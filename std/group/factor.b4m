@@ -1,0 +1,546 @@
+// std/group/factor.b4m — the FACTOR GROUP G/N as a genuine SORT (AATA §10.1, §11.2).
+//
+// G/N is the group of cosets of a normal subgroup N, under (aN)(bN) = abN. `std/group/normal.b4m`
+// proves that operation WELL-DEFINED (`theFactorOperationIsWellDefined`) but stops there, and
+// aata/10.1 records why:
+//
+//     "That G/N is a GROUP — associativity, identity N, inverse a⁻¹N — [is not
+//      transliterated]. The first needs the cosets themselves as a sort to carry the
+//      operation (there is none, which is why the operation appears above as a statement
+//      about representatives)."
+//
+// This file supplies that sort, and so closes the gap. The construction is
+// `std/integer/mod-n.b4m`'s, which builds ℤ/nℤ the same way: a fresh sort with a CLASS MAP
+// onto it, a surjectivity axiom so representatives can be unpacked, a CONGRUENCE axiom saying
+// when two representatives name the same class, and the operations posited as class-map
+// homomorphism equations. The group axioms are then THEOREMS, each proved by unpacking
+// representatives and pushing the corresponding law through from G.
+//
+// WHY A FRESH SORT RATHER THAN A CUT. `sort Sub = Grp where inSubgroup` is right for a SUBSET
+// of a group; a QUOTIENT's elements are not elements of G at all, so it is a new sort with a
+// map onto it. mod-n.b4m makes the same distinction (`sort Zn` bare, `sort Units = Zn where
+// isUnit` cut).
+//
+// WHY THE OPERATION IS POSITED RATHER THAN DEFINED. `opQHom` is simultaneously the definition
+// of `opQ` and its well-definedness: it says the class of a product is the product of the
+// classes, which is exactly what `normal.theFactorOperationIsWellDefined` licenses. A
+// consumer instantiating this theory discharges it from that theorem. Defining `opQ` by
+// choosing representatives instead would require a choice operator the language does not have.
+//
+// INTENDED USE — a TEMPLATE to be modeled, like std/group.b4m and std/integer/mod-n.b4m, not a
+// standalone object. A concrete factor group supplies its own sort and class map and runs a
+// `model` of this theory, inheriting the lifted corpus.
+//
+// CAVEAT carried from mod-n.b4m's header: the quotient template composes over a STANDALONE
+// substrate. Over a cut-sort substrate it meets two model-system walls (the one-source-theory
+// mapping restriction, and un-threaded guarded cut-closure obligations). G/N here is built
+// over a bare abstract `Grp` with `inN` as a plain predicate, which is the safe shape.
+
+import group <<< "std/group.b4m"
+import subgroup <<< "std/subgroup.b4m"
+import normal <<< "std/group/normal.b4m"
+
+// -- the ambient group G ----------------------------------------------------------------------
+sort G
+const EG: G
+func opG(a: G, b: G) => G
+func invG(a: G) => G
+axiom opGAssoc: forall a, b, c: G; opG(opG(a, b), c) = opG(a, opG(b, c))
+axiom opGIdentityLeft: forall a: G; opG(EG, a) = a
+axiom opGInverseLeft: forall a: G; opG(invG(a), a) = EG
+
+model GIsAGroup {
+  group.Grp: G
+  group.E: EG
+  group.op: opG
+  group.inverse: invG
+  group.opAssoc <- opGAssoc
+  group.opIdentityLeft <- opGIdentityLeft
+  group.opInverseLeft <- opGInverseLeft
+}
+
+// G's inverse-uniqueness and the identity's inverse, needed by `clsKernelIsN` below.
+// (`group.inverseIdentity` lives in std/group/sequence.b4m, off the model's transfer path.)
+theorem inverseUniqueG: forall a: G; forall b: G; opG(a, b) = EG -> b = invG(a)
+proof
+  @conclusion |
+    forall a: G; forall b: G; opG(a, b) = EG -> b = invG(a)
+    [using model(GIsAGroup) group.inverseUnique]
+qed
+
+theorem inverseIdentityG: invG(EG) = EG
+proof
+  @the-identity-times-itself |
+    opG(EG, EG) = EG
+    [using specialize opGIdentityLeft(EG)]
+  @the-identity-is-its-own-inverse |
+    EG = invG(EG)
+    [using specialize inverseUniqueG(EG, EG) the-identity-times-itself]
+  @conclusion |
+    invG(EG) = EG
+    [by symmetry the-identity-is-its-own-inverse]
+qed
+
+// -- the normal subgroup N --------------------------------------------------------------------
+// A membership predicate, as every subgroup in std is. Normality is the conjugation form, which
+// `normal.conjugationLandsInTheSubgroupIffCosetsCoincide` proves equivalent to the coset form.
+pred inN(g: G)
+axiom nHasIdentity: inN(EG)
+axiom nClosedOp: forall a, b: G; inN(a) -> inN(b) -> inN(opG(a, b))
+axiom nClosedInverse: forall a: G; inN(a) -> inN(invG(a))
+axiom nIsNormal: forall g: G; forall n: G; inN(n) -> inN(opG(opG(g, n), invG(g)))
+
+// N IS A SUBGROUP of G, said by a model of std/subgroup.b4m — which is what lets
+// `normal.theFactorOperationIsWellDefined` transfer onto these symbols below.
+model NIsANormalSubgroup {
+  subgroup.Grp: G
+  subgroup.E: EG
+  subgroup.op: opG
+  subgroup.inverse: invG
+  subgroup.inSubgroup: inN
+  subgroup.grpAssoc <- opGAssoc
+  subgroup.grpIdentityLeft <- opGIdentityLeft
+  subgroup.grpInverseLeft <- opGInverseLeft
+  subgroup.subgroupHasIdentity <- nHasIdentity
+  subgroup.subgroupClosedOp <- nClosedOp
+  subgroup.subgroupClosedInverse <- nClosedInverse
+}
+
+theorem inverseOfProductG: forall a: G; forall b: G; invG(opG(a, b)) = opG(invG(b), invG(a))
+proof
+  @conclusion |
+    forall a: G; forall b: G; invG(opG(a, b)) = opG(invG(b), invG(a))
+    [using model(GIsAGroup) group.invProduct]
+qed
+
+theorem inverseInvolutionG: forall a: G; invG(invG(a)) = a
+proof
+  @conclusion |
+    forall a: G; invG(invG(a)) = a
+    [using model(GIsAGroup) group.invInvolution]
+qed
+
+// -- THE FACTOR GROUP G/N ---------------------------------------------------------------------
+// `cls(g)` IS the coset gN. The congruence axiom is §6.1's criterion
+// (`coset.cosetsCoincideIffQuotientIsInTheSubgroup`): gN = hN exactly when g⁻¹h is in N.
+sort Quot
+func cls(a: G) => Quot
+axiom clsSurjective: forall q: Quot; exists a: G; q = cls(a)
+axiom clsCongruent: forall a, b: G; cls(a) = cls(b) iff inN(opG(invG(a), b))
+
+// the induced structure, posited as class-map homomorphism equations
+const EQ: Quot
+func opQ(x: Quot, y: Quot) => Quot
+func invQ(x: Quot) => Quot
+axiom eqIsClsIdentity: EQ = cls(EG)
+axiom opQHom: forall a, b: G; opQ(cls(a), cls(b)) = cls(opG(a, b))
+axiom invQHom: forall a: G; invQ(cls(a)) = cls(invG(a))
+
+// -- the group axioms on G/N, LIFTED ----------------------------------------------------------
+// Each is the same four-move idiom: `clsSurjective` + `unpack` for representatives, push
+// through the `…Hom` axiom, apply G's law, fold back.
+
+theorem opQAssoc: forall x, y, z: Quot; opQ(opQ(x, y), z) = opQ(x, opQ(y, z))
+proof
+  @generalize-x |
+    fix x: Quot {
+      @generalize-y |
+        fix y: Quot {
+          @generalize-z |
+            fix z: Quot {
+              @x-has-a-rep |
+                exists a: G; x = cls(a)
+                [using specialize clsSurjective(x)]
+              @with-x-rep |
+                unpack a: G from x-has-a-rep {
+                  @x-is-cls-a |
+                    x = cls(a)
+                    [by hypothesis with-x-rep]
+                  @y-has-a-rep |
+                    exists b: G; y = cls(b)
+                    [using specialize clsSurjective(y)]
+                  @with-y-rep |
+                    unpack b: G from y-has-a-rep {
+                      @y-is-cls-b |
+                        y = cls(b)
+                        [by hypothesis with-y-rep]
+                      @z-has-a-rep |
+                        exists c: G; z = cls(c)
+                        [using specialize clsSurjective(z)]
+                      @with-z-rep |
+                        unpack c: G from z-has-a-rep {
+                          @z-is-cls-c |
+                            z = cls(c)
+                            [by hypothesis with-z-rep]
+                          @the-left-inner |
+                            opQ(cls(a), cls(b)) = cls(opG(a, b))
+                            [using specialize opQHom(a, b)]
+                          @the-left |
+                            opQ(cls(opG(a, b)), cls(c)) = cls(opG(opG(a, b), c))
+                            [using specialize opQHom(opG(a, b), c)]
+                          @the-right-inner |
+                            opQ(cls(b), cls(c)) = cls(opG(b, c))
+                            [using specialize opQHom(b, c)]
+                          @the-right |
+                            opQ(cls(a), cls(opG(b, c))) = cls(opG(a, opG(b, c)))
+                            [using specialize opQHom(a, opG(b, c))]
+                          @g-is-associative |
+                            opG(opG(a, b), c) = opG(a, opG(b, c))
+                            [using specialize opGAssoc(a, b, c)]
+                          @conclusion-at-reps |
+                            opQ(opQ(x, y), z) = opQ(x, opQ(y, z))
+                            [using simplify x-is-cls-a y-is-cls-b z-is-cls-c the-left-inner the-left the-right-inner the-right g-is-associative]
+                        }
+                      @conclusion-after-z |
+                        opQ(opQ(x, y), z) = opQ(x, opQ(y, z))
+                        [by unpacked with-z-rep]
+                    }
+                  @conclusion-after-y |
+                    opQ(opQ(x, y), z) = opQ(x, opQ(y, z))
+                    [by unpacked with-y-rep]
+                }
+              @conclusion-after-x |
+                opQ(opQ(x, y), z) = opQ(x, opQ(y, z))
+                [by unpacked with-x-rep]
+            }
+          @discharge-z |
+            forall z: Quot; opQ(opQ(x, y), z) = opQ(x, opQ(y, z))
+            [by generalize generalize-z]
+        }
+      @discharge-y |
+        forall y, z: Quot; opQ(opQ(x, y), z) = opQ(x, opQ(y, z))
+        [by generalize generalize-y]
+    }
+  @conclusion |
+    forall x, y, z: Quot; opQ(opQ(x, y), z) = opQ(x, opQ(y, z))
+    [by generalize generalize-x]
+qed
+
+// N is the identity coset: (N)(aN) = aN.
+theorem opQIdentityLeft: forall x: Quot; opQ(EQ, x) = x
+proof
+  @generalize-x |
+    fix x: Quot {
+      @x-has-a-rep |
+        exists a: G; x = cls(a)
+        [using specialize clsSurjective(x)]
+      @with-x-rep |
+        unpack a: G from x-has-a-rep {
+          @x-is-cls-a |
+            x = cls(a)
+            [by hypothesis with-x-rep]
+          @the-identity-is-a-class |
+            EQ = cls(EG)
+            [by cite eqIsClsIdentity]
+          @the-product-of-classes |
+            opQ(cls(EG), cls(a)) = cls(opG(EG, a))
+            [using specialize opQHom(EG, a)]
+          @g-absorbs-the-identity |
+            opG(EG, a) = a
+            [using specialize opGIdentityLeft(a)]
+          @conclusion-at-the-rep |
+            opQ(EQ, x) = x
+            [using simplify x-is-cls-a the-identity-is-a-class the-product-of-classes g-absorbs-the-identity]
+        }
+      @conclusion-after-x |
+        opQ(EQ, x) = x
+        [by unpacked with-x-rep]
+    }
+  @conclusion |
+    forall x: Quot; opQ(EQ, x) = x
+    [by generalize generalize-x]
+qed
+
+// a⁻¹N is aN's inverse: (a⁻¹N)(aN) = N.
+theorem opQInverseLeft: forall x: Quot; opQ(invQ(x), x) = EQ
+proof
+  @generalize-x |
+    fix x: Quot {
+      @x-has-a-rep |
+        exists a: G; x = cls(a)
+        [using specialize clsSurjective(x)]
+      @with-x-rep |
+        unpack a: G from x-has-a-rep {
+          @x-is-cls-a |
+            x = cls(a)
+            [by hypothesis with-x-rep]
+          @the-inverse-of-a-class |
+            invQ(cls(a)) = cls(invG(a))
+            [using specialize invQHom(a)]
+          @the-product-of-classes |
+            opQ(cls(invG(a)), cls(a)) = cls(opG(invG(a), a))
+            [using specialize opQHom(invG(a), a)]
+          @g-cancels |
+            opG(invG(a), a) = EG
+            [using specialize opGInverseLeft(a)]
+          @the-identity-is-a-class |
+            EQ = cls(EG)
+            [by cite eqIsClsIdentity]
+          @conclusion-at-the-rep |
+            opQ(invQ(x), x) = EQ
+            [using simplify x-is-cls-a the-inverse-of-a-class the-product-of-classes g-cancels the-identity-is-a-class]
+        }
+      @conclusion-after-x |
+        opQ(invQ(x), x) = EQ
+        [by unpacked with-x-rep]
+    }
+  @conclusion |
+    forall x: Quot; opQ(invQ(x), x) = EQ
+    [by generalize generalize-x]
+qed
+
+// -- G/N IS A GROUP ---------------------------------------------------------------------------
+// The three laws above are std/group.b4m's three axioms, so the whole abstract group corpus
+// transfers onto G/N: the right-sided laws, both cancellation laws, uniqueness of the identity
+// and of inverses, the inverse-of-a-product law.
+model QuotIsAGroup {
+  group.Grp: Quot
+  group.E: EQ
+  group.op: opQ
+  group.inverse: invQ
+  group.opAssoc <- opQAssoc
+  group.opIdentityLeft <- opQIdentityLeft
+  group.opInverseLeft <- opQInverseLeft
+}
+
+// The payoff, under bare local names. Each is one step through the model.
+theorem opQIdentityRight: forall x: Quot; opQ(x, EQ) = x
+proof
+  @conclusion |
+    forall x: Quot; opQ(x, EQ) = x
+    [using model(QuotIsAGroup) group.opIdentityRight]
+qed
+
+theorem opQInverseRight: forall x: Quot; opQ(x, invQ(x)) = EQ
+proof
+  @conclusion |
+    forall x: Quot; opQ(x, invQ(x)) = EQ
+    [using model(QuotIsAGroup) group.opInverseRight]
+qed
+
+theorem opQCancelLeft: forall x: Quot; forall y: Quot; forall z: Quot;
+  opQ(x, y) = opQ(x, z) -> y = z
+proof
+  @conclusion |
+    forall x: Quot; forall y: Quot; forall z: Quot; opQ(x, y) = opQ(x, z) -> y = z
+    [using model(QuotIsAGroup) group.cancelLeft]
+qed
+
+// -- THE CANONICAL HOMOMORPHISM ---------------------------------------------------------------
+//
+// Judson §11.2: "every normal subgroup of a group G gives rise to a homomorphism of groups.
+// Define the natural or canonical homomorphism φ : G → G/H by φ(g) = gH. This is indeed a
+// homomorphism, since φ(g₁g₂) = g₁g₂H = g₁Hg₂H = φ(g₁)φ(g₂). The kernel of this homomorphism
+// is H."
+//
+// `cls` IS that homomorphism — `opQHom` is its operation-preservation, read right to left. Both
+// halves of Judson's claim are below.
+
+// cls preserves the operation. (`opQHom` with the sides swapped; the orientation matters because
+// a homomorphism is stated as φ(ab) = φ(a)φ(b).)
+theorem clsPreservesOp: forall a: G; forall b: G; cls(opG(a, b)) = opQ(cls(a), cls(b))
+proof
+  @generalize-a |
+    fix a: G {
+      @generalize-b |
+        fix b: G {
+          @the-product-of-classes |
+            opQ(cls(a), cls(b)) = cls(opG(a, b))
+            [using specialize opQHom(a, b)]
+          @conclusion-at-a-and-b |
+            cls(opG(a, b)) = opQ(cls(a), cls(b))
+            [by symmetry the-product-of-classes]
+        }
+      @discharge-b |
+        forall b: G; cls(opG(a, b)) = opQ(cls(a), cls(b))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a: G; forall b: G; cls(opG(a, b)) = opQ(cls(a), cls(b))
+    [by generalize generalize-a]
+qed
+
+// AND ITS KERNEL IS N. "The kernel of this homomorphism is H." cls(g) = EQ exactly when g is
+// in N — the congruence axiom at (EG, g), with G's left-identity law collapsing EG⁻¹g to g.
+theorem clsKernelIsN: forall g: G; cls(g) = EQ iff inN(g)
+proof
+  @generalize-g |
+    fix g: G {
+      @the-identity-is-a-class |
+        EQ = cls(EG)
+        [by cite eqIsClsIdentity]
+      @the-congruence-at-the-identity |
+        cls(EG) = cls(g) iff inN(opG(invG(EG), g))
+        [using specialize clsCongruent(EG, g)]
+      // invG(EG) = EG, so invG(EG)·g collapses to g
+      @the-identitys-inverse |
+        invG(EG) = EG
+        [by cite inverseIdentityG]
+      @the-congruence-collapsed |
+        cls(EG) = cls(g) iff inN(opG(EG, g))
+        [by rewrite the-identitys-inverse the-congruence-at-the-identity]
+      @g-absorbs-the-identity |
+        opG(EG, g) = g
+        [using specialize opGIdentityLeft(g)]
+      @the-congruence-at-g |
+        cls(EG) = cls(g) iff inN(g)
+        [by rewrite g-absorbs-the-identity the-congruence-collapsed]
+      @the-congruence-with-the-identity-class |
+        EQ = cls(g) iff inN(g)
+        [by rewrite the-identity-is-a-class the-congruence-at-g]
+      // orient the equation the way the statement reads
+      @given-g-is-killed |
+        assume cls(g) = EQ {
+          @g-is-killed |
+            cls(g) = EQ
+            [by hypothesis given-g-is-killed]
+          @the-identity-is-gs-class |
+            EQ = cls(g)
+            [by symmetry g-is-killed]
+          @conclusion-g-is-in-n |
+            inN(g)
+            [using tautology the-congruence-with-the-identity-class the-identity-is-gs-class]
+        }
+      @killed-implies-in-n |
+        cls(g) = EQ -> inN(g)
+        [by discharge given-g-is-killed]
+      @given-g-is-in-n |
+        assume inN(g) {
+          @g-is-in-n |
+            inN(g)
+            [by hypothesis given-g-is-in-n]
+          @the-identity-is-gs-class |
+            EQ = cls(g)
+            [using tautology the-congruence-with-the-identity-class g-is-in-n]
+          @conclusion-g-is-killed |
+            cls(g) = EQ
+            [by symmetry the-identity-is-gs-class]
+        }
+      @in-n-implies-killed |
+        inN(g) -> cls(g) = EQ
+        [by discharge given-g-is-in-n]
+      @conclusion-at-g |
+        cls(g) = EQ iff inN(g)
+        [by make_equivalence killed-implies-in-n in-n-implies-killed]
+    }
+  @conclusion |
+    forall g: G; cls(g) = EQ iff inN(g)
+    [by generalize generalize-g]
+qed
+
+// -- THE POSITED AXIOMS ARE CONSISTENT --------------------------------------------------------
+//
+// `clsCongruent` and `opQHom` are posited, and together they already encode that N is a normal
+// subgroup — which is why the lifted group laws above never cite N's own axioms. That makes it
+// worth proving, from those axioms, the two facts the posited ones REQUIRE. A consumer
+// instantiating this theory owes exactly these, so having them here shows the posits are
+// satisfiable rather than assumed out of thin air.
+//
+// This is also the section that makes N's axioms load-bearing: without it `check --library`
+// correctly reports all four as unused, i.e. reports that N's structure is decorative.
+
+// REFLEXIVITY of the congruence: every class contains its own representative. Needs N to
+// contain the identity, since a⁻¹a = e.
+theorem theCongruenceIsReflexive: forall a: G; cls(a) = cls(a)
+proof
+  @generalize-a |
+    fix a: G {
+      @a-cancels-itself |
+        opG(invG(a), a) = EG
+        [using specialize opGInverseLeft(a)]
+      @the-identity-is-in-n |
+        inN(EG)
+        [by cite nHasIdentity]
+      @the-quotient-is-in-n |
+        inN(opG(invG(a), a))
+        [by rewrite a-cancels-itself the-identity-is-in-n]
+      @the-congruence-at-a |
+        cls(a) = cls(a) iff inN(opG(invG(a), a))
+        [using specialize clsCongruent(a, a)]
+      @conclusion-at-a |
+        cls(a) = cls(a)
+        [using tautology the-congruence-at-a the-quotient-is-in-n]
+    }
+  @conclusion |
+    forall a: G; cls(a) = cls(a)
+    [by generalize generalize-a]
+qed
+
+// SYMMETRY: needs N closed under inverses, since (a⁻¹b)⁻¹ = b⁻¹a.
+theorem theCongruenceIsSymmetric: forall a: G; forall b: G;
+  cls(a) = cls(b) -> cls(b) = cls(a)
+proof
+  @generalize-a |
+    fix a: G {
+      @generalize-b |
+        fix b: G {
+          @given-same-class |
+            assume cls(a) = cls(b) {
+              @same-class |
+                cls(a) = cls(b)
+                [by hypothesis given-same-class]
+              @the-congruence-one-way |
+                cls(a) = cls(b) iff inN(opG(invG(a), b))
+                [using specialize clsCongruent(a, b)]
+              @the-quotient-is-in-n |
+                inN(opG(invG(a), b))
+                [using tautology the-congruence-one-way same-class]
+              @the-inverse-is-in-n |
+                inN(invG(opG(invG(a), b)))
+                [using specialize nClosedInverse(opG(invG(a), b)) the-quotient-is-in-n]
+              // (a⁻¹b)⁻¹ = b⁻¹(a⁻¹)⁻¹ = b⁻¹a
+              @the-inverse-of-the-product |
+                invG(opG(invG(a), b)) = opG(invG(b), invG(invG(a)))
+                [using specialize inverseOfProductG(invG(a), b)]
+              @the-double-inverse |
+                invG(invG(a)) = a
+                [using specialize inverseInvolutionG(a)]
+              @the-reversed-quotient |
+                invG(opG(invG(a), b)) = opG(invG(b), a)
+                [by rewrite the-double-inverse the-inverse-of-the-product]
+              @the-reversed-quotient-is-in-n |
+                inN(opG(invG(b), a))
+                [by rewrite the-reversed-quotient the-inverse-is-in-n]
+              @the-congruence-the-other-way |
+                cls(b) = cls(a) iff inN(opG(invG(b), a))
+                [using specialize clsCongruent(b, a)]
+              @conclusion-at-a-and-b |
+                cls(b) = cls(a)
+                [using tautology the-congruence-the-other-way the-reversed-quotient-is-in-n]
+            }
+          @conclusion-implication |
+            cls(a) = cls(b) -> cls(b) = cls(a)
+            [by discharge given-same-class]
+        }
+      @discharge-b |
+        forall b: G; cls(a) = cls(b) -> cls(b) = cls(a)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a: G; forall b: G; cls(a) = cls(b) -> cls(b) = cls(a)
+    [by generalize generalize-a]
+qed
+
+// WELL-DEFINEDNESS — Judson's Theorem 10.4, and the one that needs N NORMAL. If a and b name
+// the same class and c and d do, then ac and bd do. `normal.theFactorOperationIsWellDefined`
+// proves exactly this over its own group; here it is the same statement at this file's symbols,
+// transferred through a model of that theory.
+theorem theClassOperationIsWellDefined: forall a: G; forall b: G; forall c: G; forall d: G;
+  inN(opG(invG(a), b)) -> inN(opG(invG(c), d)) ->
+  inN(opG(invG(opG(a, c)), opG(b, d)))
+proof
+  @n-is-normal |
+    forall g: G; forall n: G; inN(n) -> inN(opG(opG(g, n), invG(g)))
+    [by cite nIsNormal]
+  @the-well-definedness |
+    (forall g: G; forall n: G; inN(n) -> inN(opG(opG(g, n), invG(g)))) ->
+      forall a: G; forall b: G; forall c: G; forall d: G;
+      inN(opG(invG(a), b)) -> inN(opG(invG(c), d)) ->
+      inN(opG(invG(opG(a, c)), opG(b, d)))
+    [using model(NIsANormalSubgroup) normal.theFactorOperationIsWellDefined]
+  @conclusion |
+    forall a: G; forall b: G; forall c: G; forall d: G;
+      inN(opG(invG(a), b)) -> inN(opG(invG(c), d)) ->
+      inN(opG(invG(opG(a, c)), opG(b, d)))
+    [by modus_ponens the-well-definedness n-is-normal]
+qed
