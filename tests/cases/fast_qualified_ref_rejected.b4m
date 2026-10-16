@@ -1,0 +1,32 @@
+// `--fast` MUST REJECT A NONEXISTENT QUALIFIED REFERENCE, as strict does.
+//
+// `--fast` and strict must agree in BOTH directions. This file names a theorem that does not
+// exist, qualified by a real import, inside a trusted `specialize` head — the shape that slipped
+// through: `seedAndCheckLocalRoot` returned on ANY qualified token (a qualified name is never a
+// local step, so it seeds no use-all-facts root), and nothing else resolved it. `--fast` printed
+// "fully verified"; strict reported "reference not found".
+//
+// The fix has two halves, and both are needed:
+//   - `demandQualifiedCiteFiles` parses the cited file in the trusted READ PASS. Without it
+//     `Context.fileOf` returns null in the process pass and every valid cross-file qualified
+//     citation in std becomes a false "unknown reference" (measured: klein.b4m,
+//     alternating-identities.b4m, cycle.b4m).
+//   - `seedAndCheckLocalRoot` then checks the name in that file's decls, existence-only —
+//     NOT `.proven`, since under `--fast` the cited fact's own proof may not have run.
+//
+// Sibling to fast_alias_ref_ok.b4m, which guards the converse (a VALID `fact` alias must not be
+// rejected). Both are the same invariant from opposite sides.
+
+import peano <<< "std/peano.b4m"
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+func add = peano.add
+
+theorem citesATypoedQualifiedName: forall n: Nat; add(ZERO, n) = n
+proof
+  @conclusion |
+    forall n: Nat; add(ZERO, n) = n
+    [using specialize peano.thereIsNoSuchTheorem]
+qed
