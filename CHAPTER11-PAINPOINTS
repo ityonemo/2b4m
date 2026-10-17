@@ -1,0 +1,133 @@
+CHAPTER 11 (HOMOMORPHISMS) — FINDINGS, 2026-10-16
+================================================================================
+
+COMPLETE. §11.1 and §11.2 both transliterated (aata/11.1, aata/11.2 — 15 and 18
+theorems). Five new std files, 66 theorems:
+
+  std/group/homomorphism.b4m        23  phi, kernel, image, preimage, Prop 11.4 all
+                                        four parts, Thm 11.6, kernel-trivial-iff-
+                                        injective
+  std/group/factor.b4m              15  G/N AS A SORT, the group laws lifted, the
+                                        canonical homomorphism and its kernel
+  std/subgroup/product.b4m          13  HN a subgroup, H n N normal in H
+  std/group/correspondence.b4m      13  both directions, surjectivity, injectivity
+  std/group/first-isomorphism.b4m    7  eta well-defined, homomorphism, injective
+
+================================================================================
+THE ERROR, AND IT IS THE ONE CHAPTER9-PAINPOINTS ALREADY NAMES
+================================================================================
+
+I predicted the Correspondence Theorem was BLOCKED, reasoning that it quantifies over
+SUBGROUPS of G/N and a subgroup is a predicate with no sort of predicates to range
+over. I wrote that into the survey README as "expect this to be the one theorem
+stated-but-not-transliterated". Then I probed it. All of it proves — both directions,
+surjectivity, and the injectivity step I most expected to fail.
+
+CHAPTER9-PAINPOINTS states the rule I broke, in those words: "All three guesses came
+from reasoning about what std HAS rather than what the language can EXPRESS, and all
+three were settled in minutes by writing the declarations and running the checker.
+Probe by writing the file, not by reading the library."
+
+I quoted that file's rule back in the same survey where I made the error. The lesson
+is not "remember the rule" — I did remember it — but that a prediction of
+unreachability is worth nothing against twenty minutes of probing, so SKIP THE
+PREDICTION and probe.
+
+What was genuinely unreachable turned out to be narrower than the prediction AND
+narrower than the previous chapter's: "S = H/N" is extensional agreement of two
+predicates, which is what set equality MEANS when a subgroup is a predicate. Only the
+"one-to-one correspondence between the two SETS" phrasing is out of reach, and that is
+the SAME =~ limit §9.1 settled. The chapter has ONE limit appearing in four places,
+not four limits.
+
+================================================================================
+THE LIBRARY GATE CAUGHT THREE DESIGN PROBLEMS, NOT THREE FORMALITIES
+================================================================================
+
+`check --library std` fails on an axiom no theorem rests on. Three times this chapter
+it was reporting something real:
+
+1. homomorphism.b4m, `opGAssoc` unused. G's associativity declared, nothing resting on
+   it — the file was treating G as a SET WITH A MAP rather than as a group, and
+   `GIsAGroup` was declared and never cited. Fixed by proving
+   kernel-trivial-iff-injective, which is what actually consumes G's group structure
+   (cancellation in G). Without the gate that ships as a file whose source group is
+   decorative.
+
+2. factor.b4m, ALL FOUR of N's axioms unused. `clsCongruent` and `opQHom` between them
+   already encode that N is a normal subgroup, so the lifted group laws never cite N's
+   structure. The gate was saying N was decorative. Fixed by proving, FROM N's axioms,
+   the facts the posited ones require: the congruence is reflexive (needs the identity)
+   and symmetric (needs inverse-closure), and the class operation is well-defined
+   (needs NORMALITY — Judson's Thm 10.4, transferred through a model of subgroup.b4m).
+   A consumer owes exactly those, so proving them shows the posits are satisfiable
+   rather than assumed out of thin air.
+
+3. correspondence.b4m, three unused (H's inverse-closure, H's containment of N, H2's
+   identity). Each became a real theorem: H/N's inverse-closure half, the injectivity
+   proof, H2/N's identity.
+
+The pattern: an unused axiom in a theory file means the theory is assuming structure
+it does not use, which is nearly always a missing theorem rather than a spurious
+axiom.
+
+================================================================================
+MECHANICS WORTH KEEPING
+================================================================================
+
+AN UNCITED `fact` ALIAS IS NEVER RESOLVED. I first wrote aata/10.1's re-exports as
+`fact X = ns.y` aliases, then tested by pointing one at `group_factor.noSuchThing` —
+the file still reported OK. References are demand-driven, so an alias nothing cites is
+never looked up. Not a soundness hole (citing it catches it immediately, same as a
+`where <undeclared>` guard) but an alias-only re-export PROVES NOTHING. Use a THEOREM
+with a one-line `[using import(I) thm]` proof: that forces the target to exist AND its
+statement to match. Every re-export in aata/11.1 and 11.2 is written that way.
+
+`assoc` CANNOT INSERT A CANCELLING PAIR. Both of Judson's Second-Isomorphism
+regroupings —
+    (h1 n1)(h2 n2) = h1 h2 (h2^-1 n1 h2) n2
+    (hn)^-1        = h^-1 (h n^-1 h^-1)
+— insert h2 h2^-1 / h^-1 h, so the two sides are NOT equal by associativity alone.
+`assoc` right-nests both sides and compares; it cannot invent the pair. Each needs the
+cancellation written out (flatten, regroup, cancel, absorb the identity).
+
+A `define` ALIAS NEEDS ITS PARAMETER. `define inImage = homomorphism.inImage` fails
+with "expects 0 arguments, got 1"; write `define inImage(x) = homomorphism.inImage(x)`.
+
+`group.inverseIdentity` LIVES IN std/group/sequence.b4m, not std/group.b4m, so it is
+NOT on a model's transfer path. invH(EH) = EH is three lines from inverse-uniqueness.
+Same for G's right-inverse law in correspondence.b4m — factor.b4m does not re-export
+it, so a local model of std/group.b4m at G's symbols is the route.
+
+A TRANSFERRED AXIOM MAY ARRIVE IN THE OPPOSITE ORIENTATION. `opGAssoc` transferred
+through a model gave `op(op(a,b),c) = op(a,op(b,c))` reversed from the source axiom, so
+regrouping needed a `symmetry`. Check the orientation rather than assuming it.
+
+NORMALITY ORIENTATION. std states it as `inN(n) -> inN(g n g^-1)`. Judson writes
+h^-1 n h, which is the axiom at g = h^-1, giving h^-1 n (h^-1)^-1 — so an
+`invInvolution` rewrite is needed to reach his form. The inverse half of the HN proof
+needs no flip: h n^-1 h^-1 is already the axiom's shape at g = h.
+
+================================================================================
+WHAT IS LEFT, AND THE TWO KINDS OF GAP
+================================================================================
+
+NOT NAMEABLE (the =~ limit, §9.1's, unchanged). Each isomorphism theorem's final
+"X =~ Y". Every instance is provable; the quantification over pairs of theories is not.
+Also "there exists a UNIQUE isomorphism eta" in the First theorem — eta is declared and
+its properties proved, which is the instance.
+
+A MODEL-SYSTEM RESTRICTION (a thing to FIX, not to state). The THIRD ISOMORPHISM
+THEOREM needs two NESTED quotients: G/N, then (G/N)/(H/N). That means instantiating
+std/group/factor.b4m with the first quotient as its ambient group — a model of the
+quotient theory onto its own output. std/integer/mod-n.b4m's header already records
+the wall: the template composes over a STANDALONE substrate but meets the
+one-source-theory mapping restriction over a quotient one. Judson gives this theorem
+no proof either (left to the reader), so nothing is lost by deferring it, but the
+obstacle is engine work with a known shape.
+
+CONSTRUCTIONS NOT BUILT (neither limit). Judson's §11.1 examples: n |-> g^n (available,
+group/generated.b4m has `power`), det : GL_2(R) -> R* (std has no matrix group), and
+theta |-> cos theta + i sin theta (std/complex.b4m has the ingredients). And "S_n and
+Z_2 are related by parity" would be a model of homomorphism.b4m at
+alternating.b4m's parity symbols. Each is a construction, not a wall.
