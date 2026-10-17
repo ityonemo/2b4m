@@ -1,0 +1,429 @@
+// PROBE: the PRODUCT SET HN, Judson's Second Isomorphism Theorem, first paragraph.
+//
+// "We will first show that HN = {hn : h in H, n in N} is a subgroup of G. Suppose that
+//  h1 n1, h2 n2 in HN. Since N is normal, (h2)^-1 n1 h2 in N. So
+//     (h1 n1)(h2 n2) = h1 h2 ( (h2)^-1 n1 h2 ) n2
+//  is in HN. The inverse of hn in HN is in HN since
+//     (hn)^-1 = n^-1 h^-1 = h^-1 (h n^-1 h^-1)."
+import group <<< "std/group.b4m"
+import subgroup <<< "std/subgroup.b4m"
+
+sort G = subgroup.Grp
+const EG = subgroup.E
+func opG = subgroup.op
+func invG = subgroup.inverse
+
+// H is `inSubgroup` (not necessarily normal), N is `inSubgroup2` AND normal.
+pred inH = subgroup.inSubgroup
+pred inN = subgroup.inSubgroup2
+fact hHasIdentity = subgroup.subgroupHasIdentity
+fact hClosedOp = subgroup.subgroupClosedOp
+fact hClosedInverse = subgroup.subgroupClosedInverse
+fact nHasIdentity = subgroup.subgroup2HasIdentity
+fact nClosedOp = subgroup.subgroup2ClosedOp
+fact nClosedInverse = subgroup.subgroup2ClosedInverse
+
+// N's normality -- the extra hypothesis this theorem needs and `subgroup.b4m` does not posit.
+axiom nIsNormal: forall g: G; forall n: G; inN(n) -> inN(opG(opG(g, n), invG(g)))
+
+theorem theIdentityIsIdempotent: opG(EG, EG) = EG
+proof
+  @conclusion |
+    opG(EG, EG) = EG
+    [using specialize subgroup.grpIdentityLeft(EG)]
+qed
+
+theorem inverseRightG: forall a: G; opG(a, invG(a)) = EG
+proof
+  @conclusion |
+    forall a: G; opG(a, invG(a)) = EG
+    [by cite subgroup.grpInverseRight]
+qed
+
+theorem involutionG: forall a: G; invG(invG(a)) = a
+proof
+  @conclusion |
+    forall a: G; invG(invG(a)) = a
+    [by cite subgroup.invInvolution]
+qed
+
+theorem invProductG: forall a: G; forall b: G; invG(opG(a, b)) = opG(invG(b), invG(a))
+proof
+  @conclusion |
+    forall a: G; forall b: G; invG(opG(a, b)) = opG(invG(b), invG(a))
+    [by cite subgroup.invProduct]
+qed
+
+define inProduct(x) = exists h: G; exists n: G; inH(h) and inN(n) and x = opG(h, n)
+
+// the identity: e = e*e, with e in both.
+theorem theProductHasTheIdentity: inProduct(EG)
+proof
+  @the-identity-is-in-h |
+    inH(EG)
+    [by cite hHasIdentity]
+  @the-identity-is-in-n |
+    inN(EG)
+    [by cite nHasIdentity]
+  @the-identity-is-idempotent |
+    opG(EG, EG) = EG
+    [by cite theIdentityIsIdempotent]
+  @the-identity-splits |
+    EG = opG(EG, EG)
+    [by symmetry the-identity-is-idempotent]
+  @the-witness |
+    inH(EG) and inN(EG) and EG = opG(EG, EG)
+    [using tautology the-identity-is-in-h the-identity-is-in-n the-identity-splits]
+  @inner-witness |
+    exists n: G; inH(EG) and inN(n) and EG = opG(EG, n)
+    [by witness(EG) the-witness]
+  @conclusion |
+    inProduct(EG)
+    [by witness(EG) inner-witness]
+qed
+
+// Judson's regrouping as an identity in any group:
+//   h1 h2 (h2^-1 n1 h2) n2 = (h1 n1)(h2 n2)
+// The two sides differ by an inserted h2 h2^-1, so `assoc` alone cannot do it -- the
+// cancellation has to be explicit. Right-nested throughout to keep the rewrites local.
+theorem theProductRegroups: forall h1: G; forall n1: G; forall h2: G; forall n2: G;
+  opG(opG(h1, h2), opG(opG(opG(invG(h2), n1), h2), n2))
+  = opG(opG(h1, n1), opG(h2, n2))
+proof
+  @generalize-h1 |
+    fix h1: G {
+      @generalize-n1 |
+        fix n1: G {
+          @generalize-h2 |
+            fix h2: G {
+              @generalize-n2 |
+                fix n2: G {
+                  // flatten the left side to h1 h2 h2^-1 n1 h2 n2, right-nested
+                  @the-left-flattens |
+                    opG(opG(h1, h2), opG(opG(opG(invG(h2), n1), h2), n2))
+                      = opG(h1, opG(h2, opG(invG(h2), opG(n1, opG(h2, n2)))))
+                    [using assoc(subgroup.grpAssoc)]
+                  // h2 h2^-1 cancels: h2 (h2^-1 X) = (h2 h2^-1) X = e X = X
+                  @the-inner-regroups |
+                    opG(h2, opG(invG(h2), opG(n1, opG(h2, n2))))
+                      = opG(opG(h2, invG(h2)), opG(n1, opG(h2, n2)))
+                    [using assoc(subgroup.grpAssoc)]
+                  @h2-cancels |
+                    opG(h2, invG(h2)) = EG
+                    [using specialize inverseRightG(h2)]
+                  @with-the-cancellation |
+                    opG(h2, opG(invG(h2), opG(n1, opG(h2, n2))))
+                      = opG(EG, opG(n1, opG(h2, n2)))
+                    [by rewrite h2-cancels the-inner-regroups]
+                  @the-identity-absorbs |
+                    opG(EG, opG(n1, opG(h2, n2))) = opG(n1, opG(h2, n2))
+                    [using specialize subgroup.grpIdentityLeft(opG(n1, opG(h2, n2)))]
+                  @the-inner-is-clean |
+                    opG(h2, opG(invG(h2), opG(n1, opG(h2, n2)))) = opG(n1, opG(h2, n2))
+                    [using chain with-the-cancellation the-identity-absorbs]
+                  // so the left side is h1 (n1 (h2 n2)), which is the right side regrouped
+                  @the-left-is-clean |
+                    opG(opG(h1, h2), opG(opG(opG(invG(h2), n1), h2), n2))
+                      = opG(h1, opG(n1, opG(h2, n2)))
+                    [by rewrite the-inner-is-clean the-left-flattens]
+                  @the-right-flattens |
+                    opG(opG(h1, n1), opG(h2, n2)) = opG(h1, opG(n1, opG(h2, n2)))
+                    [using assoc(subgroup.grpAssoc)]
+                  @the-right-is-clean |
+                    opG(h1, opG(n1, opG(h2, n2))) = opG(opG(h1, n1), opG(h2, n2))
+                    [by symmetry the-right-flattens]
+                  @conclusion-at-the-points |
+                    opG(opG(h1, h2), opG(opG(opG(invG(h2), n1), h2), n2))
+                      = opG(opG(h1, n1), opG(h2, n2))
+                    [using chain the-left-is-clean the-right-is-clean]
+                }
+              @discharge-n2 |
+                forall n2: G; opG(opG(h1, h2), opG(opG(opG(invG(h2), n1), h2), n2))
+                  = opG(opG(h1, n1), opG(h2, n2))
+                [by generalize generalize-n2]
+            }
+          @discharge-h2 |
+            forall h2: G; forall n2: G; opG(opG(h1, h2), opG(opG(opG(invG(h2), n1), h2), n2))
+              = opG(opG(h1, n1), opG(h2, n2))
+            [by generalize generalize-h2]
+        }
+      @discharge-n1 |
+        forall n1: G; forall h2: G; forall n2: G;
+          opG(opG(h1, h2), opG(opG(opG(invG(h2), n1), h2), n2))
+          = opG(opG(h1, n1), opG(h2, n2))
+        [by generalize generalize-n1]
+    }
+  @conclusion |
+    forall h1: G; forall n1: G; forall h2: G; forall n2: G;
+      opG(opG(h1, h2), opG(opG(opG(invG(h2), n1), h2), n2))
+      = opG(opG(h1, n1), opG(h2, n2))
+    [by generalize generalize-h1]
+qed
+
+// HN IS CLOSED UNDER THE OPERATION -- the step that needs N NORMAL.
+theorem theProductIsClosedUnderTheOperation: forall x: G; forall y: G;
+  inProduct(x) -> inProduct(y) -> inProduct(opG(x, y))
+proof
+  @generalize-x |
+    fix x: G {
+      @generalize-y |
+        fix y: G {
+          @given-x-in-the-product |
+            assume inProduct(x) {
+              @given-y-in-the-product |
+                assume inProduct(y) {
+                  @x-factors |
+                    exists h: G; exists n: G; inH(h) and inN(n) and x = opG(h, n)
+                    [by hypothesis given-x-in-the-product]
+                  @y-factors |
+                    exists h: G; exists n: G; inH(h) and inN(n) and y = opG(h, n)
+                    [by hypothesis given-y-in-the-product]
+                  @with-x-h |
+                    unpack h1: G from x-factors {
+                      @x-inner |
+                        exists n: G; inH(h1) and inN(n) and x = opG(h1, n)
+                        [by hypothesis with-x-h]
+                      @with-x-n |
+                        unpack n1: G from x-inner {
+                          @x-data |
+                            inH(h1) and inN(n1) and x = opG(h1, n1)
+                            [by hypothesis with-x-n]
+                          @h1-is-in-h |
+                            inH(h1)
+                            [using tautology x-data]
+                          @n1-is-in-n |
+                            inN(n1)
+                            [using tautology x-data]
+                          @x-is-the-product |
+                            x = opG(h1, n1)
+                            [using tautology x-data]
+                          @with-y-h |
+                            unpack h2: G from y-factors {
+                              @y-inner |
+                                exists n: G; inH(h2) and inN(n) and y = opG(h2, n)
+                                [by hypothesis with-y-h]
+                              @with-y-n |
+                                unpack n2: G from y-inner {
+                                  @y-data |
+                                    inH(h2) and inN(n2) and y = opG(h2, n2)
+                                    [by hypothesis with-y-n]
+                                  @h2-is-in-h |
+                                    inH(h2)
+                                    [using tautology y-data]
+                                  @n2-is-in-n |
+                                    inN(n2)
+                                    [using tautology y-data]
+                                  @y-is-the-product |
+                                    y = opG(h2, n2)
+                                    [using tautology y-data]
+
+                                  // the H part: h1 h2
+                                  @the-h-part-is-in-h |
+                                    inH(opG(h1, h2))
+                                    [using specialize hClosedOp(h1, h2) h1-is-in-h h2-is-in-h]
+
+                                  // the N part: (h2^-1 n1 h2) n2. NORMALITY at g = h2^-1
+                                  // gives h2^-1 n1 (h2^-1)^-1, and (h2^-1)^-1 = h2.
+                                  @the-conjugate-is-in-n |
+                                    inN(opG(opG(invG(h2), n1), invG(invG(h2))))
+                                    [using specialize nIsNormal(invG(h2), n1) n1-is-in-n]
+                                  @the-double-inverse |
+                                    invG(invG(h2)) = h2
+                                    [using specialize involutionG(h2)]
+                                  @the-conjugate-is-in-n-plainly |
+                                    inN(opG(opG(invG(h2), n1), h2))
+                                    [by rewrite the-double-inverse the-conjugate-is-in-n]
+                                  @the-n-part-is-in-n |
+                                    inN(opG(opG(opG(invG(h2), n1), h2), n2))
+                                    [using specialize nClosedOp(opG(opG(invG(h2), n1), h2), n2) the-conjugate-is-in-n-plainly n2-is-in-n]
+
+                                  // and the regrouping says that product IS xy
+                                  @the-regrouping |
+                                    opG(opG(h1, h2), opG(opG(opG(invG(h2), n1), h2), n2))
+                                      = opG(opG(h1, n1), opG(h2, n2))
+                                    [using specialize theProductRegroups(h1, n1, h2, n2)]
+                                  @the-product-at-the-reps |
+                                    opG(x, y) = opG(opG(h1, n1), opG(h2, n2))
+                                    [using simplify x-is-the-product y-is-the-product]
+                                  @the-regrouping-flipped |
+                                    opG(opG(h1, n1), opG(h2, n2))
+                                      = opG(opG(h1, h2), opG(opG(opG(invG(h2), n1), h2), n2))
+                                    [by symmetry the-regrouping]
+                                  @the-product-is-the-regrouping |
+                                    opG(x, y)
+                                      = opG(opG(h1, h2), opG(opG(opG(invG(h2), n1), h2), n2))
+                                    [using chain the-product-at-the-reps the-regrouping-flipped]
+                                  @the-witness |
+                                    inH(opG(h1, h2)) and inN(opG(opG(opG(invG(h2), n1), h2), n2))
+                                      and opG(x, y) = opG(opG(h1, h2), opG(opG(opG(invG(h2), n1), h2), n2))
+                                    [using tautology the-h-part-is-in-h the-n-part-is-in-n the-product-is-the-regrouping]
+                                  @inner-witness |
+                                    exists n: G; inH(opG(h1, h2)) and inN(n)
+                                      and opG(x, y) = opG(opG(h1, h2), n)
+                                    [by witness(opG(opG(opG(invG(h2), n1), h2), n2)) the-witness]
+                                  @conclusion-the-product-is-in-hn |
+                                    inProduct(opG(x, y))
+                                    [by witness(opG(h1, h2)) inner-witness]
+                                }
+                              @after-y-n |
+                                inProduct(opG(x, y))
+                                [by unpacked with-y-n]
+                            }
+                          @after-y-h |
+                            inProduct(opG(x, y))
+                            [by unpacked with-y-h]
+                        }
+                      @after-x-n |
+                        inProduct(opG(x, y))
+                        [by unpacked with-x-n]
+                    }
+                  @after-x-h |
+                    inProduct(opG(x, y))
+                    [by unpacked with-x-h]
+                }
+              @y-implies |
+                inProduct(y) -> inProduct(opG(x, y))
+                [by discharge given-y-in-the-product]
+            }
+          @conclusion-at-x-and-y |
+            inProduct(x) -> inProduct(y) -> inProduct(opG(x, y))
+            [by discharge given-x-in-the-product]
+        }
+      @discharge-y |
+        forall y: G; inProduct(x) -> inProduct(y) -> inProduct(opG(x, y))
+        [by generalize generalize-y]
+    }
+  @conclusion |
+    forall x: G; forall y: G; inProduct(x) -> inProduct(y) -> inProduct(opG(x, y))
+    [by generalize generalize-x]
+qed
+
+// Judson's inverse identity: (hn)^-1 = h^-1 (h n^-1 h^-1). Again an inserted h^-1 h,
+// so explicit cancellation rather than `assoc`.
+theorem theInverseRegroups: forall h: G; forall n: G;
+  opG(invG(h), opG(opG(h, invG(n)), invG(h))) = invG(opG(h, n))
+proof
+  @generalize-h |
+    fix h: G {
+      @generalize-n |
+        fix n: G {
+          @the-left-flattens |
+            opG(invG(h), opG(opG(h, invG(n)), invG(h)))
+              = opG(invG(h), opG(h, opG(invG(n), invG(h))))
+            [using assoc(subgroup.grpAssoc)]
+          @the-inner-regroups |
+            opG(invG(h), opG(h, opG(invG(n), invG(h))))
+              = opG(opG(invG(h), h), opG(invG(n), invG(h)))
+            [using assoc(subgroup.grpAssoc)]
+          @h-cancels |
+            opG(invG(h), h) = EG
+            [using specialize subgroup.grpInverseLeft(h)]
+          @with-the-cancellation |
+            opG(invG(h), opG(h, opG(invG(n), invG(h))))
+              = opG(EG, opG(invG(n), invG(h)))
+            [by rewrite h-cancels the-inner-regroups]
+          @the-identity-absorbs |
+            opG(EG, opG(invG(n), invG(h))) = opG(invG(n), invG(h))
+            [using specialize subgroup.grpIdentityLeft(opG(invG(n), invG(h)))]
+          @the-left-is-clean |
+            opG(invG(h), opG(opG(h, invG(n)), invG(h))) = opG(invG(n), invG(h))
+            [using chain the-left-flattens with-the-cancellation the-identity-absorbs]
+          // and n^-1 h^-1 IS (hn)^-1
+          @the-inverse-of-the-product |
+            invG(opG(h, n)) = opG(invG(n), invG(h))
+            [using specialize invProductG(h, n)]
+          @the-inverse-flipped |
+            opG(invG(n), invG(h)) = invG(opG(h, n))
+            [by symmetry the-inverse-of-the-product]
+          @conclusion-at-h-and-n |
+            opG(invG(h), opG(opG(h, invG(n)), invG(h))) = invG(opG(h, n))
+            [using chain the-left-is-clean the-inverse-flipped]
+        }
+      @discharge-n |
+        forall n: G; opG(invG(h), opG(opG(h, invG(n)), invG(h))) = invG(opG(h, n))
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall h: G; forall n: G;
+      opG(invG(h), opG(opG(h, invG(n)), invG(h))) = invG(opG(h, n))
+    [by generalize generalize-h]
+qed
+
+// HN IS CLOSED UNDER INVERSES. h^-1 is in H; h n^-1 h^-1 is in N by normality at g = h.
+theorem theProductIsClosedUnderInverses: forall x: G;
+  inProduct(x) -> inProduct(invG(x))
+proof
+  @generalize-x |
+    fix x: G {
+      @given-x-in-the-product |
+        assume inProduct(x) {
+          @x-factors |
+            exists h: G; exists n: G; inH(h) and inN(n) and x = opG(h, n)
+            [by hypothesis given-x-in-the-product]
+          @with-x-h |
+            unpack h: G from x-factors {
+              @x-inner |
+                exists n: G; inH(h) and inN(n) and x = opG(h, n)
+                [by hypothesis with-x-h]
+              @with-x-n |
+                unpack n: G from x-inner {
+                  @x-data |
+                    inH(h) and inN(n) and x = opG(h, n)
+                    [by hypothesis with-x-n]
+                  @h-is-in-h |
+                    inH(h)
+                    [using tautology x-data]
+                  @n-is-in-n |
+                    inN(n)
+                    [using tautology x-data]
+                  @x-is-the-product |
+                    x = opG(h, n)
+                    [using tautology x-data]
+                  @the-h-part-is-in-h |
+                    inH(invG(h))
+                    [using specialize hClosedInverse(h) h-is-in-h]
+                  @the-n-inverse-is-in-n |
+                    inN(invG(n))
+                    [using specialize nClosedInverse(n) n-is-in-n]
+                  @the-n-part-is-in-n |
+                    inN(opG(opG(h, invG(n)), invG(h)))
+                    [using specialize nIsNormal(h, invG(n)) the-n-inverse-is-in-n]
+                  @the-regrouping |
+                    opG(invG(h), opG(opG(h, invG(n)), invG(h))) = invG(opG(h, n))
+                    [using specialize theInverseRegroups(h, n)]
+                  @the-inverse-at-the-rep |
+                    invG(x) = invG(opG(h, n))
+                    [using simplify x-is-the-product]
+                  @the-regrouping-flipped |
+                    invG(opG(h, n)) = opG(invG(h), opG(opG(h, invG(n)), invG(h)))
+                    [by symmetry the-regrouping]
+                  @the-inverse-is-the-regrouping |
+                    invG(x) = opG(invG(h), opG(opG(h, invG(n)), invG(h)))
+                    [using chain the-inverse-at-the-rep the-regrouping-flipped]
+                  @the-witness |
+                    inH(invG(h)) and inN(opG(opG(h, invG(n)), invG(h)))
+                      and invG(x) = opG(invG(h), opG(opG(h, invG(n)), invG(h)))
+                    [using tautology the-h-part-is-in-h the-n-part-is-in-n the-inverse-is-the-regrouping]
+                  @inner-witness |
+                    exists n2: G; inH(invG(h)) and inN(n2) and invG(x) = opG(invG(h), n2)
+                    [by witness(opG(opG(h, invG(n)), invG(h))) the-witness]
+                  @conclusion-the-inverse-is-in-hn |
+                    inProduct(invG(x))
+                    [by witness(invG(h)) inner-witness]
+                }
+              @after-x-n |
+                inProduct(invG(x))
+                [by unpacked with-x-n]
+            }
+          @after-x-h |
+            inProduct(invG(x))
+            [by unpacked with-x-h]
+        }
+      @conclusion-at-x |
+        inProduct(x) -> inProduct(invG(x))
+        [by discharge given-x-in-the-product]
+    }
+  @conclusion |
+    forall x: G; inProduct(x) -> inProduct(invG(x))
+    [by generalize generalize-x]
+qed
