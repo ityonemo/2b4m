@@ -1,0 +1,75 @@
+SCHEMA-HASH-DECODE — PROBED 2026-10-16, BEFORE BUILDING. One finding changes the plan.
+
+CHECK THESE WITH `--draft`: two of the three probes carry DELIBERATELY UNUSED warm-up
+steps, whose only job is to bump the proof's fresh-name counter — the variable under
+test. Strict mode correctly rejects an unused fact, so `--draft` is the right mode and
+not a weakening here.
+
+SCHEMA-HASH-DECODE-PLAN.md picks route A (re-derivation): "Do not store anything. On
+demand, enumerate candidate instantiations, recompute `instanceHash` for each, and
+report the ones that match." Its stated cost is "a scan over citation sites per query".
+
+THAT UNDERSTATES THE COST, and the probes say by how much.
+
+PROBE 1 — lambda-arg-is-counter-free.b4m. A schema instantiated at a LAMBDA argument
+(`(fun k: Nat => add(k, ZERO) = k)`), twice, once after warm-up `fix` steps that bump
+the proof's fresh-name counter. Result: ONE instance, one hash. The lambda's params
+canonicalize BY POSITION in `hashTerm` (the `#` branch), so the counter does not reach
+the hash. Good — and this is the case the plan's examples are all drawn from.
+
+PROBE 2 — eigenvar-arg-depends-on-the-counter.b4m. A schema with a VALUE param,
+instantiated INSIDE a `fix` at an argument that MENTIONS the fix's eigenvar, twice,
+identically written, differing only in whether warm-up `fix` steps precede it:
+
+    addZeroOnTheRight{adea7c551b3c7020}      <- no warm-up
+    addZeroOnTheRight{e78561b481fdd421}      <- after one warm-up fix
+
+TWO DISTINCT HASHES FOR THE SAME WRITTEN INSTANTIATION.
+
+PROBE 3 — eigenvar-arg-without-the-warmup.b4m. The same file with the warm-up deleted:
+both theorems now hash to `adea7c551b3c7020`. So the warm-up's extra `fix` was the only
+difference, and the per-proof fresh counter is definitively the cause.
+
+WHY. An eigenvar is `freshNamed`'d, so its name is `<prefix>#<counter>` where
+`Prove.fresh_counter` counts every fresh name minted EARLIER IN THAT PROOF
+(Prove.zig:284). `hashTerm`'s fvar case canonicalizes only lambda params (the `#`
+branch, by position in `canon`); every OTHER fvar takes the `@` branch and hashes its
+NAME BYTES (Schema.zig:120-127). An eigenvar is not a lambda param, so its counter
+value is in the hash.
+
+WHAT THIS MEANS FOR ROUTE A. Re-deriving a hash from a citation site requires
+reproducing the proof's fresh-counter state at that step — i.e. REPLAYING THE PROOF UP
+TO THE INSTANTIATION, not elaborating the site in isolation. The plan's "walking proofs
+for instantiation steps yields the candidate set directly" holds for the CANDIDATE SET
+but not for the HASH: binding an argument needs a live `Elab` with scope, sort
+resolution and the counter (Prove.bindSchemaArgs / bindLambdaArg, ~Prove.zig:2020-2105).
+
+THREE WAYS FORWARD, and the choice is a real one:
+
+  A'. RE-DERIVATION BY REPLAY. Run the prover again with a decode hook: at each
+      instantiation, compute the hash and compare. Correct by construction, since it IS
+      the same code path. Cost is one extra proving pass per query — acceptable on an
+      error path, and the plan's own rationale ("slow is fine") covers it. No new data
+      structure. This is the smallest honest version of route A.
+
+  B. THE REVERSE SIDE TABLE the plan rejects. Its stated reason is the lock-discipline
+      hazard around Context side tables ([[side-table-lock-discipline]]). That reason
+      stands, but note the table would be written ONCE per instance at the naming site
+      and read only by a query — not during proving — so it is not the shape that
+      segfaulted. Worth re-weighing now that route A is known to need a replay.
+
+  C. MAKE THE HASH COUNTER-FREE: canonicalize eigenvars the way lambda params already
+      are. Then re-derivation works from the site alone, as the plan assumed. This is
+      the most invasive but it fixes the underlying oddity — two identical
+      instantiations currently mint TWO instances and prove the same thing twice, which
+      is wasted work regardless of decoding. Note the hash's comment already records a
+      PREVIOUS determinism bug of exactly this family (`cc800fe`, Indexes vs names), so
+      this is the third iteration on the same question.
+
+RECOMMENDATION: C, then A' becomes trivial. C is also the only one that makes the
+duplicate-instance waste go away, and the hash's own doc comment says what it is for —
+"it addresses a schema instance" — which two spellings of one instantiation violate.
+
+NOT YET DISCUSSED WITH THE USER. The plan was approved on the understanding that
+re-derivation is cheap and self-contained; probe 2 says it is not, so the choice above
+should be theirs.

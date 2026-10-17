@@ -1,0 +1,54 @@
+// THE HARD CASE: a schema instantiated INSIDE a `fix`, at an argument mentioning the
+// fix's eigenvar. That eigenvar is `freshNamed` -- so its name is `<prefix>#<counter>`
+// and hashTerm's `@` branch hashes those BYTES. If two otherwise-identical
+// instantiations sit at different counter values, their hashes differ.
+// NOTE: check with `--draft`, for the same reason — the warm-up is deliberately unused.
+import peano <<< "std/peano.b4m"
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+func add = peano.add
+
+// a schema with a VALUE param, so the argument is a plain term that can mention an eigenvar
+theorem addZeroOnTheRight(n: Nat): add(n, ZERO) = n
+proof
+  @conclusion |
+    add(n, ZERO) = n
+    [using arithmetic(peano)]
+qed
+
+// instantiated at an eigenvar, with NO preceding fix
+theorem usedEarly: forall a: Nat; add(a, ZERO) = a
+proof
+  @the-block |
+    fix a: Nat {
+      @at-a |
+        add(a, ZERO) = a
+        [using instantiation addZeroOnTheRight(a)]
+    }
+  @conclusion |
+    forall a: Nat; add(a, ZERO) = a
+    [by generalize the-block]
+qed
+
+// the SAME instantiation shape, but after a warm-up fix that bumps the counter
+theorem usedLate: forall a: Nat; add(a, ZERO) = a
+proof
+  @warmup |
+    forall b: Nat; b = b
+    [by generalize warmup-block]
+  @warmup-block |
+    fix b: Nat {
+      @refl | b = b [by reflexivity]
+    }
+  @the-block |
+    fix a: Nat {
+      @at-a |
+        add(a, ZERO) = a
+        [using instantiation addZeroOnTheRight(a)]
+    }
+  @conclusion |
+    forall a: Nat; add(a, ZERO) = a
+    [by generalize the-block]
+qed

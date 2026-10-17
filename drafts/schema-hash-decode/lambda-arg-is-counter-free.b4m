@@ -1,0 +1,59 @@
+// Does a schema instance's hash depend on the proof's fresh-name counter?
+// Two theorems instantiate the SAME schema at the SAME argument, but one has extra
+// `fix` steps before it (minting fresh fvars and bumping the counter). If the hashes
+// differ, re-derivation needs to replay the proof, not just elaborate the site.
+// NOTE: check with `--draft`. The warm-up steps are DELIBERATELY unused — their
+// only job is to bump the proof's fresh-name counter, which is the variable under test.
+import peano <<< "std/peano.b4m"
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+func add = peano.add
+fact induction = peano.induction
+
+theorem plainInstantiation: forall n: Nat; add(n, ZERO) = n
+proof
+  @base |
+    add(ZERO, ZERO) = ZERO
+    [by cite baseCase]
+  @step |
+    forall k: Nat; add(k, ZERO) = k -> add(succ(k), ZERO) = succ(k)
+    [by cite stepCase]
+  @conclusion |
+    forall n: Nat; add(n, ZERO) = n
+    [using instantiation peano.induction((fun k: Nat => add(k, ZERO) = k)) base step]
+qed
+
+theorem baseCase: add(ZERO, ZERO) = ZERO
+proof
+  @conclusion | add(ZERO, ZERO) = ZERO [using arithmetic(peano)]
+qed
+
+theorem stepCase: forall k: Nat; add(k, ZERO) = k -> add(succ(k), ZERO) = succ(k)
+proof
+  @conclusion |
+    forall k: Nat; add(k, ZERO) = k -> add(succ(k), ZERO) = succ(k)
+    [using arithmetic(peano)]
+qed
+
+// the same instantiation, but preceded by binder-minting steps
+theorem instantiationAfterFixes: forall n: Nat; add(n, ZERO) = n
+proof
+  @warmup |
+    forall a: Nat; a = a
+    [by generalize warmup-block]
+  @warmup-block |
+    fix a: Nat {
+      @refl | a = a [by reflexivity]
+    }
+  @base |
+    add(ZERO, ZERO) = ZERO
+    [by cite baseCase]
+  @step |
+    forall k: Nat; add(k, ZERO) = k -> add(succ(k), ZERO) = succ(k)
+    [by cite stepCase]
+  @conclusion |
+    forall n: Nat; add(n, ZERO) = n
+    [using instantiation peano.induction((fun k: Nat => add(k, ZERO) = k)) base step]
+qed
