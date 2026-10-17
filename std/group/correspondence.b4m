@@ -1,0 +1,775 @@
+// std/group/correspondence.b4m — the CORRESPONDENCE THEOREM (AATA §11.2).
+//
+// Judson: "Let N be a normal subgroup of a group G. Then H ↦ H/N is a one-to-one
+// correspondence between the set of subgroups H of G containing N and the set of subgroups of
+// G/N. Furthermore, the normal subgroups of G containing N correspond to normal subgroups of
+// G/N."
+//
+// WHAT IS PROVED HERE, AND WHAT THE STATEMENT'S PHRASING COSTS. The correspondence's whole
+// CONTENT is below — both directions, surjectivity, and injectivity. What is NOT expressible is
+// the sentence's own shape: "a one-to-one correspondence between the SET of subgroups H and the
+// SET of subgroups of G/N" quantifies over sets of subgroups, and a subgroup here is a
+// PREDICATE with no sort of predicates to range over. That is the same narrow limit §9.1 met
+// for ≅ (`CHAPTER9-PAINPOINTS`): every instance is provable, only the quantification is not.
+//
+// So each half is stated at a GIVEN subgroup, which is what makes it an instance:
+//
+//   inHsub      a subgroup H of G containing N        → H/N is a subgroup of G/N
+//   inS         a subgroup S of G/N                   → its pullback is a subgroup of G
+//                                                       containing N, whose image IS S
+//   inHsub2     a second subgroup containing N        → classes determine membership
+//
+// "S = H/N" IS EXTENSIONAL AGREEMENT of two predicates on `Quot`, which is what set equality
+// MEANS when a subgroup is a predicate — `thePullbacksImageIsS` is an `iff` for exactly that
+// reason, and it is Judson's surjectivity.
+//
+// A NOTE ON THE INJECTIVITY STEP. `containingNMakesClassesSufficient` is Judson's "since N is
+// contained in H₂, we know that h₁ ∈ H₂" — the step that makes the correspondence injective,
+// and the one place "H contains N" is load-bearing rather than decorative. a = b·(a⁻¹b)⁻¹ with
+// both factors in H₂: the quotient a⁻¹b is in N by the congruence, hence in H₂ by containment.
+
+import group <<< "std/group.b4m"
+import group_factor <<< "std/group/factor.b4m"
+
+sort G = group_factor.G
+sort Quot = group_factor.Quot
+const EG = group_factor.EG
+const EQ = group_factor.EQ
+func opG = group_factor.opG
+func invG = group_factor.invG
+func opQ = group_factor.opQ
+func invQ = group_factor.invQ
+func cls = group_factor.cls
+pred inN = group_factor.inN
+
+// G's right-inverse law. factor.b4m does not re-export it, so it comes from the group
+// corpus through a local model of std/group.b4m at G's symbols.
+model GIsAGroupHere {
+  group.Grp: G
+  group.E: EG
+  group.op: opG
+  group.inverse: invG
+  group.opAssoc <- group_factor.opGAssoc
+  group.opIdentityLeft <- group_factor.opGIdentityLeft
+  group.opInverseLeft <- group_factor.opGInverseLeft
+}
+
+theorem inverseRightG: forall a: G; opG(a, invG(a)) = EG
+proof
+  @conclusion |
+    forall a: G; opG(a, invG(a)) = EG
+    [using model(GIsAGroupHere) group.opInverseRight]
+qed
+
+// b * (a^-1 b)^-1 = a -- the recovery identity Judson's injectivity step needs.
+theorem theRecoveryIdentity: forall a: G; forall b: G;
+  opG(b, invG(opG(invG(a), b))) = a
+proof
+  @generalize-a |
+    fix a: G {
+      @generalize-b |
+        fix b: G {
+          @the-inverse-of-the-quotient |
+            invG(opG(invG(a), b)) = opG(invG(b), invG(invG(a)))
+            [using specialize group_factor.inverseOfProductG(invG(a), b)]
+          @the-double-inverse |
+            invG(invG(a)) = a
+            [using specialize group_factor.inverseInvolutionG(a)]
+          @the-inverse-plainly |
+            invG(opG(invG(a), b)) = opG(invG(b), a)
+            [by rewrite the-double-inverse the-inverse-of-the-quotient]
+          @the-product |
+            opG(b, invG(opG(invG(a), b))) = opG(b, opG(invG(b), a))
+            [using simplify the-inverse-plainly]
+          @the-regrouping |
+            opG(opG(b, invG(b)), a) = opG(b, opG(invG(b), a))
+            [using specialize group_factor.opGAssoc(b, invG(b), a)]
+          @b-cancels |
+            opG(b, invG(b)) = EG
+            [using specialize inverseRightG(b)]
+          @with-the-cancellation |
+            opG(EG, a) = opG(b, opG(invG(b), a))
+            [by rewrite b-cancels the-regrouping]
+          @the-identity-absorbs |
+            opG(EG, a) = a
+            [using specialize group_factor.opGIdentityLeft(a)]
+          @the-regrouped-product-is-a |
+            opG(b, opG(invG(b), a)) = a
+            [using chain with-the-cancellation the-identity-absorbs]
+          @conclusion-at-a-and-b |
+            opG(b, invG(opG(invG(a), b))) = a
+            [using chain the-product the-regrouped-product-is-a]
+        }
+      @discharge-b |
+        forall b: G; opG(b, invG(opG(invG(a), b))) = a
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a: G; forall b: G; opG(b, invG(opG(invG(a), b))) = a
+    [by generalize generalize-a]
+qed
+
+// H, a subgroup of G CONTAINING N.
+pred inHsub(g: G)
+axiom hHasIdentity: inHsub(EG)
+axiom hClosedOp: forall a, b: G; inHsub(a) -> inHsub(b) -> inHsub(opG(a, b))
+axiom hClosedInverse: forall a: G; inHsub(a) -> inHsub(invG(a))
+axiom hContainsN: forall g: G; inN(g) -> inHsub(g)
+
+// H/N -- the image of H under the class map. A subgroup of G/N.
+define inHoverN(q) = exists h: G; inHsub(h) and q = cls(h)
+
+theorem hOverNHasTheIdentity: inHoverN(EQ)
+proof
+  @the-identity-is-in-h |
+    inHsub(EG)
+    [by cite hHasIdentity]
+  @the-identity-is-the-class-of-the-identity |
+    EQ = cls(EG)
+    [using import(group_factor) eqIsClsIdentity]
+  @the-witness |
+    inHsub(EG) and EQ = cls(EG)
+    [by both the-identity-is-in-h the-identity-is-the-class-of-the-identity]
+  @conclusion |
+    inHoverN(EQ)
+    [by witness(EG) the-witness]
+qed
+
+theorem hOverNIsClosedUnderTheOperation: forall x: Quot; forall y: Quot;
+  inHoverN(x) -> inHoverN(y) -> inHoverN(opQ(x, y))
+proof
+  @generalize-x |
+    fix x: Quot {
+      @generalize-y |
+        fix y: Quot {
+          @given-x |
+            assume inHoverN(x) {
+              @given-y |
+                assume inHoverN(y) {
+                  @x-has-a-rep |
+                    exists h: G; inHsub(h) and x = cls(h)
+                    [by hypothesis given-x]
+                  @y-has-a-rep |
+                    exists h: G; inHsub(h) and y = cls(h)
+                    [by hypothesis given-y]
+                  @with-x-rep |
+                    unpack a: G from x-has-a-rep {
+                      @x-data |
+                        inHsub(a) and x = cls(a)
+                        [by hypothesis with-x-rep]
+                      @a-is-in-h |
+                        inHsub(a)
+                        [by and_lhs x-data]
+                      @x-is-cls-a |
+                        x = cls(a)
+                        [by and_rhs x-data]
+                      @with-y-rep |
+                        unpack b: G from y-has-a-rep {
+                          @y-data |
+                            inHsub(b) and y = cls(b)
+                            [by hypothesis with-y-rep]
+                          @b-is-in-h |
+                            inHsub(b)
+                            [by and_lhs y-data]
+                          @y-is-cls-b |
+                            y = cls(b)
+                            [by and_rhs y-data]
+                          @the-product-is-in-h |
+                            inHsub(opG(a, b))
+                            [using specialize hClosedOp(a, b) a-is-in-h b-is-in-h]
+                          @the-hom-law |
+                            forall a2: G; forall b2: G; opQ(cls(a2), cls(b2)) = cls(opG(a2, b2))
+                            [using import(group_factor) opQHom]
+                          @the-class-of-the-product |
+                            opQ(cls(a), cls(b)) = cls(opG(a, b))
+                            [using specialize the-hom-law(a, b)]
+                          @the-product-of-classes |
+                            opQ(x, y) = cls(opG(a, b))
+                            [using simplify x-is-cls-a y-is-cls-b the-class-of-the-product]
+                          @the-witness |
+                            inHsub(opG(a, b)) and opQ(x, y) = cls(opG(a, b))
+                            [by both the-product-is-in-h the-product-of-classes]
+                          @conclusion-at-the-reps |
+                            inHoverN(opQ(x, y))
+                            [by witness(opG(a, b)) the-witness]
+                        }
+                      @after-y |
+                        inHoverN(opQ(x, y))
+                        [by unpacked with-y-rep]
+                    }
+                  @after-x |
+                    inHoverN(opQ(x, y))
+                    [by unpacked with-x-rep]
+                }
+              @y-implies |
+                inHoverN(y) -> inHoverN(opQ(x, y))
+                [by discharge given-y]
+            }
+          @conclusion-at-x-and-y |
+            inHoverN(x) -> inHoverN(y) -> inHoverN(opQ(x, y))
+            [by discharge given-x]
+        }
+      @discharge-y |
+        forall y: Quot; inHoverN(x) -> inHoverN(y) -> inHoverN(opQ(x, y))
+        [by generalize generalize-y]
+    }
+  @conclusion |
+    forall x: Quot; forall y: Quot; inHoverN(x) -> inHoverN(y) -> inHoverN(opQ(x, y))
+    [by generalize generalize-x]
+qed
+
+// The same step on the H side — needed for the other inclusion in the injectivity proof.
+theorem containingNMakesClassesSufficientInH: forall a: G; forall b: G;
+  inHsub(b) -> cls(a) = cls(b) -> inHsub(a)
+proof
+  @generalize-a |
+    fix a: G {
+      @generalize-b |
+        fix b: G {
+          @given-b-in-h |
+            assume inHsub(b) {
+              @given-same-class |
+                assume cls(a) = cls(b) {
+                  @b-is-in-h |
+                    inHsub(b)
+                    [by hypothesis given-b-in-h]
+                  @same-class |
+                    cls(a) = cls(b)
+                    [by hypothesis given-same-class]
+                  @the-congruence |
+                    forall a2: G; forall b2: G; cls(a2) = cls(b2) iff inN(opG(invG(a2), b2))
+                    [using import(group_factor) clsCongruent]
+                  @the-congruence-at-a-and-b |
+                    cls(a) = cls(b) iff inN(opG(invG(a), b))
+                    [using specialize the-congruence(a, b)]
+                  @the-quotient-is-in-n |
+                    inN(opG(invG(a), b))
+                    [using tautology the-congruence-at-a-and-b same-class]
+                  @the-quotient-is-in-h |
+                    inHsub(opG(invG(a), b))
+                    [using specialize hContainsN(opG(invG(a), b)) the-quotient-is-in-n]
+                  @the-quotients-inverse-is-in-h |
+                    inHsub(invG(opG(invG(a), b)))
+                    [using specialize hClosedInverse(opG(invG(a), b)) the-quotient-is-in-h]
+                  @the-product-is-in-h |
+                    inHsub(opG(b, invG(opG(invG(a), b))))
+                    [using specialize hClosedOp(b, invG(opG(invG(a), b))) b-is-in-h the-quotients-inverse-is-in-h]
+                  @that-product-is-a |
+                    opG(b, invG(opG(invG(a), b))) = a
+                    [using specialize theRecoveryIdentity(a, b)]
+                  @conclusion-a-is-in-h |
+                    inHsub(a)
+                    [by rewrite that-product-is-a the-product-is-in-h]
+                }
+              @same-class-implies |
+                cls(a) = cls(b) -> inHsub(a)
+                [by discharge given-same-class]
+            }
+          @conclusion-at-a-and-b |
+            inHsub(b) -> cls(a) = cls(b) -> inHsub(a)
+            [by discharge given-b-in-h]
+        }
+      @discharge-b |
+        forall b: G; inHsub(b) -> cls(a) = cls(b) -> inHsub(a)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a: G; forall b: G; inHsub(b) -> cls(a) = cls(b) -> inHsub(a)
+    [by generalize generalize-a]
+qed
+
+// THE BACKWARD DIRECTION. "Let S be a subgroup of G/N. If H = {g in G : gN in S}, then for
+// h1, h2 in H, (h1 N)(h2 N) = h1 h2 N in S and h1^-1 N in S. Therefore, H must be a subgroup
+// of G. Clearly, H contains N."
+//
+// S is a GIVEN subgroup of G/N -- a second predicate, on Quot this time.
+pred inS(q: Quot)
+axiom sHasIdentity: inS(EQ)
+axiom sClosedOp: forall x, y: Quot; inS(x) -> inS(y) -> inS(opQ(x, y))
+axiom sClosedInverse: forall x: Quot; inS(x) -> inS(invQ(x))
+
+define inPullback(g) = inS(cls(g))
+
+theorem thePullbackHasTheIdentity: inPullback(EG)
+proof
+  @the-identity-is-in-s |
+    inS(EQ)
+    [by cite sHasIdentity]
+  @the-identity-is-the-class-of-the-identity |
+    EQ = cls(EG)
+    [using import(group_factor) eqIsClsIdentity]
+  @conclusion |
+    inPullback(EG)
+    [by rewrite the-identity-is-the-class-of-the-identity the-identity-is-in-s]
+qed
+
+theorem thePullbackIsClosedUnderTheOperation: forall a: G; forall b: G;
+  inPullback(a) -> inPullback(b) -> inPullback(opG(a, b))
+proof
+  @generalize-a |
+    fix a: G {
+      @generalize-b |
+        fix b: G {
+          @given-a |
+            assume inPullback(a) {
+              @given-b |
+                assume inPullback(b) {
+                  @cls-a-is-in-s |
+                    inS(cls(a))
+                    [by hypothesis given-a]
+                  @cls-b-is-in-s |
+                    inS(cls(b))
+                    [by hypothesis given-b]
+                  @the-product-of-classes-is-in-s |
+                    inS(opQ(cls(a), cls(b)))
+                    [using specialize sClosedOp(cls(a), cls(b)) cls-a-is-in-s cls-b-is-in-s]
+                  @the-hom-law |
+                    forall a2: G; forall b2: G; opQ(cls(a2), cls(b2)) = cls(opG(a2, b2))
+                    [using import(group_factor) opQHom]
+                  @the-class-of-the-product |
+                    opQ(cls(a), cls(b)) = cls(opG(a, b))
+                    [using specialize the-hom-law(a, b)]
+                  @conclusion-the-product-is-in-the-pullback |
+                    inPullback(opG(a, b))
+                    [by rewrite the-class-of-the-product the-product-of-classes-is-in-s]
+                }
+              @b-implies |
+                inPullback(b) -> inPullback(opG(a, b))
+                [by discharge given-b]
+            }
+          @conclusion-at-a-and-b |
+            inPullback(a) -> inPullback(b) -> inPullback(opG(a, b))
+            [by discharge given-a]
+        }
+      @discharge-b |
+        forall b: G; inPullback(a) -> inPullback(b) -> inPullback(opG(a, b))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a: G; forall b: G; inPullback(a) -> inPullback(b) -> inPullback(opG(a, b))
+    [by generalize generalize-a]
+qed
+
+theorem thePullbackIsClosedUnderInverses: forall a: G;
+  inPullback(a) -> inPullback(invG(a))
+proof
+  @generalize-a |
+    fix a: G {
+      @given-a |
+        assume inPullback(a) {
+          @cls-a-is-in-s |
+            inS(cls(a))
+            [by hypothesis given-a]
+          @the-inverse-class-is-in-s |
+            inS(invQ(cls(a)))
+            [using specialize sClosedInverse(cls(a)) cls-a-is-in-s]
+          @the-inverse-hom-law |
+            forall a2: G; invQ(cls(a2)) = cls(invG(a2))
+            [using import(group_factor) invQHom]
+          @the-class-of-the-inverse |
+            invQ(cls(a)) = cls(invG(a))
+            [using specialize the-inverse-hom-law(a)]
+          @conclusion-the-inverse-is-in-the-pullback |
+            inPullback(invG(a))
+            [by rewrite the-class-of-the-inverse the-inverse-class-is-in-s]
+        }
+      @conclusion-at-a |
+        inPullback(a) -> inPullback(invG(a))
+        [by discharge given-a]
+    }
+  @conclusion |
+    forall a: G; inPullback(a) -> inPullback(invG(a))
+    [by generalize generalize-a]
+qed
+
+// "Clearly, H contains N." Every element of N has class EQ, which is in S.
+theorem thePullbackContainsN: forall g: G; inN(g) -> inPullback(g)
+proof
+  @generalize-g |
+    fix g: G {
+      @given-g-in-n |
+        assume inN(g) {
+          @g-is-in-n |
+            inN(g)
+            [by hypothesis given-g-in-n]
+          @the-kernel-law |
+            forall g2: G; cls(g2) = EQ iff inN(g2)
+            [using import(group_factor) clsKernelIsN]
+          @the-kernel-at-g |
+            cls(g) = EQ iff inN(g)
+            [using specialize the-kernel-law(g)]
+          @g-is-killed |
+            cls(g) = EQ
+            [using tautology the-kernel-at-g g-is-in-n]
+          @the-identity-is-in-s |
+            inS(EQ)
+            [by cite sHasIdentity]
+          @conclusion-g-is-in-the-pullback |
+            inPullback(g)
+            [by rewrite g-is-killed the-identity-is-in-s]
+        }
+      @conclusion-at-g |
+        inN(g) -> inPullback(g)
+        [by discharge given-g-in-n]
+    }
+  @conclusion |
+    forall g: G; inN(g) -> inPullback(g)
+    [by generalize generalize-g]
+qed
+
+// SURJECTIVITY, at the fixed pair. "Therefore, S = H/N. Consequently, the map H |-> H/N is
+// onto." With H the pullback of S, H/N and S agree as predicates on Quot -- which is what
+// "S = H/N" means when a subgroup IS a predicate. Extensional agreement, both directions.
+define inPullbackOverN(q) = exists h: G; inPullback(h) and q = cls(h)
+
+theorem thePullbacksImageIsS: forall q: Quot; inPullbackOverN(q) iff inS(q)
+proof
+  @generalize-q |
+    fix q: Quot {
+      // forward: a class of a pullback element is in S by definition of the pullback
+      @given-in-the-image |
+        assume inPullbackOverN(q) {
+          @q-has-a-rep |
+            exists h: G; inPullback(h) and q = cls(h)
+            [by hypothesis given-in-the-image]
+          @with-rep |
+            unpack h: G from q-has-a-rep {
+              @the-data |
+                inPullback(h) and q = cls(h)
+                [by hypothesis with-rep]
+              @q-is-cls-h |
+                q = cls(h)
+                [by and_rhs the-data]
+              @cls-h-is-in-s |
+                inS(cls(h))
+                [by and_lhs the-data]
+              @conclusion-q-is-in-s |
+                inS(q)
+                [by rewrite q-is-cls-h cls-h-is-in-s]
+            }
+          @after-rep |
+            inS(q)
+            [by unpacked with-rep]
+        }
+      @image-implies-s |
+        inPullbackOverN(q) -> inS(q)
+        [by discharge given-in-the-image]
+      // backward: q in S has SOME representative (clsSurjective), and that rep is in the
+      // pullback precisely because its class q is in S
+      @given-in-s |
+        assume inS(q) {
+          @q-is-in-s |
+            inS(q)
+            [by hypothesis given-in-s]
+          @the-surjectivity |
+            forall q2: Quot; exists a: G; q2 = cls(a)
+            [using import(group_factor) clsSurjective]
+          @q-has-a-rep |
+            exists a: G; q = cls(a)
+            [using specialize the-surjectivity(q)]
+          @with-rep |
+            unpack a: G from q-has-a-rep {
+              @q-is-cls-a |
+                q = cls(a)
+                [by hypothesis with-rep]
+              @cls-a-is-in-s |
+                inS(cls(a))
+                [by rewrite q-is-cls-a q-is-in-s]
+              @the-witness |
+                inPullback(a) and q = cls(a)
+                [by both cls-a-is-in-s q-is-cls-a]
+              @conclusion-q-is-in-the-image |
+                inPullbackOverN(q)
+                [by witness(a) the-witness]
+            }
+          @after-rep |
+            inPullbackOverN(q)
+            [by unpacked with-rep]
+        }
+      @s-implies-image |
+        inS(q) -> inPullbackOverN(q)
+        [by discharge given-in-s]
+      @conclusion-at-q |
+        inPullbackOverN(q) iff inS(q)
+        [by make_equivalence image-implies-s s-implies-image]
+    }
+  @conclusion |
+    forall q: Quot; inPullbackOverN(q) iff inS(q)
+    [by generalize generalize-q]
+qed
+
+// INJECTIVITY, at a fixed pair. "Suppose that H1 and H2 are subgroups of G containing N such
+// that H1/N = H2/N. If h1 in H1, then h1 N in H1/N. Hence, h1 N = h2 N subset H2 for some h2
+// in H2. However, since N is contained in H2, we know that h1 in H2 or H1 subset H2."
+//
+// H here is `inHsub`; the second subgroup needs its own predicate. If their images agree
+// extensionally, the subgroups agree extensionally.
+pred inHsub2(g: G)
+axiom h2HasIdentity: inHsub2(EG)
+axiom h2ClosedOp: forall a, b: G; inHsub2(a) -> inHsub2(b) -> inHsub2(opG(a, b))
+axiom h2ClosedInverse: forall a: G; inHsub2(a) -> inHsub2(invG(a))
+axiom h2ContainsN: forall g: G; inN(g) -> inHsub2(g)
+
+define inH2overN(q) = exists h: G; inHsub2(h) and q = cls(h)
+
+// THE KEY STEP, and the one that uses N subset H2: if cls(a) = cls(b) and b is in H2 and N is
+// inside H2, then a is in H2. Judson's "since N is contained in H2, we know that h1 in H2".
+// a = b (b^-1 a) and b^-1 a is in N.
+theorem containingNMakesClassesSufficient: forall a: G; forall b: G;
+  inHsub2(b) -> cls(a) = cls(b) -> inHsub2(a)
+proof
+  @generalize-a |
+    fix a: G {
+      @generalize-b |
+        fix b: G {
+          @given-b-in-h2 |
+            assume inHsub2(b) {
+              @given-same-class |
+                assume cls(a) = cls(b) {
+                  @b-is-in-h2 |
+                    inHsub2(b)
+                    [by hypothesis given-b-in-h2]
+                  @same-class |
+                    cls(a) = cls(b)
+                    [by hypothesis given-same-class]
+                  @the-congruence |
+                    forall a2: G; forall b2: G; cls(a2) = cls(b2) iff inN(opG(invG(a2), b2))
+                    [using import(group_factor) clsCongruent]
+                  @the-congruence-at-a-and-b |
+                    cls(a) = cls(b) iff inN(opG(invG(a), b))
+                    [using specialize the-congruence(a, b)]
+                  @the-quotient-is-in-n |
+                    inN(opG(invG(a), b))
+                    [using tautology the-congruence-at-a-and-b same-class]
+                  @the-quotient-is-in-h2 |
+                    inHsub2(opG(invG(a), b))
+                    [using specialize h2ContainsN(opG(invG(a), b)) the-quotient-is-in-n]
+                  // a = b * (a^-1 b)^-1, and both factors are in H2
+                  @the-quotients-inverse-is-in-h2 |
+                    inHsub2(invG(opG(invG(a), b)))
+                    [using specialize h2ClosedInverse(opG(invG(a), b)) the-quotient-is-in-h2]
+                  @the-product-is-in-h2 |
+                    inHsub2(opG(b, invG(opG(invG(a), b))))
+                    [using specialize h2ClosedOp(b, invG(opG(invG(a), b))) b-is-in-h2 the-quotients-inverse-is-in-h2]
+                  @that-product-is-a |
+                    opG(b, invG(opG(invG(a), b))) = a
+                    [using specialize theRecoveryIdentity(a, b)]
+                  @conclusion-a-is-in-h2 |
+                    inHsub2(a)
+                    [by rewrite that-product-is-a the-product-is-in-h2]
+                }
+              @same-class-implies |
+                cls(a) = cls(b) -> inHsub2(a)
+                [by discharge given-same-class]
+            }
+          @conclusion-at-a-and-b |
+            inHsub2(b) -> cls(a) = cls(b) -> inHsub2(a)
+            [by discharge given-b-in-h2]
+        }
+      @discharge-b |
+        forall b: G; inHsub2(b) -> cls(a) = cls(b) -> inHsub2(a)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a: G; forall b: G; inHsub2(b) -> cls(a) = cls(b) -> inHsub2(a)
+    [by generalize generalize-a]
+qed
+
+// H/N is closed under inverses, completing it as a subgroup of G/N.
+theorem hOverNIsClosedUnderInverses: forall x: Quot;
+  inHoverN(x) -> inHoverN(invQ(x))
+proof
+  @generalize-x |
+    fix x: Quot {
+      @given-x |
+        assume inHoverN(x) {
+          @x-has-a-rep |
+            exists h: G; inHsub(h) and x = cls(h)
+            [by hypothesis given-x]
+          @with-rep |
+            unpack a: G from x-has-a-rep {
+              @the-data |
+                inHsub(a) and x = cls(a)
+                [by hypothesis with-rep]
+              @a-is-in-h |
+                inHsub(a)
+                [by and_lhs the-data]
+              @x-is-cls-a |
+                x = cls(a)
+                [by and_rhs the-data]
+              @the-inverse-is-in-h |
+                inHsub(invG(a))
+                [using specialize hClosedInverse(a) a-is-in-h]
+              @the-inverse-hom-law |
+                forall a2: G; invQ(cls(a2)) = cls(invG(a2))
+                [using import(group_factor) invQHom]
+              @the-class-of-the-inverse |
+                invQ(cls(a)) = cls(invG(a))
+                [using specialize the-inverse-hom-law(a)]
+              @the-inverse-of-x |
+                invQ(x) = cls(invG(a))
+                [using simplify x-is-cls-a the-class-of-the-inverse]
+              @the-witness |
+                inHsub(invG(a)) and invQ(x) = cls(invG(a))
+                [by both the-inverse-is-in-h the-inverse-of-x]
+              @conclusion-at-the-rep |
+                inHoverN(invQ(x))
+                [by witness(invG(a)) the-witness]
+            }
+          @after-rep |
+            inHoverN(invQ(x))
+            [by unpacked with-rep]
+        }
+      @conclusion-at-x |
+        inHoverN(x) -> inHoverN(invQ(x))
+        [by discharge given-x]
+    }
+  @conclusion |
+    forall x: Quot; inHoverN(x) -> inHoverN(invQ(x))
+    [by generalize generalize-x]
+qed
+
+// THE CORRESPONDENCE IS INJECTIVE, at a fixed pair. "Suppose that H₁ and H₂ are subgroups of G
+// containing N such that H₁/N = H₂/N. … H₁ ⊂ H₂. Similarly, H₂ ⊂ H₁."
+//
+// With images agreeing extensionally, the subgroups agree extensionally. Each direction is
+// `containingNMakesClassesSufficient` above: an element's class lies in the other's image, so
+// it shares a class with one of the other's elements, so it is in the other.
+//
+// This is where `hContainsN` earns its keep — without "H contains N" the classes would not
+// determine membership, and the correspondence would not be injective.
+theorem equalImagesMakeTheSubgroupsEqual:
+  (forall q: Quot; inHoverN(q) iff inH2overN(q)) ->
+  forall g: G; inHsub(g) iff inHsub2(g)
+proof
+  @given-images-agree |
+    assume forall q: Quot; inHoverN(q) iff inH2overN(q) {
+      @images-agree |
+        forall q: Quot; inHoverN(q) iff inH2overN(q)
+        [by hypothesis given-images-agree]
+      @generalize-g |
+        fix g: G {
+          // H ⊂ H₂
+          @given-g-in-h |
+            assume inHsub(g) {
+              @g-is-in-h |
+                inHsub(g)
+                [by hypothesis given-g-in-h]
+              @gs-class-is-itself |
+                cls(g) = cls(g)
+                [by reflexivity]
+              @the-h-witness |
+                inHsub(g) and cls(g) = cls(g)
+                [by both g-is-in-h gs-class-is-itself]
+              @gs-class-is-in-the-h-image |
+                inHoverN(cls(g))
+                [by witness(g) the-h-witness]
+              @the-images-agree-at-gs-class |
+                inHoverN(cls(g)) iff inH2overN(cls(g))
+                [using specialize images-agree(cls(g))]
+              @gs-class-is-in-the-h2-image |
+                inH2overN(cls(g))
+                [using tautology the-images-agree-at-gs-class gs-class-is-in-the-h-image]
+              @that-image-has-a-rep |
+                exists h: G; inHsub2(h) and cls(g) = cls(h)
+                [using tautology gs-class-is-in-the-h2-image]
+              @with-the-h2-rep |
+                unpack b: G from that-image-has-a-rep {
+                  @the-h2-data |
+                    inHsub2(b) and cls(g) = cls(b)
+                    [by hypothesis with-the-h2-rep]
+                  @b-is-in-h2 |
+                    inHsub2(b)
+                    [by and_lhs the-h2-data]
+                  @the-classes-agree |
+                    cls(g) = cls(b)
+                    [by and_rhs the-h2-data]
+                  @conclusion-g-is-in-h2 |
+                    inHsub2(g)
+                    [using specialize containingNMakesClassesSufficient(g, b) b-is-in-h2 the-classes-agree]
+                }
+              @after-the-h2-rep |
+                inHsub2(g)
+                [by unpacked with-the-h2-rep]
+            }
+          @h-implies-h2 |
+            inHsub(g) -> inHsub2(g)
+            [by discharge given-g-in-h]
+          // H₂ ⊂ H, the same way with the roles swapped
+          @given-g-in-h2 |
+            assume inHsub2(g) {
+              @g-is-in-h2 |
+                inHsub2(g)
+                [by hypothesis given-g-in-h2]
+              @gs-class-is-itself-again |
+                cls(g) = cls(g)
+                [by reflexivity]
+              @the-h2-witness |
+                inHsub2(g) and cls(g) = cls(g)
+                [by both g-is-in-h2 gs-class-is-itself-again]
+              @gs-class-is-in-the-h2-image-again |
+                inH2overN(cls(g))
+                [by witness(g) the-h2-witness]
+              @the-images-agree-at-gs-class-again |
+                inHoverN(cls(g)) iff inH2overN(cls(g))
+                [using specialize images-agree(cls(g))]
+              @gs-class-is-in-the-h-image |
+                inHoverN(cls(g))
+                [using tautology the-images-agree-at-gs-class-again gs-class-is-in-the-h2-image-again]
+              @that-image-has-a-rep-too |
+                exists h: G; inHsub(h) and cls(g) = cls(h)
+                [using tautology gs-class-is-in-the-h-image]
+              @with-the-h-rep |
+                unpack b: G from that-image-has-a-rep-too {
+                  @the-h-data |
+                    inHsub(b) and cls(g) = cls(b)
+                    [by hypothesis with-the-h-rep]
+                  @b-is-in-h |
+                    inHsub(b)
+                    [by and_lhs the-h-data]
+                  @the-classes-agree-too |
+                    cls(g) = cls(b)
+                    [by and_rhs the-h-data]
+                  @conclusion-g-is-in-h |
+                    inHsub(g)
+                    [using specialize containingNMakesClassesSufficientInH(g, b) b-is-in-h the-classes-agree-too]
+                }
+              @after-the-h-rep |
+                inHsub(g)
+                [by unpacked with-the-h-rep]
+            }
+          @h2-implies-h |
+            inHsub2(g) -> inHsub(g)
+            [by discharge given-g-in-h2]
+          @conclusion-at-g |
+            inHsub(g) iff inHsub2(g)
+            [by make_equivalence h-implies-h2 h2-implies-h]
+        }
+      @all-g |
+        forall g: G; inHsub(g) iff inHsub2(g)
+        [by generalize generalize-g]
+    }
+  @conclusion |
+    (forall q: Quot; inHoverN(q) iff inH2overN(q)) ->
+      forall g: G; inHsub(g) iff inHsub2(g)
+    [by discharge given-images-agree]
+qed
+
+// H₂/N is a subgroup of G/N too — the identity half, which is what makes H₂'s own identity
+// axiom load-bearing. (Its op and inverse closure are the same proofs as H's above, and the
+// injectivity result does not need them, so only this one is stated.)
+theorem h2OverNHasTheIdentity: inH2overN(EQ)
+proof
+  @the-identity-is-in-h2 |
+    inHsub2(EG)
+    [by cite h2HasIdentity]
+  @the-identity-is-the-class-of-the-identity |
+    EQ = cls(EG)
+    [using import(group_factor) eqIsClsIdentity]
+  @the-witness |
+    inHsub2(EG) and EQ = cls(EG)
+    [by both the-identity-is-in-h2 the-identity-is-the-class-of-the-identity]
+  @conclusion |
+    inH2overN(EQ)
+    [by witness(EG) the-witness]
+qed
