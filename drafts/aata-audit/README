@@ -1,0 +1,34 @@
+AATA AUDIT TOOLING — 2026-10-18
+
+dup.py finds aata theorems whose STATEMENT already exists in std, matched modulo variable
+names, sort names and theorem names. Run from the repo root: `python3 drafts/aata-audit/dup.py`.
+It writes duplicates.json next to itself and prints the counts. Result as of 2026-10-18:
+84 of aata's 331 theorems have an exact std twin, across 18 files.
+
+HOW IT WORKS. It parses each `theorem`/`schema` declaration's statement straight from source
+(std/**/*.b4m, and the ```2b4m fences of aata/*.md), then alpha-normalizes: binder variables
+and sort names are renumbered by first appearance, so `forall g: G; phi(invG(g)) = ...` and
+`forall z: G; phi(invG(z)) = ...` hash alike. Function/predicate/constant symbols are left
+alone, which is sound here because aata aliases std's symbols rather than renaming them.
+
+WHY NOT `2b4m query search`. That subcommand already does the lookup this catalog wants --
+give it a statement and it returns `file:line:theorem_name` across a directory, which is
+exactly the aside format. Two reasons it could not produce the catalog alone:
+
+  1. IT IS NOT ALPHA-INVARIANT. `query search std "forall g: G; phi(invG(g)) = invH(phi(g))"`
+     finds the theorem; renaming the binder to `z` gives "no theorem or axiom matching".
+     Same for `forall x: H; forall y: H; ...` vs the same statement with `a`/`b`. So it cannot
+     answer "is this statement already in std under different variable names", which is the
+     question here.
+  2. It takes one query at a time, so cataloguing 331 statements means 331 invocations.
+
+FUTURE WORK (user-flagged 2026-10-18): teach `query search` to match modulo variable/sort
+names -- i.e. alpha-normalize both the query and the indexed statements before comparing.
+Then this script is unnecessary and the catalog is a one-liner over the corpus. The
+normalization in dup.py's `normalize()` is a working reference for what that means.
+
+A FALSE START WORTH NOT REPEATING: the first attempt used `query claims` as the statement
+source. That is wrong -- `claims` lists every intermediate claim a proof establishes, and the
+theorem's own statement is not necessarily among them (std/group/homomorphism.b4m's
+phiPreservesIdentity is `phi(EG) = EH`, which appears nowhere in its claims list). It found
+11 twins instead of 84. The statement lives on the `theorem NAME: ...` line.
