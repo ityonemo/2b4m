@@ -142,7 +142,8 @@ WHAT SURVIVES of the original finding, and it is narrower than I said:
 
   SAME proof, SAME written instantiation, an unrelated step added above it
   → different address for what is genuinely ONE fact.          <- the real bug
-  (drafts/schema-hash-decode/eigenvar-arg-depends-on-the-counter.b4m)
+  (drafts/schema-hash-decode/counter-shifts-a-binder-name{,-no-warmup}.b4m
+   — NOT the probe named here originally; see the FIXED section below)
 
   DIFFERENT proofs, different variables
   → different addresses.                                        <- CORRECT
@@ -163,7 +164,7 @@ emitWeakening's synthetic blocks, the guard projection) each of which would need
 supply one. That is a real refactor, not a patch.
 
 RECOMMENDATION: do it as its own piece of work, with the probe
-`eigenvar-arg-depends-on-the-counter.b4m` as the acceptance test and
+`counter-shifts-a-binder-name.b4m` as the acceptance test and
 `two-proofs-same-position.b4m` as the guard against over-collapsing. Both are in this
 directory and both check under `--draft`.
 
@@ -171,3 +172,66 @@ COST OF LEAVING IT: one written instantiation can mint two instances when steps 
 added above it, so the prover occasionally proves the same thing twice. Wasted work,
 not unsoundness — each instance is independently kernel-checked. And the decode work
 still needs the replay route (README route A'), since the counter remains in the hash.
+
+================================================================================
+FIXED 2026-10-18 — and TWO OF MY THREE ORIGINAL PROBES WERE MISLABELLED
+================================================================================
+
+THE FIX. `bindProofVar` keys a proof binder's fvar to its SOURCE OFFSET rather than the
+mint counter: `freshNamedAt(stem, b.name.start)` instead of `freshNamed(stem)`, with
+SYNTHETIC binders (`b.name.start == b.name.end`) keeping the counter — an accelerant's
+generated `fix` gets its token from `Accelerant.Builder.tok`, which stamps one shared
+`loc` for the whole produced proof, so a loc-keyed name would collide them all.
+
+MEASURED DIRECTLY, by instrumenting the mint:
+
+    OLD, with a warm-up fix above:      a#4
+    OLD, warm-up deleted:               a#2     <- the bug: the counter shifted
+    NEW, either way:                    a#1412  <- the binder's source offset
+
+CONFIRMED END-TO-END on BYTE-ALIGNED probes (the warm-up replaced by a comment block of
+exactly its byte count, so the binder does NOT move -- both files 1603 bytes, `fix a` at
+offset 1408, binder name at 1412). Instance hash for the SAME written instantiation:
+
+                           with warm-up        warm-up deleted
+    counter scheme      e78561b481fdd421    adea7c551b3c7020   <- two addresses
+    loc scheme (fixed)  5f947fd7a9ca55ea    5f947fd7a9ca55ea   <- one
+
+That is the whole defect and the whole fix.
+
+TWO OF THE THREE PROBES IN THIS DIRECTORY DO NOT TEST WHAT THEIR NAMES CLAIM. I only
+found this by running them against the fix and seeing "no change", then checking why.
+
+  eigenvar-args-in-two-theorems.b4m (RENAMED 2026-10-18 from the misleading
+    `eigenvar-arg-depends-on-the-counter.b4m`) — compares `usedEarly` and `usedLate`, which
+    are TWO DIFFERENT THEOREMS. Different proofs, different binders, so two instances is
+    CORRECT, before and after. The file measures nothing about the counter.
+
+  two-proofs-same-position.b4m — same mistake, and I had ALREADY identified it as correct
+    behaviour in the section above ("a CORRECT behaviour I had mislabelled as a bug").
+    Keeping it as the over-collapsing guard is right; its name is still wrong.
+
+  compound-eigenvar-arg.b4m — same shape, two theorems. Also not a counter test.
+
+So the "two hashes for the same written instantiation" headline measurement in this file
+was comparing two genuinely distinct instantiations. The counter bug is REAL — the direct
+instrumentation above proves it — but none of the three probes isolated it, because
+isolating it needs ONE theorem whose binder offset is held fixed while the preceding
+counter changes, which is what the two new files do:
+
+  counter-shifts-a-binder-name.b4m            one theorem, a warm-up above the fix
+  counter-shifts-a-binder-name-no-warmup.b4m  the same theorem, warm-up deleted
+
+Under the OLD scheme those two give `a#4` / `a#2`. Under the NEW scheme the binder name
+is offset-fixed in both. (Their INSTANCE hashes still differ between the two files,
+because deleting the warm-up also moves the `fix`'s byte offset — that is the documented
+reformat tradeoff, not the counter bug.)
+
+LESSON, and it is the same one as the Correspondence Theorem earlier today: I wrote three
+probes, read their output as confirming a hypothesis, and only discovered on the third
+pass that none of them varied the thing I was testing. A probe that does not isolate its
+variable is not evidence. Check what a probe HOLDS FIXED before trusting what it shows.
+
+VERIFIED AFTER THE FIX: std 109 files / 1480 theorems --library green (the gate that
+caught both earlier attempts); std/peano/order.b4m green (the synthetic-binder path);
+aata 40 files / 331; the instance hash deterministic across three runs.
