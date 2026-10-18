@@ -281,6 +281,16 @@ fn diagFile(self: *const Prove) u32 {
     return @intFromEnum(fid);
 }
 
+/// A fresh name whose suffix is a SOURCE LOCATION rather than the mint counter — for a
+/// PROOF BINDER, whose identity the source fixes. See `bindProofVar`'s note: the counter made
+/// a binder's name depend on how much of the proof preceded it, and that name reaches
+/// `Schema.instanceHash`. Two binders cannot share a start offset, so this disambiguates as
+/// well as the counter did while being stable under edits elsewhere in the proof.
+pub fn freshNamedAt(self: *Prove, prefix: []const u8, loc: u32) Error!StrId {
+    const s = std.fmt.allocPrint(self.ctx.arena, "{s}#{d}", .{ prefix, loc }) catch return error.OutOfMemory;
+    return self.ctx.interner.internString(s) catch error.OutOfMemory;
+}
+
 pub fn freshNamed(self: *Prove, prefix: []const u8) Error!StrId {
     self.fresh_counter += 1;
     const s = std.fmt.allocPrint(self.ctx.arena, "{s}#{d}", .{ prefix, self.fresh_counter }) catch return error.OutOfMemory;
@@ -1270,7 +1280,33 @@ fn bindProofVar(self: *Prove, w: *Walk, b: ast.Binder) Error!BoundVar {
     const refined = try e.resolveBinderSort(b); // handles inline `S where inH`
     const sort: SortId = @enumFromInt(@intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(refined)))));
     const quals = self.ctx.interner.qualifiersOf(self.ctx.arena, @enumFromInt(@intFromEnum(refined))) catch return error.OutOfMemory;
-    const fvar = try self.freshNamed(self.ctx.interner.stringBytes(name));
+    // THE BINDER'S IDENTITY IS ITS SOURCE SITE, not a counter. `freshNamed` would spell this
+    // `<name>#<fresh_counter>`, and that counter counts every fresh name minted EARLIER IN THIS
+    // PROOF — so adding an unrelated step above a `fix` renamed its variable, which changed the
+    // hash of any schema instance taking that variable as an argument (`Schema.instanceHash`
+    // folds a non-lambda-param fvar's NAME BYTES). One written instantiation then minted two
+    // instances and the prover proved it twice.
+    //
+    // `<name>#<loc>` is fixed by the source instead. It still disambiguates every binder — two
+    // binders cannot share a start offset — so distinct binders stay distinct, which is load
+    // bearing: an instance keyed on an eigenvar mentions THAT variable in its statement, so two
+    // proofs binding different variables genuinely need two instances. See
+    // drafts/schema-hash-decode/, where collapsing them by position broke std/subgroup.b4m.
+    //
+    // Same reasoning as `Schema.hashEntity`, which hashes `(name, loc)` for exactly this reason.
+    //
+    // A SYNTHETIC binder keeps the counter. An accelerant's generated `fix` (ArithCert.fixStep,
+    // the Cooper/arith certs, the guard projection) reaches here with a token built by
+    // `Accelerant.Builder.tok`, which stamps `start = end = loc` — ONE location for the whole
+    // generated proof — so a loc-keyed name would collide every synthetic binder in one
+    // producer's output. `start == end` is the established synthetic-token test (see Elab.text).
+    // Synthetics need no source-stable identity anyway: they are regenerated deterministically
+    // from the same goal, so the counter is already reproducible for them.
+    const stem = self.ctx.interner.stringBytes(name);
+    const fvar = if (b.name.start == b.name.end)
+        try self.freshNamed(stem)
+    else
+        try self.freshNamedAt(stem, b.name.start);
     // under a model transfer `sort` is the model's IMAGE of the written sort; also record the
     // written (SOURCE) sort, so a source-space pass (accelerant producer inputs) sees this
     // binder in its own space. Identical outside a transfer.
@@ -9763,6 +9799,43 @@ test "usedPremiseCites: a GLOBAL cite is never a local antecedent; an empty cert
     const mask = try p.usedPremiseCites(&cites, &.{});
     try testing.expect(!mask[0]);
     try testing.expect(!mask[1]); // a global is never a local antecedent
+}
+
+test "freshNamedAt: a binder's name is keyed to its SOURCE OFFSET, independent of the mint counter" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const rig = try Polynomial.Rig.init(arena, threaded.io());
+    const p = rig.prove;
+
+    // Mint at one offset, then bump the counter the way intervening `fix`es and accelerant
+    // labels do, then mint at the SAME offset again. The two names must agree: a binder's
+    // identity is its source site, not how much of the proof preceded it.
+    //
+    // This is the defect this test exists for. With `freshNamed` the two mints differed
+    // (measured `a#2` vs `a#4` on a real proof), and that name reaches `Schema.instanceHash`
+    // via `hashTerm`'s name-bytes branch — so one written instantiation minted two instances
+    // and the prover proved it twice. See drafts/schema-hash-decode/.
+    const before = try p.freshNamedAt("a", 617);
+    _ = try p.freshNamed("spacer");
+    _ = try p.freshNamed("spacer");
+    const after = try p.freshNamedAt("a", 617);
+    try testing.expectEqual(before, after);
+    try testing.expectEqualStrings("a#617", p.ctx.interner.stringBytes(before));
+
+    // and a DIFFERENT offset is a different binder — load-bearing, not incidental. An instance
+    // keyed on an eigenvar names THAT variable in its statement, so two proofs binding
+    // different variables need two instances; collapsing them broke std/subgroup.b4m on the
+    // second reverted attempt at this fix.
+    const elsewhere = try p.freshNamedAt("a", 1660);
+    try testing.expect(before != elsewhere);
+
+    // `freshNamed` itself must still move with the counter — synthetic binders rely on it,
+    // because an accelerant stamps one shared loc for a whole generated proof.
+    const synth_first = try p.freshNamed("q");
+    const synth_second = try p.freshNamed("q");
+    try testing.expect(synth_first != synth_second);
 }
 
 test "fvarBinds: an abstraction's origs become caller-scope bindings keyed by their EXACT hygienic name (fvar, sort)" {

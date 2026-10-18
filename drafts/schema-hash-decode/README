@@ -1,9 +1,13 @@
 SCHEMA-HASH-DECODE — PROBED 2026-10-16, BEFORE BUILDING. One finding changes the plan.
 
-CHECK THESE WITH `--draft`: two of the three probes carry DELIBERATELY UNUSED warm-up
+CHECK THESE WITH `--draft`: several of the five probes carry DELIBERATELY UNUSED warm-up
 steps, whose only job is to bump the proof's fresh-name counter — the variable under
 test. Strict mode correctly rejects an unused fact, so `--draft` is the right mode and
 not a weakening here.
+
+READ THE PROBE NOTES BEFORE TRUSTING A PROBE NAME. Probes 2 and 3 were originally
+named and described as counter tests and are NOT — they compare two different
+theorems. Probes 4 and 5 are the ones that isolate the counter.
 
 SCHEMA-HASH-DECODE-PLAN.md picks route A (re-derivation): "Do not store anything. On
 demand, enumerate candidate instantiations, recompute `instanceHash` for each, and
@@ -17,18 +21,44 @@ the proof's fresh-name counter. Result: ONE instance, one hash. The lambda's par
 canonicalize BY POSITION in `hashTerm` (the `#` branch), so the counter does not reach
 the hash. Good — and this is the case the plan's examples are all drawn from.
 
-PROBE 2 — eigenvar-arg-depends-on-the-counter.b4m. A schema with a VALUE param,
-instantiated INSIDE a `fix` at an argument that MENTIONS the fix's eigenvar, twice,
-identically written, differing only in whether warm-up `fix` steps precede it:
+PROBE 2 — eigenvar-args-in-two-theorems.b4m (renamed 2026-10-18; it was called
+`eigenvar-arg-depends-on-the-counter.b4m`, which is NOT what it measures). A schema with
+a VALUE param, instantiated INSIDE a `fix` at an argument that MENTIONS the fix's
+eigenvar, in each of two theorems, the second preceded by a warm-up `fix`:
 
-    addZeroOnTheRight{adea7c551b3c7020}      <- no warm-up
-    addZeroOnTheRight{e78561b481fdd421}      <- after one warm-up fix
+    addZeroOnTheRight{adea7c551b3c7020}      <- in `usedEarly`
+    addZeroOnTheRight{e78561b481fdd421}      <- in `usedLate`
 
-TWO DISTINCT HASHES FOR THE SAME WRITTEN INSTANTIATION.
+Two hashes — but `usedEarly` and `usedLate` are TWO DIFFERENT THEOREMS, so these are two
+genuinely different instantiations at two different binders, and two addresses is CORRECT.
+The warm-up is a red herring: deleting it (PROBE 3) collapses them only because it also
+makes the two proofs structurally identical.
 
-PROBE 3 — eigenvar-arg-without-the-warmup.b4m. The same file with the warm-up deleted:
-both theorems now hash to `adea7c551b3c7020`. So the warm-up's extra `fix` was the only
-difference, and the per-proof fresh counter is definitively the cause.
+PROBE 3 — eigenvar-arg-without-the-warmup.b4m. The same file with the warm-up deleted;
+both theorems now hash to `adea7c551b3c7020`. Read together with PROBE 2 this LOOKS like
+proof that the counter is the cause, and that reading is what the original text asserted.
+It is wrong — see PROBES 4 and 5.
+
+PROBES 4 and 5 — counter-shifts-a-binder-name.b4m and
+counter-shifts-a-binder-name-no-warmup.b4m. These are the files that actually isolate the
+counter: ONE theorem, so ONE binder, and — the part that makes the pair valid — the two
+files are BYTE-ALIGNED. Deleting the warm-up would otherwise move every later byte and so
+move the binder, which is exactly the confound that invalidated probes 2 and 3. So the
+warm-up is replaced by a comment block of EXACTLY its byte count: both files are 1603 bytes
+and `fix a` sits at offset 1408 in each, with the binder name at 1412. The ONLY difference is
+how many fresh names are minted before the binder.
+
+    $ 2b4m check --draft --trace-facts <each file> | grep addZeroOnTheRight
+
+                               with warm-up        warm-up deleted
+    counter scheme      e78561b481fdd421    adea7c551b3c7020   <- TWO addresses
+    loc scheme (fixed)  5f947fd7a9ca55ea    5f947fd7a9ca55ea   <- one
+
+That is the real defect and the fix, measured: the same written instantiation in the same
+proof got two addresses depending only on what preceded it.
+
+(The mint itself was also instrumented while diagnosing: `a#4` with the warm-up vs `a#2`
+without, under the counter scheme; `a#1412` — the binder's source offset — under the fix.)
 
 WHY. An eigenvar is `freshNamed`'d, so its name is `<prefix>#<counter>` where
 `Prove.fresh_counter` counts every fresh name minted EARLIER IN THAT PROOF
@@ -36,6 +66,9 @@ WHY. An eigenvar is `freshNamed`'d, so its name is `<prefix>#<counter>` where
 branch, by position in `canon`); every OTHER fvar takes the `@` branch and hashes its
 NAME BYTES (Schema.zig:120-127). An eigenvar is not a lambda param, so its counter
 value is in the hash.
+
+FIXED 2026-10-18 — `bindProofVar` now keys a USER binder's name to its source offset
+(`freshNamedAt`), synthetic binders keeping the counter. See EIGENVAR-CANONICALIZATION.
 
 WHAT THIS MEANS FOR ROUTE A. Re-deriving a hash from a citation site requires
 reproducing the proof's fresh-counter state at that step — i.e. REPLAYING THE PROOF UP
@@ -73,3 +106,32 @@ duplicate-instance waste go away, and the hash's own doc comment says what it is
 NOT YET DISCUSSED WITH THE USER. The plan was approved on the understanding that
 re-derivation is cheap and self-contained; probe 2 says it is not, so the choice above
 should be theirs.
+
+================================================================================
+RESOLVED 2026-10-18 — C LANDED, IN A CORRECTED FORM; A' IS NO LONGER NEEDED
+================================================================================
+
+The recommendation above (C, then A') was taken, but C as stated there was WRONG and
+breaking `std/` twice is what showed it. "Canonicalize eigenvars the way lambda params
+already are" means keying them BY POSITION, and an eigenvar-keyed instance is not a
+reusable fact: its statement mentions a variable bound inside ONE proof. Positional
+canonicalization therefore collapses two proofs' distinct instances onto one address and
+hands the second proof the first's statement. Both attempts are recorded in
+EIGENVAR-CANONICALIZATION.
+
+WHAT LANDED instead keeps the binder as identity and removes only the serial:
+`bindProofVar` names a USER binder `<stem>#<source offset>` (`Prove.freshNamedAt`), with
+SYNTHETIC binders still on the counter because `Accelerant.Builder.tok` stamps one shared
+loc per generated proof.
+
+CONSEQUENCE FOR THIS PLAN. The counter is out of the hash, so the premise of A' — "the
+hash cannot be re-derived without replaying the proof" — no longer holds for the counter.
+Route A as originally written (re-derivation from the citation site) is viable again: the
+remaining inputs are the namespace, the schema name, and the argument terms, all readable
+at the site. A' (replay) and B (reverse side table) are both unnecessary.
+
+ONE CAVEAT, and it is a real one: the hash is now stable under proof-INTERNAL edits but
+NOT under reformatting, since a binder's offset moves when `2b4m fmt` rewrites whitespace.
+Nothing persists an instance address across runs (it keys FactKV in-process and appears in
+`--trace-facts`), so this costs nothing today — but it does mean a decode feature must
+re-derive against the CURRENT bytes of the file, never a stored hash from an earlier run.

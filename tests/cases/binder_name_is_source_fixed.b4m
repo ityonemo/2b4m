@@ -1,0 +1,74 @@
+// A PROOF BINDER'S NAME IS KEYED TO ITS SOURCE SITE, not to the mint counter.
+//
+// `bindProofVar` spells a binder's hygienic fvar `<name>#<source offset>`. It used to spell it
+// `<name>#<fresh_counter>`, where the counter counts every fresh name minted EARLIER IN THE
+// PROOF — so adding an unrelated step above a `fix` renamed its variable. That name reaches
+// `Schema.instanceHash` (a non-lambda-param fvar hashes by its NAME BYTES), so a schema
+// instantiated at that binder changed address, minting two instances of one fact and proving it
+// twice.
+//
+// WHAT THIS FILE PINS. Both theorems instantiate the same schema at a `fix`-bound eigenvar, and
+// `second` has an extra binder-minting block above its `fix`. Under the old scheme those two
+// binders were `a#2` and `a#4`; now each is its own source offset. The file passing at all is
+// the regression guard: it exercises the eigenvar-argument path that the two reverted attempts
+// at this fix both broke (see drafts/schema-hash-decode/).
+//
+// It must stay TWO instances, not one — different theorems bind different variables, and an
+// instance keyed on an eigenvar names THAT variable in its statement, so it can only ever serve
+// the proof that bound it. Collapsing them is what broke std/subgroup.b4m on attempt 2.
+
+import peano <<< "std/peano.b4m"
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func add = peano.add
+
+theorem addZeroOnTheRight(n: Nat): add(n, ZERO) = n
+proof
+  @conclusion |
+    add(n, ZERO) = n
+    [using arithmetic(peano)]
+qed
+
+// instantiated at an eigenvar, with nothing above the `fix`
+theorem first: forall a: Nat; add(a, ZERO) = a
+proof
+  @the-block |
+    fix a: Nat {
+      @at-the-eigenvar |
+        add(a, ZERO) = a
+        [using instantiation addZeroOnTheRight(a)]
+    }
+  @conclusion |
+    forall a: Nat; add(a, ZERO) = a
+    [by generalize the-block]
+qed
+
+// The same shape, with a binder-minting block above the `fix` — which under the old scheme
+// shifted the counter and so renamed `a`. The preceding binder is LOAD-BEARING (its universal
+// is cited by the conclusion) so the file checks strict; a throwaway block would need --draft.
+theorem second: forall a: Nat; add(a, ZERO) = a
+proof
+  @every-nat-is-itself |
+    forall b: Nat; b = b
+    [by generalize the-preceding-block]
+  @the-preceding-block |
+    fix b: Nat {
+      @reflexive |
+        b = b
+        [by reflexivity]
+    }
+  @the-block |
+    fix a: Nat {
+      @at-the-eigenvar |
+        add(a, ZERO) = a
+        [using instantiation addZeroOnTheRight(a)]
+    }
+  @every-nat-absorbs-zero |
+    forall a: Nat; add(a, ZERO) = a
+    [by generalize the-block]
+  // cite the preceding binder's result so it is not dead, keeping the file strict-clean
+  @conclusion |
+    forall a: Nat; add(a, ZERO) = a
+    [using tautology every-nat-absorbs-zero every-nat-is-itself]
+qed

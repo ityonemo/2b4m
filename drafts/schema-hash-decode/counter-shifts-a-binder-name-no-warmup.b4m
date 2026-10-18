@@ -1,0 +1,39 @@
+// THE REAL TEST: ONE theorem, ONE binder, ONE instantiation. Does its address depend on steps
+// that precede the FIX (bumping the mint counter before the binder is minted)?
+//
+// THIS FILE IS HALF OF A BYTE-ALIGNED PAIR. Its twin, counter-shifts-a-binder-name{,-no-warmup}
+// .b4m, is identical except that one carries the warm-up's STEPS where the other carries a
+// COMMENT of exactly the same byte count. That alignment is the point: a loc-keyed binder name
+// SHOULD move when the binder moves, so simply deleting the warm-up would shift every later
+// byte and measure nothing -- the confound that made this directory's three original probes
+// (eigenvar-*.b4m) useless. Here only the NUMBER OF FRESH NAMES minted before the binder
+// differs, so the instance hash is comparable.
+//
+// Measured: counter scheme e78561b481fdd421 / adea7c551b3c7020 (two addresses for one written
+// instantiation); loc scheme 5f947fd7a9ca55ea in both.
+import peano <<< "std/peano.b4m"
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func add = peano.add
+
+theorem addZeroOnTheRight(n: Nat): add(n, ZERO) = n
+proof
+  @conclusion |
+    add(n, ZERO) = n
+    [using arithmetic(peano)]
+qed
+
+theorem target: forall a: Nat; add(a, ZERO) = a
+proof
+  // WARM-UP DELETED; this comment is byte-for-byte its size,
+  // so the `fix a` below does not move. ------------------------------------------------------------
+  @the-block |
+    fix a: Nat {
+      @at-a |
+        add(a, ZERO) = a
+        [using instantiation addZeroOnTheRight(a)]
+    }
+  @conclusion |
+    forall a: Nat; add(a, ZERO) = a
+    [by generalize the-block]
+qed
