@@ -62,3 +62,112 @@ WHAT I HAVE NOT YET CHECKED, and will before writing:
     independently
   - nested binders: an eigenvar bound INSIDE a lambda argument's body, where `canon`
     for the lambda and `canon` for the chain would both apply
+
+================================================================================
+THE FOUR QUESTIONS, ANSWERED 2026-10-18
+================================================================================
+
+1. DOES THE INSTANCE'S PROOF NEED THE ORIGINAL SPELLING? No, for the guard path. The
+   value-param guard relativization uses `p.name.name` — the SCHEMA's declared param
+   name (ProveTask.zig:713) — not the argument's spelling. Safe.
+
+2. `freeFvarParams` — THE REAL INTERACTION, and it is containable. It keys the args
+   map BY THE FVAR'S OWN NAME (`args.put(…, fv.name, …)`, Prove.zig:2298-2300) and
+   appends that name to `pnames`, so an eigenvar's name BECOMES a parameter name.
+   Canonicalizing would rename a parameter — which is fine, but only if it happens
+   BEFORE this function runs.
+
+   It does happen before: `args` is complete at Prove.zig:2185 and `freeFvarParams` is
+   called at 2192, so canonicalization inserts cleanly between them and the function
+   then sees canonical names in BOTH the args and `pnames`. Note line 2287's
+   `idents.lookup` collision check must not false-positive on a synthetic name — `$0`
+   cannot collide with a source identifier, so choosing that spelling avoids the
+   question entirely.
+
+   AND IT ONLY RUNS UNDER A MODEL (`if (self.underModel())`, Prove.zig:2192). Outside
+   a model — the common case, and both probes — canonicalizing at reify touches
+   nothing else at all.
+
+3. `args_source` UNDER A TRANSFER: must canonicalize IDENTICALLY, not independently.
+   `freeFvarParams` matches source and target twins BY NAME (line 2294,
+   `if (tv.name == fv.name)`), so the two maps have to agree on the canonical name of
+   each variable. One shared canon list, applied to both.
+
+4. NESTED BINDERS: a lambda argument's body may mention BOTH its own params (already
+   canonicalized by position via `hashTerm`'s `canon`) and an enclosing eigenvar. The
+   two namespaces must not collide — so the enclosing-chain spelling (`$0`, `$1`) must
+   be distinct from whatever the lambda path uses. `hashTerm` canonicalizes lambda
+   params positionally WITHOUT renaming the term, so there is no clash at hash time;
+   at reify time only the enclosing-chain fvars are rewritten, and `l.params` are left
+   alone (they are already per-instance fresh and carry no cross-proof identity).
+
+ALSO MEASURED: a COMPOUND argument splits the hash too —
+`addZeroOnTheRight(add(a, ZERO))` vs `(add(z, ZERO))` gives 7330743b… vs 962123f6…
+(drafts/schema-hash-decode/compound-eigenvar-arg.b4m). So the problem is not confined
+to bare eigenvars, and the compound case is exactly the one `freeFvarParams` processes.
+
+================================================================================
+IMPLEMENTED TWICE, REVERTED TWICE. WHAT THE REGRESSIONS ESTABLISHED. 2026-10-18
+================================================================================
+
+ATTEMPT 1 — canonicalize the STORED args (`$0`, `$1`, … by enclosing-binder position,
+applied to `args`/`args_source` before hashing and reifying).
+
+  Probes: all three collapsed to one instance, exactly as intended.
+  Regression: std/subgroup/products.b4m:62 —
+      claim:    (forall i; …) -> inSubgroup(productUpTo(s, ZERO))
+      instance: … inSubgroup(productUpTo($0, ZERO)) …
+  The stored arg IS the instance's statement (reified → rebuilt → substituted verbatim
+  by Elab). Renaming it renames the thing being proved.
+
+ATTEMPT 2 — canonicalize a hash-only VIEW, store the originals unchanged.
+
+  Regression: std/subgroup.b4m:201 and std/set/finite.b4m:3985 —
+      step claims  op(p, inverse(p)) = E
+      instantiate  op(g, inverse(g)) = E
+  Two DISTINCT instantiations, in different proofs, at genuinely different variables
+  (`g` and `p`), collapsed to ONE address. The second proof then received the first's
+  statement, which names the first's variable.
+
+THE CONCLUSION, AND IT CORRECTS WHAT I ASSERTED EARLIER.
+
+I claimed two same-position eigenvar instantiations "should be ONE instance" because
+their statements are alpha-equivalent. That is wrong, and the regression is the proof.
+An instance keyed on an eigenvar is NOT a reusable fact: its statement mentions a
+variable bound inside ONE proof, so it can only ever serve that proof. Two proofs need
+two FACTS because they need two different STATEMENTS. The eigenvar's name is
+load-bearing identity, not noise.
+
+WHAT SURVIVES of the original finding, and it is narrower than I said:
+
+  SAME proof, SAME written instantiation, an unrelated step added above it
+  → different address for what is genuinely ONE fact.          <- the real bug
+  (drafts/schema-hash-decode/eigenvar-arg-depends-on-the-counter.b4m)
+
+  DIFFERENT proofs, different variables
+  → different addresses.                                        <- CORRECT
+  (two-proofs-same-position.b4m — which I had mislabelled as a bug)
+
+So the serial is not identity, but the binder is. The fix is to make the eigenvar's
+name independent of the COUNTER while still distinguishing distinct binders — i.e.
+`(spelling, binder loc)`, which is precisely what `hashEntity` already does for
+entities and for the same stated reason ("allocation-ordered, hence dependent on the
+demand schedule").
+
+WHY THAT IS NOT A SMALL CHANGE. `BinderInfo` (Walk.zig:73) carries sort, source_sort,
+fvar and refined — NO location. `LocalIdent` adds `block`, a BlockOrdinal, which is
+itself traversal-ordered and so no better than the counter. Giving a binder a stable
+identity means threading its source location from `bindProofVar` through `BinderInfo`,
+and `freshNamed` is called from ~a dozen sites (fix binders, unpack witnesses,
+emitWeakening's synthetic blocks, the guard projection) each of which would need to
+supply one. That is a real refactor, not a patch.
+
+RECOMMENDATION: do it as its own piece of work, with the probe
+`eigenvar-arg-depends-on-the-counter.b4m` as the acceptance test and
+`two-proofs-same-position.b4m` as the guard against over-collapsing. Both are in this
+directory and both check under `--draft`.
+
+COST OF LEAVING IT: one written instantiation can mint two instances when steps are
+added above it, so the prover occasionally proves the same thing twice. Wasted work,
+not unsoundness — each instance is independently kernel-checked. And the decode work
+still needs the replay route (README route A'), since the counter remains in the hash.
