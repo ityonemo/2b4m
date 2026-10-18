@@ -1,0 +1,64 @@
+EIGENVAR CANONICALIZATION — the design, after reading the consumption path.
+2026-10-18. Supersedes the "fix the hash" framing in README.
+
+THE INVARIANT (user, 2026-10-17): a schema instance's identity should depend on
+(1) the namespace and (2) THE IDENTITIES OF THE THINGS PASSED AS ARGUMENTS. Nothing
+else. And (user, same): a bound variable's BINDING POSITION *is* legitimate identity —
+what is illegitimate is the serial number in its NAME.
+
+WHERE THE CURRENT CODE STANDS AGAINST THAT
+
+(1) namespace — ABSENT from the hash (only the schema's name bytes are folded in,
+    Schema.zig:53). But the FactKV key is `(inst_ns, inst_name)` (Prove.zig:2209), so
+    lookups ARE namespace-scoped. Cosmetic: two same-named schemas in different files
+    share hash space but not key space. Not a correctness problem; worth folding the
+    namespace in anyway so the printed name is self-identifying.
+
+(2) argument identity — VIOLATED for eigenvars, on TWO axes:
+      the binder's source spelling   `a` vs `z`
+      the fresh-name serial          `#1` vs `#2`
+    Measured (drafts/schema-hash-decode/):
+      same instantiation, extra `fix` above it   -> adea7c55… vs e78561b4…
+      two theorems, first-fix eigenvar each      -> adea7c55… vs bfa5e850…
+    In every case the instance's STATEMENT is alpha-equivalent, so it should be ONE
+    instance. Today the prover proves it twice.
+
+WHY FIXING ONLY THE HASH IS WORSE THAN THE BUG — the finding that changes the plan.
+
+`reifyArgs` (Prove.zig:2150) serializes a value arg via `pool.reify`, which emits an
+fvar's `name` VERBATIM (term.zig:858). The instance's proof then rebuilds that arg
+(ProveTask.zig:654) and `Elab` substitutes it UNCHANGED — `.value => |v| return
+.{ .id = v.id, … }` (Elab.zig:469).
+
+So the stored statement mentions whichever eigenvar NAME was reified first. Make the
+hash position-based alone and `a#1`/`z#1` collide to one address, but the first proof
+to arrive stores ITS spelling and the second silently receives a fact mentioning a
+variable it never bound. That is a soundness-adjacent outcome traded for a performance
+win — strictly worse than the duplication it removes.
+
+THEREFORE: canonicalize AT REIFY, not at hash. The stored arg must already be in
+canonical form, and then the hash over it is automatically position-based. One change,
+two problems fixed, and the hash stays a pure function of what is stored.
+
+SHAPE OF THE FIX
+
+  canon = the enclosing binder chain at the instantiation site, outermost first.
+  Available as `Walk.local_idents` (Walk.zig:132) — append-ordered, truncated on block
+  exit (Walk.zig:213), each entry carrying `.info.fvar`. At the naming site that IS the
+  chain. `e.walk` reaches it from `demandInstance`.
+
+  Then: before reifying a value arg, rewrite each fvar that is in `canon` to a
+  positional name (`$0`, `$1`, …); leave every other fvar alone (a ground fvar or a
+  caller eigenvar from an OUTER proof is genuine identity, not noise). `hashTerm`
+  already does exactly this for lambda params via its `canon` parameter — this extends
+  the same treatment to the enclosing chain, which is what makes the two cases uniform.
+
+WHAT I HAVE NOT YET CHECKED, and will before writing:
+  - whether the instance's proof needs the ORIGINAL spelling anywhere (the guard
+    relativization at ProveTask.zig:688 mentions value params by name)
+  - `freeFvarParams` (Prove.zig, under a model) EXTENDS pnames by the args' free
+    variables — canonicalizing those names changes what that function sees
+  - whether `args_source` under a model transfer must canonicalize identically or
+    independently
+  - nested binders: an eigenvar bound INSIDE a lambda argument's body, where `canon`
+    for the lambda and `canon` for the chain would both apply
