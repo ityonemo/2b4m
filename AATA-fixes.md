@@ -1530,6 +1530,19 @@ skipped". The general version needs `power` over the pair sort plus lcm minimali
 carries lcm minimality, and the painpoints text says "neither connection is made" — not
 that it cannot be. **Probe before deciding.** User: do it at the end.
 
+## §5.2's dihedral relations — the pinned axiom IS avoidable (found 2026-10-18)
+
+`aata/5.2:88-89` takes `sIsAnInvolution` and `reflectionInverts` ($srs = r^{-1}$) as
+**axioms**. Judson derives both geometrically and explicitly forwards the second ("We will
+leave the proof that $srs = r^{-1}$ as an exercise"), so under the scope ruling it is owed a
+proof — and `std/permutation/dihedral.b4m:3371` **already proves it**
+(`reflectionReversesTheRotation`, the concrete $n$-gon form). So the fix is available, not
+blocked: either cite that theorem, or model the abstract presentation onto the concrete
+$n$-gon. Handle it with the other axiom rulings.
+
+Note `dihedralGroupHasTwiceNElements` ($|D_n| = 2n$) is a **bare** statement in the book
+and correctly keeps its citation.
+
 ## The five deferred axiomatization items (unchanged)
 
 Still flagged-not-changed, to be taken one at a time after the main sweep:
