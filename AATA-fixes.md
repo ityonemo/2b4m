@@ -1414,3 +1414,104 @@ agreed on every case tried. Script kept at `drafts/aata-audit/dup.py` if wanted.
   `forall a: Zn; forall b: Zn; forall p: Zn; isUnit(a) -> add(mul(unitInverse(a), add(mul(a, p), b)), neg(mul(unitInverse(a), b))) = p`
   > NB: This theorem exists in std in `std/integer/mod-n.b4m:1312:anAffineCipherWithAUnitMultiplierDecodes`
 
+
+---
+
+# SCOPE RULING (user, 2026-10-18) — WHICH theorems must be written out
+
+> *"You ONLY need to prove theorems that have proof text in judson or say 'proof is in
+> exercise'."* … *"if judson says 'proof left to reader' you should do that too."*
+
+So a Class-1 site is a real defect **only** when Judson signals that a proof is expected.
+Three qualifying signals:
+
+1. **`<proof>`** — he spells the argument out.
+2. **"left as an exercise"** — he forwards it (the aata guide already requires these be
+   proved in the MAIN TEXT, with only a prose pointer in the exercise slot).
+3. **"left to the reader"** — same obligation.
+
+A result he **states flatly**, with no proof and no forwarding, has no proof structure to
+transcribe. **Those may stay citations** — aliasing them was never a defect, and this
+supersedes the audit's per-chapter Class-1 counts.
+
+## Measured against the vendored XML
+
+Every `<theorem>/<lemma>/<corollary>/<proposition>` in the ten in-scope files, classified by
+whether it carries a `<proof>`, is forwarded in the surrounding prose, or is bare:
+
+| chapter | XML | has `<proof>` | forwarded | **in scope** | bare (citation OK) |
+|---|---|---|---|---|---|
+| 1.2.x | `sets.xml` | 5 | 0 | **5** | 1 |
+| 2.x | `integers.xml` | 7 | 0 | **7** | 1 |
+| 3.x | `groups.xml` | 7 | 2 | **9** | 1 |
+| 4.x | `cyclic.xml` | 7 | 1 | **8** | 3 |
+| 5.x | `permute.xml` | 9 | 0 | **9** | 3 |
+| 6.x | `cosets.xml` | 9 | 1 | **10** | 3 |
+| 9.x | `isomorph.xml` | 10 | 2 | **12** | 2 |
+| 10.x | `normal.xml` | 6 | 0 | **6** | 0 |
+| 11.x | `homomorph.xml` | 4 | 0 | **4** | 2 |
+| **total** | | **64** | **6** | **70** | **16** |
+
+**~70 results to write out, not ~146.** The audit's Class-1 count conflated "is an alias"
+with "is a defect"; under this ruling roughly half the sites it listed are legitimate
+citations of results Judson never proves.
+
+**A caveat on the forwarded count.** An element-scoped scan reports *zero* forwarded proofs,
+because Judson almost always puts the forwarding in the prose **around** the result, not
+inside it. Scanning the surrounding prose finds 14 forwarding phrases, of which 6 attach
+cleanly to a numbered result. The other 8 forward a *part* of a proof or an unnumbered claim
+and still create an obligation — list, with the exact wording:
+
+- `groups.xml` — "We leave the proof as an exercise" (**cancellation laws**, his Ex. 30)
+- `groups.xml` — "We will leave the proof of this theorem as an exercise" (**laws of
+  exponents**, his Ex. 29)
+- `groups.xml` — "We will leave this task as an exercise" (closure of $SL_2(\mathbb{R})$
+  under multiplication)
+- `cyclic.xml` — "The proof … is straightforward and is left as an exercise"
+  (**polar multiplication**)
+- `permute.xml` — "We leave the proof that $|S_n| = n!$ as an exercise"
+- `permute.xml` — "The proof for the case in which $\sigma$ can be expressed as an odd
+  number of transpositions is left as an exercise"
+- `permute.xml` — "We will leave the proof that $\lambda_\sigma$ is surjective to the reader"
+- `permute.xml` — "We will leave the proof that $srs = r^{-1}$ as an exercise"
+  (**the dihedral relation** — note §5.2 currently takes this as an `axiom` and the exercise
+  slot aliases it, so *neither* slot proves it)
+- `cosets.xml` — "(We leave its proof as an exercise.)" (**Lemma 6.3**)
+- `isomorph.xml` — "whose proof is left as an exercise" (**isomorphism is an equivalence
+  relation**, his Thm 9.10)
+- `isomorph.xml` — "We will leave the proof that $\phi$ is one-to-one and onto as an exercise"
+- `isomorph.xml` — "We will leave the proof of the following theorem as an exercise"
+  (**internal direct products**)
+- `sets.xml` — "The proof of (2) is left as an exercise" (**De Morgan**, second part)
+- `sets.xml` — "Part (2) is left as an exercise" (**composition of injections/surjections**)
+
+## The 16 bare statements — citations are legitimate
+
+These he states without proof and without forwarding. Several were on the audit's Class-1
+list and should come off it:
+
+
+- `sets.xml` **(unnamed)** — Two equivalence classes of an equivalence relation are either disjoint o
+- `integers.xml` **integers-corollary-coprime** — Let a and b be two integers that are relatively prime. Then there exist 
+- `groups.xml` **(unnamed)** — If g is any element in a group G , then the inverse of g , denoted by g^
+- `cyclic.xml` **(unnamed)** — The subgroups of {\mathbb Z} are exactly n{\mathbb Z} for n = 0, 1, 2,\l
+- `cyclic.xml` **cyclic-corollary-mod-n-generators** — The generators of {\mathbb Z}_n are the integers r such that 1 \leq r \l
+- `cyclic.xml` **(unnamed)** — The circle group is a subgroup of {\mathbb C}^* .
+- `permute.xml` **(unnamed)** — Any permutation of a finite set containing at least two elements can be 
+- `permute.xml` **(unnamed)** — The dihedral group, D_n , is a subgroup of S_n of order 2n .
+- `permute.xml` **permute-proposition-motions-cube** — The group of rigid motions of a cube contains 24 elements.
+- `cosets.xml` **cosets-corollary-theorem-6** — Suppose that G is a finite group and g \in G . Then the order of g must 
+- `cosets.xml` **cosets-theorem-theorem-11** — Let U(n) be the group of units in {\mathbb Z}_n . Then |U(n)| = \phi(n) 
+- `cosets.xml` **cosets-theorem-theorem-13** — Fermat's Little Theorem Fermat's Little Theorem Let p be any prime numbe
+- `isomorph.xml` **(unnamed)** — Let (g_1, \ldots, g_n) \in \prod G_i . If g_i has finite order r_i in G_
+- `isomorph.xml` **isomorph-corollary-relatively-prime** — Let n_1, \ldots, n_k be positive integers. Then \prod_{i=1}^k {\mathbb Z
+- `homomorph.xml` **(unnamed)** — Let \phi : G \rightarrow H be a group homomorphism. Then the kernel of \
+- `homomorph.xml` **homomorph-theorem-third-isomorphism** — Third Isomorphism Theorem Third Isomorphism Theorem for groups Let G be 
+
+Notable consequences: **Theorem 6.15** ($|U(n)| = \varphi(n)$), **Corollary 6.10** (order
+divides $|G|$), **Fermat's Little Theorem**, the **Third Isomorphism Theorem**, the
+**kernel-is-normal** corollary, $|D_n| = 2n$, and **every-permutation-is-a-product-of-
+transpositions** are all bare in the book. The audit flagged most of them as Class-1
+defects; under this ruling they are not. The §6.3/§7.2 "statement mismatch" residue largely
+dissolves with them.
+
