@@ -1558,3 +1558,76 @@ Still flagged-not-changed, to be taken one at a time after the main sweep:
   (a) aside.
 - **§9.1 Theorems 9.8, 9.9** — transcribed with his own proofs; the varying-modulus
   limit is a real (a) aside (`std/integer/mod-n.b4m`'s single `const N`).
+
+---
+
+# SWEEP STATUS (2026-10-18)
+
+## Class 1 — DONE for every chapter
+
+`2b4m check aata`: **40 files, 399 theorems, exit 0** (was 331). Every chapter that
+contains code now proves its own results; §4.3 is the only zero, correctly, being an
+algorithm section with no stated proposition.
+
+| chapter | before | after | | chapter | before | after |
+|---|---|---|---|---|---|---|
+| 3.2 | **0** | 12 | | 9.2 | **0** | 8 |
+| 3.3 | 0 | 7 | | 10.1 | **0** | 7 |
+| 4.2 | 0 | 12 | | 10.2 | **0** | 3 |
+| 5.1 | 25 | 30 | | 11.1 | 0 | 15 |
+| 6.1 | **0** | 8 | | 11.2 | **0** | 18 |
+| 6.2 | **0** | 7 | | 6.3 | **0** | 2 |
+| 9.1 | **0** | 18 | | 7.2 | **0** | 2 |
+
+Landed: Lagrange, Cayley, De Moivre, Euler, RSA correctness, Theorem 10.3, $|S_n| = n!$,
+the disjoint-cycle decomposition, Theorem 9.7, and all three Isomorphism Theorems plus
+Correspondence.
+
+### Citations that legitimately remain
+
+1. **Schemas.** `judsonsLemmaTenTen` and `theAlternatingGroupIsSimple` are declared
+   `theorem …(inN(Fn))` — parameterized by the subgroup predicate, because there is no
+   sort of subgroups. A schema has no body to lift; §10.2 instantiates both at $N = A_n$.
+   Same for `splittingAListing` in §5.1 (`prop(Item)`).
+2. **Bare statements**, per the scope ruling: Corollary 6.10, Theorem 6.15, Fermat's
+   Little Theorem, $|D_n| = 2n$, product-of-transpositions, the Third Isomorphism Theorem.
+3. **Cross-theory sort mismatches**: §10.2's two `normal.b4m` results are over `Grp`
+   while that chapter speaks `Fn`.
+
+### Two traps that strict caught and `--fast` did not
+
+- **§4.2**: `polar.b4m` has both `deMoivre` (cis form, 2 args) and `deMoivrePolar`
+  (3 args); the chapter named the GENERAL one `deMoivre`, so a lifted body citing the cis
+  form bound to the wrong theorem and only failed in strict with a sort error.
+- **§11.2**: THREE different axioms named `hHasIdentity` exist across the four theories it
+  draws on, plus `nIsNormal` in two. Strict surfaced six errors fast mode admitted.
+
+**Never close a site on `--fast`.** Also: sibling std theories each declare their own group
+sort (`subgroup_product.G` → `subgroup.b4m`, `correspondence.G` → `factor.b4m`), so lifted
+bodies need retyping onto the chapter's names.
+
+## Class 2 — the priority items are done
+
+- **The six false/contradictory claims**: all fixed.
+- **The engineering retrospectives**: §10.2's 142 lines (nearly half the file) removed with
+  his Historical Note restored verbatim; §11.2's and §10.1's likewise.
+- **Judson's restored exposition**: §2.3's Euclidean Algorithm subsection (the 945/2415
+  worked example and back-substitution to $r=-5, s=2$ — "945" previously occurred nowhere
+  in the corpus), his prime/composite definition, and his Historical Note; §2.1's
+  induction motivation; §1.2.3's partition and equivalence-class definitions, his named
+  Corollary, the mod-3 example, and the four relation examples; §5.1's **composition
+  convention remark**, the one omission that affected correctness.
+- **Import-horizon justifications**: all 8 sites across 6 files stripped.
+- **Invented result numbers**: §2.3's dropped (the XML carries none, and two collided).
+- **Mechanical**: 7 `less_than` corruptions, 2 shipped TODOs, a duplicated paragraph, and
+  every exercise number in both chapter-1 exercise files.
+
+## Still open
+
+1. **Remaining Class-2 passages** in the exercise files and the thinner chapters — the
+   audit's per-file lists are still the worklist, minus everything above.
+2. **The duplicate-catalog asides** (84 entries) — worth regenerating with
+   `python3 drafts/aata-audit/dup.py` first, since writing out theorems changed what matches.
+3. **PINNED**: §9.2's Theorem 9.17 probe, and the now-six axiomatization rulings
+   (§5.2's `reflectionInverts` is **avoidable** — `std/permutation/dihedral.b4m:3371`
+   proves it).
