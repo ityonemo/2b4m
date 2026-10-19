@@ -176,6 +176,28 @@ Re-run plain `2b4m check` to fully verify before finalizing. `2b4m fmt`
 normalizes whitespace and indentation (`--check` reports instead of
 rewriting).
 
+**What `--fast` promises, exactly: a STRUCTURAL check.** It tells you the proof's shape
+is sound — the steps compose, the rules take the arity they take, the blocks discharge.
+It does **not** resolve what your references bind to, because binding identity is not a
+structural property. Two failures therefore survive it:
+
+1. **An accelerant cannot produce a kernel certificate.** `--fast` admitted the verdict;
+   strict demands the proof. Usually a real gap.
+2. **A reference bound to the WRONG declaration of the RIGHT SHAPE.** This is not a
+   `--fast` defect — a shape-only check cannot distinguish two declarations of the same
+   form. Sibling theories reuse names for the same *idea* at different sorts, so the risk
+   scales with how many theories a proof cites across. Measured: `correspondence.b4m`'s
+   `axiom hHasIdentity: inHsub(EG)` versus `subgroup.b4m`'s
+   `axiom subgroupHasIdentity: inSubgroup(E)` (re-exported as `hHasIdentity`) are
+   structurally identical and bind differently; and `complex/polar.b4m` carries both
+   `deMoivre` (cis form, 2 args) and `deMoivrePolar` (3 args), so a file that renames the
+   latter to `deMoivre` silently rebinds citations of the former. Strict reports these as
+   `step claims X but the axiom derives Y` or a sort mismatch.
+
+So: `--fast` for the write-fix loop, strict before closing any site. When you alias a
+`std` theorem under a new local name, check whether a sibling `std` name now collides
+with your choice.
+
 ## Declaration keywords
 
 ### KEYWORD: sort

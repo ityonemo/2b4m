@@ -35,9 +35,44 @@ Then, ONCE, before you declare the file done (and before it hits a gate), run
 plain **`2b4m check <file>`** over the WHOLE file (strict — full kernel verification).
 **`2b4m check <dir>`** checks every `.b4m` and `.md` under a directory in one pass
 (a fact two files cite is proved once) and prints one aggregate line. This is the real
-guarantee. A proof can pass `--fast` but FAIL strict (an accelerant couldn't
-produce a kernel certificate) — the final strict pass catches that. A file is not
-"done" until plain `2b4m check` is green with NO `NOT FULLY VERIFIED` banner.
+guarantee. A file is not "done" until plain `2b4m check` is green with NO
+`NOT FULLY VERIFIED` banner.
+
+### `--fast` IS A STRUCTURAL CHECK — that is the whole of what it promises
+
+`--fast` tells you the proof's SHAPE is sound: the steps compose, the rules take the
+arity they take, the blocks discharge. It does not resolve what your references
+actually bind to. So two different failures survive it, and the second is the one that
+surprises people:
+
+1. **An accelerant can't produce a kernel certificate.** `--fast` admitted the verdict;
+   strict demands the proof. Usually a real gap in the argument.
+2. **A reference bound to the WRONG declaration of the RIGHT SHAPE.** Binding identity
+   is not a structural property, so a shape-only check cannot see this — and it is not a
+   `--fast` bug, it is `--fast` doing exactly what it says.
+
+Measured instances of (2), both from lifting proofs across several `std` theories:
+
+- `std/group/correspondence.b4m:114` `axiom hHasIdentity: inHsub(EG)` versus
+  `std/subgroup.b4m:52` `axiom subgroupHasIdentity: inSubgroup(E)`, re-exported by
+  `std/subgroup/product.b4m:36` as `hHasIdentity`. **Structurally identical** — a
+  predicate applied to a group identity — but a different predicate over a different
+  sort. A chapter aliasing the wrong one passed `--fast` and failed strict with
+  `step claims 'inHsub(EG)' but the axiom derives 'inSubgroup(E)'`.
+- `std/complex/polar.b4m` has BOTH `deMoivre` (the cis form, 2 args) and
+  `deMoivrePolar` (the general form, 3 args). A chapter that named the general one
+  `deMoivre` silently rebound a lifted body's citation of the cis form; strict caught it
+  as `expected sort 'Real', got 'Nat'`.
+
+**The rule this implies:** the more theories a proof cites across, the more the strict
+pass is load-bearing — because sibling theories reuse names for the same *idea* at
+different sorts. When you rename a `std` theorem locally, check whether a SIBLING `std`
+name now collides with your choice. And never close a site on `--fast` alone.
+
+(Related but different in kind: `instantiation` is never `--fast`-trustable at all,
+because admitting it shape-only would skip the per-instance proof that IS the soundness
+gate — see `### KEYWORD: instantiation`. Its strict failures read
+`schema instance '…' has no antecedent left for this premise`.)
 
 (Flags: `--fast` trusts ALL `using` words; `--fast-only W…` only the listed;
 `--fast-except W…` all but the listed; `--draft` allows `hole`s. `instantiation`
