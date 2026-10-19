@@ -1515,3 +1515,33 @@ transpositions** are all bare in the book. The audit flagged most of them as Cla
 defects; under this ruling they are not. The §6.3/§7.2 "statement mismatch" residue largely
 dissolves with them.
 
+
+---
+
+# PINNED FOR THE END OF THE SWEEP (user, 2026-10-18)
+
+## §9.2's `cubeIsIdentityComponentwise` — Theorem 9.17 proper
+
+`aata/9.2:96` proves a hardcoded **k = 3 instance** where Judson states the general
+order/lcm theorem: the order of $(g,h)$ in $G \times H$ is $\mathrm{lcm}(|g|,|h|)$.
+CHAPTER9-PAINPOINTS calls the k=3 form "the tell that the general version was wanted and
+skipped". The general version needs `power` over the pair sort plus lcm minimality; the
+`ProductGroup` model makes `std/group/power.b4m` available and `std/integer/lattice.b4m`
+carries lcm minimality, and the painpoints text says "neither connection is made" — not
+that it cannot be. **Probe before deciding.** User: do it at the end.
+
+## The five deferred axiomatization items (unchanged)
+
+Still flagged-not-changed, to be taken one at a time after the main sweep:
+`1.2.3-partitions:484` (`axiom quotientContains`), `4.1:494` + `:950`, `3.3:39`+`:69`
+(subgroup criterion as axioms), `5.2:88` (dihedral relations as axioms),
+`1.2.3-partitions:822` (the converse Judson proves, dropped as "left to a later section").
+
+## Settled, no longer owed
+
+- **§9.1 Theorem 9.10** — isomorphism as an equivalence relation. Proved pairwise over
+  the concrete declared groups; this is the right form and needs nothing further.
+- **§9.1 Theorem 9.7** — proved (both halves of his map); only the `≅` restatement is an
+  (a) aside.
+- **§9.1 Theorems 9.8, 9.9** — transcribed with his own proofs; the varying-modulus
+  limit is a real (a) aside (`std/integer/mod-n.b4m`'s single `const N`).
