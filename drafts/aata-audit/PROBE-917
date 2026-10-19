@@ -1,0 +1,48 @@
+PROBE: Theorem 9.17 (the order of (g,h) in G x H is lcm(|g|,|h|)) — 2026-10-19
+
+VERDICT: REACHABLE. The pinned question is answered; this is buildable, not blocked.
+
+CHAPTER9-PAINPOINTS said the connection needs "`power` over the pair sort plus the lcm's
+minimality" and that "neither connection is made". Both halves of that are true as
+statements of FACT, but the implied conclusion — that it cannot be made — is wrong.
+
+WHAT EXISTS ALREADY
+
+  lcm minimality:  `int_divides.lcmLeast` is EXACTLY Judson's step, and in the stronger
+                   divisibility form:
+                     axiom lcmLeast: divides(a,n) -> divides(b,n) -> divides(lcm(a,b), n)
+                   His "m is the least common multiple, so m <= n" is the <= reading of
+                   this; the divides form is cleaner and is what a proof wants.
+                   Plus lcmCommonMultipleLeft / ...Right for the other direction.
+  projections:     product.b4m's prodOpDef, prodEDef, fstOfProduct, sndOfProduct.
+
+WHAT HAD TO BE BUILT, AND IT IS THE ESTABLISHED PATTERN
+
+  `power` is a FUNC declared in group/power.b4m, not a theorem, so a model cannot
+  transfer it — a function symbol over Pair must be declared and axiomatized. That is
+  not a special limitation: it is what EVERY concrete group in std does.
+    std/permutation/power.b4m   func permPower + 3 recursion axioms + model PermPower
+    std/integer/mod-n.b4m       func znPower  + znPowerDef
+  So: `func pairPower(p: Pair, k: Int) => Pair` with pairPowerZero/Succ/Prev, then
+  `model PairPower` mapping group_power's Grp/E/op/inverse/power onto
+  Pair/prodE/prodOp/prodInv/pairPower and discharging the six axioms.
+
+MEASURED: the probe in probe-917-pair-power.b4m does exactly this and transfers
+`group_power.powerAdd` onto Pair. **Strict-green, no banner** (model transfer is admitted
+under --fast, so the strict run is the one that counts here).
+
+WHAT REMAINS, for whoever picks this up
+
+  1. The componentwise power law: fst(pairPower(p,k)) = power(fst p, k), and likewise
+     snd. An induction on the integer exponent, bidirectional (succ and prev arms),
+     using fstOfProduct/sndOfProduct at the step and prodEDef at the base. This is the
+     real work — compare group/power.b4m's own powerAdd at 132 lines.
+  2. Then Judson's squeeze is short:
+       (g,h)^m = (g^m, h^m) = (e,e)        from (1) + r|m, s|m via lcmCommonMultiple*
+       (g,h)^n = (e,e) gives r|n and s|n   from (1) + hasOrder's minimality
+       so divides(lcm(r,s), n) by lcmLeast, and divides(n, lcm(r,s)) the other way
+  3. aata/9.2's `cubeIsIdentityComponentwise` (the hardcoded k=3 instance) then becomes
+     a corollary of the general statement rather than a stand-in for it.
+
+COST: step 1 is a real induction; steps 2-3 are short. Call it one focused session, not
+a prose pass. Nothing about it is blocked.

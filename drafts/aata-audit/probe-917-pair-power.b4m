@@ -1,0 +1,64 @@
+// PROBE: is Judson's Theorem 9.17 (the order of (g,h) is lcm(|g|,|h|)) reachable?
+// Needs (1) a power over the pair sort and (2) lcm minimality. (2) exists as
+// int_divides.lcmLeast. (1) is built here the way every other concrete group does it:
+// a fresh func plus recursion axioms, then a model to transfer the abstract corpus.
+import product <<< "std/group/product.b4m"
+import group_power <<< "std/group/power.b4m"
+import group <<< "std/group.b4m"
+import integer <<< "std/integer.b4m"
+import int_divides <<< "std/integer/divides.b4m"
+
+sort Pair = product.Pair
+sort G = product.G
+sort H = product.H
+func pair = product.pair
+func fst = product.fst
+func snd = product.snd
+func prodOp = product.prodOp
+func prodInv = product.prodInv
+const prodE = product.prodE
+fact prodAssoc = product.prodAssoc
+fact prodIdentityLeft = product.prodIdentityLeft
+fact prodInverseLeft = product.prodInverseLeft
+
+sort Int = integer.Int
+const IZERO = integer.ZERO
+func isucc = integer.succ
+func iprev = integer.prev
+pred divides = int_divides.divides
+func lcm = int_divides.lcm
+fact lcmCommonMultipleLeft = int_divides.lcmCommonMultipleLeft
+fact lcmCommonMultipleRight = int_divides.lcmCommonMultipleRight
+fact lcmLeast = int_divides.lcmLeast
+
+// the componentwise power on pairs
+func pairPower(p: Pair, k: Int) => Pair
+axiom pairPowerZero: forall p: Pair; pairPower(p, IZERO) = prodE
+axiom pairPowerSucc: forall p: Pair; forall k: Int;
+  pairPower(p, isucc(k)) = prodOp(pairPower(p, k), p)
+axiom pairPowerPrev: forall p: Pair; forall k: Int;
+  pairPower(p, iprev(k)) = prodOp(pairPower(p, k), prodInv(p))
+
+model PairPower {
+  group_power.Grp: Pair
+  group_power.E: prodE
+  group_power.op: prodOp
+  group_power.inverse: prodInv
+  group_power.power: pairPower
+  group_power.opAssoc <- prodAssoc
+  group_power.opIdentityLeft <- prodIdentityLeft
+  group_power.opInverseLeft <- prodInverseLeft
+  group_power.powerZero <- pairPowerZero
+  group_power.powerSucc <- pairPowerSucc
+  group_power.powerPrev <- pairPowerPrev
+}
+
+// Does the model carry a power law onto Pair? (powerAdd is the cheapest test.)
+theorem pairPowerAdd: forall p: Pair; forall m, n: Int;
+  prodOp(pairPower(p, m), pairPower(p, n)) = pairPower(p, integer.add(m, n))
+proof
+  @conclusion |
+    forall p: Pair; forall m, n: Int;
+      prodOp(pairPower(p, m), pairPower(p, n)) = pairPower(p, integer.add(m, n))
+    [using model(PairPower) group_power.powerAdd]
+qed

@@ -1520,6 +1520,25 @@ dissolves with them.
 
 # PINNED FOR THE END OF THE SWEEP (user, 2026-10-18)
 
+## §9.2's Theorem 9.17 — PROBED 2026-10-19: REACHABLE, not blocked
+
+The probe is done; see `drafts/aata-audit/PROBE-917` and its strict-green witness
+`probe-917-pair-power.b4m`. Summary: CHAPTER9-PAINPOINTS was right that the connection
+"is not made" and wrong to leave it reading as if it could not be.
+
+- **lcm minimality already exists** as `int_divides.lcmLeast`, and in the stronger
+  divisibility form Judson's "$m \le n$" is the weak reading of.
+- **`power` over the pair sort has to be declared, not transferred** — `power` is a
+  `func` in `group/power.b4m`, and a model transfers theorems, not function symbols. But
+  that is the ESTABLISHED PATTERN for every concrete group in `std`
+  (`permutation/power.b4m`'s `permPower` + 3 recursion axioms + a model;
+  `mod-n.b4m`'s `znPower`). The probe does exactly that and transfers
+  `group_power.powerAdd` onto `Pair`, strict-green.
+- **What remains**: the componentwise law `fst(pairPower(p,k)) = power(fst p, k)` (a
+  bidirectional induction on the exponent, the one real piece of work), after which
+  Judson's two-inequality squeeze is short and `cubeIsIdentityComponentwise` becomes a
+  corollary rather than a stand-in.
+
 ## §9.2's `cubeIsIdentityComponentwise` — Theorem 9.17 proper
 
 `aata/9.2:96` proves a hardcoded **k = 3 instance** where Judson states the general
