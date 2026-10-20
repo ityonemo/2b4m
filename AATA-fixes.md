@@ -39,46 +39,48 @@ inside them (user ruling, 2026-10-19).
 
 ## 1. The engine question — HALF CLOSED 2026-10-20
 
-The question as recorded had two halves. **The import half is now closed; the `fact`-alias
-half is still open.**
+**CLOSED — an uncited import is now a hard error** (`8b7b6d7`). `check` fails with
+`import 'X' (path) is never used — cite it, or remove it if the path is wrong`. A PARSE-TIME
+syntactic check in `src/parser.zig`: an `unused_imports` map filled at the import decl,
+drained in `stamp` (any `X.name` qualifier) and at the theory-rule argument
+(`using import(X) thm`, `using model(X) …`, `arithmetic(X)`), reported at `parseFile`'s tail.
 
-**CLOSED — an uncited import is now a hard error.** `check` fails with
-`import 'X' is never used — cite it or remove it`. Implemented in `src/parser.zig` as a
-PARSE-TIME syntactic check (an `unused_imports` set filled at the import decl, drained by
-any `X.name` qualifier token and by a theory-rule argument like `using import(X) thm`), not
-by eager resolution — the engine stays demand-driven. A misspelled path like
-`std/group/group_lagrange.b4m` can no longer hide behind a green gate.
+The user rejected the first design (a "used" bit at the six engine sites that resolve a
+qualifier) as overengineering, and the parser version is also MORE correct: syntactic use is
+complete by construction, where the six-site version was complete only until someone added a
+seventh path. It also dissolved the hard case — six corpus imports are used ONLY inside
+`model` blocks.
 
-The user rejected the first design (a "used" bit set at the six engine sites that resolve a
-qualifier) as overengineering, and the parser version turned out to be *more* correct as
-well as far smaller: syntactic use is complete by construction, whereas the six-site version
-would have been complete only until someone added a seventh resolution path. It also
-dissolved the hard case — six corpus imports are used ONLY inside `model` blocks.
+**STILL OPEN — the unused DECLARATION, and the mechanism is the blocker.**
 
-Landing it required removing 18 dead imports (12 in `std`, 6 in `aata`) plus 4
-test/example fixtures. Both `aata/6.2`'s duplicate aliases of one file
-(`group_lagrange` + `lagrange_theory`) are the residue class this now prevents.
+What passes today, all for one reason — nothing in the file uses the declaration, so the
+demand-driven engine never resolves it and never tests its target:
 
-**STILL OPEN — the uncited alias, and it is broader than `fact`.** An uncited alias is
-never resolved, so both of these pass `check` with exit 0:
+- `fact f = realFile.noSuchTheorem` — nothing cites `f`;
+- `sort A = lib.X` with `import lib <<< "no-such-file.b4m"` — nothing uses `A`.
 
-- a dangling MEMBER of a real file — `fact lagrange = group_lagrange.noSuchTheorem`;
-- a dangling FILE reached through a mentioned import — `import lib <<< "no-such-file.b4m"`
-  plus `sort A = lib.X`. The new import check correctly stays quiet here: the import IS
-  mentioned. Only resolution would catch it, and nothing demands it.
+Measured 2026-10-20: all five alias kinds (`sort`/`pred`/`func`/`const`/`fact`) accept a
+nonexistent target. Repros in `drafts/uncited-alias/`.
 
-**Measured 2026-10-20: all five alias kinds have the hole** — `sort`, `pred`, `func`,
-`const`, `fact` each report `OK: 2 declarations` against a nonexistent file. So this is not
-a `fact`-alias quirk; it is every alias.
+**Why the parse-time mechanism does NOT transfer.** An import is a CONSUMPTION — its purpose
+is inward, so "this file never reaches it" is locally decidable and the file is the right
+authority. A declaration is a PUBLICATION — its purpose is outward, and whether anything
+needs it is a whole-corpus question a parser cannot answer.
 
-**Root cause** (located by the plan agent, `src/Engine/ParseTask.zig:255-262`): the root
-scan racks a ProveTask only for `.theorem => .local`; `.alias => {}` is an explicit no-op.
-Nothing ever demands an alias, so no FetchTask is racked for its qualifier — a
-`check --trace-facts` on the dangling case shows no `[fetch]` event at all.
+**Measured, and it settles it: 470 distinct downstream references to non-fact forwards (835
+total).** `std/permutation/simplicity.b4m` uses `permutation.transposition` 98 times, where
+`transposition` is an alias in `std/permutation.b4m`; one aata file uses `peano.less_than` 49
+times, forwarded there from `std/order.b4m`. That is the intended practice — import the
+theory at the level you reason at and take its vocabulary; a façade re-exports its
+sub-theories' vocabulary so consumers need not know the decomposition. So "an alias unused in
+its own file is dead" would false-fail at scale.
 
-Candidate fix: resolve aliases AT DECLARATION rather than on first citation. That retires
-the loophole the whole Class-1 defect class depended on, and still needs the cost
-judgement, since it cuts against the demand-driven design.
+**Where it belongs: `--library`**, which already sees the whole root set and would count those
+835 references as uses. **The blocker is that no symbol-usage graph exists.** The axiom check
+rides on `ctx.axiom_taint` — per proven theorem, the facts its proof rests on. Sorts, consts,
+funcs and preds are used by appearing in STATEMENTS AND TERMS, not in a citation closure, and
+every `Context` side table is fact-level (`axiom_taint`, `hole_taint`, `model_discharged`).
+Building that graph is the design question to answer before any of this is implementable.
 
 ## 2. The duplicate catalog — DONE 2026-10-20
 
