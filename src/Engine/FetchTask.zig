@@ -719,7 +719,10 @@ test "fetch: an import binds to the target file's namespace" {
     // parent imports child; simulate the parse phase's import resolution by
     // discovering both files and recording the raw-path -> child mapping.
     const ctx = try fixtureCtx(arena, io, "/t/parent.b4m",
+        // the `sort` cites the import: an uncited namespace is a parse-time error now
+        // (parser.zig `unused_imports`), and this fixture's subject is RESOLUTION.
         \\import peano <<< "child.b4m"
+        \\sort N = peano.Nat
     );
     const child_fid = try ctx.preload("/t/child.b4m", "sort Nat");
     {

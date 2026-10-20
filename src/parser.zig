@@ -70,6 +70,22 @@ pub const Parser = struct {
     /// normally, plus one `axiom` per clause staged here. Nothing downstream learns that
     /// definitions exist: they are axioms by the time anyone looks.
     pending: std.ArrayList(ast.Decl) = .empty,
+    /// Namespaces declared by `import` that no qualifier has mentioned yet, each with the
+    /// offset of its declaration. An import is USED iff some token in the file carries its
+    /// name as a `ns.` qualifier — a purely SYNTACTIC fact, which is why this lives in the
+    /// parser rather than in the six-odd engine sites that resolve a qualifier to a target.
+    /// Those sites are reached on DEMAND, so an import nothing happens to cite is never
+    /// resolved and a dangling one passes `check` (see `uncited-fact-alias-proves-nothing`).
+    /// `stamp` removes a name the moment it appears as a qualifier; whatever remains at
+    /// `parseFile`'s end is dead. Keyed by `StrId`, so this only arms under `initInterning`
+    /// — parse-only tools (fmt/lint/query) leave ids `.none` and skip the check.
+    unused_imports: std.AutoArrayHashMapUnmanaged(InternPool.StrId, PendingImport) = .empty,
+
+    /// An `import` awaiting its first qualifier: where it was declared, and the path it
+    /// names. The PATH is in the message because the most costly version of this bug is a
+    /// MISSPELLED path — "import 'group_lagrange' is never used" sends the author looking
+    /// for a dead import when the real fault was a typo two directories deep.
+    const PendingImport = struct { at: u32, path: InternPool.StrId };
 
     pub fn init(arena: Allocator, source: []const u8, sink: *Diagnostics.Sink) Parser {
         return initInFile(arena, source, sink, 0);
@@ -131,6 +147,8 @@ pub const Parser = struct {
                         self.intern_oom = true;
                         return tok;
                     };
+                    // this token USES that namespace — whatever it resolves to downstream.
+                    _ = self.unused_imports.swapRemove(tok.qualifier);
                     tok.name = ip.internString(chars[i + 1 ..]) catch {
                         self.intern_oom = true;
                         return tok;
@@ -249,6 +267,13 @@ pub const Parser = struct {
             self.pending.clearRetainingCapacity();
         }
         if (self.intern_oom) return error.OutOfMemory;
+        // Dead imports are an ERROR, not a warning (`no-warnings-hard-errors`): an import
+        // nothing cites is either a leftover or — the case that motivated this — a MISSPELLED
+        // path that `check` would otherwise accept in silence.
+        for (self.unused_imports.keys(), self.unused_imports.values()) |ns, pending| {
+            const ip = self.interner orelse break;
+            self.sink.add(self.file, pending.at, "import '{s}' ({s}) is never used — cite it, or remove it if the path is wrong", .{ ip.stringBytes(ns), ip.stringBytes(pending.path) }) catch return error.OutOfMemory;
+        }
         return .{ .decls = try decls.toOwnedSlice(self.arena) };
     }
 
@@ -259,6 +284,13 @@ pub const Parser = struct {
                 const ns = try self.expect(.identifier);
                 _ = try self.expect(.import_arrow);
                 const path = try self.expect(.string);
+                // presumed dead until some qualifier names it (see `unused_imports`). A
+                // re-import of a name already pending keeps the FIRST offset: the duplicate
+                // is the redundant one.
+                if (self.interner != null) {
+                    const gop = try self.unused_imports.getOrPut(self.arena, ns.name);
+                    if (!gop.found_existing) gop.value_ptr.* = .{ .at = ns.start, .path = path.name };
+                }
                 return .{ .import = .{ .ns = ns, .path = path } };
             },
             .keyword_forward => {
@@ -838,6 +870,11 @@ pub const Parser = struct {
                 if (isTheoryRule(self.text(rule)) and self.tok.tag == .l_paren) {
                     _ = self.advance();
                     schema = try self.expect(.identifier);
+                    // `using import(I) thm` / `using arithmetic(I) …` NAME a namespace without
+                    // writing an `I.` qualifier, so `stamp`'s dotted split never sees it. This
+                    // is the corpus's main cross-file citation idiom (86 sites) — mark it used
+                    // here or every file whose only use of an import is a citation fails.
+                    _ = self.unused_imports.swapRemove(schema.?.name);
                     _ = try self.expect(.r_paren);
                 }
                 var args: []const *const ast.Expr = &.{};
@@ -1643,4 +1680,79 @@ test "deep nesting: the expression machine is not bounded by the C stack" {
         _ = try p.parseExpr();
         try testing.expectEqual(0, sink.list.items.len);
     }
+}
+
+test "an import no qualifier mentions is an error; a model block's qualifier counts as a use" {
+    // The check is SYNTACTIC: `used` means some token carries the namespace as a `ns.`
+    // qualifier. That is what makes a `model` block's mappings count without the parser
+    // knowing anything about models — and why the six engine sites that resolve a qualifier
+    // to a target need no instrumentation.
+    const source =
+        \\import used_by_sort <<< "a.b4m"
+        \\import used_by_model <<< "b.b4m"
+        \\import dead <<< "c.b4m"
+        \\sort G = used_by_sort.G
+        \\model M {
+        \\  used_by_model.G: G
+        \\}
+    ;
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var ip: InternPool = try .init(arena);
+    var sink: Diagnostics.Sink = .init(arena);
+    var p: Parser = .initInterning(arena, source, &sink, &ip);
+    _ = try p.parseFile();
+
+    try testing.expectEqual(1, sink.list.items.len);
+    try testing.expect(std.mem.indexOf(u8, sink.list.items[0].message, "'dead'") != null);
+    try testing.expect(std.mem.indexOf(u8, sink.list.items[0].message, "never used") != null);
+    // the PATH is in the message: a misspelled path is the costly form of this bug
+    try testing.expect(std.mem.indexOf(u8, sink.list.items[0].message, "c.b4m") != null);
+    // reported at the DECLARATION, not at end-of-file
+    try testing.expectEqual(std.mem.indexOf(u8, source, "dead").?, sink.list.items[0].offset);
+}
+
+test "a theory-rule argument marks an import used: `using import(I) thm` writes no `I.` qualifier" {
+    // 86 aata sites cite across a file boundary this way, and the namespace appears with NO
+    // dot — so `stamp`'s dotted split never sees it and the `isTheoryRule` arm must mark it.
+    // A CLI fixture cannot isolate this (the citer needs the imported SORT too, which marks
+    // the import used via its qualifier), so the unit test is the only place it is guarded.
+    const source =
+        \\import cited_only <<< "a.b4m"
+        \\sort T
+        \\theorem t: forall a: T; a = a
+        \\proof
+        \\  @conclusion |
+        \\    forall a: T; a = a
+        \\    [using import(cited_only) someFact]
+        \\qed
+    ;
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var ip: InternPool = try .init(arena);
+    var sink: Diagnostics.Sink = .init(arena);
+    var p: Parser = .initInterning(arena, source, &sink, &ip);
+    _ = try p.parseFile();
+    // no unused-import diagnostic: the citation is the use.
+    for (sink.list.items) |d| try testing.expect(std.mem.indexOf(u8, d.message, "never used") == null);
+}
+
+test "the unused-import check sleeps without an interner (fmt/lint/query parse this way)" {
+    const source =
+        \\import dead <<< "c.b4m"
+    ;
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var sink: Diagnostics.Sink = .init(arena);
+    var p: Parser = .init(arena, source, &sink);
+    _ = try p.parseFile();
+    // ids are `.none` under plain `init`, so every qualifier would collide on one key;
+    // the check is the engine's, not a formatter's.
+    try testing.expectEqual(0, sink.list.items.len);
 }

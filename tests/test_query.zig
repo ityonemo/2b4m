@@ -244,7 +244,7 @@ pub fn addTests(
     // aliased in parity from subtraction.
     ctx.ok(&.{ "query", "whereis", "std/peano/parity.b4m", "sub" },
         \\sub
-        \\  std/peano/parity.b4m:19:  func sub = subtraction.sub
+        \\  std/peano/parity.b4m:18:  func sub = subtraction.sub
         \\  std/peano/subtraction.b4m:38:  func sub(a: Nat, b: Nat) => Nat  [origin]
         \\
     );
@@ -252,7 +252,7 @@ pub fn addTests(
     // an import namespace resolves to the imported file as its origin.
     ctx.ok(&.{ "query", "whereis", "std/peano/parity.b4m", "peano_divides" },
         \\peano_divides
-        \\  std/peano/parity.b4m:10:  import peano_divides <<< "std/peano/divides.b4m"
+        \\  std/peano/parity.b4m:9:  import peano_divides <<< "std/peano/divides.b4m"
         \\  std/peano/divides.b4m  [origin: imported file]
         \\
     );

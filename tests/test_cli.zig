@@ -559,6 +559,9 @@ pub fn addTests(
         \\  - spare  (tests/cases/dir_library_bad/spare.b4m:6)
         \\
     );
+    // An import whose ONLY use is inside a `model` block counts as USED. Six corpus imports
+    // are used exactly this way (4 under std/), so a regression here would break the library.
+    ctx.okSilent(&.{ "check", "tests/cases/unused_import_model/consumer.b4m" });
     ctx.fail(&.{ "check", "tests/cases/single_theorem.b4m", "--library" }, "error: --library checks a directory (a library is its whole file set); 'tests/cases/single_theorem.b4m' is a file\n");
     // an axiom cited through `[using import(I) ax]` is rested on exactly as through
     // `[by cite I.ax]`: it appears in the citer's `--axioms` report and counts as used for
