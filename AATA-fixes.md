@@ -1650,3 +1650,47 @@ bodies need retyping onto the chapter's names.
 3. **PINNED**: §9.2's Theorem 9.17 probe, and the now-six axiomatization rulings
    (§5.2's `reflectionInverts` is **avoidable** — `std/permutation/dihedral.b4m:3371`
    proves it).
+
+---
+
+# AXIOMATIZATION RULINGS — ALL FIVE SETTLED (2026-10-19)
+
+Taken one at a time, as the user asked. Four changed, one deliberately kept.
+
+| # | item | ruling | outcome |
+|---|---|---|---|
+| 1 | `1.2.3-partitions:485` `quotientContains` | **definition block** | `isTheClassOf` now reports `— DEFINITION` under `--axioms`; the posited collection remains the one honest assumption |
+| 2 | `4.1:479` the three `m` axioms | **derive from well-ordering** | 12 → 16 theorems; `wellordering` import now load-bearing |
+| 3 | `4.1:1063` `cofactorBezout` | **prove the missing std lemma, then derive** | `std/integer/divides.b4m` 58 → 59; aata 16 → 17 |
+| 4 | `3.3:39` the subgroup criterion | **split: prove the converse** | 7 → 10 theorems; forward half is a real (a) limit |
+| 5 | `5.2:88` the dihedral relations | **keep** | they are the *presentation* of $D_n$; the concrete $srs = r^{-1}$ is proved separately |
+
+## What the audit got wrong, and it matters
+
+**Item 1's premise was false.** The audit said `quotientContains` should come from
+comprehension. There is **no comprehension anywhere in `std`** — `set.b4m` and
+`collection.b4m` give only explicit constructors plus extensionality. And
+`std/equivalence.b4m` posits classes the same way (`func classOf` + `axiom classMember`),
+so positing a collection with its membership rule is the corpus idiom, not an invention.
+`--axioms` had been reporting ours and std's own identically. The fix was therefore the
+*reporting*, not the axiom.
+
+**Item 3 needed real mathematics, not restatement.** `std` had `bezout` and
+`coprimeBezout` but nothing saying the cofactors $a/d$, $b/d$ of a greatest common
+divisor are coprime. That gap is why the chapter asserted the identity. Now proved as
+`cofactorsSatisfyBezout` and exercised by the library gate (1480 → 1481 theorems).
+
+## Mechanical lessons worth keeping
+
+- A **definition block's clause variables take their sorts from argument positions**, so
+  `pred isAClass(s): … exists x; s = classOf(x)` cannot be typed — `x` fills no argument.
+  Two arguments (`isTheClassOf(s, x)`) types fine. And a `pred` is opaque where a `define`
+  is a macro, so every citation site moves with it (here: 9 statement forms, 6
+  instantiated, one `witness`, four `unpack` bridges needing
+  `by definition` + `apply_at`).
+- A **predicated sort relativizes every binder**, so an ambient law cannot be cited
+  straight into a `forall a: H` goal; each needs an explicit `fix`/`generalize` with the
+  law specialized at the fixed member.
+- `mulCancelLeft` takes **positivity**, not `!= ZERO` — and the `!= ZERO` detour hits the
+  tautology-sees-atoms trap, since `less_than(ZERO, d)` and `d = ZERO` are unrelated
+  atoms to a propositional check.
