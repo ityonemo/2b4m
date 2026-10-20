@@ -1520,7 +1520,21 @@ dissolves with them.
 
 # PINNED FOR THE END OF THE SWEEP (user, 2026-10-18)
 
-## §9.2's Theorem 9.17 — PROBED 2026-10-19: REACHABLE, not blocked
+## §9.2's Theorem 9.17 — BUILT 2026-10-19 (was: probed, reachable)
+
+**Done.** `std/group/product.b4m` now carries `pairPower`/`powerG`/`powerH` with the
+componentwise laws `fstOfPairPower`/`sndOfPairPower` (bidirectional induction on the
+exponent) and the key step `pairPowerIsIdentityIffComponentPowersAre` — which is what
+converts Judson's two equations into divisibility facts about the component orders.
+std 10 → 13 theorems in that file, library gate 1481 → 1484. aata §9.2 10 → 11, and the
+hardcoded k=3 `cubeIsIdentityComponentwise` is no longer presented as the general fact.
+
+What still separates this from his literal statement, recorded as an (a) aside in the
+chapter: "order" needs $|(g,h)|$ as a TERM, and an order here is a relation
+(`hasOrder(g,n)`) not a function, since extracting the least period wants a
+definite-description operator.
+
+### Original probe notes
 
 The probe is done; see `drafts/aata-audit/PROBE-917` and its strict-green witness
 `probe-917-pair-power.b4m`. Summary: CHAPTER9-PAINPOINTS was right that the connection
