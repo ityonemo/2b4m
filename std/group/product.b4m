@@ -22,6 +22,7 @@
 
 import group <<< "std/group.b4m"
 import integer <<< "std/integer.b4m"
+import int_divides <<< "std/integer/divides.b4m"
 
 // -- the first factor G ---------------------------------------------------------------------
 sort G
@@ -535,5 +536,131 @@ proof
   @conclusion |
     forall p: Pair; forall k: Int; pairPower(p, k) = prodE
       iff (powerG(fst(p), k) = EG and powerH(snd(p), k) = EH)
+    [by generalize generalize-p]
+qed
+
+// -- THE ORDER OF A PAIR (Judson, Theorem 9.17) ------------------------------------
+//
+// His squeeze -- (g,h)^m = (e,e) gives n | m, and (g,h)^n = (e,e) gives r | n and
+// s | n -- establishes exactly this: a pair power is the identity precisely when
+// lcm(r,s) divides the exponent. Stated with the component orders as hypotheses in the
+// form `powerEqIdentityIffOrderDivides` supplies them, since an order here is a
+// RELATION rather than a function (extracting the least period would want a
+// definite-description operator).
+
+pred divides = int_divides.divides
+func lcm = int_divides.lcm
+fact lcmLeast = int_divides.lcmLeast
+fact lcmCommonMultipleLeft = int_divides.lcmCommonMultipleLeft
+fact lcmCommonMultipleRight = int_divides.lcmCommonMultipleRight
+fact dividesTransitive = int_divides.dividesTransitive
+
+// Judson's two equations, as hypotheses on the component orders: g^k = e iff r | k,
+// and h^k = e iff s | k. (That is `powerEqIdentityIffOrderDivides` at each factor.)
+theorem pairPowerIsIdentityIffTheLcmDivides: forall p: Pair; forall r, s: Int;
+  (forall k: Int; powerG(fst(p), k) = EG iff divides(r, k)) ->
+  (forall k: Int; powerH(snd(p), k) = EH iff divides(s, k)) ->
+  forall k: Int; pairPower(p, k) = prodE iff divides(lcm(r, s), k)
+proof
+  @generalize-p |
+    fix p: Pair {
+      @generalize-r |
+        fix r: Int {
+          @generalize-s |
+            fix s: Int {
+              @given-first-order |
+                assume forall k: Int; powerG(fst(p), k) = EG iff divides(r, k) {
+                  @given-second-order |
+                    assume forall k: Int; powerH(snd(p), k) = EH iff divides(s, k) {
+                      @first-order |
+                        forall k: Int; powerG(fst(p), k) = EG iff divides(r, k)
+                        [by hypothesis given-first-order]
+                      @second-order |
+                        forall k: Int; powerH(snd(p), k) = EH iff divides(s, k)
+                        [by hypothesis given-second-order]
+                      @generalize-k |
+                        fix k: Int {
+                          @componentwise |
+                            pairPower(p, k) = prodE
+                              iff (powerG(fst(p), k) = EG and powerH(snd(p), k) = EH)
+                            [using specialize pairPowerIsIdentityIffComponentPowersAre(p, k)]
+                          @first-at-k |
+                            powerG(fst(p), k) = EG iff divides(r, k)
+                            [using specialize first-order(k)]
+                          @second-at-k |
+                            powerH(snd(p), k) = EH iff divides(s, k)
+                            [using specialize second-order(k)]
+                          // so the pair power is the identity iff r | k and s | k
+                          @both-divide |
+                            pairPower(p, k) = prodE iff (divides(r, k) and divides(s, k))
+                            [using tautology componentwise first-at-k second-at-k]
+                          // and "r | k and s | k" is exactly "lcm(r,s) | k"
+                          @lcm-divides-if-both |
+                            divides(r, k) -> divides(s, k) -> divides(lcm(r, s), k)
+                            [using specialize lcmLeast(r, s, k)]
+                          @r-divides-the-lcm |
+                            divides(r, lcm(r, s))
+                            [using specialize lcmCommonMultipleLeft(r, s)]
+                          @s-divides-the-lcm |
+                            divides(s, lcm(r, s))
+                            [using specialize lcmCommonMultipleRight(r, s)]
+                          @given-the-lcm-divides |
+                            assume divides(lcm(r, s), k) {
+                              @the-lcm-divides |
+                                divides(lcm(r, s), k)
+                                [by hypothesis given-the-lcm-divides]
+                              @r-divides-k |
+                                divides(r, k)
+                                [using specialize dividesTransitive(r, lcm(r, s), k)
+                                  r-divides-the-lcm the-lcm-divides]
+                              @s-divides-k |
+                                divides(s, k)
+                                [using specialize dividesTransitive(s, lcm(r, s), k)
+                                  s-divides-the-lcm the-lcm-divides]
+                              @conclusion-both |
+                                divides(r, k) and divides(s, k)
+                                [by both r-divides-k s-divides-k]
+                            }
+                          @lcm-gives-both |
+                            divides(lcm(r, s), k) -> (divides(r, k) and divides(s, k))
+                            [by discharge given-the-lcm-divides]
+                          @conclusion-at-k |
+                            pairPower(p, k) = prodE iff divides(lcm(r, s), k)
+                            [using tautology both-divide lcm-divides-if-both lcm-gives-both]
+                        }
+                      @conclusion-all-k |
+                        forall k: Int; pairPower(p, k) = prodE iff divides(lcm(r, s), k)
+                        [by generalize generalize-k]
+                    }
+                  @after-second |
+                    (forall k: Int; powerH(snd(p), k) = EH iff divides(s, k)) ->
+                      forall k: Int; pairPower(p, k) = prodE iff divides(lcm(r, s), k)
+                    [by discharge given-second-order]
+                }
+              @conclusion-at-r-s |
+                (forall k: Int; powerG(fst(p), k) = EG iff divides(r, k)) ->
+                  (forall k: Int; powerH(snd(p), k) = EH iff divides(s, k)) ->
+                  forall k: Int; pairPower(p, k) = prodE iff divides(lcm(r, s), k)
+                [by discharge given-first-order]
+            }
+          @discharge-s |
+            forall s: Int;
+              (forall k: Int; powerG(fst(p), k) = EG iff divides(r, k)) ->
+              (forall k: Int; powerH(snd(p), k) = EH iff divides(s, k)) ->
+              forall k: Int; pairPower(p, k) = prodE iff divides(lcm(r, s), k)
+            [by generalize generalize-s]
+        }
+      @discharge-r |
+        forall r, s: Int;
+          (forall k: Int; powerG(fst(p), k) = EG iff divides(r, k)) ->
+          (forall k: Int; powerH(snd(p), k) = EH iff divides(s, k)) ->
+          forall k: Int; pairPower(p, k) = prodE iff divides(lcm(r, s), k)
+        [by generalize generalize-r]
+    }
+  @conclusion |
+    forall p: Pair; forall r, s: Int;
+      (forall k: Int; powerG(fst(p), k) = EG iff divides(r, k)) ->
+      (forall k: Int; powerH(snd(p), k) = EH iff divides(s, k)) ->
+      forall k: Int; pairPower(p, k) = prodE iff divides(lcm(r, s), k)
     [by generalize generalize-p]
 qed
