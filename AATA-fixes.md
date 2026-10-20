@@ -1,6 +1,10 @@
 # AATA transcription audit — WHAT REMAINS
 
-**Status 2026-10-20: the sweep is done.** `check aata` is green at **40 files / 422
+**Status 2026-10-20: the transcription work is COMPLETE.** Zero main-text one-line
+re-exports remain, zero chapters prove nothing (bar §4.3, correctly), and Theorem 9.17 is
+proved. What is left is one engine question, listed below.
+
+**Earlier status note:** `check aata` is green at **40 files / 422
 theorems** (was 331 when the audit opened), `check std --library` strict at 109 files /
 1484, `zig build test` exit 0. This file has been pruned to the open items; the
 resolved per-chapter defect lists are in the git history (see the commits from
@@ -31,44 +35,23 @@ inside them (user ruling, 2026-10-19).
 
 # OPEN ITEMS
 
-## 1. Two main-text one-line re-exports
-
-The only Class-1 residue in main text. Both are genuine — Judson proves each.
-
-- **`aata/5.1-permutation-groups.md:934` `identityIsEvenLength`** — his parity **Lemma**,
-  which he proves in four cases (`permute-lemma-identity-even-trans`). The real proof is
-  `std/permutation/parity.b4m`'s `identityIsEvenLengthForAnySequence`, and that file is
-  5,535 lines, so this is the largest remaining lift. The chapter already carries his
-  statement and a conforming (c) aside about the two nested ordinary inductions.
-- **`aata/9.2-direct-products.md:229` `pairPowerIsIdentityIffComponentPowersAre`** — cites
-  the theorem added to `std/group/product.b4m` on 2026-10-19. Cheap to write out: its std
-  proof is ~30 lines over `pairIsIdentityIffComponentsAre` plus the two componentwise
-  laws, all three now in that file.
-
-23 further one-line re-exports sit in **exercise files**, where `std` is permitted
-liberally — not defects.
-
-## 2. Theorem 9.17's remaining gap (recorded, not blocked)
-
-`std/group/product.b4m` now has `pairPower`/`powerG`/`powerH`, the componentwise laws by
-bidirectional induction, and `pairPowerIsIdentityIffComponentPowersAre` — Judson's key
-step. What is still not his *literal* statement: "order" needs $|(g,h)|$ as a **term**,
-and an order here is a relation (`hasOrder(g,n)`) not a function, since extracting the
-least period wants a definite-description operator. His two-inequality squeeze is the
-equation read in each direction with `lcmLeast` for minimality. The chapter says this in
-an (a) aside.
-
-## 3. One engine question, unresolved
+## 1. The engine question — NEXT, to be done collaboratively
 
 **Should `check` fail on an unresolvable import when no alias from it is cited?** Today it
-does not — `aata/6.2` imported a nonexistent `std/group/group_lagrange.b4m` and passed,
-and even with the path fixed, `fact lagrange = group_lagrange.noSuchTheorem` *still*
+does not. `aata/6.2` imported a nonexistent `std/group/group_lagrange.b4m` and passed; and
+even with the path corrected, `fact lagrange = group_lagrange.noSuchTheorem` *still*
 passes, because an uncited `fact` alias is never resolved. That hole is why ten chapters
-could prove nothing behind a green gate. Options: resolve every import eagerly, or resolve
-every `fact` alias at declaration rather than on first citation. The second is stronger
-and would retire the aliasing loophole entirely.
+could prove nothing behind a green gate.
 
-## 4. The duplicate catalog (158 entries) — asides to paste
+Two candidate fixes:
+- resolve every import eagerly; or
+- resolve every `fact` alias **at declaration** rather than on first citation.
+
+The second is stronger — it would retire the aliasing loophole entirely, which is the
+mechanism the whole Class-1 defect class depended on. Both need a judgement about cost: the
+engine is demand-driven by design, and eager resolution cuts against that.
+
+## 2. The duplicate catalog (158 entries) — asides to paste
 
 Regenerate with `python3 drafts/aata-audit/dup.py`. Each entry is an aata theorem whose
 statement already exists in `std`, matched modulo variable, sort and theorem names, with
