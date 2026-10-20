@@ -1,0 +1,15 @@
+// the STILL-OPEN half: a real file, a member that does not exist, nothing cites the alias.
+import group_lagrange <<< "std/group/lagrange.b4m"
+
+sort G = group_lagrange.Grp
+fact lagrange = group_lagrange.noSuchTheoremAtAll
+
+// `2b4m check` on this file prints "OK: 3 declarations, 0 theorems proven", exit 0.
+// `noSuchTheoremAtAll` is not in std/group/lagrange.b4m. Nothing cites `lagrange`, and an
+// uncited `fact` alias is never resolved (the engine is demand-driven), so the dangling
+// member is never looked up.
+//
+// The IMPORT half of this bug was closed 2026-10-20 (parser.zig `unused_imports` fails on
+// an import nothing cites) — note the `sort` above is what makes the import used here, so
+// that check correctly stays quiet. What remains is a dangling MEMBER of a real file.
+// Candidate fix: resolve every `fact` alias AT DECLARATION rather than on first citation.

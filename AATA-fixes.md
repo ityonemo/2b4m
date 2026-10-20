@@ -2,7 +2,8 @@
 
 **Status 2026-10-20: the transcription work is COMPLETE.** Zero main-text one-line
 re-exports remain, zero chapters prove nothing (bar §4.3, correctly), and Theorem 9.17 is
-proved. What is left is one engine question, listed below.
+proved. Of the one engine question left, the import half is now closed (see below);
+the uncited-`fact`-alias half remains.
 
 **Earlier status note:** `check aata` is green at **40 files / 422
 theorems** (was 331 when the audit opened), `check std --library` strict at 109 files /
@@ -35,21 +36,48 @@ inside them (user ruling, 2026-10-19).
 
 # OPEN ITEMS
 
-## 1. The engine question — NEXT, to be done collaboratively
+## 1. The engine question — HALF CLOSED 2026-10-20
 
-**Should `check` fail on an unresolvable import when no alias from it is cited?** Today it
-does not. `aata/6.2` imported a nonexistent `std/group/group_lagrange.b4m` and passed; and
-even with the path corrected, `fact lagrange = group_lagrange.noSuchTheorem` *still*
-passes, because an uncited `fact` alias is never resolved. That hole is why ten chapters
-could prove nothing behind a green gate.
+The question as recorded had two halves. **The import half is now closed; the `fact`-alias
+half is still open.**
 
-Two candidate fixes:
-- resolve every import eagerly; or
-- resolve every `fact` alias **at declaration** rather than on first citation.
+**CLOSED — an uncited import is now a hard error.** `check` fails with
+`import 'X' is never used — cite it or remove it`. Implemented in `src/parser.zig` as a
+PARSE-TIME syntactic check (an `unused_imports` set filled at the import decl, drained by
+any `X.name` qualifier token and by a theory-rule argument like `using import(X) thm`), not
+by eager resolution — the engine stays demand-driven. A misspelled path like
+`std/group/group_lagrange.b4m` can no longer hide behind a green gate.
 
-The second is stronger — it would retire the aliasing loophole entirely, which is the
-mechanism the whole Class-1 defect class depended on. Both need a judgement about cost: the
-engine is demand-driven by design, and eager resolution cuts against that.
+The user rejected the first design (a "used" bit set at the six engine sites that resolve a
+qualifier) as overengineering, and the parser version turned out to be *more* correct as
+well as far smaller: syntactic use is complete by construction, whereas the six-site version
+would have been complete only until someone added a seventh resolution path. It also
+dissolved the hard case — six corpus imports are used ONLY inside `model` blocks.
+
+Landing it required removing 18 dead imports (12 in `std`, 6 in `aata`) plus 4
+test/example fixtures. Both `aata/6.2`'s duplicate aliases of one file
+(`group_lagrange` + `lagrange_theory`) are the residue class this now prevents.
+
+**STILL OPEN — the uncited alias, and it is broader than `fact`.** An uncited alias is
+never resolved, so both of these pass `check` with exit 0:
+
+- a dangling MEMBER of a real file — `fact lagrange = group_lagrange.noSuchTheorem`;
+- a dangling FILE reached through a mentioned import — `import lib <<< "no-such-file.b4m"`
+  plus `sort A = lib.X`. The new import check correctly stays quiet here: the import IS
+  mentioned. Only resolution would catch it, and nothing demands it.
+
+**Measured 2026-10-20: all five alias kinds have the hole** — `sort`, `pred`, `func`,
+`const`, `fact` each report `OK: 2 declarations` against a nonexistent file. So this is not
+a `fact`-alias quirk; it is every alias.
+
+**Root cause** (located by the plan agent, `src/Engine/ParseTask.zig:255-262`): the root
+scan racks a ProveTask only for `.theorem => .local`; `.alias => {}` is an explicit no-op.
+Nothing ever demands an alias, so no FetchTask is racked for its qualifier — a
+`check --trace-facts` on the dangling case shows no `[fetch]` event at all.
+
+Candidate fix: resolve aliases AT DECLARATION rather than on first citation. That retires
+the loophole the whole Class-1 defect class depended on, and still needs the cost
+judgement, since it cuts against the demand-driven design.
 
 ## 2. The duplicate catalog (158 entries) — asides to paste
 

@@ -341,6 +341,18 @@ A recurring wrong assumption, imported from Python, is that `import` dumps names
 
 ## Gotchas that bite (memorize)
 
+- **An import nothing cites is a hard ERROR.** `check` fails with
+  `import 'X' (path) is never used — cite it, or remove it if the path is wrong`. The check is PARSE-TIME and purely
+  syntactic: an import counts as used iff some token writes it as a qualifier (`X.name`) or
+  names it as a theory/citation argument (`using import(X) thm`, `using model(X) …`,
+  `arithmetic(X)`). Nothing else marks it — a mention in PROSE or a comment does not, and in
+  a literate `.md` a sentence ending "…is a group." is not a use of `import group`.
+  **Why it exists:** resolution is DEMAND-DRIVEN, so an import nothing happens to cite was
+  never resolved at all — a MISSPELLED path (`std/group/group_lagrange.b4m` for
+  `std/group/lagrange.b4m`) used to pass `check` in silence while a whole chapter rested on
+  it. The syntactic check cannot miss one, where instrumenting the six engine sites that
+  resolve a qualifier could. Dead imports are also how duplicate aliases of one file
+  accumulate (`6.2` had `group_lagrange` and `lagrange_theory` for the same path).
 - **`fix` takes ONE binder.** `fix a, b: Nat {` is a PARSE ERROR — nest them: `fix a: Nat { fix b: Nat { … } }`, discharging with one `generalize` per level (inner discharges `forall b; …`, outer `forall a, b; …`).
 - **Literate `.md` fence discipline**: 2b4m code lives in ` ```2b4m … ``` ` blocks; every block must be CLOSED before prose. A missing/misplaced ``` fence makes the checker try to parse prose as 2b4m ("expected a declaration, got 'The'"). When inserting a new theorem in an `.md`, keep it inside one fenced block (or open+close its own).
 - **Gates don't pin counts**: `tests/test_*.zig` uses `ctx.okSilent(&.{"check", FILE})` (asserts "checks OK, exit 0") — NOT a `"OK: N declarations, …"` golden. So an edit that changes decl/theorem counts needs NO gate update; just make sure the file still checks. (A few `--fast`/accelerated gates keep a full banner golden with counts — leave those.) Run `2b4m fmt <file>` before `fmt --check` gates.

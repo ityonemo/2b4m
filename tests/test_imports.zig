@@ -31,8 +31,14 @@ pub fn addTests(
         \\
     );
 
-    // a namespace name collides with a local declaration
-    ctx.fail(&.{ "check", "tests/cases/imports/collide.b4m" }, "tests/cases/imports/collide.b4m:3:8: error: duplicate declaration of 'lib'\n");
+    // a namespace name collides with a local declaration. BOTH errors are true of this file:
+    // the collision, and the import being uncited — a qualified `lib.x` here would bind to the
+    // local `sort lib`, so nothing can cite the namespace at all.
+    ctx.fail(&.{ "check", "tests/cases/imports/collide.b4m" },
+        \\tests/cases/imports/collide.b4m:3:8: error: import 'lib' (lib.b4m) is never used — cite it, or remove it if the path is wrong
+        \\tests/cases/imports/collide.b4m:3:8: error: duplicate declaration of 'lib'
+        \\
+    );
 
     // `--fast-only import` trusts the import CITATION (admits the cross-file `using import`
     // step by α-matching the cited statement, no re-derivation here). peano-imports declares
