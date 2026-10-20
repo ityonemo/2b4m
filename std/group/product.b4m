@@ -21,6 +21,7 @@
 // pair axioms — and inherits everything below.
 
 import group <<< "std/group.b4m"
+import integer <<< "std/integer.b4m"
 
 // -- the first factor G ---------------------------------------------------------------------
 sort G
@@ -246,5 +247,293 @@ proof
     }
   @conclusion |
     forall p: Pair; p = prodE iff (fst(p) = EG and snd(p) = EH)
+    [by generalize generalize-p]
+qed
+
+// -- INTEGER POWERS ON A DIRECT PRODUCT -------------------------------------------
+//
+// Judson's Theorem 9.17 (the order of (g,h) is lcm(|g|,|h|)) needs (g,h)^k to be
+// (g^k, h^k). `power` is a FUNC in std/group/power.b4m, so a model cannot transfer it
+// onto Pair -- a function symbol has to be declared and axiomatized, which is what
+// every concrete group in std does (permutation/power.b4m's permPower, mod-n.b4m's
+// znPower). So: a power on the product and one on each factor, with the componentwise
+// law proved by bidirectional induction on the exponent.
+
+sort Int = integer.Int
+const IZERO = integer.ZERO
+func isucc = integer.succ
+func iprev = integer.prev
+fact iinduction = integer.induction
+
+// the three powers: one on the product, one on each factor
+func pairPower(p: Pair, k: Int) => Pair
+axiom pairPowerZero: forall p: Pair; pairPower(p, IZERO) = prodE
+axiom pairPowerSucc: forall p: Pair; forall k: Int;
+  pairPower(p, isucc(k)) = prodOp(pairPower(p, k), p)
+axiom pairPowerPrev: forall p: Pair; forall k: Int;
+  pairPower(p, iprev(k)) = prodOp(pairPower(p, k), prodInv(p))
+
+func powerH(h: H, k: Int) => H
+axiom powerHZero: forall h: H; powerH(h, IZERO) = EH
+axiom powerHSucc: forall h: H; forall k: Int; powerH(h, isucc(k)) = opH(powerH(h, k), h)
+axiom powerHPrev: forall h: H; forall k: Int; powerH(h, iprev(k)) = opH(powerH(h, k), invH(h))
+
+func powerG(g: G, k: Int) => G
+axiom powerGZero: forall g: G; powerG(g, IZERO) = EG
+axiom powerGSucc: forall g: G; forall k: Int; powerG(g, isucc(k)) = opG(powerG(g, k), g)
+axiom powerGPrev: forall g: G; forall k: Int; powerG(g, iprev(k)) = opG(powerG(g, k), invG(g))
+
+// fst((p)^k) = (fst p)^k, by bidirectional induction on k.
+theorem fstOfPairPower: forall p: Pair; forall k: Int;
+  fst(pairPower(p, k)) = powerG(fst(p), k)
+proof
+  @generalize-p |
+    fix p: Pair {
+      // base: fst(p^0) = fst(prodE) = EG = (fst p)^0
+      @power-zero |
+        pairPower(p, IZERO) = prodE
+        [using specialize pairPowerZero(p)]
+      @prod-identity |
+        prodE = pair(EG, EH)
+        [by cite prodEDef]
+      @fst-of-the-identity |
+        fst(pair(EG, EH)) = EG
+        [using specialize fstPair(EG, EH)]
+      @component-power-zero |
+        powerG(fst(p), IZERO) = EG
+        [using specialize powerGZero(fst(p))]
+      @base-case |
+        fst(pairPower(p, IZERO)) = powerG(fst(p), IZERO)
+        [using chain power-zero prod-identity fst-of-the-identity component-power-zero]
+
+      // successor
+      @successor-step |
+        fix k: Int {
+          @given-ih |
+            assume fst(pairPower(p, k)) = powerG(fst(p), k) {
+              @ih |
+                fst(pairPower(p, k)) = powerG(fst(p), k)
+                [by hypothesis given-ih]
+              @lhs-unfolds |
+                pairPower(p, isucc(k)) = prodOp(pairPower(p, k), p)
+                [using specialize pairPowerSucc(p, k)]
+              @fst-splits |
+                fst(prodOp(pairPower(p, k), p)) = opG(fst(pairPower(p, k)), fst(p))
+                [using specialize fstOfProduct(pairPower(p, k), p)]
+              @rhs-unfolds |
+                powerG(fst(p), isucc(k)) = opG(powerG(fst(p), k), fst(p))
+                [using specialize powerGSucc(fst(p), k)]
+              @conclusion-at-succ |
+                fst(pairPower(p, isucc(k))) = powerG(fst(p), isucc(k))
+                [using chain lhs-unfolds fst-splits ih rhs-unfolds]
+            }
+          @ih-implies-succ |
+            fst(pairPower(p, k)) = powerG(fst(p), k)
+              -> fst(pairPower(p, isucc(k))) = powerG(fst(p), isucc(k))
+            [by discharge given-ih]
+        }
+      @successor-step-all-k |
+        forall k: Int; fst(pairPower(p, k)) = powerG(fst(p), k)
+          -> fst(pairPower(p, isucc(k))) = powerG(fst(p), isucc(k))
+        [by generalize successor-step]
+
+      // predecessor
+      @predecessor-step |
+        fix k: Int {
+          @given-ih-prev |
+            assume fst(pairPower(p, k)) = powerG(fst(p), k) {
+              @ih-prev |
+                fst(pairPower(p, k)) = powerG(fst(p), k)
+                [by hypothesis given-ih-prev]
+              @lhs-unfolds-prev |
+                pairPower(p, iprev(k)) = prodOp(pairPower(p, k), prodInv(p))
+                [using specialize pairPowerPrev(p, k)]
+              @fst-splits-prev |
+                fst(prodOp(pairPower(p, k), prodInv(p)))
+                  = opG(fst(pairPower(p, k)), fst(prodInv(p)))
+                [using specialize fstOfProduct(pairPower(p, k), prodInv(p))]
+              // fst(p⁻¹) = fst(pair(invG(fst p), invH(snd p))) = invG(fst p)
+              @the-inverse-pair |
+                prodInv(p) = pair(invG(fst(p)), invH(snd(p)))
+                [using specialize prodInvDef(p)]
+              @fst-of-that-pair |
+                fst(pair(invG(fst(p)), invH(snd(p)))) = invG(fst(p))
+                [using specialize fstPair(invG(fst(p)), invH(snd(p)))]
+              @fst-of-inverse |
+                fst(prodInv(p)) = invG(fst(p))
+                [using chain the-inverse-pair fst-of-that-pair]
+              @rhs-unfolds-prev |
+                powerG(fst(p), iprev(k)) = opG(powerG(fst(p), k), invG(fst(p)))
+                [using specialize powerGPrev(fst(p), k)]
+              @conclusion-at-prev |
+                fst(pairPower(p, iprev(k))) = powerG(fst(p), iprev(k))
+                [using chain lhs-unfolds-prev fst-splits-prev fst-of-inverse ih-prev
+                  rhs-unfolds-prev]
+            }
+          @ih-implies-prev |
+            fst(pairPower(p, k)) = powerG(fst(p), k)
+              -> fst(pairPower(p, iprev(k))) = powerG(fst(p), iprev(k))
+            [by discharge given-ih-prev]
+        }
+      @predecessor-step-all-k |
+        forall k: Int; fst(pairPower(p, k)) = powerG(fst(p), k)
+          -> fst(pairPower(p, iprev(k))) = powerG(fst(p), iprev(k))
+        [by generalize predecessor-step]
+
+      @all-k |
+        forall k: Int; fst(pairPower(p, k)) = powerG(fst(p), k)
+        [using instantiation iinduction(
+          (fun k: Int => fst(pairPower(p, k)) = powerG(fst(p), k)))
+          base-case successor-step-all-k predecessor-step-all-k]
+    }
+  @conclusion |
+    forall p: Pair; forall k: Int; fst(pairPower(p, k)) = powerG(fst(p), k)
+    [by generalize generalize-p]
+qed
+
+// snd((p)^k) = (snd p)^k, by bidirectional induction on k.
+theorem sndOfPairPower: forall p: Pair; forall k: Int;
+  snd(pairPower(p, k)) = powerH(snd(p), k)
+proof
+  @generalize-p |
+    fix p: Pair {
+      // base: snd(p^0) = snd(prodE) = EH = (snd p)^0
+      @power-zero |
+        pairPower(p, IZERO) = prodE
+        [using specialize pairPowerZero(p)]
+      @prod-identity |
+        prodE = pair(EG, EH)
+        [by cite prodEDef]
+      @snd-of-the-identity |
+        snd(pair(EG, EH)) = EH
+        [using specialize sndPair(EG, EH)]
+      @component-power-zero |
+        powerH(snd(p), IZERO) = EH
+        [using specialize powerHZero(snd(p))]
+      @base-case |
+        snd(pairPower(p, IZERO)) = powerH(snd(p), IZERO)
+        [using chain power-zero prod-identity snd-of-the-identity component-power-zero]
+
+      // successor
+      @successor-step |
+        fix k: Int {
+          @given-ih |
+            assume snd(pairPower(p, k)) = powerH(snd(p), k) {
+              @ih |
+                snd(pairPower(p, k)) = powerH(snd(p), k)
+                [by hypothesis given-ih]
+              @lhs-unfolds |
+                pairPower(p, isucc(k)) = prodOp(pairPower(p, k), p)
+                [using specialize pairPowerSucc(p, k)]
+              @snd-splits |
+                snd(prodOp(pairPower(p, k), p)) = opH(snd(pairPower(p, k)), snd(p))
+                [using specialize sndOfProduct(pairPower(p, k), p)]
+              @rhs-unfolds |
+                powerH(snd(p), isucc(k)) = opH(powerH(snd(p), k), snd(p))
+                [using specialize powerHSucc(snd(p), k)]
+              @conclusion-at-succ |
+                snd(pairPower(p, isucc(k))) = powerH(snd(p), isucc(k))
+                [using chain lhs-unfolds snd-splits ih rhs-unfolds]
+            }
+          @ih-implies-succ |
+            snd(pairPower(p, k)) = powerH(snd(p), k)
+              -> snd(pairPower(p, isucc(k))) = powerH(snd(p), isucc(k))
+            [by discharge given-ih]
+        }
+      @successor-step-all-k |
+        forall k: Int; snd(pairPower(p, k)) = powerH(snd(p), k)
+          -> snd(pairPower(p, isucc(k))) = powerH(snd(p), isucc(k))
+        [by generalize successor-step]
+
+      // predecessor
+      @predecessor-step |
+        fix k: Int {
+          @given-ih-prev |
+            assume snd(pairPower(p, k)) = powerH(snd(p), k) {
+              @ih-prev |
+                snd(pairPower(p, k)) = powerH(snd(p), k)
+                [by hypothesis given-ih-prev]
+              @lhs-unfolds-prev |
+                pairPower(p, iprev(k)) = prodOp(pairPower(p, k), prodInv(p))
+                [using specialize pairPowerPrev(p, k)]
+              @snd-splits-prev |
+                snd(prodOp(pairPower(p, k), prodInv(p)))
+                  = opH(snd(pairPower(p, k)), snd(prodInv(p)))
+                [using specialize sndOfProduct(pairPower(p, k), prodInv(p))]
+              // snd(p⁻¹) = snd(pair(invH(snd p), invH(snd p))) = invH(snd p)
+              @the-inverse-pair |
+                prodInv(p) = pair(invG(fst(p)), invH(snd(p)))
+                [using specialize prodInvDef(p)]
+              @snd-of-that-pair |
+                snd(pair(invG(fst(p)), invH(snd(p)))) = invH(snd(p))
+                [using specialize sndPair(invG(fst(p)), invH(snd(p)))]
+              @snd-of-inverse |
+                snd(prodInv(p)) = invH(snd(p))
+                [using chain the-inverse-pair snd-of-that-pair]
+              @rhs-unfolds-prev |
+                powerH(snd(p), iprev(k)) = opH(powerH(snd(p), k), invH(snd(p)))
+                [using specialize powerHPrev(snd(p), k)]
+              @conclusion-at-prev |
+                snd(pairPower(p, iprev(k))) = powerH(snd(p), iprev(k))
+                [using chain lhs-unfolds-prev snd-splits-prev snd-of-inverse ih-prev
+                  rhs-unfolds-prev]
+            }
+          @ih-implies-prev |
+            snd(pairPower(p, k)) = powerH(snd(p), k)
+              -> snd(pairPower(p, iprev(k))) = powerH(snd(p), iprev(k))
+            [by discharge given-ih-prev]
+        }
+      @predecessor-step-all-k |
+        forall k: Int; snd(pairPower(p, k)) = powerH(snd(p), k)
+          -> snd(pairPower(p, iprev(k))) = powerH(snd(p), iprev(k))
+        [by generalize predecessor-step]
+
+      @all-k |
+        forall k: Int; snd(pairPower(p, k)) = powerH(snd(p), k)
+        [using instantiation iinduction(
+          (fun k: Int => snd(pairPower(p, k)) = powerH(snd(p), k)))
+          base-case successor-step-all-k predecessor-step-all-k]
+    }
+  @conclusion |
+    forall p: Pair; forall k: Int; snd(pairPower(p, k)) = powerH(snd(p), k)
+    [by generalize generalize-p]
+qed
+
+// JUDSON'S KEY STEP: (g,h)^k = (e,e) exactly when g^k = e and h^k = e. This is what
+// turns his two equations into divisibility facts about the component orders.
+theorem pairPowerIsIdentityIffComponentPowersAre: forall p: Pair; forall k: Int;
+  pairPower(p, k) = prodE iff (powerG(fst(p), k) = EG and powerH(snd(p), k) = EH)
+proof
+  @generalize-p |
+    fix p: Pair {
+      @generalize-k |
+        fix k: Int {
+          @the-pair-criterion |
+            pairPower(p, k) = prodE
+              iff (fst(pairPower(p, k)) = EG and snd(pairPower(p, k)) = EH)
+            [using specialize pairIsIdentityIffComponentsAre(pairPower(p, k))]
+          @fst-is-the-component-power |
+            fst(pairPower(p, k)) = powerG(fst(p), k)
+            [using specialize fstOfPairPower(p, k)]
+          @snd-is-the-component-power |
+            snd(pairPower(p, k)) = powerH(snd(p), k)
+            [using specialize sndOfPairPower(p, k)]
+          @rewrite-the-first |
+            pairPower(p, k) = prodE
+              iff (powerG(fst(p), k) = EG and snd(pairPower(p, k)) = EH)
+            [by rewrite fst-is-the-component-power the-pair-criterion]
+          @conclusion-at-p-k |
+            pairPower(p, k) = prodE
+              iff (powerG(fst(p), k) = EG and powerH(snd(p), k) = EH)
+            [by rewrite snd-is-the-component-power rewrite-the-first]
+        }
+      @discharge-k |
+        forall k: Int; pairPower(p, k) = prodE
+          iff (powerG(fst(p), k) = EG and powerH(snd(p), k) = EH)
+        [by generalize generalize-k]
+    }
+  @conclusion |
+    forall p: Pair; forall k: Int; pairPower(p, k) = prodE
+      iff (powerG(fst(p), k) = EG and powerH(snd(p), k) = EH)
     [by generalize generalize-p]
 qed
