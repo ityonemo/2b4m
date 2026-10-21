@@ -1,0 +1,464 @@
+// size.b4m — TRIAL BALLOON: ONE `size` for sets AND group orders.
+//
+// std/set/finite.b4m already owns counting: `size(a: Set) => Nat`, `hasSize`, `isFinite`,
+// subsetOfFiniteIsFinite, disjointUnionSizesAdd, pigeonhole — 54 theorems. It has never been
+// connected to groups: std/group/* encodes |G| = n as a LISTING (a sequence of n distinct
+// entries covering G), and nobody has ever put a group on `element.Element`.
+//
+// The balloon: put a group structure ON THE SHARED ELEMENT SORT, transfer group theory to it
+// by `model`, take the carrier to be the universe `complement(emptyset)`, and let a subgroup be
+// a `Set` VALUE. Then `size` applies to the group and its subgroups natively, and
+// `forall h: Set; isSubgroup(h) -> …` QUANTIFIES OVER SUBGROUPS — what a predicated sort cannot.
+//
+// Two tests, each needing BOTH worlds on the SAME values:
+//   (1) a subgroup of a finite group has nonzero order — counting (sizeZeroIsEmpty) meets
+//       group structure (member(E, h));
+//   (2) a transferred group THEOREM (opInverseRight — a theorem, not an axiom) holds of set
+//       members — the model landed on the very sort Set ranges over.
+// Plus a HOLE stating Lagrange in size vocabulary: tests STATABILITY only.
+import element <<< "std/element.b4m"
+import set <<< "std/set.b4m"
+import set_finite <<< "std/set/finite.b4m"
+import group <<< "std/group.b4m"
+import peano <<< "std/peano.b4m"
+import peano_divides <<< "std/peano/divides.b4m"
+
+sort Element = element.Element
+sort Set = set.Set
+pred member = set.member
+const emptyset = set.emptyset
+func complement = set.complement
+fact complementMember = set.complementMember
+fact emptysetMember = set.emptysetMember
+define subset(a, b) = set.subset(a, b)
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func size = set_finite.size
+fact sizeIsTheSize = set_finite.sizeIsTheSize
+fact sizeZeroIsEmpty = set_finite.sizeZeroIsEmpty
+fact subsetOfFiniteIsFinite = set_finite.subsetOfFiniteIsFinite
+define hasSize(a, n) = set_finite.hasSize(a, n)
+define less_or_equal(a, b) = peano.less_or_equal(a, b)
+
+// -- a group structure on the shared element sort ------------------------------------------
+const E: Element
+func op(a: Element, b: Element) => Element
+func inverse(a: Element) => Element
+axiom opAssoc: forall a, b, c: Element; op(op(a, b), c) = op(a, op(b, c))
+axiom opIdentityLeft: forall a: Element; op(E, a) = a
+axiom opInverseLeft: forall a: Element; op(inverse(a), a) = E
+
+model ElementGroup {
+  group.Grp: Element
+  group.E: E
+  group.op: op
+  group.inverse: inverse
+  group.opAssoc <- opAssoc
+  group.opIdentityLeft <- opIdentityLeft
+  group.opInverseLeft <- opInverseLeft
+}
+
+// -- the carrier, as a set: the universe ---------------------------------------------------
+theorem everyElementIsInTheCarrier: forall x: Element; member(x, complement(emptyset))
+proof
+  @generalize-x |
+    fix x: Element {
+      @in-complement-iff |
+        member(x, complement(emptyset)) iff (not member(x, emptyset))
+        [using specialize complementMember(emptyset, x)]
+      @not-in-emptyset |
+        not member(x, emptyset)
+        [using specialize emptysetMember(x)]
+      @conclusion-x-in-carrier |
+        member(x, complement(emptyset))
+        [using tautology in-complement-iff not-in-emptyset]
+    }
+  @conclusion |
+    forall x: Element; member(x, complement(emptyset))
+    [by generalize generalize-x]
+qed
+
+theorem everySetIsASubsetOfTheCarrier: forall h: Set; subset(h, complement(emptyset))
+proof
+  @everything-is-in-the-carrier |
+    forall x: Element; member(x, complement(emptyset))
+    [by cite everyElementIsInTheCarrier]
+  @generalize-h |
+    fix h: Set {
+      @generalize-x |
+        fix x: Element {
+          @given-x-in-h |
+            assume member(x, h) {
+              @conclusion-x-in-carrier |
+                member(x, complement(emptyset))
+                [by apply_at(x) everything-is-in-the-carrier]
+            }
+          @conclusion-at-x |
+            member(x, h) -> member(x, complement(emptyset))
+            [by discharge given-x-in-h]
+        }
+      @conclusion-h-is-a-subset |
+        forall x: Element; member(x, h) -> member(x, complement(emptyset))
+        [by generalize generalize-x]
+    }
+  @conclusion |
+    forall h: Set; subset(h, complement(emptyset))
+    [by generalize generalize-h]
+qed
+
+// -- a subgroup, as a SET VALUE ---------------------------------------------------------------
+// (A definition block would be preferred, but its clause-variable inference rejects an
+// INNER quantifier: "cannot infer the sort of 'a'" at the `forall a, b: Element`. So the
+// subgroup criterion is a plain axiom, as std/subgroup.b4m's is.)
+pred isSubgroup(s: Set)
+axiom subgroupDef: forall s: Set; isSubgroup(s) iff
+    (member(E, s)
+     and (forall a, b: Element; member(a, s) -> member(b, s) -> member(op(a, b), s))
+     and (forall a: Element; member(a, s) -> member(inverse(a), s)))
+
+// TEST 1: counting meets group structure.
+theorem aSubgroupOfAFiniteGroupHasNonzeroOrder: forall n: Nat;
+  hasSize(complement(emptyset), n) -> forall h: Set; isSubgroup(h) -> size(h) != ZERO
+proof
+  @subgroup-definition |
+    forall s: Set; isSubgroup(s) iff (member(E, s) and (forall a, b: Element; member(a, s) -> member(b, s) -> member(op(a, b), s)) and (forall a: Element; member(a, s) -> member(inverse(a), s)))
+    [by cite subgroupDef]
+  @every-set-is-a-subset |
+    forall h: Set; subset(h, complement(emptyset))
+    [by cite everySetIsASubsetOfTheCarrier]
+  @generalize-n |
+    fix n: Nat {
+      @given-the-group-is-finite |
+        assume hasSize(complement(emptyset), n) {
+          @the-group-has-size-n |
+            hasSize(complement(emptyset), n)
+            [by hypothesis given-the-group-is-finite]
+          @generalize-h |
+            fix h: Set {
+              @given-h-is-a-subgroup |
+                assume isSubgroup(h) {
+                  @h-is-a-subgroup |
+                    isSubgroup(h)
+                    [by hypothesis given-h-is-a-subgroup]
+                  @h-definition |
+                    isSubgroup(h) iff (member(E, h) and (forall a, b: Element; member(a, h) -> member(b, h) -> member(op(a, b), h)) and (forall a: Element; member(a, h) -> member(inverse(a), h)))
+                    [by apply_at(h) subgroup-definition]
+                  @h-closure |
+                    member(E, h) and (forall a, b: Element; member(a, h) -> member(b, h) -> member(op(a, b), h)) and (forall a: Element; member(a, h) -> member(inverse(a), h))
+                    [using tautology h-definition h-is-a-subgroup]
+                  @identity-is-in-h |
+                    member(E, h)
+                    [using tautology h-closure]
+                  @h-is-a-subset |
+                    subset(h, complement(emptyset))
+                    [by apply_at(h) every-set-is-a-subset]
+                  @h-is-finite |
+                    exists m: Nat; hasSize(h, m) and less_or_equal(m, n)
+                    [using specialize subsetOfFiniteIsFinite(n, complement(emptyset), h) the-group-has-size-n h-is-a-subset]
+                  @with-size-m |
+                    unpack m: Nat from h-is-finite {
+                      @m-facts |
+                        hasSize(h, m) and less_or_equal(m, n)
+                        [by hypothesis with-size-m]
+                      @h-has-size-m |
+                        hasSize(h, m)
+                        [by and_lhs m-facts]
+                      @size-of-h-is-m |
+                        size(h) = m
+                        [using specialize sizeIsTheSize(h, m) h-has-size-m]
+                      @m-is-the-size-of-h |
+                        m = size(h)
+                        [by symmetry size-of-h-is-m]
+                      @suppose-size-zero |
+                        assume size(h) = ZERO {
+                          @size-is-zero |
+                            size(h) = ZERO
+                            [by hypothesis suppose-size-zero]
+                          @m-is-zero |
+                            m = ZERO
+                            [using chain m-is-the-size-of-h size-is-zero]
+                          @h-has-size-zero |
+                            hasSize(h, ZERO)
+                            [by rewrite m-is-zero h-has-size-m]
+                          @h-is-empty |
+                            h = emptyset
+                            [using specialize sizeZeroIsEmpty(h) h-has-size-zero]
+                          @identity-is-in-emptyset |
+                            member(E, emptyset)
+                            [by rewrite h-is-empty identity-is-in-h]
+                          @identity-is-not-in-emptyset |
+                            not member(E, emptyset)
+                            [using specialize emptysetMember(E)]
+                        }
+                      @conclusion-size-nonzero |
+                        size(h) != ZERO
+                        [by contradiction suppose-size-zero identity-is-in-emptyset identity-is-not-in-emptyset]
+                    }
+                  @size-nonzero |
+                    size(h) != ZERO
+                    [by unpacked with-size-m]
+                }
+              @conclusion-at-h |
+                isSubgroup(h) -> size(h) != ZERO
+                [by discharge given-h-is-a-subgroup]
+            }
+          @conclusion-for-all-h |
+            forall h: Set; isSubgroup(h) -> size(h) != ZERO
+            [by generalize generalize-h]
+        }
+      @conclusion-at-n |
+        hasSize(complement(emptyset), n) -> forall h: Set; isSubgroup(h) -> size(h) != ZERO
+        [by discharge given-the-group-is-finite]
+    }
+  @conclusion |
+    forall n: Nat; hasSize(complement(emptyset), n) -> forall h: Set; isSubgroup(h) -> size(h) != ZERO
+    [by generalize generalize-n]
+qed
+
+// TEST 2: transferred group theory acts on set members.
+theorem aMemberWithItsInverseGivesTheIdentityInsideTheSubgroup: forall h: Set; isSubgroup(h) ->
+  forall g: Element; member(g, h) -> (op(g, inverse(g)) = E and member(op(g, inverse(g)), h))
+proof
+  @subgroup-definition |
+    forall s: Set; isSubgroup(s) iff (member(E, s) and (forall a, b: Element; member(a, s) -> member(b, s) -> member(op(a, b), s)) and (forall a: Element; member(a, s) -> member(inverse(a), s)))
+    [by cite subgroupDef]
+  @inverse-right-everywhere |
+    forall a: Element; op(a, inverse(a)) = E
+    [using model(ElementGroup) group.opInverseRight]
+  @generalize-h |
+    fix h: Set {
+      @given-h-is-a-subgroup |
+        assume isSubgroup(h) {
+          @h-is-a-subgroup |
+            isSubgroup(h)
+            [by hypothesis given-h-is-a-subgroup]
+          @h-definition |
+            isSubgroup(h) iff (member(E, h) and (forall a, b: Element; member(a, h) -> member(b, h) -> member(op(a, b), h)) and (forall a: Element; member(a, h) -> member(inverse(a), h)))
+            [by apply_at(h) subgroup-definition]
+          @h-closure |
+            member(E, h) and (forall a, b: Element; member(a, h) -> member(b, h) -> member(op(a, b), h)) and (forall a: Element; member(a, h) -> member(inverse(a), h))
+            [using tautology h-definition h-is-a-subgroup]
+          @h-closed-under-op |
+            forall a, b: Element; member(a, h) -> member(b, h) -> member(op(a, b), h)
+            [using tautology h-closure]
+          @h-closed-under-inverse |
+            forall a: Element; member(a, h) -> member(inverse(a), h)
+            [using tautology h-closure]
+          @generalize-g |
+            fix g: Element {
+              @given-g-in-h |
+                assume member(g, h) {
+                  @g-is-in-h |
+                    member(g, h)
+                    [by hypothesis given-g-in-h]
+                  @g-times-its-inverse-is-the-identity |
+                    op(g, inverse(g)) = E
+                    [by apply_at(g) inverse-right-everywhere]
+                  @inverse-of-g-is-in-h |
+                    member(inverse(g), h)
+                    [using specialize h-closed-under-inverse(g) g-is-in-h]
+                  @the-product-is-in-h |
+                    member(op(g, inverse(g)), h)
+                    [using specialize h-closed-under-op(g, inverse(g)) g-is-in-h inverse-of-g-is-in-h]
+                  @conclusion-both |
+                    op(g, inverse(g)) = E and member(op(g, inverse(g)), h)
+                    [by both g-times-its-inverse-is-the-identity the-product-is-in-h]
+                }
+              @conclusion-at-g |
+                member(g, h) -> (op(g, inverse(g)) = E and member(op(g, inverse(g)), h))
+                [by discharge given-g-in-h]
+            }
+          @conclusion-for-all-g |
+            forall g: Element; member(g, h) -> (op(g, inverse(g)) = E and member(op(g, inverse(g)), h))
+            [by generalize generalize-g]
+        }
+      @conclusion-at-h |
+        isSubgroup(h) -> forall g: Element; member(g, h) -> (op(g, inverse(g)) = E and member(op(g, inverse(g)), h))
+        [by discharge given-h-is-a-subgroup]
+    }
+  @conclusion |
+    forall h: Set; isSubgroup(h) -> forall g: Element; member(g, h) -> (op(g, inverse(g)) = E and member(op(g, inverse(g)), h))
+    [by generalize generalize-h]
+qed
+
+// STATABILITY ONLY: Lagrange in size vocabulary. A hole, not a claim. Proving it needs
+// cosets AS SETS — the image of h under left-multiplication — which is SET comprehension,
+// and std/set.b4m has none (functionFromGraph gives FUNCTION comprehension, not sets).
+hole lagrangeInSizeVocabulary: forall n: Nat;
+  hasSize(complement(emptyset), n) -> forall h: Set; isSubgroup(h) -> peano_divides.divides(size(h), n)
+
+// TEST 3: a NAMED subgroup-as-Set can still be ENTERED as a group. What a quantified
+// `h: Set` cannot do (no dependent sorts), a `const H: Set` can: carve the predicated sort
+// `Element where inH`, nominate the closure facts, and the GUARDED model transfers all of
+// group theory onto H. So nothing is lost for a named subgroup; only "for EVERY subgroup,
+// reason INSIDE it" stays out of reach.
+const H: Set
+axiom HIsASubgroup: isSubgroup(H)
+pred inH(x: Element)
+axiom inHDef: forall x: Element; inH(x) iff member(x, H)
+sort HSort = Element where inH
+
+theorem identityIsInH: inH(E)
+proof
+  @subgroup-definition |
+    forall s: Set; isSubgroup(s) iff (member(E, s) and (forall a, b: Element; member(a, s) -> member(b, s) -> member(op(a, b), s)) and (forall a: Element; member(a, s) -> member(inverse(a), s)))
+    [by cite subgroupDef]
+  @H-definition |
+    isSubgroup(H) iff (member(E, H) and (forall a, b: Element; member(a, H) -> member(b, H) -> member(op(a, b), H)) and (forall a: Element; member(a, H) -> member(inverse(a), H)))
+    [by apply_at(H) subgroup-definition]
+  @H-is-a-subgroup |
+    isSubgroup(H)
+    [by cite HIsASubgroup]
+  @H-closure |
+    member(E, H) and (forall a, b: Element; member(a, H) -> member(b, H) -> member(op(a, b), H)) and (forall a: Element; member(a, H) -> member(inverse(a), H))
+    [using tautology H-definition H-is-a-subgroup]
+  @identity-is-a-member |
+    member(E, H)
+    [using tautology H-closure]
+  @inH-of-E-iff |
+    inH(E) iff member(E, H)
+    [using specialize inHDef(E)]
+  @conclusion |
+    inH(E)
+    [using tautology inH-of-E-iff identity-is-a-member]
+qed
+
+theorem hIsClosedUnderOp: forall a, b: Element; inH(a) -> inH(b) -> inH(op(a, b))
+proof
+  @subgroup-definition |
+    forall s: Set; isSubgroup(s) iff (member(E, s) and (forall a, b: Element; member(a, s) -> member(b, s) -> member(op(a, b), s)) and (forall a: Element; member(a, s) -> member(inverse(a), s)))
+    [by cite subgroupDef]
+  @H-definition |
+    isSubgroup(H) iff (member(E, H) and (forall a, b: Element; member(a, H) -> member(b, H) -> member(op(a, b), H)) and (forall a: Element; member(a, H) -> member(inverse(a), H)))
+    [by apply_at(H) subgroup-definition]
+  @H-is-a-subgroup |
+    isSubgroup(H)
+    [by cite HIsASubgroup]
+  @H-closure |
+    member(E, H) and (forall a, b: Element; member(a, H) -> member(b, H) -> member(op(a, b), H)) and (forall a: Element; member(a, H) -> member(inverse(a), H))
+    [using tautology H-definition H-is-a-subgroup]
+  @H-closed-under-op |
+    forall a, b: Element; member(a, H) -> member(b, H) -> member(op(a, b), H)
+    [using tautology H-closure]
+  @generalize-a |
+    fix a: Element {
+      @generalize-b |
+        fix b: Element {
+          @given-a-in-H |
+            assume inH(a) {
+              @given-b-in-H |
+                assume inH(b) {
+                  @a-in-H |
+                    inH(a)
+                    [by hypothesis given-a-in-H]
+                  @b-in-H |
+                    inH(b)
+                    [by hypothesis given-b-in-H]
+                  @a-iff |
+                    inH(a) iff member(a, H)
+                    [using specialize inHDef(a)]
+                  @b-iff |
+                    inH(b) iff member(b, H)
+                    [using specialize inHDef(b)]
+                  @a-is-a-member |
+                    member(a, H)
+                    [using tautology a-iff a-in-H]
+                  @b-is-a-member |
+                    member(b, H)
+                    [using tautology b-iff b-in-H]
+                  @product-is-a-member |
+                    member(op(a, b), H)
+                    [using specialize H-closed-under-op(a, b) a-is-a-member b-is-a-member]
+                  @product-iff |
+                    inH(op(a, b)) iff member(op(a, b), H)
+                    [using specialize inHDef(op(a, b))]
+                  @conclusion-product-in-H |
+                    inH(op(a, b))
+                    [using tautology product-iff product-is-a-member]
+                }
+              @conclusion-after-b |
+                inH(b) -> inH(op(a, b))
+                [by discharge given-b-in-H]
+            }
+          @conclusion-after-a |
+            inH(a) -> inH(b) -> inH(op(a, b))
+            [by discharge given-a-in-H]
+        }
+      @conclusion-for-b |
+        forall b: Element; inH(a) -> inH(b) -> inH(op(a, b))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Element; inH(a) -> inH(b) -> inH(op(a, b))
+    [by generalize generalize-a]
+qed
+
+theorem hIsClosedUnderInverse: forall a: Element; inH(a) -> inH(inverse(a))
+proof
+  @subgroup-definition |
+    forall s: Set; isSubgroup(s) iff (member(E, s) and (forall a, b: Element; member(a, s) -> member(b, s) -> member(op(a, b), s)) and (forall a: Element; member(a, s) -> member(inverse(a), s)))
+    [by cite subgroupDef]
+  @H-definition |
+    isSubgroup(H) iff (member(E, H) and (forall a, b: Element; member(a, H) -> member(b, H) -> member(op(a, b), H)) and (forall a: Element; member(a, H) -> member(inverse(a), H)))
+    [by apply_at(H) subgroup-definition]
+  @H-is-a-subgroup |
+    isSubgroup(H)
+    [by cite HIsASubgroup]
+  @H-closure |
+    member(E, H) and (forall a, b: Element; member(a, H) -> member(b, H) -> member(op(a, b), H)) and (forall a: Element; member(a, H) -> member(inverse(a), H))
+    [using tautology H-definition H-is-a-subgroup]
+  @H-closed-under-inverse |
+    forall a: Element; member(a, H) -> member(inverse(a), H)
+    [using tautology H-closure]
+  @generalize-a |
+    fix a: Element {
+      @given-a-in-H |
+        assume inH(a) {
+          @a-in-H |
+            inH(a)
+            [by hypothesis given-a-in-H]
+          @a-iff |
+            inH(a) iff member(a, H)
+            [using specialize inHDef(a)]
+          @a-is-a-member |
+            member(a, H)
+            [using tautology a-iff a-in-H]
+          @inverse-is-a-member |
+            member(inverse(a), H)
+            [using specialize H-closed-under-inverse(a) a-is-a-member]
+          @inverse-iff |
+            inH(inverse(a)) iff member(inverse(a), H)
+            [using specialize inHDef(inverse(a))]
+          @conclusion-inverse-in-H |
+            inH(inverse(a))
+            [using tautology inverse-iff inverse-is-a-member]
+        }
+      @conclusion-after-a |
+        inH(a) -> inH(inverse(a))
+        [by discharge given-a-in-H]
+    }
+  @conclusion |
+    forall a: Element; inH(a) -> inH(inverse(a))
+    [by generalize generalize-a]
+qed
+
+// the GUARDED model: nominate the membership dischargers, let the Element-level axioms
+// auto-weaken to HSort (as std/permutation/symmetric.b4m does with function.composeAssoc).
+model HGroup {
+  group.Grp: HSort
+  group.E: E(identityIsInH)
+  group.op: op -| hIsClosedUnderOp
+  group.inverse: inverse -| hIsClosedUnderInverse
+  group.opAssoc <- opAssoc
+  group.opIdentityLeft <- opIdentityLeft
+  group.opInverseLeft <- opInverseLeft
+}
+
+// and group theory now holds INSIDE the named subgroup — a transferred THEOREM, not an axiom.
+theorem cancellationHoldsInsideH: forall a, b, c: HSort; op(a, b) = op(a, c) -> b = c
+proof
+  @conclusion |
+    forall a, b, c: HSort; op(a, b) = op(a, c) -> b = c
+    [using model(HGroup) group.cancelLeft]
+qed
