@@ -1,10 +1,13 @@
+// A dangling FILE behind a USED alias. `2b4m check` prints
+// "OK: 3 declarations, 0 theorems proven", exit 0 — "no-such-file.b4m" does not exist.
+//
+// Both landed checks correctly stay quiet: the IMPORT is mentioned (by the sort alias) and
+// the ALIAS is used (by the const). Neither is a syntactic defect. Only RESOLUTION would
+// catch this, and the demand-driven engine never resolves an alias nothing DEMANDS — a
+// declaration with no proof above it is never demanded.
+//
+// NOTE the const is load-bearing for this repro: drop it and the 2026-10-21 unused-alias
+// check fires instead, which is a different (and now-closed) defect.
 import lib <<< "no-such-file.b4m"
 sort A = lib.X
-
-// `2b4m check` prints "OK: 2 declarations, 0 theorems proven", exit 0 — the file
-// "no-such-file.b4m" does not exist. The 2026-10-20 unused-import check correctly stays
-// quiet: the import IS mentioned, by this very alias. Only RESOLUTION would catch it.
-//
-// Measured: sort / pred / func / const / fact all behave this way. The cause is
-// ParseTask.zig:255-262 — the root scan racks a ProveTask for `.theorem => .local` only,
-// and `.alias => {}` is an explicit no-op, so nothing ever demands an alias.
+const Z: A

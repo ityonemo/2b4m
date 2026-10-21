@@ -75,3 +75,78 @@ Where a stated result exceeds what 2b4m's first-order kernel can express, keep t
 prose and mark it in place — a `**Deferred:** …` note for an exercise, or a
 `// this section cannot currently be encoded [reason]` block for a stated theorem —
 saying exactly what it would require. Never silently drop a result.
+
+## Fidelity: this is a TRANSLITERATION, not a paraphrase
+
+Judson's text is GFDL, so his words may and SHOULD be carried essentially verbatim. "Near
+exact transliteration, otherwise this exercise is nonsensical" (user ruling, 2026-10-21).
+The transcription exception covers NAMES AND NOTATION only — rename symbols freely, but his
+SENTENCES are not yours to rewrite, shorten, or reorder.
+
+Three failure modes, all defects, all found at scale in the 2026-10-21 audit:
+
+- **TRUNCATION** — his sentences dropped. A displayed computation collapsed to its result is
+  this, not concision: he writes `r' = a - dq = a - (ar+bs)q = a - arq - bsq = a(1-rq) + b(-sq)`
+  and "the identity $r' = a(1-rq) + b(-sq)$" is a defect.
+- **SILENT PARAPHRASE** — his sentence rewritten in your words.
+- **NARRATION** — your commentary ABOUT his argument standing in for his text ("Judson's
+  chain", "what his proof turns on", "he proves this in two moves").
+
+**Your own prose must be visibly yours.** Scaffolding a formalization needs — "three ring
+facts come first", "the peel step shared by both inductions" — goes in a `>` blockquote
+aside, never in the transliterated flow where a reader cannot tell it from the source.
+
+### The four aside exceptions
+
+A `>` aside is the only place to say "Judson …", and only for:
+
+- **(a)** a real language limit;
+- **(b)** an infeasible calculation;
+- **(c)** a deliberate divergence, reading "Judson does X, we are doing Y";
+- **(d)** a **divergent proof structure** — a different axiomatic strategy where reconciling
+  with his would be disproportionate. Name his structure and yours.
+
+Import-horizon reasoning ("which Judson has in hand by this point") is a defect, not an
+exception. Attribution headers stay. `**Deferred:**` / `**Skipped**` blocks stay verbatim.
+
+### The one body-prose exception
+
+Where he leaves a proof as an exercise and you supply one, **supplying it is the point** —
+the proof stays. But the body prose must read:
+
+> Judson's text leaves this proof as an exercise:
+
+immediately before your `**Proof.**`. That attribution is what makes the following argument
+honestly yours rather than his. Deleting his "we leave the proof as an exercise" and
+substituting a bare `**Proof.**` misattributes your argument to him.
+
+### Scope
+
+- **Numerics are NOT in scope** — his numeric worked examples and figures are not
+  transliterated. Where one carries a general remark, keep the remark. Declare the omission
+  rather than leaving a silent gap, and never let a header claim completeness it does not
+  have.
+- **A result he states FLATLY has no proof structure to transcribe** — a citation is correct
+  there. A one-line `[using model(M) …]` can be the FAITHFUL rendering: his §9.2 product-law
+  proof is "follows directly from the associativity of $G$ and $H$", and expanding that into
+  steps would be less faithful, not more.
+- **Chapter 7's cryptography exposition** may be elided wholesale with one declaration.
+
+### Auditing fidelity
+
+`drafts/aata-conformance/` scores each of our paragraphs against its best match among his:
+coverage (fraction of HIS words we carry → truncation) and fidelity (fraction of OURS that
+are his → paraphrase).
+
+    python3 drafts/aata-conformance/extract.py judson.json
+    python3 drafts/aata-conformance/compare.py judson.json cmp.json
+
+**It has a blind spot that hid the worst defects: it scores paragraphs we WROTE, so it
+cannot see paragraphs we DROPPED.** 35 of the audit's 159 defects were found only by
+scanning HIS side for passages with no counterpart in ours — a missing theorem statement, a
+missing definition the corpus depended on, a subsection the file's own title promised. Always
+run both directions.
+
+**And read the XML before editing.** Twice during the audit a passage that looked like ours
+turned out to be his verbatim. Three agents clearing 47 flagged paragraphs as faithful was as
+valuable as the defects they found.
