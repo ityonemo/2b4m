@@ -217,8 +217,8 @@ pub fn addTests(
     // pass and every valid cross-file qualified citation in std becomes a false positive), and
     // the check is then existence-only — NOT `.proven`, since under `--fast` the cited fact's
     // own proof may not have run.
-    ctx.fail(&.{ "check", "tests/cases/fast_qualified_ref_rejected.b4m" }, "tests/cases/fast_qualified_ref_rejected.b4m:31:23: error: reference not found: 'thereIsNoSuchTheorem'\n");
-    ctx.fail(&.{ "check", "--fast", "tests/cases/fast_qualified_ref_rejected.b4m" }, "tests/cases/fast_qualified_ref_rejected.b4m:31:23: error: unknown reference 'peano.thereIsNoSuchTheorem'\n");
+    ctx.fail(&.{ "check", "tests/cases/fast_qualified_ref_rejected.b4m" }, "tests/cases/fast_qualified_ref_rejected.b4m:30:23: error: reference not found: 'thereIsNoSuchTheorem'\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/fast_qualified_ref_rejected.b4m" }, "tests/cases/fast_qualified_ref_rejected.b4m:30:23: error: unknown reference 'peano.thereIsNoSuchTheorem'\n");
 
     // the other direction: `--fast` must not REJECT what strict ACCEPTS. An aliased lemma
     // (`fact X = ns.y`) cited by its bare name is the ordinary way a file names an imported
@@ -421,7 +421,7 @@ pub fn addTests(
     // `axiom X = …` / `theorem X = …` are hard errors naming `fact`.
     ctx.okSilent(&.{ "check", "tests/cases/fact_alias.b4m" });
     ctx.fail(&.{ "check", "tests/cases/fact_local_bad.b4m" }, "tests/cases/fact_local_bad.b4m:3:9: error: a 'fact' is a re-export and must name a target: `fact <name> = <namespace>.<name>`. A local claim has a kind — use `axiom` for this theory's own primitive, `theorem` for a proved result, or `hole` (optionally `cites \"...\"`) for an unproved one\n");
-    ctx.fail(&.{ "check", "tests/cases/fact_old_spelling_bad.b4m" }, "tests/cases/fact_old_spelling_bad.b4m:4:11: error: a re-export is spelled `fact`, not `axiom`: write `fact <name> = <namespace>.<name>`. The alias cannot know its target's kind, so restating it was redundant and went stale\n");
+    ctx.fail(&.{ "check", "tests/cases/fact_old_spelling_bad.b4m" }, "tests/cases/fact_old_spelling_bad.b4m:2:11: error: a re-export is spelled `fact`, not `axiom`: write `fact <name> = <namespace>.<name>`. The alias cannot know its target's kind, so restating it was redundant and went stale\n");
 
     // A CITED hole PASSES a strict check — the citation names an external authority this
     // checker cannot verify, so the run discloses it rather than rejecting. Still a hole:
@@ -540,9 +540,9 @@ pub fn addTests(
     // DIRECTORY CHECK: every .b4m and .md under the directory, recursively, in ONE engine pass
     // (base.b4m is both a root and sub/uses_base.b4m's import — proved once); a prose .md is a
     // root that parses to nothing; a literate .md counts like any file; one aggregate line.
-    ctx.ok(&.{ "check", "tests/cases/dir_ok" }, "OK: 4 files, 13 declarations, 3 theorems proven\n");
+    ctx.ok(&.{ "check", "tests/cases/dir_ok" }, "OK: 4 files, 12 declarations, 3 theorems proven\n");
     ctx.ok(&.{ "check", "tests/cases/dir_ok", "--axioms" },
-        \\OK: 4 files, 13 declarations, 3 theorems proven
+        \\OK: 4 files, 12 declarations, 3 theorems proven
         \\  — rests on 2 axiom(s):
         \\      zeroEven  (tests/cases/dir_ok/base.b4m:5)
         \\      pHolds  (tests/cases/dir_ok/literate.md:7)
@@ -553,7 +553,7 @@ pub fn addTests(
     // `--library` (a directory): an axiom declared in the directory that no theorem in it
     // rests on FAILS the check; a directory whose every axiom is reached passes; a file is
     // not a library.
-    ctx.ok(&.{ "check", "tests/cases/dir_ok", "--library" }, "OK: 4 files, 13 declarations, 3 theorems proven\n");
+    ctx.ok(&.{ "check", "tests/cases/dir_ok", "--library" }, "OK: 4 files, 12 declarations, 3 theorems proven\n");
     ctx.fail(&.{ "check", "tests/cases/dir_library_bad", "--library" },
         \\error: 1 unused axiom(s) — no theorem in the library rests on them:
         \\  - spare  (tests/cases/dir_library_bad/spare.b4m:6)
@@ -567,12 +567,12 @@ pub fn addTests(
     // `[by cite I.ax]`: it appears in the citer's `--axioms` report and counts as used for
     // `--library` (regression: the import path once skipped the taint bookkeeping).
     ctx.ok(&.{ "check", "tests/cases/import_axiom_taint/user.b4m", "--axioms" },
-        \\OK: 9 declarations, 1 theorems proven
+        \\OK: 8 declarations, 1 theorems proven
         \\  — rests on 1 axiom(s):
         \\      pZero  (tests/cases/import_axiom_taint/lib.b4m:8)
         \\
     );
-    ctx.ok(&.{ "check", "tests/cases/import_axiom_taint", "--library" }, "OK: 2 files, 9 declarations, 1 theorems proven\n");
+    ctx.ok(&.{ "check", "tests/cases/import_axiom_taint", "--library" }, "OK: 2 files, 8 declarations, 1 theorems proven\n");
     // an UNCITED axiom never discharges — the author states it as a step first.
     ctx.fail(&.{ "check", "tests/cases/tcc_uncited_bad.b4m" },
         \\tests/cases/tcc_uncited_bad.b4m:15:11: error: unproved obligation: 'inH(UNIT)'
