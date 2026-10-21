@@ -46,14 +46,14 @@ pub fn addTests(
     // 6 in the imported peano.b4m are dependencies, not this file's — the old eager engine's
     // transitive "7" was the whole dependency closure).
     ctx.ok(&.{ "check", "--fast-only", "import", "examples/peano-imports.b4m" },
-        \\OK: 24 declarations, 1 theorems proven
+        \\OK: 22 declarations, 1 theorems proven
         \\  — NOT FULLY VERIFIED: 1 theorem(s) accelerated (admitted, not proved): import
         \\
     );
 
     // --fast (trust everything) admits the same import step; the disclosure names the word.
     ctx.ok(&.{ "check", "--fast", "examples/peano-imports.b4m" },
-        \\OK: 24 declarations, 1 theorems proven
+        \\OK: 22 declarations, 1 theorems proven
         \\  — NOT FULLY VERIFIED: 1 theorem(s) accelerated (admitted, not proved): import
         \\
     );

@@ -284,7 +284,7 @@ pub fn addTests(
     ctx.ok(&.{ "query", "search", "tests/cases/dir_ok", "even" },
         \\tests/cases/dir_ok/base.b4m:5:  axiom zeroEven: even(ZERO)
         \\tests/cases/dir_ok/base.b4m:7:  theorem zeroIsEven: even(ZERO)
-        \\tests/cases/dir_ok/sub/uses_base.b4m:8:  theorem stillEven: even(ZERO)
+        \\tests/cases/dir_ok/sub/uses_base.b4m:7:  theorem stillEven: even(ZERO)
         \\
     );
 }

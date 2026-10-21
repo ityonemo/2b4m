@@ -81,11 +81,52 @@ pub const Parser = struct {
     /// — parse-only tools (fmt/lint/query) leave ids `.none` and skip the check.
     unused_imports: std.AutoArrayHashMapUnmanaged(InternPool.StrId, PendingImport) = .empty,
 
+    /// Non-`fact` ALIASES (`sort A = ns.B`, and the same for const/func/pred) that no bare
+    /// name has mentioned yet. Same shape as `unused_imports` and deliberately NOT shared
+    /// code with it: the two answer different questions over different token kinds (an
+    /// import is used by a QUALIFIER, an alias by a BARE name), so a common mechanism would
+    /// need a mode flag to tell them apart and earn nothing.
+    ///
+    /// WHY NON-`fact` ONLY: a `fact` alias is a genuine re-export — a theory's takeaway
+    /// result, meant to be cited from outside, so "unused here" is normal. Sort/const/func/
+    /// pred aliases are local vocabulary; a consumer should import the theory that OWNS a
+    /// symbol rather than borrow an intermediate file's nickname for it (identity is by
+    /// origin — see `alias-collapse` — so routing through the nickname gains nothing).
+    ///
+    /// ONE DRAIN SITE SUFFICES: `stamp` runs from the single `advance`, so every token in
+    /// the file passes through it. A bare local name is used in ~10 syntactic positions
+    /// (expressions, callees, binder sorts and guards, a guarded sort's parent, a model
+    /// block's targets/dischargers/closure facts, func params and results); enumerating
+    /// them would be complete only until someone adds the eleventh.
+    unused_aliases: std.AutoArrayHashMapUnmanaged(InternPool.StrId, PendingAlias) = .empty,
+
+    /// Namespaces this file re-exports at least one `fact` from. Applied to
+    /// `unused_aliases` ONCE at `parseFile`'s end, not eagerly at each `fact`, so the
+    /// exemption does not depend on whether the `fact` is written above or below the alias
+    /// — declaration order carries no meaning here.
+    fact_namespaces: std.AutoArrayHashMapUnmanaged(InternPool.StrId, void) = .empty,
+
     /// An `import` awaiting its first qualifier: where it was declared, and the path it
     /// names. The PATH is in the message because the most costly version of this bug is a
     /// MISSPELLED path — "import 'group_lagrange' is never used" sends the author looking
     /// for a dead import when the real fault was a typo two directories deep.
     const PendingImport = struct { at: u32, path: InternPool.StrId };
+
+    /// An alias awaiting its first bare mention: where it was declared, its keyword (for the
+    /// message — "sort"/"const"/"func"/"pred"), and the NAMESPACE it was aliased from.
+    ///
+    /// The namespace is what implements the AGGREGATOR EXEMPTION. A `fact` re-exported from
+    /// namespace N is a statement written in N's vocabulary, and a consumer citing it needs
+    /// that vocabulary under THIS file's names to say anything about the result. So
+    /// `std/peano.b4m` must keep `pred less_than = order.less_than` even though it never
+    /// says `less_than` itself: its 16 neighbouring `fact`s (`trichotomy`,
+    /// `lessThanTransitive`, …) are phrased in it, and citing `peano.trichotomy` yields
+    /// `… less_than(a, b) or a = b or less_than(b, a)`.
+    ///
+    /// Found the hard way: deleting it left `peano.b4m` passing ALONE (93 decls, 17
+    /// theorems) and failing the library sweep with `reference not found: 'less_than'` —
+    /// an undemanded `fact` is never resolved, so only a whole-library strict run sees it.
+    const PendingAlias = struct { at: u32, kind: []const u8, from: InternPool.StrId };
 
     pub fn init(arena: Allocator, source: []const u8, sink: *Diagnostics.Sink) Parser {
         return initInFile(arena, source, sink, 0);
@@ -158,6 +199,11 @@ pub const Parser = struct {
                         self.intern_oom = true;
                         return tok;
                     };
+                    // a BARE name USES any local alias of that name. An alias's own name
+                    // token also lands here, but harmlessly: each arm records itself AFTER
+                    // consuming it, so there is nothing yet to remove (same ordering the
+                    // import arm relies on).
+                    _ = self.unused_aliases.swapRemove(tok.name);
                 }
             },
             .string => tok.name = ip.internString(self.source[t.start + 1 .. t.end - 1]) catch {
@@ -172,6 +218,24 @@ pub const Parser = struct {
             else => {},
         }
         return tok;
+    }
+
+    /// Record an alias as presumed-dead until some bare name mentions it. Called at the END
+    /// of each non-`fact` alias arm, so the alias's own name token has already passed through
+    /// `stamp` with nothing to drain. A re-declaration keeps the FIRST offset.
+    fn presumeAliasDead(self: *Parser, name: Token, kind: []const u8, target: Token) ParseError!void {
+        if (self.interner == null) return;
+        const gop = try self.unused_aliases.getOrPut(self.arena, name.name);
+        if (!gop.found_existing) gop.value_ptr.* = .{ .at = name.start, .kind = kind, .from = target.qualifier };
+    }
+
+    /// Note that this file re-exports a `fact` from `ns`. Every alias drawn from `ns` is then
+    /// exempt (applied at `parseFile`'s end): the fact's statement is written in that
+    /// namespace's vocabulary, so this file's aliases of it are part of what the re-export
+    /// publishes, not dead weight. See `PendingAlias.from`.
+    fn noteFactNamespace(self: *Parser, ns: InternPool.StrId) ParseError!void {
+        if (self.interner == null or ns == InternPool.StrId.none) return;
+        try self.fact_namespaces.put(self.arena, ns, {});
     }
 
     fn text(self: *const Parser, t: Token) []const u8 {
@@ -274,6 +338,14 @@ pub const Parser = struct {
             const ip = self.interner orelse break;
             self.sink.add(self.file, pending.at, "import '{s}' ({s}) is never used — cite it, or remove it if the path is wrong", .{ ip.stringBytes(ns), ip.stringBytes(pending.path) }) catch return error.OutOfMemory;
         }
+        // Likewise a non-`fact` alias nothing mentions: local vocabulary nothing speaks. A
+        // `fact` alias is exempt — it is a re-export, so being unused HERE is its normal state.
+        for (self.unused_aliases.keys(), self.unused_aliases.values()) |nm, pending| {
+            const ip = self.interner orelse break;
+            // the aggregator exemption, applied order-independently
+            if (self.fact_namespaces.contains(pending.from)) continue;
+            self.sink.add(self.file, pending.at, "{s} alias '{s}' is never used — remove it, or import the theory that owns it where you need it", .{ pending.kind, ip.stringBytes(nm) }) catch return error.OutOfMemory;
+        }
         return .{ .decls = try decls.toOwnedSlice(self.arena) };
     }
 
@@ -318,12 +390,16 @@ pub const Parser = struct {
                     }
                     return .{ .sort = .{ .guarded = .{ .name = name, .parent = target, .guards = try guards.toOwnedSlice(self.arena) } } };
                 }
+                try self.presumeAliasDead(name, "sort", target);
                 return .{ .sort = .{ .alias = .{ .name = name, .target = target } } };
             },
             .keyword_const => {
                 _ = self.advance();
                 const name = try self.expect(.identifier);
-                if (try self.parseAliasTail()) |target| return .{ .constant = .{ .alias = .{ .name = name, .target = target } } };
+                if (try self.parseAliasTail()) |target| {
+                    try self.presumeAliasDead(name, "const", target);
+                    return .{ .constant = .{ .alias = .{ .name = name, .target = target } } };
+                }
                 _ = try self.expect(.colon);
                 return .{ .constant = .{ .local = .{ .name = name, .sort = try self.expect(.identifier) } } };
             },
@@ -339,7 +415,10 @@ pub const Parser = struct {
             .keyword_func => {
                 _ = self.advance();
                 const name = try self.expect(.identifier);
-                if (try self.parseAliasTail()) |target| return .{ .func = .{ .alias = .{ .name = name, .target = target } } };
+                if (try self.parseAliasTail()) |target| {
+                    try self.presumeAliasDead(name, "func", target);
+                    return .{ .func = .{ .alias = .{ .name = name, .target = target } } };
+                }
                 const params = try self.parseParams(false);
                 // `=> Result`, not `: Result` — the colon is reserved for a DEFINITION
                 // block (`func f(a: T) => U:` followed by its defining clauses). `=>` is
@@ -359,7 +438,10 @@ pub const Parser = struct {
             .keyword_pred => {
                 _ = self.advance();
                 const name = try self.expect(.identifier);
-                if (try self.parseAliasTail()) |target| return .{ .pred = .{ .alias = .{ .name = name, .target = target } } };
+                if (try self.parseAliasTail()) |target| {
+                    try self.presumeAliasDead(name, "pred", target);
+                    return .{ .pred = .{ .alias = .{ .name = name, .target = target } } };
+                }
                 const params = try self.parseParams(true);
                 // `pred p(x: T):` opens a DEFINITION BLOCK — the declaration carries the
                 // clauses that characterize it. Bare `pred p(x: T)` stays opaque.
@@ -371,7 +453,10 @@ pub const Parser = struct {
                 const name = try self.expect(.identifier);
                 // ALIAS-ONLY: `fact X = ns.y`. A bare `fact X: formula` is refused, because a
                 // LOCAL claim always has a kind — see ast.Decl.fact.
-                if (try self.parseAliasTail()) |target| return .{ .fact = .{ .name = name, .target = target } };
+                if (try self.parseAliasTail()) |target| {
+                    try self.noteFactNamespace(target.qualifier);
+                    return .{ .fact = .{ .name = name, .target = target } };
+                }
                 return self.fail("a 'fact' is a re-export and must name a target: `fact <name> = <namespace>.<name>`. A local claim has a kind — use `axiom` for this theory's own primitive, `theorem` for a proved result, or `hole` (optionally `cites \"...\"`) for an unproved one", .{});
             },
             .keyword_axiom => {
