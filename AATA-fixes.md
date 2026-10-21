@@ -138,22 +138,19 @@ The transliteration items (1-8 of the 2026-10-20 list) are all RESOLVED; the det
 the commits from `aata: the comprehensive transliteration audit` through
 `aata: group 2 complete`. Two things remain, neither about transliteration.
 
-## 1. Axiomatization ruling 2 was never fully applied
+## 1. ~~Axiomatization ruling 2~~ — CLOSED 2026-10-21
 
-The SETTLED table claims §4.1's three `m` axioms were "derived from well-ordering".
-Measured 2026-10-21: `aata/4.1-cyclic-subgroups.md` proves `aLeastPositiveExponentExists`
-from well-ordering, but it has **zero citations** — while `axiom mIsTheLeastPositiveExponent`
-(which re-asserts those same properties for a fixed `const m`) has **four**. The axiom does
-all the work and the derivation is decoration, so the comment claiming the properties are
-"DERIVED from well-ordering rather than assumed" is false as written.
+§4.1's `const m` + `axiom mIsTheLeastPositiveExponent` are gone. The main theorem is
+hypothetical in `m`, and `everySubgroupElementIsAPowerOfALeastExponent` unpacks
+`aLeastPositiveExponentExists` (proved from `nonnegWellOrdering`) to discharge its
+hypotheses — so the derivation is load-bearing instead of orphaned, and the three
+projection theorems that existed only to read conjuncts off the axiom are gone with it.
 
-This is the `orphaned proof is a silent failure` pattern from the cheatsheet. The fix is to
-`unpack` the existence theorem to obtain `m` rather than fixing a const and axiomatizing it.
-`axiom somePositivePowerIsInH` is Judson's own premise and is fine.
+`--axioms` now reports only `somePositivePowerIsInH`, which is Judson's own premise.
+Axiom count down one, theorem added — the signature of closing a gap rather than
+relabelling it. See `87d6043`.
 
-NOTE: Judson's §4.1 proof is now transliterated verbatim and says "Let $m$ be the smallest
-natural number such that $a^m \in H$. Such an $m$ exists by the Principle of
-Well-Ordering." — so his text now states exactly what the formal development should do.
+**All five axiomatization rulings are now genuinely applied.**
 
 ## 2. The engine question — HALF CLOSED 2026-10-20
 
@@ -279,7 +276,7 @@ conjugating a 3-cycle); §7.2 had truncated his second RSA case to its first sen
 | # | item | ruling |
 |---|---|---|
 | 1 | `1.2.3-partitions` `quotientContains` | definition block; `isTheClassOf` reports `— DEFINITION` |
-| 2 | §4.1's three `m` axioms | ~~derived from well-ordering~~ **REOPENED** — see OPEN ITEM 3; the derivation is orphaned (0 citations) while the axiom has 4 |
+| 2 | §4.1's three `m` axioms | **CLOSED 2026-10-21** (`87d6043`) — axiom deleted; the main theorem is hypothetical in `m` and a capstone unpacks the well-ordering existence proof to discharge it |
 | 3 | §4.1 `cofactorBezout` | new std lemma `cofactorsSatisfyBezout`, then derived |
 | 4 | §3.3's subgroup criterion | split: converse proved, forward half a real (a) limit |
 | 5 | §5.2's dihedral relations | **kept** — they are the presentation of $D_n$ |
