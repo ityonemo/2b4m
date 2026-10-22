@@ -1,0 +1,143 @@
+// std/set/counted-sets.b4m — SETS MODEL THE ABSTRACT COUNTING THEORY.
+//
+// std/counted.b4m states what any notion of "has n elements" satisfies — a count is unique,
+// and counting is monotone under inclusion. This file discharges those for the original
+// representation: a `Set` of `Element`, counted by std/set/finite.b4m's `hasSize`, ordered
+// by `subset`.
+//
+// Both obligations are existing finite.b4m results. Monotonicity needs one adapter, because
+// `subsetOfFiniteIsFinite` concludes `exists m; hasSize(a, m) and m <= n` — it PRODUCES a
+// size — whereas the interface takes the subset's size as GIVEN and bounds it. Composing it
+// with `hasSizeIsUnique` (the produced size must be the given one) is the whole adapter.
+
+import counted <<< "std/counted.b4m"
+import set <<< "std/set.b4m"
+import set_finite <<< "std/set/finite.b4m"
+import peano <<< "std/peano.b4m"
+
+sort Set = set.Set
+sort Nat = peano.Nat
+define subset(a, b) = set.subset(a, b)
+define hasSize(a, n) = set_finite.hasSize(a, n)
+define less_or_equal(a, b) = peano.less_or_equal(a, b)
+fact hasSizeIsUnique = set_finite.hasSizeIsUnique
+fact subsetOfFiniteIsFinite = set_finite.subsetOfFiniteIsFinite
+
+// -- the adapter: a subset's GIVEN size is bounded ---------------------------------------
+
+// `subsetOfFiniteIsFinite` hands back SOME size for the subset; `hasSizeIsUnique` says that
+// size is the one we were given. Together: the given size is bounded.
+theorem aSubsetsSizeIsBounded: forall a, b: Set; forall m, n: Nat;
+  subset(a, b) -> hasSize(a, m) -> hasSize(b, n) -> less_or_equal(m, n)
+proof
+  @subsets-of-finite-are-finite |
+    forall n: Nat; forall b: Set; forall a: Set; hasSize(b, n) -> subset(a, b) -> exists m: Nat; hasSize(a, m) and less_or_equal(m, n)
+    [by cite subsetOfFiniteIsFinite]
+  @sizes-are-unique |
+    forall a: Set; forall m: Nat; forall n: Nat; hasSize(a, m) -> hasSize(a, n) -> m = n
+    [by cite hasSizeIsUnique]
+  @generalize-a |
+    fix a: Set {
+      @generalize-b |
+        fix b: Set {
+          @generalize-m |
+            fix m: Nat {
+              @generalize-n |
+                fix n: Nat {
+                  @given-a-in-b |
+                    assume subset(a, b) {
+                      @given-a-has-size-m |
+                        assume hasSize(a, m) {
+                          @given-b-has-size-n |
+                            assume hasSize(b, n) {
+                              @a-is-a-subset |
+                                subset(a, b)
+                                [by hypothesis given-a-in-b]
+                              @a-has-size-m |
+                                hasSize(a, m)
+                                [by hypothesis given-a-has-size-m]
+                              @b-has-size-n |
+                                hasSize(b, n)
+                                [by hypothesis given-b-has-size-n]
+                              @a-has-some-bounded-size |
+                                exists k: Nat; hasSize(a, k) and less_or_equal(k, n)
+                                [using specialize subsets-of-finite-are-finite(n, b, a) b-has-size-n a-is-a-subset]
+                              @with-the-produced-size-k |
+                                unpack k: Nat from a-has-some-bounded-size {
+                                  @k-facts |
+                                    hasSize(a, k) and less_or_equal(k, n)
+                                    [by hypothesis with-the-produced-size-k]
+                                  @a-has-size-k |
+                                    hasSize(a, k)
+                                    [by and_lhs k-facts]
+                                  @k-is-bounded |
+                                    less_or_equal(k, n)
+                                    [by and_rhs k-facts]
+                                  @m-is-k |
+                                    m = k
+                                    [using specialize sizes-are-unique(a, m, k) a-has-size-m a-has-size-k]
+                                  @conclusion-m-is-bounded |
+                                    less_or_equal(m, n)
+                                    [by rewrite m-is-k k-is-bounded]
+                                }
+                              @conclusion-bounded |
+                                less_or_equal(m, n)
+                                [by unpacked with-the-produced-size-k]
+                            }
+                          @conclusion-after-b |
+                            hasSize(b, n) -> less_or_equal(m, n)
+                            [by discharge given-b-has-size-n]
+                        }
+                      @conclusion-after-a |
+                        hasSize(a, m) -> hasSize(b, n) -> less_or_equal(m, n)
+                        [by discharge given-a-has-size-m]
+                    }
+                  @conclusion-at-n |
+                    subset(a, b) -> hasSize(a, m) -> hasSize(b, n) -> less_or_equal(m, n)
+                    [by discharge given-a-in-b]
+                }
+              @conclusion-for-n |
+                forall n: Nat; subset(a, b) -> hasSize(a, m) -> hasSize(b, n) -> less_or_equal(m, n)
+                [by generalize generalize-n]
+            }
+          @conclusion-for-m |
+            forall m, n: Nat; subset(a, b) -> hasSize(a, m) -> hasSize(b, n) -> less_or_equal(m, n)
+            [by generalize generalize-m]
+        }
+      @conclusion-for-b |
+        forall b: Set; forall m, n: Nat; subset(a, b) -> hasSize(a, m) -> hasSize(b, n) -> less_or_equal(m, n)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Set; forall m, n: Nat; subset(a, b) -> hasSize(a, m) -> hasSize(b, n) -> less_or_equal(m, n)
+    [by generalize generalize-a]
+qed
+
+// -- a SET is a counted domain ----------------------------------------------------------
+
+model SetsAreCounted {
+  counted.Domain: Set
+  counted.counts: hasSize
+  counted.within: subset
+  counted.countIsUnique <- hasSizeIsUnique
+  counted.countIsMonotone <- aSubsetsSizeIsBounded
+}
+
+// and the interface's theorems hold of sets — proved once, in counted.b4m, over an abstract
+// domain, and transferred here rather than re-proved.
+theorem mutuallyIncludedSetsHaveEqualSizes: forall a, b: Set; forall m, n: Nat;
+  subset(a, b) -> subset(b, a) -> hasSize(a, m) -> hasSize(b, n) -> m = n
+proof
+  @conclusion |
+    forall a, b: Set; forall m, n: Nat; subset(a, b) -> subset(b, a) -> hasSize(a, m) -> hasSize(b, n) -> m = n
+    [using model(SetsAreCounted) counted.mutualInclusionGivesEqualCounts]
+qed
+
+theorem setSizesAreBoundedAlongAChain: forall a, b, c: Set; forall l, m, n: Nat;
+  subset(a, b) -> subset(b, c) -> hasSize(a, l) -> hasSize(b, m) -> hasSize(c, n) ->
+  less_or_equal(l, n)
+proof
+  @conclusion |
+    forall a, b, c: Set; forall l, m, n: Nat; subset(a, b) -> subset(b, c) -> hasSize(a, l) -> hasSize(b, m) -> hasSize(c, n) -> less_or_equal(l, n)
+    [using model(SetsAreCounted) counted.countsAreBoundedAlongAChain]
+qed
