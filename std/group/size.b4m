@@ -1,0 +1,471 @@
+// std/group/size.b4m — the ORDER of a group, and of its subgroups, as a SET SIZE.
+//
+// std/group/* encodes |G| = n as a LISTING (a sequence of n distinct entries covering the
+// group), because `group.Grp` is its own sort and std/set.b4m only has sets of `Element`.
+// This file takes the other road: a group whose carrier IS the shared element sort. Then
+// std/set/finite.b4m's `size`/`hasSize`/`isFinite` apply to the group and to its subgroups
+// natively — ONE `size` for sets and group orders — and a subgroup is a `Set` VALUE, so
+// `forall h: Set; isSubgroup(h) -> …` quantifies over subgroups, which a predicated sort
+// cannot do.
+//
+// The carrier is the universe `complement(emptyset)` (set.b4m has no universe constant, but
+// the complement of nothing is everything). The group structure is declared on `Element`
+// and std/group.b4m is MODELED onto it, so the whole group corpus transfers (`opCommutative`
+// is opt-in there, so nothing abelian is assumed). A theory with a concrete group on
+// `Element` models THIS file in turn.
+//
+// What is NOT here: Lagrange in size vocabulary. It needs cosets as sets — now expressible
+// through set.b4m's `setFromPredicate` — and a bijection from each coset onto the subgroup;
+// std/group/lagrange.b4m proves it in listing vocabulary, and the bridge
+// `listsTheGroup(v, n) <-> hasSize(carrier, n)` would carry it across without re-proof.
+//
+// A NAMED subgroup can still be entered as a GROUP (carve `Element where inH`, guarded
+// model): std/group/size-examples.b4m shows that, and the reverse move from a predicated
+// subgroup sort to a subgroup set.
+import element <<< "std/element.b4m"
+import set <<< "std/set.b4m"
+import set_finite <<< "std/set/finite.b4m"
+import group <<< "std/group.b4m"
+import peano <<< "std/peano.b4m"
+
+sort Element = element.Element
+sort Set = set.Set
+pred member = set.member
+const emptyset = set.emptyset
+func complement = set.complement
+fact complementMember = set.complementMember
+fact emptysetMember = set.emptysetMember
+define subset(a, b) = set.subset(a, b)
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func size = set_finite.size
+fact sizeIsTheSize = set_finite.sizeIsTheSize
+fact sizeZeroIsEmpty = set_finite.sizeZeroIsEmpty
+fact subsetOfFiniteIsFinite = set_finite.subsetOfFiniteIsFinite
+fact properSubsetIsSmaller = set_finite.properSubsetIsSmaller
+define hasSize(a, n) = set_finite.hasSize(a, n)
+define isFinite(a) = set_finite.isFinite(a)
+define less_or_equal(a, b) = peano.less_or_equal(a, b)
+pred less_than = peano.less_than
+
+// -- a group structure on the shared element sort ------------------------------------------
+const E: Element
+func op(a: Element, b: Element) => Element
+func inverse(a: Element) => Element
+axiom opAssoc: forall a, b, c: Element; op(op(a, b), c) = op(a, op(b, c))
+axiom opIdentityLeft: forall a: Element; op(E, a) = a
+axiom opInverseLeft: forall a: Element; op(inverse(a), a) = E
+
+model ElementGroup {
+  group.Grp: Element
+  group.E: E
+  group.op: op
+  group.inverse: inverse
+  group.opAssoc <- opAssoc
+  group.opIdentityLeft <- opIdentityLeft
+  group.opInverseLeft <- opInverseLeft
+}
+
+// -- the carrier, as a set: the universe ---------------------------------------------------
+theorem everyElementIsInTheCarrier: forall x: Element; member(x, complement(emptyset))
+proof
+  @generalize-x |
+    fix x: Element {
+      @in-complement-iff |
+        member(x, complement(emptyset)) iff (not member(x, emptyset))
+        [using specialize complementMember(emptyset, x)]
+      @not-in-emptyset |
+        not member(x, emptyset)
+        [using specialize emptysetMember(x)]
+      @conclusion-x-in-carrier |
+        member(x, complement(emptyset))
+        [using tautology in-complement-iff not-in-emptyset]
+    }
+  @conclusion |
+    forall x: Element; member(x, complement(emptyset))
+    [by generalize generalize-x]
+qed
+
+theorem everySetIsASubsetOfTheCarrier: forall h: Set; subset(h, complement(emptyset))
+proof
+  @everything-is-in-the-carrier |
+    forall x: Element; member(x, complement(emptyset))
+    [by cite everyElementIsInTheCarrier]
+  @generalize-h |
+    fix h: Set {
+      @generalize-x |
+        fix x: Element {
+          @given-x-in-h |
+            assume member(x, h) {
+              @conclusion-x-in-carrier |
+                member(x, complement(emptyset))
+                [by apply_at(x) everything-is-in-the-carrier]
+            }
+          @conclusion-at-x |
+            member(x, h) -> member(x, complement(emptyset))
+            [by discharge given-x-in-h]
+        }
+      @conclusion-h-is-a-subset |
+        forall x: Element; member(x, h) -> member(x, complement(emptyset))
+        [by generalize generalize-x]
+    }
+  @conclusion |
+    forall h: Set; subset(h, complement(emptyset))
+    [by generalize generalize-h]
+qed
+
+// -- a subgroup, as a SET VALUE ---------------------------------------------------------------
+// (A definition block would be preferred, but its clause-variable inference rejects an
+// INNER quantifier: "cannot infer the sort of 'a'" at the `forall a, b: Element`. So the
+// subgroup criterion is a plain axiom, as std/subgroup.b4m's is.)
+pred isSubgroup(s: Set)
+axiom subgroupDef: forall s: Set; isSubgroup(s) iff
+  (member(E, s)
+  and (forall a, b: Element; member(a, s) -> member(b, s) -> member(op(a, b), s))
+  and (forall a: Element; member(a, s) -> member(inverse(a), s)))
+
+// counting meets group structure: a subgroup contains E, so it is never empty.
+theorem aSubgroupOfAFiniteGroupHasNonzeroOrder: forall n: Nat;
+  hasSize(complement(emptyset), n) -> forall h: Set; isSubgroup(h) -> size(h) != ZERO
+proof
+  @subgroup-definition |
+    forall s: Set; isSubgroup(s) iff (member(E, s) and (forall a, b: Element; member(a, s) -> member(b, s) -> member(op(a, b), s)) and (forall a: Element; member(a, s) -> member(inverse(a), s)))
+    [by cite subgroupDef]
+  @every-set-is-a-subset |
+    forall h: Set; subset(h, complement(emptyset))
+    [by cite everySetIsASubsetOfTheCarrier]
+  @generalize-n |
+    fix n: Nat {
+      @given-the-group-is-finite |
+        assume hasSize(complement(emptyset), n) {
+          @the-group-has-size-n |
+            hasSize(complement(emptyset), n)
+            [by hypothesis given-the-group-is-finite]
+          @generalize-h |
+            fix h: Set {
+              @given-h-is-a-subgroup |
+                assume isSubgroup(h) {
+                  @h-is-a-subgroup |
+                    isSubgroup(h)
+                    [by hypothesis given-h-is-a-subgroup]
+                  @h-definition |
+                    isSubgroup(h) iff (member(E, h) and (forall a, b: Element; member(a, h) -> member(b, h) -> member(op(a, b), h)) and (forall a: Element; member(a, h) -> member(inverse(a), h)))
+                    [by apply_at(h) subgroup-definition]
+                  @h-closure |
+                    member(E, h) and (forall a, b: Element; member(a, h) -> member(b, h) -> member(op(a, b), h)) and (forall a: Element; member(a, h) -> member(inverse(a), h))
+                    [using tautology h-definition h-is-a-subgroup]
+                  @identity-is-in-h |
+                    member(E, h)
+                    [using tautology h-closure]
+                  @h-is-a-subset |
+                    subset(h, complement(emptyset))
+                    [by apply_at(h) every-set-is-a-subset]
+                  @h-is-finite |
+                    exists m: Nat; hasSize(h, m) and less_or_equal(m, n)
+                    [using specialize subsetOfFiniteIsFinite(n, complement(emptyset), h) the-group-has-size-n h-is-a-subset]
+                  @with-size-m |
+                    unpack m: Nat from h-is-finite {
+                      @m-facts |
+                        hasSize(h, m) and less_or_equal(m, n)
+                        [by hypothesis with-size-m]
+                      @h-has-size-m |
+                        hasSize(h, m)
+                        [by and_lhs m-facts]
+                      @size-of-h-is-m |
+                        size(h) = m
+                        [using specialize sizeIsTheSize(h, m) h-has-size-m]
+                      @m-is-the-size-of-h |
+                        m = size(h)
+                        [by symmetry size-of-h-is-m]
+                      @suppose-size-zero |
+                        assume size(h) = ZERO {
+                          @size-is-zero |
+                            size(h) = ZERO
+                            [by hypothesis suppose-size-zero]
+                          @m-is-zero |
+                            m = ZERO
+                            [using chain m-is-the-size-of-h size-is-zero]
+                          @h-has-size-zero |
+                            hasSize(h, ZERO)
+                            [by rewrite m-is-zero h-has-size-m]
+                          @h-is-empty |
+                            h = emptyset
+                            [using specialize sizeZeroIsEmpty(h) h-has-size-zero]
+                          @identity-is-in-emptyset |
+                            member(E, emptyset)
+                            [by rewrite h-is-empty identity-is-in-h]
+                          @identity-is-not-in-emptyset |
+                            not member(E, emptyset)
+                            [using specialize emptysetMember(E)]
+                        }
+                      @conclusion-size-nonzero |
+                        size(h) != ZERO
+                        [by contradiction suppose-size-zero identity-is-in-emptyset identity-is-not-in-emptyset]
+                    }
+                  @size-nonzero |
+                    size(h) != ZERO
+                    [by unpacked with-size-m]
+                }
+              @conclusion-at-h |
+                isSubgroup(h) -> size(h) != ZERO
+                [by discharge given-h-is-a-subgroup]
+            }
+          @conclusion-for-all-h |
+            forall h: Set; isSubgroup(h) -> size(h) != ZERO
+            [by generalize generalize-h]
+        }
+      @conclusion-at-n |
+        hasSize(complement(emptyset), n) -> forall h: Set; isSubgroup(h) -> size(h) != ZERO
+        [by discharge given-the-group-is-finite]
+    }
+  @conclusion |
+    forall n: Nat; hasSize(complement(emptyset), n) -> forall h: Set; isSubgroup(h) -> size(h) != ZERO
+    [by generalize generalize-n]
+qed
+
+// transferred group theory acts on set members (opInverseRight is a THEOREM of group.b4m).
+theorem aMemberWithItsInverseGivesTheIdentityInsideTheSubgroup: forall h: Set; isSubgroup(h) ->
+  forall g: Element; member(g, h) -> (op(g, inverse(g)) = E and member(op(g, inverse(g)), h))
+proof
+  @subgroup-definition |
+    forall s: Set; isSubgroup(s) iff (member(E, s) and (forall a, b: Element; member(a, s) -> member(b, s) -> member(op(a, b), s)) and (forall a: Element; member(a, s) -> member(inverse(a), s)))
+    [by cite subgroupDef]
+  @inverse-right-everywhere |
+    forall a: Element; op(a, inverse(a)) = E
+    [using model(ElementGroup) group.opInverseRight]
+  @generalize-h |
+    fix h: Set {
+      @given-h-is-a-subgroup |
+        assume isSubgroup(h) {
+          @h-is-a-subgroup |
+            isSubgroup(h)
+            [by hypothesis given-h-is-a-subgroup]
+          @h-definition |
+            isSubgroup(h) iff (member(E, h) and (forall a, b: Element; member(a, h) -> member(b, h) -> member(op(a, b), h)) and (forall a: Element; member(a, h) -> member(inverse(a), h)))
+            [by apply_at(h) subgroup-definition]
+          @h-closure |
+            member(E, h) and (forall a, b: Element; member(a, h) -> member(b, h) -> member(op(a, b), h)) and (forall a: Element; member(a, h) -> member(inverse(a), h))
+            [using tautology h-definition h-is-a-subgroup]
+          @h-closed-under-op |
+            forall a, b: Element; member(a, h) -> member(b, h) -> member(op(a, b), h)
+            [using tautology h-closure]
+          @h-closed-under-inverse |
+            forall a: Element; member(a, h) -> member(inverse(a), h)
+            [using tautology h-closure]
+          @generalize-g |
+            fix g: Element {
+              @given-g-in-h |
+                assume member(g, h) {
+                  @g-is-in-h |
+                    member(g, h)
+                    [by hypothesis given-g-in-h]
+                  @g-times-its-inverse-is-the-identity |
+                    op(g, inverse(g)) = E
+                    [by apply_at(g) inverse-right-everywhere]
+                  @inverse-of-g-is-in-h |
+                    member(inverse(g), h)
+                    [using specialize h-closed-under-inverse(g) g-is-in-h]
+                  @the-product-is-in-h |
+                    member(op(g, inverse(g)), h)
+                    [using specialize h-closed-under-op(g, inverse(g)) g-is-in-h inverse-of-g-is-in-h]
+                  @conclusion-both |
+                    op(g, inverse(g)) = E and member(op(g, inverse(g)), h)
+                    [by both g-times-its-inverse-is-the-identity the-product-is-in-h]
+                }
+              @conclusion-at-g |
+                member(g, h) -> (op(g, inverse(g)) = E and member(op(g, inverse(g)), h))
+                [by discharge given-g-in-h]
+            }
+          @conclusion-for-all-g |
+            forall g: Element; member(g, h) -> (op(g, inverse(g)) = E and member(op(g, inverse(g)), h))
+            [by generalize generalize-g]
+        }
+      @conclusion-at-h |
+        isSubgroup(h) -> forall g: Element; member(g, h) -> (op(g, inverse(g)) = E and member(op(g, inverse(g)), h))
+        [by discharge given-h-is-a-subgroup]
+    }
+  @conclusion |
+    forall h: Set; isSubgroup(h) -> forall g: Element; member(g, h) -> (op(g, inverse(g)) = E and member(op(g, inverse(g)), h))
+    [by generalize generalize-h]
+qed
+
+// the whole group is a subgroup of itself.
+theorem theCarrierIsASubgroup: isSubgroup(complement(emptyset))
+proof
+  @subgroup-definition |
+    forall s: Set; isSubgroup(s) iff (member(E, s) and (forall a, b: Element; member(a, s) -> member(b, s) -> member(op(a, b), s)) and (forall a: Element; member(a, s) -> member(inverse(a), s)))
+    [by cite subgroupDef]
+  @criterion-at-the-carrier |
+    isSubgroup(complement(emptyset)) iff (member(E, complement(emptyset)) and (forall a, b: Element; member(a, complement(emptyset)) -> member(b, complement(emptyset)) -> member(op(a, b), complement(emptyset))) and (forall a: Element; member(a, complement(emptyset)) -> member(inverse(a), complement(emptyset))))
+    [by apply_at(complement(emptyset)) subgroup-definition]
+  @everything-is-in-the-carrier |
+    forall x: Element; member(x, complement(emptyset))
+    [by cite everyElementIsInTheCarrier]
+  @identity-is-in-the-carrier |
+    member(E, complement(emptyset))
+    [by apply_at(E) everything-is-in-the-carrier]
+  @generalize-a |
+    fix a: Element {
+      @generalize-b |
+        fix b: Element {
+          @product-is-in-the-carrier |
+            member(op(a, b), complement(emptyset))
+            [by apply_at(op(a, b)) everything-is-in-the-carrier]
+          @conclusion-closed-at-a-b |
+            member(a, complement(emptyset)) -> member(b, complement(emptyset)) -> member(op(a, b), complement(emptyset))
+            [using tautology product-is-in-the-carrier]
+        }
+      @conclusion-closed-at-a |
+        forall b: Element; member(a, complement(emptyset)) -> member(b, complement(emptyset)) -> member(op(a, b), complement(emptyset))
+        [by generalize generalize-b]
+    }
+  @closed-under-op |
+    forall a, b: Element; member(a, complement(emptyset)) -> member(b, complement(emptyset)) -> member(op(a, b), complement(emptyset))
+    [by generalize generalize-a]
+  @generalize-a2 |
+    fix a2: Element {
+      @inverse-is-in-the-carrier |
+        member(inverse(a2), complement(emptyset))
+        [by apply_at(inverse(a2)) everything-is-in-the-carrier]
+      @conclusion-inverse-closed-at-a2 |
+        member(a2, complement(emptyset)) -> member(inverse(a2), complement(emptyset))
+        [using tautology inverse-is-in-the-carrier]
+    }
+  @closed-under-inverse |
+    forall a: Element; member(a, complement(emptyset)) -> member(inverse(a), complement(emptyset))
+    [by generalize generalize-a2]
+  @identity-and-op-closure |
+    member(E, complement(emptyset)) and (forall a, b: Element; member(a, complement(emptyset)) -> member(b, complement(emptyset)) -> member(op(a, b), complement(emptyset)))
+    [by both identity-is-in-the-carrier closed-under-op]
+  @criterion-body |
+    member(E, complement(emptyset)) and (forall a, b: Element; member(a, complement(emptyset)) -> member(b, complement(emptyset)) -> member(op(a, b), complement(emptyset))) and (forall a: Element; member(a, complement(emptyset)) -> member(inverse(a), complement(emptyset)))
+    [by both identity-and-op-closure closed-under-inverse]
+  @conclusion |
+    isSubgroup(complement(emptyset))
+    [using tautology criterion-at-the-carrier criterion-body]
+qed
+
+// a subgroup of a finite group is finite: it is a subset of the carrier.
+theorem aSubgroupOfAFiniteGroupIsFinite: forall n: Nat;
+  hasSize(complement(emptyset), n) -> forall h: Set; isSubgroup(h) -> isFinite(h)
+proof
+  @every-set-is-a-subset |
+    forall h: Set; subset(h, complement(emptyset))
+    [by cite everySetIsASubsetOfTheCarrier]
+  @generalize-n |
+    fix n: Nat {
+      @given-the-group-has-size-n |
+        assume hasSize(complement(emptyset), n) {
+          @the-group-has-size-n |
+            hasSize(complement(emptyset), n)
+            [by hypothesis given-the-group-has-size-n]
+          @generalize-h |
+            fix h: Set {
+              @given-h-is-a-subgroup |
+                assume isSubgroup(h) {
+                  @h-is-a-subset |
+                    subset(h, complement(emptyset))
+                    [by apply_at(h) every-set-is-a-subset]
+                  @h-has-a-bounded-size |
+                    exists m: Nat; hasSize(h, m) and less_or_equal(m, n)
+                    [using specialize subsetOfFiniteIsFinite(n, complement(emptyset), h) the-group-has-size-n h-is-a-subset]
+                  @with-size-m |
+                    unpack m: Nat from h-has-a-bounded-size {
+                      @h-has-size-m-and-a-bound |
+                        hasSize(h, m) and less_or_equal(m, n)
+                        [by hypothesis with-size-m]
+                      @h-has-size-m |
+                        hasSize(h, m)
+                        [by and_lhs h-has-size-m-and-a-bound]
+                      @conclusion-some-size-fits |
+                        exists k: Nat; hasSize(h, k)
+                        [by witness(m) h-has-size-m]
+                    }
+                  @conclusion-h-is-finite |
+                    isFinite(h)
+                    [by unpacked with-size-m]
+                }
+              @conclusion-at-h |
+                isSubgroup(h) -> isFinite(h)
+                [by discharge given-h-is-a-subgroup]
+            }
+          @conclusion-for-every-subgroup |
+            forall h: Set; isSubgroup(h) -> isFinite(h)
+            [by generalize generalize-h]
+        }
+      @conclusion-at-n |
+        hasSize(complement(emptyset), n) -> forall h: Set; isSubgroup(h) -> isFinite(h)
+        [by discharge given-the-group-has-size-n]
+    }
+  @conclusion |
+    forall n: Nat; hasSize(complement(emptyset), n) -> forall h: Set; isSubgroup(h) -> isFinite(h)
+    [by generalize generalize-n]
+qed
+
+// a PROPER subgroup of a finite group has strictly smaller order.
+theorem aProperSubgroupOfAFiniteGroupIsSmaller: forall n: Nat;
+  hasSize(complement(emptyset), n) -> forall h: Set; isSubgroup(h) -> h != complement(emptyset) ->
+  forall m: Nat; hasSize(h, m) -> less_than(m, n)
+proof
+  @every-set-is-a-subset |
+    forall h: Set; subset(h, complement(emptyset))
+    [by cite everySetIsASubsetOfTheCarrier]
+  @generalize-n |
+    fix n: Nat {
+      @given-the-group-has-size-n |
+        assume hasSize(complement(emptyset), n) {
+          @the-group-has-size-n |
+            hasSize(complement(emptyset), n)
+            [by hypothesis given-the-group-has-size-n]
+          @generalize-h |
+            fix h: Set {
+              @given-h-is-a-subgroup |
+                assume isSubgroup(h) {
+                  @given-h-is-proper |
+                    assume h != complement(emptyset) {
+                      @h-is-proper |
+                        h != complement(emptyset)
+                        [by hypothesis given-h-is-proper]
+                      @h-is-a-subset |
+                        subset(h, complement(emptyset))
+                        [by apply_at(h) every-set-is-a-subset]
+                      @generalize-m |
+                        fix m: Nat {
+                          @given-h-has-size-m |
+                            assume hasSize(h, m) {
+                              @h-has-size-m |
+                                hasSize(h, m)
+                                [by hypothesis given-h-has-size-m]
+                              @conclusion-m-is-below-n |
+                                less_than(m, n)
+                                [using specialize properSubsetIsSmaller(h, complement(emptyset), m, n) h-is-a-subset h-is-proper h-has-size-m the-group-has-size-n]
+                            }
+                          @conclusion-at-m |
+                            hasSize(h, m) -> less_than(m, n)
+                            [by discharge given-h-has-size-m]
+                        }
+                      @conclusion-for-every-m |
+                        forall m: Nat; hasSize(h, m) -> less_than(m, n)
+                        [by generalize generalize-m]
+                    }
+                  @conclusion-when-proper |
+                    h != complement(emptyset) -> forall m: Nat; hasSize(h, m) -> less_than(m, n)
+                    [by discharge given-h-is-proper]
+                }
+              @conclusion-at-h |
+                isSubgroup(h) -> h != complement(emptyset) -> forall m: Nat; hasSize(h, m) -> less_than(m, n)
+                [by discharge given-h-is-a-subgroup]
+            }
+          @conclusion-for-every-subgroup |
+            forall h: Set; isSubgroup(h) -> h != complement(emptyset) -> forall m: Nat; hasSize(h, m) -> less_than(m, n)
+            [by generalize generalize-h]
+        }
+      @conclusion-at-n |
+        hasSize(complement(emptyset), n) -> forall h: Set; isSubgroup(h) -> h != complement(emptyset) -> forall m: Nat; hasSize(h, m) -> less_than(m, n)
+        [by discharge given-the-group-has-size-n]
+    }
+  @conclusion |
+    forall n: Nat; hasSize(complement(emptyset), n) -> forall h: Set; isSubgroup(h) -> h != complement(emptyset) -> forall m: Nat; hasSize(h, m) -> less_than(m, n)
+    [by generalize generalize-n]
+qed

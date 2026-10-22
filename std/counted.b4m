@@ -1,0 +1,309 @@
+// std/counted.b4m — THE ABSTRACT THEORY OF COUNTING.
+//
+// The library has had two unrelated ways to say "this has n elements":
+//
+//   * std/set/finite.b4m — `hasSize(a, n)`: a SET of `Element` is equinumerous with the
+//     initial segment {0, …, n−1}. Cardinality by bijection, 54 theorems.
+//   * std/group/counting.b4m — `listsWithoutRepetition(v, n)` + covering: a group (whose
+//     carrier `group.Grp` is NOT `Element`, so finite.b4m cannot reach it) has n elements
+//     when some SEQUENCE of n distinct entries covers it.
+//
+// They prove the same facts twice. This theory is what they have in common: an abstract
+// `counts(d, n)` — "the domain-description `d` has exactly n things" — and the handful of
+// properties any honest notion of counting must have. A representation DISCHARGES these and
+// inherits every theorem stated here; a consumer that wants only "n is the size" cites this
+// theory and works with either representation.
+//
+// THE POINT OF THE INVERSION. std/sized.b4m goes the other way — it builds ON finite.b4m to
+// reach foreign carriers by injection. That is the right tool when you want finite.b4m's
+// full strength (pigeonhole, disjoint unions) on a new carrier. This file is the right tool
+// when you want a result to hold REGARDLESS of representation: state it once here, and both
+// the set world and the listing world get it. Neither file subsumes the other.
+//
+// The axioms are deliberately few — exactly what EVERY representation can actually
+// discharge: uniqueness of a count, and monotonicity under inclusion. Strictness under
+// PROPER inclusion was considered and left out: the set world has it
+// (finite.b4m:properSubsetIsSmaller) but the listing world has no such lemma and proving it
+// would need a fresh induction over sequences, so including it would have meant an interface
+// one representation could not honestly model. Add it when a consumer needs it. Anything
+// needing more (unions, products, bijections) belongs in finite.b4m, not here.
+
+import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
+
+sort Nat = peano.Nat
+define less_or_equal(a, b) = peano.less_or_equal(a, b)
+fact lessOrEqualTransitive = peano_order.lessOrEqualTransitive
+fact lessOrEqualAntisymmetric = peano_order.lessOrEqualAntisymmetric
+fact lessOrEqualRefl = peano_order.lessOrEqualRefl
+
+// -- the signature ----------------------------------------------------------------------
+
+// A DOMAIN: whatever is being counted. A representation maps this to its own notion — a
+// `Set` for finite.b4m, a (sequence, length) listing for the group world.
+sort Domain
+
+// `counts(d, n)`: the domain `d` has exactly n things.
+pred counts(d: Domain, n: Nat)
+
+// `within(d, e)`: every thing in `d` is a thing in `e`. The inclusion order on domains.
+pred within(d: Domain, e: Domain)
+
+// -- the axioms any counting notion satisfies -------------------------------------------
+
+// A count is UNIQUE: a domain does not have two different sizes. (finite.b4m:
+// hasSizeIsUnique. Listings: listingsOfTheSameClassHaveEqualLength.)
+axiom countIsUnique: forall d: Domain; forall m, n: Nat; counts(d, m) -> counts(d, n) -> m = n
+
+// COUNTING IS MONOTONE under inclusion. (finite.b4m: subsetOfFiniteIsFinite. Listings:
+// sublistingIsNoLongerThanTheListing.)
+axiom countIsMonotone: forall d, e: Domain; forall m, n: Nat;
+  within(d, e) -> counts(d, m) -> counts(e, n) -> less_or_equal(m, n)
+
+// -- what follows, for EVERY representation ---------------------------------------------
+
+// Counting is ANTISYMMETRIC on mutual inclusion: two domains each inside the other have
+// equal counts. The first thing the interface buys, and the fact a representation would
+// otherwise prove twice (finite.b4m by double inclusion + extensionality; listings by
+// pigeonhole in both directions).
+theorem mutualInclusionGivesEqualCounts: forall d, e: Domain; forall m, n: Nat;
+  within(d, e) -> within(e, d) -> counts(d, m) -> counts(e, n) -> m = n
+proof
+  @monotone |
+    forall d: Domain; forall e: Domain; forall m: Nat; forall n: Nat; within(d, e) -> counts(d, m) -> counts(e, n) -> less_or_equal(m, n)
+    [by cite countIsMonotone]
+  @antisymmetric |
+    forall a, b: Nat; less_or_equal(a, b) -> less_or_equal(b, a) -> a = b
+    [by cite lessOrEqualAntisymmetric]
+  @generalize-d |
+    fix d: Domain {
+      @generalize-e |
+        fix e: Domain {
+          @generalize-m |
+            fix m: Nat {
+              @generalize-n |
+                fix n: Nat {
+                  @given-d-in-e |
+                    assume within(d, e) {
+                      @given-e-in-d |
+                        assume within(e, d) {
+                          @given-d-counts-m |
+                            assume counts(d, m) {
+                              @given-e-counts-n |
+                                assume counts(e, n) {
+                                  @d-in-e |
+                                    within(d, e)
+                                    [by hypothesis given-d-in-e]
+                                  @e-in-d |
+                                    within(e, d)
+                                    [by hypothesis given-e-in-d]
+                                  @d-counts-m |
+                                    counts(d, m)
+                                    [by hypothesis given-d-counts-m]
+                                  @e-counts-n |
+                                    counts(e, n)
+                                    [by hypothesis given-e-counts-n]
+                                  @m-at-most-n |
+                                    less_or_equal(m, n)
+                                    [using specialize monotone(d, e, m, n) d-in-e d-counts-m e-counts-n]
+                                  @n-at-most-m |
+                                    less_or_equal(n, m)
+                                    [using specialize monotone(e, d, n, m) e-in-d e-counts-n d-counts-m]
+                                  @conclusion-counts-are-equal |
+                                    m = n
+                                    [using specialize antisymmetric(m, n) m-at-most-n n-at-most-m]
+                                }
+                              @conclusion-after-e |
+                                counts(e, n) -> m = n
+                                [by discharge given-e-counts-n]
+                            }
+                          @conclusion-after-d |
+                            counts(d, m) -> counts(e, n) -> m = n
+                            [by discharge given-d-counts-m]
+                        }
+                      @conclusion-after-e-in-d |
+                        within(e, d) -> counts(d, m) -> counts(e, n) -> m = n
+                        [by discharge given-e-in-d]
+                    }
+                  @conclusion-at-n |
+                    within(d, e) -> within(e, d) -> counts(d, m) -> counts(e, n) -> m = n
+                    [by discharge given-d-in-e]
+                }
+              @conclusion-for-n |
+                forall n: Nat; within(d, e) -> within(e, d) -> counts(d, m) -> counts(e, n) -> m = n
+                [by generalize generalize-n]
+            }
+          @conclusion-for-m |
+            forall m, n: Nat; within(d, e) -> within(e, d) -> counts(d, m) -> counts(e, n) -> m = n
+            [by generalize generalize-m]
+        }
+      @conclusion-for-e |
+        forall e: Domain; forall m, n: Nat; within(d, e) -> within(e, d) -> counts(d, m) -> counts(e, n) -> m = n
+        [by generalize generalize-e]
+    }
+  @conclusion |
+    forall d, e: Domain; forall m, n: Nat; within(d, e) -> within(e, d) -> counts(d, m) -> counts(e, n) -> m = n
+    [by generalize generalize-d]
+qed
+
+// a chain of inclusions bounds the counts transitively — the shape an index argument needs.
+theorem countsAreBoundedAlongAChain: forall c, d, e: Domain; forall l, m, n: Nat;
+  within(c, d) -> within(d, e) -> counts(c, l) -> counts(d, m) -> counts(e, n) ->
+  less_or_equal(l, n)
+proof
+  @monotone |
+    forall d: Domain; forall e: Domain; forall m: Nat; forall n: Nat; within(d, e) -> counts(d, m) -> counts(e, n) -> less_or_equal(m, n)
+    [by cite countIsMonotone]
+  @transitive |
+    forall a: Nat; forall b: Nat; forall c: Nat; less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
+    [by cite lessOrEqualTransitive]
+  @generalize-c |
+    fix c: Domain {
+      @generalize-d |
+        fix d: Domain {
+          @generalize-e |
+            fix e: Domain {
+              @generalize-l |
+                fix l: Nat {
+                  @generalize-m |
+                    fix m: Nat {
+                      @generalize-n |
+                        fix n: Nat {
+                          @given-c-in-d |
+                            assume within(c, d) {
+                              @given-d-in-e |
+                                assume within(d, e) {
+                                  @given-c-counted |
+                                    assume counts(c, l) {
+                                      @given-d-counted |
+                                        assume counts(d, m) {
+                                          @given-e-counted |
+                                            assume counts(e, n) {
+                                              @c-in-d |
+                                                within(c, d)
+                                                [by hypothesis given-c-in-d]
+                                              @d-in-e |
+                                                within(d, e)
+                                                [by hypothesis given-d-in-e]
+                                              @c-counted |
+                                                counts(c, l)
+                                                [by hypothesis given-c-counted]
+                                              @d-counted |
+                                                counts(d, m)
+                                                [by hypothesis given-d-counted]
+                                              @e-counted |
+                                                counts(e, n)
+                                                [by hypothesis given-e-counted]
+                                              @l-at-most-m |
+                                                less_or_equal(l, m)
+                                                [using specialize monotone(c, d, l, m) c-in-d c-counted d-counted]
+                                              @m-at-most-n |
+                                                less_or_equal(m, n)
+                                                [using specialize monotone(d, e, m, n) d-in-e d-counted e-counted]
+                                              @conclusion-l-at-most-n |
+                                                less_or_equal(l, n)
+                                                [using specialize transitive(l, m, n) l-at-most-m m-at-most-n]
+                                            }
+                                          @conclusion-after-e |
+                                            counts(e, n) -> less_or_equal(l, n)
+                                            [by discharge given-e-counted]
+                                        }
+                                      @conclusion-after-d |
+                                        counts(d, m) -> counts(e, n) -> less_or_equal(l, n)
+                                        [by discharge given-d-counted]
+                                    }
+                                  @conclusion-after-c |
+                                    counts(c, l) -> counts(d, m) -> counts(e, n) -> less_or_equal(l, n)
+                                    [by discharge given-c-counted]
+                                }
+                              @conclusion-after-d-in-e |
+                                within(d, e) -> counts(c, l) -> counts(d, m) -> counts(e, n) -> less_or_equal(l, n)
+                                [by discharge given-d-in-e]
+                            }
+                          @conclusion-at-n |
+                            within(c, d) -> within(d, e) -> counts(c, l) -> counts(d, m) -> counts(e, n) -> less_or_equal(l, n)
+                            [by discharge given-c-in-d]
+                        }
+                      @conclusion-for-every-n |
+                        forall n: Nat; within(c, d) -> within(d, e) -> counts(c, l) -> counts(d, m) -> counts(e, n) -> less_or_equal(l, n)
+                        [by generalize generalize-n]
+                    }
+                  @conclusion-for-every-m |
+                    forall m, n: Nat; within(c, d) -> within(d, e) -> counts(c, l) -> counts(d, m) -> counts(e, n) -> less_or_equal(l, n)
+                    [by generalize generalize-m]
+                }
+              @conclusion-for-every-l |
+                forall l, m, n: Nat; within(c, d) -> within(d, e) -> counts(c, l) -> counts(d, m) -> counts(e, n) -> less_or_equal(l, n)
+                [by generalize generalize-l]
+            }
+          @conclusion-for-every-e |
+            forall e: Domain; forall l, m, n: Nat; within(c, d) -> within(d, e) -> counts(c, l) -> counts(d, m) -> counts(e, n) -> less_or_equal(l, n)
+            [by generalize generalize-e]
+        }
+      @conclusion-for-every-d |
+        forall d, e: Domain; forall l, m, n: Nat; within(c, d) -> within(d, e) -> counts(c, l) -> counts(d, m) -> counts(e, n) -> less_or_equal(l, n)
+        [by generalize generalize-d]
+    }
+  @conclusion |
+    forall c, d, e: Domain; forall l, m, n: Nat; within(c, d) -> within(d, e) -> counts(c, l) -> counts(d, m) -> counts(e, n) -> less_or_equal(l, n)
+    [by generalize generalize-c]
+qed
+
+// A domain included in one of the SAME count has that count too — the "no room left" fact,
+// and the one place the interface needs UNIQUENESS: monotonicity bounds the count from above,
+// uniqueness is what forbids a second, smaller count for the same domain.
+theorem aDomainHasOneCountOnly: forall d: Domain; forall m, n: Nat;
+  counts(d, m) -> counts(d, n) -> less_or_equal(m, n)
+proof
+  @unique |
+    forall d: Domain; forall m: Nat; forall n: Nat; counts(d, m) -> counts(d, n) -> m = n
+    [by cite countIsUnique]
+  @reflexive |
+    forall a: Nat; less_or_equal(a, a)
+    [by cite lessOrEqualRefl]
+  @generalize-d |
+    fix d: Domain {
+      @generalize-m |
+        fix m: Nat {
+          @generalize-n |
+            fix n: Nat {
+              @given-d-counts-m |
+                assume counts(d, m) {
+                  @given-d-counts-n |
+                    assume counts(d, n) {
+                      @d-counts-m |
+                        counts(d, m)
+                        [by hypothesis given-d-counts-m]
+                      @d-counts-n |
+                        counts(d, n)
+                        [by hypothesis given-d-counts-n]
+                      @m-is-n |
+                        m = n
+                        [using specialize unique(d, m, n) d-counts-m d-counts-n]
+                      @m-at-most-m |
+                        less_or_equal(m, m)
+                        [by apply_at(m) reflexive]
+                      @conclusion-bounded |
+                        less_or_equal(m, n)
+                        [by rewrite m-is-n m-at-most-m]
+                    }
+                  @conclusion-after-n |
+                    counts(d, n) -> less_or_equal(m, n)
+                    [by discharge given-d-counts-n]
+                }
+              @conclusion-at-n |
+                counts(d, m) -> counts(d, n) -> less_or_equal(m, n)
+                [by discharge given-d-counts-m]
+            }
+          @conclusion-for-n |
+            forall n: Nat; counts(d, m) -> counts(d, n) -> less_or_equal(m, n)
+            [by generalize generalize-n]
+        }
+      @conclusion-for-m |
+        forall m, n: Nat; counts(d, m) -> counts(d, n) -> less_or_equal(m, n)
+        [by generalize generalize-m]
+    }
+  @conclusion |
+    forall d: Domain; forall m, n: Nat; counts(d, m) -> counts(d, n) -> less_or_equal(m, n)
+    [by generalize generalize-d]
+qed

@@ -1,0 +1,375 @@
+// std/sized.b4m — COUNTING A CARRIER THAT IS NOT `Element`.
+//
+// std/set/finite.b4m counts SETS OF `Element`: `size`, `hasSize`, `isFinite`, and 54
+// theorems over them. Its machinery is single-sorted on purpose — `hasSize(a, n)` is
+// "equinumerous with `segment(n)`", and `segment` embeds ℕ INTO the universe being counted
+// via `numeral: Nat => Element`. That design is what makes counting work without
+// two-sorted functions, and it is also why finite.b4m cannot simply be INSTANTIATED over
+// another carrier: `numeral` into a FINITE carrier (`Perm`, `Zn`) would be inconsistent.
+//
+// So this theory goes the other way. Rather than lift COUNTING onto a foreign carrier, it
+// lifts the carrier's OBJECTS into `Element`:
+//
+//   * one injection `embed: Carrier => Element` (consistent for a carrier of ANY
+//     cardinality — `Element` is unconstrained, so it is always large enough);
+//   * a predicate on the carrier REIFIES to a `Set` of Elements — its IMAGE — by
+//     set.b4m's `setFromPredicate` comprehension;
+//   * "the subobject P has n elements" is then `hasSize(image(P), n)`: finite.b4m's OWN
+//     size, with no new counting axioms and no re-derivation.
+//
+// What that buys, and the reason this file exists: a pointwise implication on the carrier
+// becomes `subset` of the images (`imageRespectsImplication` below), so EVERY finite.b4m
+// size theorem — properSubsetIsSmaller, pigeonhole, disjointUnionSizesAdd,
+// subsetOfFiniteIsFinite — applies to the carrier's subobjects for free. One `size` serves
+// sets, group orders, and the order of anything else that models this theory.
+//
+// A consumer supplies `Carrier` + `embed` + `embedInjective` and gets the rest. The
+// injection is the ONE assumption, and it is a signature assumption rather than a
+// mathematical claim: nothing is proved about `embed` beyond injectivity, and any carrier
+// admits such a map into an unconstrained universe. (`std/group/sized-group.b4m` models it
+// at `group.Grp`; `std/group/size.b4m` is the degenerate case where the carrier IS
+// `Element` and `embed` is the identity.)
+
+import element <<< "std/element.b4m"
+import set <<< "std/set.b4m"
+import set_finite <<< "std/set/finite.b4m"
+import peano <<< "std/peano.b4m"
+
+sort Nat = peano.Nat
+
+sort Element = element.Element
+sort Set = set.Set
+pred member = set.member
+define hasSize(a, n) = set_finite.hasSize(a, n)
+define subset(a, b) = set.subset(a, b)
+define less_or_equal(a, b) = peano.less_or_equal(a, b)
+fact subsetOfFiniteIsFinite = set_finite.subsetOfFiniteIsFinite
+fact setFromPredicate = set.setFromPredicate
+fact hasSizeIsUnique = set_finite.hasSizeIsUnique
+
+// -- the carrier and its injection ------------------------------------------------------
+
+sort Carrier
+func embed(c: Carrier) => Element
+axiom embedInjective: forall c, d: Carrier; embed(c) = embed(d) -> c = d
+
+// `s` IS THE IMAGE of the subobject `p`: its members are exactly the embedded `p`s. A
+// subobject is given as a unary predicate on the carrier, and a model maps `holds` to the
+// consumer's own predicate.
+pred holds(c: Carrier)
+
+define isTheImage(s) = forall x: Element; member(x, s) iff (exists c: Carrier; holds(c) and x = embed(c))
+
+// A SECOND subobject, so the theory can relate two of them. `holds` is the one being
+// measured; `contains` is an ambient subobject it may sit inside (e.g. a subgroup inside the
+// group). A model maps both to the consumer's predicates — the same consumer predicate may
+// be mapped to both when only one subobject is in play.
+pred contains(c: Carrier)
+
+define isTheContainingImage(s) = forall x: Element; member(x, s) iff (exists c: Carrier; contains(c) and x = embed(c))
+
+// -- reification: every subobject HAS an image ------------------------------------------
+
+// comprehension at the image formula. This is the whole bridge from a carrier predicate to
+// a countable `Set`.
+theorem theImageExists: exists s: Set; isTheImage(s)
+proof
+  @conclusion |
+    exists s: Set; forall x: Element; member(x, s) iff (exists c: Carrier; holds(c) and x = embed(c))
+    [using instantiation setFromPredicate(fun x: Element => exists c: Carrier; holds(c) and x = embed(c))]
+qed
+
+// the image is unique as a set, so "the size of the subobject" is well defined: any two
+// sets representing one subobject have equal sizes.
+theorem theImageHasAUniqueSize: forall s: Set; isTheImage(s) ->
+  forall m, n: Nat; hasSize(s, m) -> hasSize(s, n) -> m = n
+proof
+  @sizes-are-unique |
+    forall a: Set; forall m: Nat; forall n: Nat; hasSize(a, m) -> hasSize(a, n) -> m = n
+    [by cite hasSizeIsUnique]
+  @generalize-s |
+    fix s: Set {
+      @given-s-is-the-image |
+        assume isTheImage(s) {
+          @conclusion-sizes-agree |
+            forall m, n: Nat; hasSize(s, m) -> hasSize(s, n) -> m = n
+            [using specialize sizes-are-unique(s)]
+        }
+      @conclusion-at-s |
+        isTheImage(s) -> forall m, n: Nat; hasSize(s, m) -> hasSize(s, n) -> m = n
+        [by discharge given-s-is-the-image]
+    }
+  @conclusion |
+    forall s: Set; isTheImage(s) -> forall m, n: Nat; hasSize(s, m) -> hasSize(s, n) -> m = n
+    [by generalize generalize-s]
+qed
+
+// a carrier element is in the image exactly when it satisfies the subobject. The membership
+// bridge every consumer needs: it turns a carrier-level fact into a set-level one.
+theorem theImageContainsExactlyTheSubobject: forall s: Set; isTheImage(s) ->
+  forall c: Carrier; member(embed(c), s) iff holds(c)
+proof
+  @embedding-is-injective |
+    forall c, d: Carrier; embed(c) = embed(d) -> c = d
+    [by cite embedInjective]
+  @generalize-s |
+    fix s: Set {
+      @given-s-is-the-image |
+        assume isTheImage(s) {
+          @image-members |
+            forall x: Element; member(x, s) iff (exists c: Carrier; holds(c) and x = embed(c))
+            [by hypothesis given-s-is-the-image]
+          @generalize-c |
+            fix c: Carrier {
+              @image-at-embedded-c |
+                member(embed(c), s) iff (exists d: Carrier; holds(d) and embed(c) = embed(d))
+                [by apply_at(embed(c)) image-members]
+              // forward: a witness for the embedded c must BE c, by injectivity
+              @given-embedded-c-is-a-member |
+                assume member(embed(c), s) {
+                  @c-is-a-member |
+                    member(embed(c), s)
+                    [by hypothesis given-embedded-c-is-a-member]
+                  @some-witness-embeds-to-c |
+                    exists d: Carrier; holds(d) and embed(c) = embed(d)
+                    [using tautology image-at-embedded-c c-is-a-member]
+                  @with-the-witness-d |
+                    unpack d: Carrier from some-witness-embeds-to-c {
+                      @d-facts |
+                        holds(d) and embed(c) = embed(d)
+                        [by hypothesis with-the-witness-d]
+                      @d-holds |
+                        holds(d)
+                        [by and_lhs d-facts]
+                      @embeddings-agree |
+                        embed(c) = embed(d)
+                        [by and_rhs d-facts]
+                      @c-is-d |
+                        c = d
+                        [using specialize embedding-is-injective(c, d) embeddings-agree]
+                      @conclusion-c-holds |
+                        holds(c)
+                        [by rewrite c-is-d d-holds]
+                    }
+                  @conclusion-member-implies-holds |
+                    holds(c)
+                    [by unpacked with-the-witness-d]
+                }
+              @member-implies-holds |
+                member(embed(c), s) -> holds(c)
+                [by discharge given-embedded-c-is-a-member]
+              // backward: c itself is the witness
+              @given-c-holds |
+                assume holds(c) {
+                  @c-holds |
+                    holds(c)
+                    [by hypothesis given-c-holds]
+                  @c-embeds-to-itself |
+                    embed(c) = embed(c)
+                    [by reflexivity]
+                  @c-witnesses |
+                    holds(c) and embed(c) = embed(c)
+                    [by both c-holds c-embeds-to-itself]
+                  @c-is-a-witness |
+                    exists d: Carrier; holds(d) and embed(c) = embed(d)
+                    [by witness(c) c-witnesses]
+                  @conclusion-holds-implies-member |
+                    member(embed(c), s)
+                    [using tautology image-at-embedded-c c-is-a-witness]
+                }
+              @holds-implies-member |
+                holds(c) -> member(embed(c), s)
+                [by discharge given-c-holds]
+              @conclusion-membership-is-holding |
+                member(embed(c), s) iff holds(c)
+                [by make_equivalence member-implies-holds holds-implies-member]
+            }
+          @conclusion-for-every-c |
+            forall c: Carrier; member(embed(c), s) iff holds(c)
+            [by generalize generalize-c]
+        }
+      @conclusion-at-s |
+        isTheImage(s) -> forall c: Carrier; member(embed(c), s) iff holds(c)
+        [by discharge given-s-is-the-image]
+    }
+  @conclusion |
+    forall s: Set; isTheImage(s) -> forall c: Carrier; member(embed(c), s) iff holds(c)
+    [by generalize generalize-s]
+qed
+
+// -- the payoff: ORDER STRUCTURE TRANSFERS ----------------------------------------------
+
+// A POINTWISE IMPLICATION on the carrier becomes a SUBSET of the images. This is what makes
+// the file an abstraction rather than a trick: with it, every finite.b4m theorem phrased in
+// `subset` — subsetOfFiniteIsFinite, properSubsetIsSmaller, pigeonhole — speaks about the
+// carrier's subobjects, and none of them had to be restated or re-proved.
+theorem imageRespectsImplication:
+  (forall c: Carrier; holds(c) -> contains(c)) ->
+  forall s, b: Set; isTheImage(s) -> isTheContainingImage(b) -> subset(s, b)
+proof
+  @given-the-implication |
+    assume forall c: Carrier; holds(c) -> contains(c) {
+      @the-implication |
+        forall c: Carrier; holds(c) -> contains(c)
+        [by hypothesis given-the-implication]
+      @generalize-s |
+        fix s: Set {
+          @generalize-b |
+            fix b: Set {
+              @given-s-is-the-image |
+                assume isTheImage(s) {
+                  @given-b-is-the-containing-image |
+                    assume isTheContainingImage(b) {
+                      @image-members |
+                        forall x: Element; member(x, s) iff (exists c: Carrier; holds(c) and x = embed(c))
+                        [by hypothesis given-s-is-the-image]
+                      @containing-members |
+                        forall x: Element; member(x, b) iff (exists c: Carrier; contains(c) and x = embed(c))
+                        [by hypothesis given-b-is-the-containing-image]
+                      @generalize-x |
+                        fix x: Element {
+                          @given-x-in-the-image |
+                            assume member(x, s) {
+                              @x-is-in-the-image |
+                                member(x, s)
+                                [by hypothesis given-x-in-the-image]
+                              @image-at-x |
+                                member(x, s) iff (exists c: Carrier; holds(c) and x = embed(c))
+                                [by apply_at(x) image-members]
+                              @x-comes-from-a-subobject |
+                                exists c: Carrier; holds(c) and x = embed(c)
+                                [using tautology image-at-x x-is-in-the-image]
+                              @with-the-witness-c |
+                                unpack c: Carrier from x-comes-from-a-subobject {
+                                  @c-facts |
+                                    holds(c) and x = embed(c)
+                                    [by hypothesis with-the-witness-c]
+                                  @c-holds |
+                                    holds(c)
+                                    [by and_lhs c-facts]
+                                  @x-is-c-embedded |
+                                    x = embed(c)
+                                    [by and_rhs c-facts]
+                                  @c-is-contained |
+                                    contains(c)
+                                    [using specialize the-implication(c) c-holds]
+                                  @c-witnesses-containment |
+                                    contains(c) and x = embed(c)
+                                    [by both c-is-contained x-is-c-embedded]
+                                  @x-comes-from-the-containing-subobject |
+                                    exists d: Carrier; contains(d) and x = embed(d)
+                                    [by witness(c) c-witnesses-containment]
+                                  @containing-at-x |
+                                    member(x, b) iff (exists d: Carrier; contains(d) and x = embed(d))
+                                    [by apply_at(x) containing-members]
+                                  @conclusion-x-is-contained |
+                                    member(x, b)
+                                    [using tautology containing-at-x x-comes-from-the-containing-subobject]
+                                }
+                              @conclusion-x-in-b |
+                                member(x, b)
+                                [by unpacked with-the-witness-c]
+                            }
+                          @conclusion-at-x |
+                            member(x, s) -> member(x, b)
+                            [by discharge given-x-in-the-image]
+                        }
+                      @conclusion-image-is-a-subset |
+                        forall x: Element; member(x, s) -> member(x, b)
+                        [by generalize generalize-x]
+                    }
+                  @conclusion-after-containing |
+                    isTheContainingImage(b) -> subset(s, b)
+                    [by discharge given-b-is-the-containing-image]
+                }
+              @conclusion-after-image |
+                isTheImage(s) -> isTheContainingImage(b) -> subset(s, b)
+                [by discharge given-s-is-the-image]
+            }
+          @conclusion-for-every-b |
+            forall b: Set; isTheImage(s) -> isTheContainingImage(b) -> subset(s, b)
+            [by generalize generalize-b]
+        }
+      @conclusion-for-every-set |
+        forall s, b: Set; isTheImage(s) -> isTheContainingImage(b) -> subset(s, b)
+        [by generalize generalize-s]
+    }
+  @conclusion |
+    (forall c: Carrier; holds(c) -> contains(c)) -> forall s, b: Set; isTheImage(s) -> isTheContainingImage(b) -> subset(s, b)
+    [by discharge given-the-implication]
+qed
+
+// and therefore: a subobject of a FINITE subobject is finite, with no larger size. The
+// first finite.b4m theorem to cross the bridge — subsetOfFiniteIsFinite, unchanged.
+theorem aSubobjectOfAFiniteSubobjectIsFinite:
+  (forall c: Carrier; holds(c) -> contains(c)) ->
+  forall n: Nat; forall s, b: Set; isTheImage(s) -> isTheContainingImage(b) ->
+  hasSize(b, n) -> exists m: Nat; hasSize(s, m) and less_or_equal(m, n)
+proof
+  @implication-gives-a-subset |
+    (forall c: Carrier; holds(c) -> contains(c)) -> forall s, b: Set; isTheImage(s) -> isTheContainingImage(b) -> subset(s, b)
+    [by cite imageRespectsImplication]
+  @given-the-implication |
+    assume forall c: Carrier; holds(c) -> contains(c) {
+      @the-implication |
+        forall c: Carrier; holds(c) -> contains(c)
+        [by hypothesis given-the-implication]
+      @images-are-nested |
+        forall s, b: Set; isTheImage(s) -> isTheContainingImage(b) -> subset(s, b)
+        [using tautology implication-gives-a-subset the-implication]
+      @generalize-n |
+        fix n: Nat {
+          @generalize-s |
+            fix s: Set {
+              @generalize-b |
+                fix b: Set {
+                  @given-s-is-the-image |
+                    assume isTheImage(s) {
+                      @given-b-is-the-containing-image |
+                        assume isTheContainingImage(b) {
+                          @given-b-has-size-n |
+                            assume hasSize(b, n) {
+                              @b-has-size-n |
+                                hasSize(b, n)
+                                [by hypothesis given-b-has-size-n]
+                              @s-is-the-image |
+                                isTheImage(s)
+                                [by hypothesis given-s-is-the-image]
+                              @b-is-the-containing-image |
+                                isTheContainingImage(b)
+                                [by hypothesis given-b-is-the-containing-image]
+                              @s-is-a-subset |
+                                subset(s, b)
+                                [using specialize images-are-nested(s, b) s-is-the-image b-is-the-containing-image]
+                              @conclusion-s-is-finite |
+                                exists m: Nat; hasSize(s, m) and less_or_equal(m, n)
+                                [using specialize subsetOfFiniteIsFinite(n, b, s) b-has-size-n s-is-a-subset]
+                            }
+                          @conclusion-when-sized |
+                            hasSize(b, n) -> exists m: Nat; hasSize(s, m) and less_or_equal(m, n)
+                            [by discharge given-b-has-size-n]
+                        }
+                      @conclusion-after-containing |
+                        isTheContainingImage(b) -> hasSize(b, n) -> exists m: Nat; hasSize(s, m) and less_or_equal(m, n)
+                        [by discharge given-b-is-the-containing-image]
+                    }
+                  @conclusion-after-image |
+                    isTheImage(s) -> isTheContainingImage(b) -> hasSize(b, n) -> exists m: Nat; hasSize(s, m) and less_or_equal(m, n)
+                    [by discharge given-s-is-the-image]
+                }
+              @conclusion-for-every-b |
+                forall b: Set; isTheImage(s) -> isTheContainingImage(b) -> hasSize(b, n) -> exists m: Nat; hasSize(s, m) and less_or_equal(m, n)
+                [by generalize generalize-b]
+            }
+          @conclusion-for-every-s |
+            forall s, b: Set; isTheImage(s) -> isTheContainingImage(b) -> hasSize(b, n) -> exists m: Nat; hasSize(s, m) and less_or_equal(m, n)
+            [by generalize generalize-s]
+        }
+      @conclusion-for-every-n |
+        forall n: Nat; forall s, b: Set; isTheImage(s) -> isTheContainingImage(b) -> hasSize(b, n) -> exists m: Nat; hasSize(s, m) and less_or_equal(m, n)
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    (forall c: Carrier; holds(c) -> contains(c)) -> forall n: Nat; forall s, b: Set; isTheImage(s) -> isTheContainingImage(b) -> hasSize(b, n) -> exists m: Nat; hasSize(s, m) and less_or_equal(m, n)
+    [by discharge given-the-implication]
+qed
