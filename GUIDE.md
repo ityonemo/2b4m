@@ -825,6 +825,29 @@ relativized.
 > is a checked source-to-source rewrite that never enters the kernel. No instance
 > resolution, no coherence machinery. (See `MODEL-DESIGN.md`.)
 
+**Two things `model` ALREADY does — do not build a mechanism for them.** Both come up
+as "we need parameterized sorts"; neither needs one (settled 2026-10-21).
+
+- **A sort parameterized over a SORT** (`Set(X)` — sets of sets, sets of permutations):
+  declare the instance's symbols, restate the theory's axioms over the new sort, and
+  `model` the theory onto them; its whole corpus transfers. `std/collection.b4m` is the
+  precedent: `set.Element: Set`, `set.Set: Collection`, six restated membership axioms,
+  and the entire set algebra holds of collections one line each. The restating IS the
+  instantiation — comptime generics, in this language's shape.
+- **A sort parameterized over a VALUE** (the elements of `H`, residues mod `N`): a `const`
+  for the parameter, a predicate that reads it, and `where` — `const H: Set`,
+  `pred inH(x): inH(x) iff member(x, H)`, `sort HSort = Element where inH`. A guarded
+  model onto `HSort` then runs any theory inside it (`drafts/size-balloon/size.b4m`'s
+  `HGroup` runs group theory inside a subgroup given as a set). The bridge BACK — from a
+  refined sort to a `Set` value, so it can be quantified over, sized, compared — is
+  `std/set.b4m`'s `setFromPredicate` comprehension schema; `std/set/examples.b4m` shows
+  both moves. What this does NOT reach: a parameter that is a *bound* variable (no
+  model targets a `fix`-block eigenvariable). Inside an ambient structure on `Element`
+  that rarely matters — the ambient theorems already hold of `h`'s members — and the one
+  honest residual is a quotient by a bound `N`, whose operation `mulQ(N, ·, ·)` differs
+  from the ambient one.
+
+
 ## Formulas
 
 Quantifier binders end with a semicolon; connectives are words; `->` is

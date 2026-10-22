@@ -1,0 +1,126 @@
+// Worked examples for `std/set.b4m`'s comprehension schema.
+//
+// Why this file exists: `setFromPredicate` is the one construction axiom in the theory, and
+// nothing in `set.b4m` instantiates it, so its shape has never been checked against a real
+// spec. The two theorems below instantiate it at the smallest spec that says something
+// (nothing satisfies `x != x`, so the set is empty) and at the spec that matters in practice:
+// the membership predicate of a REFINED SORT, which is how a sort gets named as a value.
+//
+// The second theorem is also the standing record of "a sort parameterized over a VALUE".
+// There is no mechanism for it and none is needed: a `const` plus a predicate that reads it
+// plus `where` IS the indexed sort, and `setFromPredicate` is the bridge from that sort to a
+// `Set` value. (For "a sort parameterized over a SORT" — sets of sets, sets of permutations —
+// the mechanism is `model`: std/collection.b4m maps `set.Element: Set`, `set.Set: Collection`.)
+import set <<< "std/set.b4m"
+
+sort Element = set.Element
+sort Set = set.Set
+pred member = set.member
+
+fact setFromPredicate = set.setFromPredicate
+
+// -- the schema at an unsatisfiable spec --------------------------------------------------
+
+// `x != x` holds of nothing, so the set it carves out has no members. One instantiation,
+// then the biconditional is eliminated the only way it can be.
+theorem comprehensionAtAnUnsatisfiableSpecIsEmpty: exists s: Set; forall x: Element; not member(x, s)
+proof
+  @the-set-exists |
+    exists s: Set; forall x: Element; member(x, s) iff x != x
+    [using instantiation setFromPredicate(fun x: Element => x != x)]
+  @with-the-set-s |
+    unpack s: Set from the-set-exists {
+      @members-are-self-distinct |
+        forall x: Element; member(x, s) iff x != x
+        [by hypothesis with-the-set-s]
+      @generalize-x |
+        fix x: Element {
+          @membership-at-x |
+            member(x, s) iff x != x
+            [by apply_at(x) members-are-self-distinct]
+          @x-equals-itself |
+            x = x
+            [by reflexivity]
+          @conclusion-x-is-not-a-member |
+            not member(x, s)
+            [using tautology membership-at-x x-equals-itself]
+        }
+      @nothing-is-a-member |
+        forall x: Element; not member(x, s)
+        [by generalize generalize-x]
+      @conclusion-such-a-set-exists |
+        exists s2: Set; forall x: Element; not member(x, s2)
+        [by witness(s) nothing-is-a-member]
+    }
+  @conclusion |
+    exists s: Set; forall x: Element; not member(x, s)
+    [by unpacked with-the-set-s]
+qed
+
+// -- a sort parameterized over a value, and back to a set ---------------------------------
+
+// The indexed sort: the elements of `A`, as a SORT. `A` is the parameter; `inA` reads it;
+// `where` carves the sort. A `fix k: ASort` hands back `inA(k)` by `predicate`.
+const A: Set
+pred inA(x: Element):
+  inA(x) iff member(x, A)
+sort ASort = Element where inA
+
+// And back: the sort is a set value again — one whose members are exactly the sort's
+// inhabitants. (Here that set is provably `A` itself; the point is the move, which works for
+// ANY refined sort of Element, named by a value or not.)
+theorem aSortCarvedByAValueIsASet:
+  exists s: Set; (forall k: ASort; member(k, s)) and (forall x: Element; member(x, s) -> member(x, A))
+proof
+  @the-set-exists |
+    exists s: Set; forall x: Element; member(x, s) iff inA(x)
+    [using instantiation setFromPredicate(fun x: Element => inA(x))]
+  @in-a-unfolds |
+    forall x: Element; inA(x) iff member(x, A)
+    [by definition inA]
+  @with-the-set-s |
+    unpack s: Set from the-set-exists {
+      @members-are-exactly-a |
+        forall x: Element; member(x, s) iff inA(x)
+        [by hypothesis with-the-set-s]
+      @generalize-k |
+        fix k: ASort {
+          @k-is-in-a |
+            inA(k)
+            [by predicate generalize-k]
+          @membership-at-k |
+            member(k, s) iff inA(k)
+            [by apply_at(k) members-are-exactly-a]
+          @conclusion-k-is-a-member |
+            member(k, s)
+            [using tautology membership-at-k k-is-in-a]
+        }
+      @the-sort-maps-in |
+        forall k: ASort; member(k, s)
+        [by generalize generalize-k]
+      @generalize-x |
+        fix x: Element {
+          @membership-at-x |
+            member(x, s) iff inA(x)
+            [by apply_at(x) members-are-exactly-a]
+          @in-a-at-x |
+            inA(x) iff member(x, A)
+            [by apply_at(x) in-a-unfolds]
+          @conclusion-members-are-in-a |
+            member(x, s) -> member(x, A)
+            [using tautology membership-at-x in-a-at-x]
+        }
+      @the-set-is-within-a |
+        forall x: Element; member(x, s) -> member(x, A)
+        [by generalize generalize-x]
+      @both-directions |
+        (forall k: ASort; member(k, s)) and (forall x: Element; member(x, s) -> member(x, A))
+        [by both the-sort-maps-in the-set-is-within-a]
+      @conclusion-such-a-set-exists |
+        exists s2: Set; (forall k: ASort; member(k, s2)) and (forall x: Element; member(x, s2) -> member(x, A))
+        [by witness(s) both-directions]
+    }
+  @conclusion |
+    exists s: Set; (forall k: ASort; member(k, s)) and (forall x: Element; member(x, s) -> member(x, A))
+    [by unpacked with-the-set-s]
+qed

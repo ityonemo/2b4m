@@ -1,0 +1,244 @@
+// size.b4m — TRIAL BALLOON: ONE `size` for sets AND group orders.
+//
+// std/set/finite.b4m already owns counting: `size(a: Set) => Nat`, `hasSize`, `isFinite`,
+// subsetOfFiniteIsFinite, disjointUnionSizesAdd, pigeonhole — 54 theorems. It has never been
+// connected to groups: std/group/* encodes |G| = n as a LISTING (a sequence of n distinct
+// entries covering G), and nobody has ever put a group on `element.Element`.
+//
+// The balloon: put a group structure ON THE SHARED ELEMENT SORT, transfer group theory to it
+// by `model`, take the carrier to be the universe `complement(emptyset)`, and let a subgroup be
+// a `Set` VALUE. Then `size` applies to the group and its subgroups natively, and
+// `forall h: Set; isSubgroup(h) -> …` QUANTIFIES OVER SUBGROUPS — what a predicated sort cannot.
+//
+// Two tests, each needing BOTH worlds on the SAME values:
+//   (1) a subgroup of a finite group has nonzero order — counting (sizeZeroIsEmpty) meets
+//       group structure (member(E, h));
+//   (2) a transferred group THEOREM (opInverseRight — a theorem, not an axiom) holds of set
+//       members — the model landed on the very sort Set ranges over.
+// Plus a HOLE stating Lagrange in size vocabulary: tests STATABILITY only.
+import element <<< "std/element.b4m"
+import set <<< "std/set.b4m"
+import group <<< "std/group.b4m"
+
+sort Element = element.Element
+sort Set = set.Set
+pred member = set.member
+const emptyset = set.emptyset
+func complement = set.complement
+fact complementMember = set.complementMember
+fact emptysetMember = set.emptysetMember
+define subset(a, b) = set.subset(a, b)
+
+// -- a group structure on the shared element sort ------------------------------------------
+const E: Element
+func op(a: Element, b: Element) => Element
+func inverse(a: Element) => Element
+axiom opAssoc: forall a, b, c: Element; op(op(a, b), c) = op(a, op(b, c))
+axiom opIdentityLeft: forall a: Element; op(E, a) = a
+axiom opInverseLeft: forall a: Element; op(inverse(a), a) = E
+
+model ElementGroup {
+  group.Grp: Element
+  group.E: E
+  group.op: op
+  group.inverse: inverse
+  group.opAssoc <- opAssoc
+  group.opIdentityLeft <- opIdentityLeft
+  group.opInverseLeft <- opInverseLeft
+}
+
+// -- the carrier, as a set: the universe ---------------------------------------------------
+theorem everyElementIsInTheCarrier: forall x: Element; member(x, complement(emptyset))
+proof
+  @generalize-x |
+    fix x: Element {
+      @in-complement-iff |
+        member(x, complement(emptyset)) iff (not member(x, emptyset))
+        [using specialize complementMember(emptyset, x)]
+      @not-in-emptyset |
+        not member(x, emptyset)
+        [using specialize emptysetMember(x)]
+      @conclusion-x-in-carrier |
+        member(x, complement(emptyset))
+        [using tautology in-complement-iff not-in-emptyset]
+    }
+  @conclusion |
+    forall x: Element; member(x, complement(emptyset))
+    [by generalize generalize-x]
+qed
+
+theorem everySetIsASubsetOfTheCarrier: forall h: Set; subset(h, complement(emptyset))
+proof
+  @everything-is-in-the-carrier |
+    forall x: Element; member(x, complement(emptyset))
+    [by cite everyElementIsInTheCarrier]
+  @generalize-h |
+    fix h: Set {
+      @generalize-x |
+        fix x: Element {
+          @given-x-in-h |
+            assume member(x, h) {
+              @conclusion-x-in-carrier |
+                member(x, complement(emptyset))
+                [by apply_at(x) everything-is-in-the-carrier]
+            }
+          @conclusion-at-x |
+            member(x, h) -> member(x, complement(emptyset))
+            [by discharge given-x-in-h]
+        }
+      @conclusion-h-is-a-subset |
+        forall x: Element; member(x, h) -> member(x, complement(emptyset))
+        [by generalize generalize-x]
+    }
+  @conclusion |
+    forall h: Set; subset(h, complement(emptyset))
+    [by generalize generalize-h]
+qed
+
+// -- a subgroup, as a SET VALUE ---------------------------------------------------------------
+// (A definition block would be preferred, but its clause-variable inference rejects an
+// INNER quantifier: "cannot infer the sort of 'a'" at the `forall a, b: Element`. So the
+// subgroup criterion is a plain axiom, as std/subgroup.b4m's is.)
+pred isSubgroup(s: Set)
+axiom subgroupDef: forall s: Set; isSubgroup(s) iff
+  (member(E, s)
+  and (forall a, b: Element; member(a, s) -> member(b, s) -> member(op(a, b), s))
+  and (forall a: Element; member(a, s) -> member(inverse(a), s)))
+// =============================================================================================
+// THE REVERSE DIRECTION: a subgroup given as a PREDICATED SORT (the std/subgroup.b4m shape —
+// a membership predicate + three closure axioms) MAPPED INTO a Set value that isSubgroup.
+//
+// What it costs: ONE comprehension schema — std/set.b4m's `setFromPredicate` (landed from
+// this balloon, 2026-10-21). Every instance is the ZFC separation axiom at a formula.
+fact setFromPredicate = set.setFromPredicate
+
+// a subgroup in predicated-sort form
+pred inK(x: Element)
+axiom kHasIdentity: inK(E)
+axiom kClosedUnderOp: forall a, b: Element; inK(a) -> inK(b) -> inK(op(a, b))
+axiom kClosedUnderInverse: forall a: Element; inK(a) -> inK(inverse(a))
+sort KSort = Element where inK
+
+// The set exists, every KSort element lands in it, and it is a subgroup in Set vocabulary.
+theorem aSubgroupSortMapsIntoASubgroupSet:
+  exists s: Set; (forall x: Element; member(x, s) iff inK(x))
+  and (forall k: KSort; member(k, s))
+  and isSubgroup(s)
+proof
+  @the-set-exists |
+    exists s: Set; forall x: Element; member(x, s) iff inK(x)
+    [using instantiation setFromPredicate(fun x: Element => inK(x))]
+  @subgroup-criterion |
+    forall s: Set; isSubgroup(s) iff (member(E, s) and (forall a, b: Element; member(a, s) -> member(b, s) -> member(op(a, b), s)) and (forall a: Element; member(a, s) -> member(inverse(a), s)))
+    [by cite subgroupDef]
+  @op-closure-in-k |
+    forall a, b: Element; inK(a) -> inK(b) -> inK(op(a, b))
+    [by cite kClosedUnderOp]
+  @inverse-closure-in-k |
+    forall a: Element; inK(a) -> inK(inverse(a))
+    [by cite kClosedUnderInverse]
+  @k-has-identity |
+    inK(E)
+    [by cite kHasIdentity]
+  @with-the-set-s |
+    unpack s: Set from the-set-exists {
+      @members-are-exactly-k |
+        forall x: Element; member(x, s) iff inK(x)
+        [by hypothesis with-the-set-s]
+
+      // every element of the subgroup SORT is a member of the set
+      @generalize-k |
+        fix k: KSort {
+          @k-is-in-k |
+            inK(k)
+            [by predicate generalize-k]
+          @membership-at-k |
+            member(k, s) iff inK(k)
+            [by apply_at(k) members-are-exactly-k]
+          @conclusion-k-is-a-member |
+            member(k, s)
+            [using tautology membership-at-k k-is-in-k]
+        }
+      @the-sort-maps-in |
+        forall k: KSort; member(k, s)
+        [by generalize generalize-k]
+
+      // the set satisfies the subgroup criterion
+      @membership-at-identity |
+        member(E, s) iff inK(E)
+        [by apply_at(E) members-are-exactly-k]
+      @identity-is-a-member |
+        member(E, s)
+        [using tautology membership-at-identity k-has-identity]
+      @generalize-a |
+        fix a: Element {
+          @generalize-b |
+            fix b: Element {
+              @membership-at-a |
+                member(a, s) iff inK(a)
+                [by apply_at(a) members-are-exactly-k]
+              @membership-at-b |
+                member(b, s) iff inK(b)
+                [by apply_at(b) members-are-exactly-k]
+              @membership-at-product |
+                member(op(a, b), s) iff inK(op(a, b))
+                [by apply_at(op(a, b)) members-are-exactly-k]
+              @closure-at-a-b |
+                inK(a) -> inK(b) -> inK(op(a, b))
+                [by apply_at(a, b) op-closure-in-k]
+              @conclusion-product-is-a-member |
+                member(a, s) -> member(b, s) -> member(op(a, b), s)
+                [using tautology membership-at-a membership-at-b membership-at-product closure-at-a-b]
+            }
+          @conclusion-closed-at-a |
+            forall b: Element; member(a, s) -> member(b, s) -> member(op(a, b), s)
+            [by generalize generalize-b]
+        }
+      @closed-under-op |
+        forall a, b: Element; member(a, s) -> member(b, s) -> member(op(a, b), s)
+        [by generalize generalize-a]
+      @generalize-a2 |
+        fix a2: Element {
+          @membership-at-a2 |
+            member(a2, s) iff inK(a2)
+            [by apply_at(a2) members-are-exactly-k]
+          @membership-at-inverse |
+            member(inverse(a2), s) iff inK(inverse(a2))
+            [by apply_at(inverse(a2)) members-are-exactly-k]
+          @inverse-closure-at-a2 |
+            inK(a2) -> inK(inverse(a2))
+            [by apply_at(a2) inverse-closure-in-k]
+          @conclusion-inverse-is-a-member |
+            member(a2, s) -> member(inverse(a2), s)
+            [using tautology membership-at-a2 membership-at-inverse inverse-closure-at-a2]
+        }
+      @closed-under-inverse |
+        forall a: Element; member(a, s) -> member(inverse(a), s)
+        [by generalize generalize-a2]
+      @identity-and-op-closure |
+        member(E, s) and (forall a, b: Element; member(a, s) -> member(b, s) -> member(op(a, b), s))
+        [by both identity-is-a-member closed-under-op]
+      @criterion-body |
+        member(E, s) and (forall a, b: Element; member(a, s) -> member(b, s) -> member(op(a, b), s)) and (forall a: Element; member(a, s) -> member(inverse(a), s))
+        [by both identity-and-op-closure closed-under-inverse]
+      @criterion-at-s |
+        isSubgroup(s) iff (member(E, s) and (forall a, b: Element; member(a, s) -> member(b, s) -> member(op(a, b), s)) and (forall a: Element; member(a, s) -> member(inverse(a), s)))
+        [by apply_at(s) subgroup-criterion]
+      @s-is-a-subgroup |
+        isSubgroup(s)
+        [using tautology criterion-at-s criterion-body]
+
+      @exactness-and-map |
+        (forall x: Element; member(x, s) iff inK(x)) and (forall k: KSort; member(k, s))
+        [by both members-are-exactly-k the-sort-maps-in]
+      @all-three |
+        (forall x: Element; member(x, s) iff inK(x)) and (forall k: KSort; member(k, s)) and isSubgroup(s)
+        [by both exactness-and-map s-is-a-subgroup]
+      @conclusion-such-a-set-exists |
+        exists s2: Set; (forall x: Element; member(x, s2) iff inK(x)) and (forall k: KSort; member(k, s2)) and isSubgroup(s2)
+        [by witness(s) all-three]
+    }
+  @conclusion |
+    exists s: Set; (forall x: Element; member(x, s) iff inK(x)) and (forall k: KSort; member(k, s)) and isSubgroup(s)
+    [by unpacked with-the-set-s]
+qed
