@@ -1,0 +1,204 @@
+// std/group/counted-listings.b4m — LISTINGS MODEL THE ABSTRACT COUNTING THEORY.
+//
+// std/group/* counts a group by LISTING it: a sequence `v` of `n` distinct entries covering
+// the thing being counted (`listsWithoutRepetition(v, n)` + a covering clause). That
+// encoding exists because `group.Grp` is not `Element`, so std/set/finite.b4m's `size`
+// cannot reach it. This file shows the listing encoding satisfies the SAME abstract counting
+// interface the set encoding does (std/set/counted-sets.b4m), so a result stated once in
+// std/counted.b4m holds in both worlds.
+//
+// THE REIFICATION. `counted.Domain` is one sort, but a listing is a PAIR (sequence, length).
+// So the domain here is a `Listing` sort with two projections and the distinctness condition
+// as its defining axiom — the listing made into a value. Inclusion is `drawnFrom`: every
+// entry of one listing appears in the other.
+//
+// The two obligations land very differently, which is worth knowing before reusing this
+// pattern:
+//   * UNIQUENESS is trivial — `counts(d, n)` is `theLength(d) = n`, so two counts of one
+//     listing are two names for its length. (`listingsOfTheSameClassHaveEqualLength` is the
+//     lemma for the DIFFERENT question of two listings of the same class.)
+//   * MONOTONICITY is the real content, and it is exactly
+//     std/group/counting.b4m's `sublistingIsNoLongerThanTheListing` — the pigeonhole
+//     argument over sequences, already proved there. Nothing is re-proved here.
+
+import counted <<< "std/counted.b4m"
+import group_counting <<< "std/group/counting.b4m"
+import peano <<< "std/peano.b4m"
+
+sort Nat = peano.Nat
+sort Seq = group_counting.Seq
+define less_or_equal(a, b) = peano.less_or_equal(a, b)
+define listsWithoutRepetition(v, q) = group_counting.listsWithoutRepetition(v, q)
+define drawnFrom(v, m, w, n) = group_counting.drawnFrom(v, m, w, n)
+fact sublistingIsNoLongerThanTheListing = group_counting.sublistingIsNoLongerThanTheListing
+
+// -- a listing, as a value --------------------------------------------------------------
+
+// The (sequence, length) pair reified: one sort, two projections, and the distinctness
+// condition that makes it a count rather than an arbitrary sequence.
+sort Listing
+func theSeq(d: Listing) => Seq
+func theLength(d: Listing) => Nat
+axiom aListingHasDistinctEntries: forall d: Listing;
+  listsWithoutRepetition(theSeq(d), theLength(d))
+
+// the listing counts n when its length is n; it is within another when every entry of it
+// appears in the other.
+define listingCounts(d, n) = theLength(d) = n
+define listingWithin(d, e) = drawnFrom(theSeq(d), theLength(d), theSeq(e), theLength(e))
+
+// -- the two obligations ----------------------------------------------------------------
+
+// uniqueness: two counts of one listing are both its length.
+theorem aListingCountsOnlyItsLength: forall d: Listing; forall m, n: Nat;
+  listingCounts(d, m) -> listingCounts(d, n) -> m = n
+proof
+  @generalize-d |
+    fix d: Listing {
+      @generalize-m |
+        fix m: Nat {
+          @generalize-n |
+            fix n: Nat {
+              @given-d-counts-m |
+                assume listingCounts(d, m) {
+                  @given-d-counts-n |
+                    assume listingCounts(d, n) {
+                      @length-is-m |
+                        theLength(d) = m
+                        [by hypothesis given-d-counts-m]
+                      @length-is-n |
+                        theLength(d) = n
+                        [by hypothesis given-d-counts-n]
+                      @m-is-the-length |
+                        m = theLength(d)
+                        [by symmetry length-is-m]
+                      @conclusion-counts-agree |
+                        m = n
+                        [by rewrite m-is-the-length length-is-n]
+                    }
+                  @conclusion-after-n |
+                    listingCounts(d, n) -> m = n
+                    [by discharge given-d-counts-n]
+                }
+              @conclusion-at-n |
+                listingCounts(d, m) -> listingCounts(d, n) -> m = n
+                [by discharge given-d-counts-m]
+            }
+          @conclusion-for-n |
+            forall n: Nat; listingCounts(d, m) -> listingCounts(d, n) -> m = n
+            [by generalize generalize-n]
+        }
+      @conclusion-for-m |
+        forall m, n: Nat; listingCounts(d, m) -> listingCounts(d, n) -> m = n
+        [by generalize generalize-m]
+    }
+  @conclusion |
+    forall d: Listing; forall m, n: Nat; listingCounts(d, m) -> listingCounts(d, n) -> m = n
+    [by generalize generalize-d]
+qed
+
+// monotonicity: a listing drawn from another is no longer. The content is
+// counting.b4m's pigeonhole over sequences; here it is only transported to the projections.
+theorem listingCountIsMonotone: forall d, e: Listing; forall m, n: Nat;
+  listingWithin(d, e) -> listingCounts(d, m) -> listingCounts(e, n) -> less_or_equal(m, n)
+proof
+  @sublisting-bound |
+    forall m: Nat; forall v: Seq; listsWithoutRepetition(v, m) -> forall n: Nat; forall w: Seq; drawnFrom(v, m, w, n) -> less_or_equal(m, n)
+    [by cite sublistingIsNoLongerThanTheListing]
+  @listings-are-distinct |
+    forall d: Listing; listsWithoutRepetition(theSeq(d), theLength(d))
+    [by cite aListingHasDistinctEntries]
+  @generalize-d |
+    fix d: Listing {
+      @generalize-e |
+        fix e: Listing {
+          @generalize-m |
+            fix m: Nat {
+              @generalize-n |
+                fix n: Nat {
+                  @given-d-within-e |
+                    assume listingWithin(d, e) {
+                      @given-d-counts-m |
+                        assume listingCounts(d, m) {
+                          @given-e-counts-n |
+                            assume listingCounts(e, n) {
+                              @d-is-drawn-from-e |
+                                drawnFrom(theSeq(d), theLength(d), theSeq(e), theLength(e))
+                                [by hypothesis given-d-within-e]
+                              @d-length-is-m |
+                                theLength(d) = m
+                                [by hypothesis given-d-counts-m]
+                              @e-length-is-n |
+                                theLength(e) = n
+                                [by hypothesis given-e-counts-n]
+                              @d-is-distinct |
+                                listsWithoutRepetition(theSeq(d), theLength(d))
+                                [by apply_at(d) listings-are-distinct]
+                              @lengths-are-ordered |
+                                less_or_equal(theLength(d), theLength(e))
+                                [using specialize sublisting-bound(theLength(d), theSeq(d), theLength(e), theSeq(e)) d-is-distinct d-is-drawn-from-e]
+                              @m-at-most-e-length |
+                                less_or_equal(m, theLength(e))
+                                [by rewrite d-length-is-m lengths-are-ordered]
+                              @conclusion-m-at-most-n |
+                                less_or_equal(m, n)
+                                [by rewrite e-length-is-n m-at-most-e-length]
+                            }
+                          @conclusion-after-e |
+                            listingCounts(e, n) -> less_or_equal(m, n)
+                            [by discharge given-e-counts-n]
+                        }
+                      @conclusion-after-d |
+                        listingCounts(d, m) -> listingCounts(e, n) -> less_or_equal(m, n)
+                        [by discharge given-d-counts-m]
+                    }
+                  @conclusion-at-n |
+                    listingWithin(d, e) -> listingCounts(d, m) -> listingCounts(e, n) -> less_or_equal(m, n)
+                    [by discharge given-d-within-e]
+                }
+              @conclusion-for-n |
+                forall n: Nat; listingWithin(d, e) -> listingCounts(d, m) -> listingCounts(e, n) -> less_or_equal(m, n)
+                [by generalize generalize-n]
+            }
+          @conclusion-for-m |
+            forall m, n: Nat; listingWithin(d, e) -> listingCounts(d, m) -> listingCounts(e, n) -> less_or_equal(m, n)
+            [by generalize generalize-m]
+        }
+      @conclusion-for-e |
+        forall e: Listing; forall m, n: Nat; listingWithin(d, e) -> listingCounts(d, m) -> listingCounts(e, n) -> less_or_equal(m, n)
+        [by generalize generalize-e]
+    }
+  @conclusion |
+    forall d, e: Listing; forall m, n: Nat; listingWithin(d, e) -> listingCounts(d, m) -> listingCounts(e, n) -> less_or_equal(m, n)
+    [by generalize generalize-d]
+qed
+
+// -- a LISTING is a counted domain ------------------------------------------------------
+
+model ListingsAreCounted {
+  counted.Domain: Listing
+  counted.counts: listingCounts
+  counted.within: listingWithin
+  counted.countIsUnique <- aListingCountsOnlyItsLength
+  counted.countIsMonotone <- listingCountIsMonotone
+}
+
+// and the interface's theorems hold of listings too — the same two facts the set world got,
+// from the same single proof in std/counted.b4m.
+theorem mutuallyDrawnListingsHaveEqualLengths: forall d, e: Listing; forall m, n: Nat;
+  listingWithin(d, e) -> listingWithin(e, d) -> listingCounts(d, m) -> listingCounts(e, n) ->
+  m = n
+proof
+  @conclusion |
+    forall d, e: Listing; forall m, n: Nat; listingWithin(d, e) -> listingWithin(e, d) -> listingCounts(d, m) -> listingCounts(e, n) -> m = n
+    [using model(ListingsAreCounted) counted.mutualInclusionGivesEqualCounts]
+qed
+
+theorem listingLengthsAreBoundedAlongAChain: forall c, d, e: Listing; forall l, m, n: Nat;
+  listingWithin(c, d) -> listingWithin(d, e) -> listingCounts(c, l) -> listingCounts(d, m) ->
+  listingCounts(e, n) -> less_or_equal(l, n)
+proof
+  @conclusion |
+    forall c, d, e: Listing; forall l, m, n: Nat; listingWithin(c, d) -> listingWithin(d, e) -> listingCounts(c, l) -> listingCounts(d, m) -> listingCounts(e, n) -> less_or_equal(l, n)
+    [using model(ListingsAreCounted) counted.countsAreBoundedAlongAChain]
+qed

@@ -825,6 +825,66 @@ relativized.
 > is a checked source-to-source rewrite that never enters the kernel. No instance
 > resolution, no coherence machinery. (See `MODEL-DESIGN.md`.)
 
+### SET SIZE vs SORT SIZE — how to count anything
+
+**One `size` serves the whole library: `std/set/finite.b4m`'s.** Never write a second
+counting notion. Which route you take depends only on what the thing being counted is.
+
+| what you are counting | route |
+|---|---|
+| a `Set` of `Element` | `std/set/finite.b4m` directly — `size`, `hasSize`, `isFinite` |
+| a structure whose carrier IS `element.Element` | model `std/group/size.b4m`'s pattern: declare the structure on `Element`, model the abstract theory onto it, and `size` applies natively. A subobject is a `Set` VALUE, so it can be QUANTIFIED over |
+| a subobject of a carrier that is NOT `Element` (`group.Grp`, `Perm`, `Zn`, `Quot`, …) | model **`std/sized.b4m`**: supply `embed: Carrier => Element` + its injectivity, and the subobject's IMAGE is a countable `Set`. `std/group/sized-group.b4m` does this at `group.Grp` |
+
+**Why the third route exists, and why it is not optional.** `finite.b4m` is single-sorted by
+design: `hasSize(a, n)` is "equinumerous with `segment(n)`", and `segment` embeds ℕ *into the
+universe being counted* via `numeral: Nat => Element`. That is what lets counting work with
+ordinary one-sorted `Fn`s. It also means **`finite.b4m` cannot be INSTANTIATED over another
+carrier** — `numeral` into a FINITE carrier (`Perm`, `Zn`) is inconsistent. So you never lift
+counting *onto* a carrier; you lift the carrier's *objects into* `Element` and count there.
+
+**What the injection costs.** `embed` + `embedInjective` is a signature assumption, not a
+mathematical claim: nothing is proved about `embed` beyond injectivity, and any carrier admits
+such a map because `Element` is unconstrained. It is correctly an `axiom` rather than a `hole`
+— there is nothing to prove, and no citation to find.
+
+**What it buys.** `std/sized.b4m` proves the transfer facts ONCE: a subobject reifies to a set
+(`theImageExists`), membership agrees (`theImageContainsExactlyTheSubobject`), the order is
+well defined (`theImageHasAUniqueSize`), and — the payoff — a **pointwise implication on the
+carrier becomes `subset` of the images** (`imageRespectsImplication`). With that last one,
+every `finite.b4m` theorem phrased in `subset` (`subsetOfFiniteIsFinite`,
+`properSubsetIsSmaller`, `pigeonhole`, `disjointUnionSizesAdd`) speaks about the carrier's
+subobjects with nothing restated. A consumer's theorems are then one line each:
+`[using model(M) sized.<thm>]`.
+
+**The LISTING encoding is the legacy route for PROOFS, and a peer for STATEMENTS.**
+`std/group/lagrange.b4m` and `std/group/coset.b4m` encode `|G| = n` as `listsTheGroup(v, n)`
+— a sequence of n distinct entries covering the group — because before `sized.b4m` there was
+no way to count `group.Grp`. Those proofs stand; do not rewrite them, and prefer `size`
+vocabulary for new results.
+
+**When a result must hold in BOTH worlds, state it against `std/counted.b4m`.** That is the
+abstract counting interface: a `Domain` sort, `counts(d, n)`, `within(d, e)`, and two axioms —
+a count is unique, and counting is monotone under inclusion. Both representations model it:
+`std/set/counted-sets.b4m` (Domain := `Set`, counts := `hasSize`, within := `subset`) and
+`std/group/counted-listings.b4m` (Domain := a reified `Listing` sort with `theSeq`/`theLength`
+projections, within := `drawnFrom`). A theorem proved once in `counted.b4m` transfers to both
+as a one-line `[using model(M) counted.<thm>]`.
+
+Two things to know before reusing that pattern. **A pair must be reified**: `counted.Domain`
+is one sort, so the listing world needs a `Listing` sort with projections rather than modeling
+`(Seq, Nat)` directly. And **the interface is deliberately weak** — strictness under proper
+inclusion was left out, because the set world has it (`properSubsetIsSmaller`) but the listing
+world has no such lemma and proving it needs a fresh induction over sequences. An interface one
+representation cannot honestly discharge is worth less than a narrow one both can; add an axiom
+when a consumer needs it and both sides can pay.
+
+**So there are THREE counting tools, and they do different jobs:** `finite.b4m` is the ground
+truth for sets of `Element`; `sized.b4m` carries finite.b4m's FULL strength onto a foreign
+carrier by injection (use it when you want pigeonhole, disjoint unions, bijections there);
+`counted.b4m` carries a WEAK common core across every representation (use it when the result
+must not care how the thing is counted).
+
 **Two things `model` ALREADY does — do not build a mechanism for them.** Both come up
 as "we need parameterized sorts"; neither needs one (settled 2026-10-21).
 
