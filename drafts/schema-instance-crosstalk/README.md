@@ -1,4 +1,25 @@
-# schema-instance crosstalk — MINIMAL REPRO + the two controls
+# schema-instance crosstalk — RESOLVED 2026-10-22 (minimal repro + the two controls)
+
+**ROOT CAUSE** (`src/Engine/ProveTask/Prove.zig`, `produceSpecialize`): the synthetic schema's
+name was `specialize{hash}` with the hash over the HEAD FORMULA and ARG COUNT only. But the
+schema BODY also depends on whether the head is LOCAL — a local head's body carries the head
+formula as antecedent #0 (discharged by the citing step) and a declared head's does not — and
+a local step that `[by cite]`s a fact has exactly the fact's formula. So the two flavours
+hashed to ONE name, `registerDecl` is keep-first, and whichever theorem ran second silently
+instantiated the OTHER flavour's body against its own premise list: a one-position premise
+shift, which is both faces below. Scheduling-dependent because the loser is whoever runs
+second. The `{m<N>}` model-mangling a few lines up is the same bug class, fixed earlier along
+a different axis.
+
+**FIX:** mix the head flavour into the hash (one line). Verified: the repro and both controls
+pass; the 2026-10-10 repro passes (under `--draft` — it has an unrelated dead step of its own
+that the crosstalk had masked); the 400-line parent is 10/10 green at `-j1` where it was an
+8/2 split of two different errors. Regression: `tests/cases/schema_instance_crosstalk/`.
+
+The `--chaos=<seed>` non-replay noted below is a SEPARATE defect and is still open.
+
+---
+
 
 Bisected 2026-10-22 from a 400-line `std/group/size.b4m` failure down to 75 lines over
 `std/peano` only. Refines the bug recorded at `drafts/schema-instance-crosstalk.b4m`

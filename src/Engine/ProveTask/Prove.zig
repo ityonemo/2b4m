@@ -3242,8 +3242,14 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
 
     const steps = try self.buildSpecializeProof(&b, head, head_local, head_formula, pnames, ants.items, consequent);
 
-    // deterministic hash-name from the head formula + arg count (re-entry stable).
-    const hash = Schema.termHash(self.ctx.interner, self.pool, head_formula) ^ (@as(u64, @intCast(nargs)) *% 0x9E3779B97F4A7C15);
+    // deterministic hash-name from the head formula + arg count + HEAD FLAVOUR (re-entry
+    // stable). The flavour must be in the name: a LOCAL head's body carries the head formula as
+    // antecedent #0 and a DECLARED head's does not, yet a local step that `[by cite]`s a fact
+    // has exactly the fact's formula — so without this bit the two flavours hash alike and
+    // `registerDecl`'s keep-first lets whichever theorem runs second instantiate the OTHER
+    // flavour's body against its own premise list (drafts/schema-instance-crosstalk/).
+    const flavour: u64 = if (head_local) 0xA5A5A5A5A5A5A5A5 else 0;
+    const hash = Schema.termHash(self.ctx.interner, self.pool, head_formula) ^ (@as(u64, @intCast(nargs)) *% 0x9E3779B97F4A7C15) ^ flavour;
     const name = try b.intern(try std.fmt.allocPrint(self.ctx.arena, "specialize{{{x}}}", .{hash}));
 
     // call-site args mirror the params: the free-eigenvar args FIRST, then the user's ∀-args.

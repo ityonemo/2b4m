@@ -713,6 +713,19 @@ pub fn addTests(
     // axiom-proven, no holes) — so the emitted specialization really re-checks.
     ctx.okSilent(&.{ "check", "tests/cases/arithmetic_fallback_specialize.b4m" });
 
+    // Two theorems `specialize` ONE shared fact by DIFFERENT access paths — one by its
+    // declared name, the other via a local step that `[by cite]`s it. The synthetic
+    // schemas differ (a local head's body carries the head formula as antecedent #0; a
+    // declared head's does not) but their head FORMULA is identical, and the synthetic's
+    // hash-name once covered only the formula + arg count — so both flavours hashed alike
+    // and keep-first registration let whichever theorem ran second instantiate the other
+    // flavour's body against its own premise list. Scheduling-dependent: each theorem
+    // passed alone, and which one failed in the same pass varied run to run. The two
+    // uniform-access files are the controls that always passed.
+    ctx.okSilent(&.{ "check", "tests/cases/schema_instance_crosstalk/mixed_access_paths.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/schema_instance_crosstalk/both_declared_names.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/schema_instance_crosstalk/both_local_labels.b4m" });
+
     // linear-equation-combination certifier: an equation goal that follows by
     // CANCELLING an equality PREMISE (sub(a,r) = mul(b,q) from the premise
     // add(mul(b,q),r) = a) over opaque leaves. The rewrite-normalizer can't fire
