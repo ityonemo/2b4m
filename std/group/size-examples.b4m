@@ -1,0 +1,342 @@
+// Worked examples for `std/group/size.b4m`: a subgroup in its two guises.
+//
+// Why this file exists: size.b4m makes a subgroup a `Set` VALUE so it can be quantified over
+// and sized. The question that raises is whether a subgroup-as-set can still be reasoned in
+// as a GROUP — and the converse, whether a subgroup given as a predicated sort (the
+// std/subgroup.b4m shape) can be handed to size.b4m as a set. Both, below.
+import set <<< "std/set.b4m"
+import group <<< "std/group.b4m"
+import group_size <<< "std/group/size.b4m"
+
+sort Element = group_size.Element
+sort Set = group_size.Set
+pred member = group_size.member
+const E = group_size.E
+func op = group_size.op
+func inverse = group_size.inverse
+pred isSubgroup = group_size.isSubgroup
+fact subgroupDef = group_size.subgroupDef
+fact opAssoc = group_size.opAssoc
+fact opIdentityLeft = group_size.opIdentityLeft
+fact opInverseLeft = group_size.opInverseLeft
+fact setFromPredicate = set.setFromPredicate
+
+// -- a NAMED subgroup, as a set, entered as a GROUP ---------------------------------------
+// What a quantified `h: Set` cannot do (a model targets a declared sort), a `const H: Set`
+// can: carve the predicated sort `Element where inH`, nominate the closure facts, and the
+// GUARDED model transfers all of group theory onto H. This is "a sort parameterized over a
+// value" — const + a predicate reading it + where — with no mechanism beyond `model`.
+const H: Set
+axiom HIsASubgroup: isSubgroup(H)
+pred inH(x: Element):
+  inH(x) iff member(x, H)
+sort HSort = Element where inH
+
+theorem identityIsInH: inH(E)
+proof
+  @inH-definition |
+    forall x: Element; inH(x) iff member(x, H)
+    [by definition inH]
+  @subgroup-definition |
+    forall s: Set; isSubgroup(s) iff (member(E, s) and (forall a, b: Element; member(a, s) -> member(b, s) -> member(op(a, b), s)) and (forall a: Element; member(a, s) -> member(inverse(a), s)))
+    [by cite subgroupDef]
+  @H-definition |
+    isSubgroup(H) iff (member(E, H) and (forall a, b: Element; member(a, H) -> member(b, H) -> member(op(a, b), H)) and (forall a: Element; member(a, H) -> member(inverse(a), H)))
+    [by apply_at(H) subgroup-definition]
+  @H-is-a-subgroup |
+    isSubgroup(H)
+    [by cite HIsASubgroup]
+  @H-closure |
+    member(E, H) and (forall a, b: Element; member(a, H) -> member(b, H) -> member(op(a, b), H)) and (forall a: Element; member(a, H) -> member(inverse(a), H))
+    [using tautology H-definition H-is-a-subgroup]
+  @identity-is-a-member |
+    member(E, H)
+    [using tautology H-closure]
+  @inH-of-E-iff |
+    inH(E) iff member(E, H)
+    [using specialize inH-definition(E)]
+  @conclusion |
+    inH(E)
+    [using tautology inH-of-E-iff identity-is-a-member]
+qed
+
+theorem hIsClosedUnderOp: forall a, b: Element; inH(a) -> inH(b) -> inH(op(a, b))
+proof
+  @inH-definition |
+    forall x: Element; inH(x) iff member(x, H)
+    [by definition inH]
+  @subgroup-definition |
+    forall s: Set; isSubgroup(s) iff (member(E, s) and (forall a, b: Element; member(a, s) -> member(b, s) -> member(op(a, b), s)) and (forall a: Element; member(a, s) -> member(inverse(a), s)))
+    [by cite subgroupDef]
+  @H-definition |
+    isSubgroup(H) iff (member(E, H) and (forall a, b: Element; member(a, H) -> member(b, H) -> member(op(a, b), H)) and (forall a: Element; member(a, H) -> member(inverse(a), H)))
+    [by apply_at(H) subgroup-definition]
+  @H-is-a-subgroup |
+    isSubgroup(H)
+    [by cite HIsASubgroup]
+  @H-closure |
+    member(E, H) and (forall a, b: Element; member(a, H) -> member(b, H) -> member(op(a, b), H)) and (forall a: Element; member(a, H) -> member(inverse(a), H))
+    [using tautology H-definition H-is-a-subgroup]
+  @H-closed-under-op |
+    forall a, b: Element; member(a, H) -> member(b, H) -> member(op(a, b), H)
+    [using tautology H-closure]
+  @generalize-a |
+    fix a: Element {
+      @generalize-b |
+        fix b: Element {
+          @given-a-in-H |
+            assume inH(a) {
+              @given-b-in-H |
+                assume inH(b) {
+                  @a-in-H |
+                    inH(a)
+                    [by hypothesis given-a-in-H]
+                  @b-in-H |
+                    inH(b)
+                    [by hypothesis given-b-in-H]
+                  @a-iff |
+                    inH(a) iff member(a, H)
+                    [using specialize inH-definition(a)]
+                  @b-iff |
+                    inH(b) iff member(b, H)
+                    [using specialize inH-definition(b)]
+                  @a-is-a-member |
+                    member(a, H)
+                    [using tautology a-iff a-in-H]
+                  @b-is-a-member |
+                    member(b, H)
+                    [using tautology b-iff b-in-H]
+                  @product-is-a-member |
+                    member(op(a, b), H)
+                    [using specialize H-closed-under-op(a, b) a-is-a-member b-is-a-member]
+                  @product-iff |
+                    inH(op(a, b)) iff member(op(a, b), H)
+                    [using specialize inH-definition(op(a, b))]
+                  @conclusion-product-in-H |
+                    inH(op(a, b))
+                    [using tautology product-iff product-is-a-member]
+                }
+              @conclusion-after-b |
+                inH(b) -> inH(op(a, b))
+                [by discharge given-b-in-H]
+            }
+          @conclusion-after-a |
+            inH(a) -> inH(b) -> inH(op(a, b))
+            [by discharge given-a-in-H]
+        }
+      @conclusion-for-b |
+        forall b: Element; inH(a) -> inH(b) -> inH(op(a, b))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Element; inH(a) -> inH(b) -> inH(op(a, b))
+    [by generalize generalize-a]
+qed
+
+theorem hIsClosedUnderInverse: forall a: Element; inH(a) -> inH(inverse(a))
+proof
+  @inH-definition |
+    forall x: Element; inH(x) iff member(x, H)
+    [by definition inH]
+  @subgroup-definition |
+    forall s: Set; isSubgroup(s) iff (member(E, s) and (forall a, b: Element; member(a, s) -> member(b, s) -> member(op(a, b), s)) and (forall a: Element; member(a, s) -> member(inverse(a), s)))
+    [by cite subgroupDef]
+  @H-definition |
+    isSubgroup(H) iff (member(E, H) and (forall a, b: Element; member(a, H) -> member(b, H) -> member(op(a, b), H)) and (forall a: Element; member(a, H) -> member(inverse(a), H)))
+    [by apply_at(H) subgroup-definition]
+  @H-is-a-subgroup |
+    isSubgroup(H)
+    [by cite HIsASubgroup]
+  @H-closure |
+    member(E, H) and (forall a, b: Element; member(a, H) -> member(b, H) -> member(op(a, b), H)) and (forall a: Element; member(a, H) -> member(inverse(a), H))
+    [using tautology H-definition H-is-a-subgroup]
+  @H-closed-under-inverse |
+    forall a: Element; member(a, H) -> member(inverse(a), H)
+    [using tautology H-closure]
+  @generalize-a |
+    fix a: Element {
+      @given-a-in-H |
+        assume inH(a) {
+          @a-in-H |
+            inH(a)
+            [by hypothesis given-a-in-H]
+          @a-iff |
+            inH(a) iff member(a, H)
+            [using specialize inH-definition(a)]
+          @a-is-a-member |
+            member(a, H)
+            [using tautology a-iff a-in-H]
+          @inverse-is-a-member |
+            member(inverse(a), H)
+            [using specialize H-closed-under-inverse(a) a-is-a-member]
+          @inverse-iff |
+            inH(inverse(a)) iff member(inverse(a), H)
+            [using specialize inH-definition(inverse(a))]
+          @conclusion-inverse-in-H |
+            inH(inverse(a))
+            [using tautology inverse-iff inverse-is-a-member]
+        }
+      @conclusion-after-a |
+        inH(a) -> inH(inverse(a))
+        [by discharge given-a-in-H]
+    }
+  @conclusion |
+    forall a: Element; inH(a) -> inH(inverse(a))
+    [by generalize generalize-a]
+qed
+
+// the GUARDED model: nominate the membership dischargers, let the Element-level axioms
+// auto-weaken to HSort (as std/permutation/symmetric.b4m does with function.composeAssoc).
+model HGroup {
+  group.Grp: HSort
+  group.E: E(identityIsInH)
+  group.op: op -| hIsClosedUnderOp
+  group.inverse: inverse -| hIsClosedUnderInverse
+  group.opAssoc <- opAssoc
+  group.opIdentityLeft <- opIdentityLeft
+  group.opInverseLeft <- opInverseLeft
+}
+
+// and group theory holds INSIDE the named subgroup — a transferred THEOREM, not an axiom.
+theorem cancellationHoldsInsideH: forall a, b, c: HSort; op(a, b) = op(a, c) -> b = c
+proof
+  @conclusion |
+    forall a, b, c: HSort; op(a, b) = op(a, c) -> b = c
+    [using model(HGroup) group.cancelLeft]
+qed
+
+// -- the reverse: a subgroup given as a PREDICATED SORT, mapped into a subgroup SET --------
+// The std/subgroup.b4m shape — a membership predicate + three closure axioms + `where`.
+// set.b4m's comprehension schema names the sort's inhabitants as a Set value, every KSort
+// element lands in it, and it satisfies the subgroup criterion. Both directions exist, so a
+// subgroup can be whichever guise the theorem at hand needs.
+// a subgroup in predicated-sort form
+pred inK(x: Element)
+axiom kHasIdentity: inK(E)
+axiom kClosedUnderOp: forall a, b: Element; inK(a) -> inK(b) -> inK(op(a, b))
+axiom kClosedUnderInverse: forall a: Element; inK(a) -> inK(inverse(a))
+sort KSort = Element where inK
+
+// The set exists, every KSort element lands in it, and it is a subgroup in Set vocabulary.
+theorem aSubgroupSortMapsIntoASubgroupSet:
+  exists s: Set; (forall x: Element; member(x, s) iff inK(x))
+  and (forall k: KSort; member(k, s))
+  and isSubgroup(s)
+proof
+  @the-set-exists |
+    exists s: Set; forall x: Element; member(x, s) iff inK(x)
+    [using instantiation setFromPredicate(fun x: Element => inK(x))]
+  @subgroup-criterion |
+    forall s: Set; isSubgroup(s) iff (member(E, s) and (forall a, b: Element; member(a, s) -> member(b, s) -> member(op(a, b), s)) and (forall a: Element; member(a, s) -> member(inverse(a), s)))
+    [by cite subgroupDef]
+  @op-closure-in-k |
+    forall a, b: Element; inK(a) -> inK(b) -> inK(op(a, b))
+    [by cite kClosedUnderOp]
+  @inverse-closure-in-k |
+    forall a: Element; inK(a) -> inK(inverse(a))
+    [by cite kClosedUnderInverse]
+  @k-has-identity |
+    inK(E)
+    [by cite kHasIdentity]
+  @with-the-set-s |
+    unpack s: Set from the-set-exists {
+      @members-are-exactly-k |
+        forall x: Element; member(x, s) iff inK(x)
+        [by hypothesis with-the-set-s]
+
+      // every element of the subgroup SORT is a member of the set
+      @generalize-k |
+        fix k: KSort {
+          @k-is-in-k |
+            inK(k)
+            [by predicate generalize-k]
+          @membership-at-k |
+            member(k, s) iff inK(k)
+            [by apply_at(k) members-are-exactly-k]
+          @conclusion-k-is-a-member |
+            member(k, s)
+            [using tautology membership-at-k k-is-in-k]
+        }
+      @the-sort-maps-in |
+        forall k: KSort; member(k, s)
+        [by generalize generalize-k]
+
+      // the set satisfies the subgroup criterion
+      @membership-at-identity |
+        member(E, s) iff inK(E)
+        [by apply_at(E) members-are-exactly-k]
+      @identity-is-a-member |
+        member(E, s)
+        [using tautology membership-at-identity k-has-identity]
+      @generalize-a |
+        fix a: Element {
+          @generalize-b |
+            fix b: Element {
+              @membership-at-a |
+                member(a, s) iff inK(a)
+                [by apply_at(a) members-are-exactly-k]
+              @membership-at-b |
+                member(b, s) iff inK(b)
+                [by apply_at(b) members-are-exactly-k]
+              @membership-at-product |
+                member(op(a, b), s) iff inK(op(a, b))
+                [by apply_at(op(a, b)) members-are-exactly-k]
+              @closure-at-a-b |
+                inK(a) -> inK(b) -> inK(op(a, b))
+                [by apply_at(a, b) op-closure-in-k]
+              @conclusion-product-is-a-member |
+                member(a, s) -> member(b, s) -> member(op(a, b), s)
+                [using tautology membership-at-a membership-at-b membership-at-product closure-at-a-b]
+            }
+          @conclusion-closed-at-a |
+            forall b: Element; member(a, s) -> member(b, s) -> member(op(a, b), s)
+            [by generalize generalize-b]
+        }
+      @closed-under-op |
+        forall a, b: Element; member(a, s) -> member(b, s) -> member(op(a, b), s)
+        [by generalize generalize-a]
+      @generalize-a2 |
+        fix a2: Element {
+          @membership-at-a2 |
+            member(a2, s) iff inK(a2)
+            [by apply_at(a2) members-are-exactly-k]
+          @membership-at-inverse |
+            member(inverse(a2), s) iff inK(inverse(a2))
+            [by apply_at(inverse(a2)) members-are-exactly-k]
+          @inverse-closure-at-a2 |
+            inK(a2) -> inK(inverse(a2))
+            [by apply_at(a2) inverse-closure-in-k]
+          @conclusion-inverse-is-a-member |
+            member(a2, s) -> member(inverse(a2), s)
+            [using tautology membership-at-a2 membership-at-inverse inverse-closure-at-a2]
+        }
+      @closed-under-inverse |
+        forall a: Element; member(a, s) -> member(inverse(a), s)
+        [by generalize generalize-a2]
+      @identity-and-op-closure |
+        member(E, s) and (forall a, b: Element; member(a, s) -> member(b, s) -> member(op(a, b), s))
+        [by both identity-is-a-member closed-under-op]
+      @criterion-body |
+        member(E, s) and (forall a, b: Element; member(a, s) -> member(b, s) -> member(op(a, b), s)) and (forall a: Element; member(a, s) -> member(inverse(a), s))
+        [by both identity-and-op-closure closed-under-inverse]
+      @criterion-at-s |
+        isSubgroup(s) iff (member(E, s) and (forall a, b: Element; member(a, s) -> member(b, s) -> member(op(a, b), s)) and (forall a: Element; member(a, s) -> member(inverse(a), s)))
+        [by apply_at(s) subgroup-criterion]
+      @s-is-a-subgroup |
+        isSubgroup(s)
+        [using tautology criterion-at-s criterion-body]
+
+      @exactness-and-map |
+        (forall x: Element; member(x, s) iff inK(x)) and (forall k: KSort; member(k, s))
+        [by both members-are-exactly-k the-sort-maps-in]
+      @all-three |
+        (forall x: Element; member(x, s) iff inK(x)) and (forall k: KSort; member(k, s)) and isSubgroup(s)
+        [by both exactness-and-map s-is-a-subgroup]
+      @conclusion-such-a-set-exists |
+        exists s2: Set; (forall x: Element; member(x, s2) iff inK(x)) and (forall k: KSort; member(k, s2)) and isSubgroup(s2)
+        [by witness(s) all-three]
+    }
+  @conclusion |
+    exists s: Set; (forall x: Element; member(x, s) iff inK(x)) and (forall k: KSort; member(k, s)) and isSubgroup(s)
+    [by unpacked with-the-set-s]
+qed
