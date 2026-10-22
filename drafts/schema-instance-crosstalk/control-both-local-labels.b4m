@@ -1,0 +1,82 @@
+// MINIMAL CROSSTALK REPRO (bisected 2026-10-22 from std/group/size.b4m).
+//
+// TWO theorems specialize THE SAME declared fact by TWO DIFFERENT ACCESS PATHS:
+//   * `first`  — by the DECLARED NAME            `specialize theFact(...)`
+//   * `second` — via a LOCAL STEP that cites it  `specialize the-local(...)`
+//
+// Each passes ALONE. Together they fail, and WHICH ONE fails varies run to run (scheduling):
+// `--sync-io` pins it, `--chaos` flips the majority, and `--chaos=<seed>` does NOT replay.
+// Both faces of the recorded bug appear: "instantiate: expected premise" and
+// "cannot discharge the guard premise '<the whole statement>'".
+import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+define less_or_equal(a, b) = peano.less_or_equal(a, b)
+
+// the shared fact: three separately-quantified binders, two antecedents, an `exists` result —
+// the shape of set/finite.b4m's subsetOfFiniteIsFinite.
+axiom theFact: forall n: Nat; forall b: Nat; forall a: Nat;
+  less_or_equal(b, n) -> less_or_equal(a, b) -> exists m: Nat; less_or_equal(a, m) and less_or_equal(m, n)
+
+// PATH 1: specialize the DECLARED NAME.
+theorem first: forall n: Nat; less_or_equal(ZERO, n) ->
+  exists m: Nat; less_or_equal(ZERO, m) and less_or_equal(m, n)
+proof
+  @the-local-one |
+    forall n: Nat; forall b: Nat; forall a: Nat; less_or_equal(b, n) -> less_or_equal(a, b) -> exists m: Nat; less_or_equal(a, m) and less_or_equal(m, n)
+    [by cite theFact]
+  @generalize-n |
+    fix n: Nat {
+      @given-zero-below-n |
+        assume less_or_equal(ZERO, n) {
+          @zero-below-n |
+            less_or_equal(ZERO, n)
+            [by hypothesis given-zero-below-n]
+          @n-below-n |
+            less_or_equal(n, n)
+            [using specialize peano_order.lessOrEqualRefl(n)]
+          @conclusion-at-n |
+            exists m: Nat; less_or_equal(ZERO, m) and less_or_equal(m, n)
+            [using specialize the-local-one(n, n, ZERO) n-below-n zero-below-n]
+        }
+      @conclusion-when-below |
+        less_or_equal(ZERO, n) -> exists m: Nat; less_or_equal(ZERO, m) and less_or_equal(m, n)
+        [by discharge given-zero-below-n]
+    }
+  @conclusion |
+    forall n: Nat; less_or_equal(ZERO, n) -> exists m: Nat; less_or_equal(ZERO, m) and less_or_equal(m, n)
+    [by generalize generalize-n]
+qed
+
+// PATH 2: cite the SAME fact to a local step, then specialize THAT.
+theorem second: forall n: Nat; less_or_equal(succ(ZERO), n) ->
+  exists m: Nat; less_or_equal(succ(ZERO), m) and less_or_equal(m, n)
+proof
+  @the-local |
+    forall n: Nat; forall b: Nat; forall a: Nat; less_or_equal(b, n) -> less_or_equal(a, b) -> exists m: Nat; less_or_equal(a, m) and less_or_equal(m, n)
+    [by cite theFact]
+  @generalize-n |
+    fix n: Nat {
+      @given-one-below-n |
+        assume less_or_equal(succ(ZERO), n) {
+          @one-below-n |
+            less_or_equal(succ(ZERO), n)
+            [by hypothesis given-one-below-n]
+          @n-below-n |
+            less_or_equal(n, n)
+            [using specialize peano_order.lessOrEqualRefl(n)]
+          @conclusion-at-n |
+            exists m: Nat; less_or_equal(succ(ZERO), m) and less_or_equal(m, n)
+            [using specialize the-local(n, n, succ(ZERO)) n-below-n one-below-n]
+        }
+      @conclusion-when-below |
+        less_or_equal(succ(ZERO), n) -> exists m: Nat; less_or_equal(succ(ZERO), m) and less_or_equal(m, n)
+        [by discharge given-one-below-n]
+    }
+  @conclusion |
+    forall n: Nat; less_or_equal(succ(ZERO), n) -> exists m: Nat; less_or_equal(succ(ZERO), m) and less_or_equal(m, n)
+    [by generalize generalize-n]
+qed

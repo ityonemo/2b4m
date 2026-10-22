@@ -1,0 +1,105 @@
+// std/group/sized-group.b4m — THE ORDER OF A SUBGROUP OF AN ABSTRACT GROUP.
+//
+// std/group/size.b4m counts a group whose carrier IS `element.Element`, which is the easy
+// case: finite.b4m's `size` applies to it directly. But `group.Grp` — the carrier the whole
+// std/group corpus and every AATA chapter uses — is its own sort, with 30 model targets
+// (`Rat`, `Zn`, `Perm`, `Quot`, …) that cannot be `Element`. So `group.Grp` cannot be
+// counted directly, and std/group/* has always encoded |G| = n as a LISTING instead.
+//
+// This file closes that gap WITHOUT touching either theory: it models std/sized.b4m at
+// `group.Grp`, injecting the group's elements into `Element` so that finite.b4m's `size`
+// measures a subgroup through its image. The subobject being measured is
+// std/subgroup.b4m's `inSubgroup`; the ambient one is `inSubgroup2`, so a subgroup inside a
+// subgroup is the general case and the whole group is the degenerate one.
+//
+// The injection is the single assumption, and it is a SIGNATURE assumption rather than a
+// mathematical claim — see std/sized.b4m's header. Nothing about the group structure is
+// used to justify it: any carrier injects into an unconstrained `Element`.
+
+import group <<< "std/group.b4m"
+import subgroup <<< "std/subgroup.b4m"
+import sized <<< "std/sized.b4m"
+import set <<< "std/set.b4m"
+import peano <<< "std/peano.b4m"
+
+sort Grp = group.Grp
+sort Set = set.Set
+sort Nat = peano.Nat
+pred member = set.member
+pred inSubgroup = subgroup.inSubgroup
+pred inSubgroup2 = subgroup.inSubgroup2
+define subset(a, b) = set.subset(a, b)
+define hasSize(a, n) = sized.hasSize(a, n)
+define less_or_equal(a, b) = peano.less_or_equal(a, b)
+
+// -- the injection of the group's elements into the element sort -------------------------
+
+func embedGroup(g: Grp) => sized.Element
+axiom embedGroupInjective: forall g, h: Grp; embedGroup(g) = embedGroup(h) -> g = h
+
+// the image sets, in the group's own vocabulary
+define isTheSubgroupImage(s) = forall x: sized.Element; member(x, s) iff (exists g: Grp; inSubgroup(g) and x = embedGroup(g))
+define isTheAmbientImage(s) = forall x: sized.Element; member(x, s) iff (exists g: Grp; inSubgroup2(g) and x = embedGroup(g))
+
+// -- the group's carrier IS a sized carrier ---------------------------------------------
+
+model SubgroupIsSized {
+  sized.Carrier: Grp
+  sized.embed: embedGroup
+  sized.holds: inSubgroup
+  sized.contains: inSubgroup2
+  sized.embedInjective <- embedGroupInjective
+}
+
+// -- and so a subgroup of an abstract group HAS AN ORDER --------------------------------
+
+// every subgroup is reified as a set of elements: the image of its membership predicate.
+// This is what "no sort of subsets of a group" had blocked.
+theorem aSubgroupHasAnImageSet: exists s: Set; isTheSubgroupImage(s)
+proof
+  @conclusion |
+    exists s: Set; forall x: sized.Element; member(x, s) iff (exists g: Grp; inSubgroup(g) and x = embedGroup(g))
+    [using model(SubgroupIsSized) sized.theImageExists]
+qed
+
+// a group element is in the image exactly when it is in the subgroup — the bridge from a
+// group-level fact to a set-level one.
+theorem theSubgroupImageIsExactlyTheSubgroup: forall s: Set; isTheSubgroupImage(s) ->
+  forall g: Grp; member(embedGroup(g), s) iff inSubgroup(g)
+proof
+  @conclusion |
+    forall s: Set; isTheSubgroupImage(s) -> forall g: Grp; member(embedGroup(g), s) iff inSubgroup(g)
+    [using model(SubgroupIsSized) sized.theImageContainsExactlyTheSubobject]
+qed
+
+// the order of a subgroup is well defined.
+theorem aSubgroupOrderIsUnique: forall s: Set; isTheSubgroupImage(s) ->
+  forall m, n: Nat; hasSize(s, m) -> hasSize(s, n) -> m = n
+proof
+  @conclusion |
+    forall s: Set; isTheSubgroupImage(s) -> forall m, n: Nat; hasSize(s, m) -> hasSize(s, n) -> m = n
+    [using model(SubgroupIsSized) sized.theImageHasAUniqueSize]
+qed
+
+// a subgroup contained in another gives nested images — so every finite.b4m size theorem
+// phrased in `subset` now speaks about subgroups of an abstract group.
+theorem aContainedSubgroupHasANestedImage:
+  (forall g: Grp; inSubgroup(g) -> inSubgroup2(g)) ->
+  forall s, b: Set; isTheSubgroupImage(s) -> isTheAmbientImage(b) -> subset(s, b)
+proof
+  @conclusion |
+    (forall g: Grp; inSubgroup(g) -> inSubgroup2(g)) -> forall s, b: Set; isTheSubgroupImage(s) -> isTheAmbientImage(b) -> subset(s, b)
+    [using model(SubgroupIsSized) sized.imageRespectsImplication]
+qed
+
+// LAGRANGE'S DIVISIBILITY PRECONDITION, in size vocabulary: a subgroup of a finite group is
+// finite and no larger. Proved by transfer, with no counting argument restated here.
+theorem aSubgroupOfAFiniteGroupIsNoLarger:
+  (forall g: Grp; inSubgroup(g) -> inSubgroup2(g)) ->
+  forall n: Nat; forall s, b: Set; isTheSubgroupImage(s) -> isTheAmbientImage(b) ->
+  hasSize(b, n) -> exists m: Nat; hasSize(s, m) and less_or_equal(m, n)
+proof
+  @conclusion |
+    (forall g: Grp; inSubgroup(g) -> inSubgroup2(g)) -> forall n: Nat; forall s, b: Set; isTheSubgroupImage(s) -> isTheAmbientImage(b) -> hasSize(b, n) -> exists m: Nat; hasSize(s, m) and less_or_equal(m, n)
+    [using model(SubgroupIsSized) sized.aSubobjectOfAFiniteSubobjectIsFinite]
+qed
