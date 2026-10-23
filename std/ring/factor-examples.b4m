@@ -1,0 +1,142 @@
+// Worked examples for `std/ring/factor.b4m` — the three axioms its own theorems never reach.
+//
+// Why this file exists: `factor.b4m` lifts the ring axioms onto R/I, and those proofs happen
+// to need only part of the ideal's definition (closure under addition and the two absorption
+// conditions) plus the additive side of the quotient. Three axioms are therefore never rested
+// on there, and an axiom no theorem exercises is one whose shape has never been checked:
+//
+//   * `idealHasZero` and `idealClosedUnderNeg` — the rest of what makes I a subgroup, which
+//     the well-definedness argument does not happen to use;
+//   * `oneQIsClsOne` — the multiplicative identity of R/I, which none of the eight lifted
+//     RING axioms mention (std/ring.b4m's `ONE` is constrained by no axiom of the theory;
+//     unity is a separate hypothesis, as §16.1 defines it).
+//
+// Each theorem below is the smallest statement that genuinely needs one of them.
+import ring <<< "std/ring.b4m"
+import factor <<< "std/ring/factor.b4m"
+
+sort R = factor.R
+sort Quot = factor.Quot
+const zeroR = ring.ZERO
+const oneR = ring.ONE
+const zeroQ = factor.zeroQ
+const oneQ = factor.oneQ
+func addR = ring.add
+func mulR = ring.mul
+func negR = ring.neg
+func mulQ = factor.mulQ
+func cls = factor.cls
+pred inIdeal = factor.inIdeal
+
+fact idealHasZero = factor.idealHasZero
+fact idealClosedUnderNeg = factor.idealClosedUnderNeg
+fact oneQIsClsOne = factor.oneQIsClsOne
+fact clsKernelIsTheIdeal = factor.clsKernelIsTheIdeal
+fact mulQHom = factor.mulQHom
+fact addZeroLeftR = ring.addZeroLeft
+
+// -- the ideal contains 0, and 0 is in the kernel of the class map ------------------------
+
+// The zero of R lands on the zero of R/I. Via `clsKernelIsTheIdeal` this is exactly
+// `idealHasZero`, and it is the smallest consequence of it.
+theorem theZeroClassIsTheZeroOfTheQuotient: cls(zeroR) = zeroQ
+proof
+  @the-kernel-is-the-ideal |
+    forall r: R; cls(r) = zeroQ iff inIdeal(r)
+    [by cite clsKernelIsTheIdeal]
+  @zero-is-in-the-ideal |
+    inIdeal(zeroR)
+    [by cite idealHasZero]
+  @kernel-at-zero |
+    cls(zeroR) = zeroQ iff inIdeal(zeroR)
+    [by apply_at(zeroR) the-kernel-is-the-ideal]
+  @conclusion |
+    cls(zeroR) = zeroQ
+    [using tautology kernel-at-zero zero-is-in-the-ideal]
+qed
+
+// -- the ideal is closed under negation, so the kernel is -------------------------------
+
+// If r is in the kernel so is -r. The negation closure, used the only way it can be.
+theorem theKernelIsClosedUnderNegation: forall r: R; cls(r) = zeroQ -> cls(negR(r)) = zeroQ
+proof
+  @the-kernel-is-the-ideal |
+    forall r: R; cls(r) = zeroQ iff inIdeal(r)
+    [by cite clsKernelIsTheIdeal]
+  @ideal-is-closed-under-negation |
+    forall a: R; inIdeal(a) -> inIdeal(negR(a))
+    [by cite idealClosedUnderNeg]
+  @generalize-r |
+    fix r: R {
+      @given-r-in-the-kernel |
+        assume cls(r) = zeroQ {
+          @r-is-in-the-kernel |
+            cls(r) = zeroQ
+            [by hypothesis given-r-in-the-kernel]
+          @kernel-at-r |
+            cls(r) = zeroQ iff inIdeal(r)
+            [by apply_at(r) the-kernel-is-the-ideal]
+          @r-is-in-the-ideal |
+            inIdeal(r)
+            [using tautology kernel-at-r r-is-in-the-kernel]
+          @neg-r-is-in-the-ideal |
+            inIdeal(negR(r))
+            [using specialize ideal-is-closed-under-negation(r) r-is-in-the-ideal]
+          @kernel-at-neg-r |
+            cls(negR(r)) = zeroQ iff inIdeal(negR(r))
+            [by apply_at(negR(r)) the-kernel-is-the-ideal]
+          @conclusion-neg-r-in-the-kernel |
+            cls(negR(r)) = zeroQ
+            [using tautology kernel-at-neg-r neg-r-is-in-the-ideal]
+        }
+      @conclusion-at-r |
+        cls(r) = zeroQ -> cls(negR(r)) = zeroQ
+        [by discharge given-r-in-the-kernel]
+    }
+  @conclusion |
+    forall r: R; cls(r) = zeroQ -> cls(negR(r)) = zeroQ
+    [by generalize generalize-r]
+qed
+
+// -- the quotient's identity ------------------------------------------------------------
+
+// 1 + I is a multiplicative identity for R/I wherever 1 is one for R. This is the only
+// statement that needs `oneQIsClsOne`, and it is Judson's "R/I is a ring with identity"
+// half: the eight ring axioms say nothing about ONE, so unity transfers separately.
+theorem theOneClassIsAnIdentityOnClasses: (forall a: R; mulR(oneR, a) = a) ->
+  forall a: R; mulQ(oneQ, cls(a)) = cls(a)
+proof
+  @one-is-the-class-of-one |
+    oneQ = cls(oneR)
+    [by cite oneQIsClsOne]
+  @multiplication-is-homomorphic |
+    forall a, b: R; mulQ(cls(a), cls(b)) = cls(mulR(a, b))
+    [by cite mulQHom]
+  @given-one-is-an-identity |
+    assume forall a: R; mulR(oneR, a) = a {
+      @one-acts |
+        forall a: R; mulR(oneR, a) = a
+        [by hypothesis given-one-is-an-identity]
+      @generalize-a |
+        fix a: R {
+          @the-product |
+            mulQ(cls(oneR), cls(a)) = cls(mulR(oneR, a))
+            [using specialize multiplication-is-homomorphic(oneR, a)]
+          @one-times-a-is-a |
+            mulR(oneR, a) = a
+            [by apply_at(a) one-acts]
+          @the-product-is-cls-a |
+            mulQ(cls(oneR), cls(a)) = cls(a)
+            [by rewrite one-times-a-is-a the-product]
+          @conclusion-at-a |
+            mulQ(oneQ, cls(a)) = cls(a)
+            [by rewrite one-is-the-class-of-one the-product-is-cls-a]
+        }
+      @conclusion-for-every-a |
+        forall a: R; mulQ(oneQ, cls(a)) = cls(a)
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    (forall a: R; mulR(oneR, a) = a) -> forall a: R; mulQ(oneQ, cls(a)) = cls(a)
+    [by discharge given-one-is-an-identity]
+qed

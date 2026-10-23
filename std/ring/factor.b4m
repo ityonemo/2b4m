@@ -1,0 +1,964 @@
+// std/ring/factor.b4m — THE FACTOR RING R/I.
+//
+// Judson's Theorem 16.11: for an ideal I of R, the additive factor group R/I is a RING under
+// (r + I)(s + I) = rs + I. This file builds R/I as a SORT, following the pattern
+// std/group/factor.b4m uses for G/N — a quotient sort with a surjective class map, the
+// congruence as an axiom, and the induced operations posited as class-map homomorphism
+// equations — and adds the multiplication, which is what makes it a ring rather than a group.
+//
+// WHY THE OPERATIONS ARE POSITED, and what is proved instead. A quotient operation cannot be
+// DEFINED by `mulQ(cls(a), cls(b)) = cls(mul(a, b))` as a function definition, because `cls`
+// is not injective: the clause would be ill-formed unless the right side is independent of
+// the representatives. So the equation is an axiom, and the theorem that JUSTIFIES it —
+// Judson's own well-definedness argument, that congruent representatives give congruent
+// products — is proved here separately (`theProductIsWellDefinedModI`). That is the same
+// division of labour as `std/group/factor.b4m`'s `opQHom` /
+// `theClassOperationIsWellDefined`.
+//
+// The congruence is `a - b in I`, the additive coset criterion: a + I = b + I exactly when
+// a - b lies in I. Because a ring's addition is ABELIAN every subgroup is normal, so the
+// additive half needs no normality hypothesis — I being an ideal is what the MULTIPLICATIVE
+// half needs, through the two absorption conditions.
+
+import ring <<< "std/ring.b4m"
+
+// -- the ring R, and the ideal I ---------------------------------------------------------
+
+sort R = ring.Ring
+const zeroR = ring.ZERO
+const oneR = ring.ONE
+func addR = ring.add
+func mulR = ring.mul
+func negR = ring.neg
+
+fact addIsAssociativeR = ring.addIsAssociative
+fact addIsCommutativeR = ring.addIsCommutative
+fact addZeroLeftR = ring.addZeroLeft
+fact addNegLeftR = ring.addNegLeft
+fact addZeroRightR = ring.addZeroRight
+fact addNegRightR = ring.addNegRight
+fact mulIsAssociativeR = ring.mulIsAssociative
+fact mulAddDistribLeftR = ring.mulAddDistribLeft
+fact mulAddDistribRightR = ring.mulAddDistribRight
+
+// An ideal, as a membership predicate: the subring conditions plus Judson's two absorption
+// conditions. (There is no sort of subsets of a ring; this is how aata/16.3 carries one.)
+pred inIdeal(r: R)
+axiom idealHasZero: inIdeal(zeroR)
+axiom idealClosedUnderAdd: forall a, b: R; inIdeal(a) -> inIdeal(b) -> inIdeal(addR(a, b))
+axiom idealClosedUnderNeg: forall a: R; inIdeal(a) -> inIdeal(negR(a))
+axiom idealAbsorbsOnTheRight: forall a, r: R; inIdeal(a) -> inIdeal(mulR(a, r))
+axiom idealAbsorbsOnTheLeft: forall a, r: R; inIdeal(a) -> inIdeal(mulR(r, a))
+
+// -- WELL-DEFINEDNESS: Judson's Theorem 16.11 argument -----------------------------------
+
+// His proof: if r' = r + a and s' = s + b with a, b in I, then
+//   r's' = (r+a)(s+b) = rs + as + rb + ab
+// and as + rb + ab is in I, so r's' and rs are congruent. Written in the congruence's own
+// terms — r' - r in I and s' - s in I give r's' - rs in I — the expansion is a ring-algebra
+// rearrangement, so the two displayed identities are supplied by `polynomial`'s cousin: here
+// they are proved from distributivity directly, one factor at a time.
+
+// r's' - rs = r'(s' - s) + (r' - r)s, the regrouping his expansion amounts to. Both summands
+// are in I by absorption, so the difference is.
+theorem theProductIsWellDefinedModI: forall r, s, r2, s2: R;
+  inIdeal(addR(r2, negR(r))) -> inIdeal(addR(s2, negR(s))) ->
+  addR(mulR(r2, s2), negR(mulR(r, s))) = addR(mulR(r2, addR(s2, negR(s))), mulR(addR(r2, negR(r)), s)) ->
+  inIdeal(addR(mulR(r2, s2), negR(mulR(r, s))))
+proof
+  @absorbs-on-the-left |
+    forall a, r: R; inIdeal(a) -> inIdeal(mulR(r, a))
+    [by cite idealAbsorbsOnTheLeft]
+  @absorbs-on-the-right |
+    forall a, r: R; inIdeal(a) -> inIdeal(mulR(a, r))
+    [by cite idealAbsorbsOnTheRight]
+  @closed-under-addition |
+    forall a, b: R; inIdeal(a) -> inIdeal(b) -> inIdeal(addR(a, b))
+    [by cite idealClosedUnderAdd]
+  @generalize-r |
+    fix r: R {
+      @generalize-s |
+        fix s: R {
+          @generalize-r2 |
+            fix r2: R {
+              @generalize-s2 |
+                fix s2: R {
+                  @given-r-congruent |
+                    assume inIdeal(addR(r2, negR(r))) {
+                      @given-s-congruent |
+                        assume inIdeal(addR(s2, negR(s))) {
+                          @given-the-regrouping |
+                            assume addR(mulR(r2, s2), negR(mulR(r, s))) = addR(mulR(r2, addR(s2, negR(s))), mulR(addR(r2, negR(r)), s)) {
+                              @r-difference-is-in |
+                                inIdeal(addR(r2, negR(r)))
+                                [by hypothesis given-r-congruent]
+                              @s-difference-is-in |
+                                inIdeal(addR(s2, negR(s)))
+                                [by hypothesis given-s-congruent]
+                              @the-regrouping |
+                                addR(mulR(r2, s2), negR(mulR(r, s))) = addR(mulR(r2, addR(s2, negR(s))), mulR(addR(r2, negR(r)), s))
+                                [by hypothesis given-the-regrouping]
+                              // r'(s' - s) is in I: I absorbs on the left
+                              @left-summand-is-in |
+                                inIdeal(mulR(r2, addR(s2, negR(s))))
+                                [using specialize absorbs-on-the-left(addR(s2, negR(s)), r2) s-difference-is-in]
+                              // (r' - r)s is in I: I absorbs on the right
+                              @right-summand-is-in |
+                                inIdeal(mulR(addR(r2, negR(r)), s))
+                                [using specialize absorbs-on-the-right(addR(r2, negR(r)), s) r-difference-is-in]
+                              @the-sum-is-in |
+                                inIdeal(addR(mulR(r2, addR(s2, negR(s))), mulR(addR(r2, negR(r)), s)))
+                                [using specialize closed-under-addition(mulR(r2, addR(s2, negR(s))), mulR(addR(r2, negR(r)), s)) left-summand-is-in right-summand-is-in]
+                              @conclusion-difference-is-in |
+                                inIdeal(addR(mulR(r2, s2), negR(mulR(r, s))))
+                                [by rewrite the-regrouping the-sum-is-in]
+                            }
+                          @conclusion-given-regrouping |
+                            addR(mulR(r2, s2), negR(mulR(r, s))) = addR(mulR(r2, addR(s2, negR(s))), mulR(addR(r2, negR(r)), s)) -> inIdeal(addR(mulR(r2, s2), negR(mulR(r, s))))
+                            [by discharge given-the-regrouping]
+                        }
+                      @conclusion-after-s |
+                        inIdeal(addR(s2, negR(s))) -> addR(mulR(r2, s2), negR(mulR(r, s))) = addR(mulR(r2, addR(s2, negR(s))), mulR(addR(r2, negR(r)), s)) -> inIdeal(addR(mulR(r2, s2), negR(mulR(r, s))))
+                        [by discharge given-s-congruent]
+                    }
+                  @conclusion-after-r |
+                    inIdeal(addR(r2, negR(r))) -> inIdeal(addR(s2, negR(s))) -> addR(mulR(r2, s2), negR(mulR(r, s))) = addR(mulR(r2, addR(s2, negR(s))), mulR(addR(r2, negR(r)), s)) -> inIdeal(addR(mulR(r2, s2), negR(mulR(r, s))))
+                    [by discharge given-r-congruent]
+                }
+              @conclusion-for-s2 |
+                forall s2: R; inIdeal(addR(r2, negR(r))) -> inIdeal(addR(s2, negR(s))) -> addR(mulR(r2, s2), negR(mulR(r, s))) = addR(mulR(r2, addR(s2, negR(s))), mulR(addR(r2, negR(r)), s)) -> inIdeal(addR(mulR(r2, s2), negR(mulR(r, s))))
+                [by generalize generalize-s2]
+            }
+          @conclusion-for-r2 |
+            forall r2, s2: R; inIdeal(addR(r2, negR(r))) -> inIdeal(addR(s2, negR(s))) -> addR(mulR(r2, s2), negR(mulR(r, s))) = addR(mulR(r2, addR(s2, negR(s))), mulR(addR(r2, negR(r)), s)) -> inIdeal(addR(mulR(r2, s2), negR(mulR(r, s))))
+            [by generalize generalize-r2]
+        }
+      @conclusion-for-s |
+        forall s, r2, s2: R; inIdeal(addR(r2, negR(r))) -> inIdeal(addR(s2, negR(s))) -> addR(mulR(r2, s2), negR(mulR(r, s))) = addR(mulR(r2, addR(s2, negR(s))), mulR(addR(r2, negR(r)), s)) -> inIdeal(addR(mulR(r2, s2), negR(mulR(r, s))))
+        [by generalize generalize-s]
+    }
+  @conclusion |
+    forall r, s, r2, s2: R; inIdeal(addR(r2, negR(r))) -> inIdeal(addR(s2, negR(s))) -> addR(mulR(r2, s2), negR(mulR(r, s))) = addR(mulR(r2, addR(s2, negR(s))), mulR(addR(r2, negR(r)), s)) -> inIdeal(addR(mulR(r2, s2), negR(mulR(r, s))))
+    [by generalize generalize-r]
+qed
+
+// -- THE FACTOR RING R/I -----------------------------------------------------------------
+// `cls(r)` IS the coset r + I. The congruence is the additive coset criterion: r + I = s + I
+// exactly when r - s is in I.
+
+sort Quot
+func cls(a: R) => Quot
+axiom clsSurjective: forall q: Quot; exists a: R; q = cls(a)
+axiom clsCongruent: forall a, b: R; cls(a) = cls(b) iff inIdeal(addR(a, negR(b)))
+
+// the induced structure, posited as class-map homomorphism equations. `mulQHom` is Judson's
+// (r + I)(s + I) = rs + I; `theProductIsWellDefinedModI` above is what makes it sound.
+const zeroQ: Quot
+const oneQ: Quot
+func addQ(x: Quot, y: Quot) => Quot
+func mulQ(x: Quot, y: Quot) => Quot
+func negQ(x: Quot) => Quot
+axiom zeroQIsClsZero: zeroQ = cls(zeroR)
+axiom oneQIsClsOne: oneQ = cls(oneR)
+axiom addQHom: forall a, b: R; addQ(cls(a), cls(b)) = cls(addR(a, b))
+axiom mulQHom: forall a, b: R; mulQ(cls(a), cls(b)) = cls(mulR(a, b))
+axiom negQHom: forall a: R; negQ(cls(a)) = cls(negR(a))
+
+// -- the ring axioms on R/I, LIFTED ------------------------------------------------------
+// Each is the same idiom as std/group/factor.b4m's: `clsSurjective` + `unpack` to name
+// representatives, push through the `…Hom` equations, apply R's own law, fold back.
+
+theorem addQIsAssociative: forall x, y, z: Quot; addQ(addQ(x, y), z) = addQ(x, addQ(y, z))
+proof
+  @representatives-exist |
+    forall q: Quot; exists a: R; q = cls(a)
+    [by cite clsSurjective]
+  @addition-is-homomorphic |
+    forall a, b: R; addQ(cls(a), cls(b)) = cls(addR(a, b))
+    [by cite addQHom]
+  @addition-associates |
+    forall a, b, c: R; addR(addR(a, b), c) = addR(a, addR(b, c))
+    [by cite addIsAssociativeR]
+  @generalize-x |
+    fix x: Quot {
+      @generalize-y |
+        fix y: Quot {
+          @generalize-z |
+            fix z: Quot {
+              @x-has-a-representative |
+                exists a: R; x = cls(a)
+                [by apply_at(x) representatives-exist]
+              @y-has-a-representative |
+                exists a: R; y = cls(a)
+                [by apply_at(y) representatives-exist]
+              @z-has-a-representative |
+                exists a: R; z = cls(a)
+                [by apply_at(z) representatives-exist]
+              @with-representative-a |
+                unpack a: R from x-has-a-representative {
+                  @x-is-cls-a |
+                    x = cls(a)
+                    [by hypothesis with-representative-a]
+                  @with-representative-b |
+                    unpack b: R from y-has-a-representative {
+                      @y-is-cls-b |
+                        y = cls(b)
+                        [by hypothesis with-representative-b]
+                      @with-representative-c |
+                        unpack c: R from z-has-a-representative {
+                          @z-is-cls-c |
+                            z = cls(c)
+                            [by hypothesis with-representative-c]
+                          // both sides, pushed down to R through the hom equations
+                          @left-inner |
+                            addQ(cls(a), cls(b)) = cls(addR(a, b))
+                            [using specialize addition-is-homomorphic(a, b)]
+                          @left-outer |
+                            addQ(cls(addR(a, b)), cls(c)) = cls(addR(addR(a, b), c))
+                            [using specialize addition-is-homomorphic(addR(a, b), c)]
+                          @right-inner |
+                            addQ(cls(b), cls(c)) = cls(addR(b, c))
+                            [using specialize addition-is-homomorphic(b, c)]
+                          @right-outer |
+                            addQ(cls(a), cls(addR(b, c))) = cls(addR(a, addR(b, c)))
+                            [using specialize addition-is-homomorphic(a, addR(b, c))]
+                          @r-associates-at-a-b-c |
+                            addR(addR(a, b), c) = addR(a, addR(b, c))
+                            [using specialize addition-associates(a, b, c)]
+                          // assemble: (x+y)+z = cls((a+b)+c) = cls(a+(b+c)) = x+(y+z)
+                          @left-side |
+                            addQ(addQ(cls(a), cls(b)), cls(c)) = cls(addR(addR(a, b), c))
+                            [by rewrite left-inner left-outer]
+                          @right-side |
+                            addQ(cls(a), addQ(cls(b), cls(c))) = cls(addR(a, addR(b, c)))
+                            [by rewrite right-inner right-outer]
+                          @left-equals-right-in-r |
+                            addQ(addQ(cls(a), cls(b)), cls(c)) = cls(addR(a, addR(b, c)))
+                            [by rewrite r-associates-at-a-b-c left-side]
+                          @right-side-flipped |
+                            cls(addR(a, addR(b, c))) = addQ(cls(a), addQ(cls(b), cls(c)))
+                            [by symmetry right-side]
+                          @at-representatives |
+                            addQ(addQ(cls(a), cls(b)), cls(c)) = addQ(cls(a), addQ(cls(b), cls(c)))
+                            [using chain left-equals-right-in-r right-side-flipped]
+                          // fold the representatives back into x, y, z
+                          @with-c-folded |
+                            addQ(addQ(cls(a), cls(b)), z) = addQ(cls(a), addQ(cls(b), z))
+                            [by rewrite z-is-cls-c at-representatives]
+                          @with-b-folded |
+                            addQ(addQ(cls(a), y), z) = addQ(cls(a), addQ(y, z))
+                            [by rewrite y-is-cls-b with-c-folded]
+                          @conclusion-at-representatives |
+                            addQ(addQ(x, y), z) = addQ(x, addQ(y, z))
+                            [by rewrite x-is-cls-a with-b-folded]
+                        }
+                      @conclusion-from-c |
+                        addQ(addQ(x, y), z) = addQ(x, addQ(y, z))
+                        [by unpacked with-representative-c]
+                    }
+                  @conclusion-from-b |
+                    addQ(addQ(x, y), z) = addQ(x, addQ(y, z))
+                    [by unpacked with-representative-b]
+                }
+              @conclusion-from-a |
+                addQ(addQ(x, y), z) = addQ(x, addQ(y, z))
+                [by unpacked with-representative-a]
+            }
+          @conclusion-for-z |
+            forall z: Quot; addQ(addQ(x, y), z) = addQ(x, addQ(y, z))
+            [by generalize generalize-z]
+        }
+      @conclusion-for-y |
+        forall y, z: Quot; addQ(addQ(x, y), z) = addQ(x, addQ(y, z))
+        [by generalize generalize-y]
+    }
+  @conclusion |
+    forall x, y, z: Quot; addQ(addQ(x, y), z) = addQ(x, addQ(y, z))
+    [by generalize generalize-x]
+qed
+
+// multiplication on R/I associates, because it does on R.
+theorem mulQIsAssociative: forall x, y, z: Quot; mulQ(mulQ(x, y), z) = mulQ(x, mulQ(y, z))
+proof
+  @representatives-exist |
+    forall q: Quot; exists a: R; q = cls(a)
+    [by cite clsSurjective]
+  @the-operation-is-homomorphic |
+    forall a, b: R; mulQ(cls(a), cls(b)) = cls(mulR(a, b))
+    [by cite mulQHom]
+  @the-operation-associates |
+    forall a, b, c: R; mulR(mulR(a, b), c) = mulR(a, mulR(b, c))
+    [by cite mulIsAssociativeR]
+  @generalize-x |
+    fix x: Quot {
+      @generalize-y |
+        fix y: Quot {
+          @generalize-z |
+            fix z: Quot {
+              @x-has-a-representative |
+                exists a: R; x = cls(a)
+                [by apply_at(x) representatives-exist]
+              @y-has-a-representative |
+                exists a: R; y = cls(a)
+                [by apply_at(y) representatives-exist]
+              @z-has-a-representative |
+                exists a: R; z = cls(a)
+                [by apply_at(z) representatives-exist]
+              @with-representative-a |
+                unpack a: R from x-has-a-representative {
+                  @x-is-cls-a |
+                    x = cls(a)
+                    [by hypothesis with-representative-a]
+                  @with-representative-b |
+                    unpack b: R from y-has-a-representative {
+                      @y-is-cls-b |
+                        y = cls(b)
+                        [by hypothesis with-representative-b]
+                      @with-representative-c |
+                        unpack c: R from z-has-a-representative {
+                          @z-is-cls-c |
+                            z = cls(c)
+                            [by hypothesis with-representative-c]
+                          @left-inner |
+                            mulQ(cls(a), cls(b)) = cls(mulR(a, b))
+                            [using specialize the-operation-is-homomorphic(a, b)]
+                          @left-outer |
+                            mulQ(cls(mulR(a, b)), cls(c)) = cls(mulR(mulR(a, b), c))
+                            [using specialize the-operation-is-homomorphic(mulR(a, b), c)]
+                          @right-inner |
+                            mulQ(cls(b), cls(c)) = cls(mulR(b, c))
+                            [using specialize the-operation-is-homomorphic(b, c)]
+                          @right-outer |
+                            mulQ(cls(a), cls(mulR(b, c))) = cls(mulR(a, mulR(b, c)))
+                            [using specialize the-operation-is-homomorphic(a, mulR(b, c))]
+                          @r-associates-at-a-b-c |
+                            mulR(mulR(a, b), c) = mulR(a, mulR(b, c))
+                            [using specialize the-operation-associates(a, b, c)]
+                          @left-side |
+                            mulQ(mulQ(cls(a), cls(b)), cls(c)) = cls(mulR(mulR(a, b), c))
+                            [by rewrite left-inner left-outer]
+                          @right-side |
+                            mulQ(cls(a), mulQ(cls(b), cls(c))) = cls(mulR(a, mulR(b, c)))
+                            [by rewrite right-inner right-outer]
+                          @left-equals-right-in-r |
+                            mulQ(mulQ(cls(a), cls(b)), cls(c)) = cls(mulR(a, mulR(b, c)))
+                            [by rewrite r-associates-at-a-b-c left-side]
+                          @right-side-flipped |
+                            cls(mulR(a, mulR(b, c))) = mulQ(cls(a), mulQ(cls(b), cls(c)))
+                            [by symmetry right-side]
+                          @at-representatives |
+                            mulQ(mulQ(cls(a), cls(b)), cls(c)) = mulQ(cls(a), mulQ(cls(b), cls(c)))
+                            [using chain left-equals-right-in-r right-side-flipped]
+                          @with-c-folded |
+                            mulQ(mulQ(cls(a), cls(b)), z) = mulQ(cls(a), mulQ(cls(b), z))
+                            [by rewrite z-is-cls-c at-representatives]
+                          @with-b-folded |
+                            mulQ(mulQ(cls(a), y), z) = mulQ(cls(a), mulQ(y, z))
+                            [by rewrite y-is-cls-b with-c-folded]
+                          @conclusion-at-representatives |
+                            mulQ(mulQ(x, y), z) = mulQ(x, mulQ(y, z))
+                            [by rewrite x-is-cls-a with-b-folded]
+                        }
+                      @conclusion-from-c |
+                        mulQ(mulQ(x, y), z) = mulQ(x, mulQ(y, z))
+                        [by unpacked with-representative-c]
+                    }
+                  @conclusion-from-b |
+                    mulQ(mulQ(x, y), z) = mulQ(x, mulQ(y, z))
+                    [by unpacked with-representative-b]
+                }
+              @conclusion-from-a |
+                mulQ(mulQ(x, y), z) = mulQ(x, mulQ(y, z))
+                [by unpacked with-representative-a]
+            }
+          @conclusion-for-z |
+            forall z: Quot; mulQ(mulQ(x, y), z) = mulQ(x, mulQ(y, z))
+            [by generalize generalize-z]
+        }
+      @conclusion-for-y |
+        forall y, z: Quot; mulQ(mulQ(x, y), z) = mulQ(x, mulQ(y, z))
+        [by generalize generalize-y]
+    }
+  @conclusion |
+    forall x, y, z: Quot; mulQ(mulQ(x, y), z) = mulQ(x, mulQ(y, z))
+    [by generalize generalize-x]
+qed
+
+// addition on R/I commutes, because it does on R.
+theorem addQIsCommutative: forall x, y: Quot; addQ(x, y) = addQ(y, x)
+proof
+  @representatives-exist |
+    forall q: Quot; exists a: R; q = cls(a)
+    [by cite clsSurjective]
+  @addition-is-homomorphic |
+    forall a, b: R; addQ(cls(a), cls(b)) = cls(addR(a, b))
+    [by cite addQHom]
+  @addition-commutes |
+    forall a, b: R; addR(a, b) = addR(b, a)
+    [by cite addIsCommutativeR]
+  @generalize-x |
+    fix x: Quot {
+      @generalize-y |
+        fix y: Quot {
+          @x-has-a-representative |
+            exists a: R; x = cls(a)
+            [by apply_at(x) representatives-exist]
+          @y-has-a-representative |
+            exists a: R; y = cls(a)
+            [by apply_at(y) representatives-exist]
+          @with-representative-a |
+            unpack a: R from x-has-a-representative {
+              @x-is-cls-a |
+                x = cls(a)
+                [by hypothesis with-representative-a]
+              @with-representative-b |
+                unpack b: R from y-has-a-representative {
+                  @y-is-cls-b |
+                    y = cls(b)
+                    [by hypothesis with-representative-b]
+                  @left-side |
+                    addQ(cls(a), cls(b)) = cls(addR(a, b))
+                    [using specialize addition-is-homomorphic(a, b)]
+                  @right-side |
+                    addQ(cls(b), cls(a)) = cls(addR(b, a))
+                    [using specialize addition-is-homomorphic(b, a)]
+                  @r-commutes-at-a-b |
+                    addR(a, b) = addR(b, a)
+                    [using specialize addition-commutes(a, b)]
+                  @left-is-the-commuted |
+                    addQ(cls(a), cls(b)) = cls(addR(b, a))
+                    [by rewrite r-commutes-at-a-b left-side]
+                  @right-side-flipped |
+                    cls(addR(b, a)) = addQ(cls(b), cls(a))
+                    [by symmetry right-side]
+                  @at-representatives |
+                    addQ(cls(a), cls(b)) = addQ(cls(b), cls(a))
+                    [using chain left-is-the-commuted right-side-flipped]
+                  @with-b-folded |
+                    addQ(cls(a), y) = addQ(y, cls(a))
+                    [by rewrite y-is-cls-b at-representatives]
+                  @conclusion-at-representatives |
+                    addQ(x, y) = addQ(y, x)
+                    [by rewrite x-is-cls-a with-b-folded]
+                }
+              @conclusion-from-b |
+                addQ(x, y) = addQ(y, x)
+                [by unpacked with-representative-b]
+            }
+          @conclusion-from-a |
+            addQ(x, y) = addQ(y, x)
+            [by unpacked with-representative-a]
+        }
+      @conclusion-for-y |
+        forall y: Quot; addQ(x, y) = addQ(y, x)
+        [by generalize generalize-y]
+    }
+  @conclusion |
+    forall x, y: Quot; addQ(x, y) = addQ(y, x)
+    [by generalize generalize-x]
+qed
+
+// 0 + x = x on R/I, from 0 + a = a on R (and 0_{R/I} being the class of 0).
+theorem addQZeroLeft: forall x: Quot; addQ(zeroQ, x) = x
+proof
+  @representatives-exist |
+    forall q: Quot; exists a: R; q = cls(a)
+    [by cite clsSurjective]
+  @addition-is-homomorphic |
+    forall a, b: R; addQ(cls(a), cls(b)) = cls(addR(a, b))
+    [by cite addQHom]
+  @zero-is-the-class-of-zero |
+    zeroQ = cls(zeroR)
+    [by cite zeroQIsClsZero]
+  @zero-is-a-left-identity |
+    forall a: R; addR(zeroR, a) = a
+    [by cite addZeroLeftR]
+  @generalize-x |
+    fix x: Quot {
+      @x-has-a-representative |
+        exists a: R; x = cls(a)
+        [by apply_at(x) representatives-exist]
+      @with-representative-a |
+        unpack a: R from x-has-a-representative {
+          @x-is-cls-a |
+            x = cls(a)
+            [by hypothesis with-representative-a]
+          @the-sum |
+            addQ(cls(zeroR), cls(a)) = cls(addR(zeroR, a))
+            [using specialize addition-is-homomorphic(zeroR, a)]
+          @r-identity-at-a |
+            addR(zeroR, a) = a
+            [by apply_at(a) zero-is-a-left-identity]
+          @the-sum-is-cls-a |
+            addQ(cls(zeroR), cls(a)) = cls(a)
+            [by rewrite r-identity-at-a the-sum]
+          @with-zero-folded |
+            addQ(zeroQ, cls(a)) = cls(a)
+            [by rewrite zero-is-the-class-of-zero the-sum-is-cls-a]
+          @conclusion-at-representative |
+            addQ(zeroQ, x) = x
+            [by rewrite x-is-cls-a with-zero-folded]
+        }
+      @conclusion-from-a |
+        addQ(zeroQ, x) = x
+        [by unpacked with-representative-a]
+    }
+  @conclusion |
+    forall x: Quot; addQ(zeroQ, x) = x
+    [by generalize generalize-x]
+qed
+
+// (-x) + x = 0 on R/I, from (-a) + a = 0 on R.
+theorem addQNegLeft: forall x: Quot; addQ(negQ(x), x) = zeroQ
+proof
+  @representatives-exist |
+    forall q: Quot; exists a: R; q = cls(a)
+    [by cite clsSurjective]
+  @addition-is-homomorphic |
+    forall a, b: R; addQ(cls(a), cls(b)) = cls(addR(a, b))
+    [by cite addQHom]
+  @negation-is-homomorphic |
+    forall a: R; negQ(cls(a)) = cls(negR(a))
+    [by cite negQHom]
+  @zero-is-the-class-of-zero |
+    zeroQ = cls(zeroR)
+    [by cite zeroQIsClsZero]
+  @negatives-cancel |
+    forall a: R; addR(negR(a), a) = zeroR
+    [by cite addNegLeftR]
+  @generalize-x |
+    fix x: Quot {
+      @x-has-a-representative |
+        exists a: R; x = cls(a)
+        [by apply_at(x) representatives-exist]
+      @with-representative-a |
+        unpack a: R from x-has-a-representative {
+          @x-is-cls-a |
+            x = cls(a)
+            [by hypothesis with-representative-a]
+          @neg-at-a |
+            negQ(cls(a)) = cls(negR(a))
+            [by apply_at(a) negation-is-homomorphic]
+          @the-sum |
+            addQ(cls(negR(a)), cls(a)) = cls(addR(negR(a), a))
+            [using specialize addition-is-homomorphic(negR(a), a)]
+          @r-cancels-at-a |
+            addR(negR(a), a) = zeroR
+            [by apply_at(a) negatives-cancel]
+          @the-sum-is-cls-zero |
+            addQ(cls(negR(a)), cls(a)) = cls(zeroR)
+            [by rewrite r-cancels-at-a the-sum]
+          @with-neg-folded |
+            addQ(negQ(cls(a)), cls(a)) = cls(zeroR)
+            [by rewrite neg-at-a the-sum-is-cls-zero]
+          @with-zero-folded |
+            addQ(negQ(cls(a)), cls(a)) = zeroQ
+            [by rewrite zero-is-the-class-of-zero with-neg-folded]
+          @conclusion-at-representative |
+            addQ(negQ(x), x) = zeroQ
+            [by rewrite x-is-cls-a with-zero-folded]
+        }
+      @conclusion-from-a |
+        addQ(negQ(x), x) = zeroQ
+        [by unpacked with-representative-a]
+    }
+  @conclusion |
+    forall x: Quot; addQ(negQ(x), x) = zeroQ
+    [by generalize generalize-x]
+qed
+
+// LEFT DISTRIBUTIVITY on R/I — one of the two laws Judson leaves as an exercise.
+theorem mulQAddDistribLeft: forall x, y, z: Quot; mulQ(x, addQ(y, z)) = addQ(mulQ(x, y), mulQ(x, z))
+proof
+  @representatives-exist |
+    forall q: Quot; exists a: R; q = cls(a)
+    [by cite clsSurjective]
+  @addition-is-homomorphic |
+    forall a, b: R; addQ(cls(a), cls(b)) = cls(addR(a, b))
+    [by cite addQHom]
+  @multiplication-is-homomorphic |
+    forall a, b: R; mulQ(cls(a), cls(b)) = cls(mulR(a, b))
+    [by cite mulQHom]
+  @r-distributes |
+    forall a, b, c: R; mulR(a, addR(b, c)) = addR(mulR(a, b), mulR(a, c))
+    [by cite mulAddDistribLeftR]
+  @generalize-x |
+    fix x: Quot {
+      @generalize-y |
+        fix y: Quot {
+          @generalize-z |
+            fix z: Quot {
+              @x-has-a-representative |
+                exists a: R; x = cls(a)
+                [by apply_at(x) representatives-exist]
+              @y-has-a-representative |
+                exists a: R; y = cls(a)
+                [by apply_at(y) representatives-exist]
+              @z-has-a-representative |
+                exists a: R; z = cls(a)
+                [by apply_at(z) representatives-exist]
+              @with-representative-a |
+                unpack a: R from x-has-a-representative {
+                  @x-is-cls-a |
+                    x = cls(a)
+                    [by hypothesis with-representative-a]
+                  @with-representative-b |
+                    unpack b: R from y-has-a-representative {
+                      @y-is-cls-b |
+                        y = cls(b)
+                        [by hypothesis with-representative-b]
+                      @with-representative-c |
+                        unpack c: R from z-has-a-representative {
+                          @z-is-cls-c |
+                            z = cls(c)
+                            [by hypothesis with-representative-c]
+                          // the left side, pushed into R
+                          @inner-sum |
+                            addQ(cls(b), cls(c)) = cls(addR(b, c))
+                            [using specialize addition-is-homomorphic(b, c)]
+                          @outer-product |
+                            mulQ(cls(a), cls(addR(b, c))) = cls(mulR(a, addR(b, c)))
+                            [using specialize multiplication-is-homomorphic(a, addR(b, c))]
+                          @left-side |
+                            mulQ(cls(a), addQ(cls(b), cls(c))) = cls(mulR(a, addR(b, c)))
+                            [by rewrite inner-sum outer-product]
+                          // the right side, pushed into R
+                          @first-product |
+                            mulQ(cls(a), cls(b)) = cls(mulR(a, b))
+                            [using specialize multiplication-is-homomorphic(a, b)]
+                          @second-product |
+                            mulQ(cls(a), cls(c)) = cls(mulR(a, c))
+                            [using specialize multiplication-is-homomorphic(a, c)]
+                          @the-sum-of-products |
+                            addQ(cls(mulR(a, b)), cls(mulR(a, c))) = cls(addR(mulR(a, b), mulR(a, c)))
+                            [using specialize addition-is-homomorphic(mulR(a, b), mulR(a, c))]
+                          @right-side-with-first |
+                            addQ(mulQ(cls(a), cls(b)), cls(mulR(a, c))) = cls(addR(mulR(a, b), mulR(a, c)))
+                            [by rewrite first-product the-sum-of-products]
+                          @right-side |
+                            addQ(mulQ(cls(a), cls(b)), mulQ(cls(a), cls(c))) = cls(addR(mulR(a, b), mulR(a, c)))
+                            [by rewrite second-product right-side-with-first]
+                          // R's own distributive law joins them
+                          @r-distributes-at-a-b-c |
+                            mulR(a, addR(b, c)) = addR(mulR(a, b), mulR(a, c))
+                            [using specialize r-distributes(a, b, c)]
+                          @left-is-the-distributed |
+                            mulQ(cls(a), addQ(cls(b), cls(c))) = cls(addR(mulR(a, b), mulR(a, c)))
+                            [by rewrite r-distributes-at-a-b-c left-side]
+                          @right-side-flipped |
+                            cls(addR(mulR(a, b), mulR(a, c))) = addQ(mulQ(cls(a), cls(b)), mulQ(cls(a), cls(c)))
+                            [by symmetry right-side]
+                          @at-representatives |
+                            mulQ(cls(a), addQ(cls(b), cls(c))) = addQ(mulQ(cls(a), cls(b)), mulQ(cls(a), cls(c)))
+                            [using chain left-is-the-distributed right-side-flipped]
+                          @with-c-folded |
+                            mulQ(cls(a), addQ(cls(b), z)) = addQ(mulQ(cls(a), cls(b)), mulQ(cls(a), z))
+                            [by rewrite z-is-cls-c at-representatives]
+                          @with-b-folded |
+                            mulQ(cls(a), addQ(y, z)) = addQ(mulQ(cls(a), y), mulQ(cls(a), z))
+                            [by rewrite y-is-cls-b with-c-folded]
+                          @conclusion-at-representatives |
+                            mulQ(x, addQ(y, z)) = addQ(mulQ(x, y), mulQ(x, z))
+                            [by rewrite x-is-cls-a with-b-folded]
+                        }
+                      @conclusion-from-c |
+                        mulQ(x, addQ(y, z)) = addQ(mulQ(x, y), mulQ(x, z))
+                        [by unpacked with-representative-c]
+                    }
+                  @conclusion-from-b |
+                    mulQ(x, addQ(y, z)) = addQ(mulQ(x, y), mulQ(x, z))
+                    [by unpacked with-representative-b]
+                }
+              @conclusion-from-a |
+                mulQ(x, addQ(y, z)) = addQ(mulQ(x, y), mulQ(x, z))
+                [by unpacked with-representative-a]
+            }
+          @conclusion-for-z |
+            forall z: Quot; mulQ(x, addQ(y, z)) = addQ(mulQ(x, y), mulQ(x, z))
+            [by generalize generalize-z]
+        }
+      @conclusion-for-y |
+        forall y, z: Quot; mulQ(x, addQ(y, z)) = addQ(mulQ(x, y), mulQ(x, z))
+        [by generalize generalize-y]
+    }
+  @conclusion |
+    forall x, y, z: Quot; mulQ(x, addQ(y, z)) = addQ(mulQ(x, y), mulQ(x, z))
+    [by generalize generalize-x]
+qed
+
+// RIGHT DISTRIBUTIVITY on R/I — the other.
+theorem mulQAddDistribRight: forall x, y, z: Quot; mulQ(addQ(x, y), z) = addQ(mulQ(x, z), mulQ(y, z))
+proof
+  @representatives-exist |
+    forall q: Quot; exists a: R; q = cls(a)
+    [by cite clsSurjective]
+  @addition-is-homomorphic |
+    forall a, b: R; addQ(cls(a), cls(b)) = cls(addR(a, b))
+    [by cite addQHom]
+  @multiplication-is-homomorphic |
+    forall a, b: R; mulQ(cls(a), cls(b)) = cls(mulR(a, b))
+    [by cite mulQHom]
+  @r-distributes |
+    forall a, b, c: R; mulR(addR(a, b), c) = addR(mulR(a, c), mulR(b, c))
+    [by cite mulAddDistribRightR]
+  @generalize-x |
+    fix x: Quot {
+      @generalize-y |
+        fix y: Quot {
+          @generalize-z |
+            fix z: Quot {
+              @x-has-a-representative |
+                exists a: R; x = cls(a)
+                [by apply_at(x) representatives-exist]
+              @y-has-a-representative |
+                exists a: R; y = cls(a)
+                [by apply_at(y) representatives-exist]
+              @z-has-a-representative |
+                exists a: R; z = cls(a)
+                [by apply_at(z) representatives-exist]
+              @with-representative-a |
+                unpack a: R from x-has-a-representative {
+                  @x-is-cls-a |
+                    x = cls(a)
+                    [by hypothesis with-representative-a]
+                  @with-representative-b |
+                    unpack b: R from y-has-a-representative {
+                      @y-is-cls-b |
+                        y = cls(b)
+                        [by hypothesis with-representative-b]
+                      @with-representative-c |
+                        unpack c: R from z-has-a-representative {
+                          @z-is-cls-c |
+                            z = cls(c)
+                            [by hypothesis with-representative-c]
+                          // the left side, pushed into R
+                          @inner-sum |
+                            addQ(cls(a), cls(b)) = cls(addR(a, b))
+                            [using specialize addition-is-homomorphic(a, b)]
+                          @outer-product |
+                            mulQ(cls(addR(a, b)), cls(c)) = cls(mulR(addR(a, b), c))
+                            [using specialize multiplication-is-homomorphic(addR(a, b), c)]
+                          @left-side |
+                            mulQ(addQ(cls(a), cls(b)), cls(c)) = cls(mulR(addR(a, b), c))
+                            [by rewrite inner-sum outer-product]
+                          // the right side, pushed into R
+                          @first-product |
+                            mulQ(cls(a), cls(c)) = cls(mulR(a, c))
+                            [using specialize multiplication-is-homomorphic(a, c)]
+                          @second-product |
+                            mulQ(cls(b), cls(c)) = cls(mulR(b, c))
+                            [using specialize multiplication-is-homomorphic(b, c)]
+                          @the-sum-of-products |
+                            addQ(cls(mulR(a, c)), cls(mulR(b, c))) = cls(addR(mulR(a, c), mulR(b, c)))
+                            [using specialize addition-is-homomorphic(mulR(a, c), mulR(b, c))]
+                          @right-side-with-first |
+                            addQ(mulQ(cls(a), cls(c)), cls(mulR(b, c))) = cls(addR(mulR(a, c), mulR(b, c)))
+                            [by rewrite first-product the-sum-of-products]
+                          @right-side |
+                            addQ(mulQ(cls(a), cls(c)), mulQ(cls(b), cls(c))) = cls(addR(mulR(a, c), mulR(b, c)))
+                            [by rewrite second-product right-side-with-first]
+                          // R's own distributive law joins them
+                          @r-distributes-at-a-b-c |
+                            mulR(addR(a, b), c) = addR(mulR(a, c), mulR(b, c))
+                            [using specialize r-distributes(a, b, c)]
+                          @left-is-the-distributed |
+                            mulQ(addQ(cls(a), cls(b)), cls(c)) = cls(addR(mulR(a, c), mulR(b, c)))
+                            [by rewrite r-distributes-at-a-b-c left-side]
+                          @right-side-flipped |
+                            cls(addR(mulR(a, c), mulR(b, c))) = addQ(mulQ(cls(a), cls(c)), mulQ(cls(b), cls(c)))
+                            [by symmetry right-side]
+                          @at-representatives |
+                            mulQ(addQ(cls(a), cls(b)), cls(c)) = addQ(mulQ(cls(a), cls(c)), mulQ(cls(b), cls(c)))
+                            [using chain left-is-the-distributed right-side-flipped]
+                          @with-c-folded |
+                            mulQ(addQ(cls(a), cls(b)), z) = addQ(mulQ(cls(a), z), mulQ(cls(b), z))
+                            [by rewrite z-is-cls-c at-representatives]
+                          @with-b-folded |
+                            mulQ(addQ(cls(a), y), z) = addQ(mulQ(cls(a), z), mulQ(y, z))
+                            [by rewrite y-is-cls-b with-c-folded]
+                          @conclusion-at-representatives |
+                            mulQ(addQ(x, y), z) = addQ(mulQ(x, z), mulQ(y, z))
+                            [by rewrite x-is-cls-a with-b-folded]
+                        }
+                      @conclusion-from-c |
+                        mulQ(addQ(x, y), z) = addQ(mulQ(x, z), mulQ(y, z))
+                        [by unpacked with-representative-c]
+                    }
+                  @conclusion-from-b |
+                    mulQ(addQ(x, y), z) = addQ(mulQ(x, z), mulQ(y, z))
+                    [by unpacked with-representative-b]
+                }
+              @conclusion-from-a |
+                mulQ(addQ(x, y), z) = addQ(mulQ(x, z), mulQ(y, z))
+                [by unpacked with-representative-a]
+            }
+          @conclusion-for-z |
+            forall z: Quot; mulQ(addQ(x, y), z) = addQ(mulQ(x, z), mulQ(y, z))
+            [by generalize generalize-z]
+        }
+      @conclusion-for-y |
+        forall y, z: Quot; mulQ(addQ(x, y), z) = addQ(mulQ(x, z), mulQ(y, z))
+        [by generalize generalize-y]
+    }
+  @conclusion |
+    forall x, y, z: Quot; mulQ(addQ(x, y), z) = addQ(mulQ(x, z), mulQ(y, z))
+    [by generalize generalize-x]
+qed
+
+// -- R/I IS A RING -----------------------------------------------------------------------
+// Judson's Theorem 16.11, as a model: every axiom of std/ring.b4m is discharged by the
+// lifted theorem above, so the whole ring corpus — mulZeroRight, mulNegLeft, negMulNeg and
+// the rest — holds of the factor ring, each citation one line.
+model QuotIsARing {
+  ring.Ring: Quot
+  ring.ZERO: zeroQ
+  ring.ONE: oneQ
+  ring.add: addQ
+  ring.mul: mulQ
+  ring.neg: negQ
+  ring.addIsAssociative <- addQIsAssociative
+  ring.addZeroLeft <- addQZeroLeft
+  ring.addNegLeft <- addQNegLeft
+  ring.addIsCommutative <- addQIsCommutative
+  ring.mulIsAssociative <- mulQIsAssociative
+  ring.mulAddDistribLeft <- mulQAddDistribLeft
+  ring.mulAddDistribRight <- mulQAddDistribRight
+}
+
+// the corpus, transferred — a sample, each one line. (Every std/ring.b4m theorem is
+// available the same way.)
+theorem mulQZeroRight: forall x: Quot; mulQ(x, zeroQ) = zeroQ
+proof
+  @conclusion |
+    forall x: Quot; mulQ(x, zeroQ) = zeroQ
+    [using model(QuotIsARing) ring.mulZeroRight]
+qed
+
+theorem mulQNegRight: forall x, y: Quot; mulQ(x, negQ(y)) = negQ(mulQ(x, y))
+proof
+  @conclusion |
+    forall x, y: Quot; mulQ(x, negQ(y)) = negQ(mulQ(x, y))
+    [using model(QuotIsARing) ring.mulNegRight]
+qed
+
+theorem negQMulNegQ: forall x, y: Quot; mulQ(negQ(x), negQ(y)) = mulQ(x, y)
+proof
+  @conclusion |
+    forall x, y: Quot; mulQ(negQ(x), negQ(y)) = mulQ(x, y)
+    [using model(QuotIsARing) ring.negMulNeg]
+qed
+
+// -- THE CANONICAL HOMOMORPHISM R -> R/I -------------------------------------------------
+// Judson's Theorem 16.12: `cls` is a surjective ring homomorphism with kernel I. Surjectivity
+// IS `clsSurjective`; the two homomorphism equations are the `…Hom` axioms read the other
+// way; and the kernel being I is the congruence at zero.
+
+theorem clsPreservesAddition: forall a, b: R; cls(addR(a, b)) = addQ(cls(a), cls(b))
+proof
+  @addition-is-homomorphic |
+    forall a, b: R; addQ(cls(a), cls(b)) = cls(addR(a, b))
+    [by cite addQHom]
+  @generalize-a |
+    fix a: R {
+      @generalize-b |
+        fix b: R {
+          @the-hom-equation |
+            addQ(cls(a), cls(b)) = cls(addR(a, b))
+            [using specialize addition-is-homomorphic(a, b)]
+          @conclusion-flipped |
+            cls(addR(a, b)) = addQ(cls(a), cls(b))
+            [by symmetry the-hom-equation]
+        }
+      @conclusion-for-b |
+        forall b: R; cls(addR(a, b)) = addQ(cls(a), cls(b))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: R; cls(addR(a, b)) = addQ(cls(a), cls(b))
+    [by generalize generalize-a]
+qed
+
+theorem clsPreservesMultiplication: forall a, b: R; cls(mulR(a, b)) = mulQ(cls(a), cls(b))
+proof
+  @multiplication-is-homomorphic |
+    forall a, b: R; mulQ(cls(a), cls(b)) = cls(mulR(a, b))
+    [by cite mulQHom]
+  @generalize-a |
+    fix a: R {
+      @generalize-b |
+        fix b: R {
+          @the-hom-equation |
+            mulQ(cls(a), cls(b)) = cls(mulR(a, b))
+            [using specialize multiplication-is-homomorphic(a, b)]
+          @conclusion-flipped |
+            cls(mulR(a, b)) = mulQ(cls(a), cls(b))
+            [by symmetry the-hom-equation]
+        }
+      @conclusion-for-b |
+        forall b: R; cls(mulR(a, b)) = mulQ(cls(a), cls(b))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: R; cls(mulR(a, b)) = mulQ(cls(a), cls(b))
+    [by generalize generalize-a]
+qed
+
+// -0 = 0: zero is its own additive inverse, since 0 + 0 = 0.
+theorem negZeroIsZero: negR(zeroR) = zeroR
+proof
+  @inverses-are-unique |
+    forall x, y: R; addR(x, y) = zeroR -> y = negR(x)
+    [by cite ring.additiveInverseUnique]
+  @zero-plus-zero |
+    addR(zeroR, zeroR) = zeroR
+    [using specialize addZeroLeftR(zeroR)]
+  @zero-is-its-own-inverse |
+    zeroR = negR(zeroR)
+    [using specialize inverses-are-unique(zeroR, zeroR) zero-plus-zero]
+  @conclusion |
+    negR(zeroR) = zeroR
+    [by symmetry zero-is-its-own-inverse]
+qed
+
+// "with kernel I": cls(r) is the zero class exactly when r is in I.
+theorem clsKernelIsTheIdeal: forall r: R; cls(r) = zeroQ iff inIdeal(r)
+proof
+  @the-congruence |
+    forall a, b: R; cls(a) = cls(b) iff inIdeal(addR(a, negR(b)))
+    [by cite clsCongruent]
+  @zero-is-the-class-of-zero |
+    zeroQ = cls(zeroR)
+    [by cite zeroQIsClsZero]
+  @generalize-r |
+    fix r: R {
+      // cls(r) = cls(0) iff r - 0 in I
+      @congruence-at-r-and-zero |
+        cls(r) = cls(zeroR) iff inIdeal(addR(r, negR(zeroR)))
+        [using specialize the-congruence(r, zeroR)]
+      // -0 = 0, so r - 0 = r
+      @neg-zero-is-zero |
+        negR(zeroR) = zeroR
+        [by cite negZeroIsZero]
+      @r-minus-zero-is-r-plus-zero |
+        addR(r, negR(zeroR)) = addR(r, zeroR)
+        [by rewrite neg-zero-is-zero reflexive-r-minus-zero]
+      @reflexive-r-minus-zero |
+        addR(r, negR(zeroR)) = addR(r, negR(zeroR))
+        [by reflexivity]
+      @r-plus-zero-is-r |
+        addR(r, zeroR) = r
+        [using specialize addZeroRightR(r)]
+      @r-minus-zero-is-r |
+        addR(r, negR(zeroR)) = r
+        [using chain r-minus-zero-is-r-plus-zero r-plus-zero-is-r]
+      @congruence-simplified |
+        cls(r) = cls(zeroR) iff inIdeal(r)
+        [by rewrite r-minus-zero-is-r congruence-at-r-and-zero]
+      @conclusion-kernel-at-r |
+        cls(r) = zeroQ iff inIdeal(r)
+        [by rewrite zero-is-the-class-of-zero congruence-simplified]
+    }
+  @conclusion |
+    forall r: R; cls(r) = zeroQ iff inIdeal(r)
+    [by generalize generalize-r]
+qed
