@@ -1,0 +1,105 @@
+// Fixture for the `--chaos=<seed>` REPLAY gate (tests/test_sweeps.zig).
+//
+// It must be big enough that the engine's schedule CHANGES the amount of work it does —
+// several theorems citing each other and a shared lemma, so the demand order decides what is
+// already memoised when each proof runs. `holes_many.b4m` is too small for that (99
+// citations at every seed), which is why the seed sweep beside this one never noticed that a
+// seed could not reproduce its own schedule.
+//
+// The gate pins the `--trace-facts` citation COUNT under one seed across repeated runs. That
+// number is work actually performed, so if scheduling ever stops being a function of the
+// seed, it moves and this fails.
+import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+func add = peano.add
+define less_or_equal(a, b) = peano.less_or_equal(a, b)
+fact addZeroRight = peano.addZeroRight
+fact lessOrEqualRefl = peano_order.lessOrEqualRefl
+fact lessOrEqualTransitive = peano_order.lessOrEqualTransitive
+
+// a shared lemma every theorem below reaches, so demand order decides what is memoised
+theorem everyNumberIsAtMostItself: forall a: Nat; less_or_equal(a, a)
+proof
+  @conclusion |
+    forall a: Nat; less_or_equal(a, a)
+    [by cite lessOrEqualRefl]
+qed
+
+theorem addingZeroKeepsTheBound: forall a: Nat; less_or_equal(add(a, ZERO), a)
+proof
+  @reflexive |
+    forall a: Nat; less_or_equal(a, a)
+    [by cite everyNumberIsAtMostItself]
+  @generalize-a |
+    fix a: Nat {
+      @a-plus-zero-is-a |
+        add(a, ZERO) = a
+        [using specialize addZeroRight(a)]
+      @a-at-most-a |
+        less_or_equal(a, a)
+        [by apply_at(a) reflexive]
+      @conclusion-bounded |
+        less_or_equal(add(a, ZERO), a)
+        [by rewrite a-plus-zero-is-a a-at-most-a]
+    }
+  @conclusion |
+    forall a: Nat; less_or_equal(add(a, ZERO), a)
+    [by generalize generalize-a]
+qed
+
+theorem theBoundChainsThroughItself: forall a, b: Nat; less_or_equal(a, b) -> less_or_equal(a, b)
+proof
+  @transitive |
+    forall a, b, c: Nat; less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
+    [by cite lessOrEqualTransitive]
+  @reflexive |
+    forall a: Nat; less_or_equal(a, a)
+    [by cite everyNumberIsAtMostItself]
+  @generalize-a |
+    fix a: Nat {
+      @generalize-b |
+        fix b: Nat {
+          @given-a-below-b |
+            assume less_or_equal(a, b) {
+              @a-below-b |
+                less_or_equal(a, b)
+                [by hypothesis given-a-below-b]
+              @b-at-most-b |
+                less_or_equal(b, b)
+                [by apply_at(b) reflexive]
+              @conclusion-chained |
+                less_or_equal(a, b)
+                [using specialize transitive(a, b, b) a-below-b b-at-most-b]
+            }
+          @conclusion-at-b |
+            less_or_equal(a, b) -> less_or_equal(a, b)
+            [by discharge given-a-below-b]
+        }
+      @conclusion-for-b |
+        forall b: Nat; less_or_equal(a, b) -> less_or_equal(a, b)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Nat; less_or_equal(a, b) -> less_or_equal(a, b)
+    [by generalize generalize-a]
+qed
+
+theorem successorsKeepTheirOwnBound: forall a: Nat; less_or_equal(succ(a), succ(a))
+proof
+  @reflexive |
+    forall a: Nat; less_or_equal(a, a)
+    [by cite everyNumberIsAtMostItself]
+  @generalize-a |
+    fix a: Nat {
+      @conclusion-successor-bounded |
+        less_or_equal(succ(a), succ(a))
+        [by apply_at(succ(a)) reflexive]
+    }
+  @conclusion |
+    forall a: Nat; less_or_equal(succ(a), succ(a))
+    [by generalize generalize-a]
+qed

@@ -91,6 +91,26 @@ pub fn addTests(
     for ([_][]const u8{ "--chaos=1", "--chaos=7", "--chaos=42", "--chaos=99" }) |seed| {
         ctx.ok(&.{ "check", seed, "tests/cases/holes_many.b4m", "--draft", "--axioms" }, holes_report);
     }
+    // …and A SEED MUST REPLAY. The sweep above pins the VERDICT across seeds, which is the
+    // determinism contract, but it cannot see whether a given seed reproduces its own
+    // SCHEDULE — and for a long time it did not: a seed only picks among the tasks that are
+    // RUNNABLE, while the worker count and ASYNC READ COMPLETION decided which those were.
+    // `--chaos` therefore now implies `-j1 --sync-io` (`Verify.effectiveWorkers` /
+    // `effectiveSyncIo`). The witness is the `--trace-facts` CITATION COUNT: it counts work
+    // the demand engine actually did, so a schedule that differs between runs moves it.
+    // Pre-fix, `std/counted.b4m` at one seed gave 3857/3857/3875; the same run repeated
+    // below must agree with itself. (`holes_many.b4m` is too small to vary — 99 citations at
+    // every seed — which is exactly why the sweep above never caught this.)
+    //
+    // The fixture is a real witness because its count DOES move with the seed —
+    // 2530/2418/2654/2374 at seeds 1/7/42/99 — so pinning one seed asserts replay rather
+    // than merely asserting a constant. A regression that reintroduces async reads or extra
+    // workers under chaos makes this flaky, which is the intended signal.
+    for (0..3) |_| {
+        const r = ctx.run(&.{ "check", "--chaos=7", "--trace-facts", "tests/cases/chaos_replay.b4m", "--axioms" });
+        r.expectStdErrMatch("--- fact resolution trace (2418 citations) ---");
+        r.expectExitCode(0);
+    }
     ctx.okSilent(&.{ "fmt", "--check", "tests/cases/holes_many.b4m" });
 
     // A CITATION CYCLE is a hard error naming every participant. Before this, the engine
