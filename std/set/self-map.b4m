@@ -1,0 +1,404 @@
+// std/set/self-map.b4m — AN INJECTIVE SELF-MAP OF A FINITE SET IS ONTO.
+//
+// The finite pigeonhole in the form arguments actually use it: a map from a finite set into
+// ITSELF that loses no points must hit them all. Textbooks compress this to a clause —
+// Judson's proof of "every finite integral domain is a field" says only "Since D* is a
+// finite set, the map λ_a must also be onto" — but nothing in std/set/finite.b4m had this
+// shape, so the clause needed its own development.
+//
+// THE ARGUMENT, and why it is not `pigeonhole`: pigeonhole produces a COLLISION from a map
+// into a SMALLER set, which is the contrapositive of what is wanted here and gives no handle
+// on the image. Instead take the IMAGE of `a` under `f` as a set — available since
+// std/set.b4m gained the `setFromPredicate` comprehension schema — and observe that `f`
+// bijects `a` onto it, so image and domain have the SAME size. The image is also a SUBSET of
+// `a` (because `f` maps `a` into `a`), and a PROPER subset of a finite set is strictly
+// smaller (`properSubsetIsSmaller`). Equal sizes forbid proper, so the image IS `a`, which is
+// surjectivity.
+//
+// The three lemmas before the theorem are each independently useful: that the image set
+// exists, that an injective map bijects onto its image, and that a bijection carries a size.
+
+import set <<< "std/set.b4m"
+import set_finite <<< "std/set/finite.b4m"
+import function <<< "std/function.b4m"
+import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
+
+sort Element = set.Element
+sort Set = set.Set
+sort Fn = function.Fn
+sort Nat = peano.Nat
+func segment = set_finite.segment
+define hasSize(a, n) = set_finite.hasSize(a, n)
+define equinumerous(a, b) = set_finite.equinumerous(a, b)
+fact equinumerousSymmetric = set_finite.equinumerousSymmetric
+fact equinumerousTransitive = set_finite.equinumerousTransitive
+fact properSubsetIsSmaller = set_finite.properSubsetIsSmaller
+fact lessThanIrreflexive = peano_order.lessThanIrreflexive
+pred less_than = peano.less_than
+define subset(a, b) = set.subset(a, b)
+pred member = set.member
+func apply = function.apply
+define mapsInto(f, a, b) = set_finite.mapsInto(f, a, b)
+define injectiveOn(f, a) = set_finite.injectiveOn(f, a)
+define surjectiveOnto(f, a, b) = set_finite.surjectiveOnto(f, a, b)
+define bijectsOnto(f, a, b) = set_finite.bijectsOnto(f, a, b)
+fact setFromPredicate = set.setFromPredicate
+
+// the image of `a` under `f`, as a set
+define isImageOf(b, f, a) = forall y: Element; member(y, b) iff (exists x: Element; member(x, a) and apply(f, x) = y)
+
+theorem theImageSetExists: forall f: Fn; forall a: Set; exists b: Set; isImageOf(b, f, a)
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-a |
+        fix a: Set {
+          @conclusion-image-exists |
+            exists b: Set; forall y: Element; member(y, b) iff (exists x: Element; member(x, a) and apply(f, x) = y)
+            [using instantiation setFromPredicate(fun y: Element => exists x: Element; member(x, a) and apply(f, x) = y)]
+        }
+      @conclusion-for-a |
+        forall a: Set; exists b: Set; isImageOf(b, f, a)
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall f: Fn; forall a: Set; exists b: Set; isImageOf(b, f, a)
+    [by generalize generalize-f]
+qed
+
+// f bijects a onto its own image: it maps in by construction, stays injective, and covers it.
+theorem aMapBijectsOntoItsImage: forall f: Fn; forall a: Set; forall b: Set;
+  isImageOf(b, f, a) -> injectiveOn(f, a) -> bijectsOnto(f, a, b)
+proof
+  @generalize-f |
+    fix f: Fn {
+      @generalize-a |
+        fix a: Set {
+          @generalize-b |
+            fix b: Set {
+              @given-b-is-the-image |
+                assume isImageOf(b, f, a) {
+                  @given-f-is-injective |
+                    assume injectiveOn(f, a) {
+                      @image-members |
+                        forall y: Element; member(y, b) iff (exists x: Element; member(x, a) and apply(f, x) = y)
+                        [by hypothesis given-b-is-the-image]
+                      @f-is-injective |
+                        injectiveOn(f, a)
+                        [by hypothesis given-f-is-injective]
+                      // maps into: f(x) is in the image whenever x is in a
+                      @generalize-x |
+                        fix x: Element {
+                          @given-x-in-a |
+                            assume member(x, a) {
+                              @x-is-in-a |
+                                member(x, a)
+                                [by hypothesis given-x-in-a]
+                              @f-x-is-f-x |
+                                apply(f, x) = apply(f, x)
+                                [by reflexivity]
+                              @x-witnesses |
+                                member(x, a) and apply(f, x) = apply(f, x)
+                                [by both x-is-in-a f-x-is-f-x]
+                              @f-x-has-a-preimage |
+                                exists x2: Element; member(x2, a) and apply(f, x2) = apply(f, x)
+                                [by witness(x) x-witnesses]
+                              @image-at-f-x |
+                                member(apply(f, x), b) iff (exists x2: Element; member(x2, a) and apply(f, x2) = apply(f, x))
+                                [by apply_at(apply(f, x)) image-members]
+                              @conclusion-f-x-in-b |
+                                member(apply(f, x), b)
+                                [using tautology image-at-f-x f-x-has-a-preimage]
+                            }
+                          @conclusion-at-x |
+                            member(x, a) -> member(apply(f, x), b)
+                            [by discharge given-x-in-a]
+                        }
+                      @maps-into-the-image |
+                        forall x: Element; member(x, a) -> member(apply(f, x), b)
+                        [by generalize generalize-x]
+                      // onto: every image member has a preimage, which is the definition
+                      @generalize-y |
+                        fix y: Element {
+                          @given-y-in-b |
+                            assume member(y, b) {
+                              @y-is-in-b |
+                                member(y, b)
+                                [by hypothesis given-y-in-b]
+                              @image-at-y |
+                                member(y, b) iff (exists x: Element; member(x, a) and apply(f, x) = y)
+                                [by apply_at(y) image-members]
+                              @conclusion-y-has-a-preimage |
+                                exists x: Element; member(x, a) and apply(f, x) = y
+                                [using tautology image-at-y y-is-in-b]
+                            }
+                          @conclusion-at-y |
+                            member(y, b) -> exists x: Element; member(x, a) and apply(f, x) = y
+                            [by discharge given-y-in-b]
+                        }
+                      @covers-the-image |
+                        forall y: Element; member(y, b) -> exists x: Element; member(x, a) and apply(f, x) = y
+                        [by generalize generalize-y]
+                      @maps-and-injects |
+                        (forall x: Element; member(x, a) -> member(apply(f, x), b)) and injectiveOn(f, a)
+                        [by both maps-into-the-image f-is-injective]
+                      @conclusion-bijects |
+                        bijectsOnto(f, a, b)
+                        [by both maps-and-injects covers-the-image]
+                    }
+                  @conclusion-when-injective |
+                    injectiveOn(f, a) -> bijectsOnto(f, a, b)
+                    [by discharge given-f-is-injective]
+                }
+              @conclusion-at-b |
+                isImageOf(b, f, a) -> injectiveOn(f, a) -> bijectsOnto(f, a, b)
+                [by discharge given-b-is-the-image]
+            }
+          @conclusion-for-b |
+            forall b: Set; isImageOf(b, f, a) -> injectiveOn(f, a) -> bijectsOnto(f, a, b)
+            [by generalize generalize-b]
+        }
+      @conclusion-for-a |
+        forall a: Set; forall b: Set; isImageOf(b, f, a) -> injectiveOn(f, a) -> bijectsOnto(f, a, b)
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall f: Fn; forall a: Set; forall b: Set; isImageOf(b, f, a) -> injectiveOn(f, a) -> bijectsOnto(f, a, b)
+    [by generalize generalize-f]
+qed
+
+// a bijection carries a size across: hasSize(a,n) is equinumerous(a, segment(n)), so
+// b ~ a ~ segment(n).
+theorem aBijectionCarriesTheSize: forall f: Fn; forall a, b: Set; forall n: Nat;
+  bijectsOnto(f, a, b) -> hasSize(a, n) -> hasSize(b, n)
+proof
+  @symmetry-of-equinumerous |
+    forall a, b: Set; equinumerous(a, b) -> equinumerous(b, a)
+    [by cite equinumerousSymmetric]
+  @transitivity-of-equinumerous |
+    forall a: Set; forall b: Set; forall c: Set; equinumerous(a, b) -> equinumerous(b, c) -> equinumerous(a, c)
+    [by cite equinumerousTransitive]
+  @generalize-f |
+    fix f: Fn {
+      @generalize-a |
+        fix a: Set {
+          @generalize-b |
+            fix b: Set {
+              @generalize-n |
+                fix n: Nat {
+                  @given-f-bijects |
+                    assume bijectsOnto(f, a, b) {
+                      @given-a-has-size-n |
+                        assume hasSize(a, n) {
+                          @f-bijects |
+                            bijectsOnto(f, a, b)
+                            [by hypothesis given-f-bijects]
+                          @a-has-size-n |
+                            equinumerous(a, segment(n))
+                            [by hypothesis given-a-has-size-n]
+                          // a ~ b, witnessed by f
+                          @a-is-equinumerous-to-b |
+                            exists g: Fn; bijectsOnto(g, a, b)
+                            [by witness(f) f-bijects]
+                          @b-is-equinumerous-to-a |
+                            equinumerous(b, a)
+                            [using specialize symmetry-of-equinumerous(a, b) a-is-equinumerous-to-b]
+                          @conclusion-b-has-size-n |
+                            equinumerous(b, segment(n))
+                            [using specialize transitivity-of-equinumerous(b, a, segment(n)) b-is-equinumerous-to-a a-has-size-n]
+                        }
+                      @conclusion-when-sized |
+                        hasSize(a, n) -> hasSize(b, n)
+                        [by discharge given-a-has-size-n]
+                    }
+                  @conclusion-at-n |
+                    bijectsOnto(f, a, b) -> hasSize(a, n) -> hasSize(b, n)
+                    [by discharge given-f-bijects]
+                }
+              @conclusion-for-n |
+                forall n: Nat; bijectsOnto(f, a, b) -> hasSize(a, n) -> hasSize(b, n)
+                [by generalize generalize-n]
+            }
+          @conclusion-for-b |
+            forall b: Set; forall n: Nat; bijectsOnto(f, a, b) -> hasSize(a, n) -> hasSize(b, n)
+            [by generalize generalize-b]
+        }
+      @conclusion-for-a |
+        forall a, b: Set; forall n: Nat; bijectsOnto(f, a, b) -> hasSize(a, n) -> hasSize(b, n)
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall f: Fn; forall a, b: Set; forall n: Nat; bijectsOnto(f, a, b) -> hasSize(a, n) -> hasSize(b, n)
+    [by generalize generalize-f]
+qed
+
+// THE LEMMA Judson's one sentence stands on: an INJECTIVE self-map of a FINITE set is ONTO.
+// If a point of `a` were missed, the image would be a PROPER subset and hence strictly
+// smaller — but the map bijects `a` onto its image, so the two have the SAME size.
+theorem anInjectiveSelfMapOfAFiniteSetIsOnto: forall f: Fn; forall a: Set; forall n: Nat;
+  hasSize(a, n) -> mapsInto(f, a, a) -> injectiveOn(f, a) -> surjectiveOnto(f, a, a)
+proof
+  @image-exists |
+    forall f: Fn; forall a: Set; exists b: Set; isImageOf(b, f, a)
+    [by cite theImageSetExists]
+  @bijects-onto-its-image |
+    forall f: Fn; forall a: Set; forall b: Set; isImageOf(b, f, a) -> injectiveOn(f, a) -> bijectsOnto(f, a, b)
+    [by cite aMapBijectsOntoItsImage]
+  @bijection-carries-size |
+    forall f: Fn; forall a, b: Set; forall n: Nat; bijectsOnto(f, a, b) -> hasSize(a, n) -> hasSize(b, n)
+    [by cite aBijectionCarriesTheSize]
+  @proper-subsets-are-smaller |
+    forall a: Set; forall b: Set; forall m: Nat; forall n: Nat; subset(a, b) -> a != b -> hasSize(a, m) -> hasSize(b, n) -> less_than(m, n)
+    [by cite properSubsetIsSmaller]
+  @nothing-is-below-itself |
+    forall k: Nat; not less_than(k, k)
+    [by cite lessThanIrreflexive]
+  @generalize-f |
+    fix f: Fn {
+      @generalize-a |
+        fix a: Set {
+          @generalize-n |
+            fix n: Nat {
+              @given-a-has-size-n |
+                assume hasSize(a, n) {
+                  @given-f-maps-into-a |
+                    assume mapsInto(f, a, a) {
+                      @given-f-is-injective |
+                        assume injectiveOn(f, a) {
+                          @a-has-size-n |
+                            hasSize(a, n)
+                            [by hypothesis given-a-has-size-n]
+                          @f-maps-into-a |
+                            forall x: Element; member(x, a) -> member(apply(f, x), a)
+                            [by hypothesis given-f-maps-into-a]
+                          @f-is-injective |
+                            injectiveOn(f, a)
+                            [by hypothesis given-f-is-injective]
+                          @some-image-exists |
+                            exists b: Set; isImageOf(b, f, a)
+                            [using specialize image-exists(f, a)]
+                          @with-the-image-b |
+                            unpack b: Set from some-image-exists {
+                              @b-is-the-image |
+                                isImageOf(b, f, a)
+                                [by hypothesis with-the-image-b]
+                              @image-members |
+                                forall y: Element; member(y, b) iff (exists x: Element; member(x, a) and apply(f, x) = y)
+                                [by hypothesis with-the-image-b]
+                              // f bijects a onto b, so b has a's size
+                              @f-bijects-onto-b |
+                                bijectsOnto(f, a, b)
+                                [using specialize bijects-onto-its-image(f, a, b) b-is-the-image f-is-injective]
+                              @b-has-size-n |
+                                hasSize(b, n)
+                                [using specialize bijection-carries-size(f, a, b, n) f-bijects-onto-b a-has-size-n]
+                              // b is a subset of a, since f maps a INTO a
+                              @generalize-y |
+                                fix y: Element {
+                                  @given-y-in-b |
+                                    assume member(y, b) {
+                                      @y-is-in-b |
+                                        member(y, b)
+                                        [by hypothesis given-y-in-b]
+                                      @image-at-y |
+                                        member(y, b) iff (exists x: Element; member(x, a) and apply(f, x) = y)
+                                        [by apply_at(y) image-members]
+                                      @y-has-a-preimage |
+                                        exists x: Element; member(x, a) and apply(f, x) = y
+                                        [using tautology image-at-y y-is-in-b]
+                                      @with-the-preimage-x |
+                                        unpack x: Element from y-has-a-preimage {
+                                          @preimage-facts |
+                                            member(x, a) and apply(f, x) = y
+                                            [by hypothesis with-the-preimage-x]
+                                          @x-is-in-a |
+                                            member(x, a)
+                                            [by and_lhs preimage-facts]
+                                          @f-x-is-y |
+                                            apply(f, x) = y
+                                            [by and_rhs preimage-facts]
+                                          @f-x-is-in-a |
+                                            member(apply(f, x), a)
+                                            [using specialize f-maps-into-a(x) x-is-in-a]
+                                          @conclusion-y-is-in-a |
+                                            member(y, a)
+                                            [by rewrite f-x-is-y f-x-is-in-a]
+                                        }
+                                      @conclusion-y-in-a |
+                                        member(y, a)
+                                        [by unpacked with-the-preimage-x]
+                                    }
+                                  @conclusion-at-y |
+                                    member(y, b) -> member(y, a)
+                                    [by discharge given-y-in-b]
+                                }
+                              @b-is-a-subset-of-a |
+                                forall y: Element; member(y, b) -> member(y, a)
+                                [by generalize generalize-y]
+                              // if b were a PROPER subset its size would be strictly smaller,
+                              // contradicting that both have size n. So b = a.
+                              @given-b-is-not-a |
+                                assume b != a {
+                                  @b-differs |
+                                    b != a
+                                    [by hypothesis given-b-is-not-a]
+                                  @conclusion-n-below-n |
+                                    less_than(n, n)
+                                    [using specialize proper-subsets-are-smaller(b, a, n, n) b-is-a-subset-of-a b-differs b-has-size-n a-has-size-n]
+                                }
+                              @n-is-not-below-n |
+                                not less_than(n, n)
+                                [by apply_at(n) nothing-is-below-itself]
+                              @b-is-not-different |
+                                not (b != a)
+                                [by contradiction given-b-is-not-a conclusion-n-below-n n-is-not-below-n]
+                              @b-equals-a |
+                                b = a
+                                [by double_negation b-is-not-different]
+                              // and the image being ALL of a is exactly surjectivity
+                              // the forward half of the image biconditional, per point
+                              @generalize-y2 |
+                                fix y2: Element {
+                                  @image-at-y2 |
+                                    member(y2, b) iff (exists x: Element; member(x, a) and apply(f, x) = y2)
+                                    [by apply_at(y2) image-members]
+                                  @conclusion-forward-at-y2 |
+                                    member(y2, b) -> exists x: Element; member(x, a) and apply(f, x) = y2
+                                    [by equiv_forward image-at-y2]
+                                }
+                              @covers-its-image |
+                                forall y2: Element; member(y2, b) -> exists x: Element; member(x, a) and apply(f, x) = y2
+                                [by generalize generalize-y2]
+                              @conclusion-covers-a |
+                                forall y2: Element; member(y2, a) -> exists x: Element; member(x, a) and apply(f, x) = y2
+                                [by rewrite b-equals-a covers-its-image]
+                            }
+                          @conclusion-onto |
+                            surjectiveOnto(f, a, a)
+                            [by unpacked with-the-image-b]
+                        }
+                      @conclusion-when-injective |
+                        injectiveOn(f, a) -> surjectiveOnto(f, a, a)
+                        [by discharge given-f-is-injective]
+                    }
+                  @conclusion-when-maps-into |
+                    mapsInto(f, a, a) -> injectiveOn(f, a) -> surjectiveOnto(f, a, a)
+                    [by discharge given-f-maps-into-a]
+                }
+              @conclusion-at-n |
+                hasSize(a, n) -> mapsInto(f, a, a) -> injectiveOn(f, a) -> surjectiveOnto(f, a, a)
+                [by discharge given-a-has-size-n]
+            }
+          @conclusion-for-n |
+            forall n: Nat; hasSize(a, n) -> mapsInto(f, a, a) -> injectiveOn(f, a) -> surjectiveOnto(f, a, a)
+            [by generalize generalize-n]
+        }
+      @conclusion-for-a |
+        forall a: Set; forall n: Nat; hasSize(a, n) -> mapsInto(f, a, a) -> injectiveOn(f, a) -> surjectiveOnto(f, a, a)
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall f: Fn; forall a: Set; forall n: Nat; hasSize(a, n) -> mapsInto(f, a, a) -> injectiveOn(f, a) -> surjectiveOnto(f, a, a)
+    [by generalize generalize-f]
+qed
