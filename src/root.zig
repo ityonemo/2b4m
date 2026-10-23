@@ -345,13 +345,13 @@ pub fn loadProject(
     var threaded: std.Io.Threaded = .init(gpa(), .{ .concurrent_limit = .limited(pool_ceiling) });
     defer threaded.deinit();
     var loader: Engine.Loader = .{ .backend = .{ .pool = .{ .io = threaded.io() } } };
-    const ring: ?*Engine.Loader.Ring = if (Engine.Loader.uring_supported and source == .filesystem and !verify.sync_io and verify.io_threads == null)
+    const ring: ?*Engine.Loader.Ring = if (Engine.Loader.uring_supported and source == .filesystem and !verify.effectiveSyncIo() and verify.io_threads == null)
         Engine.Loader.Ring.init(gpa(), io) catch null
     else
         null;
     defer if (ring) |r| r.deinit();
     if (ring) |r| loader.backend = .{ .ring = r };
-    context.loader = if (verify.sync_io) null else &loader;
+    context.loader = if (verify.effectiveSyncIo()) null else &loader;
     defer context.loader = null; // the backends die with this frame; the context outlives it
     if (context.loader) |l| {
         if (verify.trace_facts) context.traceLine(std.fmt.allocPrint(arena, "[load] backend = {s}\n", .{l.name()}) catch "");

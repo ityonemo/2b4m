@@ -108,6 +108,21 @@ trace_facts: bool = false,
 /// contract the goldens encode. This is how the contract is TESTED: check the corpus under
 /// many seeds and diff. Any difference is a determinism bug (something leaked task order
 /// into output), caught here without threads to confuse the diagnosis. Null = off.
+///
+/// REPRODUCIBILITY IS NOT FREE, and the seed alone does not buy it (fixed 2026-10-22): a
+/// seed only determines `Engine.pull`'s choice among the tasks that are RUNNABLE, and two
+/// other inputs decide which those are. Several workers draw from the one PRNG concurrently,
+/// and — the subtler half — ASYNC file reads complete in wall-clock order, so each run wakes
+/// a different set of parse tasks at a different time. Measured before the fix on
+/// `std/counted.b4m` at `-j1 --chaos=7`: three runs, three different schedules; and even
+/// WITHOUT chaos, `-j1` gave 3857/3857/3875 citations while `-j1 --sync-io` gave 3179 every
+/// time. So chaos now IMPLIES `-j1` and `--sync-io` (see `effectiveWorkers` /
+/// `effectiveSyncIo`) — otherwise `--chaos=<seed>` cannot replay the schedule it found,
+/// which is the one thing a seed is for.
+///
+/// Note what never varied: the VERDICT. Across seeds 1/7/42/999 and repeated runs the
+/// result was identical; only how much work the demand engine redid to reach it moved. That
+/// is the determinism contract holding while its test harness was broken.
 chaos_seed: ?u64 = null,
 /// `-j<n>`: how many worker threads prove in parallel; null = `defaultWorkers()`.
 ///
@@ -152,6 +167,19 @@ io_threads: ?usize = null,
 io_delay_ns: u64 = 0,
 
 pub const max_io_threads = 64;
+
+/// Worker count to actually run with: `--chaos` pins ONE worker, because a shared PRNG drawn
+/// from several threads makes the seed meaningless. Otherwise `-j<n>`, else the default.
+pub fn effectiveWorkers(self: Verify) usize {
+    if (self.chaos_seed != null) return 1;
+    return self.workers orelse defaultWorkers();
+}
+
+/// Whether to read source files inline: `--chaos` forces it, because async completions land
+/// in wall-clock order and so decide which tasks are runnable — the seed cannot control that.
+pub fn effectiveSyncIo(self: Verify) bool {
+    return self.sync_io or self.chaos_seed != null;
+}
 
 const Verify = @This();
 
