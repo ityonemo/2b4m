@@ -1,0 +1,655 @@
+// std/group/third-isomorphism.b4m — THE THIRD ISOMORPHISM THEOREM'S MAP.
+//
+// Judson's Theorem 11.14: for normal subgroups N ⊆ H of G, G/H ≅ (G/N)/(H/N). The relation
+// ≅ cannot be NAMED — a group is a sort, not a value, so a relation between groups has no
+// terms to take (see aata/9.1 and 11.2) — so what is built here is the MAP, and the facts
+// the name abbreviates: it is well defined, preserves the operation, and is injective.
+//
+// WHY THIS DOES NOT NEED A NESTED CONSTRUCTION. The statement mentions three quotients, and
+// `std/group/factor.b4m` cannot be instantiated over one of its own quotients: it declares
+// its OWN ambient `sort G` with its own axioms, so there is nothing to point at a foreign
+// quotient sort. aata/11.2 recorded that as the blocker. But nesting is not required — the
+// three quotients can be declared SIDE BY SIDE, each with its own class map and congruence,
+// and the theorem is then about the composite G → G/N → (G/N)/(H/N) factoring through G/H.
+// G/N is factor.b4m's quotient; G/H and (G/N)/(H/N) are declared here the same way it
+// declares its own.
+//
+// H/N, as a subgroup of G/N, is "the N-classes of elements of H" — which is a predicate on
+// the quotient sort, so no sort of subsets is needed.
+
+import group_factor <<< "std/group/factor.b4m"
+import group <<< "std/group.b4m"
+
+sort G = group_factor.G
+const EG = group_factor.EG
+func opG = group_factor.opG
+func invG = group_factor.invG
+pred inN = group_factor.inN
+
+// N <= H <= G, both normal; H's quotient is group_factor's Quot? No — factor.b4m's quotient
+// is by inN. So this file names its OWN three quotients, each by its own class map.
+pred inH(g: G)
+axiom hContainsN: forall g: G; inN(g) -> inH(g)
+axiom hHasIdentity: inH(EG)
+axiom hClosedOp: forall a, b: G; inH(a) -> inH(b) -> inH(opG(a, b))
+axiom hClosedInverse: forall a: G; inH(a) -> inH(invG(a))
+
+// G/H
+sort QuotH
+func clsH(a: G) => QuotH
+axiom clsHSurjective: forall q: QuotH; exists a: G; q = clsH(a)
+axiom clsHCongruent: forall a, b: G; clsH(a) = clsH(b) iff inH(opG(invG(a), b))
+
+// G/N — this one IS factor.b4m's
+sort QuotN = group_factor.Quot
+func clsN = group_factor.cls
+
+// (G/N)/(H/N): the classes of G/N modulo the image of H. Its membership predicate is
+// "the class of some element of H".
+pred inHmodN(x: QuotN)
+axiom inHmodNDef: forall x: QuotN; inHmodN(x) iff (exists h: G; inH(h) and x = clsN(h))
+
+sort QuotHN
+func clsHN(x: QuotN) => QuotHN
+axiom clsHNSurjective: forall q: QuotHN; exists x: QuotN; q = clsHN(x)
+axiom clsHNCongruent: forall x, y: QuotN;
+  clsHN(x) = clsHN(y) iff inHmodN(group_factor.opQ(group_factor.invQ(x), y))
+
+// THE MAP: G/H -> (G/N)/(H/N), sending the H-class of g to the (H/N)-class of the N-class.
+func theta(q: QuotH) => QuotHN
+axiom thetaOnClasses: forall g: G; theta(clsH(g)) = clsHN(clsN(g))
+
+// THE CRUX: theta is WELL DEFINED. If clsH(a) = clsH(b) — i.e. a^-1 b in H — then the
+// N-classes of a and b differ by the N-class of an element of H, so they agree mod H/N.
+theorem thetaIsWellDefined: forall a, b: G;
+  clsH(a) = clsH(b) -> clsHN(clsN(a)) = clsHN(clsN(b))
+proof
+  @h-congruence |
+    forall a, b: G; clsH(a) = clsH(b) iff inH(opG(invG(a), b))
+    [by cite clsHCongruent]
+  @hn-congruence |
+    forall x, y: QuotN; clsHN(x) = clsHN(y) iff inHmodN(group_factor.opQ(group_factor.invQ(x), y))
+    [by cite clsHNCongruent]
+  @what-in-h-mod-n-means |
+    forall x: QuotN; inHmodN(x) iff (exists h: G; inH(h) and x = clsN(h))
+    [by cite inHmodNDef]
+  @cls-preserves-op |
+    forall a, b: G; clsN(opG(a, b)) = group_factor.opQ(clsN(a), clsN(b))
+    [by cite group_factor.clsPreservesOp]
+  @inverse-is-homomorphic |
+    forall a: G; group_factor.invQ(clsN(a)) = clsN(invG(a))
+    [by cite group_factor.invQHom]
+  @generalize-a |
+    fix a: G {
+      @generalize-b |
+        fix b: G {
+          @given-same-h-class |
+            assume clsH(a) = clsH(b) {
+              @same-h-class |
+                clsH(a) = clsH(b)
+                [by hypothesis given-same-h-class]
+              @h-congruence-at-a-b |
+                clsH(a) = clsH(b) iff inH(opG(invG(a), b))
+                [using specialize h-congruence(a, b)]
+              @the-quotient-is-in-h |
+                inH(opG(invG(a), b))
+                [using tautology h-congruence-at-a-b same-h-class]
+              // the N-class of a^-1 b is in H/N, by definition, witnessed by a^-1 b itself
+              @the-quotient-class-is-itself |
+                clsN(opG(invG(a), b)) = clsN(opG(invG(a), b))
+                [by reflexivity]
+              @the-quotient-witnesses |
+                inH(opG(invG(a), b)) and clsN(opG(invG(a), b)) = clsN(opG(invG(a), b))
+                [by both the-quotient-is-in-h the-quotient-class-is-itself]
+              @some-h-gives-this-class |
+                exists h: G; inH(h) and clsN(opG(invG(a), b)) = clsN(h)
+                [by witness(opG(invG(a), b)) the-quotient-witnesses]
+              @in-h-mod-n-at-the-quotient |
+                inHmodN(clsN(opG(invG(a), b))) iff (exists h: G; inH(h) and clsN(opG(invG(a), b)) = clsN(h))
+                [by apply_at(clsN(opG(invG(a), b))) what-in-h-mod-n-means]
+              @the-quotient-class-is-in-h-mod-n |
+                inHmodN(clsN(opG(invG(a), b)))
+                [using tautology in-h-mod-n-at-the-quotient some-h-gives-this-class]
+              // and that class IS invQ(clsN(a)) * clsN(b)
+              @cls-of-the-quotient |
+                clsN(opG(invG(a), b)) = group_factor.opQ(clsN(invG(a)), clsN(b))
+                [using specialize cls-preserves-op(invG(a), b)]
+              @inverse-hom-at-a |
+                group_factor.invQ(clsN(a)) = clsN(invG(a))
+                [by apply_at(a) inverse-is-homomorphic]
+              @cls-of-the-inverse |
+                clsN(invG(a)) = group_factor.invQ(clsN(a))
+                [by symmetry inverse-hom-at-a]
+              @cls-of-the-quotient-in-q |
+                clsN(opG(invG(a), b)) = group_factor.opQ(group_factor.invQ(clsN(a)), clsN(b))
+                [by rewrite cls-of-the-inverse cls-of-the-quotient]
+              @the-q-quotient-is-in-h-mod-n |
+                inHmodN(group_factor.opQ(group_factor.invQ(clsN(a)), clsN(b)))
+                [by rewrite cls-of-the-quotient-in-q the-quotient-class-is-in-h-mod-n]
+              @hn-congruence-at-the-classes |
+                clsHN(clsN(a)) = clsHN(clsN(b)) iff inHmodN(group_factor.opQ(group_factor.invQ(clsN(a)), clsN(b)))
+                [using specialize hn-congruence(clsN(a), clsN(b))]
+              @conclusion-the-classes-agree |
+                clsHN(clsN(a)) = clsHN(clsN(b))
+                [using tautology hn-congruence-at-the-classes the-q-quotient-is-in-h-mod-n]
+            }
+          @conclusion-at-b |
+            clsH(a) = clsH(b) -> clsHN(clsN(a)) = clsHN(clsN(b))
+            [by discharge given-same-h-class]
+        }
+      @conclusion-for-b |
+        forall b: G; clsH(a) = clsH(b) -> clsHN(clsN(a)) = clsHN(clsN(b))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: G; clsH(a) = clsH(b) -> clsHN(clsN(a)) = clsHN(clsN(b))
+    [by generalize generalize-a]
+qed
+
+// theta PRESERVES THE OPERATION: theta(xy) = theta(x)theta(y), where the quotient operations
+// are the two class-map homomorphism equations composed.
+func opQH(x: QuotH, y: QuotH) => QuotH
+axiom opQHHom: forall a, b: G; opQH(clsH(a), clsH(b)) = clsH(opG(a, b))
+func opQHN(x: QuotHN, y: QuotHN) => QuotHN
+axiom opQHNHom: forall x, y: QuotN; opQHN(clsHN(x), clsHN(y)) = clsHN(group_factor.opQ(x, y))
+
+theorem thetaPreservesTheOperation: forall x, y: QuotH;
+  theta(opQH(x, y)) = opQHN(theta(x), theta(y))
+proof
+  @representatives-exist |
+    forall q: QuotH; exists a: G; q = clsH(a)
+    [by cite clsHSurjective]
+  @theta-on-classes |
+    forall g: G; theta(clsH(g)) = clsHN(clsN(g))
+    [by cite thetaOnClasses]
+  @h-operation-is-homomorphic |
+    forall a, b: G; opQH(clsH(a), clsH(b)) = clsH(opG(a, b))
+    [by cite opQHHom]
+  @hn-operation-is-homomorphic |
+    forall x, y: QuotN; opQHN(clsHN(x), clsHN(y)) = clsHN(group_factor.opQ(x, y))
+    [by cite opQHNHom]
+  @n-class-preserves-op |
+    forall a, b: G; clsN(opG(a, b)) = group_factor.opQ(clsN(a), clsN(b))
+    [by cite group_factor.clsPreservesOp]
+  @generalize-x |
+    fix x: QuotH {
+      @generalize-y |
+        fix y: QuotH {
+          @x-has-a-representative |
+            exists a: G; x = clsH(a)
+            [by apply_at(x) representatives-exist]
+          @y-has-a-representative |
+            exists a: G; y = clsH(a)
+            [by apply_at(y) representatives-exist]
+          @with-representative-a |
+            unpack a: G from x-has-a-representative {
+              @x-is-cls-a |
+                x = clsH(a)
+                [by hypothesis with-representative-a]
+              @with-representative-b |
+                unpack b: G from y-has-a-representative {
+                  @y-is-cls-b |
+                    y = clsH(b)
+                    [by hypothesis with-representative-b]
+                  // theta(clsH(a)clsH(b)) = theta(clsH(ab)) = clsHN(clsN(ab))
+                  @the-h-product |
+                    opQH(clsH(a), clsH(b)) = clsH(opG(a, b))
+                    [using specialize h-operation-is-homomorphic(a, b)]
+                  @theta-at-the-product-class |
+                    theta(clsH(opG(a, b))) = clsHN(clsN(opG(a, b)))
+                    [by apply_at(opG(a, b)) theta-on-classes]
+                  @theta-of-the-product |
+                    theta(opQH(clsH(a), clsH(b))) = clsHN(clsN(opG(a, b)))
+                    [by rewrite the-h-product theta-at-the-product-class]
+                  // clsN(ab) = clsN(a)clsN(b), so that is clsHN(clsN(a)clsN(b))
+                  @n-class-splits |
+                    clsN(opG(a, b)) = group_factor.opQ(clsN(a), clsN(b))
+                    [using specialize n-class-preserves-op(a, b)]
+                  @theta-of-the-product-split |
+                    theta(opQH(clsH(a), clsH(b))) = clsHN(group_factor.opQ(clsN(a), clsN(b)))
+                    [by rewrite n-class-splits theta-of-the-product]
+                  // and that is clsHN(clsN(a)) · clsHN(clsN(b)) = theta(x)theta(y)
+                  @the-hn-product |
+                    opQHN(clsHN(clsN(a)), clsHN(clsN(b))) = clsHN(group_factor.opQ(clsN(a), clsN(b)))
+                    [using specialize hn-operation-is-homomorphic(clsN(a), clsN(b))]
+                  @the-hn-product-flipped |
+                    clsHN(group_factor.opQ(clsN(a), clsN(b))) = opQHN(clsHN(clsN(a)), clsHN(clsN(b)))
+                    [by symmetry the-hn-product]
+                  @theta-of-the-product-is-the-hn-product |
+                    theta(opQH(clsH(a), clsH(b))) = opQHN(clsHN(clsN(a)), clsHN(clsN(b)))
+                    [using chain theta-of-the-product-split the-hn-product-flipped]
+                  @theta-at-a |
+                    theta(clsH(a)) = clsHN(clsN(a))
+                    [by apply_at(a) theta-on-classes]
+                  @theta-at-b |
+                    theta(clsH(b)) = clsHN(clsN(b))
+                    [by apply_at(b) theta-on-classes]
+                  @clsn-a-is-theta-a |
+                    clsHN(clsN(a)) = theta(clsH(a))
+                    [by symmetry theta-at-a]
+                  @clsn-b-is-theta-b |
+                    clsHN(clsN(b)) = theta(clsH(b))
+                    [by symmetry theta-at-b]
+                  @with-first-folded |
+                    theta(opQH(clsH(a), clsH(b))) = opQHN(theta(clsH(a)), clsHN(clsN(b)))
+                    [by rewrite clsn-a-is-theta-a theta-of-the-product-is-the-hn-product]
+                  @at-representatives |
+                    theta(opQH(clsH(a), clsH(b))) = opQHN(theta(clsH(a)), theta(clsH(b)))
+                    [by rewrite clsn-b-is-theta-b with-first-folded]
+                  @with-b-folded |
+                    theta(opQH(clsH(a), y)) = opQHN(theta(clsH(a)), theta(y))
+                    [by rewrite y-is-cls-b at-representatives]
+                  @conclusion-at-representatives |
+                    theta(opQH(x, y)) = opQHN(theta(x), theta(y))
+                    [by rewrite x-is-cls-a with-b-folded]
+                }
+              @conclusion-from-b |
+                theta(opQH(x, y)) = opQHN(theta(x), theta(y))
+                [by unpacked with-representative-b]
+            }
+          @conclusion-from-a |
+            theta(opQH(x, y)) = opQHN(theta(x), theta(y))
+            [by unpacked with-representative-a]
+        }
+      @conclusion-for-y |
+        forall y: QuotH; theta(opQH(x, y)) = opQHN(theta(x), theta(y))
+        [by generalize generalize-y]
+    }
+  @conclusion |
+    forall x, y: QuotH; theta(opQH(x, y)) = opQHN(theta(x), theta(y))
+    [by generalize generalize-x]
+qed
+
+// g·(g⁻¹z) = z — the left factor swallows its own inverse. Three moves: regroup, cancel the
+// inverse pair, drop the identity. (std/group.b4m has `solutionExists` for the mirror shape
+// (b·a⁻¹)·a = b, but not this one.)
+theorem leftFactorCancelsItsInverse: forall g, z: G; opG(g, opG(invG(g), z)) = z
+proof
+  @associates |
+    forall a, b, c: G; opG(opG(a, b), c) = opG(a, opG(b, c))
+    [by cite group_factor.opGAssoc]
+  @inverses-cancel-on-the-right |
+    forall a: G; opG(a, invG(a)) = EG
+    [using model(group_factor.GIsAGroup) group.opInverseRight]
+  @the-identity-acts |
+    forall a: G; opG(EG, a) = a
+    [by cite group_factor.opGIdentityLeft]
+  @generalize-g |
+    fix g: G {
+      @generalize-z |
+        fix z: G {
+          // (g·g⁻¹)·z = g·(g⁻¹·z)
+          @regroup |
+            opG(opG(g, invG(g)), z) = opG(g, opG(invG(g), z))
+            [using specialize associates(g, invG(g), z)]
+          @the-pair-cancels |
+            opG(g, invG(g)) = EG
+            [by apply_at(g) inverses-cancel-on-the-right]
+          @the-identity-times-z |
+            opG(EG, z) = z
+            [by apply_at(z) the-identity-acts]
+          // so g·(g⁻¹·z) = (g·g⁻¹)·z = E·z = z
+          @regroup-flipped |
+            opG(g, opG(invG(g), z)) = opG(opG(g, invG(g)), z)
+            [by symmetry regroup]
+          @with-the-pair-cancelled |
+            opG(g, opG(invG(g), z)) = opG(EG, z)
+            [by rewrite the-pair-cancels regroup-flipped]
+          @conclusion-collapses |
+            opG(g, opG(invG(g), z)) = z
+            [using chain with-the-pair-cancelled the-identity-times-z]
+        }
+      @conclusion-for-z |
+        forall z: G; opG(g, opG(invG(g), z)) = z
+        [by generalize generalize-z]
+    }
+  @conclusion |
+    forall g, z: G; opG(g, opG(invG(g), z)) = z
+    [by generalize generalize-g]
+qed
+
+// theta is INJECTIVE — the converse of well-definedness, and the last of the four facts. If
+// the N-classes of a and b agree mod H/N, then a^-1 b is congruent mod N to an element of H;
+// since N ⊆ H that puts a^-1 b itself in H, so the H-classes agree.
+theorem thetaIsInjective: forall x, y: QuotH; theta(x) = theta(y) -> x = y
+proof
+  @representatives-exist |
+    forall q: QuotH; exists a: G; q = clsH(a)
+    [by cite clsHSurjective]
+  @theta-on-classes |
+    forall g: G; theta(clsH(g)) = clsHN(clsN(g))
+    [by cite thetaOnClasses]
+  @h-congruence |
+    forall a, b: G; clsH(a) = clsH(b) iff inH(opG(invG(a), b))
+    [by cite clsHCongruent]
+  @hn-congruence |
+    forall x, y: QuotN; clsHN(x) = clsHN(y) iff inHmodN(group_factor.opQ(group_factor.invQ(x), y))
+    [by cite clsHNCongruent]
+  @what-in-h-mod-n-means |
+    forall x: QuotN; inHmodN(x) iff (exists h: G; inH(h) and x = clsN(h))
+    [by cite inHmodNDef]
+  @n-class-preserves-op |
+    forall a, b: G; clsN(opG(a, b)) = group_factor.opQ(clsN(a), clsN(b))
+    [by cite group_factor.clsPreservesOp]
+  @inverse-is-homomorphic |
+    forall a: G; group_factor.invQ(clsN(a)) = clsN(invG(a))
+    [by cite group_factor.invQHom]
+  @the-n-congruence |
+    forall a, b: G; clsN(a) = clsN(b) iff inN(opG(invG(a), b))
+    [by cite group_factor.clsCongruent]
+  @h-contains-n |
+    forall g: G; inN(g) -> inH(g)
+    [by cite hContainsN]
+  @h-is-closed-under-op |
+    forall a, b: G; inH(a) -> inH(b) -> inH(opG(a, b))
+    [by cite hClosedOp]
+  @generalize-x |
+    fix x: QuotH {
+      @generalize-y |
+        fix y: QuotH {
+          @given-the-same-image |
+            assume theta(x) = theta(y) {
+              @same-image |
+                theta(x) = theta(y)
+                [by hypothesis given-the-same-image]
+              @x-has-a-representative |
+                exists a: G; x = clsH(a)
+                [by apply_at(x) representatives-exist]
+              @with-representative-a |
+                unpack a: G from x-has-a-representative {
+                  @x-is-cls-a |
+                    x = clsH(a)
+                    [by hypothesis with-representative-a]
+                  @y-has-a-representative |
+                    exists b: G; y = clsH(b)
+                    [by apply_at(y) representatives-exist]
+                  @with-representative-b |
+                    unpack b: G from y-has-a-representative {
+                      @y-is-cls-b |
+                        y = clsH(b)
+                        [by hypothesis with-representative-b]
+                      // the two N-classes agree mod H/N
+                      @theta-at-a |
+                        theta(clsH(a)) = clsHN(clsN(a))
+                        [by apply_at(a) theta-on-classes]
+                      @theta-at-b |
+                        theta(clsH(b)) = clsHN(clsN(b))
+                        [by apply_at(b) theta-on-classes]
+                      @same-image-with-a |
+                        theta(clsH(a)) = theta(y)
+                        [by rewrite x-is-cls-a same-image]
+                      @same-image-at-representatives |
+                        theta(clsH(a)) = theta(clsH(b))
+                        [by rewrite y-is-cls-b same-image-with-a]
+                      @the-n-classes-via-a |
+                        clsHN(clsN(a)) = theta(clsH(b))
+                        [using chain theta-at-a-flipped same-image-at-representatives]
+                      @theta-at-a-flipped |
+                        clsHN(clsN(a)) = theta(clsH(a))
+                        [by symmetry theta-at-a]
+                      @the-n-classes-agree-mod-hn |
+                        clsHN(clsN(a)) = clsHN(clsN(b))
+                        [using chain the-n-classes-via-a theta-at-b]
+                      // so invQ(clsN(a)) clsN(b) is in H/N
+                      @hn-congruence-at-the-classes |
+                        clsHN(clsN(a)) = clsHN(clsN(b)) iff inHmodN(group_factor.opQ(group_factor.invQ(clsN(a)), clsN(b)))
+                        [using specialize hn-congruence(clsN(a), clsN(b))]
+                      @the-q-quotient-is-in-h-mod-n |
+                        inHmodN(group_factor.opQ(group_factor.invQ(clsN(a)), clsN(b)))
+                        [using tautology hn-congruence-at-the-classes the-n-classes-agree-mod-hn]
+                      // and that element IS clsN(a^-1 b)
+                      @cls-of-the-quotient |
+                        clsN(opG(invG(a), b)) = group_factor.opQ(clsN(invG(a)), clsN(b))
+                        [using specialize n-class-preserves-op(invG(a), b)]
+                      @inverse-hom-at-a |
+                        group_factor.invQ(clsN(a)) = clsN(invG(a))
+                        [by apply_at(a) inverse-is-homomorphic]
+                      @cls-of-the-inverse |
+                        clsN(invG(a)) = group_factor.invQ(clsN(a))
+                        [by symmetry inverse-hom-at-a]
+                      @cls-of-the-quotient-in-q |
+                        clsN(opG(invG(a), b)) = group_factor.opQ(group_factor.invQ(clsN(a)), clsN(b))
+                        [by rewrite cls-of-the-inverse cls-of-the-quotient]
+                      @the-n-class-of-the-quotient-is-in-h-mod-n |
+                        inHmodN(clsN(opG(invG(a), b)))
+                        [by rewrite cls-of-the-quotient-in-q the-q-quotient-is-in-h-mod-n]
+                      // unfold: some h in H has the same N-class as a^-1 b
+                      @in-h-mod-n-at-the-quotient |
+                        inHmodN(clsN(opG(invG(a), b))) iff (exists h: G; inH(h) and clsN(opG(invG(a), b)) = clsN(h))
+                        [by apply_at(clsN(opG(invG(a), b))) what-in-h-mod-n-means]
+                      @some-h-matches |
+                        exists h: G; inH(h) and clsN(opG(invG(a), b)) = clsN(h)
+                        [using tautology in-h-mod-n-at-the-quotient the-n-class-of-the-quotient-is-in-h-mod-n]
+                      @with-the-matching-h |
+                        unpack h: G from some-h-matches {
+                          @h-facts |
+                            inH(h) and clsN(opG(invG(a), b)) = clsN(h)
+                            [by hypothesis with-the-matching-h]
+                          @h-is-in-h |
+                            inH(h)
+                            [by and_lhs h-facts]
+                          @same-n-class |
+                            clsN(opG(invG(a), b)) = clsN(h)
+                            [by and_rhs h-facts]
+                          // so h^-1(a^-1 b) is in N, hence in H; and h is in H, so a^-1 b is
+                          // SYMMETRY of the N-congruence: h^-1(a^-1 b) is in N as well.
+                          @n-classes-are-symmetric |
+                            clsN(h) = clsN(opG(invG(a), b))
+                            [by symmetry same-n-class]
+                          @n-congruence-the-other-way |
+                            clsN(h) = clsN(opG(invG(a), b)) iff inN(opG(invG(h), opG(invG(a), b)))
+                            [using specialize the-n-congruence(h, opG(invG(a), b))]
+                          @h-inverse-times-the-quotient-is-in-n |
+                            inN(opG(invG(h), opG(invG(a), b)))
+                            [using tautology n-congruence-the-other-way n-classes-are-symmetric]
+                          // N ⊆ H, so it is in H; and h is in H, so the product h·(h^-1(a^-1 b)) is
+                          @h-inverse-times-the-quotient-is-in-h |
+                            inH(opG(invG(h), opG(invG(a), b)))
+                            [using specialize h-contains-n(opG(invG(h), opG(invG(a), b))) h-inverse-times-the-quotient-is-in-n]
+                          @the-product-is-in-h |
+                            inH(opG(h, opG(invG(h), opG(invG(a), b))))
+                            [using specialize h-is-closed-under-op(h, opG(invG(h), opG(invG(a), b))) h-is-in-h h-inverse-times-the-quotient-is-in-h]
+                          // and h·(h^-1·z) = z in any group
+                          @the-product-collapses |
+                            forall g, z: G; opG(g, opG(invG(g), z)) = z
+                            [by cite leftFactorCancelsItsInverse]
+                          @the-product-is-the-quotient |
+                            opG(h, opG(invG(h), opG(invG(a), b))) = opG(invG(a), b)
+                            [using specialize the-product-collapses(h, opG(invG(a), b))]
+                          @the-quotient-is-in-h |
+                            inH(opG(invG(a), b))
+                            [by rewrite the-product-is-the-quotient the-product-is-in-h]
+                          @h-congruence-at-a-b |
+                            clsH(a) = clsH(b) iff inH(opG(invG(a), b))
+                            [using specialize h-congruence(a, b)]
+                          @the-h-classes-agree |
+                            clsH(a) = clsH(b)
+                            [using tautology h-congruence-at-a-b the-quotient-is-in-h]
+                          @conclusion-at-representatives |
+                            x = y
+                            [using simplify the-h-classes-agree x-is-cls-a y-is-cls-b]
+                        }
+                      @conclusion-from-h |
+                        x = y
+                        [by unpacked with-the-matching-h]
+                    }
+                  @conclusion-after-b |
+                    x = y
+                    [by unpacked with-representative-b]
+                }
+              @conclusion-after-a |
+                x = y
+                [by unpacked with-representative-a]
+            }
+          @conclusion-at-y |
+            theta(x) = theta(y) -> x = y
+            [by discharge given-the-same-image]
+        }
+      @conclusion-for-y |
+        forall y: QuotH; theta(x) = theta(y) -> x = y
+        [by generalize generalize-y]
+    }
+  @conclusion |
+    forall x, y: QuotH; theta(x) = theta(y) -> x = y
+    [by generalize generalize-x]
+qed
+
+// SURJECTIVITY is immediate: every element of (G/N)/(H/N) is clsHN(clsN(g)) for some g,
+// since both class maps are surjective — and that is theta(clsH(g)).
+theorem thetaIsSurjective: forall q: QuotHN; exists p: QuotH; theta(p) = q
+proof
+  @hn-representatives-exist |
+    forall q: QuotHN; exists x: QuotN; q = clsHN(x)
+    [by cite clsHNSurjective]
+  @n-representatives-exist |
+    forall q: QuotN; exists a: G; q = clsN(a)
+    [by cite group_factor.clsSurjective]
+  @theta-on-classes |
+    forall g: G; theta(clsH(g)) = clsHN(clsN(g))
+    [by cite thetaOnClasses]
+  @generalize-q |
+    fix q: QuotHN {
+      @q-has-a-representative |
+        exists x: QuotN; q = clsHN(x)
+        [by apply_at(q) hn-representatives-exist]
+      @with-the-n-class-x |
+        unpack x: QuotN from q-has-a-representative {
+          @q-is-cls-x |
+            q = clsHN(x)
+            [by hypothesis with-the-n-class-x]
+          @x-has-a-representative |
+            exists a: G; x = clsN(a)
+            [by apply_at(x) n-representatives-exist]
+          @with-the-element-a |
+            unpack a: G from x-has-a-representative {
+              @x-is-cls-a |
+                x = clsN(a)
+                [by hypothesis with-the-element-a]
+              @theta-at-a |
+                theta(clsH(a)) = clsHN(clsN(a))
+                [by apply_at(a) theta-on-classes]
+              @q-is-the-double-class |
+                q = clsHN(clsN(a))
+                [by rewrite x-is-cls-a q-is-cls-x]
+              @q-is-theta-at-a |
+                theta(clsH(a)) = q
+                [by rewrite q-is-the-double-class theta-at-a]
+              @conclusion-something-hits-q |
+                exists p: QuotH; theta(p) = q
+                [by witness(clsH(a)) q-is-theta-at-a]
+            }
+          @conclusion-from-a |
+            exists p: QuotH; theta(p) = q
+            [by unpacked with-the-element-a]
+        }
+      @conclusion-from-x |
+        exists p: QuotH; theta(p) = q
+        [by unpacked with-the-n-class-x]
+    }
+  @conclusion |
+    forall q: QuotHN; exists p: QuotH; theta(p) = q
+    [by generalize generalize-q]
+qed
+
+// -- H/N IS A SUBGROUP OF G/N ------------------------------------------------------------
+// Judson's statement presumes this — (G/N)/(H/N) only means something if H/N is a subgroup
+// of G/N — and it is where H's remaining two subgroup conditions do their work: the identity
+// class lies in H/N because the identity lies in H, and H/N is closed under inverses because
+// H is.
+
+theorem theIdentityClassIsInHmodN: inHmodN(group_factor.EQ)
+proof
+  @what-in-h-mod-n-means |
+    forall x: QuotN; inHmodN(x) iff (exists h: G; inH(h) and x = clsN(h))
+    [by cite inHmodNDef]
+  @h-has-the-identity |
+    inH(EG)
+    [by cite hHasIdentity]
+  @the-identity-class |
+    group_factor.EQ = clsN(EG)
+    [by cite group_factor.eqIsClsIdentity]
+  @the-identity-witnesses |
+    inH(EG) and group_factor.EQ = clsN(EG)
+    [by both h-has-the-identity the-identity-class]
+  @some-h-gives-the-identity-class |
+    exists h: G; inH(h) and group_factor.EQ = clsN(h)
+    [by witness(EG) the-identity-witnesses]
+  @in-h-mod-n-at-the-identity |
+    inHmodN(group_factor.EQ) iff (exists h: G; inH(h) and group_factor.EQ = clsN(h))
+    [by apply_at(group_factor.EQ) what-in-h-mod-n-means]
+  @conclusion |
+    inHmodN(group_factor.EQ)
+    [using tautology in-h-mod-n-at-the-identity some-h-gives-the-identity-class]
+qed
+
+theorem hModNIsClosedUnderInverses: forall x: QuotN;
+  inHmodN(x) -> inHmodN(group_factor.invQ(x))
+proof
+  @what-in-h-mod-n-means |
+    forall x: QuotN; inHmodN(x) iff (exists h: G; inH(h) and x = clsN(h))
+    [by cite inHmodNDef]
+  @h-is-closed-under-inverse |
+    forall a: G; inH(a) -> inH(invG(a))
+    [by cite hClosedInverse]
+  @inverse-is-homomorphic |
+    forall a: G; group_factor.invQ(clsN(a)) = clsN(invG(a))
+    [by cite group_factor.invQHom]
+  @generalize-x |
+    fix x: QuotN {
+      @given-x-in-h-mod-n |
+        assume inHmodN(x) {
+          @x-is-in-h-mod-n |
+            inHmodN(x)
+            [by hypothesis given-x-in-h-mod-n]
+          @in-h-mod-n-at-x |
+            inHmodN(x) iff (exists h: G; inH(h) and x = clsN(h))
+            [by apply_at(x) what-in-h-mod-n-means]
+          @some-h-gives-x |
+            exists h: G; inH(h) and x = clsN(h)
+            [using tautology in-h-mod-n-at-x x-is-in-h-mod-n]
+          @with-the-witness-h |
+            unpack h: G from some-h-gives-x {
+              @h-facts |
+                inH(h) and x = clsN(h)
+                [by hypothesis with-the-witness-h]
+              @h-is-in-h |
+                inH(h)
+                [by and_lhs h-facts]
+              @x-is-the-class-of-h |
+                x = clsN(h)
+                [by and_rhs h-facts]
+              // h⁻¹ is in H, and its class is the inverse of x's class
+              @h-inverse-is-in-h |
+                inH(invG(h))
+                [using specialize h-is-closed-under-inverse(h) h-is-in-h]
+              @inverse-hom-at-h |
+                group_factor.invQ(clsN(h)) = clsN(invG(h))
+                [by apply_at(h) inverse-is-homomorphic]
+              @the-inverse-class-via-h |
+                group_factor.invQ(x) = clsN(invG(h))
+                [by rewrite x-is-the-class-of-h inverse-hom-at-h]
+              @h-inverse-witnesses |
+                inH(invG(h)) and group_factor.invQ(x) = clsN(invG(h))
+                [by both h-inverse-is-in-h the-inverse-class-via-h]
+              @some-h-gives-the-inverse-class |
+                exists h2: G; inH(h2) and group_factor.invQ(x) = clsN(h2)
+                [by witness(invG(h)) h-inverse-witnesses]
+              @in-h-mod-n-at-the-inverse |
+                inHmodN(group_factor.invQ(x)) iff (exists h2: G; inH(h2) and group_factor.invQ(x) = clsN(h2))
+                [by apply_at(group_factor.invQ(x)) what-in-h-mod-n-means]
+              @conclusion-the-inverse-is-in |
+                inHmodN(group_factor.invQ(x))
+                [using tautology in-h-mod-n-at-the-inverse some-h-gives-the-inverse-class]
+            }
+          @conclusion-from-h |
+            inHmodN(group_factor.invQ(x))
+            [by unpacked with-the-witness-h]
+        }
+      @conclusion-at-x |
+        inHmodN(x) -> inHmodN(group_factor.invQ(x))
+        [by discharge given-x-in-h-mod-n]
+    }
+  @conclusion |
+    forall x: QuotN; inHmodN(x) -> inHmodN(group_factor.invQ(x))
+    [by generalize generalize-x]
+qed
