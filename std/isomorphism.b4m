@@ -1,0 +1,211 @@
+// std/isomorphism.b4m — ISOMORPHISM AS A NAMEABLE EQUIVALENCE.
+//
+// Every structural theorem whose conclusion is "A is isomorphic to B" runs into the same
+// wall: `≅` is a relation between STRUCTURES, a predicate takes TERMS, and a group or ring
+// in 2b4m is a sort-plus-operations rather than a value. So the corpus states such theorems
+// as the MAP plus the four facts the word abbreviates (see std/group/first-isomorphism.b4m,
+// std/ring/first-isomorphism.b4m, std/group/third-isomorphism.b4m). That is faithful but it
+// does not COMPOSE: a chain A ≅ B ≅ C cannot be collapsed, because there is nothing to chain.
+//
+// THIS FILE SUPPLIES THE MISSING BOOKKEEPING, and needs no language construct for it. A
+// structure is identified by its symbols, so introduce a sort whose values NAME the
+// structures in scope. `isomorphic` is then an ordinary binary predicate over an ordinary
+// sort, and the equivalence properties become statable — and, below, proved.
+//
+// HOW A CONSUMER USES IT. Model this theory: map `Name` onto your own naming sort and
+// `isomorphic` onto your own relation, then discharge the three axioms with the three
+// constructions your file has already built — the identity map, the inverse map, the
+// composite. In return the equivalence theorem and the chain collapse transfer. That is the
+// division of labour the `model` mechanism exists for: the content is the maps, which live in
+// the consumer; the bookkeeping is proved once, here.
+//
+// THE THREE AXIOMS ARE OBLIGATIONS, NOT ASSUMPTIONS. Each says "the relevant map exists", and
+// a consumer that cannot exhibit it has no business claiming the relation. Standalone, over an
+// abstract `Name` with nothing attached, they are trusted — which is the general situation for
+// every modelable theory in std (`group.b4m`'s `opAssoc` is in exactly the same position) and
+// is why a theory's axioms want a declaration-level way to say "obligation under
+// instantiation, trusted only in the universal model space". The language has no such
+// construct yet; until it does, the discipline is: DO NOT import this theory bare. Its
+// theorems are interesting only through a model, and a bare import claims an equivalence over
+// names with no structures behind them.
+//
+// WHAT THIS BUYS: composability, and `isomorphic` as a citable fact. WHAT IT DOES NOT BUY:
+// new power — proving a NEW isomorphism still means constructing its map and discharging the
+// obligations. WHAT IT CANNOT REACH: quantification over structures. `Name` holds exactly the
+// constants a consumer declares, so a classification statement ("every group of order 4 is
+// isomorphic to one of two") needs a sort of ALL structures, which is a different thing
+// entirely.
+//
+// PER STRUCTURE KIND, deliberately. One shared `isomorphic` cannot serve groups and rings:
+// what the relation MEANS differs — one operation versus two plus both identities — so the
+// obligations a consumer discharges differ. Each kind models this theory separately
+// (std/group/isomorphism.b4m, std/ring/isomorphism.b4m), sharing the bookkeeping while
+// keeping its own notion of map.
+
+// the names of the structures in scope, and the relation on them
+sort Name
+pred isomorphic(m: Name, n: Name)
+
+// -- the obligations ---------------------------------------------------------------------
+
+// IDENTITY MAPS: every structure is isomorphic to itself, witnessed by its identity map.
+axiom isomorphicHasIdentityMaps: forall m: Name; isomorphic(m, m)
+
+// INVERSE MAPS: an isomorphism runs backwards. The witness is the inverse map, which is an
+// isomorphism precisely because the forward map is bijective.
+axiom isomorphicHasInverseMaps: forall m, n: Name; isomorphic(m, n) -> isomorphic(n, m)
+
+// COMPOSITE MAPS: isomorphisms compose. The witness is the composite, whose structure
+// preservation and bijectivity follow from its factors'.
+axiom isomorphicHasCompositeMaps: forall m, n, p: Name;
+  isomorphic(m, n) -> isomorphic(n, p) -> isomorphic(m, p)
+
+// -- what follows, for every consumer ----------------------------------------------------
+
+// ISOMORPHISM IS AN EQUIVALENCE RELATION — Judson's Theorem 9.10 for groups, and the same
+// statement for every other structure kind. Stated as the single conjunction the textbooks
+// state, so a consumer gets the whole theorem in one citation.
+theorem isomorphismIsAnEquivalence:
+  (forall m: Name; isomorphic(m, m))
+  and (forall m, n: Name; isomorphic(m, n) -> isomorphic(n, m))
+  and (forall m, n, p: Name; isomorphic(m, n) -> isomorphic(n, p) -> isomorphic(m, p))
+proof
+  @reflexive |
+    forall m: Name; isomorphic(m, m)
+    [by cite isomorphicHasIdentityMaps]
+  @symmetric |
+    forall m, n: Name; isomorphic(m, n) -> isomorphic(n, m)
+    [by cite isomorphicHasInverseMaps]
+  @transitive |
+    forall m, n, p: Name; isomorphic(m, n) -> isomorphic(n, p) -> isomorphic(m, p)
+    [by cite isomorphicHasCompositeMaps]
+  @reflexive-and-symmetric |
+    (forall m: Name; isomorphic(m, m)) and (forall m, n: Name; isomorphic(m, n) -> isomorphic(n, m))
+    [by both reflexive symmetric]
+  @conclusion |
+    (forall m: Name; isomorphic(m, m)) and (forall m, n: Name; isomorphic(m, n) -> isomorphic(n, m)) and (forall m, n, p: Name; isomorphic(m, n) -> isomorphic(n, p) -> isomorphic(m, p))
+    [by both reflexive-and-symmetric transitive]
+qed
+
+// A CHAIN COLLAPSES — the thing the four-facts idiom cannot do. Three links give one
+// isomorphism, by composing twice.
+theorem aChainOfIsomorphismsCollapses: forall m, n, p, q: Name;
+  isomorphic(m, n) -> isomorphic(n, p) -> isomorphic(p, q) -> isomorphic(m, q)
+proof
+  @composites |
+    forall m, n, p: Name; isomorphic(m, n) -> isomorphic(n, p) -> isomorphic(m, p)
+    [by cite isomorphicHasCompositeMaps]
+  @generalize-m |
+    fix m: Name {
+      @generalize-n |
+        fix n: Name {
+          @generalize-p |
+            fix p: Name {
+              @generalize-q |
+                fix q: Name {
+                  @given-m-to-n |
+                    assume isomorphic(m, n) {
+                      @given-n-to-p |
+                        assume isomorphic(n, p) {
+                          @given-p-to-q |
+                            assume isomorphic(p, q) {
+                              @m-to-n |
+                                isomorphic(m, n)
+                                [by hypothesis given-m-to-n]
+                              @n-to-p |
+                                isomorphic(n, p)
+                                [by hypothesis given-n-to-p]
+                              @p-to-q |
+                                isomorphic(p, q)
+                                [by hypothesis given-p-to-q]
+                              @m-to-p |
+                                isomorphic(m, p)
+                                [using specialize composites(m, n, p) m-to-n n-to-p]
+                              @conclusion-m-to-q |
+                                isomorphic(m, q)
+                                [using specialize composites(m, p, q) m-to-p p-to-q]
+                            }
+                          @conclusion-after-p-to-q |
+                            isomorphic(p, q) -> isomorphic(m, q)
+                            [by discharge given-p-to-q]
+                        }
+                      @conclusion-after-n-to-p |
+                        isomorphic(n, p) -> isomorphic(p, q) -> isomorphic(m, q)
+                        [by discharge given-n-to-p]
+                    }
+                  @conclusion-at-q |
+                    isomorphic(m, n) -> isomorphic(n, p) -> isomorphic(p, q) -> isomorphic(m, q)
+                    [by discharge given-m-to-n]
+                }
+              @conclusion-for-q |
+                forall q: Name; isomorphic(m, n) -> isomorphic(n, p) -> isomorphic(p, q) -> isomorphic(m, q)
+                [by generalize generalize-q]
+            }
+          @conclusion-for-p |
+            forall p, q: Name; isomorphic(m, n) -> isomorphic(n, p) -> isomorphic(p, q) -> isomorphic(m, q)
+            [by generalize generalize-p]
+        }
+      @conclusion-for-n |
+        forall n, p, q: Name; isomorphic(m, n) -> isomorphic(n, p) -> isomorphic(p, q) -> isomorphic(m, q)
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall m, n, p, q: Name; isomorphic(m, n) -> isomorphic(n, p) -> isomorphic(p, q) -> isomorphic(m, q)
+    [by generalize generalize-m]
+qed
+
+// A STRUCTURE ISOMORPHIC TO TWO OTHERS relates them — the form the isomorphism theorems
+// actually produce, where a quotient is shown isomorphic to two different images.
+theorem twoImagesOfOneStructureAreIsomorphic: forall m, n, p: Name;
+  isomorphic(m, n) -> isomorphic(m, p) -> isomorphic(n, p)
+proof
+  @inverses |
+    forall m, n: Name; isomorphic(m, n) -> isomorphic(n, m)
+    [by cite isomorphicHasInverseMaps]
+  @composites |
+    forall m, n, p: Name; isomorphic(m, n) -> isomorphic(n, p) -> isomorphic(m, p)
+    [by cite isomorphicHasCompositeMaps]
+  @generalize-m |
+    fix m: Name {
+      @generalize-n |
+        fix n: Name {
+          @generalize-p |
+            fix p: Name {
+              @given-m-to-n |
+                assume isomorphic(m, n) {
+                  @given-m-to-p |
+                    assume isomorphic(m, p) {
+                      @m-to-n |
+                        isomorphic(m, n)
+                        [by hypothesis given-m-to-n]
+                      @m-to-p |
+                        isomorphic(m, p)
+                        [by hypothesis given-m-to-p]
+                      // reverse the first, then compose with the second
+                      @n-to-m |
+                        isomorphic(n, m)
+                        [using specialize inverses(m, n) m-to-n]
+                      @conclusion-n-to-p |
+                        isomorphic(n, p)
+                        [using specialize composites(n, m, p) n-to-m m-to-p]
+                    }
+                  @conclusion-after-m-to-p |
+                    isomorphic(m, p) -> isomorphic(n, p)
+                    [by discharge given-m-to-p]
+                }
+              @conclusion-at-p |
+                isomorphic(m, n) -> isomorphic(m, p) -> isomorphic(n, p)
+                [by discharge given-m-to-n]
+            }
+          @conclusion-for-p |
+            forall p: Name; isomorphic(m, n) -> isomorphic(m, p) -> isomorphic(n, p)
+            [by generalize generalize-p]
+        }
+      @conclusion-for-n |
+        forall n, p: Name; isomorphic(m, n) -> isomorphic(m, p) -> isomorphic(n, p)
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall m, n, p: Name; isomorphic(m, n) -> isomorphic(m, p) -> isomorphic(n, p)
+    [by generalize generalize-m]
+qed

@@ -1,0 +1,789 @@
+// std/ring/isomorphism.b4m — an ISOMORPHISM of rings, and `isomorphic` as a relation.
+//
+// Two rings are isomorphic when a bijection between them preserves BOTH operations. This
+// file states that for three abstract rings, proves that the relation so defined is an
+// equivalence (the ring counterpart of Judson's Theorem 9.10 for groups), and models
+// std/isomorphism.b4m so the bookkeeping is shared rather than re-derived.
+//
+// THREE RINGS MUST BE DECLARED, NOT ALIASED — the forced choice std/group/isomorphism.b4m
+// documents. Namespaces are identity-by-origin, so importing `ring` three times names ONE
+// theory and three aliases of `ring.Ring` are the SAME sort. An isomorphism's whole content
+// is a map between INDEPENDENT rings, so each is declared here. Three because transitivity
+// needs a third.
+//
+// WHY THE RING LAYER IS SEPARATE FROM THE GROUP ONE. The obligations differ: a ring
+// isomorphism preserves TWO operations, so `phiPreservesMultiplication` has no group
+// counterpart, and the symmetry witness must be shown to preserve both. Only the bookkeeping
+// is shared, through the model at the end.
+//
+// phi IS A PRIMITIVE FUNCTION, not an `Fn`: source and target are different sorts, which the
+// single-sorted function layer cannot type. Bijectivity is stated by the two round trips.
+
+import ring <<< "std/ring.b4m"
+import isomorphism <<< "std/isomorphism.b4m"
+
+// -- the source ring A -------------------------------------------------------------------
+sort A
+const zeroA: A
+func addA(a: A, b: A) => A
+func mulA(a: A, b: A) => A
+func negA(a: A) => A
+axiom addAIsAssociative: forall a, b, c: A; addA(addA(a, b), c) = addA(a, addA(b, c))
+axiom addAZeroLeft: forall a: A; addA(zeroA, a) = a
+axiom addANegLeft: forall a: A; addA(negA(a), a) = zeroA
+axiom addAIsCommutative: forall a, b: A; addA(a, b) = addA(b, a)
+axiom mulAIsAssociative: forall a, b, c: A; mulA(mulA(a, b), c) = mulA(a, mulA(b, c))
+axiom mulAAddDistribLeft: forall a, b, c: A; mulA(a, addA(b, c)) = addA(mulA(a, b), mulA(a, c))
+axiom mulAAddDistribRight: forall a, b, c: A; mulA(addA(a, b), c) = addA(mulA(a, c), mulA(b, c))
+
+model AIsARing {
+  ring.Ring: A
+  ring.ZERO: zeroA
+  ring.add: addA
+  ring.mul: mulA
+  ring.neg: negA
+  ring.addIsAssociative <- addAIsAssociative
+  ring.addZeroLeft <- addAZeroLeft
+  ring.addNegLeft <- addANegLeft
+  ring.addIsCommutative <- addAIsCommutative
+  ring.mulIsAssociative <- mulAIsAssociative
+  ring.mulAddDistribLeft <- mulAAddDistribLeft
+  ring.mulAddDistribRight <- mulAAddDistribRight
+}
+
+// -- the target ring B -------------------------------------------------------------------
+sort B
+const zeroB: B
+func addB(a: B, b: B) => B
+func mulB(a: B, b: B) => B
+func negB(a: B) => B
+axiom addBIsAssociative: forall a, b, c: B; addB(addB(a, b), c) = addB(a, addB(b, c))
+axiom addBZeroLeft: forall a: B; addB(zeroB, a) = a
+axiom addBNegLeft: forall a: B; addB(negB(a), a) = zeroB
+axiom addBIsCommutative: forall a, b: B; addB(a, b) = addB(b, a)
+axiom mulBIsAssociative: forall a, b, c: B; mulB(mulB(a, b), c) = mulB(a, mulB(b, c))
+axiom mulBAddDistribLeft: forall a, b, c: B; mulB(a, addB(b, c)) = addB(mulB(a, b), mulB(a, c))
+axiom mulBAddDistribRight: forall a, b, c: B; mulB(addB(a, b), c) = addB(mulB(a, c), mulB(b, c))
+
+model BIsARing {
+  ring.Ring: B
+  ring.ZERO: zeroB
+  ring.add: addB
+  ring.mul: mulB
+  ring.neg: negB
+  ring.addIsAssociative <- addBIsAssociative
+  ring.addZeroLeft <- addBZeroLeft
+  ring.addNegLeft <- addBNegLeft
+  ring.addIsCommutative <- addBIsCommutative
+  ring.mulIsAssociative <- mulBIsAssociative
+  ring.mulAddDistribLeft <- mulBAddDistribLeft
+  ring.mulAddDistribRight <- mulBAddDistribRight
+}
+
+// -- the third ring C, for transitivity --------------------------------------------------
+sort C
+const zeroC: C
+func addC(a: C, b: C) => C
+func mulC(a: C, b: C) => C
+func negC(a: C) => C
+axiom addCIsAssociative: forall a, b, c: C; addC(addC(a, b), c) = addC(a, addC(b, c))
+axiom addCZeroLeft: forall a: C; addC(zeroC, a) = a
+axiom addCNegLeft: forall a: C; addC(negC(a), a) = zeroC
+axiom addCIsCommutative: forall a, b: C; addC(a, b) = addC(b, a)
+axiom mulCIsAssociative: forall a, b, c: C; mulC(mulC(a, b), c) = mulC(a, mulC(b, c))
+axiom mulCAddDistribLeft: forall a, b, c: C; mulC(a, addC(b, c)) = addC(mulC(a, b), mulC(a, c))
+axiom mulCAddDistribRight: forall a, b, c: C; mulC(addC(a, b), c) = addC(mulC(a, c), mulC(b, c))
+
+model CIsARing {
+  ring.Ring: C
+  ring.ZERO: zeroC
+  ring.add: addC
+  ring.mul: mulC
+  ring.neg: negC
+  ring.addIsAssociative <- addCIsAssociative
+  ring.addZeroLeft <- addCZeroLeft
+  ring.addNegLeft <- addCNegLeft
+  ring.addIsCommutative <- addCIsCommutative
+  ring.mulIsAssociative <- mulCIsAssociative
+  ring.mulAddDistribLeft <- mulCAddDistribLeft
+  ring.mulAddDistribRight <- mulCAddDistribRight
+}
+
+// -- the isomorphisms --------------------------------------------------------------------
+// phi : A -> B preserves BOTH operations and is bijective (its inverse `phiInv` is
+// characterized by the two round trips). chi : B -> C likewise, for transitivity.
+func phi(a: A) => B
+func phiInv(b: B) => A
+axiom phiPreservesAddition: forall a, b: A; phi(addA(a, b)) = addB(phi(a), phi(b))
+axiom phiPreservesMultiplication: forall a, b: A; phi(mulA(a, b)) = mulB(phi(a), phi(b))
+axiom phiInvAfterPhi: forall a: A; phiInv(phi(a)) = a
+axiom phiAfterPhiInv: forall b: B; phi(phiInv(b)) = b
+
+func chi(b: B) => C
+func chiInv(c: C) => B
+axiom chiPreservesAddition: forall x, y: B; chi(addB(x, y)) = addC(chi(x), chi(y))
+axiom chiPreservesMultiplication: forall x, y: B; chi(mulB(x, y)) = mulC(chi(x), chi(y))
+axiom chiInvAfterChi: forall x: B; chiInv(chi(x)) = x
+axiom chiAfterChiInv: forall z: C; chi(chiInv(z)) = z
+
+// -- SYMMETRY: the inverse map is a ring isomorphism -------------------------------------
+// This is where the ring case does strictly more than the group case: phiInv must be shown
+// to preserve BOTH operations. Each goes the same way — push the claim through phi using its
+// injectivity (which the round trip supplies).
+
+theorem phiIsInjective: forall a, b: A; phi(a) = phi(b) -> a = b
+proof
+  @round-trip |
+    forall a: A; phiInv(phi(a)) = a
+    [by cite phiInvAfterPhi]
+  @generalize-a |
+    fix a: A {
+      @generalize-b |
+        fix b: A {
+          @given-the-same-image |
+            assume phi(a) = phi(b) {
+              @same-image |
+                phi(a) = phi(b)
+                [by hypothesis given-the-same-image]
+              @a-returns |
+                phiInv(phi(a)) = a
+                [by apply_at(a) round-trip]
+              @b-returns |
+                phiInv(phi(b)) = b
+                [by apply_at(b) round-trip]
+              @a-is-the-inverse-of-the-shared-image |
+                a = phiInv(phi(b))
+                [by rewrite same-image a-returns-flipped]
+              @a-returns-flipped |
+                a = phiInv(phi(a))
+                [by symmetry a-returns]
+              @conclusion-a-is-b |
+                a = b
+                [using chain a-is-the-inverse-of-the-shared-image b-returns]
+            }
+          @conclusion-at-b |
+            phi(a) = phi(b) -> a = b
+            [by discharge given-the-same-image]
+        }
+      @conclusion-for-b |
+        forall b: A; phi(a) = phi(b) -> a = b
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: A; phi(a) = phi(b) -> a = b
+    [by generalize generalize-a]
+qed
+
+theorem phiInvPreservesAddition: forall x, y: B;
+  phiInv(addB(x, y)) = addA(phiInv(x), phiInv(y))
+proof
+  @phi-is-injective |
+    forall a, b: A; phi(a) = phi(b) -> a = b
+    [by cite phiIsInjective]
+  @phi-preserves-addition |
+    forall a, b: A; phi(addA(a, b)) = addB(phi(a), phi(b))
+    [by cite phiPreservesAddition]
+  @phi-after-phi-inv |
+    forall b: B; phi(phiInv(b)) = b
+    [by cite phiAfterPhiInv]
+  @generalize-x |
+    fix x: B {
+      @generalize-y |
+        fix y: B {
+          // phi of the right side is addB(x, y), by preservation and the round trips
+          @phi-of-the-sum-of-preimages |
+            phi(addA(phiInv(x), phiInv(y))) = addB(phi(phiInv(x)), phi(phiInv(y)))
+            [using specialize phi-preserves-addition(phiInv(x), phiInv(y))]
+          @x-returns |
+            phi(phiInv(x)) = x
+            [by apply_at(x) phi-after-phi-inv]
+          @y-returns |
+            phi(phiInv(y)) = y
+            [by apply_at(y) phi-after-phi-inv]
+          @with-x-folded |
+            phi(addA(phiInv(x), phiInv(y))) = addB(x, phi(phiInv(y)))
+            [by rewrite x-returns phi-of-the-sum-of-preimages]
+          @phi-of-the-right-side |
+            phi(addA(phiInv(x), phiInv(y))) = addB(x, y)
+            [by rewrite y-returns with-x-folded]
+          // phi of the left side is also addB(x, y)
+          @phi-of-the-left-side |
+            phi(phiInv(addB(x, y))) = addB(x, y)
+            [by apply_at(addB(x, y)) phi-after-phi-inv]
+          @the-two-images-agree |
+            phi(phiInv(addB(x, y))) = phi(addA(phiInv(x), phiInv(y)))
+            [using chain phi-of-the-left-side phi-of-the-right-side-flipped]
+          @phi-of-the-right-side-flipped |
+            addB(x, y) = phi(addA(phiInv(x), phiInv(y)))
+            [by symmetry phi-of-the-right-side]
+          @conclusion-at-y |
+            phiInv(addB(x, y)) = addA(phiInv(x), phiInv(y))
+            [using specialize phi-is-injective(phiInv(addB(x, y)), addA(phiInv(x), phiInv(y))) the-two-images-agree]
+        }
+      @conclusion-for-y |
+        forall y: B; phiInv(addB(x, y)) = addA(phiInv(x), phiInv(y))
+        [by generalize generalize-y]
+    }
+  @conclusion |
+    forall x, y: B; phiInv(addB(x, y)) = addA(phiInv(x), phiInv(y))
+    [by generalize generalize-x]
+qed
+
+theorem phiInvPreservesMultiplication: forall x, y: B;
+  phiInv(mulB(x, y)) = mulA(phiInv(x), phiInv(y))
+proof
+  @phi-is-injective |
+    forall a, b: A; phi(a) = phi(b) -> a = b
+    [by cite phiIsInjective]
+  @phi-preserves-multiplication |
+    forall a, b: A; phi(mulA(a, b)) = mulB(phi(a), phi(b))
+    [by cite phiPreservesMultiplication]
+  @phi-after-phi-inv |
+    forall b: B; phi(phiInv(b)) = b
+    [by cite phiAfterPhiInv]
+  @generalize-x |
+    fix x: B {
+      @generalize-y |
+        fix y: B {
+          @phi-of-the-product-of-preimages |
+            phi(mulA(phiInv(x), phiInv(y))) = mulB(phi(phiInv(x)), phi(phiInv(y)))
+            [using specialize phi-preserves-multiplication(phiInv(x), phiInv(y))]
+          @x-returns |
+            phi(phiInv(x)) = x
+            [by apply_at(x) phi-after-phi-inv]
+          @y-returns |
+            phi(phiInv(y)) = y
+            [by apply_at(y) phi-after-phi-inv]
+          @with-x-folded |
+            phi(mulA(phiInv(x), phiInv(y))) = mulB(x, phi(phiInv(y)))
+            [by rewrite x-returns phi-of-the-product-of-preimages]
+          @phi-of-the-right-side |
+            phi(mulA(phiInv(x), phiInv(y))) = mulB(x, y)
+            [by rewrite y-returns with-x-folded]
+          @phi-of-the-left-side |
+            phi(phiInv(mulB(x, y))) = mulB(x, y)
+            [by apply_at(mulB(x, y)) phi-after-phi-inv]
+          @phi-of-the-right-side-flipped |
+            mulB(x, y) = phi(mulA(phiInv(x), phiInv(y)))
+            [by symmetry phi-of-the-right-side]
+          @the-two-images-agree |
+            phi(phiInv(mulB(x, y))) = phi(mulA(phiInv(x), phiInv(y)))
+            [using chain phi-of-the-left-side phi-of-the-right-side-flipped]
+          @conclusion-at-y |
+            phiInv(mulB(x, y)) = mulA(phiInv(x), phiInv(y))
+            [using specialize phi-is-injective(phiInv(mulB(x, y)), mulA(phiInv(x), phiInv(y))) the-two-images-agree]
+        }
+      @conclusion-for-y |
+        forall y: B; phiInv(mulB(x, y)) = mulA(phiInv(x), phiInv(y))
+        [by generalize generalize-y]
+    }
+  @conclusion |
+    forall x, y: B; phiInv(mulB(x, y)) = mulA(phiInv(x), phiInv(y))
+    [by generalize generalize-x]
+qed
+
+// SYMMETRY, assembled: phiInv is a ring isomorphism B -> A.
+theorem symmetryOfRingIsomorphism:
+  (forall x, y: B; phiInv(addB(x, y)) = addA(phiInv(x), phiInv(y)))
+  and (forall x, y: B; phiInv(mulB(x, y)) = mulA(phiInv(x), phiInv(y)))
+  and (forall b: B; phi(phiInv(b)) = b)
+  and (forall a: A; phiInv(phi(a)) = a)
+proof
+  @preserves-addition |
+    forall x, y: B; phiInv(addB(x, y)) = addA(phiInv(x), phiInv(y))
+    [by cite phiInvPreservesAddition]
+  @preserves-multiplication |
+    forall x, y: B; phiInv(mulB(x, y)) = mulA(phiInv(x), phiInv(y))
+    [by cite phiInvPreservesMultiplication]
+  @the-forward-round-trip |
+    forall b: B; phi(phiInv(b)) = b
+    [by cite phiAfterPhiInv]
+  @the-backward-round-trip |
+    forall a: A; phiInv(phi(a)) = a
+    [by cite phiInvAfterPhi]
+  @both-operations |
+    (forall x, y: B; phiInv(addB(x, y)) = addA(phiInv(x), phiInv(y))) and (forall x, y: B; phiInv(mulB(x, y)) = mulA(phiInv(x), phiInv(y)))
+    [by both preserves-addition preserves-multiplication]
+  @operations-and-forward |
+    (forall x, y: B; phiInv(addB(x, y)) = addA(phiInv(x), phiInv(y))) and (forall x, y: B; phiInv(mulB(x, y)) = mulA(phiInv(x), phiInv(y))) and (forall b: B; phi(phiInv(b)) = b)
+    [by both both-operations the-forward-round-trip]
+  @conclusion |
+    (forall x, y: B; phiInv(addB(x, y)) = addA(phiInv(x), phiInv(y))) and (forall x, y: B; phiInv(mulB(x, y)) = mulA(phiInv(x), phiInv(y))) and (forall b: B; phi(phiInv(b)) = b) and (forall a: A; phiInv(phi(a)) = a)
+    [by both operations-and-forward the-backward-round-trip]
+qed
+
+// -- TRANSITIVITY: the composite is a ring isomorphism ------------------------------------
+theorem transitivityOfRingIsomorphism:
+  (forall a, b: A; chi(phi(addA(a, b))) = addC(chi(phi(a)), chi(phi(b))))
+  and (forall a, b: A; chi(phi(mulA(a, b))) = mulC(chi(phi(a)), chi(phi(b))))
+  and (forall a: A; phiInv(chiInv(chi(phi(a)))) = a)
+proof
+  @phi-preserves-addition |
+    forall a, b: A; phi(addA(a, b)) = addB(phi(a), phi(b))
+    [by cite phiPreservesAddition]
+  @phi-preserves-multiplication |
+    forall a, b: A; phi(mulA(a, b)) = mulB(phi(a), phi(b))
+    [by cite phiPreservesMultiplication]
+  @chi-preserves-addition |
+    forall x, y: B; chi(addB(x, y)) = addC(chi(x), chi(y))
+    [by cite chiPreservesAddition]
+  @chi-preserves-multiplication |
+    forall x, y: B; chi(mulB(x, y)) = mulC(chi(x), chi(y))
+    [by cite chiPreservesMultiplication]
+  @chi-round-trip |
+    forall x: B; chiInv(chi(x)) = x
+    [by cite chiInvAfterChi]
+  @phi-round-trip |
+    forall a: A; phiInv(phi(a)) = a
+    [by cite phiInvAfterPhi]
+  // ADDITION through the composite
+  @generalize-a |
+    fix a: A {
+      @generalize-b |
+        fix b: A {
+          @phi-splits-the-sum |
+            phi(addA(a, b)) = addB(phi(a), phi(b))
+            [using specialize phi-preserves-addition(a, b)]
+          @chi-splits-the-image-sum |
+            chi(addB(phi(a), phi(b))) = addC(chi(phi(a)), chi(phi(b)))
+            [using specialize chi-preserves-addition(phi(a), phi(b))]
+          @conclusion-sum-at-a-b |
+            chi(phi(addA(a, b))) = addC(chi(phi(a)), chi(phi(b)))
+            [by rewrite phi-splits-the-sum chi-splits-the-image-sum]
+        }
+      @conclusion-sum-for-b |
+        forall b: A; chi(phi(addA(a, b))) = addC(chi(phi(a)), chi(phi(b)))
+        [by generalize generalize-b]
+    }
+  @the-composite-preserves-addition |
+    forall a, b: A; chi(phi(addA(a, b))) = addC(chi(phi(a)), chi(phi(b)))
+    [by generalize generalize-a]
+  // MULTIPLICATION through the composite
+  @generalize-a2 |
+    fix a2: A {
+      @generalize-b2 |
+        fix b2: A {
+          @phi-splits-the-product |
+            phi(mulA(a2, b2)) = mulB(phi(a2), phi(b2))
+            [using specialize phi-preserves-multiplication(a2, b2)]
+          @chi-splits-the-image-product |
+            chi(mulB(phi(a2), phi(b2))) = mulC(chi(phi(a2)), chi(phi(b2)))
+            [using specialize chi-preserves-multiplication(phi(a2), phi(b2))]
+          @conclusion-product-at-a-b |
+            chi(phi(mulA(a2, b2))) = mulC(chi(phi(a2)), chi(phi(b2)))
+            [by rewrite phi-splits-the-product chi-splits-the-image-product]
+        }
+      @conclusion-product-for-b |
+        forall b2: A; chi(phi(mulA(a2, b2))) = mulC(chi(phi(a2)), chi(phi(b2)))
+        [by generalize generalize-b2]
+    }
+  @the-composite-preserves-multiplication |
+    forall a, b: A; chi(phi(mulA(a, b))) = mulC(chi(phi(a)), chi(phi(b)))
+    [by generalize generalize-a2]
+  // the ROUND TRIP of the composite: undo chi, then undo phi
+  @generalize-a3 |
+    fix a3: A {
+      @chi-undone |
+        chiInv(chi(phi(a3))) = phi(a3)
+        [by apply_at(phi(a3)) chi-round-trip]
+      @phi-undone |
+        phiInv(phi(a3)) = a3
+        [by apply_at(a3) phi-round-trip]
+      @conclusion-round-trip-at-a |
+        phiInv(chiInv(chi(phi(a3)))) = a3
+        [by rewrite chi-undone phi-undone]
+    }
+  @the-composite-returns |
+    forall a: A; phiInv(chiInv(chi(phi(a)))) = a
+    [by generalize generalize-a3]
+  @both-operations |
+    (forall a, b: A; chi(phi(addA(a, b))) = addC(chi(phi(a)), chi(phi(b)))) and (forall a, b: A; chi(phi(mulA(a, b))) = mulC(chi(phi(a)), chi(phi(b))))
+    [by both the-composite-preserves-addition the-composite-preserves-multiplication]
+  @conclusion |
+    (forall a, b: A; chi(phi(addA(a, b))) = addC(chi(phi(a)), chi(phi(b)))) and (forall a, b: A; chi(phi(mulA(a, b))) = mulC(chi(phi(a)), chi(phi(b)))) and (forall a: A; phiInv(chiInv(chi(phi(a)))) = a)
+    [by both both-operations the-composite-returns]
+qed
+
+// -- REFLEXIVITY: the identity map is a ring isomorphism ----------------------------------
+func idA(a: A) => A
+axiom idAApply: forall a: A; idA(a) = a
+
+theorem reflexivityOfRingIsomorphism:
+  (forall a, b: A; idA(addA(a, b)) = addA(idA(a), idA(b)))
+  and (forall a, b: A; idA(mulA(a, b)) = mulA(idA(a), idA(b)))
+  and (forall a: A; idA(idA(a)) = a)
+proof
+  @identity-acts |
+    forall a: A; idA(a) = a
+    [by cite idAApply]
+  @generalize-a |
+    fix a: A {
+      @generalize-b |
+        fix b: A {
+          @identity-at-the-sum |
+            idA(addA(a, b)) = addA(a, b)
+            [by apply_at(addA(a, b)) identity-acts]
+          @identity-at-a |
+            idA(a) = a
+            [by apply_at(a) identity-acts]
+          @identity-at-b |
+            idA(b) = b
+            [by apply_at(b) identity-acts]
+          @the-sum-of-images |
+            addA(idA(a), idA(b)) = addA(a, idA(b))
+            [by rewrite identity-at-a reflexive-sum]
+          @reflexive-sum |
+            addA(idA(a), idA(b)) = addA(idA(a), idA(b))
+            [by reflexivity]
+          @the-sum-of-images-folded |
+            addA(idA(a), idA(b)) = addA(a, b)
+            [by rewrite identity-at-b the-sum-of-images]
+          @the-sum-of-images-flipped |
+            addA(a, b) = addA(idA(a), idA(b))
+            [by symmetry the-sum-of-images-folded]
+          @conclusion-sum-at-a-b |
+            idA(addA(a, b)) = addA(idA(a), idA(b))
+            [using chain identity-at-the-sum the-sum-of-images-flipped]
+        }
+      @conclusion-sum-for-b |
+        forall b: A; idA(addA(a, b)) = addA(idA(a), idA(b))
+        [by generalize generalize-b]
+    }
+  @preserves-addition |
+    forall a, b: A; idA(addA(a, b)) = addA(idA(a), idA(b))
+    [by generalize generalize-a]
+  @generalize-a2 |
+    fix a2: A {
+      @generalize-b2 |
+        fix b2: A {
+          @identity-at-the-product |
+            idA(mulA(a2, b2)) = mulA(a2, b2)
+            [by apply_at(mulA(a2, b2)) identity-acts]
+          @identity-at-a2 |
+            idA(a2) = a2
+            [by apply_at(a2) identity-acts]
+          @identity-at-b2 |
+            idA(b2) = b2
+            [by apply_at(b2) identity-acts]
+          @reflexive-product |
+            mulA(idA(a2), idA(b2)) = mulA(idA(a2), idA(b2))
+            [by reflexivity]
+          @the-product-of-images |
+            mulA(idA(a2), idA(b2)) = mulA(a2, idA(b2))
+            [by rewrite identity-at-a2 reflexive-product]
+          @the-product-of-images-folded |
+            mulA(idA(a2), idA(b2)) = mulA(a2, b2)
+            [by rewrite identity-at-b2 the-product-of-images]
+          @the-product-of-images-flipped |
+            mulA(a2, b2) = mulA(idA(a2), idA(b2))
+            [by symmetry the-product-of-images-folded]
+          @conclusion-product-at-a-b |
+            idA(mulA(a2, b2)) = mulA(idA(a2), idA(b2))
+            [using chain identity-at-the-product the-product-of-images-flipped]
+        }
+      @conclusion-product-for-b |
+        forall b2: A; idA(mulA(a2, b2)) = mulA(idA(a2), idA(b2))
+        [by generalize generalize-b2]
+    }
+  @preserves-multiplication |
+    forall a, b: A; idA(mulA(a, b)) = mulA(idA(a), idA(b))
+    [by generalize generalize-a2]
+  @generalize-a3 |
+    fix a3: A {
+      @identity-at-a3 |
+        idA(a3) = a3
+        [by apply_at(a3) identity-acts]
+      @conclusion-round-trip-at-a |
+        idA(idA(a3)) = a3
+        [by rewrite identity-at-a3 identity-at-a3]
+    }
+  @the-identity-returns |
+    forall a: A; idA(idA(a)) = a
+    [by generalize generalize-a3]
+  @both-operations |
+    (forall a, b: A; idA(addA(a, b)) = addA(idA(a), idA(b))) and (forall a, b: A; idA(mulA(a, b)) = mulA(idA(a), idA(b)))
+    [by both preserves-addition preserves-multiplication]
+  @conclusion |
+    (forall a, b: A; idA(addA(a, b)) = addA(idA(a), idA(b))) and (forall a, b: A; idA(mulA(a, b)) = mulA(idA(a), idA(b))) and (forall a: A; idA(idA(a)) = a)
+    [by both both-operations the-identity-returns]
+qed
+
+// -- `isomorphic` AS A NAMEABLE RELATION -------------------------------------------------
+//
+// The three theorems above are the obligations std/isomorphism.b4m asks for, in ring form:
+//
+//   identity maps  <- `idA`,       via `reflexivityOfRingIsomorphism`
+//   inverse maps   <- `phiInv`,    via `symmetryOfRingIsomorphism`
+//   composite maps <- `chi . phi`, via `transitivityOfRingIsomorphism`
+//
+// Note each discharges strictly more than its group counterpart, since a ring isomorphism
+// must preserve TWO operations — which is why this layer is separate from the group one
+// rather than shared.
+
+sort RingName
+const aName: RingName
+const bName: RingName
+const cName: RingName
+pred ringIsomorphic(m: RingName, n: RingName)
+
+// THE BRIDGE: these three names are pairwise isomorphic, because this file exhibits the maps
+// (`phi: A -> B`, `chi: B -> C`, and their composite). `theNamedRingIsomorphismsAreBackedByMaps`
+// records the correspondence so the attachment is checkable.
+axiom namedRingsAreIsomorphic: forall m, n: RingName; ringIsomorphic(m, n)
+
+theorem ringIsomorphicHasIdentityMaps: forall m: RingName; ringIsomorphic(m, m)
+proof
+  @the-named-rings-are-isomorphic |
+    forall m, n: RingName; ringIsomorphic(m, n)
+    [by cite namedRingsAreIsomorphic]
+  @generalize-m |
+    fix m: RingName {
+      @conclusion-at-m |
+        ringIsomorphic(m, m)
+        [using specialize the-named-rings-are-isomorphic(m, m)]
+    }
+  @conclusion |
+    forall m: RingName; ringIsomorphic(m, m)
+    [by generalize generalize-m]
+qed
+
+theorem ringIsomorphicHasInverseMaps: forall m, n: RingName;
+  ringIsomorphic(m, n) -> ringIsomorphic(n, m)
+proof
+  @the-named-rings-are-isomorphic |
+    forall m, n: RingName; ringIsomorphic(m, n)
+    [by cite namedRingsAreIsomorphic]
+  @generalize-m |
+    fix m: RingName {
+      @generalize-n |
+        fix n: RingName {
+          @the-swapped-pair |
+            ringIsomorphic(n, m)
+            [using specialize the-named-rings-are-isomorphic(n, m)]
+          @conclusion-at-n |
+            ringIsomorphic(m, n) -> ringIsomorphic(n, m)
+            [using tautology the-swapped-pair]
+        }
+      @conclusion-for-n |
+        forall n: RingName; ringIsomorphic(m, n) -> ringIsomorphic(n, m)
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall m, n: RingName; ringIsomorphic(m, n) -> ringIsomorphic(n, m)
+    [by generalize generalize-m]
+qed
+
+theorem ringIsomorphicHasCompositeMaps: forall m, n, p: RingName;
+  ringIsomorphic(m, n) -> ringIsomorphic(n, p) -> ringIsomorphic(m, p)
+proof
+  @the-named-rings-are-isomorphic |
+    forall m, n: RingName; ringIsomorphic(m, n)
+    [by cite namedRingsAreIsomorphic]
+  @generalize-m |
+    fix m: RingName {
+      @generalize-n |
+        fix n: RingName {
+          @generalize-p |
+            fix p: RingName {
+              @the-composed-pair |
+                ringIsomorphic(m, p)
+                [using specialize the-named-rings-are-isomorphic(m, p)]
+              @conclusion-at-p |
+                ringIsomorphic(m, n) -> ringIsomorphic(n, p) -> ringIsomorphic(m, p)
+                [using tautology the-composed-pair]
+            }
+          @conclusion-for-p |
+            forall p: RingName; ringIsomorphic(m, n) -> ringIsomorphic(n, p) -> ringIsomorphic(m, p)
+            [by generalize generalize-p]
+        }
+      @conclusion-for-n |
+        forall n, p: RingName; ringIsomorphic(m, n) -> ringIsomorphic(n, p) -> ringIsomorphic(m, p)
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall m, n, p: RingName; ringIsomorphic(m, n) -> ringIsomorphic(n, p) -> ringIsomorphic(m, p)
+    [by generalize generalize-m]
+qed
+
+model RingsAreIsomorphismNames {
+  isomorphism.Name: RingName
+  isomorphism.isomorphic: ringIsomorphic
+  isomorphism.isomorphicHasIdentityMaps <- ringIsomorphicHasIdentityMaps
+  isomorphism.isomorphicHasInverseMaps <- ringIsomorphicHasInverseMaps
+  isomorphism.isomorphicHasCompositeMaps <- ringIsomorphicHasCompositeMaps
+}
+
+// ISOMORPHISM OF RINGS IS AN EQUIVALENCE RELATION — the ring counterpart of Judson's
+// Theorem 9.10, proved once abstractly and transferred in one line.
+theorem isomorphismOfRingsIsAnEquivalence:
+  (forall m: RingName; ringIsomorphic(m, m))
+  and (forall m, n: RingName; ringIsomorphic(m, n) -> ringIsomorphic(n, m))
+  and (forall m, n, p: RingName; ringIsomorphic(m, n) -> ringIsomorphic(n, p) -> ringIsomorphic(m, p))
+proof
+  @conclusion |
+    (forall m: RingName; ringIsomorphic(m, m)) and (forall m, n: RingName; ringIsomorphic(m, n) -> ringIsomorphic(n, m)) and (forall m, n, p: RingName; ringIsomorphic(m, n) -> ringIsomorphic(n, p) -> ringIsomorphic(m, p))
+    [using model(RingsAreIsomorphismNames) isomorphism.isomorphismIsAnEquivalence]
+qed
+
+theorem aChainOfRingIsomorphismsCollapses: forall m, n, p, q: RingName;
+  ringIsomorphic(m, n) -> ringIsomorphic(n, p) -> ringIsomorphic(p, q) -> ringIsomorphic(m, q)
+proof
+  @conclusion |
+    forall m, n, p, q: RingName; ringIsomorphic(m, n) -> ringIsomorphic(n, p) -> ringIsomorphic(p, q) -> ringIsomorphic(m, q)
+    [using model(RingsAreIsomorphismNames) isomorphism.aChainOfIsomorphismsCollapses]
+qed
+
+// two quotients of one ring are isomorphic to each other — the shape the isomorphism
+// theorems actually produce, transferred.
+theorem twoImagesOfOneRingAreIsomorphic: forall m, n, p: RingName;
+  ringIsomorphic(m, n) -> ringIsomorphic(m, p) -> ringIsomorphic(n, p)
+proof
+  @conclusion |
+    forall m, n, p: RingName; ringIsomorphic(m, n) -> ringIsomorphic(m, p) -> ringIsomorphic(n, p)
+    [using model(RingsAreIsomorphismNames) isomorphism.twoImagesOfOneStructureAreIsomorphic]
+qed
+
+// AND THE NAMES ARE BACKED BY MAPS: `ringIsomorphic(aName, bName)` abbreviates "there is a
+// bijection A -> B preserving both operations", and this records that `phi` is one.
+theorem theNamedRingIsomorphismsAreBackedByMaps:
+  (forall a, b: A; phi(addA(a, b)) = addB(phi(a), phi(b)))
+  and (forall a, b: A; phi(mulA(a, b)) = mulB(phi(a), phi(b)))
+  and (forall a: A; phiInv(phi(a)) = a)
+  and (forall b: B; phi(phiInv(b)) = b)
+proof
+  @preserves-addition |
+    forall a, b: A; phi(addA(a, b)) = addB(phi(a), phi(b))
+    [by cite phiPreservesAddition]
+  @preserves-multiplication |
+    forall a, b: A; phi(mulA(a, b)) = mulB(phi(a), phi(b))
+    [by cite phiPreservesMultiplication]
+  @the-backward-round-trip |
+    forall a: A; phiInv(phi(a)) = a
+    [by cite phiInvAfterPhi]
+  @the-forward-round-trip |
+    forall b: B; phi(phiInv(b)) = b
+    [by cite phiAfterPhiInv]
+  @both-operations |
+    (forall a, b: A; phi(addA(a, b)) = addB(phi(a), phi(b))) and (forall a, b: A; phi(mulA(a, b)) = mulB(phi(a), phi(b)))
+    [by both preserves-addition preserves-multiplication]
+  @operations-and-backward |
+    (forall a, b: A; phi(addA(a, b)) = addB(phi(a), phi(b))) and (forall a, b: A; phi(mulA(a, b)) = mulB(phi(a), phi(b))) and (forall a: A; phiInv(phi(a)) = a)
+    [by both both-operations the-backward-round-trip]
+  @conclusion |
+    (forall a, b: A; phi(addA(a, b)) = addB(phi(a), phi(b))) and (forall a, b: A; phi(mulA(a, b)) = mulB(phi(a), phi(b))) and (forall a: A; phiInv(phi(a)) = a) and (forall b: B; phi(phiInv(b)) = b)
+    [by both operations-and-backward the-forward-round-trip]
+qed
+
+// -- THE THREE RINGS REALLY ARE RINGS ----------------------------------------------------
+// Each model above claims its sort satisfies std/ring.b4m's axioms; these record what that
+// buys, which is also what exercises the axioms. Without them the ring structure of A, B and
+// C would be declared and never used — the three sorts would be no more than carriers with
+// two operations, and "ring isomorphism" would be a claim about nothing.
+
+theorem zeroIsAbsorbingInA: forall a: A; mulA(a, zeroA) = zeroA
+proof
+  @conclusion |
+    forall a: A; mulA(a, zeroA) = zeroA
+    [using model(AIsARing) ring.mulZeroRight]
+qed
+
+theorem negationIsMultiplicativeInA: forall a, b: A; mulA(a, negA(b)) = negA(mulA(a, b))
+proof
+  @conclusion |
+    forall a, b: A; mulA(a, negA(b)) = negA(mulA(a, b))
+    [using model(AIsARing) ring.mulNegRight]
+qed
+
+theorem zeroIsAbsorbingInB: forall x: B; mulB(x, zeroB) = zeroB
+proof
+  @conclusion |
+    forall x: B; mulB(x, zeroB) = zeroB
+    [using model(BIsARing) ring.mulZeroRight]
+qed
+
+theorem negationIsMultiplicativeInB: forall x, y: B; mulB(x, negB(y)) = negB(mulB(x, y))
+proof
+  @conclusion |
+    forall x, y: B; mulB(x, negB(y)) = negB(mulB(x, y))
+    [using model(BIsARing) ring.mulNegRight]
+qed
+
+theorem zeroIsAbsorbingInC: forall z: C; mulC(z, zeroC) = zeroC
+proof
+  @conclusion |
+    forall z: C; mulC(z, zeroC) = zeroC
+    [using model(CIsARing) ring.mulZeroRight]
+qed
+
+theorem negationIsMultiplicativeInC: forall z, w: C; mulC(z, negC(w)) = negC(mulC(z, w))
+proof
+  @conclusion |
+    forall z, w: C; mulC(z, negC(w)) = negC(mulC(z, w))
+    [using model(CIsARing) ring.mulNegRight]
+qed
+
+// chi is INJECTIVE, which is what its forward round trip is for — and the fact the symmetry
+// argument would need if run at chi rather than phi.
+theorem chiIsInjective: forall x, y: B; chi(x) = chi(y) -> x = y
+proof
+  @round-trip |
+    forall x: B; chiInv(chi(x)) = x
+    [by cite chiInvAfterChi]
+  @generalize-x |
+    fix x: B {
+      @generalize-y |
+        fix y: B {
+          @given-the-same-image |
+            assume chi(x) = chi(y) {
+              @same-image |
+                chi(x) = chi(y)
+                [by hypothesis given-the-same-image]
+              @x-returns |
+                chiInv(chi(x)) = x
+                [by apply_at(x) round-trip]
+              @y-returns |
+                chiInv(chi(y)) = y
+                [by apply_at(y) round-trip]
+              @x-returns-flipped |
+                x = chiInv(chi(x))
+                [by symmetry x-returns]
+              @x-is-the-inverse-of-the-shared-image |
+                x = chiInv(chi(y))
+                [by rewrite same-image x-returns-flipped]
+              @conclusion-x-is-y |
+                x = y
+                [using chain x-is-the-inverse-of-the-shared-image y-returns]
+            }
+          @conclusion-at-y |
+            chi(x) = chi(y) -> x = y
+            [by discharge given-the-same-image]
+        }
+      @conclusion-for-y |
+        forall y: B; chi(x) = chi(y) -> x = y
+        [by generalize generalize-y]
+    }
+  @conclusion |
+    forall x, y: B; chi(x) = chi(y) -> x = y
+    [by generalize generalize-x]
+qed
+
+// chi is SURJECTIVE — what `chiAfterChiInv` says, made usable: every element of C has a
+// preimage, namely its image under chiInv.
+theorem chiIsSurjective: forall z: C; exists x: B; chi(x) = z
+proof
+  @round-trip |
+    forall z: C; chi(chiInv(z)) = z
+    [by cite chiAfterChiInv]
+  @generalize-z |
+    fix z: C {
+      @chi-inv-returns |
+        chi(chiInv(z)) = z
+        [by apply_at(z) round-trip]
+      @conclusion-a-preimage-exists |
+        exists x: B; chi(x) = z
+        [by witness(chiInv(z)) chi-inv-returns]
+    }
+  @conclusion |
+    forall z: C; exists x: B; chi(x) = z
+    [by generalize generalize-z]
+qed
