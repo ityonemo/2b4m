@@ -1,0 +1,563 @@
+// std/ring/first-isomorphism.b4m — THE FIRST ISOMORPHISM THEOREM FOR RINGS.
+//
+// Judson's Theorem 16.13: for a ring homomorphism psi: R -> S, there is a unique isomorphism
+// eta: R/ker(psi) -> psi(R) with psi = eta . cls. His own proof defines eta(r + K) = psi(r)
+// and then checks it is a ring homomorphism, so the map is CONSTRUCTED, not merely asserted
+// to exist — and that is what lets this file state the theorem at all.
+//
+// WHAT "ISOMORPHISM" MEANS HERE, and why the theorem is stated as four facts about a map
+// rather than as a single `=~`. A ring is a SORT plus operations, and a relation between
+// structures would need its arguments to be TERMS — there is no sort whose values are rings,
+// so `R/K =~ psi(R)` cannot be named. (The same limit std/group/first-isomorphism.b4m meets,
+// and aata/9.1 and 11.2 record.) What CAN be said is everything the name abbreviates: eta is
+// well defined, preserves both operations, and is injective; surjectivity onto psi's image is
+// immediate, since every element of the image is psi(r) = eta(cls(r)). Those four facts ARE
+// the isomorphism; only the word is missing.
+//
+// This is the ring counterpart of std/group/first-isomorphism.b4m, which proves the same
+// four facts for the additive structure. The addition here is `etaPreservesMultiplication`,
+// which is exactly the step Judson's proof says "we need only show".
+
+import ring <<< "std/ring.b4m"
+import factor <<< "std/ring/factor.b4m"
+import group <<< "std/group.b4m"
+
+// R, its ideal K (the kernel), and the factor ring R/K — all from std/ring/factor.b4m.
+sort R = factor.R
+sort Quot = factor.Quot
+const zeroR = ring.ZERO
+const zeroQ = factor.zeroQ
+func addR = ring.add
+func mulR = ring.mul
+func addQ = factor.addQ
+func mulQ = factor.mulQ
+func cls = factor.cls
+pred inK = factor.inIdeal
+
+fact clsSurjective = factor.clsSurjective
+fact clsCongruent = factor.clsCongruent
+fact clsKernelIsTheIdeal = factor.clsKernelIsTheIdeal
+fact addQHom = factor.addQHom
+fact mulQHom = factor.mulQHom
+
+// -- the target ring S, and the homomorphism psi -----------------------------------------
+
+sort S
+const zeroS: S
+func addS(a: S, b: S) => S
+func mulS(a: S, b: S) => S
+func negS(a: S) => S
+axiom addSIsAssociative: forall a, b, c: S; addS(addS(a, b), c) = addS(a, addS(b, c))
+axiom addSZeroLeft: forall a: S; addS(zeroS, a) = a
+axiom addSNegLeft: forall a: S; addS(negS(a), a) = zeroS
+axiom addSIsCommutative: forall a, b: S; addS(a, b) = addS(b, a)
+axiom mulSIsAssociative: forall a, b, c: S; mulS(mulS(a, b), c) = mulS(a, mulS(b, c))
+axiom mulSAddDistribLeft: forall a, b, c: S; mulS(a, addS(b, c)) = addS(mulS(a, b), mulS(a, c))
+axiom mulSAddDistribRight: forall a, b, c: S; mulS(addS(a, b), c) = addS(mulS(a, c), mulS(b, c))
+
+model SIsARing {
+  ring.Ring: S
+  ring.ZERO: zeroS
+  ring.add: addS
+  ring.mul: mulS
+  ring.neg: negS
+  ring.addIsAssociative <- addSIsAssociative
+  ring.addZeroLeft <- addSZeroLeft
+  ring.addNegLeft <- addSNegLeft
+  ring.addIsCommutative <- addSIsCommutative
+  ring.mulIsAssociative <- mulSIsAssociative
+  ring.mulAddDistribLeft <- mulSAddDistribLeft
+  ring.mulAddDistribRight <- mulSAddDistribRight
+}
+
+model SAdditiveGroup {
+  group.Grp: S
+  group.E: zeroS
+  group.op: addS
+  group.inverse: negS
+  group.opAssoc <- addSIsAssociative
+  group.opIdentityLeft <- addSZeroLeft
+  group.opInverseLeft <- addSNegLeft
+  group.opCommutative <- addSIsCommutative
+}
+
+// a + (-a) = 0 on S, the right-sided form, transferred from the additive group.
+theorem addSNegRight: forall a: S; addS(a, negS(a)) = zeroS
+proof
+  @conclusion |
+    forall a: S; addS(a, negS(a)) = zeroS
+    [using model(SAdditiveGroup) group.opInverseRight]
+qed
+
+func psi(a: R) => S
+axiom psiPreservesAddition: forall a, b: R; psi(addR(a, b)) = addS(psi(a), psi(b))
+axiom psiPreservesMultiplication: forall a, b: R; psi(mulR(a, b)) = mulS(psi(a), psi(b))
+
+// K IS the kernel of psi: this is what ties the factor ring to this homomorphism.
+axiom kIsTheKernel: forall r: R; inK(r) iff psi(r) = zeroS
+
+// -- eta : R/K -> psi(R), by eta(cls(r)) = psi(r) ----------------------------------------
+
+func eta(q: Quot) => S
+axiom etaOnClasses: forall r: R; eta(cls(r)) = psi(r)
+
+// THE CRUX, as in the group case: eta is WELL DEFINED. If cls(a) = cls(b) then psi(a) =
+// psi(b) — otherwise the equation above would demand two values of eta at one class.
+theorem etaIsWellDefined: forall a, b: R; cls(a) = cls(b) -> psi(a) = psi(b)
+proof
+  @eta-on-classes |
+    forall r: R; eta(cls(r)) = psi(r)
+    [by cite etaOnClasses]
+  @generalize-a |
+    fix a: R {
+      @generalize-b |
+        fix b: R {
+          @given-the-same-class |
+            assume cls(a) = cls(b) {
+              @same-class |
+                cls(a) = cls(b)
+                [by hypothesis given-the-same-class]
+              @eta-at-a |
+                eta(cls(a)) = psi(a)
+                [by apply_at(a) eta-on-classes]
+              @eta-at-b |
+                eta(cls(b)) = psi(b)
+                [by apply_at(b) eta-on-classes]
+              // the two classes being equal, eta takes one value there
+              @eta-at-b-via-a |
+                eta(cls(a)) = psi(b)
+                [by rewrite same-class eta-at-b]
+              @psi-a-is-eta |
+                psi(a) = eta(cls(a))
+                [by symmetry eta-at-a]
+              @conclusion-the-values-agree |
+                psi(a) = psi(b)
+                [using chain psi-a-is-eta eta-at-b-via-a]
+            }
+          @conclusion-at-b |
+            cls(a) = cls(b) -> psi(a) = psi(b)
+            [by discharge given-the-same-class]
+        }
+      @conclusion-for-b |
+        forall b: R; cls(a) = cls(b) -> psi(a) = psi(b)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: R; cls(a) = cls(b) -> psi(a) = psi(b)
+    [by generalize generalize-a]
+qed
+
+// eta preserves ADDITION — the half the group theorem already has.
+theorem etaPreservesAddition: forall x, y: Quot; eta(addQ(x, y)) = addS(eta(x), eta(y))
+proof
+  @representatives-exist |
+    forall q: Quot; exists a: R; q = cls(a)
+    [by cite clsSurjective]
+  @eta-on-classes |
+    forall r: R; eta(cls(r)) = psi(r)
+    [by cite etaOnClasses]
+  @addition-is-homomorphic |
+    forall a, b: R; addQ(cls(a), cls(b)) = cls(addR(a, b))
+    [by cite addQHom]
+  @psi-preserves-addition |
+    forall a, b: R; psi(addR(a, b)) = addS(psi(a), psi(b))
+    [by cite psiPreservesAddition]
+  @generalize-x |
+    fix x: Quot {
+      @generalize-y |
+        fix y: Quot {
+          @x-has-a-representative |
+            exists a: R; x = cls(a)
+            [by apply_at(x) representatives-exist]
+          @y-has-a-representative |
+            exists a: R; y = cls(a)
+            [by apply_at(y) representatives-exist]
+          @with-representative-a |
+            unpack a: R from x-has-a-representative {
+              @x-is-cls-a |
+                x = cls(a)
+                [by hypothesis with-representative-a]
+              @with-representative-b |
+                unpack b: R from y-has-a-representative {
+                  @y-is-cls-b |
+                    y = cls(b)
+                    [by hypothesis with-representative-b]
+                  // eta(cls(a) + cls(b)) = eta(cls(a+b)) = psi(a+b) = psi(a) + psi(b)
+                  @the-sum-of-classes |
+                    addQ(cls(a), cls(b)) = cls(addR(a, b))
+                    [using specialize addition-is-homomorphic(a, b)]
+                  @eta-at-the-sum-class |
+                    eta(cls(addR(a, b))) = psi(addR(a, b))
+                    [by apply_at(addR(a, b)) eta-on-classes]
+                  @eta-of-the-sum |
+                    eta(addQ(cls(a), cls(b))) = psi(addR(a, b))
+                    [by rewrite the-sum-of-classes eta-at-the-sum-class]
+                  @psi-splits |
+                    psi(addR(a, b)) = addS(psi(a), psi(b))
+                    [using specialize psi-preserves-addition(a, b)]
+                  @eta-of-the-sum-splits |
+                    eta(addQ(cls(a), cls(b))) = addS(psi(a), psi(b))
+                    [using chain eta-of-the-sum psi-splits]
+                  // and psi(a), psi(b) are eta's values at the two classes
+                  @eta-at-a |
+                    eta(cls(a)) = psi(a)
+                    [by apply_at(a) eta-on-classes]
+                  @eta-at-b |
+                    eta(cls(b)) = psi(b)
+                    [by apply_at(b) eta-on-classes]
+                  @psi-a-is-eta-a |
+                    psi(a) = eta(cls(a))
+                    [by symmetry eta-at-a]
+                  @psi-b-is-eta-b |
+                    psi(b) = eta(cls(b))
+                    [by symmetry eta-at-b]
+                  @with-first-folded |
+                    eta(addQ(cls(a), cls(b))) = addS(eta(cls(a)), psi(b))
+                    [by rewrite psi-a-is-eta-a eta-of-the-sum-splits]
+                  @at-representatives |
+                    eta(addQ(cls(a), cls(b))) = addS(eta(cls(a)), eta(cls(b)))
+                    [by rewrite psi-b-is-eta-b with-first-folded]
+                  @with-b-folded |
+                    eta(addQ(cls(a), y)) = addS(eta(cls(a)), eta(y))
+                    [by rewrite y-is-cls-b at-representatives]
+                  @conclusion-at-representatives |
+                    eta(addQ(x, y)) = addS(eta(x), eta(y))
+                    [by rewrite x-is-cls-a with-b-folded]
+                }
+              @conclusion-from-b |
+                eta(addQ(x, y)) = addS(eta(x), eta(y))
+                [by unpacked with-representative-b]
+            }
+          @conclusion-from-a |
+            eta(addQ(x, y)) = addS(eta(x), eta(y))
+            [by unpacked with-representative-a]
+        }
+      @conclusion-for-y |
+        forall y: Quot; eta(addQ(x, y)) = addS(eta(x), eta(y))
+        [by generalize generalize-y]
+    }
+  @conclusion |
+    forall x, y: Quot; eta(addQ(x, y)) = addS(eta(x), eta(y))
+    [by generalize generalize-x]
+qed
+
+// eta preserves MULTIPLICATION — the step Judson's proof says "we need only show", and the
+// one thing the group First Isomorphism Theorem has nothing to say about. His displayed
+// chain: eta((r+K)(s+K)) = eta(rs+K) = psi(rs) = psi(r)psi(s) = eta(r+K)eta(s+K).
+theorem etaPreservesMultiplication: forall x, y: Quot; eta(mulQ(x, y)) = mulS(eta(x), eta(y))
+proof
+  @representatives-exist |
+    forall q: Quot; exists a: R; q = cls(a)
+    [by cite clsSurjective]
+  @eta-on-classes |
+    forall r: R; eta(cls(r)) = psi(r)
+    [by cite etaOnClasses]
+  @multiplication-is-homomorphic |
+    forall a, b: R; mulQ(cls(a), cls(b)) = cls(mulR(a, b))
+    [by cite mulQHom]
+  @psi-preserves-multiplication |
+    forall a, b: R; psi(mulR(a, b)) = mulS(psi(a), psi(b))
+    [by cite psiPreservesMultiplication]
+  @generalize-x |
+    fix x: Quot {
+      @generalize-y |
+        fix y: Quot {
+          @x-has-a-representative |
+            exists a: R; x = cls(a)
+            [by apply_at(x) representatives-exist]
+          @y-has-a-representative |
+            exists a: R; y = cls(a)
+            [by apply_at(y) representatives-exist]
+          @with-representative-a |
+            unpack a: R from x-has-a-representative {
+              @x-is-cls-a |
+                x = cls(a)
+                [by hypothesis with-representative-a]
+              @with-representative-b |
+                unpack b: R from y-has-a-representative {
+                  @y-is-cls-b |
+                    y = cls(b)
+                    [by hypothesis with-representative-b]
+                  // eta((r+K)(s+K)) = eta(rs+K)
+                  @the-product-of-classes |
+                    mulQ(cls(a), cls(b)) = cls(mulR(a, b))
+                    [using specialize multiplication-is-homomorphic(a, b)]
+                  @eta-at-the-product-class |
+                    eta(cls(mulR(a, b))) = psi(mulR(a, b))
+                    [by apply_at(mulR(a, b)) eta-on-classes]
+                  // = psi(rs)
+                  @eta-of-the-product |
+                    eta(mulQ(cls(a), cls(b))) = psi(mulR(a, b))
+                    [by rewrite the-product-of-classes eta-at-the-product-class]
+                  // = psi(r)psi(s)
+                  @psi-splits |
+                    psi(mulR(a, b)) = mulS(psi(a), psi(b))
+                    [using specialize psi-preserves-multiplication(a, b)]
+                  @eta-of-the-product-splits |
+                    eta(mulQ(cls(a), cls(b))) = mulS(psi(a), psi(b))
+                    [using chain eta-of-the-product psi-splits]
+                  // = eta(r+K)eta(s+K)
+                  @eta-at-a |
+                    eta(cls(a)) = psi(a)
+                    [by apply_at(a) eta-on-classes]
+                  @eta-at-b |
+                    eta(cls(b)) = psi(b)
+                    [by apply_at(b) eta-on-classes]
+                  @psi-a-is-eta-a |
+                    psi(a) = eta(cls(a))
+                    [by symmetry eta-at-a]
+                  @psi-b-is-eta-b |
+                    psi(b) = eta(cls(b))
+                    [by symmetry eta-at-b]
+                  @with-first-folded |
+                    eta(mulQ(cls(a), cls(b))) = mulS(eta(cls(a)), psi(b))
+                    [by rewrite psi-a-is-eta-a eta-of-the-product-splits]
+                  @at-representatives |
+                    eta(mulQ(cls(a), cls(b))) = mulS(eta(cls(a)), eta(cls(b)))
+                    [by rewrite psi-b-is-eta-b with-first-folded]
+                  @with-b-folded |
+                    eta(mulQ(cls(a), y)) = mulS(eta(cls(a)), eta(y))
+                    [by rewrite y-is-cls-b at-representatives]
+                  @conclusion-at-representatives |
+                    eta(mulQ(x, y)) = mulS(eta(x), eta(y))
+                    [by rewrite x-is-cls-a with-b-folded]
+                }
+              @conclusion-from-b |
+                eta(mulQ(x, y)) = mulS(eta(x), eta(y))
+                [by unpacked with-representative-b]
+            }
+          @conclusion-from-a |
+            eta(mulQ(x, y)) = mulS(eta(x), eta(y))
+            [by unpacked with-representative-a]
+        }
+      @conclusion-for-y |
+        forall y: Quot; eta(mulQ(x, y)) = mulS(eta(x), eta(y))
+        [by generalize generalize-y]
+    }
+  @conclusion |
+    forall x, y: Quot; eta(mulQ(x, y)) = mulS(eta(x), eta(y))
+    [by generalize generalize-x]
+qed
+
+// psi preserves the additive structure's zero and negation — needed to turn "the images
+// agree" into "the difference is in the kernel". Both come from psi being an additive group
+// homomorphism, which its addition axiom makes it.
+theorem psiSendsZeroToZero: psi(zeroR) = zeroS
+proof
+  @psi-preserves-addition |
+    forall a, b: R; psi(addR(a, b)) = addS(psi(a), psi(b))
+    [by cite psiPreservesAddition]
+  @zero-plus-zero |
+    addR(zeroR, zeroR) = zeroR
+    [using specialize ring.addZeroLeft(zeroR)]
+  @psi-of-the-sum |
+    psi(addR(zeroR, zeroR)) = addS(psi(zeroR), psi(zeroR))
+    [using specialize psi-preserves-addition(zeroR, zeroR)]
+  @psi-zero-doubles |
+    psi(zeroR) = addS(psi(zeroR), psi(zeroR))
+    [by rewrite zero-plus-zero psi-of-the-sum]
+  @left-as-zero-plus |
+    addS(zeroS, psi(zeroR)) = psi(zeroR)
+    [using specialize addSZeroLeft(psi(zeroR))]
+  @zero-plus-equals-doubled |
+    addS(zeroS, psi(zeroR)) = addS(psi(zeroR), psi(zeroR))
+    [by rewrite psi-zero-doubles left-as-zero-plus]
+  @cancel-right |
+    forall b, x, c: S; addS(b, x) = addS(c, x) -> b = c
+    [using model(SAdditiveGroup) group.cancelRight]
+  @zero-is-psi-zero |
+    zeroS = psi(zeroR)
+    [using specialize cancel-right(zeroS, psi(zeroR), psi(zeroR)) zero-plus-equals-doubled]
+  @conclusion |
+    psi(zeroR) = zeroS
+    [by symmetry zero-is-psi-zero]
+qed
+
+theorem psiPreservesNegation: forall a: R; psi(ring.neg(a)) = negS(psi(a))
+proof
+  @psi-preserves-addition |
+    forall a, b: R; psi(addR(a, b)) = addS(psi(a), psi(b))
+    [by cite psiPreservesAddition]
+  @psi-kills-zero |
+    psi(zeroR) = zeroS
+    [by cite psiSendsZeroToZero]
+  @inverses-are-unique |
+    forall x, y: S; addS(x, y) = zeroS -> y = negS(x)
+    [using model(SIsARing) ring.additiveInverseUnique]
+  @generalize-a |
+    fix a: R {
+      // psi(a) + psi(-a) = psi(a + (-a)) = psi(0) = 0, so psi(-a) is psi(a)'s inverse
+      @psi-of-the-sum |
+        psi(addR(a, ring.neg(a))) = addS(psi(a), psi(ring.neg(a)))
+        [using specialize psi-preserves-addition(a, ring.neg(a))]
+      @a-minus-a-is-zero |
+        addR(a, ring.neg(a)) = zeroR
+        [using specialize ring.addNegRight(a)]
+      @psi-at-zero-is-the-sum |
+        psi(zeroR) = addS(psi(a), psi(ring.neg(a)))
+        [by rewrite a-minus-a-is-zero psi-of-the-sum]
+      @the-sum-is-psi-zero |
+        addS(psi(a), psi(ring.neg(a))) = psi(zeroR)
+        [by symmetry psi-at-zero-is-the-sum]
+      @the-sum-is-zero |
+        addS(psi(a), psi(ring.neg(a))) = zeroS
+        [using chain the-sum-is-psi-zero psi-kills-zero]
+      @conclusion-at-a |
+        psi(ring.neg(a)) = negS(psi(a))
+        [using specialize inverses-are-unique(psi(a), psi(ring.neg(a))) the-sum-is-zero]
+    }
+  @conclusion |
+    forall a: R; psi(ring.neg(a)) = negS(psi(a))
+    [by generalize generalize-a]
+qed
+
+// eta is INJECTIVE — the fourth property, and what makes it an isomorphism onto psi(R)
+// rather than merely a homomorphism. Judson gets it from the group First Isomorphism
+// Theorem; here it is the ring congruence: if eta agrees at two classes then psi does at
+// their representatives, so psi(a - b) = psi(a) - psi(b) = 0, so a - b is in K, which IS
+// the classes being equal.
+theorem etaIsInjective: forall x, y: Quot; eta(x) = eta(y) -> x = y
+proof
+  @representatives-exist |
+    forall q: Quot; exists a: R; q = cls(a)
+    [by cite clsSurjective]
+  @eta-on-classes |
+    forall r: R; eta(cls(r)) = psi(r)
+    [by cite etaOnClasses]
+  @psi-preserves-addition |
+    forall a, b: R; psi(addR(a, b)) = addS(psi(a), psi(b))
+    [by cite psiPreservesAddition]
+  @psi-preserves-negation |
+    forall a: R; psi(ring.neg(a)) = negS(psi(a))
+    [by cite psiPreservesNegation]
+  @what-the-kernel-means |
+    forall r: R; inK(r) iff psi(r) = zeroS
+    [by cite kIsTheKernel]
+  @the-congruence |
+    forall a, b: R; cls(a) = cls(b) iff inK(addR(a, ring.neg(b)))
+    [by cite clsCongruent]
+  @generalize-x |
+    fix x: Quot {
+      @generalize-y |
+        fix y: Quot {
+          @given-the-same-image |
+            assume eta(x) = eta(y) {
+              @same-image |
+                eta(x) = eta(y)
+                [by hypothesis given-the-same-image]
+              @x-has-a-representative |
+                exists a: R; x = cls(a)
+                [by apply_at(x) representatives-exist]
+              @with-representative-a |
+                unpack a: R from x-has-a-representative {
+                  @x-is-cls-a |
+                    x = cls(a)
+                    [by hypothesis with-representative-a]
+                  @y-has-a-representative |
+                    exists b: R; y = cls(b)
+                    [by apply_at(y) representatives-exist]
+                  @with-representative-b |
+                    unpack b: R from y-has-a-representative {
+                      @y-is-cls-b |
+                        y = cls(b)
+                        [by hypothesis with-representative-b]
+                      // the images of the representatives agree
+                      @eta-at-a |
+                        eta(cls(a)) = psi(a)
+                        [by apply_at(a) eta-on-classes]
+                      @eta-at-b |
+                        eta(cls(b)) = psi(b)
+                        [by apply_at(b) eta-on-classes]
+                      @same-image-with-a |
+                        eta(cls(a)) = eta(y)
+                        [by rewrite x-is-cls-a same-image]
+                      @same-image-at-representatives |
+                        eta(cls(a)) = eta(cls(b))
+                        [by rewrite y-is-cls-b same-image-with-a]
+                      @psi-a-is-eta-b |
+                        psi(a) = eta(cls(b))
+                        [using chain eta-at-a-flipped same-image-at-representatives]
+                      @eta-at-a-flipped |
+                        psi(a) = eta(cls(a))
+                        [by symmetry eta-at-a]
+                      @the-images-agree |
+                        psi(a) = psi(b)
+                        [using chain psi-a-is-eta-b eta-at-b]
+                      // psi(a - b) = psi(a) + psi(-b) = psi(a) - psi(b) = psi(b) - psi(b) = 0
+                      @psi-splits-the-difference |
+                        psi(addR(a, ring.neg(b))) = addS(psi(a), psi(ring.neg(b)))
+                        [using specialize psi-preserves-addition(a, ring.neg(b))]
+                      @psi-of-the-negative |
+                        psi(ring.neg(b)) = negS(psi(b))
+                        [by apply_at(b) psi-preserves-negation]
+                      @the-difference-maps-to |
+                        psi(addR(a, ring.neg(b))) = addS(psi(a), negS(psi(b)))
+                        [by rewrite psi-of-the-negative psi-splits-the-difference]
+                      @with-the-images-equal |
+                        psi(addR(a, ring.neg(b))) = addS(psi(b), negS(psi(b)))
+                        [by rewrite the-images-agree the-difference-maps-to]
+                      @the-negative-cancels |
+                        addS(psi(b), negS(psi(b))) = zeroS
+                        [using specialize addSNegRight(psi(b))]
+                      @the-difference-is-killed |
+                        psi(addR(a, ring.neg(b))) = zeroS
+                        [using chain with-the-images-equal the-negative-cancels]
+                      // so a - b is in the kernel, which is the classes being equal
+                      @kernel-at-the-difference |
+                        inK(addR(a, ring.neg(b))) iff psi(addR(a, ring.neg(b))) = zeroS
+                        [by apply_at(addR(a, ring.neg(b))) what-the-kernel-means]
+                      @the-difference-is-in-the-kernel |
+                        inK(addR(a, ring.neg(b)))
+                        [using tautology kernel-at-the-difference the-difference-is-killed]
+                      @congruence-at-a-and-b |
+                        cls(a) = cls(b) iff inK(addR(a, ring.neg(b)))
+                        [using specialize the-congruence(a, b)]
+                      @the-classes-are-equal |
+                        cls(a) = cls(b)
+                        [using tautology congruence-at-a-and-b the-difference-is-in-the-kernel]
+                      @conclusion-at-representatives |
+                        x = y
+                        [using simplify the-classes-are-equal x-is-cls-a y-is-cls-b]
+                    }
+                  @conclusion-after-b |
+                    x = y
+                    [by unpacked with-representative-b]
+                }
+              @conclusion-after-a |
+                x = y
+                [by unpacked with-representative-a]
+            }
+          @conclusion-at-y |
+            eta(x) = eta(y) -> x = y
+            [by discharge given-the-same-image]
+        }
+      @conclusion-for-y |
+        forall y: Quot; eta(x) = eta(y) -> x = y
+        [by generalize generalize-y]
+    }
+  @conclusion |
+    forall x, y: Quot; eta(x) = eta(y) -> x = y
+    [by generalize generalize-x]
+qed
+
+// SURJECTIVITY onto psi(R) is immediate: every element of the image is psi(r) for some r,
+// and psi(r) = eta(cls(r)). Stated as "everything psi hits, eta hits" — the fourth and last
+// of the facts that the word "isomorphism" abbreviates.
+theorem etaCoversTheImage: forall r: R; exists q: Quot; eta(q) = psi(r)
+proof
+  @eta-on-classes |
+    forall r: R; eta(cls(r)) = psi(r)
+    [by cite etaOnClasses]
+  @generalize-r |
+    fix r: R {
+      @eta-at-the-class-of-r |
+        eta(cls(r)) = psi(r)
+        [by apply_at(r) eta-on-classes]
+      @conclusion-some-class-hits-it |
+        exists q: Quot; eta(q) = psi(r)
+        [by witness(cls(r)) eta-at-the-class-of-r]
+    }
+  @conclusion |
+    forall r: R; exists q: Quot; eta(q) = psi(r)
+    [by generalize generalize-r]
+qed
