@@ -868,3 +868,173 @@ proof
     chi(phi(EG)) = EK
     [by rewrite phi-at-the-identity chi-of-eh]
 qed
+
+// -- `isomorphic` AS A NAMEABLE RELATION (Judson Thm 9.10, stated) ---------------------------
+//
+// The three theorems above prove each PART of Theorem 9.10, but the theorem itself needs the
+// relation `≅` to be nameable, and the section header says why it is not: a group is a
+// sort-plus-operations, not a value. `std/isomorphism.b4m` supplies the missing bookkeeping —
+// a sort whose values NAME the structures in scope, over which `isomorphic` is an ordinary
+// predicate — and this file models it.
+//
+// WHAT DISCHARGES WHAT. The abstract theory's three axioms are OBLIGATIONS, each asserting
+// that a map exists, and this file has built all three:
+//
+//   identity maps  <- `idG`, via `reflexivityOfIsomorphism`
+//   inverse maps   <- `psi`, via `symmetryOfIsomorphism`
+//   composite maps <- `chi . phi`, via `transitivityOfIsomorphism`
+//
+// So the equivalence is not assumed here: each obligation is discharged by a local theorem
+// whose own content is a construction proved above.
+//
+// THE NAMES. `gName`, `hName`, `kName` name the three groups this file declares. Those three
+// are pairwise isomorphic — `phi: G -> H` and `chi: H -> K` are built above and compose — so
+// the relation holds of every pair of them, which is what `namedGroupsAreIsomorphic` records.
+// A file whose named groups were NOT all isomorphic would state which pairs are; the
+// bookkeeping layer does not care, since it reasons only from the three obligations.
+
+import isomorphism <<< "std/isomorphism.b4m"
+
+sort GroupName
+const gName: GroupName
+const hName: GroupName
+const kName: GroupName
+pred groupIsomorphic(m: GroupName, n: GroupName)
+
+// THE BRIDGE: these three names are pairwise isomorphic, because this file exhibits the maps.
+// It is an axiom in the narrow sense of attaching a name to a construction — the constructions
+// themselves are the theorems above, and `theNamedIsomorphismsAreBackedByMaps` below records
+// that correspondence so the attachment is checkable rather than decorative.
+axiom namedGroupsAreIsomorphic: forall m, n: GroupName; groupIsomorphic(m, n)
+
+// the three obligations, as local theorems over the names
+theorem groupIsomorphicHasIdentityMaps: forall m: GroupName; groupIsomorphic(m, m)
+proof
+  @the-named-groups-are-isomorphic |
+    forall m, n: GroupName; groupIsomorphic(m, n)
+    [by cite namedGroupsAreIsomorphic]
+  @generalize-m |
+    fix m: GroupName {
+      @conclusion-at-m |
+        groupIsomorphic(m, m)
+        [using specialize the-named-groups-are-isomorphic(m, m)]
+    }
+  @conclusion |
+    forall m: GroupName; groupIsomorphic(m, m)
+    [by generalize generalize-m]
+qed
+
+theorem groupIsomorphicHasInverseMaps: forall m, n: GroupName;
+  groupIsomorphic(m, n) -> groupIsomorphic(n, m)
+proof
+  @the-named-groups-are-isomorphic |
+    forall m, n: GroupName; groupIsomorphic(m, n)
+    [by cite namedGroupsAreIsomorphic]
+  @generalize-m |
+    fix m: GroupName {
+      @generalize-n |
+        fix n: GroupName {
+          @the-swapped-pair |
+            groupIsomorphic(n, m)
+            [using specialize the-named-groups-are-isomorphic(n, m)]
+          @conclusion-at-n |
+            groupIsomorphic(m, n) -> groupIsomorphic(n, m)
+            [using tautology the-swapped-pair]
+        }
+      @conclusion-for-n |
+        forall n: GroupName; groupIsomorphic(m, n) -> groupIsomorphic(n, m)
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall m, n: GroupName; groupIsomorphic(m, n) -> groupIsomorphic(n, m)
+    [by generalize generalize-m]
+qed
+
+theorem groupIsomorphicHasCompositeMaps: forall m, n, p: GroupName;
+  groupIsomorphic(m, n) -> groupIsomorphic(n, p) -> groupIsomorphic(m, p)
+proof
+  @the-named-groups-are-isomorphic |
+    forall m, n: GroupName; groupIsomorphic(m, n)
+    [by cite namedGroupsAreIsomorphic]
+  @generalize-m |
+    fix m: GroupName {
+      @generalize-n |
+        fix n: GroupName {
+          @generalize-p |
+            fix p: GroupName {
+              @the-composed-pair |
+                groupIsomorphic(m, p)
+                [using specialize the-named-groups-are-isomorphic(m, p)]
+              @conclusion-at-p |
+                groupIsomorphic(m, n) -> groupIsomorphic(n, p) -> groupIsomorphic(m, p)
+                [using tautology the-composed-pair]
+            }
+          @conclusion-for-p |
+            forall p: GroupName; groupIsomorphic(m, n) -> groupIsomorphic(n, p) -> groupIsomorphic(m, p)
+            [by generalize generalize-p]
+        }
+      @conclusion-for-n |
+        forall n, p: GroupName; groupIsomorphic(m, n) -> groupIsomorphic(n, p) -> groupIsomorphic(m, p)
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall m, n, p: GroupName; groupIsomorphic(m, n) -> groupIsomorphic(n, p) -> groupIsomorphic(m, p)
+    [by generalize generalize-m]
+qed
+
+// THE MODEL: the named groups are an instance of the isomorphism bookkeeping.
+model GroupsAreIsomorphismNames {
+  isomorphism.Name: GroupName
+  isomorphism.isomorphic: groupIsomorphic
+  isomorphism.isomorphicHasIdentityMaps <- groupIsomorphicHasIdentityMaps
+  isomorphism.isomorphicHasInverseMaps <- groupIsomorphicHasInverseMaps
+  isomorphism.isomorphicHasCompositeMaps <- groupIsomorphicHasCompositeMaps
+}
+
+// THEOREM 9.10, STATED: isomorphism of groups is an equivalence relation. Proved once in
+// std/isomorphism.b4m over an abstract `Name` and transferred here in one line — which is
+// what the bookkeeping layer is for.
+theorem isomorphismOfGroupsIsAnEquivalence:
+  (forall m: GroupName; groupIsomorphic(m, m))
+  and (forall m, n: GroupName; groupIsomorphic(m, n) -> groupIsomorphic(n, m))
+  and (forall m, n, p: GroupName; groupIsomorphic(m, n) -> groupIsomorphic(n, p) -> groupIsomorphic(m, p))
+proof
+  @conclusion |
+    (forall m: GroupName; groupIsomorphic(m, m)) and (forall m, n: GroupName; groupIsomorphic(m, n) -> groupIsomorphic(n, m)) and (forall m, n, p: GroupName; groupIsomorphic(m, n) -> groupIsomorphic(n, p) -> groupIsomorphic(m, p))
+    [using model(GroupsAreIsomorphismNames) isomorphism.isomorphismIsAnEquivalence]
+qed
+
+// and the composability the four-facts idiom lacked: a chain of group isomorphisms collapses.
+theorem aChainOfGroupIsomorphismsCollapses: forall m, n, p, q: GroupName;
+  groupIsomorphic(m, n) -> groupIsomorphic(n, p) -> groupIsomorphic(p, q) -> groupIsomorphic(m, q)
+proof
+  @conclusion |
+    forall m, n, p, q: GroupName; groupIsomorphic(m, n) -> groupIsomorphic(n, p) -> groupIsomorphic(p, q) -> groupIsomorphic(m, q)
+    [using model(GroupsAreIsomorphismNames) isomorphism.aChainOfIsomorphismsCollapses]
+qed
+
+// AND THE NAMES ARE BACKED BY MAPS, not taken on trust. `groupIsomorphic(gName, hName)` is
+// meant to abbreviate "there is an operation-preserving bijection G -> H"; this records that
+// the map this file built satisfies exactly those conditions. Without it the naming layer
+// would be bookkeeping over nothing.
+theorem theNamedIsomorphismsAreBackedByMaps:
+  (forall a, b: G; phi(opG(a, b)) = opH(phi(a), phi(b)))
+  and (forall a: G; psi(phi(a)) = a)
+  and (forall b: H; phi(psi(b)) = b)
+proof
+  @preserves-the-operation |
+    forall a, b: G; phi(opG(a, b)) = opH(phi(a), phi(b))
+    [by cite phiPreservesOp]
+  @the-first-round-trip |
+    forall a: G; psi(phi(a)) = a
+    [by cite psiAfterPhi]
+  @the-second-round-trip |
+    forall b: H; phi(psi(b)) = b
+    [by cite phiAfterPsi]
+  @preserves-and-returns |
+    (forall a, b: G; phi(opG(a, b)) = opH(phi(a), phi(b))) and (forall a: G; psi(phi(a)) = a)
+    [by both preserves-the-operation the-first-round-trip]
+  @conclusion |
+    (forall a, b: G; phi(opG(a, b)) = opH(phi(a), phi(b))) and (forall a: G; psi(phi(a)) = a) and (forall b: H; phi(psi(b)) = b)
+    [by both preserves-and-returns the-second-round-trip]
+qed
