@@ -713,6 +713,23 @@ pub fn addTests(
     // axiom-proven, no holes) — so the emitted specialization really re-checks.
     ctx.okSilent(&.{ "check", "tests/cases/arithmetic_fallback_specialize.b4m" });
 
+    // `--fast` RUNS THE DECISION — it declines only to EMIT the certificate. A FALSE goal is
+    // therefore rejected in BOTH modes, with the same diagnostic. This regressed when
+    // `4d84393` restored per-word admit and inserted an early return at the top of
+    // `buildArithmetic`, collapsing the decision away: `--fast` reported `OK: 1 theorems
+    // proven` for `succ(ZERO) = succ(succ(ZERO))` while strict said "the statement is false".
+    //
+    // The decision admits on exactly ONE outcome (the goal is TRUE, whether or not any
+    // certifier can certify it); FALSE and cannot-handle-the-shape both fail. Getting the
+    // verdict right needs the theory's well-known idents RESOLVED — `nonneg` picks the ℕ-vs-ℤ
+    // fragment, and without it `less_than(a, add(a, succ(b)))` decides false over ℤ — so
+    // `trustedReadPass` demands them too, not just the untrusted read pass.
+    // See ACCELERANT-PRUNING-BOUNDARY.md.
+    ctx.fail(&.{ "check", "--fast", "tests/cases/arithmetic_false_fast.b4m" }, "tests/cases/arithmetic_false_fast.b4m:12:12: error: arithmetic: the statement is false\n");
+    ctx.fail(&.{ "check", "tests/cases/arithmetic_false_fast.b4m" }, "tests/cases/arithmetic_false_fast.b4m:12:12: error: arithmetic: the statement is false\n");
+    // and a TRUE goal no certifier can certify is ADMITTED under `--fast` (strict reports the
+    // certification gap) — the `arithmetic.b4m` fixture above covers exactly that pair.
+
     // Two theorems `specialize` ONE shared fact by DIFFERENT access paths — one by its
     // declared name, the other via a local step that `[by cite]`s it. The synthetic
     // schemas differ (a local head's body carries the head formula as antecedent #0; a

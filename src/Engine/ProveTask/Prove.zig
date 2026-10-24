@@ -741,6 +741,20 @@ fn trustedReadPass(self: *Prove, w: *Walk, step: *const ast.Step) Allocator.Erro
     // printed "fully verified" where strict reported "reference not found".
     if (try self.demandQualifiedCiteFiles(c)) |blocker| return blocker;
 
+    // `arithmetic` DECIDES under `--fast` (it only declines to EMIT the certificate), and its
+    // decision depends on the theory's well-known names: `nonneg` chooses the FRAGMENT, so
+    // without it a ℕ goal is read over ℤ and `less_than(a, add(a, succ(b)))` decides FALSE.
+    // The untrusted read pass demands these (`demandArithIdents`); a trusted step diverted
+    // here and skipped them, which is why the admitted decision saw `nonneg=false`. Demand
+    // them here too — same call, same park channel.
+    {
+        const arith_id = try self.ctx.interner.internString("arithmetic");
+        const arith_q_id = try self.ctx.interner.internString("arithmetic_quantified");
+        if (c.rule.name == arith_id or c.rule.name == arith_q_id) {
+            if (try self.demandArithIdents(c)) |blocker| return blocker;
+        }
+    }
+
     // parse the source file whose decl AST the α-match reads (model: src.thm's file; import:
     // I's file; instantiation: the schema's file).
     const src_file = self.trustSourceFile(c) catch |err| switch (err) {
@@ -6417,13 +6431,24 @@ fn produceArithmetic(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
 /// A declined-but-valid goal with `fallback(thm)` emits the fallback path; else a terminal
 /// error. STRICT ONLY — never a trusted verdict.
 fn buildArithmetic(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
-    // ADMIT: the arg-count validation ran in produceArithmetic. Everything below RESOLVES the
-    // cited premises (resolveFactRef) and runs the certifier/decision-procedure chain. Skip that
-    // expensive path under `--fast`.
-    if (self.admit_mode) {
-        self.admit_ok = true;
-        return null;
-    }
+    // `--fast` declines to EMIT the certificate; the DECISION still runs. (It did run until
+    // `4d84393` restored per-word admit and inserted an early return here, collapsing it away —
+    // which let `--fast` accept `succ(ZERO) = succ(succ(ZERO))` and `add(a, succ(b)) < a`, both
+    // plainly false.) The decision admits on exactly ONE outcome: the goal is TRUE.
+    //
+    //   FALSE                     -> fail, with strict's own diagnostic.
+    //   TRUE (certifiable or not) -> admit. Certifiability is a fact about our CERTIFIER
+    //                                strategies, not about the goal, so `--fast` accepts both
+    //                                and never consults `fallback(...)` — a fallback supplies a
+    //                                CERTIFICATE, which `--fast` is not building.
+    //   SHAPE IT CANNOT HANDLE    -> fail. Nothing was adjudicated, so admitting would invent
+    //                                a verdict; strict reports the same gap.
+    //
+    // The admit point is after the decision below, before the certifier chain — which exists
+    // only to BUILD a certificate. The well-known idents the decision needs (`nonneg` above
+    // all, which picks the ℕ-vs-ℤ fragment) are demanded in the read pass by
+    // `demandArithIdents`, for trusted steps as well as untrusted — without that the decision
+    // here would read a ℕ goal over ℤ. See ACCELERANT-PRUNING-BOUNDARY.md.
     var b: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
 
     // resolve cited premises (local steps / global facts).
@@ -6445,6 +6470,34 @@ fn buildArithmetic(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim
     for (prems, prem_formulae) |*p, *pf| {
         p.formula = try self.substFvarsToParams(p.formula, abs);
         pf.* = p.formula;
+    }
+
+    // THE DECISION — under `--fast`, the whole of the check. Same inputs as the strict decide
+    // below (abstracted goal, param-substituted premises, injected `nonneg` guards), so the two
+    // modes always agree on the goal's truth.
+    if (self.admit_mode) {
+        const peel = try self.arithPeel(goal_p);
+        var dprems: std.ArrayList(TermId) = .empty;
+        try dprems.appendSlice(self.ctx.arena, prem_formulae);
+        if (symbols.nonneg) |nn| if (symbols.nat) |nat| {
+            var seen: std.AutoHashMapUnmanaged(StrId, void) = .empty;
+            try self.collectArithNonneg(peel.body, nat, nn, &seen, &dprems);
+            for (prem_formulae) |pf| try self.collectArithNonneg(pf, nat, nn, &seen, &dprems);
+        };
+        switch (try smt.decideMixed(self.ctx.arena, self.pool, symbols, dprems.items, peel.body)) {
+            .valid => {
+                self.admit_ok = true;
+                return null;
+            },
+            .countermodel => |cm| {
+                for (cm.values) |a| if (a.term) |offending|
+                    return self.fail(c.rule.start, "arithmetic: '{s}' is outside linear arithmetic", .{try self.renderTerm(offending)});
+                return self.fail(c.rule.start, "arithmetic: the statement is false", .{});
+            },
+            .too_many_atoms => |n| return self.fail(c.rule.start, "arithmetic: {d} distinct atoms exceeds the limit of {d}", .{ n, smt.atom_limit }),
+            .too_large => return self.fail(c.rule.start, "arithmetic: decision exceeded the work limit", .{}),
+            .overflow => return self.fail(c.rule.start, "arithmetic: coefficient overflow", .{}),
+        }
     }
 
     // build the cert into a fresh step list. Try each certifier in order — every path is

@@ -1,0 +1,71 @@
+// PROBE: does a PARTIAL model of std/isomorphism.b4m — omitting the transitivity obligation —
+// still transfer the equivalence theorem? If it fails, the guard at Prove.zig:403 already
+// closes the hole and `abstract axiom` is unnecessary for this case. If it passes, the hole
+// is real and abstract is needed.
+import isomorphism <<< "std/isomorphism.b4m"
+
+sort MyName
+const oneName: MyName
+pred myIsomorphic(m: MyName, n: MyName)
+
+axiom allRelated: forall m, n: MyName; myIsomorphic(m, n)
+
+theorem myReflexive: forall m: MyName; myIsomorphic(m, m)
+proof
+  @all |
+    forall m, n: MyName; myIsomorphic(m, n)
+    [by cite allRelated]
+  @generalize-m |
+    fix m: MyName {
+      @conclusion-at-m |
+        myIsomorphic(m, m)
+        [using specialize all(m, m)]
+    }
+  @conclusion |
+    forall m: MyName; myIsomorphic(m, m)
+    [by generalize generalize-m]
+qed
+
+theorem mySymmetric: forall m, n: MyName; myIsomorphic(m, n) -> myIsomorphic(n, m)
+proof
+  @all |
+    forall m, n: MyName; myIsomorphic(m, n)
+    [by cite allRelated]
+  @generalize-m |
+    fix m: MyName {
+      @generalize-n |
+        fix n: MyName {
+          @swapped |
+            myIsomorphic(n, m)
+            [using specialize all(n, m)]
+          @conclusion-at-n |
+            myIsomorphic(m, n) -> myIsomorphic(n, m)
+            [using tautology swapped]
+        }
+      @conclusion-for-n |
+        forall n: MyName; myIsomorphic(m, n) -> myIsomorphic(n, m)
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall m, n: MyName; myIsomorphic(m, n) -> myIsomorphic(n, m)
+    [by generalize generalize-m]
+qed
+
+// THE PARTIAL MODEL: identity and inverse mapped, COMPOSITE DELIBERATELY OMITTED.
+model PartialNames {
+  isomorphism.Name: MyName
+  isomorphism.isomorphic: myIsomorphic
+  isomorphism.isomorphicHasIdentityMaps <- myReflexive
+  isomorphism.isomorphicHasInverseMaps <- mySymmetric
+}
+
+// Does the equivalence theorem — whose proof NEEDS the composite axiom — transfer anyway?
+theorem doesTheEquivalenceTransferAnyway:
+  (forall m: MyName; myIsomorphic(m, m))
+  and (forall m, n: MyName; myIsomorphic(m, n) -> myIsomorphic(n, m))
+  and (forall m, n, p: MyName; myIsomorphic(m, n) -> myIsomorphic(n, p) -> myIsomorphic(m, p))
+proof
+  @conclusion |
+    (forall m: MyName; myIsomorphic(m, m)) and (forall m, n: MyName; myIsomorphic(m, n) -> myIsomorphic(n, m)) and (forall m, n, p: MyName; myIsomorphic(m, n) -> myIsomorphic(n, p) -> myIsomorphic(m, p))
+    [using model(PartialNames) isomorphism.isomorphismIsAnEquivalence]
+qed
