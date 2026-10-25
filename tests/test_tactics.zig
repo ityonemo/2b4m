@@ -730,6 +730,19 @@ pub fn addTests(
     // and a TRUE goal no certifier can certify is ADMITTED under `--fast` (strict reports the
     // certification gap) — the `arithmetic.b4m` fixture above covers exactly that pair.
 
+    // `simplify` runs its decision under `--fast` too — the normal-form comparison — and
+    // declines only to EMIT the join certificate. A FALSE equation is rejected in both modes
+    // with the same diagnostic. (It used to admit before normalizing, so `--fast` reported
+    // `OK` for `add(ZERO, succ(ZERO)) = succ(succ(ZERO))`.)
+    ctx.fail(&.{ "check", "--fast", "tests/cases/simplify_false_fast.b4m" }, "tests/cases/simplify_false_fast.b4m:11:12: error: simplify: normal forms differ: 'succ(ZERO)' vs 'succ(succ(ZERO))'\n");
+    ctx.fail(&.{ "check", "tests/cases/simplify_false_fast.b4m" }, "tests/cases/simplify_false_fast.b4m:11:12: error: simplify: normal forms differ: 'succ(ZERO)' vs 'succ(succ(ZERO))'\n");
+    // The decision reads each cited rule's STATEMENT (no proof demand). For a `fact X = ns.y`
+    // RE-EXPORT that means the alias chase must resolve the import name; `factOrigin` used to
+    // give up when it was not fetched yet, and `--fast` then failed with "'X' has no stated
+    // formula" where strict passed. Both modes must agree on a re-exported rule.
+    ctx.okSilent(&.{ "check", "--fast", "tests/cases/simplify_alias_fast.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/simplify_alias_fast.b4m" });
+
     // Two theorems `specialize` ONE shared fact by DIFFERENT access paths — one by its
     // declared name, the other via a local step that `[by cite]`s it. The synthetic
     // schemas differ (a local head's body carries the head formula as antecedent #0; a

@@ -474,7 +474,24 @@ fn factOrigin(
         // `ns.thm` hops to ns's file; a bare `thm` re-exports within this file.
         if (alias.target.qualifier != InternPool.Index.none) {
             const self_ns = try self.interner.namespace(.universe, file.*);
-            const state = self.idents.lookup(self.io, .{ .namespace = self_ns, .name = alias.target.qualifier }) orelse return .ready;
+            // The qualifier is an import NAME. If nobody has racked its fetch yet, giving up
+            // here (`return .ready`, which this used to do) hands the caller an UNRESOLVED
+            // alias, which it can only diagnose as "'X' has no stated formula" — an error
+            // strict never gives, since strict reaches the origin through `factAlias` after the
+            // read pass fetched the import. Rack the fetch and suspend instead, exactly as
+            // `resolveRefs` does for a qualified ref; the caller re-runs once it lands.
+            // (Surfaced by `--fast` reading a `simplify` rule's statement: four `fact X = ns.y`
+            // re-exports in std/integer/order.b4m and std/permutation/alternating.b4m.)
+            const state = self.idents.lookup(self.io, .{ .namespace = self_ns, .name = alias.target.qualifier }) orelse {
+                const t = try h.rackIndexed(try FetchTask.new(self.arena, .{
+                    .file = file.*,
+                    .name = alias.target.qualifier,
+                    .loc = alias.target.start,
+                    .loc_file = file.*,
+                }));
+                h.suspendOn(t);
+                return .suspended;
+            };
             const ix = switch (state) {
                 .done => |ix| ix,
                 .in_flight => |owner| {
