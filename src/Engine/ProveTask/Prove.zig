@@ -741,6 +741,34 @@ fn trustedReadPass(self: *Prove, w: *Walk, step: *const ast.Step) Allocator.Erro
     // printed "fully verified" where strict reported "reference not found".
     if (try self.demandQualifiedCiteFiles(c)) |blocker| return blocker;
 
+    // `simplify` DECIDES under `--fast` too, and its decision reads the cited RULES' statements
+    // (`prepareRule` → `elaborateFactStatement`), which needs the declaring file parsed and —
+    // for a re-export — its alias chain resolvable. Do that here, in the read pass, where
+    // parking is free; `elaborateFactStatement` racks no ProveTask, so this is a parse and an
+    // ident fetch, not a proof cascade. A `.failed` is left for the producer to report.
+    {
+        const simp = try self.ctx.interner.internString("simplify");
+        const simp_q = try self.ctx.interner.internString("simplify_quantified");
+        if (c.rule.name == simp or c.rule.name == simp_q) {
+            for (c.refs) |r| {
+                if (w.findStep(tokName(r)) != null) continue; // a local step, not a fact
+                const sfile = if (r.qualifier == InternPool.Index.none) self.file else blk: {
+                    const st = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = r.qualifier }) orelse continue;
+                    const ix = switch (st) {
+                        .done => |x| x,
+                        .in_flight => continue,
+                    };
+                    if (self.ctx.interner.keyOf(ix) != .import) continue;
+                    break :blk self.ctx.interner.keyOf(self.ctx.interner.keyOf(ix).import.namespace).namespace.file;
+                };
+                switch (try elaborateFactStatement(self.ctx, self.h, sfile, tokName(r), self.model, self.pool)) {
+                    .ready, .failed => {},
+                    .suspended => return self.h.blocked_on,
+                }
+            }
+        }
+    }
+
     // `arithmetic` DECIDES under `--fast` (it only declines to EMIT the certificate), and its
     // decision depends on the theory's well-known names: `nonneg` chooses the FRAGMENT, so
     // without it a ℕ goal is read over ℤ and `less_than(a, add(a, succ(b)))` decides FALSE.
@@ -2896,7 +2924,15 @@ fn demandUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step
     const syn = blk: {
         const produced = self.produceAccelerant(w, e, goal, c) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
-            error.Recover => return .failed,
+            // A `Recover` WITH `producer_blocker` set is a PARK, not a diagnosis: the producer
+            // racked a demand and suspended. Report it blocked so the step re-runs.
+            error.Recover => {
+                if (self.producer_blocker) |blocker| {
+                    self.producer_blocker = null;
+                    return .{ .blocked = blocker };
+                }
+                return .failed;
+            },
         };
         if (produced) |s| {
             self.producer_premise_refs = s.premises;
@@ -4144,6 +4180,33 @@ fn prepareRule(self: *Prove, w: *const Walk, ref: lexer.Token) Error!PreparedRul
         const sref = try self.resolveStepRef(w, ref);
         formula = self.producerPremiseFormula(sref);
         cite = .{ .local = .{ .hyp = try self.premiseHypLabel(ref) } };
+    } else if (self.admit_mode) {
+        // ADMIT MODE: `simplify` needs the rule's STATEMENT to normalize with, not its proof —
+        // and `resolveFactRef` requires `.proven`, which the trusted read pass deliberately
+        // does not arrange (racking a cited rule's ProveTask is the proof cascade `--fast`
+        // exists to avoid). `elaborateFactStatement` reads the statement and racks NO
+        // ProveTask: the right weight, and what lets the normalize DECISION run under `--fast`
+        // while the join certificate stays unbuilt. The alias chase starts in the file the
+        // NAME lives in — this proof's own file when unqualified, since a re-export
+        // (`fact composeApply = function.composeApply`) is declared HERE and `factOrigin`
+        // follows it from there.
+        const sfile = if (ref.qualifier == InternPool.Index.none) self.file else blk: {
+            const ns = try self.resolveQualifier(ref);
+            break :blk self.ctx.interner.keyOf(ns).namespace.file;
+        };
+        switch (try elaborateFactStatement(self.ctx, self.h, sfile, tokName(ref), self.model, self.pool)) {
+            .ready => |stmt| formula = stmt,
+            // `suspendOn` was already called. Recording the blocker makes the caller treat the
+            // `Recover` as a PARK (re-run later), not a diagnosed rejection — rejecting drops
+            // this step's LABEL from the walk and surfaces as "unknown reference" at the next
+            // step that cites it (std/peano/divides.b4m:171, `difference-is-d-multiple`).
+            .suspended => {
+                self.producer_blocker = self.h.blocked_on;
+                return error.Recover;
+            },
+            .failed => return error.Recover,
+        }
+        cite = .{ .global = .{ .head = ref, .is_axiom = false } };
     } else {
         const fact = try self.resolveFactRef(ref);
         formula = try self.pool.copyIn(self.ctx.interner, self.ctx.interner.keyOf(fact).fact.formula);
@@ -4245,12 +4308,12 @@ fn produceSimplifyQuantified(self: *Prove, w: *const Walk, goal: TermId, c: ast.
 /// quantified variant re-generalizes over via `fix` blocks (they are NOT abstracted into
 /// params — the schema proof re-binds them; only genuinely-free caller-locals become params).
 fn buildSimplify(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: TermId, eigen: []const term.Node.Fvar) Error!?Accelerant.Synthetic {
-    // ADMIT: the goal-shape validation ran in the produce* caller; everything below RESOLVES the
-    // cited rules (prepareRule → resolveFactRef) and runs the normalize decision. Skip under `--fast`.
-    if (self.admit_mode) {
-        self.admit_ok = true;
-        return null;
-    }
+    // `--fast` declines to EMIT the certificate; the NORMALIZE DECISION still runs. (Admitting
+    // here let `--fast` accept `add(ZERO, succ(ZERO)) = succ(succ(ZERO))`, which strict rejects
+    // — a both-ways divergence the `--fast` contract forbids.) The decision needs the cited
+    // rules' STATEMENTS, which `prepareRule` reads via `elaborateFactStatement` in admit mode —
+    // no ProveTask, so no proof cascade. Admit lands after the normal-form comparison below,
+    // before `EqCert` emission. See ACCELERANT-PRUNING-BOUNDARY.md.
     var b: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
 
     // prepare the rewrite rules (in citation order) + how the cert cites each.
@@ -4304,6 +4367,18 @@ fn buildSimplify(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: T
             try self.renderTerm(try self.unabstract(rs.nf, abs)),
             try self.renderTerm(try self.unabstract(rt.nf, abs)),
         });
+    }
+
+    // ADMIT: both sides reached the SAME normal form under the cited rules, so a certificate
+    // demonstrably exists — only emitting it is pruned. `producer_premise_refs` is cleared:
+    // it records the LOCAL refs a produced synthetic kept as antecedents, and the admitted
+    // path reads it to decide which cited refs are steps to resolve; an admitted step builds
+    // no instance and has none. (It was null here before only because `simplify` admitted
+    // before producing at all.)
+    if (self.admit_mode) {
+        self.producer_premise_refs = null;
+        self.admit_ok = true;
+        return null;
     }
 
     // Build the equation-cert AST proving `s = t` into a fresh step list.
@@ -9173,7 +9248,20 @@ fn admit(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step.Claim
             // the producer either ADMITS (sets admit_ok, returns null — no cert) or REJECTS
             // (fails → error.Recover). A null return without admit_ok = the producer didn't
             // reach an admit decision (a producer not yet admit-aware) — treat as a reject.
-            _ = try self.produceAccelerant(w, e, goal, c);
+            _ = self.produceAccelerant(w, e, goal, c) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                error.Recover => {
+                    // A PARK at lowering time has no channel to propagate (this returns void),
+                    // and should never happen: the trusted READ PASS is where an admitted word's
+                    // demands are racked. Reaching here parked means it missed one — a bug worth
+                    // a visible diagnostic, not a silent reject (which drops the step's label).
+                    if (self.producer_blocker != null) {
+                        self.producer_blocker = null;
+                        return self.fail(c.rule.start, "internal: '{s}' parked during admit (the read pass missed a demand)", .{self.text(c.rule)});
+                    }
+                    return error.Recover;
+                },
+            };
             if (!self.admit_ok) return self.fail(c.rule.start, "'{s}' cannot admit this step under `--fast` (no fast acceptance)", .{self.text(c.rule)});
             // an admitted accelerant builds no certificate, so nothing carries the citation
             // edges its premises would have had: the cited local steps are its use-all-facts
