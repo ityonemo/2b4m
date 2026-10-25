@@ -1,0 +1,24 @@
+// Regression: an admitted `simplify` whose cited rule is a `fact` RE-EXPORT (`fact X = ns.y`).
+//
+// Under `--fast`, simplify DECIDES (normalizes both sides) and only declines to emit the
+// certificate. The decision reads each cited rule's STATEMENT via `elaborateFactStatement`,
+// whose alias chase (`factOrigin`) must resolve the re-export's qualifier — and it used to give
+// up with `.ready` when that import name had not been fetched yet, which the caller could only
+// diagnose as "'addZeroRight' has no stated formula (an alias or a non-fact)". That is an error
+// strict never gives (strict reaches the origin via `factAlias` after the read pass fetched the
+// import), so `--fast` and strict disagreed. `factOrigin` now racks the fetch and suspends.
+import peano <<< "std/peano.b4m"
+
+const ZERO = peano.ZERO
+func succ = peano.succ
+func add = peano.add
+
+// the re-export: an alias with no formula of its own
+fact addZeroRight = peano.addZeroRight
+
+theorem addingZeroOnTheRightViaAReexport: add(succ(ZERO), ZERO) = succ(ZERO)
+proof
+  @conclusion |
+    add(succ(ZERO), ZERO) = succ(ZERO)
+    [using simplify addZeroRight]
+qed

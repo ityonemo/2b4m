@@ -1,7 +1,8 @@
 # The accelerant pruning boundary
 
-**Status:** `arithmetic` FIXED 2026-10-24, with a regression gate
-(`tests/cases/arithmetic_false_fast.b4m`). Eight decision words remain. The tradeoff this note
+**Status:** `arithmetic` FIXED 2026-10-24 and `simplify` FIXED 2026-10-25, each with a
+regression gate (`tests/cases/arithmetic_false_fast.b4m`, `simplify_false_fast.b4m`,
+`simplify_alias_fast.b4m`). Seven decision words remain. The tradeoff this note
 originally flagged — a slower `--fast` loop — **measured as negligible**: whole-std `--fast` is
 16.8s against strict's 233.7s, still 14x, because certify-first keeps the decision off the
 common path.
@@ -99,14 +100,24 @@ finding this: assembling the decision's inputs by hand in the producer (wrong fr
 parking from inside the producer via `error.Recover` (which SILENTLY DROPPED a theorem, 4 → 3
 proven — worse than the original bug).
 
-**4. `simplify`'s obstacle is incidental, not principled.** Normalizing both sides is a
-pre-certificate check, so under the rule above it SHOULD run under `--fast`. It cannot today
-because reading a cited global rule's statement goes through `resolveFactRef`, i.e. demands
-the fact — and that resolution is currently entangled with the normalize step rather than
-separable from it. So this is an implementation defect to fix (expose a rule's statement
-without a full fetch, or demand the rules in admit mode too and measure the cost), not an
-exception to the principle. The false-accept stands until then and is documented at the admit
-branch in the source.
+**4. `simplify` — FIXED 2026-10-25, in two deliberate steps.** Its decision needs each cited
+rule's STATEMENT, not its proof, and the right-weight tool already existed:
+`elaborateFactStatement` reads a statement and racks NO ProveTask. So `prepareRule` uses it in
+admit mode, the trusted read pass demands the statements up front (where parking is free), and
+admit lands after the normal-form comparison. Step 1 landed that RED on purpose — four
+`fact X = ns.y` re-exports failed with "'X' has no stated formula" — so the fallout could be
+seen rather than guessed at. Step 2 was one root cause: `factOrigin` gave up (`return .ready`)
+when the alias target's import name had not been fetched yet, handing the caller an unresolved
+alias. It now racks the fetch and suspends, as `resolveRefs` does for a qualified ref.
+
+Two engine bugs were found on the way, both now fixed: a producer that PARKS (racks a demand,
+`suspendOn`) signalled it with `error.Recover`, which `demandUsing` read as a diagnosed
+REJECTION — and rejecting a step drops its LABEL from the walk, surfacing as "unknown
+reference" at the NEXT step that cited it (the std/peano/divides.b4m:171 mystery). And
+`producer_premise_refs` was left set on admit, making the admitted path resolve global rule
+names as step labels. Lesson from the dead ends: probing readability with a call that WRITES
+DIAGNOSTICS on failure makes `--fast` report errors strict never gives; demand the thing
+properly in the read pass instead.
 
 ## Cost, and what remains
 
@@ -122,11 +133,11 @@ the certify-first ordering exists.
    corpus unsoundness — but it is the one that matters, since the whole point of a model is
    that its obligations are discharged. Resolving the overlay does not obviously need a fetch
    the way `simplify`'s rules do, so this looks tractable.
-2. **`simplify`.** Its normalize step is a pre-certificate check and should run; the blocker
-   is that rule resolution is entangled with it. Either expose a cited rule's statement
-   without a full fetch, or simply demand the rules under admit too — the `arithmetic`
-   measurement (16.8s vs 233.7s) suggests the fetches may be affordable, which would make this
-   a small change rather than a demand-engine project. Worth measuring before assuming.
+2. **The remaining seven** (`polynomial`, `assoc`, `assoc_commut`, `tautology`, `chain`,
+   `extensionality`, `specialize`). Each has the same shape as the two fixed ones: find where
+   construction begins, move admit there, and demand in the trusted read pass whatever the
+   decision reads (idents for the arithmetic-like ones, rule statements for the rewrite-like
+   ones). `polynomial`'s `completePolyOps` already demands idents, so it is probably closest.
 
 ## What this is NOT
 
