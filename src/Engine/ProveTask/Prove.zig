@@ -3301,18 +3301,22 @@ fn internStr(self: *Prove, comptime s: []const u8) Error!StrId {
 fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
     _ = goal;
     const head = c.schema orelse return self.fail(c.rule.start, "specialize requires a head theorem/axiom or local step", .{});
-    // ADMIT UP FRONT — the one accelerant of the nine where the decision cannot move here.
+    // ADMIT UP FRONT — the one trustable word whose decision genuinely cannot move here.
     //
-    // `specialize` has no decision of its own: whether the instance's conclusion MATCHES the
-    // claim is checked by the schema-instance machinery (`lowerInstantiate`), not by this
-    // producer, so there is nothing for admit mode to decide beyond the head's existence. And
-    // running the ∀-peel in admit mode is not free: a LOCAL head carries free caller fvars that
-    // become schema params (`Synthetic.fvar_binds`), and those bindings are installed by the
-    // plumbing AFTER the producer returns — admitting mid-peel left the params unresolvable
-    // ("reference not found: 'k'" across std/subgroup/products.b4m). Tried and reverted
-    // 2026-10-26; the remaining gap is that `--fast` accepts a `specialize` whose instance
-    // conclusion differs from the claim, which strict rejects. See
-    // ACCELERANT-PRUNING-BOUNDARY.md.
+    // What `--fast` must never do is admit a claim the specialization cannot produce, and that
+    // match is done by `withGuardPremises` only AFTER the instance is PROVEN — which `--fast`
+    // skips. Doing it in the producer does not work: the consequent is in PARAM space (for
+    // `forall a, b; a = b` it is literally `p1 = p2`), and the actual arguments are AST exprs
+    // that only the instance pass elaborates, so matching the consequent against the goal with
+    // the params as pattern variables succeeds for ANY equation goal — measured 2026-10-26,
+    // `succ(ZERO) = ZERO` matched `p1 = p2`. A real check needs the elaborated args, i.e. the
+    // instance. (Moving admit past the peel is independently wrong: the caller installs
+    // `fvar_binds` only after the producer returns, so a local head's abstracted params become
+    // unresolvable — "reference not found: 'k'" across std/subgroup/products.b4m.)
+    //
+    // KNOWN GAP, deliberately left: `--fast` accepts a `specialize` whose instance conclusion
+    // differs from the claim. Gated by `tests/cases/specialize_claim_mismatch_fast.b4m`, which
+    // pins today's behaviour so a future fix is noticed. See ACCELERANT-PRUNING-BOUNDARY.md.
     if (self.admit_mode) {
         self.admit_ok = true;
         return null;
@@ -5993,18 +5997,22 @@ fn buildExtensionality(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_
     const unfolds = try self.ctx.arena.alloc(ExtUnfold, c.refs.len);
     for (c.refs, unfolds) |ref, *out| out.* = try self.resolveUnfold(ref);
 
-    // ADMIT: the ext lemma and every unfold resolved and apply to this goal's sides. (Unlike
-    // the other accelerants there is no decision separable from emission here, so this is a
-    // weaker guarantee than theirs — recorded in the note as the one remaining gap.)
+    // build the cert steps proving `s = t`. This BOTH decides and emits: buried inside it is
+    // `emitExtSetResidue`'s `smt.tautology` on the pointwise obligation, which is the real
+    // decision (it is what refutes `union(a, b) = intersection(a, b)`). There is no way to
+    // reach that verdict without running the emission, so admit mode runs it too and throws
+    // the steps away — the cost is building an AST we discard, which is far cheaper than the
+    // alternative of `--fast` accepting a false set identity.
+    var body_steps: std.ArrayList(ast.Step) = .empty;
+    try self.emitExtEquation(&b, &body_steps, lemma, unfolds, s, t, c);
+
+    // ADMIT: the pointwise obligation closed, so a certificate demonstrably exists — only
+    // packaging it as the synthetic schema is pruned.
     if (self.admit_mode) {
         self.producer_premise_refs = null;
         self.admit_ok = true;
         return null;
     }
-
-    // build the cert steps proving `s = t`.
-    var body_steps: std.ArrayList(ast.Step) = .empty;
-    try self.emitExtEquation(&b, &body_steps, lemma, unfolds, s, t, c);
 
     // the inner proposition the cert proves: the equation `s = t` (no local premises — the ext +
     // unfold lemmas are all globals cited inside the cert; a LOCAL cite is unusual but supported

@@ -1,5 +1,12 @@
 # The accelerant pruning boundary
 
+**THE INVARIANT, swept 2026-10-26 across all 17 trustable words:** `--fast` must never ADMIT a
+goal the strict path REFUTES. (Distinct from the legitimate case where strict decides the goal
+TRUE but can build no certificate — `--fast` admits that, by design.) Result: ten of the eleven
+distinct words reject correctly; **`specialize` is the single violation**, pinned by
+`tests/cases/specialize_claim_mismatch_fast.b4m`. Probes and the table:
+`drafts/fast-soundness/`.
+
 **Status:** EIGHT of the nine decision words FIXED (`arithmetic` 2026-10-24, `simplify`
 2026-10-25, `polynomial`/`tautology`/`chain`/`assoc`/`assoc_commut`/`extensionality`
 2026-10-26). `specialize` is the one exception and the reason is recorded below. Regression
