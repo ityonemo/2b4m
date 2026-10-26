@@ -48,9 +48,10 @@ pins it to a vetted theory.
 
 ## The invariant, and how to keep it
 
-**`--fast` must never ADMIT a goal the strict path REFUTES.** Admitting a goal strict merely
-cannot CERTIFY is the whole point of `--fast` and is fine; admitting one a decision procedure
-REFUTES is a soundness bug. Swept 2026-10-26 across all 17 trustable words with one
+**`--fast` must never ADMIT a goal the strict path REFUTES.** It MAY admit a goal strict
+cannot CERTIFY — that is the permission `--fast` exists to grant, not an obligation, and each
+word decides for itself what its own `--fast` criterion is. Admitting a goal a decision
+procedure REFUTES is a soundness bug. Swept 2026-10-26 across all 17 trustable words with one
 refuted-goal probe each; `specialize` is the single violation, gated by
 `tests/cases/specialize_claim_mismatch_fast.b4m`. Every other word has a regression fixture
 named `*_false_fast.b4m` beside it.
