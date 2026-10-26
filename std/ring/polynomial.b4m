@@ -1243,23 +1243,284 @@ proof
     [by generalize generalize-p]
 qed
 
+// THE BRIDGE: the tail segment of width k IS the two-bound segment based at i - k.
+//
+// This is the step the two index lemmas in `std/peano/subtraction.b4m` were proved for.
+// Growing the tail by one moves its base DOWN by one (`succOfSubSucc`), and the new term's
+// q-index is recovered by the involution (`subInvolution`): the term at index i - succ(k)
+// carries coefficient q at i - (i - succ k) = succ k. Both hold exactly when k < i, so the
+// statement is guarded by `less_than(k, i)` — which is all the use below needs, since it is
+// applied along the range up to i.
+theorem theTailIsASegmentBasedBelow: forall p, q: Poly; forall i, k: Nat;
+  less_than(k, succ(i)) ->
+  tailConvolution(p, q, i, k) = segment(p, q, i, peano.sub(i, k), k)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-i |
+            fix i: Nat {
+              // base case: one term, a_i b_0, based at i itself.
+              @base-tail |
+                tailConvolution(p, q, i, ZERO) = mulR(coeff(p, i), coeff(q, ZERO))
+                [using specialize tailConvolutionZero(p, q, i)]
+              @the-base-index |
+                peano.sub(i, ZERO) = i
+                [using specialize subtraction.subZeroRight(i)]
+              @base-segment |
+                segment(p, q, i, i, ZERO) = mulR(coeff(p, i), coeff(q, peano.sub(i, i)))
+                [using specialize segmentZero(p, q, i, i)]
+              @the-difference-vanishes |
+                peano.sub(i, i) = ZERO
+                [using specialize subtraction.subSelf(i)]
+              @base-segment-simplified |
+                segment(p, q, i, peano.sub(i, ZERO), ZERO) =
+                  mulR(coeff(p, i), coeff(q, ZERO))
+                [using simplify the-base-index base-segment the-difference-vanishes]
+              @base-segment-flipped |
+                mulR(coeff(p, i), coeff(q, ZERO)) =
+                  segment(p, q, i, peano.sub(i, ZERO), ZERO)
+                [by symmetry base-segment-simplified]
+              @base-equation |
+                tailConvolution(p, q, i, ZERO) =
+                  segment(p, q, i, peano.sub(i, ZERO), ZERO)
+                [using chain base-tail base-segment-flipped]
+              @base-case |
+                less_than(ZERO, succ(i)) ->
+                  tailConvolution(p, q, i, ZERO) =
+                  segment(p, q, i, peano.sub(i, ZERO), ZERO)
+                [using tautology base-equation]
+
+              @induction-step |
+                fix k: Nat {
+                  @given-inductive-hypothesis |
+                    assume less_than(k, succ(i)) ->
+                      tailConvolution(p, q, i, k) = segment(p, q, i, peano.sub(i, k), k) {
+                      @inductive-hypothesis |
+                        less_than(k, succ(i)) ->
+                          tailConvolution(p, q, i, k) = segment(p, q, i, peano.sub(i, k), k)
+                        [by hypothesis given-inductive-hypothesis]
+                      @given-successor-in-range |
+                        assume less_than(succ(k), succ(i)) {
+                          @successor-in-range |
+                            less_than(succ(k), succ(i))
+                            [by hypothesis given-successor-in-range]
+                          @k-below-i |
+                            less_than(k, i)
+                            [using specialize peano_order.succReflectsOrder(k, i) successor-in-range]
+                          @k-in-range |
+                            less_than(k, succ(i))
+                            [using specialize peano_order.lessThanSuccRight(k, i) k-below-i]
+                          @the-hypothesis-applies |
+                            tailConvolution(p, q, i, k) =
+                              segment(p, q, i, peano.sub(i, k), k)
+                            [using tautology inductive-hypothesis k-in-range]
+
+                          // the tail gains a term at its base.
+                          @the-tail-grows |
+                            tailConvolution(p, q, i, succ(k)) =
+                              addR(mulR(coeff(p, peano.sub(i, succ(k))), coeff(q, succ(k))),
+                              tailConvolution(p, q, i, k))
+                            [using specialize tailConvolutionSucc(p, q, i, k)]
+                          @the-tail-grows-over-the-segment |
+                            tailConvolution(p, q, i, succ(k)) =
+                              addR(mulR(coeff(p, peano.sub(i, succ(k))), coeff(q, succ(k))),
+                              segment(p, q, i, peano.sub(i, k), k))
+                            [using simplify the-tail-grows the-hypothesis-applies]
+
+                          // the segment based one lower peels to the same two pieces.
+                          @the-lower-segment-peels |
+                            segment(p, q, i, peano.sub(i, succ(k)), succ(k)) =
+                              addR(mulR(coeff(p, peano.sub(i, succ(k))),
+                              coeff(q, peano.sub(i, peano.sub(i, succ(k))))),
+                              segment(p, q, i, succ(peano.sub(i, succ(k))), k))
+                            [using specialize segmentPeelsAtTheBase(p, q, i, peano.sub(i, succ(k)), k)]
+                          // the new term's q-index, by the involution.
+                          @the-q-index |
+                            peano.sub(i, peano.sub(i, succ(k))) = succ(k)
+                            [using specialize subtraction.subInvolution(succ(k), i) successor-in-range]
+                          // and the remaining segment's base, by the stepping lemma.
+                          @the-remaining-base |
+                            succ(peano.sub(i, succ(k))) = peano.sub(i, k)
+                            [using specialize subtraction.succOfSubSucc(k, i) k-below-i]
+                          @the-lower-segment-in-our-terms |
+                            segment(p, q, i, peano.sub(i, succ(k)), succ(k)) =
+                              addR(mulR(coeff(p, peano.sub(i, succ(k))), coeff(q, succ(k))),
+                              segment(p, q, i, peano.sub(i, k), k))
+                            [using simplify the-lower-segment-peels the-q-index the-remaining-base]
+                          @the-lower-segment-flipped |
+                            addR(mulR(coeff(p, peano.sub(i, succ(k))), coeff(q, succ(k))),
+                              segment(p, q, i, peano.sub(i, k), k)) =
+                              segment(p, q, i, peano.sub(i, succ(k)), succ(k))
+                            [by symmetry the-lower-segment-in-our-terms]
+                          @conclusion-successor |
+                            tailConvolution(p, q, i, succ(k)) =
+                              segment(p, q, i, peano.sub(i, succ(k)), succ(k))
+                            [using chain the-tail-grows-over-the-segment the-lower-segment-flipped]
+                        }
+                      @successor-in-range-implies-the-equation |
+                        less_than(succ(k), succ(i)) ->
+                          tailConvolution(p, q, i, succ(k)) =
+                          segment(p, q, i, peano.sub(i, succ(k)), succ(k))
+                        [by discharge given-successor-in-range]
+                    }
+                  @induction-step-at-k |
+                    (less_than(k, succ(i)) ->
+                      tailConvolution(p, q, i, k) = segment(p, q, i, peano.sub(i, k), k)) ->
+                      (less_than(succ(k), succ(i)) ->
+                      tailConvolution(p, q, i, succ(k)) =
+                      segment(p, q, i, peano.sub(i, succ(k)), succ(k)))
+                    [by discharge given-inductive-hypothesis]
+                }
+              @induction-step-for-all-k |
+                forall k: Nat;
+                  (less_than(k, succ(i)) ->
+                  tailConvolution(p, q, i, k) = segment(p, q, i, peano.sub(i, k), k)) ->
+                  (less_than(succ(k), succ(i)) ->
+                  tailConvolution(p, q, i, succ(k)) =
+                  segment(p, q, i, peano.sub(i, succ(k)), succ(k)))
+                [by generalize induction-step]
+              @conclusion-for-all-k |
+                forall k: Nat;
+                  less_than(k, succ(i)) ->
+                  tailConvolution(p, q, i, k) = segment(p, q, i, peano.sub(i, k), k)
+                [using instantiation peano.induction((fun k: Nat => less_than(k, succ(i)) -> tailConvolution(p, q, i, k) = segment(p, q, i, peano.sub(i, k), k))) base-case induction-step-for-all-k]
+            }
+          @discharge-i |
+            forall i: Nat; forall k: Nat;
+              less_than(k, succ(i)) ->
+              tailConvolution(p, q, i, k) = segment(p, q, i, peano.sub(i, k), k)
+            [by generalize generalize-i]
+        }
+      @discharge-q |
+        forall q: Poly; forall i, k: Nat;
+          less_than(k, succ(i)) ->
+          tailConvolution(p, q, i, k) = segment(p, q, i, peano.sub(i, k), k)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; forall i, k: Nat;
+      less_than(k, succ(i)) ->
+      tailConvolution(p, q, i, k) = segment(p, q, i, peano.sub(i, k), k)
+    [by generalize generalize-p]
+qed
+
+// == THE REINDEXING LEMMA ==================================================================
+//
+// Assembling the four pieces at k = i, where the segment spans the whole range:
+//
+//   conv(q,p,i,i) = tail(p,q,i,i)                 [reversedConvolutionIsTheTailSegment]
+//                 = segment(p,q,i, i-i, i)        [theTailIsASegmentBasedBelow, i < succ i]
+//                 = segment(p,q,i, 0,   i)        [i - i = 0]
+//                 = conv(p,q,i,i)                 [segmentAtZeroIsTheConvolution]
+//
+// This is the reindexing: the i-th coefficient of a product is unchanged when the sum is
+// read from the other end.
+theorem convolutionIsReversible: forall p, q: Poly; forall i: Nat;
+  convolution(q, p, i, i) = convolution(p, q, i, i)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-i |
+            fix i: Nat {
+              @the-reversed-sum-is-the-tail |
+                convolution(q, p, i, i) = tailConvolution(p, q, i, i)
+                [using specialize reversedConvolutionIsTheTailSegment(p, q, i, i)]
+              @the-range-is-closed |
+                less_than(i, succ(i))
+                [using specialize peano_order.lessThanSelf(i)]
+              @the-tail-is-a-based-segment |
+                tailConvolution(p, q, i, i) = segment(p, q, i, peano.sub(i, i), i)
+                [using specialize theTailIsASegmentBasedBelow(p, q, i, i) the-range-is-closed]
+              @the-base-is-zero |
+                peano.sub(i, i) = ZERO
+                [using specialize subtraction.subSelf(i)]
+              @the-tail-is-the-segment-from-zero |
+                tailConvolution(p, q, i, i) = segment(p, q, i, ZERO, i)
+                [using simplify the-tail-is-a-based-segment the-base-is-zero]
+              @the-segment-from-zero-is-the-convolution |
+                segment(p, q, i, ZERO, i) = convolution(p, q, i, i)
+                [using specialize segmentAtZeroIsTheConvolution(p, q, i, i)]
+              @conclusion-the-sum-reverses |
+                convolution(q, p, i, i) = convolution(p, q, i, i)
+                [using chain the-reversed-sum-is-the-tail the-tail-is-the-segment-from-zero the-segment-from-zero-is-the-convolution]
+            }
+          @discharge-i |
+            forall i: Nat; convolution(q, p, i, i) = convolution(p, q, i, i)
+            [by generalize generalize-i]
+        }
+      @discharge-q |
+        forall q: Poly; forall i: Nat;
+          convolution(q, p, i, i) = convolution(p, q, i, i)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; forall i: Nat;
+      convolution(q, p, i, i) = convolution(p, q, i, i)
+    [by generalize generalize-p]
+qed
+
+// JUDSON'S EXERCISE, DISCHARGED: R[x] is commutative.
+theorem polyMulIsCommutative: forall p, q: Poly; mulP(p, q) = mulP(q, p)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-index |
+            fix i: Nat {
+              @the-forward-coefficient |
+                coeff(mulP(p, q), i) = convolution(p, q, i, i)
+                [using specialize mulPolyCoeff(p, q, i)]
+              @the-reversed-coefficient |
+                coeff(mulP(q, p), i) = convolution(q, p, i, i)
+                [using specialize mulPolyCoeff(q, p, i)]
+              @the-sums-agree |
+                convolution(q, p, i, i) = convolution(p, q, i, i)
+                [using specialize convolutionIsReversible(p, q, i)]
+              @coefficients-agree-at-index |
+                coeff(mulP(p, q), i) = coeff(mulP(q, p), i)
+                [using chain the-forward-coefficient the-sums-agree-flipped the-reversed-coefficient-flipped]
+              @the-sums-agree-flipped |
+                convolution(p, q, i, i) = convolution(q, p, i, i)
+                [by symmetry the-sums-agree]
+              @the-reversed-coefficient-flipped |
+                convolution(q, p, i, i) = coeff(mulP(q, p), i)
+                [by symmetry the-reversed-coefficient]
+            }
+          @corresponding-coefficients-are-equal |
+            forall i: Nat; coeff(mulP(p, q), i) = coeff(mulP(q, p), i)
+            [by generalize generalize-index]
+          @conclusion-multiplication-commutes |
+            mulP(p, q) = mulP(q, p)
+            [using specialize polyExtensionality(mulP(p, q), mulP(q, p)) corresponding-coefficients-are-equal]
+        }
+      @discharge-q |
+        forall q: Poly; mulP(p, q) = mulP(q, p)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; mulP(p, q) = mulP(q, p)
+    [by generalize generalize-p]
+qed
+
 // == WHAT IS NOT HERE, AND WHAT IT WOULD TAKE =============================================
 //
-// FULL MULTIPLICATIVE COMMUTATIVITY (pq = qp) and MULTIPLICATIVE ASSOCIATIVITY ((pq)r =
-// p(qr)) are the two ring axioms for R[x] this file does not prove. Judson leaves
-// commutativity as an exercise and proves associativity by the displayed triple-sum
-// expansion
+// MULTIPLICATIVE ASSOCIATIVITY ((pq)r = p(qr)) is the one ring axiom for R[x] still not
+// proved. Judson proves it by the displayed triple-sum expansion whose middle line is
 //
 //     sum_i [ sum_j ( sum_k a_k b_{j-k} ) c_{i-j} ] x^i = sum_i ( sum_{j+k+l=i} a_j b_k c_l ) x^i
 //
-// whose middle line reindexes a DOUBLE sum into a sum over triples j+k+l=i. Both steps are
-// the same missing ingredient: a lemma that REINDEXES a convolution, either reversing it
-// (k -> i-k, which gives commutativity from R's own commutativity) or flattening a nested
-// pair of them. `std` has no summation-reversal or double-sum-exchange lemma — `grep` for a
-// fold-reversal theorem over `std/sequence.b4m`'s `foldUpTo` finds none — so this is a real
-// missing piece of library, not a proof that got stuck.
+// a DOUBLE sum flattened into a sum over index TRIPLES. The reindexing machinery above
+// reverses a single sum, which was enough for commutativity, but flattening a nested pair is
+// a different lemma: it needs a sum over a two-dimensional index range and a Fubini-style
+// exchange, and the triple-sum form has no primitive-recursive shape in a single bound.
+// Nothing above generalizes to it for free — that is an honest second project, not a corollary.
 //
-// What exists instead: `polyProductConstantTermCommutes` is commutativity at index 0, where
-// no reindexing is needed. The honest statement of the gap is that R[x]'s additive group,
-// its multiplicative identity, and its distributive law are proved here from R's axioms,
-// while the two reindexing-dependent axioms await a summation-reversal lemma.
+// What IS proved: R[x] is a COMMUTATIVE ring (every additive axiom, the multiplicative
+// identity, distributivity, and commutativity via `convolutionIsReversible`), which is all
+// of Judson's Theorem 17.1 except his associativity display, plus the degree bound for sums
+// and the leading-product step of Proposition 17.4.
