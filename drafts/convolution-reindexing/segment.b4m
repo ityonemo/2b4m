@@ -124,3 +124,74 @@ proof
     forall lo, n: Nat; seg(lo, succ(n)) = addR(term(lo), seg(succ(lo), n))
     [by generalize generalize-lo]
 qed
+
+// -- THE REVERSAL -------------------------------------------------------------------------
+//
+// `rseg` sums the SAME n+1 terms starting at lo, but accumulates each new term on the LEFT
+// instead of the right — the sum read from the other end.
+func rseg(lo: Nat, n: Nat) => R
+axiom rsegZero: forall lo: Nat; rseg(lo, ZERO) = term(lo)
+axiom rsegSucc: forall lo, n: Nat;
+  rseg(lo, succ(n)) = addR(term(addN(lo, succ(n))), rseg(lo, n))
+
+// A segment is its own reversal. This is where `segPrepend` earns its place: the two
+// accumulation orders differ by exactly the associativity/commutativity regrouping.
+theorem segIsItsOwnReversal: forall lo, n: Nat; rseg(lo, n) = seg(lo, n)
+proof
+  @generalize-lo |
+    fix lo: Nat {
+      @base-reversed |
+        rseg(lo, ZERO) = term(lo)
+        [using specialize rsegZero(lo)]
+      @base-forward |
+        seg(lo, ZERO) = term(lo)
+        [using specialize segZero(lo)]
+      @base-case |
+        rseg(lo, ZERO) = seg(lo, ZERO)
+        [using chain base-reversed base-forward-flipped]
+      @base-forward-flipped |
+        term(lo) = seg(lo, ZERO)
+        [by symmetry base-forward]
+
+      @induction-step |
+        fix n: Nat {
+          @given-inductive-hypothesis |
+            assume rseg(lo, n) = seg(lo, n) {
+              @inductive-hypothesis |
+                rseg(lo, n) = seg(lo, n)
+                [by hypothesis given-inductive-hypothesis]
+              @reversed-grows-on-the-left |
+                rseg(lo, succ(n)) = addR(term(addN(lo, succ(n))), rseg(lo, n))
+                [using specialize rsegSucc(lo, n)]
+              @reversed-in-terms-of-the-segment |
+                rseg(lo, succ(n)) = addR(term(addN(lo, succ(n))), seg(lo, n))
+                [using simplify reversed-grows-on-the-left inductive-hypothesis]
+              @forward-grows-on-the-right |
+                seg(lo, succ(n)) = addR(seg(lo, n), term(addN(lo, succ(n))))
+                [using specialize segSucc(lo, n)]
+              @the-two-orders-agree |
+                addR(term(addN(lo, succ(n))), seg(lo, n)) =
+                  addR(seg(lo, n), term(addN(lo, succ(n))))
+                [using specialize addIsCommutativeR(term(addN(lo, succ(n))), seg(lo, n))]
+              @conclusion-successor |
+                rseg(lo, succ(n)) = seg(lo, succ(n))
+                [using chain reversed-in-terms-of-the-segment the-two-orders-agree forward-grows-on-the-right-flipped]
+              @forward-grows-on-the-right-flipped |
+                addR(seg(lo, n), term(addN(lo, succ(n)))) = seg(lo, succ(n))
+                [by symmetry forward-grows-on-the-right]
+            }
+          @induction-step-at-n |
+            rseg(lo, n) = seg(lo, n) -> rseg(lo, succ(n)) = seg(lo, succ(n))
+            [by discharge given-inductive-hypothesis]
+        }
+      @induction-step-for-all-n |
+        forall n: Nat; rseg(lo, n) = seg(lo, n) -> rseg(lo, succ(n)) = seg(lo, succ(n))
+        [by generalize induction-step]
+      @conclusion-for-all-n |
+        forall n: Nat; rseg(lo, n) = seg(lo, n)
+        [using instantiation peano.induction((fun n: Nat => rseg(lo, n) = seg(lo, n))) base-case induction-step-for-all-n]
+    }
+  @conclusion |
+    forall lo, n: Nat; rseg(lo, n) = seg(lo, n)
+    [by generalize generalize-lo]
+qed

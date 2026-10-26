@@ -1,0 +1,175 @@
+// THE REINDEXING LEMMA, against the real convolution shape.
+//
+// Target: convolution(p, q, i, i) = convolution(q, p, i, i), i.e. polynomial multiplication
+// commutes. Decomposed into two independent halves:
+//
+//   (A) POINTWISE: the j-th term of conv(q,p,i,·) equals the (i-j)-th term of conv(p,q,i,·).
+//       Needs R's mul-commutativity and `subInvolution` (sub(i, sub(i, j)) = j for j <= i).
+//   (B) WHOLE-SUM: a sum over 0..i whose terms are reindexed by j |-> i-j has the same value.
+//       This is accumulation-order reversal; needs only add assoc + commut.
+//
+// (B) is the piece with teeth, because the reversed sum is NOT primitive-recursive in i:
+// each of its terms' indices depends on i. The standard route is a sum with a SHIFTED base,
+// `tailSum(m, n)` = the n+1 terms starting at m, which IS primitive-recursive in n.
+
+import peano <<< "std/peano.b4m"
+import ring <<< "std/ring.b4m"
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+func addN = peano.add
+
+sort R = ring.Ring
+func addR = ring.add
+
+fact addIsAssociativeR = ring.addIsAssociative
+fact addIsCommutativeR = ring.addIsCommutative
+fact addSuccLeft = peano.addSuccLeft
+fact addSuccRight = peano.addSuccRight
+fact addZeroRight = peano.addZeroRight
+
+// An abstract term family. `f(j)` stands for the j-th summand.
+func f(j: Nat) => R
+
+// ascending(n) = f(0) + f(1) + ... + f(n), accumulated on the right.
+func ascending(n: Nat) => R
+axiom ascendingZero: ascending(ZERO) = f(ZERO)
+axiom ascendingSucc: forall n: Nat; ascending(succ(n)) = addR(ascending(n), f(succ(n)))
+
+// shifted(m, n) = f(m) + f(m+1) + ... + f(m+n), accumulated on the right.
+// Primitive-recursive in n with m a parameter, which is what makes the reversal reachable.
+func shifted(m: Nat, n: Nat) => R
+axiom shiftedZero: forall m: Nat; shifted(m, ZERO) = f(m)
+axiom shiftedSucc: forall m, n: Nat;
+  shifted(m, succ(n)) = addR(shifted(m, n), f(addN(m, succ(n))))
+
+// shifted at base 0 IS the ascending sum.
+theorem shiftedAtZeroIsAscending: forall n: Nat; shifted(ZERO, n) = ascending(n)
+proof
+  @base-shifted |
+    shifted(ZERO, ZERO) = f(ZERO)
+    [using specialize shiftedZero(ZERO)]
+  @base-ascending |
+    ascending(ZERO) = f(ZERO)
+    [by cite ascendingZero]
+  @base-ascending-flipped |
+    f(ZERO) = ascending(ZERO)
+    [by symmetry base-ascending]
+  @base-case |
+    shifted(ZERO, ZERO) = ascending(ZERO)
+    [using chain base-shifted base-ascending-flipped]
+  @induction-step |
+    fix n: Nat {
+      @given-inductive-hypothesis |
+        assume shifted(ZERO, n) = ascending(n) {
+          @inductive-hypothesis |
+            shifted(ZERO, n) = ascending(n)
+            [by hypothesis given-inductive-hypothesis]
+          @shifted-grows |
+            shifted(ZERO, succ(n)) = addR(shifted(ZERO, n), f(addN(ZERO, succ(n))))
+            [using specialize shiftedSucc(ZERO, n)]
+          @the-base-index-vanishes |
+            addN(ZERO, succ(n)) = succ(n)
+            [using arithmetic(peano)]
+          @shifted-grows-at-our-index |
+            shifted(ZERO, succ(n)) = addR(ascending(n), f(succ(n)))
+            [using simplify shifted-grows the-base-index-vanishes inductive-hypothesis]
+          @ascending-grows |
+            ascending(succ(n)) = addR(ascending(n), f(succ(n)))
+            [using specialize ascendingSucc(n)]
+          @ascending-grows-flipped |
+            addR(ascending(n), f(succ(n))) = ascending(succ(n))
+            [by symmetry ascending-grows]
+          @conclusion-successor |
+            shifted(ZERO, succ(n)) = ascending(succ(n))
+            [using chain shifted-grows-at-our-index ascending-grows-flipped]
+        }
+      @induction-step-at-n |
+        shifted(ZERO, n) = ascending(n) -> shifted(ZERO, succ(n)) = ascending(succ(n))
+        [by discharge given-inductive-hypothesis]
+    }
+  @induction-step-for-all-n |
+    forall n: Nat;
+      shifted(ZERO, n) = ascending(n) -> shifted(ZERO, succ(n)) = ascending(succ(n))
+    [by generalize induction-step]
+  @conclusion |
+    forall n: Nat; shifted(ZERO, n) = ascending(n)
+    [using instantiation peano.induction((fun n: Nat => shifted(ZERO, n) = ascending(n))) base-case induction-step-for-all-n]
+qed
+
+// THE PEEL-FROM-THE-BOTTOM equation, the one with teeth: a shifted segment can be split as
+// its FIRST term plus the segment one step up. Derivable by induction on n.
+theorem shiftedPeelsAtTheBase: forall m, n: Nat;
+  shifted(m, succ(n)) = addR(f(m), shifted(succ(m), n))
+proof
+  @generalize-m |
+    fix m: Nat {
+      @base-grows |
+        shifted(m, succ(ZERO)) = addR(shifted(m, ZERO), f(addN(m, succ(ZERO))))
+        [using specialize shiftedSucc(m, ZERO)]
+      @base-first-term |
+        shifted(m, ZERO) = f(m)
+        [using specialize shiftedZero(m)]
+      @base-upper-term |
+        shifted(succ(m), ZERO) = f(succ(m))
+        [using specialize shiftedZero(succ(m))]
+      @base-index |
+        addN(m, succ(ZERO)) = succ(m)
+        [using arithmetic(peano)]
+      @base-case |
+        shifted(m, succ(ZERO)) = addR(f(m), shifted(succ(m), ZERO))
+        [using simplify base-grows base-first-term base-upper-term base-index]
+
+      @induction-step |
+        fix n: Nat {
+          @given-inductive-hypothesis |
+            assume shifted(m, succ(n)) = addR(f(m), shifted(succ(m), n)) {
+              @inductive-hypothesis |
+                shifted(m, succ(n)) = addR(f(m), shifted(succ(m), n))
+                [by hypothesis given-inductive-hypothesis]
+              @grow-the-lower-segment |
+                shifted(m, succ(succ(n))) =
+                  addR(shifted(m, succ(n)), f(addN(m, succ(succ(n)))))
+                [using specialize shiftedSucc(m, succ(n))]
+              @expand-by-the-hypothesis |
+                shifted(m, succ(succ(n))) =
+                  addR(addR(f(m), shifted(succ(m), n)), f(addN(m, succ(succ(n)))))
+                [using simplify grow-the-lower-segment inductive-hypothesis]
+              @reassociate |
+                addR(addR(f(m), shifted(succ(m), n)), f(addN(m, succ(succ(n))))) =
+                  addR(f(m), addR(shifted(succ(m), n), f(addN(m, succ(succ(n))))))
+                [using specialize addIsAssociativeR(f(m), shifted(succ(m), n), f(addN(m, succ(succ(n)))))]
+              @grow-the-upper-segment |
+                shifted(succ(m), succ(n)) =
+                  addR(shifted(succ(m), n), f(addN(succ(m), succ(n))))
+                [using specialize shiftedSucc(succ(m), n)]
+              @the-indices-agree |
+                addN(succ(m), succ(n)) = addN(m, succ(succ(n)))
+                [using arithmetic(peano)]
+              @the-upper-segment-at-our-index |
+                shifted(succ(m), succ(n)) =
+                  addR(shifted(succ(m), n), f(addN(m, succ(succ(n)))))
+                [using simplify grow-the-upper-segment the-indices-agree]
+              @conclusion-successor |
+                shifted(m, succ(succ(n))) = addR(f(m), shifted(succ(m), succ(n)))
+                [using simplify expand-by-the-hypothesis reassociate the-upper-segment-at-our-index]
+            }
+          @induction-step-at-n |
+            shifted(m, succ(n)) = addR(f(m), shifted(succ(m), n)) ->
+              shifted(m, succ(succ(n))) = addR(f(m), shifted(succ(m), succ(n)))
+            [by discharge given-inductive-hypothesis]
+        }
+      @induction-step-for-all-n |
+        forall n: Nat;
+          shifted(m, succ(n)) = addR(f(m), shifted(succ(m), n)) ->
+            shifted(m, succ(succ(n))) = addR(f(m), shifted(succ(m), succ(n)))
+        [by generalize induction-step]
+      @conclusion-for-all-n |
+        forall n: Nat; shifted(m, succ(n)) = addR(f(m), shifted(succ(m), n))
+        [using instantiation peano.induction((fun n: Nat => shifted(m, succ(n)) = addR(f(m), shifted(succ(m), n)))) base-case induction-step-for-all-n]
+    }
+  @conclusion |
+    forall m, n: Nat; shifted(m, succ(n)) = addR(f(m), shifted(succ(m), n))
+    [by generalize generalize-m]
+qed
