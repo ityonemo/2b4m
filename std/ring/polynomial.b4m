@@ -32,6 +32,7 @@
 import ring <<< "std/ring.b4m"
 import peano <<< "std/peano.b4m"
 import peano_order <<< "std/peano/order.b4m"
+import subtraction <<< "std/peano/subtraction.b4m"
 
 // -- the coefficient ring R ---------------------------------------------------------------
 
@@ -69,6 +70,7 @@ axiom mulIsCommutativeR: forall a, b: R; mulR(a, b) = mulR(b, a)
 sort Nat = peano.Nat
 const ZERO = peano.ZERO
 func succ = peano.succ
+func addN = peano.add
 pred less_than = peano.less_than
 define at_most(a, b) = peano_order.less_or_equal(a, b)
 
@@ -845,6 +847,399 @@ proof
     }
   @conclusion |
     forall p, q: Poly; coeff(mulP(p, q), ZERO) = coeff(mulP(q, p), ZERO)
+    [by generalize generalize-p]
+qed
+
+// == THE REINDEXING LEMMA, and multiplicative commutativity ================================
+//
+// Judson leaves "R[x] is commutative" as an exercise. It is the one ring axiom for R[x] that
+// is not a coefficientwise lift: the two products' coefficients are the SAME multiset of
+// ring products, but summed from opposite ends —
+//
+//     coeff(pq, i) = a_0 b_i + a_1 b_{i-1} + ... + a_i b_0
+//     coeff(qp, i) = b_0 a_i + b_1 a_{i-1} + ... + b_i a_0
+//
+// so relating them is a REINDEXING of the sum by j |-> i - j, not a rewrite of its terms.
+//
+// Two routes were measured and rejected before this one. Induction on i fails: every term's
+// b-index is i - j, so the whole index set SHIFTS and the hypothesis at i says nothing about
+// i + 1. Induction on k of "conv(p,q,i,k) = conv(q,p,i,k)" fails because that equation is
+// FALSE for k < i — the two partial sums genuinely differ until the range closes.
+//
+// What works, with i FIXED and the induction on k: conv(q,p,i,k) equals the TOP k+1 terms
+// of conv(p,q,i,i). `tailConvolution(p, q, i, k)` names that top segment, recursing by
+// PREPENDING at its base, which is the growth direction conv itself cannot do. At k = i the
+// segment is the whole sum, and that is commutativity.
+
+// tailConvolution(p, q, i, k) = a_{i-k} b_k + ... + a_{i-1} b_1 + a_i b_0: the last k+1
+// terms of coeff(pq, i), grown at the BASE rather than the top.
+func tailConvolution(p: Poly, q: Poly, i: Nat, k: Nat) => R
+axiom tailConvolutionZero: forall p, q: Poly; forall i: Nat;
+  tailConvolution(p, q, i, ZERO) = mulR(coeff(p, i), coeff(q, ZERO))
+axiom tailConvolutionSucc: forall p, q: Poly; forall i, k: Nat;
+  tailConvolution(p, q, i, succ(k)) =
+  addR(mulR(coeff(p, peano.sub(i, succ(k))), coeff(q, succ(k))),
+  tailConvolution(p, q, i, k))
+
+// HALF ONE: the reversed product's partial sum IS that top segment. Each step pairs one
+// term of conv(q,p) with one term of the segment, so the whole proof is R's own
+// commutativity applied twice — once to the product, once to the sum.
+theorem reversedConvolutionIsTheTailSegment: forall p, q: Poly; forall i, k: Nat;
+  convolution(q, p, i, k) = tailConvolution(p, q, i, k)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-i |
+            fix i: Nat {
+              // base case: b_0 a_i versus a_i b_0.
+              @base-reversed |
+                convolution(q, p, i, ZERO) = mulR(coeff(q, ZERO), coeff(p, i))
+                [using specialize convolutionZero(q, p, i)]
+              @base-segment |
+                tailConvolution(p, q, i, ZERO) = mulR(coeff(p, i), coeff(q, ZERO))
+                [using specialize tailConvolutionZero(p, q, i)]
+              @base-products-commute |
+                mulR(coeff(q, ZERO), coeff(p, i)) = mulR(coeff(p, i), coeff(q, ZERO))
+                [using specialize mulIsCommutativeR(coeff(q, ZERO), coeff(p, i))]
+              @base-segment-flipped |
+                mulR(coeff(p, i), coeff(q, ZERO)) = tailConvolution(p, q, i, ZERO)
+                [by symmetry base-segment]
+              @base-case |
+                convolution(q, p, i, ZERO) = tailConvolution(p, q, i, ZERO)
+                [using chain base-reversed base-products-commute base-segment-flipped]
+
+              // inductive step: one more term at the top of conv(q,p) is one more term at
+              // the base of the segment.
+              @induction-step |
+                fix k: Nat {
+                  @given-inductive-hypothesis |
+                    assume convolution(q, p, i, k) = tailConvolution(p, q, i, k) {
+                      @inductive-hypothesis |
+                        convolution(q, p, i, k) = tailConvolution(p, q, i, k)
+                        [by hypothesis given-inductive-hypothesis]
+                      @reversed-grows-at-the-top |
+                        convolution(q, p, i, succ(k)) =
+                          addR(convolution(q, p, i, k),
+                          mulR(coeff(q, succ(k)), coeff(p, peano.sub(i, succ(k)))))
+                        [using specialize convolutionSucc(q, p, i, k)]
+                      @the-new-product-commutes |
+                        mulR(coeff(q, succ(k)), coeff(p, peano.sub(i, succ(k)))) =
+                          mulR(coeff(p, peano.sub(i, succ(k))), coeff(q, succ(k)))
+                        [using specialize mulIsCommutativeR(coeff(q, succ(k)), coeff(p, peano.sub(i, succ(k))))]
+                      @reversed-in-segment-terms |
+                        convolution(q, p, i, succ(k)) =
+                          addR(tailConvolution(p, q, i, k),
+                          mulR(coeff(p, peano.sub(i, succ(k))), coeff(q, succ(k))))
+                        [using simplify reversed-grows-at-the-top the-new-product-commutes inductive-hypothesis]
+                      @the-segment-grows-at-the-base |
+                        tailConvolution(p, q, i, succ(k)) =
+                          addR(mulR(coeff(p, peano.sub(i, succ(k))), coeff(q, succ(k))),
+                          tailConvolution(p, q, i, k))
+                        [using specialize tailConvolutionSucc(p, q, i, k)]
+                      @the-two-orders-agree |
+                        addR(tailConvolution(p, q, i, k),
+                          mulR(coeff(p, peano.sub(i, succ(k))), coeff(q, succ(k)))) =
+                          addR(mulR(coeff(p, peano.sub(i, succ(k))), coeff(q, succ(k))),
+                          tailConvolution(p, q, i, k))
+                        [using specialize addIsCommutativeR(tailConvolution(p, q, i, k), mulR(coeff(p, peano.sub(i, succ(k))), coeff(q, succ(k))))]
+                      @the-segment-grows-flipped |
+                        addR(mulR(coeff(p, peano.sub(i, succ(k))), coeff(q, succ(k))),
+                          tailConvolution(p, q, i, k)) =
+                          tailConvolution(p, q, i, succ(k))
+                        [by symmetry the-segment-grows-at-the-base]
+                      @conclusion-successor |
+                        convolution(q, p, i, succ(k)) = tailConvolution(p, q, i, succ(k))
+                        [using chain reversed-in-segment-terms the-two-orders-agree the-segment-grows-flipped]
+                    }
+                  @induction-step-at-k |
+                    convolution(q, p, i, k) = tailConvolution(p, q, i, k) ->
+                      convolution(q, p, i, succ(k)) = tailConvolution(p, q, i, succ(k))
+                    [by discharge given-inductive-hypothesis]
+                }
+              @induction-step-for-all-k |
+                forall k: Nat;
+                  convolution(q, p, i, k) = tailConvolution(p, q, i, k) ->
+                  convolution(q, p, i, succ(k)) = tailConvolution(p, q, i, succ(k))
+                [by generalize induction-step]
+              @conclusion-for-all-k |
+                forall k: Nat; convolution(q, p, i, k) = tailConvolution(p, q, i, k)
+                [using instantiation peano.induction((fun k: Nat => convolution(q, p, i, k) = tailConvolution(p, q, i, k))) base-case induction-step-for-all-k]
+            }
+          @discharge-i |
+            forall i: Nat; forall k: Nat;
+              convolution(q, p, i, k) = tailConvolution(p, q, i, k)
+            [by generalize generalize-i]
+        }
+      @discharge-q |
+        forall q: Poly; forall i, k: Nat;
+          convolution(q, p, i, k) = tailConvolution(p, q, i, k)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; forall i, k: Nat;
+      convolution(q, p, i, k) = tailConvolution(p, q, i, k)
+    [by generalize generalize-p]
+qed
+
+// -- HALF TWO: the full tail segment IS the full convolution -------------------------------
+//
+// `tailConvolution(p,q,i,i)` and `convolution(p,q,i,i)` are the same terms in the same
+// ORDER, differing only in how the sum is bracketed — one grown at its base, one at its top.
+// They coincide only at k = i (measured: for every k < i the two partial sums differ), so
+// this is not an induction on k either. The generalization that IS inductive carries a
+// SECOND bound: `segment(p, q, i, m, n)` sums the n+1 terms starting at index m.
+
+// segment(p, q, i, m, n) = a_m b_{i-m} + ... + a_{m+n} b_{i-m-n}, grown at the TOP.
+func segment(p: Poly, q: Poly, i: Nat, m: Nat, n: Nat) => R
+axiom segmentZero: forall p, q: Poly; forall i, m: Nat;
+  segment(p, q, i, m, ZERO) = mulR(coeff(p, m), coeff(q, peano.sub(i, m)))
+axiom segmentSucc: forall p, q: Poly; forall i, m, n: Nat;
+  segment(p, q, i, m, succ(n)) =
+  addR(segment(p, q, i, m, n),
+  mulR(coeff(p, addN(m, succ(n))), coeff(q, peano.sub(i, addN(m, succ(n))))))
+
+// Based at 0, a segment is exactly the convolution: both grow at the top from index 0.
+theorem segmentAtZeroIsTheConvolution: forall p, q: Poly; forall i, k: Nat;
+  segment(p, q, i, ZERO, k) = convolution(p, q, i, k)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-i |
+            fix i: Nat {
+              @base-segment |
+                segment(p, q, i, ZERO, ZERO) =
+                  mulR(coeff(p, ZERO), coeff(q, peano.sub(i, ZERO)))
+                [using specialize segmentZero(p, q, i, ZERO)]
+              @subtracting-zero |
+                peano.sub(i, ZERO) = i
+                [using specialize subtraction.subZeroRight(i)]
+              @base-segment-simplified |
+                segment(p, q, i, ZERO, ZERO) = mulR(coeff(p, ZERO), coeff(q, i))
+                [using simplify base-segment subtracting-zero]
+              @base-convolution |
+                convolution(p, q, i, ZERO) = mulR(coeff(p, ZERO), coeff(q, i))
+                [using specialize convolutionZero(p, q, i)]
+              @base-convolution-flipped |
+                mulR(coeff(p, ZERO), coeff(q, i)) = convolution(p, q, i, ZERO)
+                [by symmetry base-convolution]
+              @base-case |
+                segment(p, q, i, ZERO, ZERO) = convolution(p, q, i, ZERO)
+                [using chain base-segment-simplified base-convolution-flipped]
+
+              @induction-step |
+                fix k: Nat {
+                  @given-inductive-hypothesis |
+                    assume segment(p, q, i, ZERO, k) = convolution(p, q, i, k) {
+                      @inductive-hypothesis |
+                        segment(p, q, i, ZERO, k) = convolution(p, q, i, k)
+                        [by hypothesis given-inductive-hypothesis]
+                      @segment-grows |
+                        segment(p, q, i, ZERO, succ(k)) =
+                          addR(segment(p, q, i, ZERO, k),
+                          mulR(coeff(p, addN(ZERO, succ(k))),
+                          coeff(q, peano.sub(i, addN(ZERO, succ(k))))))
+                        [using specialize segmentSucc(p, q, i, ZERO, k)]
+                      @the-base-index-vanishes |
+                        addN(ZERO, succ(k)) = succ(k)
+                        [using arithmetic(peano)]
+                      @segment-grows-at-our-index |
+                        segment(p, q, i, ZERO, succ(k)) =
+                          addR(convolution(p, q, i, k),
+                          mulR(coeff(p, succ(k)), coeff(q, peano.sub(i, succ(k)))))
+                        [using simplify segment-grows the-base-index-vanishes inductive-hypothesis]
+                      @convolution-grows |
+                        convolution(p, q, i, succ(k)) =
+                          addR(convolution(p, q, i, k),
+                          mulR(coeff(p, succ(k)), coeff(q, peano.sub(i, succ(k)))))
+                        [using specialize convolutionSucc(p, q, i, k)]
+                      @convolution-grows-flipped |
+                        addR(convolution(p, q, i, k),
+                          mulR(coeff(p, succ(k)), coeff(q, peano.sub(i, succ(k))))) =
+                          convolution(p, q, i, succ(k))
+                        [by symmetry convolution-grows]
+                      @conclusion-successor |
+                        segment(p, q, i, ZERO, succ(k)) = convolution(p, q, i, succ(k))
+                        [using chain segment-grows-at-our-index convolution-grows-flipped]
+                    }
+                  @induction-step-at-k |
+                    segment(p, q, i, ZERO, k) = convolution(p, q, i, k) ->
+                      segment(p, q, i, ZERO, succ(k)) = convolution(p, q, i, succ(k))
+                    [by discharge given-inductive-hypothesis]
+                }
+              @induction-step-for-all-k |
+                forall k: Nat;
+                  segment(p, q, i, ZERO, k) = convolution(p, q, i, k) ->
+                  segment(p, q, i, ZERO, succ(k)) = convolution(p, q, i, succ(k))
+                [by generalize induction-step]
+              @conclusion-for-all-k |
+                forall k: Nat; segment(p, q, i, ZERO, k) = convolution(p, q, i, k)
+                [using instantiation peano.induction((fun k: Nat => segment(p, q, i, ZERO, k) = convolution(p, q, i, k))) base-case induction-step-for-all-k]
+            }
+          @discharge-i |
+            forall i: Nat; forall k: Nat;
+              segment(p, q, i, ZERO, k) = convolution(p, q, i, k)
+            [by generalize generalize-i]
+        }
+      @discharge-q |
+        forall q: Poly; forall i, k: Nat;
+          segment(p, q, i, ZERO, k) = convolution(p, q, i, k)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; forall i, k: Nat;
+      segment(p, q, i, ZERO, k) = convolution(p, q, i, k)
+    [by generalize generalize-p]
+qed
+
+// THE PEEL: a segment splits as its FIRST term plus the segment one step up. This is the
+// growth direction `convolution` structurally lacks, and it is what lets a sum accumulated
+// at its base be re-read as one accumulated at its top. Derivable by induction on n.
+theorem segmentPeelsAtTheBase: forall p, q: Poly; forall i, m, n: Nat;
+  segment(p, q, i, m, succ(n)) =
+  addR(mulR(coeff(p, m), coeff(q, peano.sub(i, m))), segment(p, q, i, succ(m), n))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-i |
+            fix i: Nat {
+              @generalize-m |
+                fix m: Nat {
+                  // base case: a two-term segment, read from either end.
+                  @base-grows |
+                    segment(p, q, i, m, succ(ZERO)) =
+                      addR(segment(p, q, i, m, ZERO),
+                      mulR(coeff(p, addN(m, succ(ZERO))),
+                      coeff(q, peano.sub(i, addN(m, succ(ZERO))))))
+                    [using specialize segmentSucc(p, q, i, m, ZERO)]
+                  @base-first-term |
+                    segment(p, q, i, m, ZERO) =
+                      mulR(coeff(p, m), coeff(q, peano.sub(i, m)))
+                    [using specialize segmentZero(p, q, i, m)]
+                  @base-upper-term |
+                    segment(p, q, i, succ(m), ZERO) =
+                      mulR(coeff(p, succ(m)), coeff(q, peano.sub(i, succ(m))))
+                    [using specialize segmentZero(p, q, i, succ(m))]
+                  @base-index |
+                    addN(m, succ(ZERO)) = succ(m)
+                    [using arithmetic(peano)]
+                  @base-case |
+                    segment(p, q, i, m, succ(ZERO)) =
+                      addR(mulR(coeff(p, m), coeff(q, peano.sub(i, m))),
+                      segment(p, q, i, succ(m), ZERO))
+                    [using simplify base-grows base-first-term base-upper-term base-index]
+
+                  @induction-step |
+                    fix n: Nat {
+                      @given-inductive-hypothesis |
+                        assume segment(p, q, i, m, succ(n)) =
+                          addR(mulR(coeff(p, m), coeff(q, peano.sub(i, m))),
+                          segment(p, q, i, succ(m), n)) {
+                          @inductive-hypothesis |
+                            segment(p, q, i, m, succ(n)) =
+                              addR(mulR(coeff(p, m), coeff(q, peano.sub(i, m))),
+                              segment(p, q, i, succ(m), n))
+                            [by hypothesis given-inductive-hypothesis]
+                          @grow-the-lower-segment |
+                            segment(p, q, i, m, succ(succ(n))) =
+                              addR(segment(p, q, i, m, succ(n)),
+                              mulR(coeff(p, addN(m, succ(succ(n)))),
+                              coeff(q, peano.sub(i, addN(m, succ(succ(n)))))))
+                            [using specialize segmentSucc(p, q, i, m, succ(n))]
+                          @expand-by-the-hypothesis |
+                            segment(p, q, i, m, succ(succ(n))) =
+                              addR(addR(mulR(coeff(p, m), coeff(q, peano.sub(i, m))),
+                              segment(p, q, i, succ(m), n)),
+                              mulR(coeff(p, addN(m, succ(succ(n)))),
+                              coeff(q, peano.sub(i, addN(m, succ(succ(n)))))))
+                            [using simplify grow-the-lower-segment inductive-hypothesis]
+                          @reassociate |
+                            addR(addR(mulR(coeff(p, m), coeff(q, peano.sub(i, m))),
+                              segment(p, q, i, succ(m), n)),
+                              mulR(coeff(p, addN(m, succ(succ(n)))),
+                              coeff(q, peano.sub(i, addN(m, succ(succ(n))))))) =
+                              addR(mulR(coeff(p, m), coeff(q, peano.sub(i, m))),
+                              addR(segment(p, q, i, succ(m), n),
+                              mulR(coeff(p, addN(m, succ(succ(n)))),
+                              coeff(q, peano.sub(i, addN(m, succ(succ(n))))))))
+                            [using specialize addIsAssociativeR(mulR(coeff(p, m), coeff(q, peano.sub(i, m))), segment(p, q, i, succ(m), n), mulR(coeff(p, addN(m, succ(succ(n)))), coeff(q, peano.sub(i, addN(m, succ(succ(n)))))))]
+                          @grow-the-upper-segment |
+                            segment(p, q, i, succ(m), succ(n)) =
+                              addR(segment(p, q, i, succ(m), n),
+                              mulR(coeff(p, addN(succ(m), succ(n))),
+                              coeff(q, peano.sub(i, addN(succ(m), succ(n))))))
+                            [using specialize segmentSucc(p, q, i, succ(m), n)]
+                          @the-indices-agree |
+                            addN(succ(m), succ(n)) = addN(m, succ(succ(n)))
+                            [using arithmetic(peano)]
+                          @the-upper-segment-at-our-index |
+                            segment(p, q, i, succ(m), succ(n)) =
+                              addR(segment(p, q, i, succ(m), n),
+                              mulR(coeff(p, addN(m, succ(succ(n)))),
+                              coeff(q, peano.sub(i, addN(m, succ(succ(n)))))))
+                            [using simplify grow-the-upper-segment the-indices-agree]
+                          @conclusion-successor |
+                            segment(p, q, i, m, succ(succ(n))) =
+                              addR(mulR(coeff(p, m), coeff(q, peano.sub(i, m))),
+                              segment(p, q, i, succ(m), succ(n)))
+                            [using simplify expand-by-the-hypothesis reassociate the-upper-segment-at-our-index]
+                        }
+                      @induction-step-at-n |
+                        segment(p, q, i, m, succ(n)) =
+                          addR(mulR(coeff(p, m), coeff(q, peano.sub(i, m))),
+                          segment(p, q, i, succ(m), n)) ->
+                          segment(p, q, i, m, succ(succ(n))) =
+                          addR(mulR(coeff(p, m), coeff(q, peano.sub(i, m))),
+                          segment(p, q, i, succ(m), succ(n)))
+                        [by discharge given-inductive-hypothesis]
+                    }
+                  @induction-step-for-all-n |
+                    forall n: Nat;
+                      segment(p, q, i, m, succ(n)) =
+                      addR(mulR(coeff(p, m), coeff(q, peano.sub(i, m))),
+                      segment(p, q, i, succ(m), n)) ->
+                      segment(p, q, i, m, succ(succ(n))) =
+                      addR(mulR(coeff(p, m), coeff(q, peano.sub(i, m))),
+                      segment(p, q, i, succ(m), succ(n)))
+                    [by generalize induction-step]
+                  @conclusion-for-all-n |
+                    forall n: Nat;
+                      segment(p, q, i, m, succ(n)) =
+                      addR(mulR(coeff(p, m), coeff(q, peano.sub(i, m))),
+                      segment(p, q, i, succ(m), n))
+                    [using instantiation peano.induction((fun n: Nat => segment(p, q, i, m, succ(n)) = addR(mulR(coeff(p, m), coeff(q, peano.sub(i, m))), segment(p, q, i, succ(m), n)))) base-case induction-step-for-all-n]
+                }
+              @discharge-m |
+                forall m: Nat; forall n: Nat;
+                  segment(p, q, i, m, succ(n)) =
+                  addR(mulR(coeff(p, m), coeff(q, peano.sub(i, m))),
+                  segment(p, q, i, succ(m), n))
+                [by generalize generalize-m]
+            }
+          @discharge-i |
+            forall i: Nat; forall m, n: Nat;
+              segment(p, q, i, m, succ(n)) =
+              addR(mulR(coeff(p, m), coeff(q, peano.sub(i, m))),
+              segment(p, q, i, succ(m), n))
+            [by generalize generalize-i]
+        }
+      @discharge-q |
+        forall q: Poly; forall i, m, n: Nat;
+          segment(p, q, i, m, succ(n)) =
+          addR(mulR(coeff(p, m), coeff(q, peano.sub(i, m))),
+          segment(p, q, i, succ(m), n))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; forall i, m, n: Nat;
+      segment(p, q, i, m, succ(n)) =
+      addR(mulR(coeff(p, m), coeff(q, peano.sub(i, m))),
+      segment(p, q, i, succ(m), n))
     [by generalize generalize-p]
 qed
 
