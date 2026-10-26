@@ -755,6 +755,26 @@ pub fn addTests(
     ctx.fail(&.{ "check", "tests/cases/tautology_false_fast.b4m" }, "tests/cases/tautology_false_fast.b4m:14:12: error: tautology: not a propositional consequence; countermodel: p(ZERO) := true\n");
     ctx.fail(&.{ "check", "--fast", "tests/cases/chain_false_fast.b4m" }, "tests/cases/chain_false_fast.b4m:24:12: error: chain: cannot connect 'succ(ZERO)' to 'add(succ(ZERO), succ(ZERO))' from the cited equations\n");
     ctx.fail(&.{ "check", "tests/cases/chain_false_fast.b4m" }, "tests/cases/chain_false_fast.b4m:24:12: error: chain: cannot connect 'succ(ZERO)' to 'add(succ(ZERO), succ(ZERO))' from the cited equations\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/assoc_false_fast.b4m" }, "tests/cases/assoc_false_fast.b4m:12:12: error: assoc: sides differ by more than associativity: 'add(a, b)' vs 'add(b, succ(a))'\n");
+    ctx.fail(&.{ "check", "tests/cases/assoc_false_fast.b4m" }, "tests/cases/assoc_false_fast.b4m:12:12: error: assoc: sides differ by more than associativity: 'add(a, b)' vs 'add(b, succ(a))'\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/assoc_commut_false_fast.b4m" }, "tests/cases/assoc_commut_false_fast.b4m:10:12: error: assoc_commut: sides have different summands: 'add(a, b)' vs 'add(a, succ(b))'\n");
+    ctx.fail(&.{ "check", "tests/cases/assoc_commut_false_fast.b4m" }, "tests/cases/assoc_commut_false_fast.b4m:10:12: error: assoc_commut: sides have different summands: 'add(a, b)' vs 'add(a, succ(b))'\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/extensionality_false_fast.b4m" }, "tests/cases/extensionality_false_fast.b4m:15:12: error: extensionality: could not close the pointwise obligation propositionally (is the identity true?)\n");
+    ctx.fail(&.{ "check", "tests/cases/extensionality_false_fast.b4m" }, "tests/cases/extensionality_false_fast.b4m:15:12: error: extensionality: could not close the pointwise obligation propositionally (is the identity true?)\n");
+
+    // THE INVARIANT, swept across all 17 trustable words (drafts/fast-soundness/README.md):
+    // `--fast` must never ADMIT a goal the strict path REFUTES. (Distinct from the legitimate
+    // case where strict decides the goal TRUE but can build no certificate — `--fast` admits
+    // that, by design.) Ten of the eleven distinct words reject correctly; `specialize` is the
+    // ONE violation, and this gate pins today's wrong behaviour so a fix is noticed.
+    //
+    // Why it cannot be fixed in the producer: whether the instance's conclusion matches the
+    // claim is checked by `withGuardPremises` AFTER the instance is proven, which `--fast`
+    // skips. The producer only has the consequent in PARAM space — for `forall a, b; a = b`
+    // literally `p1 = p2` — and the arguments are AST exprs that only the instance pass
+    // elaborates, so a pattern match there succeeds for ANY equation goal.
+    ctx.okSilent(&.{ "check", "--fast", "tests/cases/specialize_claim_mismatch_fast.b4m" });
+    ctx.fail(&.{ "check", "tests/cases/specialize_claim_mismatch_fast.b4m" }, "tests/cases/specialize_claim_mismatch_fast.b4m:11:12: error: the claim does not match the instance's conclusion:\n  claim:      succ(ZERO) = ZERO\n  instance:   succ(ZERO) = succ(ZERO) -> ZERO = ZERO\n");
 
     // Two theorems `specialize` ONE shared fact by DIFFERENT access paths — one by its
     // declared name, the other via a local step that `[by cite]`s it. The synthetic
