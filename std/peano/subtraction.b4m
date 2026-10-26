@@ -25,6 +25,7 @@ pred less_than = ordering.less_than
 fact lessThanIntro = ordering.lessThanIntro
 fact lessThanElim = ordering.lessThanElim
 fact addZeroRight = peano.addZeroRight
+fact addIsCommutative = peano.addIsCommutative
 fact addSuccRight = peano.addSuccRight
 fact mulZeroRight = peano.mulZeroRight
 fact mulSuccRight = peano.mulSuccRight
@@ -48,6 +49,7 @@ intheory addSubCancel
 intheory subStrictlyDecreases
 intheory subAddSameRight
 intheory mulSubDistribLeft
+intheory subInvolution
 
 // -- theorems ---------------------------------------------------------------
 
@@ -540,4 +542,62 @@ proof
   @conclusion |
     forall d, a, b: Nat; mul(d, sub(a, b)) = sub(mul(d, a), mul(d, b))
     [by generalize reorder-d]
+qed
+
+// -- the INVOLUTION: subtracting a difference recovers the subtrahend ---------------------
+//
+// a - (a - b) = b whenever b <= a. This is what REVERSING an index range needs: the map
+// j |-> a - j is its own inverse on {0..a}, which is the index half of reversing a sum
+// (a convolution read from the other end, say). Without the bound it fails — truncation
+// makes a - (a - b) = a for b > a.
+//
+// Proof: (a - b) + b = a by `addSubCancel`, so a - (a - b) = ((a-b) + b) - (a-b) = b by
+// `subAddCancel`, which cancels an added term on the right.
+theorem subInvolution: forall b, a: Nat; less_than(b, succ(a)) -> sub(a, sub(a, b)) = b
+proof
+  @generalize-b |
+    fix b: Nat {
+      @generalize-a |
+        fix a: Nat {
+          @given-b-at-most-a |
+            assume less_than(b, succ(a)) {
+              @b-at-most-a |
+                less_than(b, succ(a))
+                [by hypothesis given-b-at-most-a]
+              @the-difference-adds-back |
+                add(sub(a, b), b) = a
+                [using specialize addSubCancel(b, a) b-at-most-a]
+              // rewrite the outer a as (a-b)+b, so the outer subtraction cancels it.
+              @a-as-the-sum |
+                a = add(sub(a, b), b)
+                [by symmetry the-difference-adds-back]
+              @cancel-the-added-term |
+                sub(add(b, sub(a, b)), sub(a, b)) = b
+                [using specialize subAddCancel(b, sub(a, b))]
+              @the-sum-commutes |
+                add(sub(a, b), b) = add(b, sub(a, b))
+                [using specialize addIsCommutative(sub(a, b), b)]
+              @a-as-the-flipped-sum |
+                a = add(b, sub(a, b))
+                [using chain a-as-the-sum the-sum-commutes]
+              // oriented so `rewrite` replaces the SUM by `a`, not the other way.
+              @the-difference-adds-back-flipped |
+                add(b, sub(a, b)) = a
+                [by symmetry a-as-the-flipped-sum]
+              // substitute a = b + (a-b) into the cancellation's left side.
+              @conclusion-the-involution |
+                sub(a, sub(a, b)) = b
+                [by rewrite the-difference-adds-back-flipped cancel-the-added-term]
+            }
+          @b-at-most-a-implies-the-involution |
+            less_than(b, succ(a)) -> sub(a, sub(a, b)) = b
+            [by discharge given-b-at-most-a]
+        }
+      @discharge-a |
+        forall a: Nat; less_than(b, succ(a)) -> sub(a, sub(a, b)) = b
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall b, a: Nat; less_than(b, succ(a)) -> sub(a, sub(a, b)) = b
+    [by generalize generalize-b]
 qed

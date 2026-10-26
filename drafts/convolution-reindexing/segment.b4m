@@ -1,0 +1,126 @@
+// Spike: the convolution-reindexing lemma, over an ABSTRACT indexed family rather than
+// polynomials, so the reversal is proved once and lands wherever a fold is reversed.
+//
+// THE SHAPE. For a fixed i, `convolution(p, q, i, k)` sums a_j * b_{i-j} for j = 0..k. Its
+// reversal needs the SAME multiset summed from the other end. The naive routes both fail:
+//   - induction on i: every b-index is i-j, so it SHIFTS with i (measured, does not close);
+//   - induction on k of "conv(k) = rev(k)": FALSE for k < i (measured; true only at k = i).
+// What IS inductive is a segment with TWO bounds that can grow at either end.
+
+import peano <<< "std/peano.b4m"
+import ring <<< "std/ring.b4m"
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+func addN = peano.add
+
+sort R = ring.Ring
+const zeroR = ring.ZERO
+func addR = ring.add
+func mulR = ring.mul
+
+fact addIsAssociativeR = ring.addIsAssociative
+fact addIsCommutativeR = ring.addIsCommutative
+fact addZeroLeftR = ring.addZeroLeft
+fact addZeroRightR = ring.addZeroRight
+
+// Two abstract coefficient families and a weight. `term(j)` stands for a_j * b_{i-j} with i
+// fixed; the reversal is a statement about SUMS of terms, so the lemma needs nothing about
+// what a term is.
+func term(j: Nat) => R
+
+// seg(lo, n) = term(lo) + term(lo+1) + ... + term(lo+n): n+1 terms starting at lo.
+func seg(lo: Nat, n: Nat) => R
+axiom segZero: forall lo: Nat; seg(lo, ZERO) = term(lo)
+axiom segSucc: forall lo, n: Nat;
+  seg(lo, succ(n)) = addR(seg(lo, n), term(addN(lo, succ(n))))
+
+fact addSuccLeft = peano.addSuccLeft
+fact addSuccRight = peano.addSuccRight
+
+// THE OTHER GROWTH DIRECTION, and the equation the reversal turns on: a segment can be
+// extended DOWNWARD at its base. This is DERIVABLE from the two defining equations by
+// induction on n — positing it would beg the question the lemma is asking.
+//
+//   n = 0:   seg(lo,1) = seg(lo,0) + t(lo+1) = t(lo) + t(lo+1) = t(lo) + seg(lo+1,0)
+//   step:    seg(lo,n+2) = seg(lo,n+1) + t(lo+n+2)
+//                        = [t(lo) + seg(lo+1,n)] + t(lo+n+2)        (hypothesis)
+//                        = t(lo) + [seg(lo+1,n) + t(lo+n+2)]        (associativity)
+//                        = t(lo) + seg(lo+1,n+1)                    (segSucc at lo+1)
+//
+// the last step needing add(succ(lo), succ(n)) = add(lo, succ(succ(n))) on the index.
+theorem segPrepend: forall lo, n: Nat;
+  seg(lo, succ(n)) = addR(term(lo), seg(succ(lo), n))
+proof
+  @generalize-lo |
+    fix lo: Nat {
+      // base case: a two-term segment, read from either end.
+      @base-grows-at-the-top |
+        seg(lo, succ(ZERO)) = addR(seg(lo, ZERO), term(addN(lo, succ(ZERO))))
+        [using specialize segSucc(lo, ZERO)]
+      @base-first-term |
+        seg(lo, ZERO) = term(lo)
+        [using specialize segZero(lo)]
+      @base-second-segment |
+        seg(succ(lo), ZERO) = term(succ(lo))
+        [using specialize segZero(succ(lo))]
+      @base-index |
+        addN(lo, succ(ZERO)) = succ(lo)
+        [using arithmetic(peano)]
+      @base-case |
+        seg(lo, succ(ZERO)) = addR(term(lo), seg(succ(lo), ZERO))
+        [using simplify base-grows-at-the-top base-first-term base-second-segment base-index]
+
+      @induction-step |
+        fix n: Nat {
+          @given-inductive-hypothesis |
+            assume seg(lo, succ(n)) = addR(term(lo), seg(succ(lo), n)) {
+              @inductive-hypothesis |
+                seg(lo, succ(n)) = addR(term(lo), seg(succ(lo), n))
+                [by hypothesis given-inductive-hypothesis]
+              @grow-at-the-top |
+                seg(lo, succ(succ(n))) =
+                  addR(seg(lo, succ(n)), term(addN(lo, succ(succ(n)))))
+                [using specialize segSucc(lo, succ(n))]
+              @expand-by-the-hypothesis |
+                seg(lo, succ(succ(n))) =
+                  addR(addR(term(lo), seg(succ(lo), n)), term(addN(lo, succ(succ(n)))))
+                [using simplify grow-at-the-top inductive-hypothesis]
+              @reassociate |
+                addR(addR(term(lo), seg(succ(lo), n)), term(addN(lo, succ(succ(n))))) =
+                  addR(term(lo), addR(seg(succ(lo), n), term(addN(lo, succ(succ(n))))))
+                [using specialize addIsAssociativeR(term(lo), seg(succ(lo), n), term(addN(lo, succ(succ(n)))))]
+              @the-upper-segment-grows |
+                seg(succ(lo), succ(n)) =
+                  addR(seg(succ(lo), n), term(addN(succ(lo), succ(n))))
+                [using specialize segSucc(succ(lo), n)]
+              @the-index-agrees |
+                addN(succ(lo), succ(n)) = addN(lo, succ(succ(n)))
+                [using arithmetic(peano)]
+              @the-upper-segment-at-our-index |
+                seg(succ(lo), succ(n)) =
+                  addR(seg(succ(lo), n), term(addN(lo, succ(succ(n)))))
+                [using simplify the-upper-segment-grows the-index-agrees]
+              @conclusion-successor |
+                seg(lo, succ(succ(n))) = addR(term(lo), seg(succ(lo), succ(n)))
+                [using simplify expand-by-the-hypothesis reassociate the-upper-segment-at-our-index]
+            }
+          @induction-step-at-n |
+            seg(lo, succ(n)) = addR(term(lo), seg(succ(lo), n)) ->
+              seg(lo, succ(succ(n))) = addR(term(lo), seg(succ(lo), succ(n)))
+            [by discharge given-inductive-hypothesis]
+        }
+      @induction-step-for-all-n |
+        forall n: Nat;
+          seg(lo, succ(n)) = addR(term(lo), seg(succ(lo), n)) ->
+            seg(lo, succ(succ(n))) = addR(term(lo), seg(succ(lo), succ(n)))
+        [by generalize induction-step]
+      @conclusion-for-all-n |
+        forall n: Nat; seg(lo, succ(n)) = addR(term(lo), seg(succ(lo), n))
+        [using instantiation peano.induction((fun n: Nat => seg(lo, succ(n)) = addR(term(lo), seg(succ(lo), n)))) base-case induction-step-for-all-n]
+    }
+  @conclusion |
+    forall lo, n: Nat; seg(lo, succ(n)) = addR(term(lo), seg(succ(lo), n))
+    [by generalize generalize-lo]
+qed
