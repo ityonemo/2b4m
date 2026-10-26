@@ -46,6 +46,107 @@ function and presumes its behavior — the acceleration discloses that
 presumption; the theory argument (`polynomial(peano)`, `arithmetic(peano)`)
 pins it to a vetted theory.
 
+## The invariant, and how to keep it
+
+**`--fast` must never ADMIT a goal the strict path REFUTES.** Admitting a goal strict merely
+cannot CERTIFY is the whole point of `--fast` and is fine; admitting one a decision procedure
+REFUTES is a soundness bug. Swept 2026-10-26 across all 17 trustable words with one
+refuted-goal probe each; `specialize` is the single violation, gated by
+`tests/cases/specialize_claim_mismatch_fast.b4m`. Every other word has a regression fixture
+named `*_false_fast.b4m` beside it.
+
+So a decision word admits on exactly ONE outcome: the goal is TRUE. A refutation fails, and a
+shape the procedure cannot handle also fails — "I can't decide this" is not a verdict. A
+`fallback(thm)` is never consulted under `--fast`.
+
+### Where admit must land in a producer
+
+Four rules, each learned by breaking it:
+
+1. **Admit AFTER the decision, not before.** This is the whole invariant. Eight of the nine
+   decision words were fixed this way (`arithmetic`, `simplify`, `polynomial`, `assoc`,
+   `assoc_commut`, `tautology`, `chain`, `extensionality`). Clear
+   `producer_premise_refs` when you do, or the admitted path resolves global rule names as
+   step labels.
+2. **But admit BEFORE a `fallback(thm)` resolves.** A fallback names a proven theorem standing
+   in where no certifier can build a cert, and resolving it needs that fact DEMANDED, which
+   admit mode has not done. The certifiers already declined; what adjudicates the goal is the
+   cited theorem, whose own proof the strict pass checks.
+3. **Demand in the READ PASS, never from inside the producer.** `trustedReadPass` is the only
+   place with a free park channel. Parking from a producer via `error.Recover` reads as a
+   diagnosed REJECTION, and rejecting a step DROPS ITS LABEL from the walk — surfacing much
+   later as "unknown reference" at the next step that cited it. It silently lost a theorem
+   (4 proven → 3) before this was understood.
+4. **Read a statement with the right-weight tool.** `elaborateFactStatement` reads a fact's
+   STATEMENT and racks NO ProveTask, which is exactly what a decision needs. Do NOT use it to
+   PROBE readability: it writes diagnostics on failure, so `--fast` would report errors strict
+   never gives. Demand the thing properly in the read pass instead.
+
+Some decisions hide INSIDE the emitter — `extensionality`'s pointwise obligation is closed by
+an `smt.tautology` call buried in `emitExtSetResidue`. There, admit means running the emitter
+and discarding its steps. A sweep found this; reading the code had concluded, wrongly, that
+the word had no separable decision.
+
+**The cost objection does not survive measurement.** `--fast` over `std` is 16.8s against
+strict's 233.7s. The decision is far cheaper than the certificate it replaces, which is why
+the certify-first ordering exists at all.
+
+## Where the `--fast` trust boundary falls, per word
+
+`--fast` is a structural check **up to a trust boundary**: it runs the proof's shape checks and
+each accelerant's own interface — including its DECISION — and declines only to EMIT and
+kernel-check the certificate. The table below says, for every trustable word, exactly what is
+KEPT and what is DROPPED, measured from the admit site in `src/Engine/ProveTask/Prove.zig`
+(2026-10-26). The invariant sweep behind it lives in `drafts/fast-soundness/`.
+
+**The one-line rule: the decision is a FILTER, the certificate is the AUTHORITY, and `--fast`
+keeps every filter and drops the authority.**
+
+
+| word | KEPT under `--fast` | DROPPED |
+|---|---|---|
+| `arithmetic` (+`_q`) | premise resolution; well-known symbol binding (incl. `nonneg`, which picks the ℕ-vs-ℤ fragment); the Presburger/mixed **decision** — admits only on `.valid`, fails on a countermodel or an undecidable shape | the certifier chain (equation/order/Farkas/Cooper/mixed) and its kernel certificate; `fallback(thm)` is never consulted |
+| `simplify` (+`_q`) | cited rule STATEMENTS (via `elaborateFactStatement`, no ProveTask); rule orientation; **both sides normalized to a shared normal form** | the `EqCert` join certificate |
+| `polynomial` (+`_q`) | goal has add/mul structure; ring vocabulary completion (`completePolyOps`, demanded in the read pass); **both sides canonicalized to one form** | `finishReorder`'s certificate |
+| `assoc` (+`_q`) | the lemma ARGUMENT's statement and its `f(f(a,b),c) = f(a,f(b,c))` shape; **both sides right-nested to one normal form** | `finishReorder`'s certificate |
+| `assoc_commut` (+`_q`) | arg count (0 or 3); cited rule statements; distribution pre-pass; **both sides sorted to the same summand multiset** | `finishReorder`'s certificate |
+| `tautology` | premise step resolution; **`smt.tautology` — the goal is a propositional consequence** (its own source comment says "no --fast escape") | the `TautAst` certificate |
+| `chain` | goal is an equation; ≥1 cited equation; each equation's statement and eq-shape; **the BFS connects the goal's two sides** | the path's rewrite-step certificate |
+| `extensionality` (+`_q`) | the ext lemma and every unfold lemma resolve; **`emitExtSetResidue`'s `smt.tautology` closes the pointwise obligation** — reached by running the emitter and discarding its steps, since the decision lives inside it | packaging the emitted steps as the synthetic schema |
+| `model` | the model name resolves and is a model; exactly one cited theorem; **the transferred statement α-matches the claim** | the per-axiom OBLIGATION COVERAGE check — whether the mapping discharges every axiom the source theorem's proof rests on (`drafts/accelerant-pruning/model-partial-accepted.b4m`) |
+| `import` | the import resolves; exactly one cited theorem; **the imported statement α-matches the claim** | nothing further — citing a proven fact IS the justification, so there is no certificate to emit |
+| `specialize` | a head is present | **everything else**, including whether the instance's conclusion matches the claim — see below |
+| `instantiation` | — | **nothing. Never trustable at all**: an instantiation's content IS the body's proof at the args, which is the only soundness gate (#93) |
+
+## The two residuals
+
+**`specialize` — `--fast` admits what strict REFUTES.** The only such case in the corpus, gated
+by `tests/cases/specialize_claim_mismatch_fast.b4m`. The claim-vs-instance match happens in
+`withGuardPremises`, AFTER the instance is proven, which `--fast` skips. It cannot move into the
+producer: the consequent is in PARAM space — `forall a, b; a = b` is literally `p1 = p2` — so
+matching it against the goal with the params as pattern variables succeeds for ANY equation goal
+(measured: `succ(ZERO) = ZERO` matched and was admitted). A real check needs the elaborated args,
+i.e. the instance. Moving admit past the ∀-peel is separately wrong: `fvar_binds` are installed
+after the producer returns.
+
+**`model` — unchecked obligation coverage.** Strict rejects a partial model whose cited theorem
+needs an unmapped axiom (the guard at `Prove.zig:403`: "giving an axiom a free transferred leaf
+would let an unmapped axiom through"). `--fast` does not reach that check, so a consumer can be
+handed, say, an equivalence relation whose transitivity nothing supplied.
+
+## What no word checks, in either mode's decision
+
+A decision binds its vocabulary by well-known NAME — `add`, `mul`, `ZERO`, `succ`, `less_than`,
+`nonneg`, the ext lemma, the associativity lemma — and never verifies the bound symbol OBEYS the
+laws it assumes. Over a theory whose `add` is not associative, Presburger can return `.valid`.
+
+**Strict still rejects such a goal**, because its certificate must discharge against the theory's
+DECLARED AXIOMS and a misbound operator has no axiom to license the rewrite. That is the
+certificate earning its keep. But from inside `--fast` this is indistinguishable from the
+benign "decided true, no certifier covers the shape" case — both are a true verdict with no
+certificate — so **naming things strangely is how shenanigans escape the boundary**, and only
+strict notices.
+
 ## Naming couplings — hardcoded defaults are fine, but MUST be overridable
 
 Accelerators routinely *expect* conventional names: `arithmetic`/`polynomial`

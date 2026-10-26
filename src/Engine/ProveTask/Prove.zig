@@ -3316,7 +3316,7 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
     //
     // KNOWN GAP, deliberately left: `--fast` accepts a `specialize` whose instance conclusion
     // differs from the claim. Gated by `tests/cases/specialize_claim_mismatch_fast.b4m`, which
-    // pins today's behaviour so a future fix is noticed. See ACCELERANT-PRUNING-BOUNDARY.md.
+    // pins today's behaviour so a future fix is noticed. See ACCELERATION.md.
     if (self.admit_mode) {
         self.admit_ok = true;
         return null;
@@ -4457,7 +4457,7 @@ fn buildSimplify(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: T
     // — a both-ways divergence the `--fast` contract forbids.) The decision needs the cited
     // rules' STATEMENTS, which `prepareRule` reads via `elaborateFactStatement` in admit mode —
     // no ProveTask, so no proof cascade. Admit lands after the normal-form comparison below,
-    // before `EqCert` emission. See ACCELERANT-PRUNING-BOUNDARY.md.
+    // before `EqCert` emission. See ACCELERATION.md.
     var b: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
 
     // prepare the rewrite rules (in citation order) + how the cert cites each.
@@ -5369,7 +5369,7 @@ fn buildPolynomial(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw:
     // Admitting here accepted any add/mul-shaped equation, true or not. `completePolyOps`
     // already parks on an outstanding ident demand (null → blocked), which is exactly what the
     // decision needs — so admit lands after the normal-form comparison below, before
-    // `finishReorder` emits the cert. See ACCELERANT-PRUNING-BOUNDARY.md.
+    // `finishReorder` emits the cert. See ACCELERATION.md.
     // COMPLETE the vocabulary from the theory (a demand may be outstanding → null, blocked).
     // In ADMIT mode a null is a PARK the dispatch has no channel for, so the read pass must
     // have demanded these already; reaching here parked means it did not.
@@ -5976,7 +5976,7 @@ fn buildExtensionality(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_
     // confirming the goal is an equation whose sides the lemma applies to. There is no separate
     // decision to run: `emitExtEquation` both decides and emits, so admit lands immediately
     // after the lemmas resolve (below), which is the furthest point reachable without building
-    // the cert. See ACCELERANT-PRUNING-BOUNDARY.md.
+    // the cert. See ACCELERATION.md.
     var b: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
 
     // ABSTRACT genuinely-free caller-local fvars (an enclosing `fix` at the call site) into value
@@ -6709,7 +6709,7 @@ fn buildArithmetic(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim
     // only to BUILD a certificate. The well-known idents the decision needs (`nonneg` above
     // all, which picks the ℕ-vs-ℤ fragment) are demanded in the read pass by
     // `demandArithIdents`, for trusted steps as well as untrusted — without that the decision
-    // here would read a ℕ goal over ℤ. See ACCELERANT-PRUNING-BOUNDARY.md.
+    // here would read a ℕ goal over ℤ. See ACCELERATION.md.
     var b: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
 
     // resolve cited premises (local steps / global facts).

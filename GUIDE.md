@@ -176,13 +176,29 @@ Re-run plain `2b4m check` to fully verify before finalizing. `2b4m fmt`
 normalizes whitespace and indentation (`--check` reports instead of
 rewriting).
 
-**What `--fast` promises, exactly: a STRUCTURAL check.** It tells you the proof's shape
-is sound — the steps compose, the rules take the arity they take, the blocks discharge.
-It does **not** resolve what your references bind to, because binding identity is not a
-structural property. Two failures therefore survive it:
+**What `--fast` promises, exactly: a STRUCTURAL check up to a TRUST BOUNDARY.** It tells
+you the proof's shape is sound — the steps compose, the rules take the arity they take, the
+blocks discharge — and, at each `using` step, that the accelerant's own interface holds:
+its DECISION runs (both sides really do normalize alike, the arithmetic really is valid,
+the BFS really connects), and the vocabulary and cited statements that decision reads
+really resolve. A goal an accelerant's decision REFUTES is rejected in both modes, with the
+same diagnostic (swept across every trustable word; `drafts/fast-soundness/`, and
+`specialize` is the one gated exception).
 
-1. **An accelerant cannot produce a kernel certificate.** `--fast` admitted the verdict;
-   strict demands the proof. Usually a real gap.
+What `--fast` does not do is **drill into the certificate**. That is where the boundary
+falls, and two failures live beyond it:
+
+1. **An accelerant decided "true" but no kernel certificate exists.** `--fast` admitted the
+   verdict; strict demands the proof. Sometimes that is a benign certification gap (the goal
+   IS true, no certifier covers its shape — `arithmetic` says "valid but no certifier could
+   prove it here"). Sometimes the decision was reasoning over a vocabulary that does not mean
+   what it assumes: a decision binds `add`, `mul`, `ZERO`, `succ`, `less_than`, `nonneg` by
+   well-known NAME and never checks the bound symbol obeys the laws it needs, so over a theory
+   whose `add` is not associative, Presburger can return valid. **Strict still rejects that** —
+   its certificate must discharge against the theory's DECLARED AXIOMS, and a misbound operator
+   has no axiom to license the rewrite — but from inside `--fast` the two cases are
+   indistinguishable, because both are a true verdict with no certificate. The decision is a
+   FILTER; the certificate is the AUTHORITY.
 2. **A reference bound to the WRONG declaration of the RIGHT SHAPE.** This is not a
    `--fast` defect — a shape-only check cannot distinguish two declarations of the same
    form. Sibling theories reuse names for the same *idea* at different sorts, so the risk
@@ -193,6 +209,16 @@ structural property. Two failures therefore survive it:
    `deMoivre` (cis form, 2 args) and `deMoivrePolar` (3 args), so a file that renames the
    latter to `deMoivre` silently rebinds citations of the former. Strict reports these as
    `step claims X but the axiom derives Y` or a sort mismatch.
+
+Both escape the boundary the same way: by **what a name denotes**. Name things strangely —
+an operator that does not obey its namesake's laws, a local alias colliding with a sibling
+theory's — and `--fast` has no way to notice, because noticing is the certificate's job.
+
+`ACCELERATION.md` tabulates, under "Where the `--fast` trust boundary falls, per word", exactly
+what `--fast` keeps and what it drops for every trustable word. Two cases there are worth knowing before relying on a `--fast` green:
+`specialize` is the one word where `--fast` admits a goal strict REFUTES (gated, with the
+reason recorded), and `model` keeps the statement α-match but drops the per-axiom
+obligation-coverage check, so a partial model passes `--fast` and fails strict.
 
 So: `--fast` for the write-fix loop, strict before closing any site. When you alias a
 `std` theorem under a new local name, check whether a sibling `std` name now collides
@@ -782,12 +808,15 @@ qed
 
 `[using model(AdditiveGroup) group.cancelLeft]` takes `group`'s abstract
 theorem, rewrites it through the `AdditiveGroup` mapping (relativizing by the
-guard if any), and checks the result equals the goal. It is an **accelerant**:
-under `--fast` the transfer is trusted wholesale and marks the theorem
-accelerated (disclosed in the summary); in default mode it is legitimate because
-the model's axiom obligations were themselves checked and the source theorem was
-already proven over the abstract sort — so nothing is trusted that wasn't
-derived.
+guard if any), and checks the result equals the goal. It is an **accelerant**, and
+precisely what `--fast` keeps versus drops here is worth knowing: the α-match of the
+transferred statement against the claim **still runs** (so a claim that is not the
+transfer of the cited theorem is rejected in both modes), and the theorem is marked
+accelerated in the summary. What `--fast` drops is the per-axiom OBLIGATION COVERAGE
+check — whether the mapping actually discharges every axiom the source theorem's proof
+rests on. In default mode that check runs, and the transfer is legitimate because the
+obligations were verified and the source theorem was already proven over the abstract
+sort — so nothing is trusted that wasn't derived.
 
 **Transferring a SCHEMA.** A model can also transfer a source theory's *schema*
 (an induction/recursion family like `peano.induction`, parameterized by a
@@ -1433,10 +1462,12 @@ result equals the goal. See `KEYWORD: model` for the mapping block.
 
 It is an **accelerant**: in default (strict) mode it is legitimate because the
 model's axiom obligations were checked and the source theorem was already proven, so
-nothing untrusted enters — but under `--fast` the transfer is trusted wholesale and
-marks the theorem accelerated. A model that leaves some source axioms unmapped is
+nothing untrusted enters. Under `--fast` the statement α-match still runs — a claim that
+is not the transfer of the cited theorem fails in both modes — but the per-axiom
+OBLIGATION COVERAGE check does not. So a model that leaves some source axioms unmapped is
 **rejected** in strict mode when a cited transferred theorem depends on a missing
-obligation (named in the error); `--fast` passes it provisionally.
+obligation (named in the error), while `--fast` passes it provisionally
+(`drafts/accelerant-pruning/model-partial-accepted.b4m` is that case).
 
 ### RULE: import
 
