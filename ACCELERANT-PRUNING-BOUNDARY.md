@@ -1,11 +1,30 @@
 # The accelerant pruning boundary
 
 **THE INVARIANT, swept 2026-10-26 across all 17 trustable words:** `--fast` must never ADMIT a
-goal the strict path REFUTES. (Distinct from the legitimate case where strict decides the goal
-TRUE but can build no certificate — `--fast` admits that, by design.) Result: ten of the eleven
-distinct words reject correctly; **`specialize` is the single violation**, pinned by
+goal the strict path REFUTES. Result: ten of the eleven distinct words reject correctly;
+**`specialize` is the single violation**, pinned by
 `tests/cases/specialize_claim_mismatch_fast.b4m`. Probes and the table:
 `drafts/fast-soundness/`.
+
+**What that invariant does NOT say, and the distinction matters.** A decision procedure is a
+FILTER; the CERTIFICATE is the authority. The two can disagree, and `--fast` skips exactly the
+authority:
+
+- A decision reads its vocabulary by well-known NAME — `readArithSymbols` binds `add`, `mul`,
+  `ZERO`, `succ`, `less_than`, `nonneg`; `readPolyOps` the ring operators — and nothing checks
+  that the symbol so bound BEHAVES like the operation the decision assumes. Over a theory whose
+  `add` is not associative, Presburger will happily return `.valid`.
+- STRICT still rejects such a goal, because the certificate it then builds must discharge
+  against the theory's DECLARED AXIOMS, and a misbound operator has no axiom to license the
+  rewrite. The kernel is what catches it.
+- So the residual `--fast` risk is not "admits what strict refutes" (swept, above) but **"admits
+  what strict could not CERTIFY"** — and one reason it could not is a misbound vocabulary. From
+  inside `--fast` that case is indistinguishable from the legitimate "decided true, no certifier
+  available" that we deliberately admit: both are a true-looking verdict with no certificate.
+
+This is inherent to not emitting the certificate, not a bug to close. It is also the reason the
+`NOT FULLY VERIFIED` banner exists: `--fast` establishes that a proof's SHAPE and its
+accelerants' DECISIONS hold; only strict establishes the claim.
 
 **Status:** EIGHT of the nine decision words FIXED (`arithmetic` 2026-10-24, `simplify`
 2026-10-25, `polynomial`/`tautology`/`chain`/`assoc`/`assoc_commut`/`extensionality`
