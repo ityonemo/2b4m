@@ -764,9 +764,62 @@ fn trustedReadPass(self: *Prove, w: *Walk, step: *const ast.Step) Allocator.Erro
     // parking is free; `elaborateFactStatement` racks no ProveTask, so this is a parse and an
     // ident fetch, not a proof cascade. A `.failed` is left for the producer to report.
     {
-        const simp = try self.ctx.interner.internString("simplify");
-        const simp_q = try self.ctx.interner.internString("simplify_quantified");
-        if (c.rule.name == simp or c.rule.name == simp_q) {
+        // Every accelerant whose DECISION reads a cited fact's STATEMENT needs those statements
+        // resolved here — `simplify` and `assoc_commut` from `c.refs`, `assoc` from its lemma
+        // ARGUMENT, `chain` from its cited equations. (A park during admit has no channel to
+        // propagate, so the read pass is the only place to do this.)
+        const words = [_][]const u8{
+            "simplify",      "simplify_quantified",
+            "assoc",         "assoc_quantified",
+            "assoc_commut",  "assoc_commut_quantified",
+            "chain",         "extensionality",
+            "extensionality_quantified",
+        };
+        var wants = false;
+        for (words) |nm| {
+            if (c.rule.name == try self.ctx.interner.internString(nm)) {
+                wants = true;
+                break;
+            }
+        }
+        if (wants) {
+            // the HEAD (`specialize`'s lemma, in `c.schema` rather than `c.refs`)
+            if (c.schema) |t| {
+                if (w.findStep(tokName(t)) == null) {
+                    const hfile = if (t.qualifier == InternPool.Index.none) self.file else blk: {
+                        const st = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = t.qualifier }) orelse break :blk self.file;
+                        const ix = switch (st) {
+                            .done => |x| x,
+                            .in_flight => break :blk self.file,
+                        };
+                        if (self.ctx.interner.keyOf(ix) != .import) break :blk self.file;
+                        break :blk self.ctx.interner.keyOf(self.ctx.interner.keyOf(ix).import.namespace).namespace.file;
+                    };
+                    switch (try elaborateFactStatement(self.ctx, self.h, hfile, tokName(t), self.model, self.pool)) {
+                        .ready, .failed => {},
+                        .suspended => return self.h.blocked_on,
+                    }
+                }
+            }
+            // the lemma ARGUMENT (assoc's associativity lemma, assoc_commut's explicit triple)
+            for (c.args) |a| {
+                if (a.* != .name) continue;
+                const t = a.name;
+                if (w.findStep(tokName(t)) != null) continue;
+                const afile = if (t.qualifier == InternPool.Index.none) self.file else blk: {
+                    const st = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = t.qualifier }) orelse continue;
+                    const ix = switch (st) {
+                        .done => |x| x,
+                        .in_flight => continue,
+                    };
+                    if (self.ctx.interner.keyOf(ix) != .import) continue;
+                    break :blk self.ctx.interner.keyOf(self.ctx.interner.keyOf(ix).import.namespace).namespace.file;
+                };
+                switch (try elaborateFactStatement(self.ctx, self.h, afile, tokName(t), self.model, self.pool)) {
+                    .ready, .failed => {},
+                    .suspended => return self.h.blocked_on,
+                }
+            }
             for (c.refs) |r| {
                 if (w.findStep(tokName(r)) != null) continue; // a local step, not a fact
                 const sfile = if (r.qualifier == InternPool.Index.none) self.file else blk: {
@@ -782,6 +835,51 @@ fn trustedReadPass(self: *Prove, w: *Walk, step: *const ast.Step) Allocator.Erro
                     .ready, .failed => {},
                     .suspended => return self.h.blocked_on,
                 }
+            }
+        }
+    }
+
+    // `polynomial` DECIDES under `--fast` too (canonicalizing both sides), and its vocabulary
+    // completion (`completePolyOps`) racks ident FetchTasks for operators the goal implies the
+    // theory has — `ZERO` for a `neg`, `add` for a `mul`+`succ`. Those must be resolved BEFORE
+    // the producer runs, since a park during admit has no channel to propagate. Demand the same
+    // well-known ring names the untrusted path would, plus the selector's import when given.
+    {
+        const poly = try self.ctx.interner.internString("polynomial");
+        const poly_q = try self.ctx.interner.internString("polynomial_quantified");
+        if (c.rule.name == poly or c.rule.name == poly_q) {
+            const names = [_][]const u8{ "add", "mul", "succ", "prev", "ZERO", "ONE", "neg", "sub" };
+            // the theory namespace: the selector's import when present, else this proof's file
+            var tfile = self.file;
+            if (c.schema) |sel| {
+                const st = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = tokName(sel) });
+                if (st == null) {
+                    const t = try self.h.rackIndexed(try FetchTask.new(self.ctx.arena, .{
+                        .file = self.file,
+                        .name = tokName(sel),
+                        .loc = sel.start,
+                        .loc_file = self.file,
+                    }));
+                    return t;
+                }
+                switch (st.?) {
+                    .in_flight => |owner| return owner,
+                    .done => |ix| if (self.ctx.interner.keyOf(ix) == .import) {
+                        tfile = self.ctx.interner.keyOf(self.ctx.interner.keyOf(ix).import.namespace).namespace.file;
+                    },
+                }
+            }
+            const tfid = self.ctx.fileOf(tfile);
+            if (tfid) |fid| {
+                const tns = try self.ctx.interner.namespace(.universe, tfile);
+                var poly_refs: std.ArrayList(RefScan.Ref) = .empty;
+                for (names) |nm| {
+                    const nid = try self.ctx.interner.internString(nm);
+                    const d = self.ctx.declOf(fid, nid) orelse continue;
+                    if (d.* == .define) continue;
+                    try poly_refs.append(self.ctx.arena, .{ .ns = null, .name = nid, .domain = .ident, .loc = c.rule.start });
+                }
+                if (try resolveRefs(self.ctx, self.h, tfile, tns, self.model, self.self_key, poly_refs.items)) |blocker| return blocker;
             }
         }
     }
@@ -3203,8 +3301,18 @@ fn internStr(self: *Prove, comptime s: []const u8) Error!StrId {
 fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
     _ = goal;
     const head = c.schema orelse return self.fail(c.rule.start, "specialize requires a head theorem/axiom or local step", .{});
-    // ADMIT: the only pre-cert validation is the presence of a head; everything below RESOLVES
-    // the head fact/step and builds the synthetic schema. Skip all of it under `--fast`.
+    // ADMIT UP FRONT — the one accelerant of the nine where the decision cannot move here.
+    //
+    // `specialize` has no decision of its own: whether the instance's conclusion MATCHES the
+    // claim is checked by the schema-instance machinery (`lowerInstantiate`), not by this
+    // producer, so there is nothing for admit mode to decide beyond the head's existence. And
+    // running the ∀-peel in admit mode is not free: a LOCAL head carries free caller fvars that
+    // become schema params (`Synthetic.fvar_binds`), and those bindings are installed by the
+    // plumbing AFTER the producer returns — admitting mid-peel left the params unresolvable
+    // ("reference not found: 'k'" across std/subgroup/products.b4m). Tried and reverted
+    // 2026-10-26; the remaining gap is that `--fast` accepts a `specialize` whose instance
+    // conclusion differs from the claim, which strict rejects. See
+    // ACCELERANT-PRUNING-BOUNDARY.md.
     if (self.admit_mode) {
         self.admit_ok = true;
         return null;
@@ -3220,9 +3328,10 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
     } else {
         // resolveFactRef rejects a schema head (no ground formula) — a clean diagnostic, not a
         // crash — so `.fact` is safe here. (The generated cert cites it kind-agnostically with
-        // `cite`, so the head's axiom-vs-theorem kind is never needed.)
-        const fact = try self.resolveFactRef(head);
-        head_formula = try self.pool.copyIn(self.ctx.interner, self.ctx.interner.keyOf(fact).fact.formula);
+        // `cite`, so the head's axiom-vs-theorem kind is never needed.) `citedFactFormula`
+        // routes by mode: strict resolves the proven fact, admit mode reads the STATEMENT so
+        // the ∀-peel below can run under `--fast` without racking a ProveTask.
+        head_formula = (try self.citedFactFormula(head)).formula;
     }
 
     // Instantiate one ∀ per arg at a fresh param fvar, INTERLEAVED with `->` antecedents:
@@ -3642,10 +3751,8 @@ fn produceTautology(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Clai
     if (c.args.len != 0) return self.fail(c.rule.start, "tautology takes no arguments", .{});
     // ADMIT: the only pre-cert validation is the arg-count; the DECISION (smt.tautology) and the
     // cert build are the expensive path. Skip both under `--fast`.
-    if (self.admit_mode) {
-        self.admit_ok = true;
-        return null;
-    }
+    // `--fast` declines to EMIT the certificate; the PROPOSITIONAL DECISION still runs — its
+    // own comment below says "no --fast escape", which the early admit here silently undid.
     var b: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
 
     // premises = the cited LOCAL steps' formulae (in ref order — the body's antecedent order).
@@ -3677,6 +3784,14 @@ fn produceTautology(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Clai
             }
             return self.fail(c.rule.start, "tautology: not a propositional consequence; countermodel: {s}", .{msg.written()});
         },
+    }
+
+    // ADMIT: the goal is a propositional consequence of the cited premises, so a certificate
+    // demonstrably exists — only emitting it is pruned.
+    if (self.admit_mode) {
+        self.producer_premise_refs = null;
+        self.admit_ok = true;
+        return null;
     }
 
     // ABSTRACT the free caller-local eigenvars (an enclosing `fix a { … }` around this step)
@@ -4183,6 +4298,41 @@ fn eqCertFresh(ctx: *anyopaque, prefix: []const u8) anyerror!StrId {
     return self.freshNamed(prefix);
 }
 
+/// The FORMULA of a cited global fact, by the route the current mode allows.
+///
+/// Strict resolves the fact itself (`resolveFactRef`, which requires `.proven`). ADMIT mode
+/// cannot: the trusted read pass deliberately racks no ProveTask for a cited rule, since that
+/// is the proof cascade `--fast` exists to avoid. But an accelerant's DECISION needs only the
+/// STATEMENT — and `elaborateFactStatement` reads one without racking a ProveTask, which is
+/// exactly the right weight. A `.suspended` records `producer_blocker` so the caller treats the
+/// `Recover` as a PARK (re-run) rather than a diagnosed rejection; rejecting would drop the
+/// step's LABEL from the walk and surface as "unknown reference" at whatever cited it next.
+///
+/// Returns the formula and whether the fact is an AXIOM (admit mode cannot tell, and does not
+/// need to — the kind only decorates an emitted cert's `[by axiom|theorem]` word).
+fn citedFactFormula(self: *Prove, ref: lexer.Token) Error!struct { formula: TermId, is_axiom: bool } {
+    if (!self.admit_mode) {
+        const fact = try self.resolveFactRef(ref);
+        const key = self.ctx.interner.keyOf(fact).fact;
+        return .{
+            .formula = try self.pool.copyIn(self.ctx.interner, key.formula),
+            .is_axiom = key.kind == .axiom,
+        };
+    }
+    const sfile = if (ref.qualifier == InternPool.Index.none) self.file else blk: {
+        const ns = try self.resolveQualifier(ref);
+        break :blk self.ctx.interner.keyOf(ns).namespace.file;
+    };
+    switch (try elaborateFactStatement(self.ctx, self.h, sfile, tokName(ref), self.model, self.pool)) {
+        .ready => |stmt| return .{ .formula = stmt, .is_axiom = false },
+        .suspended => {
+            self.producer_blocker = self.h.blocked_on;
+            return error.Recover;
+        },
+        .failed => return error.Recover,
+    }
+}
+
 /// Prepare one rewrite rule from a cited ref: resolve its formula (LOCAL step or GLOBAL
 /// axiom/theorem), orient the (possibly ∀-prefixed) equation left→right opening each binder
 /// at a fresh `#`-mangled pattern fvar, and record how the cert cites it. A rule's binders
@@ -4197,37 +4347,10 @@ fn prepareRule(self: *Prove, w: *const Walk, ref: lexer.Token) Error!PreparedRul
         const sref = try self.resolveStepRef(w, ref);
         formula = self.producerPremiseFormula(sref);
         cite = .{ .local = .{ .hyp = try self.premiseHypLabel(ref) } };
-    } else if (self.admit_mode) {
-        // ADMIT MODE: `simplify` needs the rule's STATEMENT to normalize with, not its proof —
-        // and `resolveFactRef` requires `.proven`, which the trusted read pass deliberately
-        // does not arrange (racking a cited rule's ProveTask is the proof cascade `--fast`
-        // exists to avoid). `elaborateFactStatement` reads the statement and racks NO
-        // ProveTask: the right weight, and what lets the normalize DECISION run under `--fast`
-        // while the join certificate stays unbuilt. The alias chase starts in the file the
-        // NAME lives in — this proof's own file when unqualified, since a re-export
-        // (`fact composeApply = function.composeApply`) is declared HERE and `factOrigin`
-        // follows it from there.
-        const sfile = if (ref.qualifier == InternPool.Index.none) self.file else blk: {
-            const ns = try self.resolveQualifier(ref);
-            break :blk self.ctx.interner.keyOf(ns).namespace.file;
-        };
-        switch (try elaborateFactStatement(self.ctx, self.h, sfile, tokName(ref), self.model, self.pool)) {
-            .ready => |stmt| formula = stmt,
-            // `suspendOn` was already called. Recording the blocker makes the caller treat the
-            // `Recover` as a PARK (re-run later), not a diagnosed rejection — rejecting drops
-            // this step's LABEL from the walk and surfaces as "unknown reference" at the next
-            // step that cites it (std/peano/divides.b4m:171, `difference-is-d-multiple`).
-            .suspended => {
-                self.producer_blocker = self.h.blocked_on;
-                return error.Recover;
-            },
-            .failed => return error.Recover,
-        }
-        cite = .{ .global = .{ .head = ref, .is_axiom = false } };
     } else {
-        const fact = try self.resolveFactRef(ref);
-        formula = try self.pool.copyIn(self.ctx.interner, self.ctx.interner.keyOf(fact).fact.formula);
-        cite = .{ .global = .{ .head = ref, .is_axiom = self.ctx.interner.keyOf(fact).fact.kind == .axiom } };
+        const got = try self.citedFactFormula(ref);
+        formula = got.formula;
+        cite = .{ .global = .{ .head = ref, .is_axiom = got.is_axiom } };
     }
     // orient: peel `forall` binders as fresh pattern fvars, require an equation body. Under a
     // model TRANSFER the cited lemma is RELATIVIZED — `∀a; inH(a) -> ∀b; … -> lhs=rhs` — with
@@ -4872,10 +4995,8 @@ fn produceChain(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) E
     // ADMIT: the pre-cert validation (goal is an equation, >=1 ref) is done; everything below
     // RESOLVES the cited equations (resolveFactRef) and runs the BFS connection search. Skip
     // under `--fast`.
-    if (self.admit_mode) {
-        self.admit_ok = true;
-        return null;
-    }
+    // `--fast` declines to EMIT the certificate; the BFS DECISION (can the cited equations
+    // connect the goal's two sides?) still runs. Admit lands just before PHASE 2 below.
     var b: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
 
     // RESOLVE each cited equation to its formula + how the synthetic proof cites it (LOCAL =
@@ -4893,10 +5014,10 @@ fn produceChain(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) E
             formula = self.producerPremiseFormula(sref);
             body_label = try self.premiseHypLabel(ref); // the restated-hypothesis step's label
         } else {
-            const fact = try self.resolveFactRef(ref);
-            formula = try self.pool.copyIn(self.ctx.interner, self.ctx.interner.keyOf(fact).fact.formula);
+            const got = try self.citedFactFormula(ref);
+            formula = got.formula;
             body_label = try self.freshNamed("chain-cite"); // the `[by axiom|theorem]` head step
-            is_axiom = self.ctx.interner.keyOf(fact).fact.kind == .axiom;
+            is_axiom = got.is_axiom;
         }
         if (self.pool.get(formula) != .eq) return self.fail(ref.start, "'{s}' is not an equation", .{self.text(ref)});
         out.* = .{ .formula = formula, .body_label = body_label, .local = is_local, .head = ref, .is_axiom = is_axiom };
@@ -4984,6 +5105,14 @@ fn produceChain(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) E
         }
     }
     std.mem.reverse(TermId, path.items); // target-first → start-order
+
+    // ADMIT: the search connected start to target, so a certificate demonstrably exists —
+    // only emitting it is pruned.
+    if (self.admit_mode) {
+        self.producer_premise_refs = null;
+        self.admit_ok = true;
+        return null;
+    }
 
     // PHASE 2 — emit the cert body. GLOBAL equations are cited up front (each once, in ref
     // order) as a `[by axiom|theorem head]` step under the label the search recorded; LOCAL
@@ -5111,10 +5240,8 @@ fn buildAssoc(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: Term
     // ADMIT: goal-shape (equation) validated in the caller + arg-count here. The next step
     // (`argRule` → resolveFactRef) RESOLVES the associativity lemma — which is exactly what an
     // admitted step must NOT require proved (e.g. assoc_oracle's `opAssoc` is unresolvable). Skip.
-    if (self.admit_mode) {
-        self.admit_ok = true;
-        return null;
-    }
+    // `--fast` declines to EMIT the certificate; the ASSOCIATIVITY NORMALIZATION still runs.
+    // Admit lands after the normal-form comparison below.
     var b: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
 
     const prepared = try self.argRule(w, c.args[0]);
@@ -5159,6 +5286,13 @@ fn buildAssoc(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: Term
             try self.renderTerm(try self.unabstract(rs.nf, abs)),
             try self.renderTerm(try self.unabstract(rt.nf, abs)),
         });
+    }
+    // ADMIT: both sides reached the same associativity normal form, so a certificate
+    // demonstrably exists — only emitting it is pruned.
+    if (self.admit_mode) {
+        self.producer_premise_refs = null;
+        self.admit_ok = true;
+        return null;
     }
     return self.finishReorder(w, &b, c, "assoc", s, t, &rules, &cites, rs, rt, abs, eigen, if (prepared.local) &.{prepared} else &.{});
 }
@@ -5227,14 +5361,14 @@ fn buildPolynomial(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw:
     // has them). The theory selector's qualifier is stamped into every emitted cite.
     const goal_ops = (try self.readPolyOps(eq_goal_raw)) orelse
         return self.fail(c.rule.start, "polynomial: the goal has no add/mul structure", .{});
-    // ADMIT: the goal well-formedness check for polynomial is that it has add/mul structure
-    // (readPolyOps, a pure structural read). Below builds the hardcoded rule set + canonicalizes
-    // both sides (the decision). Skip that expensive path under `--fast`.
-    if (self.admit_mode) {
-        self.admit_ok = true;
-        return null;
-    }
+    // `--fast` declines to EMIT the certificate; the CANONICALIZATION DECISION still runs.
+    // Admitting here accepted any add/mul-shaped equation, true or not. `completePolyOps`
+    // already parks on an outstanding ident demand (null → blocked), which is exactly what the
+    // decision needs — so admit lands after the normal-form comparison below, before
+    // `finishReorder` emits the cert. See ACCELERANT-PRUNING-BOUNDARY.md.
     // COMPLETE the vocabulary from the theory (a demand may be outstanding → null, blocked).
+    // In ADMIT mode a null is a PARK the dispatch has no channel for, so the read pass must
+    // have demanded these already; reaching here parked means it did not.
     const ops = (try self.completePolyOps(c.schema, goal_ops)) orelse return null;
     const qualifier: StrId = if (c.schema) |s| s.name else .none;
     const pr = try Polynomial.polyRules(self, ops, qualifier, c.rule.start);
@@ -5258,6 +5392,13 @@ fn buildPolynomial(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw:
             try self.renderTerm(try self.unabstract(rs.nf, abs)),
             try self.renderTerm(try self.unabstract(rt.nf, abs)),
         });
+    }
+    // ADMIT: both sides expanded to the SAME canonical form, so a certificate demonstrably
+    // exists — only emitting it is pruned.
+    if (self.admit_mode) {
+        self.producer_premise_refs = null;
+        self.admit_ok = true;
+        return null;
     }
     return self.finishReorder(w, &b, c, "polynomial", s0, t0, pr.rules, pr.cites, rs, rt, abs, eigen, &.{});
 }
@@ -5494,10 +5635,8 @@ fn buildAssocCommut(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw
     // ADMIT: goal-shape (equation) validated in the caller + arg-count here. Everything below
     // RESOLVES the (distribute pre-rules and, for the explicit form, the AC triple) lemmas and
     // runs the AC re-association search. Skip the resolution + decision under `--fast`.
-    if (self.admit_mode) {
-        self.admit_ok = true;
-        return null;
-    }
+    // `--fast` declines to EMIT the certificate; the A/C REORDERING DECISION still runs.
+    // Admit lands after the summand comparison below.
     const explicit = c.args.len == 3;
     var b: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
 
@@ -5601,6 +5740,13 @@ fn buildAssocCommut(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw
     const full_t = try self.concatTrace(t_pre.trace, plan_t.trace);
     const rs: simplify_mod.Result = .{ .nf = plan_s.sorted, .trace = full_s };
     const rt: simplify_mod.Result = .{ .nf = plan_t.sorted, .trace = full_t };
+    // ADMIT: both sides sort to the same summand multiset, so a certificate demonstrably
+    // exists — only emitting it is pruned.
+    if (self.admit_mode) {
+        self.producer_premise_refs = null;
+        self.admit_ok = true;
+        return null;
+    }
     return self.finishReorder(w, &b, c, "assoc_commut", s0, t0, rules.items, cites.items, rs, rt, abs, eigen, pre_prepared.items);
 }
 
@@ -5821,10 +5967,12 @@ fn buildExtensionality(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_
     // ADMIT: the goal-shape + ext-lemma-present validation ran in the produce* caller. Everything
     // below RESOLVES the ext lemma + each unfold lemma (resolveFactRef) and builds the cert. Skip
     // under `--fast`.
-    if (self.admit_mode) {
-        self.admit_ok = true;
-        return null;
-    }
+    // `--fast` declines to EMIT the certificate; the checks BEFORE it still run — for
+    // extensionality that is resolving the ext lemma and each cited unfold lemma, and
+    // confirming the goal is an equation whose sides the lemma applies to. There is no separate
+    // decision to run: `emitExtEquation` both decides and emits, so admit lands immediately
+    // after the lemmas resolve (below), which is the furthest point reachable without building
+    // the cert. See ACCELERANT-PRUNING-BOUNDARY.md.
     var b: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
 
     // ABSTRACT genuinely-free caller-local fvars (an enclosing `fix` at the call site) into value
@@ -5844,6 +5992,15 @@ fn buildExtensionality(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_
     // `member(x, op(...)) iff …`; for the FUNCTION model `apply(op(...), x) = …` rewrite rules.
     const unfolds = try self.ctx.arena.alloc(ExtUnfold, c.refs.len);
     for (c.refs, unfolds) |ref, *out| out.* = try self.resolveUnfold(ref);
+
+    // ADMIT: the ext lemma and every unfold resolved and apply to this goal's sides. (Unlike
+    // the other accelerants there is no decision separable from emission here, so this is a
+    // weaker guarantee than theirs — recorded in the note as the one remaining gap.)
+    if (self.admit_mode) {
+        self.producer_premise_refs = null;
+        self.admit_ok = true;
+        return null;
+    }
 
     // build the cert steps proving `s = t`.
     var body_steps: std.ArrayList(ast.Step) = .empty;
@@ -5883,9 +6040,11 @@ fn buildExtensionality(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_
 /// prefix at (s, t), reading off the leading `(forall x; …) ->` obligations. Requires a GLOBAL
 /// axiom/theorem (the ext lemma is never a local step in the fixtures).
 fn resolveExtLemma(self: *Prove, head: lexer.Token, s: TermId, t: TermId) Error!ExtLemma {
-    const fact = try self.resolveFactRef(head);
-    const formula = try self.pool.copyIn(self.ctx.interner, self.ctx.interner.keyOf(fact).fact.formula);
-    const is_axiom = self.ctx.interner.keyOf(fact).fact.kind == .axiom;
+    // `citedFactFormula` routes by mode: strict resolves the proven fact, admit mode reads the
+    // STATEMENT (no ProveTask racked) so the pre-certificate checks can run under `--fast`.
+    const got = try self.citedFactFormula(head);
+    const formula = got.formula;
+    const is_axiom = got.is_axiom;
 
     // peel the two structure binders at (s, t).
     var body = formula;
@@ -5936,9 +6095,11 @@ const ExtUnfold = struct {
 
 fn resolveUnfold(self: *Prove, ref: lexer.Token) Error!ExtUnfold {
     // ext unfold lemmas are always GLOBAL facts (membership / apply axioms) in practice.
-    const fact = try self.resolveFactRef(ref);
-    const formula = try self.pool.copyIn(self.ctx.interner, self.ctx.interner.keyOf(fact).fact.formula);
-    const is_axiom = self.ctx.interner.keyOf(fact).fact.kind == .axiom;
+    // `citedFactFormula` routes by mode: strict resolves the proven fact, admit mode reads the
+    // STATEMENT (no ProveTask racked) so the pre-certificate checks can run under `--fast`.
+    const got = try self.citedFactFormula(ref);
+    const formula = got.formula;
+    const is_axiom = got.is_axiom;
     // strip the forall prefix; classify by the stripped body shape + read the characterized op.
     var body = formula;
     while (self.pool.get(body) == .quant and self.pool.get(body).quant.q == .forall) {

@@ -1,8 +1,10 @@
 # The accelerant pruning boundary
 
-**Status:** `arithmetic` FIXED 2026-10-24 and `simplify` FIXED 2026-10-25, each with a
-regression gate (`tests/cases/arithmetic_false_fast.b4m`, `simplify_false_fast.b4m`,
-`simplify_alias_fast.b4m`). Seven decision words remain. The tradeoff this note
+**Status:** EIGHT of the nine decision words FIXED (`arithmetic` 2026-10-24, `simplify`
+2026-10-25, `polynomial`/`tautology`/`chain`/`assoc`/`assoc_commut`/`extensionality`
+2026-10-26). `specialize` is the one exception and the reason is recorded below. Regression
+gates: `tests/cases/{arithmetic,simplify,polynomial,tautology,chain}_false_fast.b4m` plus
+`simplify_alias_fast.b4m`. The tradeoff this note
 originally flagged — a slower `--fast` loop — **measured as negligible**: whole-std `--fast` is
 16.8s against strict's 233.7s, still 14x, because certify-first keeps the decision off the
 common path.
@@ -133,11 +135,8 @@ the certify-first ordering exists.
    corpus unsoundness — but it is the one that matters, since the whole point of a model is
    that its obligations are discharged. Resolving the overlay does not obviously need a fetch
    the way `simplify`'s rules do, so this looks tractable.
-2. **The remaining seven** (`polynomial`, `assoc`, `assoc_commut`, `tautology`, `chain`,
-   `extensionality`, `specialize`). Each has the same shape as the two fixed ones: find where
-   construction begins, move admit there, and demand in the trusted read pass whatever the
-   decision reads (idents for the arithmetic-like ones, rule statements for the rewrite-like
-   ones). `polynomial`'s `completePolyOps` already demands idents, so it is probably closest.
+2. **`specialize`**, as described above — it needs the claim-match moved into the producer, or
+   `fvar_binds` installed before the producer runs.
 
 ## What this is NOT
 

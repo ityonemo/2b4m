@@ -743,6 +743,19 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "--fast", "tests/cases/simplify_alias_fast.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/simplify_alias_fast.b4m" });
 
+    // The same contract for the rest of the decision accelerants: each runs its OWN decision
+    // under `--fast` and declines only to emit the certificate, so a goal its decision refutes
+    // fails in BOTH modes with the same diagnostic. Before this they admitted on arity and goal
+    // SHAPE alone — `polynomial` accepted any add/mul-shaped equation, `tautology` any goal with
+    // premises (its own comment said "no --fast escape", which the early admit undid), `chain`
+    // any equation goal with a cited equation. See ACCELERANT-PRUNING-BOUNDARY.md.
+    ctx.fail(&.{ "check", "--fast", "tests/cases/polynomial_false_fast.b4m" }, "tests/cases/polynomial_false_fast.b4m:10:12: error: polynomial: sides expand differently: 'add(mul(a, a), add(mul(a, b), add(mul(a, b), mul(b, b))))' vs 'add(mul(a, a), mul(b, b))'\n");
+    ctx.fail(&.{ "check", "tests/cases/polynomial_false_fast.b4m" }, "tests/cases/polynomial_false_fast.b4m:10:12: error: polynomial: sides expand differently: 'add(mul(a, a), add(mul(a, b), add(mul(a, b), mul(b, b))))' vs 'add(mul(a, a), mul(b, b))'\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/tautology_false_fast.b4m" }, "tests/cases/tautology_false_fast.b4m:14:12: error: tautology: not a propositional consequence; countermodel: p(ZERO) := true\n");
+    ctx.fail(&.{ "check", "tests/cases/tautology_false_fast.b4m" }, "tests/cases/tautology_false_fast.b4m:14:12: error: tautology: not a propositional consequence; countermodel: p(ZERO) := true\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/chain_false_fast.b4m" }, "tests/cases/chain_false_fast.b4m:24:12: error: chain: cannot connect 'succ(ZERO)' to 'add(succ(ZERO), succ(ZERO))' from the cited equations\n");
+    ctx.fail(&.{ "check", "tests/cases/chain_false_fast.b4m" }, "tests/cases/chain_false_fast.b4m:24:12: error: chain: cannot connect 'succ(ZERO)' to 'add(succ(ZERO), succ(ZERO))' from the cited equations\n");
+
     // Two theorems `specialize` ONE shared fact by DIFFERENT access paths — one by its
     // declared name, the other via a local step that `[by cite]`s it. The synthetic
     // schemas differ (a local head's body carries the head formula as antecedent #0; a
