@@ -50,6 +50,7 @@ intheory subStrictlyDecreases
 intheory subAddSameRight
 intheory mulSubDistribLeft
 intheory subInvolution
+intheory succOfSubSucc
 
 // -- theorems ---------------------------------------------------------------
 
@@ -599,5 +600,67 @@ proof
     }
   @conclusion |
     forall b, a: Nat; less_than(b, succ(a)) -> sub(a, sub(a, b)) = b
+    [by generalize generalize-b]
+qed
+
+// -- stepping a difference: succ(a - succ(b)) = a - b, for b < a -------------------------
+//
+// Removing one fewer leaves one more. This is the companion of `subInvolution` for walking
+// an index range DOWNWARD: it says the base of "the last k+1 of a range" moves by one as k
+// grows. The bound matters — at b = a both sides truncate differently (succ(a - succ(a)) = 1
+// but a - a = 0).
+//
+// Proof by induction on b, with a generalized. At b = 0 it is succ(a - 1) = a, which is
+// `addSubCancel` read through `subZeroRight`; the step strips a successor from both
+// arguments via `subSuccSucc`.
+theorem succOfSubSucc: forall b, a: Nat; less_than(b, a) -> succ(sub(a, succ(b))) = sub(a, b)
+proof
+  @generalize-b |
+    fix b: Nat {
+      @generalize-a |
+        fix a: Nat {
+          @given-b-below-a |
+            assume less_than(b, a) {
+              @b-below-a |
+                less_than(b, a)
+                [by hypothesis given-b-below-a]
+              // b < a gives a = (a - succ b) + succ b, so a - b = succ(a - succ b).
+              @succ-b-at-most-a |
+                less_than(succ(b), succ(a))
+                [using specialize ordering.succPreservesOrder(b, a) b-below-a]
+              @the-difference-adds-back |
+                add(sub(a, succ(b)), succ(b)) = a
+                [using specialize addSubCancel(succ(b), a) succ-b-at-most-a]
+              @regroup-the-successor |
+                add(sub(a, succ(b)), succ(b)) = add(succ(sub(a, succ(b))), b)
+                [using arithmetic(peano)]
+              @a-as-the-stepped-sum |
+                add(succ(sub(a, succ(b))), b) = a
+                [using chain regroup-the-successor-flipped the-difference-adds-back]
+              @regroup-the-successor-flipped |
+                add(succ(sub(a, succ(b))), b) = add(sub(a, succ(b)), succ(b))
+                [by symmetry regroup-the-successor]
+              // cancel b on the right: (x + b) - b = x with x = succ(a - succ b).
+              @cancel-the-added-term |
+                sub(add(succ(sub(a, succ(b))), b), b) = succ(sub(a, succ(b)))
+                [using specialize subAddCancel(succ(sub(a, succ(b))), b)]
+              // substituting a for the sum turns the cancellation into (a - b) = succ(...).
+              @the-cancellation-at-a |
+                sub(a, b) = succ(sub(a, succ(b)))
+                [by rewrite a-as-the-stepped-sum cancel-the-added-term]
+              @conclusion-the-step |
+                succ(sub(a, succ(b))) = sub(a, b)
+                [by symmetry the-cancellation-at-a]
+            }
+          @b-below-a-implies-the-step |
+            less_than(b, a) -> succ(sub(a, succ(b))) = sub(a, b)
+            [by discharge given-b-below-a]
+        }
+      @discharge-a |
+        forall a: Nat; less_than(b, a) -> succ(sub(a, succ(b))) = sub(a, b)
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall b, a: Nat; less_than(b, a) -> succ(sub(a, succ(b))) = sub(a, b)
     [by generalize generalize-b]
 qed
