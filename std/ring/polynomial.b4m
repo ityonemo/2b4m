@@ -1,0 +1,870 @@
+// std/ring/polynomial.b4m — THE POLYNOMIAL RING R[x].
+//
+// Judson's Theorem 17.1: for a commutative ring R with identity, R[x] is a commutative ring
+// with identity. This file builds R[x] as a SORT, following the pattern std/ring/factor.b4m
+// uses for R/I — a second ring sort in its own file, with the operations posited as
+// coefficient equations and the facts that justify them proved here.
+//
+// HOW A POLYNOMIAL IS CARRIED. Judson's polynomial is a coefficient list a_0 … a_n with
+// a_n nonzero, and "two polynomials are equal exactly when their corresponding coefficients
+// are equal". So the sort is observe-only through one accessor, `coeff(p, i)`, exactly as
+// std/indexed.b4m carries a finite list through `at` — a `func` cannot take a `Nat => Ring`
+// parameter, so the coefficient family is REIFIED as the sort itself rather than passed.
+// Equality by coefficients is then an axiom (`polyExtensionality`), which is the surface
+// 2b4m gives for "corresponding coefficients are equal": it is the extensionality principle
+// for this carrier, not an assumption about any particular polynomial.
+//
+// WHY THE OPERATIONS ARE POSITED. `addP` and `mulP` cannot be DEFINED by a function
+// definition, because each defining clause would have to range over an index: his
+// c_i = a_i + b_i and c_i = sum_{k<=i} a_k b_{i-k} are statements about EVERY i, and a
+// definition block cannot nest a quantifier in a clause. So each operation is a func whose
+// coefficient equation is an axiom, and the theorems that the equations DETERMINE the result
+// (there is at most one such polynomial, by extensionality) are proved here. Same division of
+// labour as factor.b4m's `mulQHom` / `theProductIsWellDefinedModI`.
+//
+// DEGREE IS A BOUND, NOT -infinity. Judson gives the zero polynomial degree -infinity, which
+// is not a Nat; rather than add a bottom element, `degreeAtMost(p, n)` says every coefficient
+// above n vanishes. The zero polynomial satisfies it for EVERY n, which is exactly what
+// degree -infinity is for, and the statements that need a real degree (17.4's
+// deg(pq) = deg p + deg q) take the leading coefficient as a separate hypothesis. This keeps
+// the index sort ℕ and avoids a second number tower.
+
+import ring <<< "std/ring.b4m"
+import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
+
+// -- the coefficient ring R ---------------------------------------------------------------
+
+sort R = ring.Ring
+const zeroR = ring.ZERO
+const oneR = ring.ONE
+func addR = ring.add
+func mulR = ring.mul
+func negR = ring.neg
+
+fact addIsAssociativeR = ring.addIsAssociative
+fact addIsCommutativeR = ring.addIsCommutative
+fact addZeroLeftR = ring.addZeroLeft
+fact addZeroRightR = ring.addZeroRight
+fact addNegLeftR = ring.addNegLeft
+fact addNegRightR = ring.addNegRight
+fact mulIsAssociativeR = ring.mulIsAssociative
+fact mulAddDistribLeftR = ring.mulAddDistribLeft
+fact mulAddDistribRightR = ring.mulAddDistribRight
+fact mulZeroLeftR = ring.mulZeroLeft
+fact mulZeroRightR = ring.mulZeroRight
+
+// JUDSON'S STANDING ASSUMPTION FOR CHAPTER 17: "Throughout this chapter we shall assume that
+// R is a commutative ring with identity." `std/ring.b4m` is the BARE ring — it declares ONE
+// but axiomatizes neither an identity law nor commutativity of multiplication (its `ONE` is
+// an unused constant), and `std/field.b4m` is too strong, since a field's nonzero elements
+// are all invertible and R[x] is never a field. So the two extra hypotheses are stated here,
+// over R's own multiplication, and they are the only assumptions this file adds to the ring
+// theory. A caller that models this file supplies them for its own coefficient ring.
+axiom mulOneLeftR: forall a: R; mulR(oneR, a) = a
+axiom mulIsCommutativeR: forall a, b: R; mulR(a, b) = mulR(b, a)
+
+// -- the index sort -----------------------------------------------------------------------
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+pred less_than = peano.less_than
+define at_most(a, b) = peano_order.less_or_equal(a, b)
+
+// -- the carrier: a polynomial IS its coefficient family ----------------------------------
+//
+// `Poly` is observe-only: `coeff` reads the i-th coefficient and nothing else inspects a
+// polynomial. Judson's equality criterion is the extensionality axiom, and it is what makes
+// the posited operations below DETERMINED rather than merely constrained.
+sort Poly
+func coeff(p: Poly, i: Nat) => R
+
+axiom polyExtensionality: forall p, q: Poly;
+  (forall i: Nat; coeff(p, i) = coeff(q, i)) -> p = q
+
+// -- degree as a coefficient bound --------------------------------------------------------
+// "every coefficient strictly above n is zero". The zero polynomial satisfies this for every
+// n, which is Judson's degree -infinity without a bottom element in the index sort.
+// (A definition block cannot nest a quantifier in a clause, so this is a declared pred with
+// its meaning as an axiom rather than a `pred … :` definition.)
+pred degreeAtMost(p: Poly, n: Nat)
+axiom degreeAtMostMeaning: forall p: Poly; forall n: Nat;
+  degreeAtMost(p, n) iff (forall i: Nat; less_than(n, i) -> coeff(p, i) = zeroR)
+
+// -- the zero and one of R[x] -------------------------------------------------------------
+
+const ZEROP: Poly
+axiom zeroPolyCoeff: forall i: Nat; coeff(ZEROP, i) = zeroR
+
+const ONEP: Poly
+axiom onePolyCoeffZero: coeff(ONEP, ZERO) = oneR
+axiom onePolyCoeffHigher: forall i: Nat; coeff(ONEP, succ(i)) = zeroR
+
+// -- addition: c_i = a_i + b_i -----------------------------------------------------------
+
+func addP(p: Poly, q: Poly) => Poly
+axiom addPolyCoeff: forall p, q: Poly; forall i: Nat;
+  coeff(addP(p, q), i) = addR(coeff(p, i), coeff(q, i))
+
+// -- negation: the inverse of p is the polynomial of negated coefficients -----------------
+
+func negP(p: Poly) => Poly
+axiom negPolyCoeff: forall p: Poly; forall i: Nat;
+  coeff(negP(p), i) = negR(coeff(p, i))
+
+// -- multiplication: the convolution c_i = sum_{k=0}^{i} a_k b_{i-k} ----------------------
+//
+// The convolution sum itself is a FOLD over the index range, which is what
+// `convolution(p, q, i)` names: the sum of a_k b_{i-k} for k running 0..i. Its two defining
+// equations are the fold's base and step, stated the way std/sequence.b4m states foldZero
+// and foldSucc — the k = 0 term, then one more term for each successor.
+func convolution(p: Poly, q: Poly, i: Nat, k: Nat) => R
+axiom convolutionZero: forall p, q: Poly; forall i: Nat;
+  convolution(p, q, i, ZERO) = mulR(coeff(p, ZERO), coeff(q, i))
+axiom convolutionSucc: forall p, q: Poly; forall i, k: Nat;
+  convolution(p, q, i, succ(k)) =
+  addR(convolution(p, q, i, k), mulR(coeff(p, succ(k)), coeff(q, peano.sub(i, succ(k)))))
+
+func mulP(p: Poly, q: Poly) => Poly
+axiom mulPolyCoeff: forall p, q: Poly; forall i: Nat;
+  coeff(mulP(p, q), i) = convolution(p, q, i, i)
+
+// -- R's additive left-swap, which `assoc_commut`'s explicit AC triple requires -----------
+//
+// a + (b + c) = b + (a + c). `std/ring.b4m` proves associativity and commutativity but has
+// no left-swap, and `assoc_commut` takes the whole triple or none.
+theorem addLeftSwapR: forall a, b, c: R; addR(a, addR(b, c)) = addR(b, addR(a, c))
+proof
+  @generalize-a |
+    fix a: R {
+      @generalize-b |
+        fix b: R {
+          @generalize-c |
+            fix c: R {
+              @regroup-left-forward |
+                addR(addR(a, b), c) = addR(a, addR(b, c))
+                [using specialize addIsAssociativeR(a, b, c)]
+              @regroup-left |
+                addR(a, addR(b, c)) = addR(addR(a, b), c)
+                [by symmetry regroup-left-forward]
+              @swap-the-pair |
+                addR(a, b) = addR(b, a)
+                [using specialize addIsCommutativeR(a, b)]
+              @regrouped-swapped |
+                addR(a, addR(b, c)) = addR(addR(b, a), c)
+                [using simplify regroup-left swap-the-pair]
+              @regroup-right |
+                addR(addR(b, a), c) = addR(b, addR(a, c))
+                [using specialize addIsAssociativeR(b, a, c)]
+              @conclusion-swapped |
+                addR(a, addR(b, c)) = addR(b, addR(a, c))
+                [using chain regrouped-swapped regroup-right]
+            }
+          @discharge-c |
+            forall c: R; addR(a, addR(b, c)) = addR(b, addR(a, c))
+            [by generalize generalize-c]
+        }
+      @discharge-b |
+        forall b, c: R; addR(a, addR(b, c)) = addR(b, addR(a, c))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: R; addR(a, addR(b, c)) = addR(b, addR(a, c))
+    [by generalize generalize-a]
+qed
+
+// == JUDSON'S THEOREM 17.1 ================================================================
+//
+// R[x] is a commutative ring with identity. Each ring axiom for R[x] reduces, by
+// extensionality, to the corresponding axiom for R applied coefficientwise: "commutativity
+// and associativity follow immediately from the definition of polynomial addition and from
+// the fact that addition in R is both commutative and associative."
+
+// His "commutativity … follows immediately from the definition of polynomial addition and
+// from the fact that addition in R is commutative."
+theorem polyAddIsCommutative: forall p, q: Poly; addP(p, q) = addP(q, p)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          // coeff(p+q, i) = a_i + b_i = b_i + a_i = coeff(q+p, i): the coefficient
+          // equation on both sides, with R's commutativity in the middle.
+          @generalize-index |
+            fix i: Nat {
+              @left-coefficient |
+                coeff(addP(p, q), i) = addR(coeff(p, i), coeff(q, i))
+                [using specialize addPolyCoeff(p, q, i)]
+              @right-coefficient |
+                coeff(addP(q, p), i) = addR(coeff(q, i), coeff(p, i))
+                [using specialize addPolyCoeff(q, p, i)]
+              @ring-addition-commutes |
+                addR(coeff(p, i), coeff(q, i)) = addR(coeff(q, i), coeff(p, i))
+                [using specialize addIsCommutativeR(coeff(p, i), coeff(q, i))]
+              @coefficients-agree-at-index |
+                coeff(addP(p, q), i) = coeff(addP(q, p), i)
+                [using chain left-coefficient ring-addition-commutes right-coefficient]
+            }
+          @coefficients-agree |
+            forall i: Nat; coeff(addP(p, q), i) = coeff(addP(q, p), i)
+            [by generalize generalize-index]
+          @conclusion-commutative |
+            addP(p, q) = addP(q, p)
+            [using specialize polyExtensionality(addP(p, q), addP(q, p)) coefficients-agree]
+        }
+      @discharge-q |
+        forall q: Poly; addP(p, q) = addP(q, p)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; addP(p, q) = addP(q, p)
+    [by generalize generalize-p]
+qed
+
+// His "associativity follow[s] immediately from the definition of polynomial addition and
+// from the fact that addition in R is … associative."
+theorem polyAddIsAssociative: forall p, q, r: Poly; addP(addP(p, q), r) = addP(p, addP(q, r))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-index |
+                fix i: Nat {
+                  @left-outer |
+                    coeff(addP(addP(p, q), r), i) = addR(coeff(addP(p, q), i), coeff(r, i))
+                    [using specialize addPolyCoeff(addP(p, q), r, i)]
+                  @left-inner |
+                    coeff(addP(p, q), i) = addR(coeff(p, i), coeff(q, i))
+                    [using specialize addPolyCoeff(p, q, i)]
+                  @left-expanded |
+                    coeff(addP(addP(p, q), r), i) =
+                      addR(addR(coeff(p, i), coeff(q, i)), coeff(r, i))
+                    [using simplify left-outer left-inner]
+                  @right-outer |
+                    coeff(addP(p, addP(q, r)), i) = addR(coeff(p, i), coeff(addP(q, r), i))
+                    [using specialize addPolyCoeff(p, addP(q, r), i)]
+                  @right-inner |
+                    coeff(addP(q, r), i) = addR(coeff(q, i), coeff(r, i))
+                    [using specialize addPolyCoeff(q, r, i)]
+                  @right-expanded |
+                    coeff(addP(p, addP(q, r)), i) =
+                      addR(coeff(p, i), addR(coeff(q, i), coeff(r, i)))
+                    [using simplify right-outer right-inner]
+                  @ring-addition-associates |
+                    addR(addR(coeff(p, i), coeff(q, i)), coeff(r, i)) =
+                      addR(coeff(p, i), addR(coeff(q, i), coeff(r, i)))
+                    [using specialize addIsAssociativeR(coeff(p, i), coeff(q, i), coeff(r, i))]
+                  @coefficients-agree-at-index |
+                    coeff(addP(addP(p, q), r), i) = coeff(addP(p, addP(q, r)), i)
+                    [using chain left-expanded ring-addition-associates right-expanded]
+                }
+              @coefficients-agree |
+                forall i: Nat; coeff(addP(addP(p, q), r), i) = coeff(addP(p, addP(q, r)), i)
+                [by generalize generalize-index]
+              @conclusion-associative |
+                addP(addP(p, q), r) = addP(p, addP(q, r))
+                [using specialize polyExtensionality(addP(addP(p, q), r), addP(p, addP(q, r))) coefficients-agree]
+            }
+          @discharge-r |
+            forall r: Poly; addP(addP(p, q), r) = addP(p, addP(q, r))
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; addP(addP(p, q), r) = addP(p, addP(q, r))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; addP(addP(p, q), r) = addP(p, addP(q, r))
+    [by generalize generalize-p]
+qed
+
+// His "the zero polynomial, f(x) = 0, is the additive identity."
+theorem polyAddZeroLeft: forall p: Poly; addP(ZEROP, p) = p
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-index |
+        fix i: Nat {
+          @sum-coefficient |
+            coeff(addP(ZEROP, p), i) = addR(coeff(ZEROP, i), coeff(p, i))
+            [using specialize addPolyCoeff(ZEROP, p, i)]
+          @zero-coefficient |
+            coeff(ZEROP, i) = zeroR
+            [using specialize zeroPolyCoeff(i)]
+          @sum-is-zero-plus |
+            coeff(addP(ZEROP, p), i) = addR(zeroR, coeff(p, i))
+            [using simplify sum-coefficient zero-coefficient]
+          @ring-zero-absorbs |
+            addR(zeroR, coeff(p, i)) = coeff(p, i)
+            [using specialize addZeroLeftR(coeff(p, i))]
+          @coefficients-agree-at-index |
+            coeff(addP(ZEROP, p), i) = coeff(p, i)
+            [using chain sum-is-zero-plus ring-zero-absorbs]
+        }
+      @coefficients-agree |
+        forall i: Nat; coeff(addP(ZEROP, p), i) = coeff(p, i)
+        [by generalize generalize-index]
+      @conclusion-identity |
+        addP(ZEROP, p) = p
+        [using specialize polyExtensionality(addP(ZEROP, p), p) coefficients-agree]
+    }
+  @conclusion |
+    forall p: Poly; addP(ZEROP, p) = p
+    [by generalize generalize-p]
+qed
+
+// His "the inverse of p(x) is easily verified to be -p(x) = sum (-a_i) x^i."
+theorem polyAddNegLeft: forall p: Poly; addP(negP(p), p) = ZEROP
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-index |
+        fix i: Nat {
+          @sum-coefficient |
+            coeff(addP(negP(p), p), i) = addR(coeff(negP(p), i), coeff(p, i))
+            [using specialize addPolyCoeff(negP(p), p, i)]
+          @negated-coefficient |
+            coeff(negP(p), i) = negR(coeff(p, i))
+            [using specialize negPolyCoeff(p, i)]
+          @sum-is-neg-plus |
+            coeff(addP(negP(p), p), i) = addR(negR(coeff(p, i)), coeff(p, i))
+            [using simplify sum-coefficient negated-coefficient]
+          @ring-inverse-cancels |
+            addR(negR(coeff(p, i)), coeff(p, i)) = zeroR
+            [using specialize addNegLeftR(coeff(p, i))]
+          @zero-coefficient |
+            coeff(ZEROP, i) = zeroR
+            [using specialize zeroPolyCoeff(i)]
+          @coefficients-agree-at-index |
+            coeff(addP(negP(p), p), i) = coeff(ZEROP, i)
+            [using chain sum-is-neg-plus ring-inverse-cancels zero-coefficient]
+        }
+      @coefficients-agree |
+        forall i: Nat; coeff(addP(negP(p), p), i) = coeff(ZEROP, i)
+        [by generalize generalize-index]
+      @conclusion-inverse |
+        addP(negP(p), p) = ZEROP
+        [using specialize polyExtensionality(addP(negP(p), p), ZEROP) coefficients-agree]
+    }
+  @conclusion |
+    forall p: Poly; addP(negP(p), p) = ZEROP
+    [by generalize generalize-p]
+qed
+
+// -- the multiplicative identity ----------------------------------------------------------
+//
+// 1 in R[x] is the constant polynomial 1, and coeff(1*p, i) = convolution(1, p, i, i). The
+// convolution against ONEP collapses because every higher coefficient of ONEP is zero, so
+// only the k = 0 term survives. That collapse is an induction on the fold's upper limit.
+
+// The tail of the convolution against ONEP contributes nothing: summing up to any k leaves
+// just the k = 0 term, 1 * b_i.
+theorem convolutionAgainstOneCollapses: forall p: Poly; forall i, k: Nat;
+  convolution(ONEP, p, i, k) = mulR(oneR, coeff(p, i))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-i |
+        fix i: Nat {
+          // base case: the k = 0 term is 1 * b_i by definition.
+          @base-case |
+            convolution(ONEP, p, i, ZERO) = mulR(coeff(ONEP, ZERO), coeff(p, i))
+            [using specialize convolutionZero(ONEP, p, i)]
+          @one-at-zero |
+            coeff(ONEP, ZERO) = oneR
+            [by cite onePolyCoeffZero]
+          @base-case-collapsed |
+            convolution(ONEP, p, i, ZERO) = mulR(oneR, coeff(p, i))
+            [using simplify base-case one-at-zero]
+
+          // inductive step: the new term is 0 * something, which adds nothing.
+          @induction-step |
+            fix k: Nat {
+              @given-inductive-hypothesis |
+                assume convolution(ONEP, p, i, k) = mulR(oneR, coeff(p, i)) {
+                  @inductive-hypothesis |
+                    convolution(ONEP, p, i, k) = mulR(oneR, coeff(p, i))
+                    [by hypothesis given-inductive-hypothesis]
+                  @unfold-successor |
+                    convolution(ONEP, p, i, succ(k)) =
+                      addR(convolution(ONEP, p, i, k),
+                      mulR(coeff(ONEP, succ(k)), coeff(p, peano.sub(i, succ(k)))))
+                    [using specialize convolutionSucc(ONEP, p, i, k)]
+                  @one-above-zero-vanishes |
+                    coeff(ONEP, succ(k)) = zeroR
+                    [using specialize onePolyCoeffHigher(k)]
+                  @new-term-is-zero |
+                    mulR(zeroR, coeff(p, peano.sub(i, succ(k)))) = zeroR
+                    [using specialize mulZeroLeftR(coeff(p, peano.sub(i, succ(k))))]
+                  @successor-adds-zero |
+                    convolution(ONEP, p, i, succ(k)) =
+                      addR(mulR(oneR, coeff(p, i)), zeroR)
+                    [using simplify unfold-successor one-above-zero-vanishes new-term-is-zero inductive-hypothesis]
+                  @zero-on-the-right |
+                    addR(mulR(oneR, coeff(p, i)), zeroR) = mulR(oneR, coeff(p, i))
+                    [using specialize addZeroRightR(mulR(oneR, coeff(p, i)))]
+                  @conclusion-successor |
+                    convolution(ONEP, p, i, succ(k)) = mulR(oneR, coeff(p, i))
+                    [using chain successor-adds-zero zero-on-the-right]
+                }
+              @induction-step-at-k |
+                convolution(ONEP, p, i, k) = mulR(oneR, coeff(p, i)) ->
+                  convolution(ONEP, p, i, succ(k)) = mulR(oneR, coeff(p, i))
+                [by discharge given-inductive-hypothesis]
+            }
+          @induction-step-for-all-k |
+            forall k: Nat; convolution(ONEP, p, i, k) = mulR(oneR, coeff(p, i)) ->
+              convolution(ONEP, p, i, succ(k)) = mulR(oneR, coeff(p, i))
+            [by generalize induction-step]
+          @conclusion-for-all-k |
+            forall k: Nat; convolution(ONEP, p, i, k) = mulR(oneR, coeff(p, i))
+            [using instantiation peano.induction((fun k: Nat => convolution(ONEP, p, i, k) = mulR(oneR, coeff(p, i)))) base-case-collapsed induction-step-for-all-k]
+        }
+      @discharge-i |
+        forall i: Nat; forall k: Nat; convolution(ONEP, p, i, k) = mulR(oneR, coeff(p, i))
+        [by generalize generalize-i]
+    }
+  @conclusion |
+    forall p: Poly; forall i, k: Nat; convolution(ONEP, p, i, k) = mulR(oneR, coeff(p, i))
+    [by generalize generalize-p]
+qed
+
+// 1 is the identity of R[x]: the convolution collapses to 1 * b_i = b_i.
+theorem polyMulOneLeft: forall p: Poly; mulP(ONEP, p) = p
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-index |
+        fix i: Nat {
+          @product-coefficient |
+            coeff(mulP(ONEP, p), i) = convolution(ONEP, p, i, i)
+            [using specialize mulPolyCoeff(ONEP, p, i)]
+          @convolution-collapses |
+            convolution(ONEP, p, i, i) = mulR(oneR, coeff(p, i))
+            [using specialize convolutionAgainstOneCollapses(p, i, i)]
+          @ring-one-is-identity |
+            mulR(oneR, coeff(p, i)) = coeff(p, i)
+            [using specialize mulOneLeftR(coeff(p, i))]
+          @coefficients-agree-at-index |
+            coeff(mulP(ONEP, p), i) = coeff(p, i)
+            [using chain product-coefficient convolution-collapses ring-one-is-identity]
+        }
+      @coefficients-agree |
+        forall i: Nat; coeff(mulP(ONEP, p), i) = coeff(p, i)
+        [by generalize generalize-index]
+      @conclusion-identity |
+        mulP(ONEP, p) = p
+        [using specialize polyExtensionality(mulP(ONEP, p), p) coefficients-agree]
+    }
+  @conclusion |
+    forall p: Poly; mulP(ONEP, p) = p
+    [by generalize generalize-p]
+qed
+
+// -- DISTRIBUTIVITY: p(q + r) = pq + pr ---------------------------------------------------
+//
+// Judson leaves this as an exercise ("The commutativity and distribution properties of
+// polynomial multiplication are proved in a similar manner. We shall leave the proofs of
+// these properties as an exercise."). It is an induction on the convolution's upper limit:
+// each term a_k (b + c)_{i-k} splits as a_k b_{i-k} + a_k c_{i-k} by R's distributivity, and
+// the two running sums stay separated because R's addition is commutative and associative.
+
+// The convolution against a SUM splits into the sum of the two convolutions, at every k.
+theorem convolutionDistributes: forall p, q, r: Poly; forall i, k: Nat;
+  convolution(p, addP(q, r), i, k) =
+  addR(convolution(p, q, i, k), convolution(p, r, i, k))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-i |
+                fix i: Nat {
+                  // base case: the k = 0 term is a_0 (b_i + c_i) = a_0 b_i + a_0 c_i.
+                  @base-sum |
+                    convolution(p, addP(q, r), i, ZERO) =
+                      mulR(coeff(p, ZERO), coeff(addP(q, r), i))
+                    [using specialize convolutionZero(p, addP(q, r), i)]
+                  @base-coefficient-splits |
+                    coeff(addP(q, r), i) = addR(coeff(q, i), coeff(r, i))
+                    [using specialize addPolyCoeff(q, r, i)]
+                  @base-distributes |
+                    mulR(coeff(p, ZERO), addR(coeff(q, i), coeff(r, i))) =
+                      addR(mulR(coeff(p, ZERO), coeff(q, i)), mulR(coeff(p, ZERO), coeff(r, i)))
+                    [using specialize mulAddDistribLeftR(coeff(p, ZERO), coeff(q, i), coeff(r, i))]
+                  @base-left |
+                    convolution(p, q, i, ZERO) = mulR(coeff(p, ZERO), coeff(q, i))
+                    [using specialize convolutionZero(p, q, i)]
+                  @base-right |
+                    convolution(p, r, i, ZERO) = mulR(coeff(p, ZERO), coeff(r, i))
+                    [using specialize convolutionZero(p, r, i)]
+                  @base-case |
+                    convolution(p, addP(q, r), i, ZERO) =
+                      addR(convolution(p, q, i, ZERO), convolution(p, r, i, ZERO))
+                    [using simplify base-sum base-coefficient-splits base-distributes base-left base-right]
+
+                  // inductive step: one more term on each side, split the same way.
+                  @induction-step |
+                    fix k: Nat {
+                      @given-inductive-hypothesis |
+                        assume convolution(p, addP(q, r), i, k) =
+                          addR(convolution(p, q, i, k), convolution(p, r, i, k)) {
+                          @inductive-hypothesis |
+                            convolution(p, addP(q, r), i, k) =
+                              addR(convolution(p, q, i, k), convolution(p, r, i, k))
+                            [by hypothesis given-inductive-hypothesis]
+                          @unfold-sum-side |
+                            convolution(p, addP(q, r), i, succ(k)) =
+                              addR(convolution(p, addP(q, r), i, k),
+                              mulR(coeff(p, succ(k)), coeff(addP(q, r), peano.sub(i, succ(k)))))
+                            [using specialize convolutionSucc(p, addP(q, r), i, k)]
+                          @new-coefficient-splits |
+                            coeff(addP(q, r), peano.sub(i, succ(k))) =
+                              addR(coeff(q, peano.sub(i, succ(k))), coeff(r, peano.sub(i, succ(k))))
+                            [using specialize addPolyCoeff(q, r, peano.sub(i, succ(k)))]
+                          @new-term-distributes |
+                            mulR(coeff(p, succ(k)),
+                              addR(coeff(q, peano.sub(i, succ(k))), coeff(r, peano.sub(i, succ(k))))) =
+                              addR(mulR(coeff(p, succ(k)), coeff(q, peano.sub(i, succ(k)))),
+                              mulR(coeff(p, succ(k)), coeff(r, peano.sub(i, succ(k)))))
+                            [using specialize mulAddDistribLeftR(coeff(p, succ(k)), coeff(q, peano.sub(i, succ(k))), coeff(r, peano.sub(i, succ(k))))]
+                          @unfold-left-side |
+                            convolution(p, q, i, succ(k)) =
+                              addR(convolution(p, q, i, k),
+                              mulR(coeff(p, succ(k)), coeff(q, peano.sub(i, succ(k)))))
+                            [using specialize convolutionSucc(p, q, i, k)]
+                          @unfold-right-side |
+                            convolution(p, r, i, succ(k)) =
+                              addR(convolution(p, r, i, k),
+                              mulR(coeff(p, succ(k)), coeff(r, peano.sub(i, succ(k)))))
+                            [using specialize convolutionSucc(p, r, i, k)]
+                          // the four summands regroup: (S_q + S_r) + (t_q + t_r)
+                          //   = (S_q + t_q) + (S_r + t_r), which is AC rearrangement.
+                          // LHS, fully expanded into the four summands.
+                          @sum-side-expanded |
+                            convolution(p, addP(q, r), i, succ(k)) =
+                              addR(addR(convolution(p, q, i, k), convolution(p, r, i, k)),
+                              addR(mulR(coeff(p, succ(k)), coeff(q, peano.sub(i, succ(k)))),
+                              mulR(coeff(p, succ(k)), coeff(r, peano.sub(i, succ(k))))))
+                            [using simplify unfold-sum-side new-coefficient-splits new-term-distributes inductive-hypothesis]
+                          // RHS, fully expanded into the same four summands.
+                          @product-side-expanded |
+                            addR(convolution(p, q, i, succ(k)), convolution(p, r, i, succ(k))) =
+                              addR(addR(convolution(p, q, i, k),
+                              mulR(coeff(p, succ(k)), coeff(q, peano.sub(i, succ(k))))),
+                              addR(convolution(p, r, i, k),
+                              mulR(coeff(p, succ(k)), coeff(r, peano.sub(i, succ(k))))))
+                            [using simplify unfold-left-side unfold-right-side]
+                          // (S_q + S_r) + (t_q + t_r) = (S_q + t_q) + (S_r + t_r).
+                          @the-four-summands-regroup |
+                            addR(addR(convolution(p, q, i, k), convolution(p, r, i, k)),
+                              addR(mulR(coeff(p, succ(k)), coeff(q, peano.sub(i, succ(k)))),
+                              mulR(coeff(p, succ(k)), coeff(r, peano.sub(i, succ(k)))))) =
+                              addR(addR(convolution(p, q, i, k),
+                              mulR(coeff(p, succ(k)), coeff(q, peano.sub(i, succ(k))))),
+                              addR(convolution(p, r, i, k),
+                              mulR(coeff(p, succ(k)), coeff(r, peano.sub(i, succ(k))))))
+                            [using assoc_commut(addIsAssociativeR, addIsCommutativeR, addLeftSwapR)]
+                          @conclusion-successor |
+                            convolution(p, addP(q, r), i, succ(k)) =
+                              addR(convolution(p, q, i, succ(k)), convolution(p, r, i, succ(k)))
+                            [using chain sum-side-expanded the-four-summands-regroup product-side-expanded]
+                        }
+                      @induction-step-at-k |
+                        convolution(p, addP(q, r), i, k) =
+                          addR(convolution(p, q, i, k), convolution(p, r, i, k)) ->
+                          convolution(p, addP(q, r), i, succ(k)) =
+                          addR(convolution(p, q, i, succ(k)), convolution(p, r, i, succ(k)))
+                        [by discharge given-inductive-hypothesis]
+                    }
+                  @induction-step-for-all-k |
+                    forall k: Nat;
+                      convolution(p, addP(q, r), i, k) =
+                      addR(convolution(p, q, i, k), convolution(p, r, i, k)) ->
+                      convolution(p, addP(q, r), i, succ(k)) =
+                      addR(convolution(p, q, i, succ(k)), convolution(p, r, i, succ(k)))
+                    [by generalize induction-step]
+                  @conclusion-for-all-k |
+                    forall k: Nat; convolution(p, addP(q, r), i, k) =
+                      addR(convolution(p, q, i, k), convolution(p, r, i, k))
+                    [using instantiation peano.induction((fun k: Nat => convolution(p, addP(q, r), i, k) = addR(convolution(p, q, i, k), convolution(p, r, i, k)))) base-case induction-step-for-all-k]
+                }
+              @discharge-i |
+                forall i: Nat; forall k: Nat;
+                  convolution(p, addP(q, r), i, k) =
+                  addR(convolution(p, q, i, k), convolution(p, r, i, k))
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r: Poly; forall i, k: Nat;
+              convolution(p, addP(q, r), i, k) =
+              addR(convolution(p, q, i, k), convolution(p, r, i, k))
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; forall i, k: Nat;
+          convolution(p, addP(q, r), i, k) =
+          addR(convolution(p, q, i, k), convolution(p, r, i, k))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall i, k: Nat;
+      convolution(p, addP(q, r), i, k) =
+      addR(convolution(p, q, i, k), convolution(p, r, i, k))
+    [by generalize generalize-p]
+qed
+
+// The distributive law for R[x], from the convolution's own distributivity at i = i.
+theorem polyMulAddDistribLeft: forall p, q, r: Poly;
+  mulP(p, addP(q, r)) = addP(mulP(p, q), mulP(p, r))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-index |
+                fix i: Nat {
+                  @product-with-sum |
+                    coeff(mulP(p, addP(q, r)), i) = convolution(p, addP(q, r), i, i)
+                    [using specialize mulPolyCoeff(p, addP(q, r), i)]
+                  @convolution-splits |
+                    convolution(p, addP(q, r), i, i) =
+                      addR(convolution(p, q, i, i), convolution(p, r, i, i))
+                    [using specialize convolutionDistributes(p, q, r, i, i)]
+                  @left-product |
+                    coeff(mulP(p, q), i) = convolution(p, q, i, i)
+                    [using specialize mulPolyCoeff(p, q, i)]
+                  @right-product |
+                    coeff(mulP(p, r), i) = convolution(p, r, i, i)
+                    [using specialize mulPolyCoeff(p, r, i)]
+                  @sum-of-products |
+                    coeff(addP(mulP(p, q), mulP(p, r)), i) =
+                      addR(coeff(mulP(p, q), i), coeff(mulP(p, r), i))
+                    [using specialize addPolyCoeff(mulP(p, q), mulP(p, r), i)]
+                  @sum-side-in-convolutions |
+                    coeff(addP(mulP(p, q), mulP(p, r)), i) =
+                      addR(convolution(p, q, i, i), convolution(p, r, i, i))
+                    [using simplify sum-of-products left-product right-product]
+                  @product-side-in-convolutions |
+                    coeff(mulP(p, addP(q, r)), i) =
+                      addR(convolution(p, q, i, i), convolution(p, r, i, i))
+                    [using simplify product-with-sum convolution-splits]
+                  @coefficients-agree-at-index |
+                    coeff(mulP(p, addP(q, r)), i) = coeff(addP(mulP(p, q), mulP(p, r)), i)
+                    [using chain product-side-in-convolutions sum-side-in-convolutions]
+                }
+              @coefficients-agree |
+                forall i: Nat;
+                  coeff(mulP(p, addP(q, r)), i) = coeff(addP(mulP(p, q), mulP(p, r)), i)
+                [by generalize generalize-index]
+              @conclusion-distributes |
+                mulP(p, addP(q, r)) = addP(mulP(p, q), mulP(p, r))
+                [using specialize polyExtensionality(mulP(p, addP(q, r)), addP(mulP(p, q), mulP(p, r))) coefficients-agree]
+            }
+          @discharge-r |
+            forall r: Poly; mulP(p, addP(q, r)) = addP(mulP(p, q), mulP(p, r))
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; mulP(p, addP(q, r)) = addP(mulP(p, q), mulP(p, r))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; mulP(p, addP(q, r)) = addP(mulP(p, q), mulP(p, r))
+    [by generalize generalize-p]
+qed
+
+// -- DEGREE: the bound behaves under addition ---------------------------------------------
+//
+// If neither p nor q has a coefficient above n, neither does p + q. This is the half of
+// Judson's degree arithmetic that needs no integral domain — it is the statement that
+// deg(p + q) <= max(deg p, deg q), written with a common bound.
+theorem polyAddDegreeBound: forall p, q: Poly; forall n: Nat;
+  degreeAtMost(p, n) -> degreeAtMost(q, n) -> degreeAtMost(addP(p, q), n)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-n |
+            fix n: Nat {
+              @given-p-bounded |
+                assume degreeAtMost(p, n) {
+                  @given-q-bounded |
+                    assume degreeAtMost(q, n) {
+                      @p-bounded |
+                        degreeAtMost(p, n)
+                        [by hypothesis given-p-bounded]
+                      @q-bounded |
+                        degreeAtMost(q, n)
+                        [by hypothesis given-q-bounded]
+                      @bound-meaning-p |
+                        degreeAtMost(p, n) iff
+                          (forall i: Nat; less_than(n, i) -> coeff(p, i) = zeroR)
+                        [using specialize degreeAtMostMeaning(p, n)]
+                      @bound-meaning-q |
+                        degreeAtMost(q, n) iff
+                          (forall i: Nat; less_than(n, i) -> coeff(q, i) = zeroR)
+                        [using specialize degreeAtMostMeaning(q, n)]
+                      @p-vanishes-above |
+                        forall i: Nat; less_than(n, i) -> coeff(p, i) = zeroR
+                        [using tautology p-bounded bound-meaning-p]
+                      @q-vanishes-above |
+                        forall i: Nat; less_than(n, i) -> coeff(q, i) = zeroR
+                        [using tautology q-bounded bound-meaning-q]
+                      @generalize-index |
+                        fix i: Nat {
+                          @given-index-above |
+                            assume less_than(n, i) {
+                              @index-above |
+                                less_than(n, i)
+                                [by hypothesis given-index-above]
+                              @p-zero-here |
+                                coeff(p, i) = zeroR
+                                [using specialize p-vanishes-above(i) index-above]
+                              @q-zero-here |
+                                coeff(q, i) = zeroR
+                                [using specialize q-vanishes-above(i) index-above]
+                              @sum-here |
+                                coeff(addP(p, q), i) = addR(coeff(p, i), coeff(q, i))
+                                [using specialize addPolyCoeff(p, q, i)]
+                              @sum-of-zeros |
+                                coeff(addP(p, q), i) = addR(zeroR, zeroR)
+                                [using simplify sum-here p-zero-here q-zero-here]
+                              @zero-plus-zero |
+                                addR(zeroR, zeroR) = zeroR
+                                [using specialize addZeroLeftR(zeroR)]
+                              @conclusion-vanishes-here |
+                                coeff(addP(p, q), i) = zeroR
+                                [using chain sum-of-zeros zero-plus-zero]
+                            }
+                          @index-above-implies-zero |
+                            less_than(n, i) -> coeff(addP(p, q), i) = zeroR
+                            [by discharge given-index-above]
+                        }
+                      @sum-vanishes-above |
+                        forall i: Nat; less_than(n, i) -> coeff(addP(p, q), i) = zeroR
+                        [by generalize generalize-index]
+                      @bound-meaning-sum |
+                        degreeAtMost(addP(p, q), n) iff
+                          (forall i: Nat; less_than(n, i) -> coeff(addP(p, q), i) = zeroR)
+                        [using specialize degreeAtMostMeaning(addP(p, q), n)]
+                      @conclusion-bounded |
+                        degreeAtMost(addP(p, q), n)
+                        [using tautology sum-vanishes-above bound-meaning-sum]
+                    }
+                  @q-bounded-implies-sum-bounded |
+                    degreeAtMost(q, n) -> degreeAtMost(addP(p, q), n)
+                    [by discharge given-q-bounded]
+                }
+              @both-bounded-implies-sum-bounded |
+                degreeAtMost(p, n) -> degreeAtMost(q, n) -> degreeAtMost(addP(p, q), n)
+                [by discharge given-p-bounded]
+            }
+          @discharge-n |
+            forall n: Nat;
+              degreeAtMost(p, n) -> degreeAtMost(q, n) -> degreeAtMost(addP(p, q), n)
+            [by generalize generalize-n]
+        }
+      @discharge-q |
+        forall q: Poly; forall n: Nat;
+          degreeAtMost(p, n) -> degreeAtMost(q, n) -> degreeAtMost(addP(p, q), n)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; forall n: Nat;
+      degreeAtMost(p, n) -> degreeAtMost(q, n) -> degreeAtMost(addP(p, q), n)
+    [by generalize generalize-p]
+qed
+
+// -- the k = 0 coefficient of a product ---------------------------------------------------
+//
+// coeff(pq, 0) = a_0 b_0: the convolution at i = 0 is its own base term. With R commutative
+// this is symmetric in p and q, which is the constant term of Judson's exercise that R[x] is
+// commutative. The full commutativity needs the convolution sum REVERSED (reindexing
+// k -> i-k), which needs a summation-reversal lemma std does not have; see the file's
+// closing note.
+theorem polyProductConstantTerm: forall p, q: Poly;
+  coeff(mulP(p, q), ZERO) = mulR(coeff(p, ZERO), coeff(q, ZERO))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @product-coefficient |
+            coeff(mulP(p, q), ZERO) = convolution(p, q, ZERO, ZERO)
+            [using specialize mulPolyCoeff(p, q, ZERO)]
+          @convolution-base |
+            convolution(p, q, ZERO, ZERO) = mulR(coeff(p, ZERO), coeff(q, ZERO))
+            [using specialize convolutionZero(p, q, ZERO)]
+          @conclusion-constant-term |
+            coeff(mulP(p, q), ZERO) = mulR(coeff(p, ZERO), coeff(q, ZERO))
+            [using chain product-coefficient convolution-base]
+        }
+      @discharge-q |
+        forall q: Poly; coeff(mulP(p, q), ZERO) = mulR(coeff(p, ZERO), coeff(q, ZERO))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; coeff(mulP(p, q), ZERO) = mulR(coeff(p, ZERO), coeff(q, ZERO))
+    [by generalize generalize-p]
+qed
+
+// The constant terms of pq and qp agree, which is R's commutativity at index 0.
+theorem polyProductConstantTermCommutes: forall p, q: Poly;
+  coeff(mulP(p, q), ZERO) = coeff(mulP(q, p), ZERO)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @forward-constant-term |
+            coeff(mulP(p, q), ZERO) = mulR(coeff(p, ZERO), coeff(q, ZERO))
+            [using specialize polyProductConstantTerm(p, q)]
+          @reversed-constant-term |
+            coeff(mulP(q, p), ZERO) = mulR(coeff(q, ZERO), coeff(p, ZERO))
+            [using specialize polyProductConstantTerm(q, p)]
+          @ring-multiplication-commutes |
+            mulR(coeff(p, ZERO), coeff(q, ZERO)) = mulR(coeff(q, ZERO), coeff(p, ZERO))
+            [using specialize mulIsCommutativeR(coeff(p, ZERO), coeff(q, ZERO))]
+          @conclusion-constant-terms-agree |
+            coeff(mulP(p, q), ZERO) = coeff(mulP(q, p), ZERO)
+            [using chain forward-constant-term ring-multiplication-commutes reversed-constant-term]
+        }
+      @discharge-q |
+        forall q: Poly; coeff(mulP(p, q), ZERO) = coeff(mulP(q, p), ZERO)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; coeff(mulP(p, q), ZERO) = coeff(mulP(q, p), ZERO)
+    [by generalize generalize-p]
+qed
+
+// == WHAT IS NOT HERE, AND WHAT IT WOULD TAKE =============================================
+//
+// FULL MULTIPLICATIVE COMMUTATIVITY (pq = qp) and MULTIPLICATIVE ASSOCIATIVITY ((pq)r =
+// p(qr)) are the two ring axioms for R[x] this file does not prove. Judson leaves
+// commutativity as an exercise and proves associativity by the displayed triple-sum
+// expansion
+//
+//     sum_i [ sum_j ( sum_k a_k b_{j-k} ) c_{i-j} ] x^i = sum_i ( sum_{j+k+l=i} a_j b_k c_l ) x^i
+//
+// whose middle line reindexes a DOUBLE sum into a sum over triples j+k+l=i. Both steps are
+// the same missing ingredient: a lemma that REINDEXES a convolution, either reversing it
+// (k -> i-k, which gives commutativity from R's own commutativity) or flattening a nested
+// pair of them. `std` has no summation-reversal or double-sum-exchange lemma — `grep` for a
+// fold-reversal theorem over `std/sequence.b4m`'s `foldUpTo` finds none — so this is a real
+// missing piece of library, not a proof that got stuck.
+//
+// What exists instead: `polyProductConstantTermCommutes` is commutativity at index 0, where
+// no reindexing is needed. The honest statement of the gap is that R[x]'s additive group,
+// its multiplicative identity, and its distributive law are proved here from R's axioms,
+// while the two reindexing-dependent axioms await a summation-reversal lemma.
