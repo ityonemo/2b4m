@@ -724,7 +724,7 @@ pub fn addTests(
     // verdict right needs the theory's well-known idents RESOLVED — `nonneg` picks the ℕ-vs-ℤ
     // fragment, and without it `less_than(a, add(a, succ(b)))` decides false over ℤ — so
     // `trustedReadPass` demands them too, not just the untrusted read pass.
-    // See ACCELERANT-PRUNING-BOUNDARY.md.
+    // See ACCELERATION.md.
     ctx.fail(&.{ "check", "--fast", "tests/cases/arithmetic_false_fast.b4m" }, "tests/cases/arithmetic_false_fast.b4m:12:12: error: arithmetic: the statement is false\n");
     ctx.fail(&.{ "check", "tests/cases/arithmetic_false_fast.b4m" }, "tests/cases/arithmetic_false_fast.b4m:12:12: error: arithmetic: the statement is false\n");
     // and a TRUE goal no certifier can certify is ADMITTED under `--fast` (strict reports the
@@ -748,7 +748,7 @@ pub fn addTests(
     // fails in BOTH modes with the same diagnostic. Before this they admitted on arity and goal
     // SHAPE alone — `polynomial` accepted any add/mul-shaped equation, `tautology` any goal with
     // premises (its own comment said "no --fast escape", which the early admit undid), `chain`
-    // any equation goal with a cited equation. See ACCELERANT-PRUNING-BOUNDARY.md.
+    // any equation goal with a cited equation. See ACCELERATION.md.
     ctx.fail(&.{ "check", "--fast", "tests/cases/polynomial_false_fast.b4m" }, "tests/cases/polynomial_false_fast.b4m:10:12: error: polynomial: sides expand differently: 'add(mul(a, a), add(mul(a, b), add(mul(a, b), mul(b, b))))' vs 'add(mul(a, a), mul(b, b))'\n");
     ctx.fail(&.{ "check", "tests/cases/polynomial_false_fast.b4m" }, "tests/cases/polynomial_false_fast.b4m:10:12: error: polynomial: sides expand differently: 'add(mul(a, a), add(mul(a, b), add(mul(a, b), mul(b, b))))' vs 'add(mul(a, a), mul(b, b))'\n");
     ctx.fail(&.{ "check", "--fast", "tests/cases/tautology_false_fast.b4m" }, "tests/cases/tautology_false_fast.b4m:14:12: error: tautology: not a propositional consequence; countermodel: p(ZERO) := true\n");

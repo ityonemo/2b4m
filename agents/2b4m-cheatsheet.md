@@ -38,18 +38,41 @@ plain **`2b4m check <file>`** over the WHOLE file (strict — full kernel verifi
 guarantee. A file is not "done" until plain `2b4m check` is green with NO
 `NOT FULLY VERIFIED` banner.
 
-### `--fast` IS A STRUCTURAL CHECK — that is the whole of what it promises
+### `--fast` IS A STRUCTURAL CHECK UP TO A TRUST BOUNDARY — that is the whole of what it promises
 
-`--fast` tells you the proof's SHAPE is sound: the steps compose, the rules take the
-arity they take, the blocks discharge. It does not resolve what your references
-actually bind to. So two different failures survive it, and the second is the one that
-surprises people:
+`--fast` tells you the proof's SHAPE is sound (the steps compose, the rules take the arity
+they take, the blocks discharge) AND that each accelerant's own interface holds: its
+DECISION runs — both sides really normalize alike, the arithmetic really is valid, the BFS
+really connects — and the vocabulary and cited statements that decision reads really
+resolve. **A goal an accelerant's decision REFUTES fails in both modes, with the same
+diagnostic.** (Swept across every trustable word; `specialize` is the one gated exception,
+where `--fast` still accepts a claim the specialization cannot produce.)
 
-1. **An accelerant can't produce a kernel certificate.** `--fast` admitted the verdict;
-   strict demands the proof. Usually a real gap in the argument.
-2. **A reference bound to the WRONG declaration of the RIGHT SHAPE.** Binding identity
-   is not a structural property, so a shape-only check cannot see this — and it is not a
+What `--fast` does NOT do is drill into the CERTIFICATE. That is where the trust boundary
+falls, and two failures live beyond it — the second is the one that surprises people:
+
+1. **An accelerant decided "true" but no kernel certificate exists.** `--fast` admitted the
+   verdict; strict demands the proof. Sometimes benign (the goal IS true, no certifier
+   covers its shape — `arithmetic` says "valid but no certifier could prove it here").
+   Sometimes the decision was reasoning over a vocabulary that does not mean what it
+   assumes: `add`, `mul`, `ZERO`, `succ`, `less_than`, `nonneg` are bound by well-known
+   NAME, with no check the symbol obeys the laws the decision needs. Strict still rejects
+   that — its certificate must discharge against DECLARED AXIOMS — but from inside `--fast`
+   the two look identical, since both are a true verdict with no certificate. **The decision
+   is a FILTER; the certificate is the AUTHORITY.**
+2. **A reference bound to the WRONG declaration of the RIGHT SHAPE.** Binding identity is
+   not a structural property, so a shape-only check cannot see this — and it is not a
    `--fast` bug, it is `--fast` doing exactly what it says.
+
+Both escape the same way: through **what a name denotes**. Name things strangely — an
+operator that does not obey its namesake's laws, a local alias colliding with a sibling
+theory's — and `--fast` cannot notice, because noticing is the certificate's job.
+
+**Where the boundary falls for each word is catalogued in `ACCELERATION.md`** — "Where the
+`--fast` trust boundary falls, per word" (kept vs dropped, per `using` word). Two residuals worth carrying in head: `specialize` is
+the one word where `--fast` admits what strict REFUTES (its claim-vs-instance match happens
+only after the instance is proven), and `model` keeps the statement α-match but drops the
+per-axiom obligation-coverage check, so a partial model passes `--fast` and fails strict.
 
 Measured instances of (2), both from lifting proofs across several `std` theories:
 
