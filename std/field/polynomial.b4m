@@ -194,6 +194,57 @@ proof
     [by generalize generalize-p]
 qed
 
+// -- addition, negation, and the difference the construction subtracts --------------------
+//
+// Judson's `f(x) - (a_n/b_m) x^{n-m} g(x)` needs a difference, so addition and negation come
+// back here, now that there is a theorem that uses them.
+func addP(p: Poly, q: Poly) => Poly
+axiom addPolyCoeff: forall p, q: Poly; forall i: Nat;
+  coeff(addP(p, q), i) = addF(coeff(p, i), coeff(q, i))
+
+func negP(p: Poly) => Poly
+axiom negPolyCoeff: forall p: Poly; forall i: Nat;
+  coeff(negP(p), i) = negF(coeff(p, i))
+
+// `subP(p, q)` is `p - q`. Over a FIELD subtraction is total and honest — it is addition of
+// the negation, with no truncation anywhere — so this is a definition, not a guarded symbol.
+define subP(p, q) = addP(p, negP(q))
+
+// The coefficient of a difference is the difference of the coefficients.
+theorem subPolyCoeff: forall p, q: Poly; forall i: Nat;
+  coeff(subP(p, q), i) = addF(coeff(p, i), negF(coeff(q, i)))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-index |
+            fix i: Nat {
+              @the-difference-is-a-sum |
+                coeff(addP(p, negP(q)), i) = addF(coeff(p, i), coeff(negP(q), i))
+                [using specialize addPolyCoeff(p, negP(q), i)]
+              @the-negated-coefficient |
+                coeff(negP(q), i) = negF(coeff(q, i))
+                [using specialize negPolyCoeff(q, i)]
+              @conclusion-the-difference |
+                coeff(subP(p, q), i) = addF(coeff(p, i), negF(coeff(q, i)))
+                [using simplify the-difference-is-a-sum the-negated-coefficient]
+            }
+          @discharge-index |
+            forall i: Nat; coeff(subP(p, q), i) = addF(coeff(p, i), negF(coeff(q, i)))
+            [by generalize generalize-index]
+        }
+      @discharge-q |
+        forall q: Poly; forall i: Nat;
+          coeff(subP(p, q), i) = addF(coeff(p, i), negF(coeff(q, i)))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; forall i: Nat;
+      coeff(subP(p, q), i) = addF(coeff(p, i), negF(coeff(q, i)))
+    [by generalize generalize-p]
+qed
+
 // -- MONOMIALS: the constructor the existence half needs ----------------------------------
 //
 // `F[x]` above is observe-only — `coeff` reads a polynomial and only `ZEROP` is named, so
@@ -804,6 +855,158 @@ proof
     [by generalize generalize-g]
 qed
 
+// -- THE LEADING-TERM CANCELLATION --------------------------------------------------------
+//
+// This is where `recip` finally earns its place, and it is the crux of Judson's induction.
+// He subtracts `(a_n / b_m) x^{n-m} g(x)` from `f(x)`, and the point of that coefficient is
+// that the two leading terms become EQUAL, so the difference vanishes at index n.
+//
+// Concretely, with `c = a_n * recip(b_m)` and `k = n - m`, the shift law gives the
+// subtrahend's coefficient at `k + m = n` as `c * b_m`, and
+//
+//     c * b_m = (a_n * recip(b_m)) * b_m = a_n * (recip(b_m) * b_m) = a_n * 1 = a_n
+//
+// so `coeff(f, n) - coeff(subtrahend, n) = a_n - a_n = 0`. The index arithmetic (`k + m = n`
+// when `m <= n`) is what the hypothesis buys.
+
+// The chosen coefficient reproduces the leading coefficient: `(a_n * recip(b_m)) * b_m = a_n`.
+theorem theChosenCoefficientReproducesTheLeadingOne: forall leading, divisor_leading: F;
+  (not (divisor_leading = zeroF)) ->
+  mulF(mulF(leading, recipF(divisor_leading)), divisor_leading) = leading
+proof
+  @generalize-leading |
+    fix leading: F {
+      @generalize-divisor |
+        fix divisor_leading: F {
+          @given-the-divisor-is-nonzero |
+            assume not (divisor_leading = zeroF) {
+              @the-divisor-is-nonzero |
+                divisor_leading != zeroF
+                [by hypothesis given-the-divisor-is-nonzero]
+              @regroup |
+                mulF(mulF(leading, recipF(divisor_leading)), divisor_leading) =
+                  mulF(leading, mulF(recipF(divisor_leading), divisor_leading))
+                [using specialize field.mulIsAssociative(leading, recipF(divisor_leading), divisor_leading)]
+              @the-reciprocal-cancels |
+                mulF(recipF(divisor_leading), divisor_leading) = oneF
+                [using specialize field.recipMulLeft(divisor_leading) the-divisor-is-nonzero]
+              @times-one |
+                mulF(leading, oneF) = leading
+                [using specialize field.mulOneRight(leading)]
+              @regrouped-to-one |
+                mulF(mulF(leading, recipF(divisor_leading)), divisor_leading) =
+                  mulF(leading, oneF)
+                [using simplify regroup the-reciprocal-cancels]
+              @conclusion-reproduces |
+                mulF(mulF(leading, recipF(divisor_leading)), divisor_leading) = leading
+                [using chain regrouped-to-one times-one]
+            }
+          @nonzero-implies-reproduction |
+            (not (divisor_leading = zeroF)) ->
+              mulF(mulF(leading, recipF(divisor_leading)), divisor_leading) = leading
+            [by discharge given-the-divisor-is-nonzero]
+        }
+      @discharge-divisor |
+        forall divisor_leading: F;
+          (not (divisor_leading = zeroF)) ->
+          mulF(mulF(leading, recipF(divisor_leading)), divisor_leading) = leading
+        [by generalize generalize-divisor]
+    }
+  @conclusion |
+    forall leading, divisor_leading: F;
+      (not (divisor_leading = zeroF)) ->
+      mulF(mulF(leading, recipF(divisor_leading)), divisor_leading) = leading
+    [by generalize generalize-leading]
+qed
+
+// THE CANCELLATION: at index k + m, the difference's coefficient is ZERO.
+//
+// `f` and `g` are arbitrary; what matters is that `g`'s m-th coefficient is nonzero (it is
+// `g`'s leading one) and that `f`'s coefficient at `k + m` is the `leading` being cancelled.
+theorem theLeadingTermsCancel: forall f, g: Poly; forall k, m: Nat;
+  (not (coeff(g, m) = zeroF)) ->
+  coeff(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)),
+  peano.add(k, m)) = zeroF
+proof
+  @generalize-f |
+    fix f: Poly {
+      @generalize-g |
+        fix g: Poly {
+          @generalize-k |
+            fix k: Nat {
+              @generalize-m |
+                fix m: Nat {
+                  @given-the-divisor-leads |
+                    assume not (coeff(g, m) = zeroF) {
+                      @the-divisor-leads |
+                        coeff(g, m) != zeroF
+                        [by hypothesis given-the-divisor-leads]
+
+                      // the difference's coefficient, by subPolyCoeff
+                      @the-difference-coefficient |
+                        coeff(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), peano.add(k, m)) =
+                          addF(coeff(f, peano.add(k, m)),
+                          negF(coeff(mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g), peano.add(k, m))))
+                        [using specialize subPolyCoeff(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g), peano.add(k, m))]
+
+                      // the subtrahend's coefficient at k + m, by the shift law
+                      @the-subtrahend-coefficient |
+                        coeff(mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g), peano.add(k, m)) =
+                          mulF(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), coeff(g, m))
+                        [using specialize theMonomialShiftsEveryCoefficient(g, mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k, m)]
+
+                      // and that product IS the leading coefficient
+                      @the-coefficient-reproduces-the-leading-one |
+                        mulF(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), coeff(g, m)) =
+                          coeff(f, peano.add(k, m))
+                        [using specialize theChosenCoefficientReproducesTheLeadingOne(coeff(f, peano.add(k, m)), coeff(g, m)) the-divisor-leads]
+                      @the-subtrahend-is-the-leading-coefficient |
+                        coeff(mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g), peano.add(k, m)) =
+                          coeff(f, peano.add(k, m))
+                        [using chain the-subtrahend-coefficient the-coefficient-reproduces-the-leading-one]
+
+                      // so the difference is a_n + (-a_n) = 0
+                      @the-difference-is-a-cancelling-pair |
+                        coeff(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), peano.add(k, m)) =
+                          addF(coeff(f, peano.add(k, m)), negF(coeff(f, peano.add(k, m))))
+                        [using simplify the-difference-coefficient the-subtrahend-is-the-leading-coefficient]
+                      @the-pair-cancels |
+                        addF(coeff(f, peano.add(k, m)), negF(coeff(f, peano.add(k, m)))) = zeroF
+                        [using specialize field.addNegRight(coeff(f, peano.add(k, m)))]
+                      @conclusion-the-cancellation |
+                        coeff(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), peano.add(k, m)) = zeroF
+                        [using chain the-difference-is-a-cancelling-pair the-pair-cancels]
+                    }
+                  @leading-implies-cancellation |
+                    (not (coeff(g, m) = zeroF)) ->
+                      coeff(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), peano.add(k, m)) = zeroF
+                    [by discharge given-the-divisor-leads]
+                }
+              @discharge-m |
+                forall m: Nat;
+                  (not (coeff(g, m) = zeroF)) ->
+                  coeff(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), peano.add(k, m)) = zeroF
+                [by generalize generalize-m]
+            }
+          @discharge-k |
+            forall k: Nat; forall m: Nat;
+              (not (coeff(g, m) = zeroF)) ->
+              coeff(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), peano.add(k, m)) = zeroF
+            [by generalize generalize-k]
+        }
+      @discharge-g |
+        forall g: Poly; forall k, m: Nat;
+          (not (coeff(g, m) = zeroF)) ->
+          coeff(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), peano.add(k, m)) = zeroF
+        [by generalize generalize-g]
+    }
+  @conclusion |
+    forall f, g: Poly; forall k, m: Nat;
+      (not (coeff(g, m) = zeroF)) ->
+      coeff(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), peano.add(k, m)) = zeroF
+    [by generalize generalize-f]
+qed
+
 // == JUDSON'S DIVISION ALGORITHM (§17.2) ==================================================
 //
 // "Let f(x) and g(x) be polynomials in F[x], where F is a field and g(x) is a nonzero
@@ -990,30 +1193,27 @@ qed
 
 // == WHAT IS NOT HERE, AND WHAT IT WOULD TAKE =============================================
 //
-// THE EXISTENCE HALF of the division algorithm. Judson's construction is an induction on
-// deg f: when deg g <= deg f he forms
+// THE EXISTENCE HALF, which is now one step away. Judson's induction on deg f is:
 //
-//     f'(x) = f(x) - (a_n / b_m) x^{n-m} g(x)
+//     f'(x) = f(x) - (a_n / b_m) x^{n-m} g(x)    has degree < n, or is zero
+//     by induction f' = q'g + r, so f = (q' + (a_n/b_m) x^{n-m}) g + r
 //
-// whose degree is strictly less than deg f, applies the hypothesis to f', and assembles
-// q(x) = q'(x) + (a_n / b_m) x^{n-m}. Three pieces are missing for that, and each is a real
-// addition rather than a detail:
+// Everything the construction USES is built: `monomial` makes the term, `subP` subtracts it,
+// and `theLeadingTermsCancel` is the fact that the n-th coefficient of the difference
+// vanishes. What remains is two steps of assembly:
 //
-//   1. MONOMIALS — now BUILT above: `monomial(a, k)` is `a x^k`, and a nonzero coefficient
-//      makes its degree exactly `k`.
-//   2. THE MONOMIAL-SHIFT LAW — now PROVED above: multiplying by `c x^k` shifts the
-//      coefficient family, so the product's k-th coefficient is `c * g_0`. What remains of
-//      the cancellation is the SUBTRACTION itself (`subP`, hence `addP`/`negP` back) and the
-//      arithmetic that `recip` makes work: choosing `c = a_n * recip(b_m)` makes the two
-//      leading terms equal, so their difference vanishes at index n.
-//   3. INDUCTION ON DEGREE. The recursion is on deg f with deg g fixed, so it is ordinary
-//      induction on a Nat — available, but it must be set up over a STRONG hypothesis
-//      ("for every f of degree below n"), since f' is not f's predecessor in any structural
-//      sense.
-//
-// What IS here is the uniqueness half, the monomial constructor, and the shift law.
-// `aSmallDegreeMultipleIsTheZeroMultiple` is the whole force of Judson's second paragraph
-// and `aNonzeroMultipleHasAtLeastTheDegree` its pivot; neither needs the construction.
+//   1. THE DEGREE DROP. `theLeadingTermsCancel` kills ONE coefficient. To conclude
+//      `degree(f') < degree(f)` one also needs that everything ABOVE n already vanished on
+//      both sides — true because `degreeAtMost(f, n)` and the subtrahend's degree is
+//      `k + deg g = n` — and then `degreeIsUnique`-style reasoning to turn "vanishes at and
+//      above n" into a strict degree bound.
+//   2. STRONG INDUCTION ON DEGREE. The recursion is on deg f with deg g fixed, and f' is not
+//      f's structural predecessor, so it needs the "for every f of degree below n" form.
+//      `std/peano/order.b4m` has strong induction; this is set-up work, not new theory.
 //
 // Judson's two corollaries (the factor theorem, and that a degree-n polynomial has at most n
-// zeros) both cite the EXISTENCE half, so both wait on the three pieces above.
+// zeros) both cite the existence half, so both follow that.
+//
+// Also still open, and unrelated: multiplicative ASSOCIATIVITY of a polynomial ring. See the
+// closing note in `std/ring/polynomial.b4m` — it needs a double-sum flattening, a different
+// lemma from the single-sum reversal that gave commutativity.
