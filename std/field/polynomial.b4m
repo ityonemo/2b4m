@@ -19,6 +19,7 @@
 import field <<< "std/field.b4m"
 import peano <<< "std/peano.b4m"
 import peano_order <<< "std/peano/order.b4m"
+import subtraction <<< "std/peano/subtraction.b4m"
 
 // -- the coefficient field F --------------------------------------------------------------
 
@@ -42,6 +43,9 @@ fact oneNotZero = field.oneNotZero
 // -- the index sort -----------------------------------------------------------------------
 
 sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+func subN = subtraction.sub
 pred less_than = peano.less_than
 
 // -- the carrier: F[x] --------------------------------------------------------------------
@@ -71,7 +75,21 @@ axiom degreeBoundsTheCoefficients: forall p: Poly;
 
 // -- the operations -----------------------------------------------------------------------
 
+// Multiplication, by the convolution, exactly as `std/ring/polynomial.b4m` defines it over a
+// ring. Carried here rather than left opaque because §17.2's existence half BUILDS
+// polynomials and then reasons about their coefficients: an opaque `mulP` would force every
+// such fact to be a fresh assumption about an undefined function.
+func convolution(p: Poly, q: Poly, i: Nat, k: Nat) => F
+axiom convolutionZero: forall p, q: Poly; forall i: Nat;
+  convolution(p, q, i, ZERO) = mulF(coeff(p, ZERO), coeff(q, i))
+axiom convolutionSucc: forall p, q: Poly; forall i, k: Nat;
+  convolution(p, q, i, succ(k)) =
+  addF(convolution(p, q, i, k),
+  mulF(coeff(p, succ(k)), coeff(q, subN(i, succ(k)))))
+
 func mulP(p: Poly, q: Poly) => Poly
+axiom mulPolyCoeff: forall p, q: Poly; forall i: Nat;
+  coeff(mulP(p, q), i) = convolution(p, q, i, i)
 
 // Judson's Proposition 17.4 over a field: the degree of a product is the sum of the degrees.
 // A field is an integral domain, so the leading product a_m b_n cannot vanish. Stated as an
@@ -223,31 +241,15 @@ proof
                           @the-index-is-above |
                             less_than(k, i)
                             [by hypothesis given-the-index-is-above]
-                          // if i were k, then k < k
-                          @given-the-index-equals-k |
-                            assume i = k {
-                              @the-index-equals-k |
-                                i = k
-                                [by hypothesis given-the-index-equals-k]
-                              @k-would-be-below-itself |
-                                less_than(k, k)
-                                [by rewrite the-index-equals-k the-index-is-above]
-                              @nothing-is-below-itself |
-                                not less_than(k, k)
-                                [using specialize peano_order.lessThanIrreflexive(k)]
-                              @contradiction |
-                                not (i = k)
-                                [by ex_falso k-would-be-below-itself nothing-is-below-itself]
-                            }
-                          @equalling-k-is-absurd |
-                            i = k -> (not (i = k))
-                            [by discharge given-the-index-equals-k]
                           @being-above-makes-it-different |
-                            not (i = k)
-                            [using tautology equalling-k-is-absurd]
+                            k != i
+                            [using specialize peano_order.lessThanIsStrict(k, i) the-index-is-above]
+                          @the-index-differs-from-k |
+                            i != k
+                            [using specialize peano_order.natDisequalityIsSymmetric(k, i) being-above-makes-it-different]
                           @the-coefficient-vanishes |
                             coeff(monomial(a, k), i) = zeroF
-                            [using specialize monomialCoeffElsewhere(a, k, i) being-above-makes-it-different]
+                            [using specialize monomialCoeffElsewhere(a, k, i) the-index-differs-from-k]
                         }
                       @above-implies-vanishing |
                         less_than(k, i) -> coeff(monomial(a, k), i) = zeroF
@@ -292,6 +294,322 @@ proof
       (not (a = zeroF)) -> (not (monomial(a, k) = ZEROP)) ->
       degree(monomial(a, k)) = k
     [by generalize generalize-a]
+qed
+
+// -- THE MONOMIAL-SHIFT LAW ---------------------------------------------------------------
+//
+// Multiplying by `a x^k` shifts the coefficient family: the i-th coefficient of
+// `monomial(c,k) * g` is `c * g_{i-k}`. This is the law Judson's construction needs, because
+// his `f(x) - (a_n/b_m) x^{n-m} g(x)` only cancels the leading term if the product's n-th
+// coefficient is exactly `(a_n/b_m) * b_m`.
+//
+// The convolution sum has exactly ONE surviving term — every `j != k` contributes
+// `0 * g_{i-j}` — so the proof is two inductions on the fold's limit: below k the sum is
+// still empty, and at k the single term appears and nothing after changes it.
+
+// PHASE ONE: summing to any limit strictly below k contributes nothing, since every index
+// reached so far misses k.
+theorem theMonomialConvolutionIsEmptyBelowItsIndex: forall g: Poly; forall c: F;
+  forall k, i, t: Nat;
+  less_than(t, k) -> convolution(monomial(c, k), g, i, t) = zeroF
+proof
+  @generalize-g |
+    fix g: Poly {
+      @generalize-c |
+        fix c: F {
+          @generalize-k |
+            fix k: Nat {
+              @generalize-i |
+                fix i: Nat {
+                  // base: the t = 0 term is m_0 * g_i, and 0 != k because 0 < k.
+                  @given-zero-below-k |
+                    assume less_than(ZERO, k) {
+                      @zero-below-k |
+                        less_than(ZERO, k)
+                        [by hypothesis given-zero-below-k]
+                      @the-base-term |
+                        convolution(monomial(c, k), g, i, ZERO) =
+                          mulF(coeff(monomial(c, k), ZERO), coeff(g, i))
+                        [using specialize convolutionZero(monomial(c, k), g, i)]
+                      @zero-differs-from-k |
+                        ZERO != k
+                        [using specialize peano_order.lessThanIsStrict(ZERO, k) zero-below-k]
+                      @the-monomial-vanishes-at-zero |
+                        coeff(monomial(c, k), ZERO) = zeroF
+                        [using specialize monomialCoeffElsewhere(c, k, ZERO) zero-differs-from-k]
+                      @zero-times-anything |
+                        mulF(zeroF, coeff(g, i)) = zeroF
+                        [using specialize field.mulZeroLeft(coeff(g, i))]
+                      @base-case-value |
+                        convolution(monomial(c, k), g, i, ZERO) = zeroF
+                        [using simplify the-base-term the-monomial-vanishes-at-zero zero-times-anything]
+                    }
+                  @base-case |
+                    less_than(ZERO, k) -> convolution(monomial(c, k), g, i, ZERO) = zeroF
+                    [by discharge given-zero-below-k]
+
+                  // step: one more term, whose index succ(t) is still below k, so it misses k.
+                  @induction-step |
+                    fix t: Nat {
+                      @given-inductive-hypothesis |
+                        assume less_than(t, k) ->
+                          convolution(monomial(c, k), g, i, t) = zeroF {
+                          @inductive-hypothesis |
+                            less_than(t, k) -> convolution(monomial(c, k), g, i, t) = zeroF
+                            [by hypothesis given-inductive-hypothesis]
+                          @given-successor-below-k |
+                            assume less_than(succ(t), k) {
+                              @successor-below-k |
+                                less_than(succ(t), k)
+                                [by hypothesis given-successor-below-k]
+                              @t-below-k |
+                                less_than(t, k)
+                                [using specialize peano_order.lessThanTransitive(t, succ(t), k) t-below-its-successor successor-below-k]
+                              @t-below-its-successor |
+                                less_than(t, succ(t))
+                                [using specialize peano_order.lessThanSelf(t)]
+                              @the-sum-so-far-vanishes |
+                                convolution(monomial(c, k), g, i, t) = zeroF
+                                [using tautology inductive-hypothesis t-below-k]
+                              @one-more-term |
+                                convolution(monomial(c, k), g, i, succ(t)) =
+                                  addF(convolution(monomial(c, k), g, i, t),
+                                  mulF(coeff(monomial(c, k), succ(t)),
+                                  coeff(g, subN(i, succ(t)))))
+                                [using specialize convolutionSucc(monomial(c, k), g, i, t)]
+                              @the-successor-differs-from-k |
+                                succ(t) != k
+                                [using specialize peano_order.lessThanIsStrict(succ(t), k) successor-below-k]
+                              @the-monomial-vanishes-here |
+                                coeff(monomial(c, k), succ(t)) = zeroF
+                                [using specialize monomialCoeffElsewhere(c, k, succ(t)) the-successor-differs-from-k]
+                              @the-new-term-is-zero |
+                                mulF(zeroF, coeff(g, subN(i, succ(t)))) = zeroF
+                                [using specialize field.mulZeroLeft(coeff(g, subN(i, succ(t))))]
+                              @the-sum-is-zero-plus-zero |
+                                convolution(monomial(c, k), g, i, succ(t)) = addF(zeroF, zeroF)
+                                [using simplify one-more-term the-sum-so-far-vanishes the-monomial-vanishes-here the-new-term-is-zero]
+                              @zero-plus-zero |
+                                addF(zeroF, zeroF) = zeroF
+                                [using specialize addZeroLeftF(zeroF)]
+                              @conclusion-successor |
+                                convolution(monomial(c, k), g, i, succ(t)) = zeroF
+                                [using chain the-sum-is-zero-plus-zero zero-plus-zero]
+                            }
+                          @successor-below-k-implies-vanishing |
+                            less_than(succ(t), k) ->
+                              convolution(monomial(c, k), g, i, succ(t)) = zeroF
+                            [by discharge given-successor-below-k]
+                        }
+                      @induction-step-at-t |
+                        (less_than(t, k) -> convolution(monomial(c, k), g, i, t) = zeroF) ->
+                          (less_than(succ(t), k) ->
+                          convolution(monomial(c, k), g, i, succ(t)) = zeroF)
+                        [by discharge given-inductive-hypothesis]
+                    }
+                  @induction-step-for-all-t |
+                    forall t: Nat;
+                      (less_than(t, k) -> convolution(monomial(c, k), g, i, t) = zeroF) ->
+                      (less_than(succ(t), k) ->
+                      convolution(monomial(c, k), g, i, succ(t)) = zeroF)
+                    [by generalize induction-step]
+                  @conclusion-for-all-t |
+                    forall t: Nat;
+                      less_than(t, k) -> convolution(monomial(c, k), g, i, t) = zeroF
+                    [using instantiation peano.induction((fun t: Nat => less_than(t, k) -> convolution(monomial(c, k), g, i, t) = zeroF)) base-case induction-step-for-all-t]
+                }
+              @discharge-i |
+                forall i: Nat; forall t: Nat;
+                  less_than(t, k) -> convolution(monomial(c, k), g, i, t) = zeroF
+                [by generalize generalize-i]
+            }
+          @discharge-k |
+            forall k: Nat; forall i, t: Nat;
+              less_than(t, k) -> convolution(monomial(c, k), g, i, t) = zeroF
+            [by generalize generalize-k]
+        }
+      @discharge-c |
+        forall c: F; forall k, i, t: Nat;
+          less_than(t, k) -> convolution(monomial(c, k), g, i, t) = zeroF
+        [by generalize generalize-c]
+    }
+  @conclusion |
+    forall g: Poly; forall c: F; forall k, i, t: Nat;
+      less_than(t, k) -> convolution(monomial(c, k), g, i, t) = zeroF
+    [by generalize generalize-g]
+qed
+
+// PHASE TWO: at the limit k the single surviving term appears, and the sum from there is
+// `c * g_{i-k}` for good. The pivot is the step from k-1 to k, where phase one's "still
+// empty" meets the one index that does not miss.
+theorem theMonomialConvolutionIsTheShiftedTerm: forall g: Poly; forall c: F;
+  forall k, i: Nat;
+  convolution(monomial(c, k), g, i, k) = mulF(c, coeff(g, subN(i, k)))
+proof
+  @generalize-g |
+    fix g: Poly {
+      @generalize-c |
+        fix c: F {
+          @generalize-k |
+            fix k: Nat {
+              @generalize-i |
+                fix i: Nat {
+                  // Two cases on k, because the k = 0 sum has no predecessor to be empty.
+                  @k-is-zero-or-a-successor |
+                    k = ZERO or (exists t: Nat; k = succ(t))
+                    [using specialize peano.zeroOrSucc(k)]
+
+                  @when-k-is-zero |
+                    assume k = ZERO {
+                      @k-is-zero |
+                        k = ZERO
+                        [by hypothesis when-k-is-zero]
+                      // the whole sum IS the base term, c * g_i, and i - 0 = i
+                      @the-base-term |
+                        convolution(monomial(c, ZERO), g, i, ZERO) =
+                          mulF(coeff(monomial(c, ZERO), ZERO), coeff(g, i))
+                        [using specialize convolutionZero(monomial(c, ZERO), g, i)]
+                      @the-monomial-at-its-own-index |
+                        coeff(monomial(c, ZERO), ZERO) = c
+                        [using specialize monomialCoeffAtItsIndex(c, ZERO)]
+                      @subtracting-zero |
+                        subN(i, ZERO) = i
+                        [using specialize subtraction.subZeroRight(i)]
+                      @the-value-at-zero |
+                        convolution(monomial(c, ZERO), g, i, ZERO) =
+                          mulF(c, coeff(g, subN(i, ZERO)))
+                        [using simplify the-base-term the-monomial-at-its-own-index subtracting-zero]
+                      @conclusion-when-zero |
+                        convolution(monomial(c, k), g, i, k) = mulF(c, coeff(g, subN(i, k)))
+                        [by rewrite k-is-zero-flipped the-value-at-zero]
+                      @k-is-zero-flipped |
+                        ZERO = k
+                        [by symmetry k-is-zero]
+                    }
+
+                  @when-k-is-a-successor |
+                    assume exists t: Nat; k = succ(t) {
+                      @the-predecessor-exists |
+                        exists t: Nat; k = succ(t)
+                        [by hypothesis when-k-is-a-successor]
+                      @with-predecessor-t |
+                        unpack t: Nat from the-predecessor-exists {
+                          @k-is-the-successor |
+                            k = succ(t)
+                            [by hypothesis with-predecessor-t]
+                          // the sum to t is empty (t < k), and the k-th term is c * g_{i-k}
+                          @t-is-below-k |
+                            less_than(t, succ(t))
+                            [using specialize peano_order.lessThanSelf(t)]
+                          @t-is-below-k-itself |
+                            less_than(t, k)
+                            [by rewrite k-is-the-successor-flipped t-is-below-k]
+                          @k-is-the-successor-flipped |
+                            succ(t) = k
+                            [by symmetry k-is-the-successor]
+                          @the-sum-to-t-is-empty |
+                            convolution(monomial(c, k), g, i, t) = zeroF
+                            [using specialize theMonomialConvolutionIsEmptyBelowItsIndex(g, c, k, i, t) t-is-below-k-itself]
+                          @one-more-term |
+                            convolution(monomial(c, k), g, i, succ(t)) =
+                              addF(convolution(monomial(c, k), g, i, t),
+                              mulF(coeff(monomial(c, k), succ(t)),
+                              coeff(g, subN(i, succ(t)))))
+                            [using specialize convolutionSucc(monomial(c, k), g, i, t)]
+                          @the-monomial-at-its-own-index |
+                            coeff(monomial(c, k), k) = c
+                            [using specialize monomialCoeffAtItsIndex(c, k)]
+                          @the-surviving-term |
+                            coeff(monomial(c, k), succ(t)) = c
+                            [by rewrite k-is-the-successor-flipped the-monomial-at-its-own-index]
+                          @the-sum-is-zero-plus-the-term |
+                            convolution(monomial(c, k), g, i, succ(t)) =
+                              addF(zeroF, mulF(c, coeff(g, subN(i, succ(t)))))
+                            [using simplify one-more-term the-sum-to-t-is-empty the-surviving-term]
+                          @zero-plus-the-term |
+                            addF(zeroF, mulF(c, coeff(g, subN(i, succ(t))))) =
+                              mulF(c, coeff(g, subN(i, succ(t))))
+                            [using specialize addZeroLeftF(mulF(c, coeff(g, subN(i, succ(t)))))]
+                          @the-value-at-the-successor |
+                            convolution(monomial(c, k), g, i, succ(t)) =
+                              mulF(c, coeff(g, subN(i, succ(t))))
+                            [using chain the-sum-is-zero-plus-the-term zero-plus-the-term]
+                          @conclusion-when-a-successor |
+                            convolution(monomial(c, k), g, i, k) =
+                              mulF(c, coeff(g, subN(i, k)))
+                            [by rewrite k-is-the-successor the-value-at-the-successor]
+                        }
+                      @the-value-when-a-successor |
+                        convolution(monomial(c, k), g, i, k) =
+                          mulF(c, coeff(g, subN(i, k)))
+                        [by unpacked with-predecessor-t]
+                    }
+
+                  @conclusion-either-way |
+                    convolution(monomial(c, k), g, i, k) = mulF(c, coeff(g, subN(i, k)))
+                    [by common_conclusion k-is-zero-or-a-successor when-k-is-zero when-k-is-a-successor]
+                }
+              @discharge-i |
+                forall i: Nat;
+                  convolution(monomial(c, k), g, i, k) = mulF(c, coeff(g, subN(i, k)))
+                [by generalize generalize-i]
+            }
+          @discharge-k |
+            forall k: Nat; forall i: Nat;
+              convolution(monomial(c, k), g, i, k) = mulF(c, coeff(g, subN(i, k)))
+            [by generalize generalize-k]
+        }
+      @discharge-c |
+        forall c: F; forall k, i: Nat;
+          convolution(monomial(c, k), g, i, k) = mulF(c, coeff(g, subN(i, k)))
+        [by generalize generalize-c]
+    }
+  @conclusion |
+    forall g: Poly; forall c: F; forall k, i: Nat;
+      convolution(monomial(c, k), g, i, k) = mulF(c, coeff(g, subN(i, k)))
+    [by generalize generalize-g]
+qed
+
+// THE SHIFT LAW at the index that matters: the k-th coefficient of `monomial(c,k) * g` is
+// `c * g_0`, which is the leading coefficient Judson's cancellation needs.
+theorem theMonomialShiftsTheCoefficients: forall g: Poly; forall c: F; forall k: Nat;
+  coeff(mulP(monomial(c, k), g), k) = mulF(c, coeff(g, ZERO))
+proof
+  @generalize-g |
+    fix g: Poly {
+      @generalize-c |
+        fix c: F {
+          @generalize-k |
+            fix k: Nat {
+              @the-coefficient-is-the-convolution |
+                coeff(mulP(monomial(c, k), g), k) = convolution(monomial(c, k), g, k, k)
+                [using specialize mulPolyCoeff(monomial(c, k), g, k)]
+              @the-convolution-is-the-shifted-term |
+                convolution(monomial(c, k), g, k, k) = mulF(c, coeff(g, subN(k, k)))
+                [using specialize theMonomialConvolutionIsTheShiftedTerm(g, c, k, k)]
+              @the-shift-vanishes |
+                subN(k, k) = ZERO
+                [using specialize subtraction.subSelf(k)]
+              @the-shifted-term-at-zero |
+                convolution(monomial(c, k), g, k, k) = mulF(c, coeff(g, ZERO))
+                [using simplify the-convolution-is-the-shifted-term the-shift-vanishes]
+              @conclusion-the-shift |
+                coeff(mulP(monomial(c, k), g), k) = mulF(c, coeff(g, ZERO))
+                [using chain the-coefficient-is-the-convolution the-shifted-term-at-zero]
+            }
+          @discharge-k |
+            forall k: Nat; coeff(mulP(monomial(c, k), g), k) = mulF(c, coeff(g, ZERO))
+            [by generalize generalize-k]
+        }
+      @discharge-c |
+        forall c: F; forall k: Nat;
+          coeff(mulP(monomial(c, k), g), k) = mulF(c, coeff(g, ZERO))
+        [by generalize generalize-c]
+    }
+  @conclusion |
+    forall g: Poly; forall c: F; forall k: Nat;
+      coeff(mulP(monomial(c, k), g), k) = mulF(c, coeff(g, ZERO))
+    [by generalize generalize-g]
 qed
 
 // == JUDSON'S DIVISION ALGORITHM (§17.2) ==================================================
@@ -491,18 +809,19 @@ qed
 //
 //   1. MONOMIALS — now BUILT above: `monomial(a, k)` is `a x^k`, and a nonzero coefficient
 //      makes its degree exactly `k`.
-//   2. THE LEADING-TERM CANCELLATION. That the subtraction strictly lowers the degree is
-//      the crux of the induction, and it is where `recip` finally does its work: the
-//      coefficient is chosen precisely so the two leading terms cancel. Proving it needs
-//      monomials plus the product's leading coefficient.
+//   2. THE MONOMIAL-SHIFT LAW — now PROVED above: multiplying by `c x^k` shifts the
+//      coefficient family, so the product's k-th coefficient is `c * g_0`. What remains of
+//      the cancellation is the SUBTRACTION itself (`subP`, hence `addP`/`negP` back) and the
+//      arithmetic that `recip` makes work: choosing `c = a_n * recip(b_m)` makes the two
+//      leading terms equal, so their difference vanishes at index n.
 //   3. INDUCTION ON DEGREE. The recursion is on deg f with deg g fixed, so it is ordinary
 //      induction on a Nat — available, but it must be set up over a STRONG hypothesis
 //      ("for every f of degree below n"), since f' is not f's predecessor in any structural
 //      sense.
 //
-// What IS here is the uniqueness half plus the monomial constructor: `aSmallDegreeMultipleIsTheZeroMultiple` is
-// the whole force of Judson's second paragraph, and `aNonzeroMultipleHasAtLeastTheDegree` is
-// its pivot. Neither needs the construction.
+// What IS here is the uniqueness half, the monomial constructor, and the shift law.
+// `aSmallDegreeMultipleIsTheZeroMultiple` is the whole force of Judson's second paragraph
+// and `aNonzeroMultipleHasAtLeastTheDegree` its pivot; neither needs the construction.
 //
 // Judson's two corollaries (the factor theorem, and that a degree-n polynomial has at most n
 // zeros) both cite the EXISTENCE half, so both wait on the three pieces above.
