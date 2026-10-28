@@ -58,7 +58,16 @@ const ZEROP: Poly
 //
 // Same shape and same reason: a bound for the general statements, a total function with a
 // guarded axiom for the arithmetic, junk at the zero polynomial.
+// The degree bound, now exercised by the monomial's degree proof.
+pred degreeAtMost(p: Poly, n: Nat)
+axiom degreeAtMostMeaning: forall p: Poly; forall n: Nat;
+  degreeAtMost(p, n) iff (forall i: Nat; less_than(n, i) -> coeff(p, i) = zeroF)
+
 func degree(p: Poly) => Nat
+axiom degreeIsALeadingIndex: forall p: Poly;
+  (not (p = ZEROP)) -> (not (coeff(p, degree(p)) = zeroF))
+axiom degreeBoundsTheCoefficients: forall p: Poly;
+  (not (p = ZEROP)) -> degreeAtMost(p, degree(p))
 
 // -- the operations -----------------------------------------------------------------------
 
@@ -72,6 +81,218 @@ func mulP(p: Poly, q: Poly) => Poly
 axiom degreeOfAProduct: forall p, q: Poly;
   (not (p = ZEROP)) -> (not (q = ZEROP)) ->
   degree(mulP(p, q)) = peano.add(degree(p), degree(q))
+
+// `degree` is DETERMINED by its two halves: any index that is nonzero and bounds the rest
+// IS the degree. Same statement and same trichotomy argument as `std/ring/polynomial.b4m`'s
+// `degreeIsUnique`, re-proved here because that one is over `ring.Ring` and this sort's
+// coefficients are `field.Field` — there is no sort subsumption to inherit it through.
+theorem degreeIsUnique: forall p: Poly; forall n: Nat;
+  (not (p = ZEROP)) -> (not (coeff(p, n) = zeroF)) -> degreeAtMost(p, n) -> n = degree(p)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-n |
+        fix n: Nat {
+          @given-p-nonzero |
+            assume not (p = ZEROP) {
+              @given-coefficient-nonzero |
+                assume not (coeff(p, n) = zeroF) {
+                  @given-n-bounds |
+                    assume degreeAtMost(p, n) {
+                      @p-nonzero |
+                        not (p = ZEROP)
+                        [by hypothesis given-p-nonzero]
+                      @coefficient-at-n-nonzero |
+                        not (coeff(p, n) = zeroF)
+                        [by hypothesis given-coefficient-nonzero]
+                      @n-bounds-the-coefficients |
+                        degreeAtMost(p, n)
+                        [by hypothesis given-n-bounds]
+
+                      @degree-coefficient-nonzero |
+                        not (coeff(p, degree(p)) = zeroF)
+                        [using specialize degreeIsALeadingIndex(p) p-nonzero]
+                      @what-n-bounding-means |
+                        degreeAtMost(p, n) iff
+                          (forall i: Nat; less_than(n, i) -> coeff(p, i) = zeroF)
+                        [using specialize degreeAtMostMeaning(p, n)]
+                      @above-n-everything-vanishes |
+                        forall i: Nat; less_than(n, i) -> coeff(p, i) = zeroF
+                        [using tautology n-bounds-the-coefficients what-n-bounding-means]
+                      @degree-vanishes-if-above-n |
+                        less_than(n, degree(p)) -> coeff(p, degree(p)) = zeroF
+                        [using specialize above-n-everything-vanishes(degree(p))]
+                      @degree-not-above-n |
+                        not less_than(n, degree(p))
+                        [using tautology degree-vanishes-if-above-n degree-coefficient-nonzero]
+
+                      @degree-bounds-the-coefficients |
+                        degreeAtMost(p, degree(p))
+                        [using specialize degreeBoundsTheCoefficients(p) p-nonzero]
+                      @what-degree-bounding-means |
+                        degreeAtMost(p, degree(p)) iff
+                          (forall i: Nat; less_than(degree(p), i) -> coeff(p, i) = zeroF)
+                        [using specialize degreeAtMostMeaning(p, degree(p))]
+                      @above-the-degree-everything-vanishes |
+                        forall i: Nat; less_than(degree(p), i) -> coeff(p, i) = zeroF
+                        [using tautology degree-bounds-the-coefficients what-degree-bounding-means]
+                      @n-vanishes-if-above-the-degree |
+                        less_than(degree(p), n) -> coeff(p, n) = zeroF
+                        [using specialize above-the-degree-everything-vanishes(n)]
+                      @n-not-above-the-degree |
+                        not less_than(degree(p), n)
+                        [using tautology n-vanishes-if-above-the-degree coefficient-at-n-nonzero]
+
+                      @trichotomy-at-n-and-the-degree |
+                        less_than(n, degree(p)) or n = degree(p) or less_than(degree(p), n)
+                        [using specialize peano_order.trichotomy(n, degree(p))]
+                      @conclusion-the-degree-is-n |
+                        n = degree(p)
+                        [using tautology trichotomy-at-n-and-the-degree degree-not-above-n n-not-above-the-degree]
+                    }
+                  @bounding-implies-the-degree |
+                    degreeAtMost(p, n) -> n = degree(p)
+                    [by discharge given-n-bounds]
+                }
+              @nonzero-coefficient-implies-the-degree |
+                (not (coeff(p, n) = zeroF)) -> degreeAtMost(p, n) -> n = degree(p)
+                [by discharge given-coefficient-nonzero]
+            }
+          @p-nonzero-implies-the-degree |
+            (not (p = ZEROP)) -> (not (coeff(p, n) = zeroF)) -> degreeAtMost(p, n) ->
+              n = degree(p)
+            [by discharge given-p-nonzero]
+        }
+      @discharge-n |
+        forall n: Nat;
+          (not (p = ZEROP)) -> (not (coeff(p, n) = zeroF)) -> degreeAtMost(p, n) ->
+          n = degree(p)
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall p: Poly; forall n: Nat;
+      (not (p = ZEROP)) -> (not (coeff(p, n) = zeroF)) -> degreeAtMost(p, n) ->
+      n = degree(p)
+    [by generalize generalize-p]
+qed
+
+// -- MONOMIALS: the constructor the existence half needs ----------------------------------
+//
+// `F[x]` above is observe-only — `coeff` reads a polynomial and only `ZEROP` is named, so
+// nothing BUILDS one. Judson's construction needs `(a_n / b_m) x^{n-m}`, a single term, so
+// that is the constructor to add: `monomial(a, k)` is the polynomial `a x^k`.
+func monomial(a: F, k: Nat) => Poly
+axiom monomialCoeffAtItsIndex: forall a: F; forall k: Nat; coeff(monomial(a, k), k) = a
+axiom monomialCoeffElsewhere: forall a: F; forall k, i: Nat;
+  (not (i = k)) -> coeff(monomial(a, k), i) = zeroF
+
+// A nonzero coefficient makes the monomial's degree exactly its index. This is the first
+// thing the construction needs: `(a_n/b_m) x^{n-m}` has degree n - m, which is what makes
+// the assembled quotient have the right degree.
+theorem aNonzeroMonomialHasItsIndexAsDegree: forall a: F; forall k: Nat;
+  (not (a = zeroF)) -> (not (monomial(a, k) = ZEROP)) -> degree(monomial(a, k)) = k
+proof
+  @generalize-a |
+    fix a: F {
+      @generalize-k |
+        fix k: Nat {
+          @given-the-coefficient-is-nonzero |
+            assume not (a = zeroF) {
+              @given-the-monomial-is-nonzero |
+                assume not (monomial(a, k) = ZEROP) {
+                  @the-coefficient-is-nonzero |
+                    not (a = zeroF)
+                    [by hypothesis given-the-coefficient-is-nonzero]
+                  @the-monomial-is-nonzero |
+                    not (monomial(a, k) = ZEROP)
+                    [by hypothesis given-the-monomial-is-nonzero]
+
+                  // its k-th coefficient is a, which is nonzero
+                  @the-coefficient-at-k |
+                    coeff(monomial(a, k), k) = a
+                    [using specialize monomialCoeffAtItsIndex(a, k)]
+                  @the-coefficient-at-k-is-nonzero |
+                    not (coeff(monomial(a, k), k) = zeroF)
+                    [by rewrite the-coefficient-at-k the-coefficient-is-nonzero]
+
+                  // and everything above k vanishes, since those indices differ from k
+                  @generalize-index |
+                    fix i: Nat {
+                      @given-the-index-is-above |
+                        assume less_than(k, i) {
+                          @the-index-is-above |
+                            less_than(k, i)
+                            [by hypothesis given-the-index-is-above]
+                          // if i were k, then k < k
+                          @given-the-index-equals-k |
+                            assume i = k {
+                              @the-index-equals-k |
+                                i = k
+                                [by hypothesis given-the-index-equals-k]
+                              @k-would-be-below-itself |
+                                less_than(k, k)
+                                [by rewrite the-index-equals-k the-index-is-above]
+                              @nothing-is-below-itself |
+                                not less_than(k, k)
+                                [using specialize peano_order.lessThanIrreflexive(k)]
+                              @contradiction |
+                                not (i = k)
+                                [by ex_falso k-would-be-below-itself nothing-is-below-itself]
+                            }
+                          @equalling-k-is-absurd |
+                            i = k -> (not (i = k))
+                            [by discharge given-the-index-equals-k]
+                          @being-above-makes-it-different |
+                            not (i = k)
+                            [using tautology equalling-k-is-absurd]
+                          @the-coefficient-vanishes |
+                            coeff(monomial(a, k), i) = zeroF
+                            [using specialize monomialCoeffElsewhere(a, k, i) being-above-makes-it-different]
+                        }
+                      @above-implies-vanishing |
+                        less_than(k, i) -> coeff(monomial(a, k), i) = zeroF
+                        [by discharge given-the-index-is-above]
+                    }
+                  @everything-above-k-vanishes |
+                    forall i: Nat; less_than(k, i) -> coeff(monomial(a, k), i) = zeroF
+                    [by generalize generalize-index]
+                  @what-bounding-means |
+                    degreeAtMost(monomial(a, k), k) iff
+                      (forall i: Nat; less_than(k, i) -> coeff(monomial(a, k), i) = zeroF)
+                    [using specialize degreeAtMostMeaning(monomial(a, k), k)]
+                  @k-bounds-the-monomial |
+                    degreeAtMost(monomial(a, k), k)
+                    [using tautology everything-above-k-vanishes what-bounding-means]
+
+                  // nonzero at k and bounded by k: by uniqueness, k IS the degree
+                  @k-is-the-degree |
+                    k = degree(monomial(a, k))
+                    [using specialize degreeIsUnique(monomial(a, k), k) the-monomial-is-nonzero the-coefficient-at-k-is-nonzero k-bounds-the-monomial]
+                  @conclusion-the-degree-is-k |
+                    degree(monomial(a, k)) = k
+                    [by symmetry k-is-the-degree]
+                }
+              @the-monomial-being-nonzero-gives-the-degree |
+                (not (monomial(a, k) = ZEROP)) -> degree(monomial(a, k)) = k
+                [by discharge given-the-monomial-is-nonzero]
+            }
+          @a-nonzero-coefficient-gives-the-degree |
+            (not (a = zeroF)) -> (not (monomial(a, k) = ZEROP)) ->
+              degree(monomial(a, k)) = k
+            [by discharge given-the-coefficient-is-nonzero]
+        }
+      @discharge-k |
+        forall k: Nat;
+          (not (a = zeroF)) -> (not (monomial(a, k) = ZEROP)) ->
+          degree(monomial(a, k)) = k
+        [by generalize generalize-k]
+    }
+  @conclusion |
+    forall a: F; forall k: Nat;
+      (not (a = zeroF)) -> (not (monomial(a, k) = ZEROP)) ->
+      degree(monomial(a, k)) = k
+    [by generalize generalize-a]
+qed
 
 // == JUDSON'S DIVISION ALGORITHM (§17.2) ==================================================
 //
@@ -268,10 +489,8 @@ qed
 // q(x) = q'(x) + (a_n / b_m) x^{n-m}. Three pieces are missing for that, and each is a real
 // addition rather than a detail:
 //
-//   1. MONOMIALS. `(a_n / b_m) x^{n-m}` is a polynomial built from a coefficient and an
-//      exponent. Nothing here constructs one; `F[x]` is observe-only through `coeff`, with
-//      only ZEROP named. A `monomial(a, k)` with `coeff(monomial(a,k), i) = a` at `i = k`
-//      and `zeroF` elsewhere is the missing constructor.
+//   1. MONOMIALS — now BUILT above: `monomial(a, k)` is `a x^k`, and a nonzero coefficient
+//      makes its degree exactly `k`.
 //   2. THE LEADING-TERM CANCELLATION. That the subtraction strictly lowers the degree is
 //      the crux of the induction, and it is where `recip` finally does its work: the
 //      coefficient is chosen precisely so the two leading terms cancel. Proving it needs
@@ -281,7 +500,7 @@ qed
 //      ("for every f of degree below n"), since f' is not f's predecessor in any structural
 //      sense.
 //
-// What IS here is the uniqueness half, complete: `aSmallDegreeMultipleIsTheZeroMultiple` is
+// What IS here is the uniqueness half plus the monomial constructor: `aSmallDegreeMultipleIsTheZeroMultiple` is
 // the whole force of Judson's second paragraph, and `aNonzeroMultipleHasAtLeastTheDegree` is
 // its pivot. Neither needs the construction.
 //
