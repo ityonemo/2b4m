@@ -570,6 +570,198 @@ proof
     [by generalize generalize-g]
 qed
 
+// PHASE THREE: above k the sum STABILIZES — every further term is `0 * g`, so extending the
+// limit past k changes nothing. This is what carries the shift law from the special index k
+// to a general index, which is what the cancellation needs: it reads the product's n-th
+// coefficient, and that sum runs to n, not to k.
+theorem theMonomialConvolutionStabilizesAboveItsIndex: forall g: Poly; forall c: F;
+  forall k, i, t: Nat;
+  convolution(monomial(c, k), g, i, peano.add(k, t)) =
+  convolution(monomial(c, k), g, i, k)
+proof
+  @generalize-g |
+    fix g: Poly {
+      @generalize-c |
+        fix c: F {
+          @generalize-k |
+            fix k: Nat {
+              @generalize-i |
+                fix i: Nat {
+                  // base: adding nothing to the limit.
+                  @adding-zero |
+                    peano.add(k, ZERO) = k
+                    [using specialize peano.addZeroRight(k)]
+                  @base-case |
+                    convolution(monomial(c, k), g, i, peano.add(k, ZERO)) =
+                      convolution(monomial(c, k), g, i, k)
+                    [by rewrite adding-zero the-sum-at-k-is-itself]
+                  @the-sum-at-k-is-itself |
+                    convolution(monomial(c, k), g, i, k) =
+                      convolution(monomial(c, k), g, i, k)
+                    [by reflexivity]
+
+                  // step: the next index is k + succ(t), which is strictly above k, so the
+                  // monomial vanishes there and the term adds nothing.
+                  @induction-step |
+                    fix t: Nat {
+                      @given-inductive-hypothesis |
+                        assume convolution(monomial(c, k), g, i, peano.add(k, t)) =
+                          convolution(monomial(c, k), g, i, k) {
+                          @inductive-hypothesis |
+                            convolution(monomial(c, k), g, i, peano.add(k, t)) =
+                              convolution(monomial(c, k), g, i, k)
+                            [by hypothesis given-inductive-hypothesis]
+                          @the-next-limit |
+                            peano.add(k, succ(t)) = succ(peano.add(k, t))
+                            [using specialize peano.addSuccRight(k, t)]
+                          @one-more-term |
+                            convolution(monomial(c, k), g, i, succ(peano.add(k, t))) =
+                              addF(convolution(monomial(c, k), g, i, peano.add(k, t)),
+                              mulF(coeff(monomial(c, k), succ(peano.add(k, t))),
+                              coeff(g, subN(i, succ(peano.add(k, t))))))
+                            [using specialize convolutionSucc(monomial(c, k), g, i, peano.add(k, t))]
+                          // succ(k+t) is strictly above k, hence differs from it
+                          @k-is-below-the-next-index |
+                            less_than(k, succ(peano.add(k, t)))
+                            [using arithmetic(peano)]
+                          @k-differs-from-the-next-index |
+                            k != succ(peano.add(k, t))
+                            [using specialize peano_order.lessThanIsStrict(k, succ(peano.add(k, t))) k-is-below-the-next-index]
+                          @the-next-index-differs-from-k |
+                            succ(peano.add(k, t)) != k
+                            [using specialize peano_order.natDisequalityIsSymmetric(k, succ(peano.add(k, t))) k-differs-from-the-next-index]
+                          @the-monomial-vanishes-there |
+                            coeff(monomial(c, k), succ(peano.add(k, t))) = zeroF
+                            [using specialize monomialCoeffElsewhere(c, k, succ(peano.add(k, t))) the-next-index-differs-from-k]
+                          @the-new-term-is-zero |
+                            mulF(zeroF, coeff(g, subN(i, succ(peano.add(k, t))))) = zeroF
+                            [using specialize field.mulZeroLeft(coeff(g, subN(i, succ(peano.add(k, t)))))]
+                          @the-sum-gains-zero |
+                            convolution(monomial(c, k), g, i, succ(peano.add(k, t))) =
+                              addF(convolution(monomial(c, k), g, i, k), zeroF)
+                            [using simplify one-more-term the-monomial-vanishes-there the-new-term-is-zero inductive-hypothesis]
+                          @adding-zero-changes-nothing |
+                            addF(convolution(monomial(c, k), g, i, k), zeroF) =
+                              convolution(monomial(c, k), g, i, k)
+                            [using specialize field.addZeroRight(convolution(monomial(c, k), g, i, k))]
+                          @the-value-at-the-next-index |
+                            convolution(monomial(c, k), g, i, succ(peano.add(k, t))) =
+                              convolution(monomial(c, k), g, i, k)
+                            [using chain the-sum-gains-zero adding-zero-changes-nothing]
+                          @conclusion-successor |
+                            convolution(monomial(c, k), g, i, peano.add(k, succ(t))) =
+                              convolution(monomial(c, k), g, i, k)
+                            [by rewrite the-next-limit the-value-at-the-next-index]
+                        }
+                      @induction-step-at-t |
+                        (convolution(monomial(c, k), g, i, peano.add(k, t)) =
+                          convolution(monomial(c, k), g, i, k)) ->
+                          (convolution(monomial(c, k), g, i, peano.add(k, succ(t))) =
+                          convolution(monomial(c, k), g, i, k))
+                        [by discharge given-inductive-hypothesis]
+                    }
+                  @induction-step-for-all-t |
+                    forall t: Nat;
+                      (convolution(monomial(c, k), g, i, peano.add(k, t)) =
+                      convolution(monomial(c, k), g, i, k)) ->
+                      (convolution(monomial(c, k), g, i, peano.add(k, succ(t))) =
+                      convolution(monomial(c, k), g, i, k))
+                    [by generalize induction-step]
+                  @conclusion-for-all-t |
+                    forall t: Nat;
+                      convolution(monomial(c, k), g, i, peano.add(k, t)) =
+                      convolution(monomial(c, k), g, i, k)
+                    [using instantiation peano.induction((fun t: Nat => convolution(monomial(c, k), g, i, peano.add(k, t)) = convolution(monomial(c, k), g, i, k))) base-case induction-step-for-all-t]
+                }
+              @discharge-i |
+                forall i: Nat; forall t: Nat;
+                  convolution(monomial(c, k), g, i, peano.add(k, t)) =
+                  convolution(monomial(c, k), g, i, k)
+                [by generalize generalize-i]
+            }
+          @discharge-k |
+            forall k: Nat; forall i, t: Nat;
+              convolution(monomial(c, k), g, i, peano.add(k, t)) =
+              convolution(monomial(c, k), g, i, k)
+            [by generalize generalize-k]
+        }
+      @discharge-c |
+        forall c: F; forall k, i, t: Nat;
+          convolution(monomial(c, k), g, i, peano.add(k, t)) =
+          convolution(monomial(c, k), g, i, k)
+        [by generalize generalize-c]
+    }
+  @conclusion |
+    forall g: Poly; forall c: F; forall k, i, t: Nat;
+      convolution(monomial(c, k), g, i, peano.add(k, t)) =
+      convolution(monomial(c, k), g, i, k)
+    [by generalize generalize-g]
+qed
+
+// THE SHIFT LAW, in the general form the cancellation reads: at index k + t, the product's
+// coefficient is `c * g_t`. The sum there runs to k + t, which stabilization collapses back
+// to k, where phase two names the single surviving term.
+theorem theMonomialShiftsEveryCoefficient: forall g: Poly; forall c: F; forall k, t: Nat;
+  coeff(mulP(monomial(c, k), g), peano.add(k, t)) = mulF(c, coeff(g, t))
+proof
+  @generalize-g |
+    fix g: Poly {
+      @generalize-c |
+        fix c: F {
+          @generalize-k |
+            fix k: Nat {
+              @generalize-t |
+                fix t: Nat {
+                  @the-coefficient-is-the-convolution |
+                    coeff(mulP(monomial(c, k), g), peano.add(k, t)) =
+                      convolution(monomial(c, k), g, peano.add(k, t), peano.add(k, t))
+                    [using specialize mulPolyCoeff(monomial(c, k), g, peano.add(k, t))]
+                  @the-sum-stabilizes |
+                    convolution(monomial(c, k), g, peano.add(k, t), peano.add(k, t)) =
+                      convolution(monomial(c, k), g, peano.add(k, t), k)
+                    [using specialize theMonomialConvolutionStabilizesAboveItsIndex(g, c, k, peano.add(k, t), t)]
+                  @the-surviving-term |
+                    convolution(monomial(c, k), g, peano.add(k, t), k) =
+                      mulF(c, coeff(g, subN(peano.add(k, t), k)))
+                    [using specialize theMonomialConvolutionIsTheShiftedTerm(g, c, k, peano.add(k, t))]
+                  // sub(k+t, k) = t: commute the sum, then subAddCancel cancels the k.
+                  @the-sum-commutes |
+                    peano.add(k, t) = peano.add(t, k)
+                    [using specialize peano.addIsCommutative(k, t)]
+                  @cancelling-the-k |
+                    subN(peano.add(t, k), k) = t
+                    [using specialize subtraction.subAddCancel(t, k)]
+                  @the-shift-recovers-t |
+                    subN(peano.add(k, t), k) = t
+                    [using simplify the-sum-commutes cancelling-the-k]
+                  @the-term-at-t |
+                    convolution(monomial(c, k), g, peano.add(k, t), k) = mulF(c, coeff(g, t))
+                    [using simplify the-surviving-term the-shift-recovers-t]
+                  @conclusion-the-general-shift |
+                    coeff(mulP(monomial(c, k), g), peano.add(k, t)) = mulF(c, coeff(g, t))
+                    [using chain the-coefficient-is-the-convolution the-sum-stabilizes the-term-at-t]
+                }
+              @discharge-t |
+                forall t: Nat;
+                  coeff(mulP(monomial(c, k), g), peano.add(k, t)) = mulF(c, coeff(g, t))
+                [by generalize generalize-t]
+            }
+          @discharge-k |
+            forall k: Nat; forall t: Nat;
+              coeff(mulP(monomial(c, k), g), peano.add(k, t)) = mulF(c, coeff(g, t))
+            [by generalize generalize-k]
+        }
+      @discharge-c |
+        forall c: F; forall k, t: Nat;
+          coeff(mulP(monomial(c, k), g), peano.add(k, t)) = mulF(c, coeff(g, t))
+        [by generalize generalize-c]
+    }
+  @conclusion |
+    forall g: Poly; forall c: F; forall k, t: Nat;
+      coeff(mulP(monomial(c, k), g), peano.add(k, t)) = mulF(c, coeff(g, t))
+    [by generalize generalize-g]
+qed
+
 // THE SHIFT LAW at the index that matters: the k-th coefficient of `monomial(c,k) * g` is
 // `c * g_0`, which is the leading coefficient Judson's cancellation needs.
 theorem theMonomialShiftsTheCoefficients: forall g: Poly; forall c: F; forall k: Nat;
