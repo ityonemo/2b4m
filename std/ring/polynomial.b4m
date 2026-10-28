@@ -850,6 +850,127 @@ proof
     [by generalize generalize-p]
 qed
 
+// -- DEGREE AS A NUMBER -------------------------------------------------------------------
+//
+// `degreeAtMost` is a bound, which is all §17.1 needed. Judson's §17.2 writes `deg p(x) = n`
+// as a VALUE and does arithmetic on it (`deg r < deg g`, `deg pq = deg p + deg q`), so the
+// degree has to be a function.
+//
+// WHY IT IS TOTAL WITH A GUARDED AXIOM. The zero polynomial has no largest nonzero
+// coefficient — Judson gives it degree -infinity, which is not a Nat. Rather than add a
+// bottom element to the index sort, `degree` is a TOTAL function whose only axiom is guarded
+// on `p != ZEROP`, exactly as `std/field.b4m` treats `recip`: `recip(ZERO)` is an
+// unconstrained junk value that no axiom can reach, so it is never usable. `degree(ZEROP)`
+// is junk in the same way, and every statement below that mentions a degree carries the
+// nonzero hypothesis that makes it meaningful.
+func degree(p: Poly) => Nat
+
+// The defining property, in two halves: the degree's own coefficient does not vanish, and
+// nothing above it survives. Together these say "the largest index with a nonzero
+// coefficient", which is Judson's definition.
+axiom degreeIsALeadingIndex: forall p: Poly;
+  (not (p = ZEROP)) -> (not (coeff(p, degree(p)) = zeroR))
+axiom degreeBoundsTheCoefficients: forall p: Poly;
+  (not (p = ZEROP)) -> degreeAtMost(p, degree(p))
+
+// `degree` is DETERMINED by those two halves: any index with both properties IS the degree.
+// This is what lets a proof conclude `degree(p) = n` from facts about coefficients, and it
+// is the uniqueness that makes the function well-defined rather than merely constrained.
+theorem degreeIsUnique: forall p: Poly; forall n: Nat;
+  (not (p = ZEROP)) -> (not (coeff(p, n) = zeroR)) -> degreeAtMost(p, n) ->
+  n = degree(p)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-n |
+        fix n: Nat {
+          @given-p-nonzero |
+            assume not (p = ZEROP) {
+              @given-coefficient-nonzero |
+                assume not (coeff(p, n) = zeroR) {
+                  @given-n-bounds |
+                    assume degreeAtMost(p, n) {
+                      @p-nonzero |
+                        not (p = ZEROP)
+                        [by hypothesis given-p-nonzero]
+                      @coefficient-at-n-nonzero |
+                        not (coeff(p, n) = zeroR)
+                        [by hypothesis given-coefficient-nonzero]
+                      @n-bounds-the-coefficients |
+                        degreeAtMost(p, n)
+                        [by hypothesis given-n-bounds]
+
+                      // the degree's own coefficient is nonzero, and n bounds everything,
+                      // so the degree cannot exceed n.
+                      @degree-coefficient-nonzero |
+                        not (coeff(p, degree(p)) = zeroR)
+                        [using specialize degreeIsALeadingIndex(p) p-nonzero]
+                      @what-n-bounding-means |
+                        degreeAtMost(p, n) iff
+                          (forall i: Nat; less_than(n, i) -> coeff(p, i) = zeroR)
+                        [using specialize degreeAtMostMeaning(p, n)]
+                      @above-n-everything-vanishes |
+                        forall i: Nat; less_than(n, i) -> coeff(p, i) = zeroR
+                        [using tautology n-bounds-the-coefficients what-n-bounding-means]
+                      @degree-vanishes-if-above-n |
+                        less_than(n, degree(p)) -> coeff(p, degree(p)) = zeroR
+                        [using specialize above-n-everything-vanishes(degree(p))]
+                      @degree-not-above-n |
+                        not less_than(n, degree(p))
+                        [using tautology degree-vanishes-if-above-n degree-coefficient-nonzero]
+
+                      // symmetrically, the degree bounds everything, so n cannot exceed it.
+                      @degree-bounds-the-coefficients |
+                        degreeAtMost(p, degree(p))
+                        [using specialize degreeBoundsTheCoefficients(p) p-nonzero]
+                      @what-degree-bounding-means |
+                        degreeAtMost(p, degree(p)) iff
+                          (forall i: Nat; less_than(degree(p), i) -> coeff(p, i) = zeroR)
+                        [using specialize degreeAtMostMeaning(p, degree(p))]
+                      @above-the-degree-everything-vanishes |
+                        forall i: Nat; less_than(degree(p), i) -> coeff(p, i) = zeroR
+                        [using tautology degree-bounds-the-coefficients what-degree-bounding-means]
+                      @n-vanishes-if-above-the-degree |
+                        less_than(degree(p), n) -> coeff(p, n) = zeroR
+                        [using specialize above-the-degree-everything-vanishes(n)]
+                      @n-not-above-the-degree |
+                        not less_than(degree(p), n)
+                        [using tautology n-vanishes-if-above-the-degree coefficient-at-n-nonzero]
+
+                      // neither exceeds the other, so by trichotomy they are equal.
+                      @trichotomy-at-n-and-the-degree |
+                        less_than(n, degree(p)) or n = degree(p) or less_than(degree(p), n)
+                        [using specialize peano_order.trichotomy(n, degree(p))]
+                      @conclusion-the-degree-is-n |
+                        n = degree(p)
+                        [using tautology trichotomy-at-n-and-the-degree degree-not-above-n n-not-above-the-degree]
+                    }
+                  @bounding-implies-the-degree |
+                    degreeAtMost(p, n) -> n = degree(p)
+                    [by discharge given-n-bounds]
+                }
+              @nonzero-coefficient-implies-the-degree |
+                (not (coeff(p, n) = zeroR)) -> degreeAtMost(p, n) -> n = degree(p)
+                [by discharge given-coefficient-nonzero]
+            }
+          @p-nonzero-implies-the-degree |
+            (not (p = ZEROP)) -> (not (coeff(p, n) = zeroR)) -> degreeAtMost(p, n) ->
+              n = degree(p)
+            [by discharge given-p-nonzero]
+        }
+      @discharge-n |
+        forall n: Nat;
+          (not (p = ZEROP)) -> (not (coeff(p, n) = zeroR)) -> degreeAtMost(p, n) ->
+          n = degree(p)
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall p: Poly; forall n: Nat;
+      (not (p = ZEROP)) -> (not (coeff(p, n) = zeroR)) -> degreeAtMost(p, n) ->
+      n = degree(p)
+    [by generalize generalize-p]
+qed
+
 // == THE REINDEXING LEMMA, and multiplicative commutativity ================================
 //
 // Judson leaves "R[x] is commutative" as an exercise. It is the one ring axiom for R[x] that
