@@ -67,6 +67,7 @@ intheory succPreservesOrder
 intheory succReflectsOrder
 intheory lessThanTransitive
 intheory lessThanIrreflexive
+intheory lessThanIsStrict
 intheory additionPreservesOrder
 intheory multiplicationPreservesOrder
 intheory oneCoversZero
@@ -2070,4 +2071,55 @@ proof
       (i = ZERO or i = succ(ZERO) or i = succ(succ(ZERO))
       or i = succ(succ(succ(ZERO))) or i = succ(succ(succ(succ(ZERO)))))
     [by generalize generalize-i]
+qed
+
+// -- a strict order is a DISEQUALITY ------------------------------------------
+//
+// a < b forces a != b. Written out because the derivation (rewrite the equation
+// into the order fact, contradict irreflexivity) was being re-spelled inline at
+// every use — three times while building the polynomial-degree layer alone.
+theorem lessThanIsStrict: forall a, b: Nat; less_than(a, b) -> a != b
+proof
+  @generalize-a |
+    fix a: Nat {
+      @generalize-b |
+        fix b: Nat {
+          @given-a-below-b |
+            assume less_than(a, b) {
+              @a-below-b |
+                less_than(a, b)
+                [by hypothesis given-a-below-b]
+              @given-they-are-equal |
+                assume a = b {
+                  @they-are-equal |
+                    a = b
+                    [by hypothesis given-they-are-equal]
+                  @b-would-be-below-itself |
+                    less_than(b, b)
+                    [by rewrite they-are-equal a-below-b]
+                  @nothing-is-below-itself |
+                    not less_than(b, b)
+                    [using specialize lessThanIrreflexive(b)]
+                  @contradiction |
+                    a != b
+                    [by ex_falso b-would-be-below-itself nothing-is-below-itself]
+                }
+              @equality-is-absurd |
+                a = b -> a != b
+                [by discharge given-they-are-equal]
+              @conclusion-they-differ |
+                a != b
+                [using tautology equality-is-absurd]
+            }
+          @below-implies-different |
+            less_than(a, b) -> a != b
+            [by discharge given-a-below-b]
+        }
+      @discharge-b |
+        forall b: Nat; less_than(a, b) -> a != b
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Nat; less_than(a, b) -> a != b
+    [by generalize generalize-a]
 qed
