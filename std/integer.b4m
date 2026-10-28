@@ -2562,11 +2562,108 @@ qed
 // -- subtraction: sub(a, b) = a + (-b) --------------------------------------
 // Over ℤ subtraction is TOTAL and trivial — just addition of the negation.
 // It lives here in the ring layer (it needs only `add`/`neg`), so every ℤ file
-// above sees it; its ring-only facts (sub(a,a)=0, (a-b)+b=a, a+(b-a)=b) are
-// proven from the additive-inverse algebra with no order or induction.
+// above sees it, and its ring-only facts are proven from the additive-inverse
+// algebra with no order or induction. Two are below; `sub(a,a) = ZERO` and
+// `add(a, sub(b,a)) = b` are not yet needed by anything, so they are not stated.
 
 func sub(a: Int, b: Int) => Int
 axiom definitionOfSubtraction: forall a, b: Int; sub(a, b) = add(a, neg(b))
+
+// Both are pure additive-inverse algebra, which is why they belong here beside `sub`
+// rather than in a file about something else. They were proved in
+// `std/integer/mod-n-listing.b4m` and moved here: `(a+b)-b = a` has nothing to do with
+// modular arithmetic, and a consumer that wanted it had to import a mod-n file to
+// subtract (`std/integer/mod-n-generators.b4m` was re-exporting one through that file's
+// nickname, which is the smell that found this).
+
+theorem differenceOfSum: forall a: Int; forall b: Int; sub(add(a, b), b) = a
+proof
+  @generalize-a |
+    fix a: Int {
+      @generalize-b |
+        fix b: Int {
+          @unfolds |
+            sub(add(a, b), b) = add(add(a, b), neg(b))
+            [using specialize definitionOfSubtraction(add(a, b), b)]
+          @reassociated |
+            add(add(a, b), neg(b)) = add(a, add(b, neg(b)))
+            [using specialize addIsAssociative(a, b, neg(b))]
+          @cancels |
+            add(b, neg(b)) = ZERO
+            [using specialize addNegRight(b)]
+          @plus-zero |
+            add(a, ZERO) = a
+            [using specialize addZeroRight(a)]
+          @conclusion-difference |
+            sub(add(a, b), b) = a
+            [using simplify unfolds reassociated cancels plus-zero]
+        }
+      @discharge-b |
+        forall b: Int; sub(add(a, b), b) = a
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a: Int; forall b: Int; sub(add(a, b), b) = a
+    [by generalize generalize-a]
+qed
+
+theorem zeroDifferenceMeansEqual: forall a: Int; forall b: Int; sub(a, b) = ZERO -> a = b
+proof
+  @generalize-a |
+    fix a: Int {
+      @generalize-b |
+        fix b: Int {
+          @given-zero-difference |
+            assume sub(a, b) = ZERO {
+              @zero-difference |
+                sub(a, b) = ZERO
+                [by hypothesis given-zero-difference]
+              @unfolds |
+                sub(a, b) = add(a, neg(b))
+                [using specialize definitionOfSubtraction(a, b)]
+              @sum-is-zero |
+                add(a, neg(b)) = ZERO
+                [by rewrite unfolds zero-difference]
+              @reassociated |
+                add(add(a, neg(b)), b) = add(a, add(neg(b), b))
+                [using specialize addIsAssociative(a, neg(b), b)]
+              @cancels |
+                add(neg(b), b) = ZERO
+                [using specialize addNegLeft(b)]
+              @a-plus-zero |
+                add(a, ZERO) = a
+                [using specialize addZeroRight(a)]
+              @zero-plus-b |
+                add(ZERO, b) = b
+                [using specialize addZeroLeft(b)]
+              @a-is-a-plus-zero |
+                a = add(a, ZERO)
+                [by symmetry a-plus-zero]
+              @a-through-the-cancelling-pair |
+                a = add(a, add(neg(b), b))
+                [by rewrite cancels a-is-a-plus-zero]
+              @a-reassociated |
+                a = add(add(a, neg(b)), b)
+                [by rewrite reassociated a-through-the-cancelling-pair]
+              @a-is-zero-plus-b |
+                a = add(ZERO, b)
+                [by rewrite sum-is-zero a-reassociated]
+              @conclusion-equal |
+                a = b
+                [using chain a-is-zero-plus-b zero-plus-b]
+            }
+          @conclusion-at-b |
+            sub(a, b) = ZERO -> a = b
+            [by discharge given-zero-difference]
+        }
+      @discharge-b |
+        forall b: Int; sub(a, b) = ZERO -> a = b
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a: Int; forall b: Int; sub(a, b) = ZERO -> a = b
+    [by generalize generalize-a]
+qed
 
 // ============================================================================
 // THEORY OF ℤ — what the sub-theories under std/integer/ prove.
