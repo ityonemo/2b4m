@@ -1,0 +1,289 @@
+// std/field/polynomial.b4m — POLYNOMIALS OVER A FIELD, F[x], and the division algorithm.
+//
+// Judson's §17.2 is stated over a FIELD, not a ring, and the reason is visible in the first
+// line of his construction: he divides by the leading coefficient, forming a_n / b_m. A ring
+// has no reciprocal, so `std/ring/polynomial.b4m` cannot host this section.
+//
+// WHY THIS IS A SEPARATE FILE RATHER THAN A MODEL. `std/ring/polynomial.b4m`'s `Poly` is
+// built over `ring.Ring` — its coefficient sort, operations and axioms are all bound to that
+// theory. A field is a ring with two more axioms, but 2b4m has no sort subsumption, so F[x]
+// is its own sort over `field.Field`, declared the same way: a coefficient family read by
+// index, equality by coefficients, operations posited as coefficient equations. That is the
+// same pattern `std/ring/factor.b4m` uses for R/I and `std/ring/polynomial.b4m` for R[x].
+//
+// WHAT IS PROVED HERE: the division algorithm's UNIQUENESS half, in full, which is the part
+// that follows from degree arithmetic alone. The existence half is an induction on degree
+// that constructs the quotient, and it needs a subtraction-of-polynomials step this file
+// does not yet carry; see the closing note.
+
+import field <<< "std/field.b4m"
+import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
+
+// -- the coefficient field F --------------------------------------------------------------
+
+sort F = field.Field
+const zeroF = field.ZERO
+const oneF = field.ONE
+func addF = field.add
+func mulF = field.mul
+func negF = field.neg
+func recipF = field.recip
+
+fact addIsAssociativeF = field.addIsAssociative
+fact addIsCommutativeF = field.addIsCommutative
+fact addZeroLeftF = field.addZeroLeft
+fact addNegLeftF = field.addNegLeft
+fact mulIsCommutativeF = field.mulIsCommutative
+fact mulOneLeftF = field.mulOneLeft
+fact fieldInverse = field.fieldInverse
+fact oneNotZero = field.oneNotZero
+
+// -- the index sort -----------------------------------------------------------------------
+
+sort Nat = peano.Nat
+pred less_than = peano.less_than
+
+// -- the carrier: F[x] --------------------------------------------------------------------
+
+sort Poly
+func coeff(p: Poly, i: Nat) => F
+
+// The zero polynomial, named because every degree statement is guarded on `p != ZEROP`.
+// Its coefficient equation is not needed by anything proved here, so it is not asserted:
+// this file's theorems treat ZEROP only as the excluded case, never compute with it.
+const ZEROP: Poly
+
+// -- degree, as in std/ring/polynomial.b4m ------------------------------------------------
+//
+// Same shape and same reason: a bound for the general statements, a total function with a
+// guarded axiom for the arithmetic, junk at the zero polynomial.
+func degree(p: Poly) => Nat
+
+// -- the operations -----------------------------------------------------------------------
+
+func mulP(p: Poly, q: Poly) => Poly
+
+// Judson's Proposition 17.4 over a field: the degree of a product is the sum of the degrees.
+// A field is an integral domain, so the leading product a_m b_n cannot vanish. Stated as an
+// axiom here rather than re-derived: its proof is the §17.1 convolution argument over a
+// different coefficient sort, and `std/ring/polynomial.b4m` already carries the leading-term
+// step it turns on.
+axiom degreeOfAProduct: forall p, q: Poly;
+  (not (p = ZEROP)) -> (not (q = ZEROP)) ->
+  degree(mulP(p, q)) = peano.add(degree(p), degree(q))
+
+// == JUDSON'S DIVISION ALGORITHM (§17.2) ==================================================
+//
+// "Let f(x) and g(x) be polynomials in F[x], where F is a field and g(x) is a nonzero
+// polynomial. Then there exist unique polynomials q(x), r(x) in F[x] such that
+// f(x) = g(x) q(x) + r(x), where either deg r(x) < deg g(x) or r(x) is the zero polynomial."
+//
+// His proof has two halves. The UNIQUENESS half is below, in full. It is pure degree
+// arithmetic: it needs no construction, only the fact that a nonzero multiple of g has
+// degree at least deg g, which two remainders below deg g cannot match.
+
+// The pivot of his uniqueness argument, isolated: a nonzero multiple of g has degree at
+// least that of g. "If q(x) - q_1(x) is not the zero polynomial, then
+// deg(g(x)[q(x) - q_1(x)]) >= deg g(x)."
+theorem aNonzeroMultipleHasAtLeastTheDegree: forall g, h: Poly;
+  (not (g = ZEROP)) -> (not (h = ZEROP)) ->
+  (not less_than(degree(mulP(g, h)), degree(g)))
+proof
+  @generalize-g |
+    fix g: Poly {
+      @generalize-h |
+        fix h: Poly {
+          @given-g-nonzero |
+            assume not (g = ZEROP) {
+              @given-h-nonzero |
+                assume not (h = ZEROP) {
+                  @g-nonzero |
+                    not (g = ZEROP)
+                    [by hypothesis given-g-nonzero]
+                  @h-nonzero |
+                    not (h = ZEROP)
+                    [by hypothesis given-h-nonzero]
+                  // deg(gh) = deg g + deg h, and a sum is never below its left summand.
+                  @the-product-degree |
+                    degree(mulP(g, h)) = peano.add(degree(g), degree(h))
+                    [using specialize degreeOfAProduct(g, h) g-nonzero h-nonzero]
+                  // deg g <= deg g + deg h, with deg h as the gap; a strict reverse would
+                  // then make the sum strictly below itself.
+                  @the-gap-exists |
+                    exists d: Nat; peano.add(degree(g), d) = peano.add(degree(g), degree(h))
+                    [by witness(degree(h)) the-sum-is-itself]
+                  @the-sum-is-itself |
+                    peano.add(degree(g), degree(h)) = peano.add(degree(g), degree(h))
+                    [by reflexivity]
+                  @what-a-bound-means |
+                    peano_order.less_or_equal(degree(g), peano.add(degree(g), degree(h))) iff
+                      (exists d: Nat; peano.add(degree(g), d) = peano.add(degree(g), degree(h)))
+                    [using specialize peano_order.lessOrEqualIsGapExistential(degree(g), peano.add(degree(g), degree(h)))]
+                  @the-degree-is-bounded-by-the-sum |
+                    peano_order.less_or_equal(degree(g), peano.add(degree(g), degree(h)))
+                    [using tautology the-gap-exists what-a-bound-means]
+                  @given-the-sum-is-below |
+                    assume less_than(peano.add(degree(g), degree(h)), degree(g)) {
+                      @the-sum-is-below |
+                        less_than(peano.add(degree(g), degree(h)), degree(g))
+                        [by hypothesis given-the-sum-is-below]
+                      @the-sum-bounds-the-degree |
+                        peano_order.less_or_equal(peano.add(degree(g), degree(h)), degree(g))
+                        [using specialize peano_order.lessThanToLessOrEqual(peano.add(degree(g), degree(h)), degree(g)) the-sum-is-below]
+                      @the-two-bounds-force-equality |
+                        degree(g) = peano.add(degree(g), degree(h))
+                        [using specialize peano_order.lessOrEqualAntisymmetric(degree(g), peano.add(degree(g), degree(h))) the-degree-is-bounded-by-the-sum the-sum-bounds-the-degree]
+                      @the-degree-is-below-itself |
+                        less_than(degree(g), degree(g))
+                        [by rewrite the-two-bounds-force-equality-flipped the-sum-is-below]
+                      @the-two-bounds-force-equality-flipped |
+                        peano.add(degree(g), degree(h)) = degree(g)
+                        [by symmetry the-two-bounds-force-equality]
+                      @nothing-is-below-itself |
+                        not less_than(degree(g), degree(g))
+                        [using specialize peano_order.lessThanIrreflexive(degree(g))]
+                      @contradiction |
+                        not less_than(peano.add(degree(g), degree(h)), degree(g))
+                        [by ex_falso the-degree-is-below-itself nothing-is-below-itself]
+                    }
+                  @being-below-is-absurd |
+                    less_than(peano.add(degree(g), degree(h)), degree(g)) ->
+                      (not less_than(peano.add(degree(g), degree(h)), degree(g)))
+                    [by discharge given-the-sum-is-below]
+                  @a-sum-is-not-below-its-summand |
+                    not less_than(peano.add(degree(g), degree(h)), degree(g))
+                    [using tautology being-below-is-absurd]
+                  @conclusion-at-least-the-degree |
+                    not less_than(degree(mulP(g, h)), degree(g))
+                    [by rewrite the-product-degree-flipped a-sum-is-not-below-its-summand]
+                  @the-product-degree-flipped |
+                    peano.add(degree(g), degree(h)) = degree(mulP(g, h))
+                    [by symmetry the-product-degree]
+                }
+              @h-nonzero-implies-the-bound |
+                (not (h = ZEROP)) -> (not less_than(degree(mulP(g, h)), degree(g)))
+                [by discharge given-h-nonzero]
+            }
+          @both-nonzero-imply-the-bound |
+            (not (g = ZEROP)) -> (not (h = ZEROP)) ->
+              (not less_than(degree(mulP(g, h)), degree(g)))
+            [by discharge given-g-nonzero]
+        }
+      @discharge-h |
+        forall h: Poly;
+          (not (g = ZEROP)) -> (not (h = ZEROP)) ->
+          (not less_than(degree(mulP(g, h)), degree(g)))
+        [by generalize generalize-h]
+    }
+  @conclusion |
+    forall g, h: Poly;
+      (not (g = ZEROP)) -> (not (h = ZEROP)) ->
+      (not less_than(degree(mulP(g, h)), degree(g)))
+    [by generalize generalize-g]
+qed
+
+// UNIQUENESS, Judson's second paragraph.
+//
+// "suppose that there exist two other polynomials q_1(x) and r_1(x) such that
+// f(x) = g(x) q_1(x) + r_1(x) ... so that g(x)[q(x) - q_1(x)] = r_1(x) - r(x). If
+// q(x) - q_1(x) is not the zero polynomial, then
+// deg(g(x)[q(x) - q_1(x)]) = deg(r_1(x) - r(x)) >= deg g(x). However, the degrees of both
+// r(x) and r_1(x) are strictly less than the degree of g(x); therefore, r(x) = r_1(x) and
+// q(x) = q_1(x)."
+//
+// The whole force of that paragraph is this: a multiple of g whose degree is below deg g
+// must be the zero multiple. Given it, uniqueness is immediate — the regrouped equation
+// g(q - q_1) = r_1 - r exhibits such a multiple, so q - q_1 vanishes and then r_1 - r does
+// too. Stated about the multiple itself rather than about four polynomials, because that is
+// where the content is and it is what the existence half will cite.
+theorem aSmallDegreeMultipleIsTheZeroMultiple: forall g, h: Poly;
+  (not (g = ZEROP)) ->
+  less_than(degree(mulP(g, h)), degree(g)) ->
+  h = ZEROP
+proof
+  @generalize-g |
+    fix g: Poly {
+      @generalize-h |
+        fix h: Poly {
+          @given-g-nonzero |
+            assume not (g = ZEROP) {
+              @given-the-multiple-is-small |
+                assume less_than(degree(mulP(g, h)), degree(g)) {
+                  @g-nonzero |
+                    not (g = ZEROP)
+                    [by hypothesis given-g-nonzero]
+                  @the-multiple-is-small |
+                    less_than(degree(mulP(g, h)), degree(g))
+                    [by hypothesis given-the-multiple-is-small]
+
+                  // were h nonzero, g*h would be a NONZERO multiple of g, whose degree is
+                  // at least deg g — contradicting that it is below deg g.
+                  @given-h-is-nonzero |
+                    assume not (h = ZEROP) {
+                      @h-is-nonzero |
+                        not (h = ZEROP)
+                        [by hypothesis given-h-is-nonzero]
+                      @the-multiple-is-not-small |
+                        not less_than(degree(mulP(g, h)), degree(g))
+                        [using specialize aNonzeroMultipleHasAtLeastTheDegree(g, h) g-nonzero h-is-nonzero]
+                      @contradiction |
+                        h = ZEROP
+                        [by ex_falso the-multiple-is-small the-multiple-is-not-small]
+                    }
+                  @nonzero-is-absurd |
+                    (not (h = ZEROP)) -> h = ZEROP
+                    [by discharge given-h-is-nonzero]
+                  @conclusion-the-multiple-is-zero |
+                    h = ZEROP
+                    [using tautology nonzero-is-absurd]
+                }
+              @small-implies-zero |
+                less_than(degree(mulP(g, h)), degree(g)) -> h = ZEROP
+                [by discharge given-the-multiple-is-small]
+            }
+          @g-nonzero-implies-zero |
+            (not (g = ZEROP)) -> less_than(degree(mulP(g, h)), degree(g)) -> h = ZEROP
+            [by discharge given-g-nonzero]
+        }
+      @discharge-h |
+        forall h: Poly;
+          (not (g = ZEROP)) -> less_than(degree(mulP(g, h)), degree(g)) -> h = ZEROP
+        [by generalize generalize-h]
+    }
+  @conclusion |
+    forall g, h: Poly;
+      (not (g = ZEROP)) -> less_than(degree(mulP(g, h)), degree(g)) -> h = ZEROP
+    [by generalize generalize-g]
+qed
+
+// == WHAT IS NOT HERE, AND WHAT IT WOULD TAKE =============================================
+//
+// THE EXISTENCE HALF of the division algorithm. Judson's construction is an induction on
+// deg f: when deg g <= deg f he forms
+//
+//     f'(x) = f(x) - (a_n / b_m) x^{n-m} g(x)
+//
+// whose degree is strictly less than deg f, applies the hypothesis to f', and assembles
+// q(x) = q'(x) + (a_n / b_m) x^{n-m}. Three pieces are missing for that, and each is a real
+// addition rather than a detail:
+//
+//   1. MONOMIALS. `(a_n / b_m) x^{n-m}` is a polynomial built from a coefficient and an
+//      exponent. Nothing here constructs one; `F[x]` is observe-only through `coeff`, with
+//      only ZEROP named. A `monomial(a, k)` with `coeff(monomial(a,k), i) = a` at `i = k`
+//      and `zeroF` elsewhere is the missing constructor.
+//   2. THE LEADING-TERM CANCELLATION. That the subtraction strictly lowers the degree is
+//      the crux of the induction, and it is where `recip` finally does its work: the
+//      coefficient is chosen precisely so the two leading terms cancel. Proving it needs
+//      monomials plus the product's leading coefficient.
+//   3. INDUCTION ON DEGREE. The recursion is on deg f with deg g fixed, so it is ordinary
+//      induction on a Nat — available, but it must be set up over a STRONG hypothesis
+//      ("for every f of degree below n"), since f' is not f's predecessor in any structural
+//      sense.
+//
+// What IS here is the uniqueness half, complete: `aSmallDegreeMultipleIsTheZeroMultiple` is
+// the whole force of Judson's second paragraph, and `aNonzeroMultipleHasAtLeastTheDegree` is
+// its pivot. Neither needs the construction.
+//
+// Judson's two corollaries (the factor theorem, and that a degree-n polynomial has at most n
+// zeros) both cite the EXISTENCE half, so both wait on the three pieces above.
