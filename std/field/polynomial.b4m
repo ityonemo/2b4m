@@ -672,9 +672,29 @@ proof
                               coeff(g, subN(i, succ(peano.add(k, t))))))
                             [using specialize convolutionSucc(monomial(c, k), g, i, peano.add(k, t))]
                           // succ(k+t) is strictly above k, hence differs from it
+                          // k <= k + t (t is the gap), so k < succ(k + t).
+                          //
+                          // NOT `[using arithmetic(peano)]`: that decision is SORT-AGNOSTIC
+                          // and pure-ℤ unless a `nonneg` predicate is in scope, so it reads
+                          // `t` as possibly negative and reports the statement FALSE. Strict
+                          // certified it anyway, so this was a `--fast`/strict divergence
+                          // until it was proved from ℕ's own order instead.
+                          @the-gap-exists |
+                            exists d: Nat; peano.add(k, d) = peano.add(k, t)
+                            [by witness(t) the-sum-is-itself]
+                          @the-sum-is-itself |
+                            peano.add(k, t) = peano.add(k, t)
+                            [by reflexivity]
+                          @what-a-bound-means |
+                            peano_order.less_or_equal(k, peano.add(k, t)) iff
+                              (exists d: Nat; peano.add(k, d) = peano.add(k, t))
+                            [using specialize peano_order.lessOrEqualIsGapExistential(k, peano.add(k, t))]
+                          @k-is-bounded-by-the-sum |
+                            peano_order.less_or_equal(k, peano.add(k, t))
+                            [using tautology the-gap-exists what-a-bound-means]
                           @k-is-below-the-next-index |
                             less_than(k, succ(peano.add(k, t)))
-                            [using arithmetic(peano)]
+                            [using specialize peano_order.lessOrEqualToLessThanSucc(k, peano.add(k, t)) k-is-bounded-by-the-sum]
                           @k-differs-from-the-next-index |
                             k != succ(peano.add(k, t))
                             [using specialize peano_order.lessThanIsStrict(k, succ(peano.add(k, t))) k-is-below-the-next-index]
