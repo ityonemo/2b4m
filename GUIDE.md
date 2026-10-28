@@ -31,14 +31,16 @@ below. The overview tables (`### Justification rules (overview table)`,
 | `KEYWORD: pred` | predicate (function into `Prop`) |
 | `KEYWORD: axiom` | assert a formula without proof |
 | `KEYWORD: theorem` | assert a formula with a checked `proof … qed` |
+| `KEYWORD: fact` | localize a named fact (axiom, theorem, hole) from an imported namespace |
 | `KEYWORD: hole` | aspirational placeholder (the "sorry"); `--draft` |
-| `KEYWORD: schematic` | parameterized `axiom`/`theorem` (schemas) |
+| `KEYWORD: schemas` | parameterized `axiom`/`theorem` (a parameter list) |
 | `KEYWORD: intheory` | forward-declare a theorem (verified TOC) |
 | `KEYWORD: import` | load another file under a namespace |
 | `KEYWORD: alias` | local kind-checked view of an imported entity |
 | `KEYWORD: model` | declare a local structure models an abstract theory |
-| `RULE: axiom` | cite an axiom verbatim |
-| `RULE: theorem` | cite a proven theorem verbatim |
+| `JUSTIFICATION: by` | instruct the kernel to use one of the below RULEs |
+| `JUSTIFICATION: using` | kernel should use one of the below accelerated TACTICs |
+| `RULE: cite` | cite an axiom, theorem, or hole verbatim (kind-agnostic) |
 | `RULE: hypothesis` | restate an enclosing block's assumption/witness |
 | `RULE: predicate` | surface a predicated `fix h: H` binder's guard |
 | `RULE: modus_ponens` | from `P -> Q` and `P`, conclude `Q` |
@@ -61,10 +63,10 @@ below. The overview tables (`### Justification rules (overview table)`,
 | `RULE: rewrite` | replace an equation's LHS by its RHS in a target |
 | `RULE: equiv_rewrite` | replace `P` by `Q` given `P iff Q` in a target |
 | `TACTIC: instantiation` | monomorphize a schema (`using`) |
-| `RULE: specialize` | apply a forall-theorem at args + discharge antecedents, in one step |
-| `WHAT A TACTIC IS GIVEN vs WHAT IT FINDS` | logical inputs are named; guard obligations are searched for |
-| `RULE: chain` | prove A = Z from equations used any direction + congruence |
-| `RULE: model` | transfer a theory's theorem through a named model |
+| `TACTIC: specialize` | apply a forall-theorem at args + discharge antecedents, in one step |
+| `TACTIC: chain` | prove A = Z from equations used any direction + congruence |
+| `TACTIC: model` | transfer a theory's theorem through a named model |
+| `TACTIC: import` | cite a fact from an import's file across the file boundary |
 | `TACTIC: simplify` | equational rewriting to a common normal form (documents `simplify_quantified` inline) |
 | `TACTIC: assoc_commut` | associative-commutative reordering of a sum |
 | `TACTIC: assoc` | associativity-only reordering (non-commutative) |
@@ -480,7 +482,8 @@ qed
 
 ### KEYWORD: fact
 
-**Re-exports a named fact** from another namespace, whatever its origin kind:
+**Localizes a named fact** — an `axiom`, a proven `theorem`, or a `hole` — from an
+imported namespace, binding it to a local name whatever its origin kind:
 
 ```2b4m
 fact addZeroLeft = peano.addZeroLeft      // origin is an axiom
@@ -550,9 +553,10 @@ Practical notes, from proving Judson's parity lemma this way (2026-09-29):
 signature the source dictates — build it bottom-up; its shape is not in question and the
 hole machinery only adds the costs above.
 
-### KEYWORD: schematic
+### KEYWORD: schemas
 
-Schematic axioms and theorems.
+Schematic axioms and theorems. There is no `schematic` keyword — the parameter
+list alone is what makes a declaration a schema.
 A parenthesized parameter list makes an `axiom` or `theorem` **schematic**:
 a stored form with `comptime` semantics. Each `instantiate` use substitutes
 concrete, written-out arguments and (for theorem schemas) re-checks the proof at
@@ -1087,19 +1091,32 @@ Every step ends with a bracketed justification whose FIRST word is one of **two
 keywords** — the parser enforces the split:
 
 - **`[by <rule> <refs>]`** — a KERNEL PRIMITIVE: pure inference the kernel checks
-  directly (everything in this table down to `equiv_rewrite`, plus `cite`). Refs are
+  directly. These are the entries anchored `RULE:`; the full list is the `by` half of
+  the partition below. Refs are
   step or block labels (and fact names for `cite`). Term arguments go in parens:
   `[by apply_at(succ(b)) some-step]`.
-- **`[using <name> <refs>]`** — ENGINE PROOF-GENERATION: an ACCELERANT (the tactics
-  below — `simplify`, `assoc_commut`, `polynomial`, `tautology`, `arithmetic`,
-  `specialize`, …) or `instantiation` / `model`. These generate a kernel-checked
-  certificate; `using` marks exactly the steps a future `--fast` could trust, so a
-  `by`-only proof means the same under every mode.
+- **`[using <name> <refs>]`** — ENGINE-MEDIATED: not a single kernel inference, so the
+  engine stands between the step and the kernel. Two flavours, and the difference
+  matters for what `--fast` is trusting:
+  - **ACCELERANTS GENERATE A PROOF** — `simplify`, `assoc_commut`, `assoc`,
+    `polynomial`, `tautology`, `arithmetic`, `chain`, `extensionality`, `specialize`,
+    and `instantiation` build kernel steps that are then checked.
+  - **`model` and `import` GENERATE NOTHING** — they RELOCATE a fact that is already
+    proved elsewhere: `import` cites across a file boundary, `model` remaps a source
+    theory's theorem through a named model. Neither creates a theory or an implicit
+    assumption, and there is no certificate to emit, which is why citing a proven fact
+    IS the justification.
+
+  `using` marks exactly the steps a future `--fast` could trust, so a `by`-only proof
+  means the same under every mode.
 
 Writing `using` on a kernel primitive, or `by` on an accelerant, is a hard parse
 error (with an actionable message). This table is the at-a-glance index; the
-gotcha-heavy and non-obvious rules get their own greppable `### RULE: <name>` leaf
-below it (see the Index for the full anchor list).
+gotcha-heavy and non-obvious entries get their own greppable leaf below it —
+`### RULE: <name>` for a kernel primitive, `### TACTIC: <name>` for a `using`
+word (see the Index for the full anchor list). **The anchor prefix tracks the
+partition**: every `RULE:` leaf is a `by` word and every `TACTIC:` leaf is a
+`using` word, so the label tells you which keyword a step must use.
 
 **The complete partition** (every rule word is on exactly one side):
 
@@ -1149,8 +1166,8 @@ below it (see the Index for the full anchor list).
 | `polynomial_quantified(theory)` | tactic: `polynomial` under a `forall` prefix, without a hand `fix` (see Automation) |
 | `tautology refs...` | tactic: propositional consequence (see Automation) |
 | `arithmetic refs...` | tactic: linear arithmetic over Nat (see Automation) |
-| `model(INSTANCE) source.theorem` | transfer an abstract theory's theorem to a sort that models it, remapped through the named model (see `KEYWORD: model` and `RULE: model`) |
-| `import(I) thm` | cite a fact (axiom or theorem) from import `I`'s file across the file boundary (see `RULE: import`) |
+| `model(INSTANCE) source.theorem` | transfer an abstract theory's theorem to a sort that models it, remapped through the named model (see `KEYWORD: model` and `TACTIC: model`) |
+| `import(I) thm` | cite a fact (axiom or theorem) from import `I`'s file across the file boundary (see `TACTIC: import`) |
 
 The leaves below cover each rule that has a gotcha or a non-obvious ref count;
 the simple rules get a one-line leaf too, so every rule name is greppable.
@@ -1370,7 +1387,7 @@ term-equation rule) cannot reach. A kernel-checked rule with **no accelerant tai
 `[using instantiation NAME(args) refs...]` — monomorphize the schema `NAME` at the
 written-out `args` (formula params supplied as `fun … => …` lambdas). Trailing refs
 discharge the instance's **leading antecedents** (its `->` premises), left to right.
-The proof body is re-checked at this instance (see `KEYWORD: schematic`). Reusing an
+The proof body is re-checked at this instance (see `KEYWORD: schemas`). Reusing an
 expensive instance? Realize it into a named theorem and cite that instead.
 
 ```2b4m
@@ -1379,7 +1396,7 @@ expensive instance? Realize it into a named theorem and cite that instead.
   [using instantiation contrapositive(fun => p, fun => q) have-p-imp-q]
 ```
 
-### RULE: specialize
+### TACTIC: specialize
 
 `[using specialize HEAD(args) hyps...]` — apply a `forall`-quantified fact `HEAD` in
 ONE step: it ∀-elims `HEAD` at each written-out `args` (peeling the universal
@@ -1408,7 +1425,7 @@ order. With NO hyps it is a bare specialization (just the ∀-elim chain). For a
 parameterized SCHEMA (a `prop`-parameter), use `instantiation` instead — `specialize`
 is for ordinary quantified theorems.
 
-### RULE: chain
+### TACTIC: chain
 
 `[using chain eq1 eq2 ...]` — prove an equality goal `A = Z` from the cited
 equations, used in ANY direction and closed under congruence. Each `eqN` is a
@@ -1447,7 +1464,7 @@ antecedents automatically:
   [using specialize factorizationLengthUnique(k, s, t, l) k-nonneg l-nonneg s-primes t-primes eq]
 ```
 
-### RULE: model
+### TACTIC: model
 
 `[using model(INSTANCE) source.theorem]` — transfer an abstract theory's proven theorem
 to a sort that models it. It takes the source theorem, rewrites it through the named
@@ -1469,7 +1486,7 @@ OBLIGATION COVERAGE check does not. So a model that leaves some source axioms un
 obligation (named in the error), while `--fast` passes it provisionally
 (`drafts/accelerant-pruning/model-partial-accepted.b4m` is that case).
 
-### RULE: import
+### TACTIC: import
 
 `[using import(I) thm]` — cite a theorem `thm` from import `I`'s file across the file
 boundary. `I` names an `import` in scope; `thm` is a theorem (or axiom) that file

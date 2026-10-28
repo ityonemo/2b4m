@@ -127,6 +127,12 @@ Shuffles the engine's scheduling order under a fixed seed. The run does the same
 different ORDER: a different task is pulled each time, so suspensions and wakeups interleave
 differently, deterministically per seed.
 
+`--chaos` IMPLIES `-j1 --sync-io`, and it has to. A seed only picks among the tasks that are
+RUNNABLE, while the worker count and async read-completion order decide which tasks those
+are — so without pinning both, the same seed replayed a different schedule (measured: it
+bites even at `-j1`, because IO completion still varies). The verdict was never affected,
+only how much work got redone.
+
 This exists to TEST the determinism contract: output is a function of (tree, roots), never
 of scheduling — that is what the goldens encode, and what lets the engine reorder freely.
 So the check is a diff:
