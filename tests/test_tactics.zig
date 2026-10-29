@@ -730,6 +730,15 @@ pub fn addTests(
     // and a TRUE goal no certifier can certify is ADMITTED under `--fast` (strict reports the
     // certification gap) — the `arithmetic.b4m` fixture above covers exactly that pair.
 
+    // STRICT RUNS THE DECISION GATE TOO, not just `--fast`. The gate used to sit inside
+    // `if (self.admit_mode)`, so strict skipped it and went straight to the certifier — and
+    // `--fast` could then REJECT a step strict accepted, which is the invariant's forbidden
+    // direction (the 2026-10-26 sweep only probed the other one). The fixture's goal is true
+    // over ℕ and false over ℤ, and the certifier can prove it from ℕ lemmas while the
+    // sort-agnostic decision refutes it, so it separates the two paths exactly.
+    ctx.fail(&.{ "check", "tests/cases/arithmetic_strict_runs_the_gate.b4m" }, "tests/cases/arithmetic_strict_runs_the_gate.b4m:26:12: error: arithmetic: the statement is false\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/arithmetic_strict_runs_the_gate.b4m" }, "tests/cases/arithmetic_strict_runs_the_gate.b4m:26:12: error: arithmetic: the statement is false\n");
+
     // `simplify` runs its decision under `--fast` too — the normal-form comparison — and
     // declines only to EMIT the join certificate. A FALSE equation is rejected in both modes
     // with the same diagnostic. (It used to admit before normalizing, so `--fast` reported

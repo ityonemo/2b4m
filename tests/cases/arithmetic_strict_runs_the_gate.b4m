@@ -1,0 +1,27 @@
+// PROBE: does STRICT run the decision gate, or only `--fast`?
+//
+// `k < succ(k + t)` is TRUE over ℕ and FALSE over ℤ (at t = -1 it is k < k). The
+// `arithmetic` decision is sort-agnostic and reads variables as integers unless a `nonneg`
+// predicate resolves in scope — this file deliberately has none — so the decision REFUTES it.
+//
+// The certifier, meanwhile, CAN build a valid ℕ proof of it: it cites `addSuccRight` and the
+// order-introduction lemma, whose ℕ-ness is baked into the lemmas rather than assumed of the
+// variables. So before the fix the two modes DISAGREED — strict emitted a kernel-checked
+// certificate and passed, `--fast` ran the decision and failed.
+//
+// Strict must apply every gate `--fast` applies and THEN additionally certify, so both modes
+// must now reject this with the same diagnostic. A regression here means the decision has
+// been moved back inside `if (self.admit_mode)`.
+import peano <<< "std/peano.b4m"
+
+sort Nat = peano.Nat
+func succ = peano.succ
+func add = peano.add
+pred less_than = peano.less_than
+
+theorem indexFact: forall k, t: Nat; less_than(k, succ(add(k, t)))
+proof
+  @conclusion |
+    forall k, t: Nat; less_than(k, succ(add(k, t)))
+    [using arithmetic(peano)]
+qed

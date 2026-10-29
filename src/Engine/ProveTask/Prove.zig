@@ -6736,7 +6736,16 @@ fn buildArithmetic(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim
     // THE DECISION — under `--fast`, the whole of the check. Same inputs as the strict decide
     // below (abstracted goal, param-substituted premises, injected `nonneg` guards), so the two
     // modes always agree on the goal's truth.
-    if (self.admit_mode) {
+    // THE DECISION GATE, run in BOTH modes. Strict must apply every gate `--fast` applies and
+    // then additionally emit and kernel-check the certificate; a gate that runs only under
+    // `--fast` lets the two modes DISAGREE, which is the invariant's whole point. This block
+    // used to be wrapped in `if (self.admit_mode)`, so strict skipped it and fell straight
+    // through to the certifier — and `--fast` could then REJECT a step strict accepted (the
+    // mirror of the 2026-10-26 sweep, which only probed the other direction).
+    //
+    // Only the ADMIT differs by mode: on `.valid`, `--fast` is done and strict goes on to
+    // build the certificate.
+    {
         const peel = try self.arithPeel(goal_p);
         var dprems: std.ArrayList(TermId) = .empty;
         try dprems.appendSlice(self.ctx.arena, prem_formulae);
@@ -6747,8 +6756,11 @@ fn buildArithmetic(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim
         };
         switch (try smt.decideMixed(self.ctx.arena, self.pool, symbols, dprems.items, peel.body)) {
             .valid => {
-                self.admit_ok = true;
-                return null;
+                if (self.admit_mode) {
+                    self.admit_ok = true;
+                    return null;
+                }
+                // strict: decided TRUE, now go build the certificate below.
             },
             .countermodel => |cm| {
                 for (cm.values) |a| if (a.term) |offending|
