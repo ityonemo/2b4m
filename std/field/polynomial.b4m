@@ -1027,6 +1027,176 @@ proof
     [by generalize generalize-f]
 qed
 
+// -- THE DEGREE DROP ----------------------------------------------------------------------
+//
+// `theLeadingTermsCancel` kills ONE coefficient. Judson needs the stronger statement that
+// `f'(x) = f(x) - (a_n/b_m) x^{n-m} g(x)` "has degree less than n or is the zero polynomial",
+// which is what makes his induction descend.
+//
+// The degree is carried as `succ(d)` rather than as `n` with an `n - 1` elsewhere: the
+// conclusion is a bound at `d`, and writing it this way keeps truncated subtraction out of
+// the statement entirely.
+//
+// Two inputs: the cancellation at the top index, and that BOTH `f` and the subtrahend are
+// bounded by that index, so nothing above it survives on either side.
+theorem theDifferenceDropsADegree: forall f, h: Poly; forall d: Nat;
+  coeff(subP(f, h), succ(d)) = zeroF ->
+  degreeAtMost(f, succ(d)) -> degreeAtMost(h, succ(d)) ->
+  degreeAtMost(subP(f, h), d)
+proof
+  @generalize-f |
+    fix f: Poly {
+      @generalize-h |
+        fix h: Poly {
+          @generalize-d |
+            fix d: Nat {
+              @given-the-top-cancels |
+                assume coeff(subP(f, h), succ(d)) = zeroF {
+                  @given-f-is-bounded |
+                    assume degreeAtMost(f, succ(d)) {
+                      @given-h-is-bounded |
+                        assume degreeAtMost(h, succ(d)) {
+                          @the-top-cancels |
+                            coeff(subP(f, h), succ(d)) = zeroF
+                            [by hypothesis given-the-top-cancels]
+                          @f-is-bounded |
+                            degreeAtMost(f, succ(d))
+                            [by hypothesis given-f-is-bounded]
+                          @h-is-bounded |
+                            degreeAtMost(h, succ(d))
+                            [by hypothesis given-h-is-bounded]
+
+                          // unfold both bounds into their coefficient statements
+                          @what-f-bounding-means |
+                            degreeAtMost(f, succ(d)) iff
+                              (forall i: Nat; less_than(succ(d), i) -> coeff(f, i) = zeroF)
+                            [using specialize degreeAtMostMeaning(f, succ(d))]
+                          @f-vanishes-above |
+                            forall i: Nat; less_than(succ(d), i) -> coeff(f, i) = zeroF
+                            [using tautology f-is-bounded what-f-bounding-means]
+                          @what-h-bounding-means |
+                            degreeAtMost(h, succ(d)) iff
+                              (forall i: Nat; less_than(succ(d), i) -> coeff(h, i) = zeroF)
+                            [using specialize degreeAtMostMeaning(h, succ(d))]
+                          @h-vanishes-above |
+                            forall i: Nat; less_than(succ(d), i) -> coeff(h, i) = zeroF
+                            [using tautology h-is-bounded what-h-bounding-means]
+
+                          // every index strictly above d is either succ(d) itself — where the
+                          // cancellation applies — or strictly above succ(d), where both
+                          // polynomials already vanish.
+                          @generalize-index |
+                            fix i: Nat {
+                              @given-the-index-is-above-d |
+                                assume less_than(d, i) {
+                                  @the-index-is-above-d |
+                                    less_than(d, i)
+                                    [by hypothesis given-the-index-is-above-d]
+                                  // d < i gives succ(d) < succ(i), hence succ(d) <= i.
+                                  @the-successors-compare |
+                                    less_than(succ(d), succ(i))
+                                    [using specialize peano_order.succPreservesOrder(d, i) the-index-is-above-d]
+                                  @the-successor-is-bounded-by-the-index |
+                                    peano_order.less_or_equal(succ(d), i)
+                                    [using specialize peano_order.lessThanSuccToLessOrEqual(succ(d), i) the-successors-compare]
+                                  @the-index-splits |
+                                    less_than(succ(d), i) or succ(d) = i
+                                    [using specialize peano_order.lessOrEqualSplit(succ(d), i) the-successor-is-bounded-by-the-index]
+
+                                  @when-the-index-is-the-successor |
+                                    assume succ(d) = i {
+                                      @the-index-is-the-successor |
+                                        succ(d) = i
+                                        [by hypothesis when-the-index-is-the-successor]
+                                      @the-difference-vanishes-at-the-successor |
+                                        coeff(subP(f, h), i) = zeroF
+                                        [by rewrite the-index-is-the-successor the-top-cancels]
+                                    }
+
+                                  @when-the-index-is-higher |
+                                    assume less_than(succ(d), i) {
+                                      @the-index-is-higher |
+                                        less_than(succ(d), i)
+                                        [by hypothesis when-the-index-is-higher]
+                                      @f-vanishes-here |
+                                        coeff(f, i) = zeroF
+                                        [using specialize f-vanishes-above(i) the-index-is-higher]
+                                      @h-vanishes-here |
+                                        coeff(h, i) = zeroF
+                                        [using specialize h-vanishes-above(i) the-index-is-higher]
+                                      @the-difference-here |
+                                        coeff(subP(f, h), i) = addF(coeff(f, i), negF(coeff(h, i)))
+                                        [using specialize subPolyCoeff(f, h, i)]
+                                      @the-difference-of-zeros |
+                                        coeff(subP(f, h), i) = addF(zeroF, negF(zeroF))
+                                        [using simplify the-difference-here f-vanishes-here h-vanishes-here]
+                                      @negating-zero |
+                                        negF(zeroF) = zeroF
+                                        [by cite field.negZero]
+                                      @zero-plus-zero |
+                                        addF(zeroF, zeroF) = zeroF
+                                        [using specialize addZeroLeftF(zeroF)]
+                                      @the-difference-vanishes-higher-up |
+                                        coeff(subP(f, h), i) = zeroF
+                                        [using simplify the-difference-of-zeros negating-zero zero-plus-zero]
+                                    }
+
+                                  @the-difference-vanishes-either-way |
+                                    coeff(subP(f, h), i) = zeroF
+                                    [by common_conclusion the-index-splits when-the-index-is-higher when-the-index-is-the-successor]
+                                }
+                              @above-d-implies-vanishing |
+                                less_than(d, i) -> coeff(subP(f, h), i) = zeroF
+                                [by discharge given-the-index-is-above-d]
+                            }
+                          @the-difference-vanishes-above-d |
+                            forall i: Nat; less_than(d, i) -> coeff(subP(f, h), i) = zeroF
+                            [by generalize generalize-index]
+                          @what-the-conclusion-means |
+                            degreeAtMost(subP(f, h), d) iff
+                              (forall i: Nat; less_than(d, i) -> coeff(subP(f, h), i) = zeroF)
+                            [using specialize degreeAtMostMeaning(subP(f, h), d)]
+                          @conclusion-the-degree-drops |
+                            degreeAtMost(subP(f, h), d)
+                            [using tautology the-difference-vanishes-above-d what-the-conclusion-means]
+                        }
+                      @h-bounded-implies-the-drop |
+                        degreeAtMost(h, succ(d)) -> degreeAtMost(subP(f, h), d)
+                        [by discharge given-h-is-bounded]
+                    }
+                  @both-bounded-imply-the-drop |
+                    degreeAtMost(f, succ(d)) -> degreeAtMost(h, succ(d)) ->
+                      degreeAtMost(subP(f, h), d)
+                    [by discharge given-f-is-bounded]
+                }
+              @cancellation-implies-the-drop |
+                coeff(subP(f, h), succ(d)) = zeroF ->
+                  degreeAtMost(f, succ(d)) -> degreeAtMost(h, succ(d)) ->
+                  degreeAtMost(subP(f, h), d)
+                [by discharge given-the-top-cancels]
+            }
+          @discharge-d |
+            forall d: Nat;
+              coeff(subP(f, h), succ(d)) = zeroF ->
+              degreeAtMost(f, succ(d)) -> degreeAtMost(h, succ(d)) ->
+              degreeAtMost(subP(f, h), d)
+            [by generalize generalize-d]
+        }
+      @discharge-h |
+        forall h: Poly; forall d: Nat;
+          coeff(subP(f, h), succ(d)) = zeroF ->
+          degreeAtMost(f, succ(d)) -> degreeAtMost(h, succ(d)) ->
+          degreeAtMost(subP(f, h), d)
+        [by generalize generalize-h]
+    }
+  @conclusion |
+    forall f, h: Poly; forall d: Nat;
+      coeff(subP(f, h), succ(d)) = zeroF ->
+      degreeAtMost(f, succ(d)) -> degreeAtMost(h, succ(d)) ->
+      degreeAtMost(subP(f, h), d)
+    [by generalize generalize-f]
+qed
+
 // == JUDSON'S DIVISION ALGORITHM (§17.2) ==================================================
 //
 // "Let f(x) and g(x) be polynomials in F[x], where F is a field and g(x) is a nonzero
@@ -1222,11 +1392,14 @@ qed
 // and `theLeadingTermsCancel` is the fact that the n-th coefficient of the difference
 // vanishes. What remains is two steps of assembly:
 //
-//   1. THE DEGREE DROP. `theLeadingTermsCancel` kills ONE coefficient. To conclude
-//      `degree(f') < degree(f)` one also needs that everything ABOVE n already vanished on
-//      both sides — true because `degreeAtMost(f, n)` and the subtrahend's degree is
-//      `k + deg g = n` — and then `degreeIsUnique`-style reasoning to turn "vanishes at and
-//      above n" into a strict degree bound.
+//   1. THE DEGREE DROP — now PROVED above as `theDifferenceDropsADegree`: given the
+//      cancellation at the top index and that both sides are bounded by it, the difference is
+//      bounded one lower. (Stated with the degree as `succ(d)` so no truncated subtraction
+//      appears; every index above `d` is either `succ(d)`, where the cancellation applies, or
+//      higher, where both polynomials already vanish.) What still has to be assembled is
+//      DISCHARGING its three hypotheses at Judson's actual subtrahend — the bound on
+//      `monomial(c,k) * g` follows from `degreeOfAProduct`, and the one on `f` from
+//      `degreeBoundsTheCoefficients`.
 //   2. STRONG INDUCTION ON DEGREE. The recursion is on deg f with deg g fixed, and f' is not
 //      f's structural predecessor, so it needs the "for every f of degree below n" form.
 //      `std/peano/order.b4m` has strong induction; this is set-up work, not new theory.
