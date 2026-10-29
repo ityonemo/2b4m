@@ -1796,6 +1796,130 @@ proof
     [by generalize generalize-f]
 qed
 
+// Multiplying by the zero polynomial gives the zero polynomial. Needed for the trivial
+// division `f = g·0 + f`, which is Judson's "if m > n, then we can let q(x) = 0 and
+// r(x) = f(x)". Proved coefficientwise, since the product's coefficient is a convolution
+// whose every term carries a factor of `zeroF`.
+theorem polyMulZeroRight: forall p: Poly; mulP(p, ZEROP) = ZEROP
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-index |
+        fix i: Nat {
+          // the convolution against ZEROP vanishes at every limit: induction on the limit.
+          @base-term |
+            convolution(p, ZEROP, i, ZERO) = mulF(coeff(p, ZERO), coeff(ZEROP, i))
+            [using specialize convolutionZero(p, ZEROP, i)]
+          @the-zero-polynomial-vanishes |
+            coeff(ZEROP, i) = zeroF
+            [using specialize zeroPolyCoeff(i)]
+          @times-zero |
+            mulF(coeff(p, ZERO), zeroF) = zeroF
+            [using specialize field.mulZeroRight(coeff(p, ZERO))]
+          @base-case |
+            convolution(p, ZEROP, i, ZERO) = zeroF
+            [using simplify base-term the-zero-polynomial-vanishes times-zero]
+
+          @induction-step |
+            fix k: Nat {
+              @given-inductive-hypothesis |
+                assume convolution(p, ZEROP, i, k) = zeroF {
+                  @inductive-hypothesis |
+                    convolution(p, ZEROP, i, k) = zeroF
+                    [by hypothesis given-inductive-hypothesis]
+                  @one-more-term |
+                    convolution(p, ZEROP, i, succ(k)) =
+                      addF(convolution(p, ZEROP, i, k),
+                      mulF(coeff(p, succ(k)), coeff(ZEROP, subN(i, succ(k)))))
+                    [using specialize convolutionSucc(p, ZEROP, i, k)]
+                  @the-zero-polynomial-vanishes-here |
+                    coeff(ZEROP, subN(i, succ(k))) = zeroF
+                    [using specialize zeroPolyCoeff(subN(i, succ(k)))]
+                  @the-new-term-is-zero |
+                    mulF(coeff(p, succ(k)), zeroF) = zeroF
+                    [using specialize field.mulZeroRight(coeff(p, succ(k)))]
+                  @the-sum-is-zero-plus-zero |
+                    convolution(p, ZEROP, i, succ(k)) = addF(zeroF, zeroF)
+                    [using simplify one-more-term the-zero-polynomial-vanishes-here the-new-term-is-zero inductive-hypothesis]
+                  @zero-plus-zero |
+                    addF(zeroF, zeroF) = zeroF
+                    [using specialize addZeroLeftF(zeroF)]
+                  @conclusion-successor |
+                    convolution(p, ZEROP, i, succ(k)) = zeroF
+                    [using chain the-sum-is-zero-plus-zero zero-plus-zero]
+                }
+              @induction-step-at-k |
+                convolution(p, ZEROP, i, k) = zeroF ->
+                  convolution(p, ZEROP, i, succ(k)) = zeroF
+                [by discharge given-inductive-hypothesis]
+            }
+          @induction-step-for-all-k |
+            forall k: Nat;
+              convolution(p, ZEROP, i, k) = zeroF ->
+              convolution(p, ZEROP, i, succ(k)) = zeroF
+            [by generalize induction-step]
+          @the-convolution-vanishes |
+            forall k: Nat; convolution(p, ZEROP, i, k) = zeroF
+            [using instantiation peano.induction((fun k: Nat => convolution(p, ZEROP, i, k) = zeroF)) base-case induction-step-for-all-k]
+          @the-product-coefficient |
+            coeff(mulP(p, ZEROP), i) = convolution(p, ZEROP, i, i)
+            [using specialize mulPolyCoeff(p, ZEROP, i)]
+          @the-convolution-at-i |
+            convolution(p, ZEROP, i, i) = zeroF
+            [using specialize the-convolution-vanishes(i)]
+          @the-zero-coefficient |
+            coeff(ZEROP, i) = zeroF
+            [using specialize zeroPolyCoeff(i)]
+          @the-zero-coefficient-flipped |
+            zeroF = coeff(ZEROP, i)
+            [by symmetry the-zero-coefficient]
+          @coefficients-agree-at-index |
+            coeff(mulP(p, ZEROP), i) = coeff(ZEROP, i)
+            [using chain the-product-coefficient the-convolution-at-i the-zero-coefficient-flipped]
+        }
+      @corresponding-coefficients-are-equal |
+        forall i: Nat; coeff(mulP(p, ZEROP), i) = coeff(ZEROP, i)
+        [by generalize generalize-index]
+      @conclusion-the-product-vanishes |
+        mulP(p, ZEROP) = ZEROP
+        [using specialize polyExtensionality(mulP(p, ZEROP), ZEROP) corresponding-coefficients-are-equal]
+    }
+  @conclusion |
+    forall p: Poly; mulP(p, ZEROP) = ZEROP
+    [by generalize generalize-p]
+qed
+
+// THE TRIVIAL DIVISION, Judson's "If m > n, then we can let q(x) = 0 and r(x) = f(x)":
+// every `f` divides by `g` with quotient zero and remainder itself.
+theorem theTrivialDivision: forall f, g: Poly;
+  f = addP(mulP(g, ZEROP), f)
+proof
+  @generalize-f |
+    fix f: Poly {
+      @generalize-g |
+        fix g: Poly {
+          @the-product-vanishes |
+            mulP(g, ZEROP) = ZEROP
+            [using specialize polyMulZeroRight(g)]
+          @zero-plus-f |
+            addP(ZEROP, f) = f
+            [using specialize polyAddZeroLeft(f)]
+          @the-sum-is-f |
+            addP(mulP(g, ZEROP), f) = f
+            [using simplify the-product-vanishes zero-plus-f]
+          @conclusion-the-trivial-division |
+            f = addP(mulP(g, ZEROP), f)
+            [by symmetry the-sum-is-f]
+        }
+      @discharge-g |
+        forall g: Poly; f = addP(mulP(g, ZEROP), f)
+        [by generalize generalize-g]
+    }
+  @conclusion |
+    forall f, g: Poly; f = addP(mulP(g, ZEROP), f)
+    [by generalize generalize-f]
+qed
+
 // == JUDSON'S DIVISION ALGORITHM (§17.2) ==================================================
 //
 // "Let f(x) and g(x) be polynomials in F[x], where F is a field and g(x) is a nonzero
@@ -1980,57 +2104,39 @@ proof
     [by generalize generalize-g]
 qed
 
-// == WHAT IS NOT HERE, AND THE ONE DECISION IT WAITS ON ===================================
+// == WHAT IS NOT HERE ====================================================================
 //
-// THE EXISTENCE HALF. Every INGREDIENT is built: `monomial` makes the term, `subP` subtracts
-// it, `theLeadingTermsCancel` kills the top coefficient, and `theConstructionDropsADegree`
-// turns that into a strict degree bound with all three of its hypotheses discharged at
-// Judson's own subtrahend. What is missing is not another lemma about degrees.
+// THE EXISTENCE HALF as a single quantified statement. Every PIECE of Judson's induction is
+// now proved and the missing mathematics is gone:
 //
-// WHAT IS MISSING IS RING ALGEBRA ON F[x]. The induction's assembly step is
+//   `theTrivialDivision`            his "if m > n, let q = 0 and r = f"
+//   `theConstructionDropsADegree`   the reduced polynomial's degree really is lower
+//   `theQuotientExtendsByOneTerm`   his "now let q = q' + (a_n/b_m) x^{n-m}"
+//   `aSmallDegreeMultipleIsTheZeroMultiple`   the uniqueness half
 //
-//     f - c·x^k·g = g·q' + r    ==>    f = g·(q' + c·x^k) + r
+// What remains is the INDUCTION that chains them, and it is plumbing rather than insight:
+// `strongInduction` over the property
 //
-// which is four moves in the polynomial RING: additive associativity and commutativity,
-// `mulP` distributing over `addP`, `mulP` commutativity (to turn `c·x^k·g` into `g·c·x^k`),
-// and that `subP(f,h) = u` gives `f = addP(u,h)`. This file has NONE of them — `mulP` is a
-// func with a convolution equation and two degree axioms, nothing more.
+//     prop(n) := forall f; degreeAtMost(f, n) ->
+//                  exists q, r; f = g·q + r and (r = ZEROP or deg r < deg g)
 //
-// They are all PROVED, in `std/ring/polynomial.b4m`, over `ring.Ring`. The obstacle is that
-// they cannot be reached from here:
+// with `g` fixed, and a three-way case analysis inside the step — `f` zero, `deg g` above
+// the bound (trivial division), or the construction. Each arm's mathematical content is one
+// of the four theorems above; what the arms cost is the case plumbing: the `n = ZERO` versus
+// `n = succ(d)` split that the degree drop's `succ`-form requires, the gap witness `k` from
+// `lessOrEqualIsGapExistential` standing in for Judson's `n - m`, and threading a
+// two-polynomial existential through `unpack` in every branch.
 //
-//   - 2b4m has no sort subsumption, so `Field` is not a `Ring` and `F[x]` is not an `R[x]`.
-//   - `std/field.b4m`'s `RingIsField` model maps the COEFFICIENT ring, which is what lets
-//     this file borrow `mulZeroLeft` and friends. It says nothing about polynomials.
-//   - A second model mapping `ring_poly.Poly: field_poly.Poly` was tried and does not close:
-//     the transfer re-checks the source proof, so it needs every axiom that proof rests on
-//     DISCHARGED here — `polyExtensionality`, `addPolyCoeff`, the coefficient AC laws — and
-//     this file's signature was deliberately trimmed to what its own theorems exercise.
+// It is a long proof rather than a blocked one. Left here as the next increment.
 //
-// So the next step is a DESIGN CHOICE, not a proof:
+// Judson's two §17.2 corollaries (the factor theorem, at-most-n-zeros) cite existence, so
+// they follow it; §17.3 rests on them.
 //
-//   (a) FATTEN this file to the full F[x] signature (extensionality + the add/neg coefficient
-//       equations) and model `R[x]`, inheriting its ring laws. Costs: every added axiom must
-//       be exercised or `--library` rejects it, and the model block must list the source's
-//       whole axiom set.
-//   (b) RE-PROVE the four needed laws here, coefficientwise, as §17.1 did over a ring. Honest
-//       and self-contained; duplicates roughly 200 lines of already-proved argument.
-//   (c) PARAMETERIZE the polynomial construction over its coefficient theory, so one file
-//       serves both. The "sorts over sorts" question, which `sort-parameterization-via-model`
-//       settles as model + restated axioms — i.e. it reduces to (a).
+// Unrelated and still open: multiplicative ASSOCIATIVITY of a polynomial ring, which needs a
+// double-sum flattening — a different lemma from the single-sum reversal that gave
+// commutativity. See `std/ring/polynomial.b4m`'s closing note.
 //
-// USER DIRECTION (2026-10-29), after checking what Judson actually does: the eventual std
-// shape is his CHAPTER 20 construction, where `F[x]` is a VECTOR SPACE over `F` — "the
-// vectors in F[x] are simply polynomials, and vector addition is just polynomial addition"
-// (§20.1). That reorganizes the polynomial layer around the vector-space theory rather than
-// re-deriving ring algebra per coefficient sort. Chapter 17 itself uses no vector language,
-// so nothing here is wrong; the direction is for when the std layer is rebuilt.
-//
-// FOR NOW: polynomials stay as they are. Existence waits on that rebuild, not on a local
-// patch, so (a) and (b) are deliberately NOT taken.
-//
-// Judson's two §17.2 corollaries (the factor theorem, at-most-n-zeros) both cite existence,
-// so both wait on this. §17.3 rests on them in turn.
-//
-// Unrelated and also open: multiplicative ASSOCIATIVITY of a polynomial ring, which needs a
-// double-sum flattening. See `std/ring/polynomial.b4m`'s closing note.
+// NOTE ON ORGANIZATION (user direction, 2026-10-29): the eventual std shape for polynomials
+// is Judson's CHAPTER 20 construction, `F[x]` as a VECTOR SPACE over `F`. The model above is
+// the interim mechanism — it buys §17.1's ring laws without duplicating them — not an
+// argument against that rebuild.
