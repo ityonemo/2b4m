@@ -17,6 +17,7 @@
 // does not yet carry; see the closing note.
 
 import field <<< "std/field.b4m"
+import ring_poly <<< "std/ring/polynomial.b4m"
 import peano <<< "std/peano.b4m"
 import peano_order <<< "std/peano/order.b4m"
 import subtraction <<< "std/peano/subtraction.b4m"
@@ -37,6 +38,8 @@ fact addZeroLeftF = field.addZeroLeft
 fact addNegLeftF = field.addNegLeft
 fact mulIsCommutativeF = field.mulIsCommutative
 fact mulOneLeftF = field.mulOneLeft
+fact mulAddDistribLeftF = field.mulAddDistribLeft
+fact mulAddDistribRightF = field.mulAddDistribRight
 fact fieldInverse = field.fieldInverse
 fact oneNotZero = field.oneNotZero
 
@@ -56,7 +59,14 @@ func coeff(p: Poly, i: Nat) => F
 // The zero polynomial, named because every degree statement is guarded on `p != ZEROP`.
 // Its coefficient equation is not needed by anything proved here, so it is not asserted:
 // this file's theorems treat ZEROP only as the excluded case, never compute with it.
+// Judson's equality criterion. Needed here both for its own sake and because the `R[x]`
+// transfer below re-checks the source proof, so every axiom that proof rests on must be
+// discharged by one of ours.
+axiom polyExtensionality: forall p, q: Poly;
+  (forall i: Nat; coeff(p, i) = coeff(q, i)) -> p = q
+
 const ZEROP: Poly
+axiom zeroPolyCoeff: forall i: Nat; coeff(ZEROP, i) = zeroF
 
 // -- degree, as in std/ring/polynomial.b4m ------------------------------------------------
 //
@@ -198,6 +208,32 @@ proof
       n = degree(p)
     [by generalize generalize-p]
 qed
+
+// -- the two summation helpers the R[x] transfer needs ------------------------------------
+//
+// `std/ring/polynomial.b4m` proves multiplicative commutativity through a REINDEXING lemma
+// built on two helpers: `tailConvolution`, the top k+1 terms of a coefficient, and
+// `segment`, the n+1 terms from an arbitrary base. A model transfer RE-CHECKS the source
+// proof, so every symbol that proof mentions needs a counterpart here — these are those
+// counterparts, declared with the same recursion equations.
+//
+// They are pure reification: nothing below proves anything ABOUT them directly. Their whole
+// job is to let `polyMulIsCommutative` land over `F`.
+func tailConvolution(p: Poly, q: Poly, i: Nat, k: Nat) => F
+axiom tailConvolutionZero: forall p, q: Poly; forall i: Nat;
+  tailConvolution(p, q, i, ZERO) = mulF(coeff(p, i), coeff(q, ZERO))
+axiom tailConvolutionSucc: forall p, q: Poly; forall i, k: Nat;
+  tailConvolution(p, q, i, succ(k)) =
+  addF(mulF(coeff(p, subN(i, succ(k))), coeff(q, succ(k))),
+  tailConvolution(p, q, i, k))
+
+func segment(p: Poly, q: Poly, i: Nat, m: Nat, n: Nat) => F
+axiom segmentZero: forall p, q: Poly; forall i, m: Nat;
+  segment(p, q, i, m, ZERO) = mulF(coeff(p, m), coeff(q, subN(i, m)))
+axiom segmentSucc: forall p, q: Poly; forall i, m, n: Nat;
+  segment(p, q, i, m, succ(n)) =
+  addF(segment(p, q, i, m, n),
+  mulF(coeff(p, peano.add(m, succ(n))), coeff(q, subN(i, peano.add(m, succ(n))))))
 
 // -- addition, negation, and the difference the construction subtracts --------------------
 //
@@ -1423,6 +1459,117 @@ proof
       degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
       degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
     [by generalize generalize-f]
+qed
+
+// == F[x] MODELS R[x]: INHERITING THE RING LAWS ===========================================
+//
+// §17.1 proved that a polynomial ring over a COMMUTATIVE RING WITH IDENTITY is itself a
+// commutative ring — the abelian group, the identity, distributivity, and (through the
+// reindexing lemma) multiplicative commutativity. A field IS a commutative ring with
+// identity, so all of that holds of `F[x]` too, and re-proving it here would duplicate
+// roughly 200 lines of settled argument.
+//
+// 2b4m has no sort subsumption, so `Field` is not a `Ring` and this is not automatic. The
+// mechanism is a MODEL: map `R[x]`'s vocabulary onto ours and discharge the axioms its
+// proofs rest on, and its theorems transfer. (`std/field.b4m`'s `RingIsField` does exactly
+// this one level down, for the coefficients.)
+//
+// Three layers have to be mapped, which is the part that is easy to get wrong: the
+// COEFFICIENT layer (R[x]'s theorems are stated in terms of R's operations), the INDEX layer
+// (both files index by ℕ, but the model must say so), and the POLYNOMIAL layer itself —
+// including the two summation helpers, because a transfer re-checks the source PROOF and
+// `polyMulIsCommutative` goes through them.
+model FieldPolyModelsRingPoly {
+  // the coefficient ring: a field, viewed as the commutative ring §17.1 assumed
+  ring_poly.R: F
+  ring_poly.zeroR: zeroF
+  ring_poly.oneR: oneF
+  ring_poly.addR: addF
+  ring_poly.mulR: mulF
+  ring_poly.negR: negF
+  ring_poly.addIsAssociativeR <- addIsAssociativeF
+  ring_poly.addIsCommutativeR <- addIsCommutativeF
+  ring_poly.addZeroLeftR <- addZeroLeftF
+  ring_poly.addNegLeftR <- addNegLeftF
+  ring_poly.mulIsCommutativeR <- mulIsCommutativeF
+  ring_poly.mulOneLeftR <- mulOneLeftF
+  ring_poly.mulAddDistribLeftR <- mulAddDistribLeftF
+  ring_poly.mulAddDistribRightR <- mulAddDistribRightF
+
+  // the index sort
+  ring_poly.Nat: Nat
+  ring_poly.ZERO: ZERO
+  ring_poly.succ: succ
+  ring_poly.addN: peano.add
+
+  // the polynomial carrier and its operations
+  ring_poly.Poly: Poly
+  ring_poly.coeff: coeff
+  ring_poly.ZEROP: ZEROP
+  ring_poly.addP: addP
+  ring_poly.negP: negP
+  ring_poly.mulP: mulP
+  ring_poly.convolution: convolution
+  ring_poly.tailConvolution: tailConvolution
+  ring_poly.segment: segment
+  ring_poly.zeroPolyCoeff <- zeroPolyCoeff
+  ring_poly.polyExtensionality <- polyExtensionality
+  ring_poly.addPolyCoeff <- addPolyCoeff
+  ring_poly.negPolyCoeff <- negPolyCoeff
+  ring_poly.mulPolyCoeff <- mulPolyCoeff
+  ring_poly.convolutionZero <- convolutionZero
+  ring_poly.convolutionSucc <- convolutionSucc
+  ring_poly.tailConvolutionZero <- tailConvolutionZero
+  ring_poly.tailConvolutionSucc <- tailConvolutionSucc
+  ring_poly.segmentZero <- segmentZero
+  ring_poly.segmentSucc <- segmentSucc
+}
+
+// The four laws the division algorithm's assembly step needs, transferred.
+
+theorem polyAddIsAssociative: forall p, q, r: Poly;
+  addP(addP(p, q), r) = addP(p, addP(q, r))
+proof
+  @conclusion |
+    forall p, q, r: Poly; addP(addP(p, q), r) = addP(p, addP(q, r))
+    [using model(FieldPolyModelsRingPoly) ring_poly.polyAddIsAssociative]
+qed
+
+theorem polyAddIsCommutative: forall p, q: Poly; addP(p, q) = addP(q, p)
+proof
+  @conclusion |
+    forall p, q: Poly; addP(p, q) = addP(q, p)
+    [using model(FieldPolyModelsRingPoly) ring_poly.polyAddIsCommutative]
+qed
+
+theorem polyAddZeroLeft: forall p: Poly; addP(ZEROP, p) = p
+proof
+  @conclusion |
+    forall p: Poly; addP(ZEROP, p) = p
+    [using model(FieldPolyModelsRingPoly) ring_poly.polyAddZeroLeft]
+qed
+
+theorem polyAddNegLeft: forall p: Poly; addP(negP(p), p) = ZEROP
+proof
+  @conclusion |
+    forall p: Poly; addP(negP(p), p) = ZEROP
+    [using model(FieldPolyModelsRingPoly) ring_poly.polyAddNegLeft]
+qed
+
+theorem polyMulAddDistribLeft: forall p, q, r: Poly;
+  mulP(p, addP(q, r)) = addP(mulP(p, q), mulP(p, r))
+proof
+  @conclusion |
+    forall p, q, r: Poly; mulP(p, addP(q, r)) = addP(mulP(p, q), mulP(p, r))
+    [using model(FieldPolyModelsRingPoly) ring_poly.polyMulAddDistribLeft]
+qed
+
+// The reindexing lemma's payoff, inherited: F[x] is commutative.
+theorem polyMulIsCommutative: forall p, q: Poly; mulP(p, q) = mulP(q, p)
+proof
+  @conclusion |
+    forall p, q: Poly; mulP(p, q) = mulP(q, p)
+    [using model(FieldPolyModelsRingPoly) ring_poly.polyMulIsCommutative]
 qed
 
 // == JUDSON'S DIVISION ALGORITHM (§17.2) ==================================================
