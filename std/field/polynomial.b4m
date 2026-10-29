@@ -96,6 +96,11 @@ axiom mulPolyCoeff: forall p, q: Poly; forall i: Nat;
 // axiom here rather than re-derived: its proof is the §17.1 convolution argument over a
 // different coefficient sort, and `std/ring/polynomial.b4m` already carries the leading-term
 // step it turns on.
+// A field is an integral domain, so a product of nonzeros is nonzero — the other half of
+// Judson's Proposition 17.4, needed here to know the subtrahend has a degree at all.
+axiom aProductOfNonzerosIsNonzero: forall p, q: Poly;
+  (not (p = ZEROP)) -> (not (q = ZEROP)) -> (not (mulP(p, q) = ZEROP))
+
 axiom degreeOfAProduct: forall p, q: Poly;
   (not (p = ZEROP)) -> (not (q = ZEROP)) ->
   degree(mulP(p, q)) = peano.add(degree(p), degree(q))
@@ -1194,6 +1199,229 @@ proof
       coeff(subP(f, h), succ(d)) = zeroF ->
       degreeAtMost(f, succ(d)) -> degreeAtMost(h, succ(d)) ->
       degreeAtMost(subP(f, h), d)
+    [by generalize generalize-f]
+qed
+
+// -- THE DROP AT JUDSON'S OWN SUBTRAHEND --------------------------------------------------
+//
+// `theDifferenceDropsADegree` takes three hypotheses. Here they are discharged at the actual
+// construction, so the result is the step his induction uses: subtracting
+// `(a_n/b_m) x^{n-m} g(x)` from an `f` of degree `succ(d)` leaves something of degree at
+// most `d`.
+//
+// The hypotheses go as follows. The cancellation is `theLeadingTermsCancel` at `k + m =
+// succ(d)`. The bound on `f` is `degreeBoundsTheCoefficients` rewritten through
+// `degree(f) = succ(d)`. The bound on the subtrahend is `degreeOfAProduct` plus the
+// monomial's own degree: `deg(monomial(c,k) * g) = k + m`, which the hypothesis says is
+// `succ(d)`.
+theorem theConstructionDropsADegree: forall f, g: Poly; forall k, m, d: Nat;
+  (not (f = ZEROP)) -> (not (g = ZEROP)) ->
+  (not (monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) = ZEROP)) ->
+  (not (coeff(g, m) = zeroF)) ->
+  (not (mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))) = zeroF)) ->
+  degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
+  degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
+proof
+  @generalize-f |
+    fix f: Poly {
+      @generalize-g |
+        fix g: Poly {
+          @generalize-k |
+            fix k: Nat {
+              @generalize-m |
+                fix m: Nat {
+                  @generalize-d |
+                    fix d: Nat {
+                      @given-f-nonzero |
+                        assume not (f = ZEROP) {
+                          @given-g-nonzero |
+                            assume not (g = ZEROP) {
+                              @given-the-monomial-nonzero |
+                                assume not (monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) = ZEROP) {
+                                  @given-the-divisor-leads |
+                                    assume not (coeff(g, m) = zeroF) {
+                                      @given-the-coefficient-nonzero |
+                                        assume not (mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))) = zeroF) {
+                                          @given-g-has-degree-m |
+                                            assume degree(g) = m {
+                                              @given-f-has-the-top-degree |
+                                                assume degree(f) = peano.add(k, m) {
+                                                  @given-the-top-is-a-successor |
+                                                    assume peano.add(k, m) = succ(d) {
+                                                      @f-nonzero |
+                                                        not (f = ZEROP)
+                                                        [by hypothesis given-f-nonzero]
+                                                      @g-nonzero |
+                                                        not (g = ZEROP)
+                                                        [by hypothesis given-g-nonzero]
+                                                      @the-monomial-nonzero |
+                                                        not (monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) = ZEROP)
+                                                        [by hypothesis given-the-monomial-nonzero]
+                                                      @the-divisor-leads |
+                                                        coeff(g, m) != zeroF
+                                                        [by hypothesis given-the-divisor-leads]
+                                                      @the-coefficient-nonzero |
+                                                        mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))) != zeroF
+                                                        [by hypothesis given-the-coefficient-nonzero]
+                                                      @g-has-degree-m |
+                                                        degree(g) = m
+                                                        [by hypothesis given-g-has-degree-m]
+                                                      @f-has-the-top-degree |
+                                                        degree(f) = peano.add(k, m)
+                                                        [by hypothesis given-f-has-the-top-degree]
+                                                      @the-top-is-a-successor |
+                                                        peano.add(k, m) = succ(d)
+                                                        [by hypothesis given-the-top-is-a-successor]
+
+                                                      // HYPOTHESIS 1: the cancellation.
+                                                      @the-top-coefficient-cancels |
+                                                        coeff(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), peano.add(k, m)) = zeroF
+                                                        [using specialize theLeadingTermsCancel(f, g, k, m) the-divisor-leads]
+                                                      @the-cancellation-at-the-successor |
+                                                        coeff(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), succ(d)) = zeroF
+                                                        [by rewrite the-top-is-a-successor the-top-coefficient-cancels]
+
+                                                      // HYPOTHESIS 2: f is bounded by its own degree, which is succ(d).
+                                                      @f-is-bounded-by-its-degree |
+                                                        degreeAtMost(f, degree(f))
+                                                        [using specialize degreeBoundsTheCoefficients(f) f-nonzero]
+                                                      @f-degree-is-the-successor |
+                                                        degree(f) = succ(d)
+                                                        [using chain f-has-the-top-degree the-top-is-a-successor]
+                                                      @f-is-bounded |
+                                                        degreeAtMost(f, succ(d))
+                                                        [by rewrite f-degree-is-the-successor f-is-bounded-by-its-degree]
+
+                                                      // HYPOTHESIS 3: the subtrahend's degree is k + m = succ(d).
+                                                      @the-monomial-has-degree-k |
+                                                        degree(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k)) = k
+                                                        [using specialize aNonzeroMonomialHasItsIndexAsDegree(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) the-coefficient-nonzero the-monomial-nonzero]
+                                                      @the-product-degree |
+                                                        degree(mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)) =
+                                                          peano.add(degree(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k)), degree(g))
+                                                        [using specialize degreeOfAProduct(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g) the-monomial-nonzero g-nonzero]
+                                                      @the-product-degree-in-k-and-m |
+                                                        degree(mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)) = peano.add(k, m)
+                                                        [using simplify the-product-degree the-monomial-has-degree-k g-has-degree-m]
+                                                      @the-subtrahend-degree-is-the-successor |
+                                                        degree(mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)) = succ(d)
+                                                        [using chain the-product-degree-in-k-and-m the-top-is-a-successor]
+                                                      @the-subtrahend-nonzero |
+                                                        not (mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g) = ZEROP)
+                                                        [using specialize aProductOfNonzerosIsNonzero(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g) the-monomial-nonzero g-nonzero]
+                                                      @the-subtrahend-is-bounded-by-its-degree |
+                                                        degreeAtMost(mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g), degree(mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)))
+                                                        [using specialize degreeBoundsTheCoefficients(mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)) the-subtrahend-nonzero]
+                                                      @the-subtrahend-is-bounded |
+                                                        degreeAtMost(mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g), succ(d))
+                                                        [by rewrite the-subtrahend-degree-is-the-successor the-subtrahend-is-bounded-by-its-degree]
+
+                                                      @conclusion-the-construction-drops |
+                                                        degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
+                                                        [using specialize theDifferenceDropsADegree(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g), d) the-cancellation-at-the-successor f-is-bounded the-subtrahend-is-bounded]
+                                                    }
+                                                  @successor-implies-the-drop |
+                                                    peano.add(k, m) = succ(d) ->
+                                                      degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
+                                                    [by discharge given-the-top-is-a-successor]
+                                                }
+                                              @f-degree-implies-the-drop |
+                                                degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
+                                                  degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
+                                                [by discharge given-f-has-the-top-degree]
+                                            }
+                                          @g-degree-implies-the-drop |
+                                            degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
+                                              degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
+                                            [by discharge given-g-has-degree-m]
+                                        }
+                                      @coefficient-implies-the-drop |
+                                        (not (mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))) = zeroF)) ->
+                                          degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
+                                          degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
+                                        [by discharge given-the-coefficient-nonzero]
+                                    }
+                                  @leading-implies-the-drop |
+                                    (not (coeff(g, m) = zeroF)) ->
+                                      (not (mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))) = zeroF)) ->
+                                      degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
+                                      degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
+                                    [by discharge given-the-divisor-leads]
+                                }
+                              @monomial-implies-the-drop |
+                                (not (monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) = ZEROP)) ->
+                                  (not (coeff(g, m) = zeroF)) ->
+                                  (not (mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))) = zeroF)) ->
+                                  degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
+                                  degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
+                                [by discharge given-the-monomial-nonzero]
+                            }
+                          @g-nonzero-implies-the-drop |
+                            (not (g = ZEROP)) ->
+                              (not (monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) = ZEROP)) ->
+                              (not (coeff(g, m) = zeroF)) ->
+                              (not (mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))) = zeroF)) ->
+                              degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
+                              degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
+                            [by discharge given-g-nonzero]
+                        }
+                      @the-drop |
+                        (not (f = ZEROP)) -> (not (g = ZEROP)) ->
+                          (not (monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) = ZEROP)) ->
+                          (not (coeff(g, m) = zeroF)) ->
+                          (not (mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))) = zeroF)) ->
+                          degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
+                          degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
+                        [by discharge given-f-nonzero]
+                    }
+                  @discharge-d |
+                    forall d: Nat;
+                      (not (f = ZEROP)) -> (not (g = ZEROP)) ->
+                      (not (monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) = ZEROP)) ->
+                      (not (coeff(g, m) = zeroF)) ->
+                      (not (mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))) = zeroF)) ->
+                      degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
+                      degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
+                    [by generalize generalize-d]
+                }
+              @discharge-m |
+                forall m, d: Nat;
+                  (not (f = ZEROP)) -> (not (g = ZEROP)) ->
+                  (not (monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) = ZEROP)) ->
+                  (not (coeff(g, m) = zeroF)) ->
+                  (not (mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))) = zeroF)) ->
+                  degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
+                  degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
+                [by generalize generalize-m]
+            }
+          @discharge-k |
+            forall k, m, d: Nat;
+              (not (f = ZEROP)) -> (not (g = ZEROP)) ->
+              (not (monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) = ZEROP)) ->
+              (not (coeff(g, m) = zeroF)) ->
+              (not (mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))) = zeroF)) ->
+              degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
+              degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
+            [by generalize generalize-k]
+        }
+      @discharge-g |
+        forall g: Poly; forall k, m, d: Nat;
+          (not (f = ZEROP)) -> (not (g = ZEROP)) ->
+          (not (monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) = ZEROP)) ->
+          (not (coeff(g, m) = zeroF)) ->
+          (not (mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))) = zeroF)) ->
+          degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
+          degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
+        [by generalize generalize-g]
+    }
+  @conclusion |
+    forall f, g: Poly; forall k, m, d: Nat;
+      (not (f = ZEROP)) -> (not (g = ZEROP)) ->
+      (not (monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) = ZEROP)) ->
+      (not (coeff(g, m) = zeroF)) ->
+      (not (mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))) = zeroF)) ->
+      degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
+      degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
     [by generalize generalize-f]
 qed
 
