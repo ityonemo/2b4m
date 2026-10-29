@@ -1572,6 +1572,230 @@ proof
     [using model(FieldPolyModelsRingPoly) ring_poly.polyMulIsCommutative]
 qed
 
+// The right-handed zero law, from the left one and commutativity. (Neither §17.1 nor this
+// file needed it before; the recovery lemma below does.)
+theorem polyAddZeroRight: forall p: Poly; addP(p, ZEROP) = p
+proof
+  @generalize-p |
+    fix p: Poly {
+      @the-sum-commutes |
+        addP(p, ZEROP) = addP(ZEROP, p)
+        [using specialize polyAddIsCommutative(p, ZEROP)]
+      @zero-on-the-left |
+        addP(ZEROP, p) = p
+        [using specialize polyAddZeroLeft(p)]
+      @conclusion-zero-on-the-right |
+        addP(p, ZEROP) = p
+        [using chain the-sum-commutes zero-on-the-left]
+    }
+  @conclusion |
+    forall p: Poly; addP(p, ZEROP) = p
+    [by generalize generalize-p]
+qed
+
+// The additive left-swap, which `assoc_commut`'s explicit triple requires (it takes the
+// whole assoc/comm/swap triple or none).
+theorem polyAddLeftSwap: forall p, q, r: Poly;
+  addP(p, addP(q, r)) = addP(q, addP(p, r))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @regroup-forward |
+                addP(addP(p, q), r) = addP(p, addP(q, r))
+                [using specialize polyAddIsAssociative(p, q, r)]
+              @regrouped |
+                addP(p, addP(q, r)) = addP(addP(p, q), r)
+                [by symmetry regroup-forward]
+              @swap-the-leading-pair |
+                addP(p, q) = addP(q, p)
+                [using specialize polyAddIsCommutative(p, q)]
+              @regrouped-and-swapped |
+                addP(p, addP(q, r)) = addP(addP(q, p), r)
+                [using simplify regrouped swap-the-leading-pair]
+              @regroup-back |
+                addP(addP(q, p), r) = addP(q, addP(p, r))
+                [using specialize polyAddIsAssociative(q, p, r)]
+              @conclusion-the-swap |
+                addP(p, addP(q, r)) = addP(q, addP(p, r))
+                [using chain regrouped-and-swapped regroup-back]
+            }
+          @discharge-r |
+            forall r: Poly; addP(p, addP(q, r)) = addP(q, addP(p, r))
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; addP(p, addP(q, r)) = addP(q, addP(p, r))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; addP(p, addP(q, r)) = addP(q, addP(p, r))
+    [by generalize generalize-p]
+qed
+
+// -- recovering a polynomial from its difference ------------------------------------------
+//
+// `subP(f, h) = u` gives `f = u + h`. Judson uses this silently when he rearranges
+// `f' = f - c x^k g` into `f = f' + c x^k g`; with the ring laws inherited above it is four
+// steps of additive algebra.
+theorem aDifferenceRecoversItsMinuend: forall f, h, u: Poly;
+  subP(f, h) = u -> f = addP(u, h)
+proof
+  @generalize-f |
+    fix f: Poly {
+      @generalize-h |
+        fix h: Poly {
+          @generalize-u |
+            fix u: Poly {
+              @given-the-difference |
+                assume subP(f, h) = u {
+                  @the-difference |
+                    subP(f, h) = u
+                    [by hypothesis given-the-difference]
+                  // (f + (-h)) + h = f + ((-h) + h) = f + 0 = f
+                  @regroup |
+                    addP(addP(f, negP(h)), h) = addP(f, addP(negP(h), h))
+                    [using specialize polyAddIsAssociative(f, negP(h), h)]
+                  @the-inverse-cancels |
+                    addP(negP(h), h) = ZEROP
+                    [using specialize polyAddNegLeft(h)]
+                  @adding-zero |
+                    addP(f, ZEROP) = f
+                    [using specialize polyAddZeroRight(f)]
+                  @the-sum-is-f |
+                    addP(addP(f, negP(h)), h) = f
+                    [using simplify regroup the-inverse-cancels adding-zero]
+                  // `subP(f,h)` IS `addP(f, negP(h))`, so the step above already reads
+                  // `addP(subP(f,h), h) = f`; the hypothesis rewrites its inner term to `u`.
+                  @u-plus-h-is-f |
+                    addP(u, h) = f
+                    [by rewrite the-difference the-sum-is-f]
+                  @conclusion-recovered |
+                    f = addP(u, h)
+                    [by symmetry u-plus-h-is-f]
+                }
+              @the-difference-implies-recovery |
+                subP(f, h) = u -> f = addP(u, h)
+                [by discharge given-the-difference]
+            }
+          @discharge-u |
+            forall u: Poly; subP(f, h) = u -> f = addP(u, h)
+            [by generalize generalize-u]
+        }
+      @discharge-h |
+        forall h, u: Poly; subP(f, h) = u -> f = addP(u, h)
+        [by generalize generalize-h]
+    }
+  @conclusion |
+    forall f, h, u: Poly; subP(f, h) = u -> f = addP(u, h)
+    [by generalize generalize-f]
+qed
+
+// -- THE ASSEMBLY STEP --------------------------------------------------------------------
+//
+// Judson's "Now let q(x) = q'(x) + (a_n/b_m) x^{n-m}. Then f(x) = g(x) q(x) + r(x)." Given a
+// division of the REDUCED polynomial, this extends the quotient by one term to divide the
+// original. It is the inductive step of the existence half, and with the ring laws inherited
+// it is pure algebra — no degrees, no coefficients, no hypotheses about `mono` at all.
+//
+//     f = (f - mono·g) + mono·g      recovery
+//       = (g·q + r) + mono·g         the given division
+//       = (g·q + g·mono) + r         AC reorder, and mono·g = g·mono
+//       = g·(q + mono) + r           distributivity
+theorem theQuotientExtendsByOneTerm: forall f, g, mono, quotient, remainder: Poly;
+  subP(f, mulP(mono, g)) = addP(mulP(g, quotient), remainder) ->
+  f = addP(mulP(g, addP(quotient, mono)), remainder)
+proof
+  @generalize-f |
+    fix f: Poly {
+      @generalize-g |
+        fix g: Poly {
+          @generalize-mono |
+            fix mono: Poly {
+              @generalize-quotient |
+                fix quotient: Poly {
+                  @generalize-remainder |
+                    fix remainder: Poly {
+                      @given-the-reduced-division |
+                        assume subP(f, mulP(mono, g)) = addP(mulP(g, quotient), remainder) {
+                          @the-reduced-division |
+                            subP(f, mulP(mono, g)) = addP(mulP(g, quotient), remainder)
+                            [by hypothesis given-the-reduced-division]
+
+                          // f = (g·q + r) + mono·g
+                          @f-recovered |
+                            f = addP(addP(mulP(g, quotient), remainder), mulP(mono, g))
+                            [using specialize aDifferenceRecoversItsMinuend(f, mulP(mono, g), addP(mulP(g, quotient), remainder)) the-reduced-division]
+
+                          // the subtrahend's factors commute
+                          @the-term-commutes |
+                            mulP(mono, g) = mulP(g, mono)
+                            [using specialize polyMulIsCommutative(mono, g)]
+                          @f-with-the-term-flipped |
+                            f = addP(addP(mulP(g, quotient), remainder), mulP(g, mono))
+                            [using simplify f-recovered the-term-commutes]
+
+                          // (g·q + r) + g·mono = (g·q + g·mono) + r
+                          @the-summands-reorder |
+                            addP(addP(mulP(g, quotient), remainder), mulP(g, mono)) =
+                              addP(addP(mulP(g, quotient), mulP(g, mono)), remainder)
+                            [using assoc_commut(polyAddIsAssociative, polyAddIsCommutative, polyAddLeftSwap)]
+                          @f-reordered |
+                            f = addP(addP(mulP(g, quotient), mulP(g, mono)), remainder)
+                            [using chain f-with-the-term-flipped the-summands-reorder]
+
+                          // g·q + g·mono = g·(q + mono)
+                          @the-products-factor |
+                            mulP(g, addP(quotient, mono)) =
+                              addP(mulP(g, quotient), mulP(g, mono))
+                            [using specialize polyMulAddDistribLeft(g, quotient, mono)]
+                          @the-products-factored |
+                            addP(mulP(g, quotient), mulP(g, mono)) =
+                              mulP(g, addP(quotient, mono))
+                            [by symmetry the-products-factor]
+                          @conclusion-the-quotient-extends |
+                            f = addP(mulP(g, addP(quotient, mono)), remainder)
+                            [using simplify f-reordered the-products-factored]
+                        }
+                      @the-division-extends |
+                        subP(f, mulP(mono, g)) = addP(mulP(g, quotient), remainder) ->
+                          f = addP(mulP(g, addP(quotient, mono)), remainder)
+                        [by discharge given-the-reduced-division]
+                    }
+                  @discharge-remainder |
+                    forall remainder: Poly;
+                      subP(f, mulP(mono, g)) = addP(mulP(g, quotient), remainder) ->
+                      f = addP(mulP(g, addP(quotient, mono)), remainder)
+                    [by generalize generalize-remainder]
+                }
+              @discharge-quotient |
+                forall quotient, remainder: Poly;
+                  subP(f, mulP(mono, g)) = addP(mulP(g, quotient), remainder) ->
+                  f = addP(mulP(g, addP(quotient, mono)), remainder)
+                [by generalize generalize-quotient]
+            }
+          @discharge-mono |
+            forall mono, quotient, remainder: Poly;
+              subP(f, mulP(mono, g)) = addP(mulP(g, quotient), remainder) ->
+              f = addP(mulP(g, addP(quotient, mono)), remainder)
+            [by generalize generalize-mono]
+        }
+      @discharge-g |
+        forall g, mono, quotient, remainder: Poly;
+          subP(f, mulP(mono, g)) = addP(mulP(g, quotient), remainder) ->
+          f = addP(mulP(g, addP(quotient, mono)), remainder)
+        [by generalize generalize-g]
+    }
+  @conclusion |
+    forall f, g, mono, quotient, remainder: Poly;
+      subP(f, mulP(mono, g)) = addP(mulP(g, quotient), remainder) ->
+      f = addP(mulP(g, addP(quotient, mono)), remainder)
+    [by generalize generalize-f]
+qed
+
 // == JUDSON'S DIVISION ALGORITHM (§17.2) ==================================================
 //
 // "Let f(x) and g(x) be polynomials in F[x], where F is a field and g(x) is a nonzero
