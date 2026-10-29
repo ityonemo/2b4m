@@ -1609,32 +1609,48 @@ proof
     [by generalize generalize-g]
 qed
 
-// == WHAT IS NOT HERE, AND WHAT IT WOULD TAKE =============================================
+// == WHAT IS NOT HERE, AND THE ONE DECISION IT WAITS ON ===================================
 //
-// THE EXISTENCE HALF, which is now one step away. Judson's induction on deg f is:
+// THE EXISTENCE HALF. Every INGREDIENT is built: `monomial` makes the term, `subP` subtracts
+// it, `theLeadingTermsCancel` kills the top coefficient, and `theConstructionDropsADegree`
+// turns that into a strict degree bound with all three of its hypotheses discharged at
+// Judson's own subtrahend. What is missing is not another lemma about degrees.
 //
-//     f'(x) = f(x) - (a_n / b_m) x^{n-m} g(x)    has degree < n, or is zero
-//     by induction f' = q'g + r, so f = (q' + (a_n/b_m) x^{n-m}) g + r
+// WHAT IS MISSING IS RING ALGEBRA ON F[x]. The induction's assembly step is
 //
-// Everything the construction USES is built: `monomial` makes the term, `subP` subtracts it,
-// and `theLeadingTermsCancel` is the fact that the n-th coefficient of the difference
-// vanishes. What remains is two steps of assembly:
+//     f - c·x^k·g = g·q' + r    ==>    f = g·(q' + c·x^k) + r
 //
-//   1. THE DEGREE DROP — now PROVED above as `theDifferenceDropsADegree`: given the
-//      cancellation at the top index and that both sides are bounded by it, the difference is
-//      bounded one lower. (Stated with the degree as `succ(d)` so no truncated subtraction
-//      appears; every index above `d` is either `succ(d)`, where the cancellation applies, or
-//      higher, where both polynomials already vanish.) What still has to be assembled is
-//      DISCHARGING its three hypotheses at Judson's actual subtrahend — the bound on
-//      `monomial(c,k) * g` follows from `degreeOfAProduct`, and the one on `f` from
-//      `degreeBoundsTheCoefficients`.
-//   2. STRONG INDUCTION ON DEGREE. The recursion is on deg f with deg g fixed, and f' is not
-//      f's structural predecessor, so it needs the "for every f of degree below n" form.
-//      `std/peano/order.b4m` has strong induction; this is set-up work, not new theory.
+// which is four moves in the polynomial RING: additive associativity and commutativity,
+// `mulP` distributing over `addP`, `mulP` commutativity (to turn `c·x^k·g` into `g·c·x^k`),
+// and that `subP(f,h) = u` gives `f = addP(u,h)`. This file has NONE of them — `mulP` is a
+// func with a convolution equation and two degree axioms, nothing more.
 //
-// Judson's two corollaries (the factor theorem, and that a degree-n polynomial has at most n
-// zeros) both cite the existence half, so both follow that.
+// They are all PROVED, in `std/ring/polynomial.b4m`, over `ring.Ring`. The obstacle is that
+// they cannot be reached from here:
 //
-// Also still open, and unrelated: multiplicative ASSOCIATIVITY of a polynomial ring. See the
-// closing note in `std/ring/polynomial.b4m` — it needs a double-sum flattening, a different
-// lemma from the single-sum reversal that gave commutativity.
+//   - 2b4m has no sort subsumption, so `Field` is not a `Ring` and `F[x]` is not an `R[x]`.
+//   - `std/field.b4m`'s `RingIsField` model maps the COEFFICIENT ring, which is what lets
+//     this file borrow `mulZeroLeft` and friends. It says nothing about polynomials.
+//   - A second model mapping `ring_poly.Poly: field_poly.Poly` was tried and does not close:
+//     the transfer re-checks the source proof, so it needs every axiom that proof rests on
+//     DISCHARGED here — `polyExtensionality`, `addPolyCoeff`, the coefficient AC laws — and
+//     this file's signature was deliberately trimmed to what its own theorems exercise.
+//
+// So the next step is a DESIGN CHOICE, not a proof:
+//
+//   (a) FATTEN this file to the full F[x] signature (extensionality + the add/neg coefficient
+//       equations) and model `R[x]`, inheriting its ring laws. Costs: every added axiom must
+//       be exercised or `--library` rejects it, and the model block must list the source's
+//       whole axiom set.
+//   (b) RE-PROVE the four needed laws here, coefficientwise, as §17.1 did over a ring. Honest
+//       and self-contained; duplicates roughly 200 lines of already-proved argument.
+//   (c) PARAMETERIZE the polynomial construction over its coefficient theory, so one file
+//       serves both. This is the real fix and the biggest: it is the "sorts over sorts"
+//       question, which `sort-parameterization-via-model` settles as model + restated axioms
+//       — i.e. it reduces to (a).
+//
+// Judson's two §17.2 corollaries (the factor theorem, at-most-n-zeros) both cite existence,
+// so both wait on this. §17.3 rests on them in turn.
+//
+// Unrelated and also open: multiplicative ASSOCIATIVITY of a polynomial ring, which needs a
+// double-sum flattening. See `std/ring/polynomial.b4m`'s closing note.
