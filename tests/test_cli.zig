@@ -465,6 +465,14 @@ pub fn addTests(
     );
     // --draft disables the check (a WIP proof may have not-yet-wired facts).
     ctx.okSilent(&.{ "check", "--draft", "tests/cases/use_all_facts_bad.b4m" });
+    // ...and so does `--fast`, because the lint needs a COMPLETE citation graph. Some steps
+    // are used only when a CERTIFICATE is generated: a proved step teaches its formula to its
+    // block, and a later guard obligation can be discharged from it with no citation in the
+    // source — the edge is appended while building the certificate. Skip the certificate and
+    // a correctly-wired step looks dead, so `--fast` must not dead-check. (This fixture is
+    // pure `by`-rules, which is exactly the case the old `admitted.count() == 0` guard let
+    // through to a false error.)
+    ctx.okSilent(&.{ "check", "--fast", "tests/cases/use_all_facts_bad.b4m" });
     // a proof that USES every fact passes — including facts consumed through
     // non-citation edges: an `unpack` block's existential source, a step that
     // discharges a guarded application's proof obligation (a TCC), and a step fed
