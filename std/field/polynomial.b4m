@@ -3653,6 +3653,106 @@ proof
     [by generalize generalize-r]
 qed
 
+// Its constant coefficient is `-alpha`.
+theorem theLinearPolynomialHasNegatedConstantTerm: forall alpha: F;
+  coeff(linear(alpha), ZERO) = negF(alpha)
+proof
+  @generalize-alpha |
+    fix alpha: F {
+      @the-difference-coefficient |
+        coeff(linear(alpha), ZERO) =
+          addF(coeff(monomial(oneF, succ(ZERO)), ZERO), negF(coeff(monomial(alpha, ZERO), ZERO)))
+        [using specialize subPolyCoeff(monomial(oneF, succ(ZERO)), monomial(alpha, ZERO), ZERO)]
+      @zero-differs-from-one |
+        ZERO != succ(ZERO)
+        [using specialize peano_order.lessThanIsStrict(ZERO, succ(ZERO)) zero-is-below-one]
+      @zero-is-below-one |
+        less_than(ZERO, succ(ZERO))
+        [using specialize peano_order.lessThanSelf(ZERO)]
+      @the-leading-monomial-vanishes-at-zero |
+        coeff(monomial(oneF, succ(ZERO)), ZERO) = zeroF
+        [using specialize monomialCoeffElsewhere(oneF, succ(ZERO), ZERO) zero-differs-from-one]
+      @the-constant-monomial |
+        coeff(monomial(alpha, ZERO), ZERO) = alpha
+        [using specialize monomialCoeffAtItsIndex(alpha, ZERO)]
+      @the-coefficient-is-zero-plus-negated |
+        coeff(linear(alpha), ZERO) = addF(zeroF, negF(alpha))
+        [using simplify the-difference-coefficient the-leading-monomial-vanishes-at-zero the-constant-monomial]
+      @zero-plus-negated |
+        addF(zeroF, negF(alpha)) = negF(alpha)
+        [using specialize addZeroLeftF(negF(alpha))]
+      @conclusion-the-constant-term |
+        coeff(linear(alpha), ZERO) = negF(alpha)
+        [using chain the-coefficient-is-zero-plus-negated zero-plus-negated]
+    }
+  @conclusion |
+    forall alpha: F; coeff(linear(alpha), ZERO) = negF(alpha)
+    [by generalize generalize-alpha]
+qed
+
+// ALPHA IS A ZERO OF x - alpha. Judson uses this implicitly on both sides of the factor
+// theorem; it is the only concrete evaluation either direction needs.
+//
+//   (x - alpha)(alpha) = (0 + (-alpha)·alpha^0) + 1·alpha^1 = -alpha + alpha = 0
+theorem theRootOfTheLinearPolynomial: forall alpha: F;
+  isZeroOf(alpha, linear(alpha))
+proof
+  @generalize-alpha |
+    fix alpha: F {
+      @the-degree |
+        degree(linear(alpha)) = succ(ZERO)
+        [using specialize theLinearPolynomialHasDegreeOne(alpha)]
+
+      // sum to bound 2: the index-0 term, then the index-1 term
+      @the-two-term-sum |
+        evalUpTo(linear(alpha), alpha, succ(succ(ZERO))) =
+          addF(evalUpTo(linear(alpha), alpha, succ(ZERO)),
+          mulF(coeff(linear(alpha), succ(ZERO)), power(alpha, succ(ZERO))))
+        [using specialize evalSucc(linear(alpha), alpha, succ(ZERO))]
+      @the-one-term-sum |
+        evalUpTo(linear(alpha), alpha, succ(ZERO)) = coeff(linear(alpha), ZERO)
+        [using specialize aConstantEvaluatesToItsCoefficient(linear(alpha), alpha)]
+      @the-constant-term |
+        coeff(linear(alpha), ZERO) = negF(alpha)
+        [using specialize theLinearPolynomialHasNegatedConstantTerm(alpha)]
+      @the-leading-term |
+        coeff(linear(alpha), succ(ZERO)) = oneF
+        [using specialize theLinearPolynomialLeadsWithOne(alpha)]
+      @the-first-power |
+        power(alpha, succ(ZERO)) = alpha
+        [using specialize theFirstPowerIsTheBase(alpha)]
+      @one-times-alpha |
+        mulF(oneF, alpha) = alpha
+        [using specialize mulOneLeftF(alpha)]
+      @the-sum-is-a-cancelling-pair |
+        evalUpTo(linear(alpha), alpha, succ(succ(ZERO))) = addF(negF(alpha), alpha)
+        [using simplify the-two-term-sum the-one-term-sum the-constant-term the-leading-term the-first-power one-times-alpha]
+      @the-pair-cancels |
+        addF(negF(alpha), alpha) = zeroF
+        [using specialize addNegLeftF(alpha)]
+      @the-evaluation-at-bound-two |
+        evalUpTo(linear(alpha), alpha, succ(succ(ZERO))) = zeroF
+        [using chain the-sum-is-a-cancelling-pair the-pair-cancels]
+
+      // and that bound IS succ(degree), so it is `evaluate`
+      @the-evaluation-vanishes |
+        evalUpTo(linear(alpha), alpha, succ(degree(linear(alpha)))) = zeroF
+        [by rewrite the-degree-flipped the-evaluation-at-bound-two]
+      @the-degree-flipped |
+        succ(ZERO) = degree(linear(alpha))
+        [by symmetry the-degree]
+      @what-being-a-zero-means |
+        isZeroOf(alpha, linear(alpha)) iff evaluate(linear(alpha), alpha) = zeroF
+        [using specialize isZeroOfMeaning(alpha, linear(alpha))]
+      @conclusion-alpha-is-a-root |
+        isZeroOf(alpha, linear(alpha))
+        [using tautology the-evaluation-vanishes what-being-a-zero-means]
+    }
+  @conclusion |
+    forall alpha: F; isZeroOf(alpha, linear(alpha))
+    [by generalize generalize-alpha]
+qed
+
 // == THE EXISTENCE HALF ===================================================================
 //
 // "Let f(x) and g(x) be polynomials in F[x], where F is a field and g(x) is a nonzero
