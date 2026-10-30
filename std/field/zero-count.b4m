@@ -1,0 +1,2190 @@
+// std/field/zero-count.b4m — A NONZERO POLYNOMIAL HAS AT MOST deg MANY ZEROS.
+//
+// Judson's Corollary 17.8. The statement needs COUNTING over a field's carrier: the zeros of
+// a polynomial reify (by std/set.b4m's `setFromPredicate`) as a `Set` of labelled field
+// elements, and every std/set/finite.b4m size theorem then measures it.
+//
+// WHAT IT ASSUMES. Only a labelling `embedField: F => Element`, NOT an injective one: every
+// bound below comes from a subset inclusion, which survives a collapsing labelling. So this
+// file assumes strictly less than std/sized.b4m, whose contract needs injectivity to carry
+// exact sizes.
+//
+// THE INDUCTION. On the degree bound, with the POLYNOMIAL QUANTIFIED INSIDE the property
+// (`boundedZeros` below), so it may change between the hypothesis and the conclusion — which
+// is what Judson's argument needs, since it applies the hypothesis to a cofactor.
+//
+//   base      a nonzero polynomial of degree at most 0 is a nonzero constant, so evaluates
+//             everywhere to its nonvanishing constant term and has NO zeros.
+//   step      a zero `al` peels off a linear factor (the division algorithm, with the
+//             remainder constant because `deg linear = 1`), leaving a nonzero cofactor of
+//             degree at most `k`; every OTHER zero of `p` is a zero of that cofactor,
+//             because `b - al != 0` in a field and a field has no zero divisors. So the
+//             zeros of `p` sit inside the cofactor's zeros together with `al`, and the
+//             count rises by at most one.
+//
+// WHAT THIS DOES NOT NEED. The general product rule for evaluation
+// (`evaluate(p*q, b) = evaluate(p,b)*evaluate(q,b)`) is still open — it needs the
+// nested-double-sum exchange of std/nested-sum.b4m plus a square-vs-triangle step. The
+// LINEAR case is enough here, and it needs none of that: `linear(al)` has two nonzero
+// coefficients, so its convolution collapses and the factor theorem's own telescoping works
+// verbatim at a general point (`aLinearFactorMultipliesTheEvaluation`, in
+// std/field/polynomial.b4m).
+
+import fieldpoly <<< "std/field/polynomial.b4m"
+import field <<< "std/field.b4m"
+import set <<< "std/set.b4m"
+import set_finite <<< "std/set/finite.b4m"
+import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
+
+sort F = fieldpoly.F
+sort Poly = fieldpoly.Poly
+sort Set = set.Set
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+const ZEROP = fieldpoly.ZEROP
+const zeroF = fieldpoly.zeroF
+pred member = set.member
+pred less_than = peano.less_than
+
+// -- the counting contract ----------------------------------------------------------------
+// A labelling of field elements in the countable universe `Set` counts over. NOTE it is
+// NOT assumed injective: the bound below comes from a SUBSET inclusion, and a subset's size
+// bound survives any collapsing the labelling might do. (std/sized.b4m's contract does
+// assume injectivity, because it transfers EXACT sizes; this file only needs an upper
+// bound, so it assumes strictly less. An injective labelling exists — `Set`'s universe is
+// unconstrained — but no theorem here needs one.)
+func embedField(a: F) => set.Element
+
+// `s` is the set of zeros of `p`, as embedded field elements.
+define isTheZeroSetOf(p, s) =
+  forall x: set.Element;
+  member(x, s) iff (exists a: F; fieldpoly.isZeroOf(a, p) and x = embedField(a))
+
+// BASE CASE of Corollary 17.8: a nonzero polynomial of degree at most 0 has NO zeros.
+
+// a nonzero constant polynomial has degree ZERO
+theorem aNonzeroConstantHasDegreeZero: forall p: Poly;
+  (not (p = ZEROP)) -> fieldpoly.degreeAtMost(p, ZERO) -> fieldpoly.degree(p) = ZERO
+proof
+  @generalize-p |
+    fix p: Poly {
+      @given-p-nonzero |
+        assume not (p = ZEROP) {
+          @p-nonzero |
+            not (p = ZEROP)
+            [by hypothesis given-p-nonzero]
+          @given-degree-at-most-zero |
+            assume fieldpoly.degreeAtMost(p, ZERO) {
+              @degree-at-most-zero |
+                fieldpoly.degreeAtMost(p, ZERO)
+                [by hypothesis given-degree-at-most-zero]
+              // the leading coefficient does not vanish
+              @leading-coefficient-is-nonzero |
+                not (fieldpoly.coeff(p, fieldpoly.degree(p)) = zeroF)
+                [using specialize fieldpoly.degreeIsALeadingIndex(p) p-nonzero]
+              // but every index above ZERO has a vanishing coefficient
+              @the-bound-unfolds |
+                fieldpoly.degreeAtMost(p, ZERO) iff
+                  (forall i: Nat; less_than(ZERO, i) -> fieldpoly.coeff(p, i) = zeroF)
+                [using specialize fieldpoly.degreeAtMostMeaning(p, ZERO)]
+              @coefficients-above-zero-vanish |
+                forall i: Nat; less_than(ZERO, i) -> fieldpoly.coeff(p, i) = zeroF
+                [using tautology the-bound-unfolds degree-at-most-zero]
+              @the-degree-cannot-exceed-zero |
+                less_than(ZERO, fieldpoly.degree(p)) ->
+                  fieldpoly.coeff(p, fieldpoly.degree(p)) = zeroF
+                [using specialize coefficients-above-zero-vanish(fieldpoly.degree(p))]
+              @the-degree-is-not-above-zero |
+                not less_than(ZERO, fieldpoly.degree(p))
+                [using tautology the-degree-cannot-exceed-zero leading-coefficient-is-nonzero]
+              // and ZERO is least, so the degree IS zero
+              // ZERO is least: a nat is either ZERO or a successor, and every successor
+              // is above ZERO -- which the previous step forbids
+              @the-degree-splits |
+                fieldpoly.degree(p) = ZERO or
+                  (exists m: Nat; fieldpoly.degree(p) = peano.succ(m))
+                [using specialize peano.zeroOrSucc(fieldpoly.degree(p))]
+              @when-already-zero |
+                assume fieldpoly.degree(p) = ZERO {
+                  @conclusion-it-is-zero |
+                    fieldpoly.degree(p) = ZERO
+                    [by hypothesis when-already-zero]
+                }
+              @when-a-successor |
+                assume exists m: Nat; fieldpoly.degree(p) = peano.succ(m) {
+                  @a-successor-exists |
+                    exists m: Nat; fieldpoly.degree(p) = peano.succ(m)
+                    [by hypothesis when-a-successor]
+                  @with-the-predecessor-m |
+                    unpack m: Nat from a-successor-exists {
+                      @the-degree-is-a-successor |
+                        fieldpoly.degree(p) = peano.succ(m)
+                        [by hypothesis with-the-predecessor-m]
+                      @a-successor-is-above-zero |
+                        less_than(ZERO, peano.succ(m))
+                        [using specialize peano_order.zeroBelowSucc(m)]
+                      @the-degree-is-above-zero |
+                        less_than(ZERO, fieldpoly.degree(p))
+                        [by rewrite the-degree-is-a-successor a-successor-is-above-zero]
+                      @conclusion-absurd |
+                        fieldpoly.degree(p) = ZERO
+                        [by ex_falso the-degree-is-above-zero the-degree-is-not-above-zero]
+                    }
+                  @conclusion-from-the-successor |
+                    fieldpoly.degree(p) = ZERO
+                    [by unpacked with-the-predecessor-m]
+                }
+              @conclusion-the-degree-is-zero |
+                fieldpoly.degree(p) = ZERO
+                [by common_conclusion the-degree-splits when-already-zero when-a-successor]
+            }
+          @at-most-zero-implies-degree-zero |
+            fieldpoly.degreeAtMost(p, ZERO) -> fieldpoly.degree(p) = ZERO
+            [by discharge given-degree-at-most-zero]
+        }
+      @nonzero-implies |
+        (not (p = ZEROP)) -> fieldpoly.degreeAtMost(p, ZERO) -> fieldpoly.degree(p) = ZERO
+        [by discharge given-p-nonzero]
+    }
+  @conclusion |
+    forall p: Poly;
+      (not (p = ZEROP)) -> fieldpoly.degreeAtMost(p, ZERO) -> fieldpoly.degree(p) = ZERO
+    [by generalize generalize-p]
+qed
+
+// A nonzero polynomial of degree at most 0 has NO zeros: it evaluates everywhere to its
+// constant coefficient, which is the nonvanishing leading one.
+theorem aNonzeroConstantHasNoZeros: forall p: Poly; forall a: F;
+  (not (p = ZEROP)) -> fieldpoly.degreeAtMost(p, ZERO) ->
+  (not fieldpoly.isZeroOf(a, p))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-a |
+        fix a: F {
+          @given-p-nonzero |
+            assume not (p = ZEROP) {
+              @p-nonzero |
+                not (p = ZEROP)
+                [by hypothesis given-p-nonzero]
+              @given-degree-at-most-zero |
+                assume fieldpoly.degreeAtMost(p, ZERO) {
+                  @degree-at-most-zero |
+                    fieldpoly.degreeAtMost(p, ZERO)
+                    [by hypothesis given-degree-at-most-zero]
+                  @the-degree-is-zero |
+                    fieldpoly.degree(p) = ZERO
+                    [using specialize aNonzeroConstantHasDegreeZero(p) p-nonzero degree-at-most-zero]
+                  @reflexivity-of-the-evaluation |
+                    fieldpoly.evalUpTo(p, a, peano.succ(fieldpoly.degree(p))) =
+                      fieldpoly.evalUpTo(p, a, peano.succ(fieldpoly.degree(p)))
+                    [by reflexivity]
+                  // evaluate(p, a) is evalUpTo at bound succ(degree(p)) = succ(ZERO)
+                  @the-evaluation-is-at-bound-one |
+                    fieldpoly.evalUpTo(p, a, peano.succ(fieldpoly.degree(p))) =
+                      fieldpoly.evalUpTo(p, a, peano.succ(ZERO))
+                    [by rewrite the-degree-is-zero reflexivity-of-the-evaluation]
+                  @a-constant-evaluates-to-its-coefficient |
+                    fieldpoly.evalUpTo(p, a, peano.succ(ZERO)) = fieldpoly.coeff(p, ZERO)
+                    [using specialize fieldpoly.aConstantEvaluatesToItsCoefficient(p, a)]
+                  @the-evaluation-is-the-constant-term |
+                    fieldpoly.evalUpTo(p, a, peano.succ(fieldpoly.degree(p))) =
+                      fieldpoly.coeff(p, ZERO)
+                    [using chain the-evaluation-is-at-bound-one a-constant-evaluates-to-its-coefficient]
+                  // that coefficient is the LEADING one, which does not vanish
+                  @the-leading-coefficient-is-nonzero |
+                    not (fieldpoly.coeff(p, fieldpoly.degree(p)) = zeroF)
+                    [using specialize fieldpoly.degreeIsALeadingIndex(p) p-nonzero]
+                  @the-constant-term-is-nonzero |
+                    not (fieldpoly.coeff(p, ZERO) = zeroF)
+                    [by rewrite the-degree-is-zero the-leading-coefficient-is-nonzero]
+                  @the-evaluation-is-nonzero |
+                    not (fieldpoly.evalUpTo(p, a, peano.succ(fieldpoly.degree(p))) = zeroF)
+                    [by rewrite the-evaluation-is-the-constant-term the-constant-term-is-nonzero]
+                  // and being a zero MEANS that evaluation vanishes
+                  @being-a-zero-unfolds |
+                    fieldpoly.isZeroOf(a, p) iff
+                      fieldpoly.evalUpTo(p, a, peano.succ(fieldpoly.degree(p))) = zeroF
+                    [using specialize fieldpoly.isZeroOfMeaning(a, p)]
+                  @conclusion-not-a-zero |
+                    not fieldpoly.isZeroOf(a, p)
+                    [using tautology being-a-zero-unfolds the-evaluation-is-nonzero]
+                }
+              @at-most-zero-implies-no-zero |
+                fieldpoly.degreeAtMost(p, ZERO) -> (not fieldpoly.isZeroOf(a, p))
+                [by discharge given-degree-at-most-zero]
+            }
+          @nonzero-implies |
+            (not (p = ZEROP)) -> fieldpoly.degreeAtMost(p, ZERO) ->
+              (not fieldpoly.isZeroOf(a, p))
+            [by discharge given-p-nonzero]
+        }
+      @discharge-a |
+        forall a9: F;
+          (not (p = ZEROP)) -> fieldpoly.degreeAtMost(p, ZERO) ->
+          (not fieldpoly.isZeroOf(a9, p))
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall p: Poly; forall a: F;
+      (not (p = ZEROP)) -> fieldpoly.degreeAtMost(p, ZERO) ->
+      (not fieldpoly.isZeroOf(a, p))
+    [by generalize generalize-p]
+qed
+
+// Therefore the base case: the zero set of a nonzero constant is EMPTY, so has size ZERO
+// and is bounded by ZERO.
+
+theorem theZeroSetOfAConstantIsEmpty: forall p: Poly; forall s: Set;
+  (not (p = ZEROP)) -> fieldpoly.degreeAtMost(p, ZERO) ->
+  isTheZeroSetOf(p, s) -> s = set.emptyset
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-s |
+        fix s: Set {
+          @given-p-nonzero |
+            assume not (p = ZEROP) {
+              @p-nonzero |
+                not (p = ZEROP)
+                [by hypothesis given-p-nonzero]
+              @given-degree-at-most-zero |
+                assume fieldpoly.degreeAtMost(p, ZERO) {
+                  @degree-at-most-zero |
+                    fieldpoly.degreeAtMost(p, ZERO)
+                    [by hypothesis given-degree-at-most-zero]
+                  @given-s-is-the-zero-set |
+                    assume isTheZeroSetOf(p, s) {
+                      @s-is-the-zero-set |
+                        forall x: set.Element;
+                          member(x, s) iff
+                          (exists a: F; fieldpoly.isZeroOf(a, p) and x = embedField(a))
+                        [by hypothesis given-s-is-the-zero-set]
+                      // nothing is in s: a member would name a zero, and there are none
+                      @generalize-x |
+                        fix x: set.Element {
+                          @membership-at-x |
+                            member(x, s) iff
+                              (exists a: F; fieldpoly.isZeroOf(a, p) and x = embedField(a))
+                            [by apply_at(x) s-is-the-zero-set]
+                          @given-x-is-a-member |
+                            assume member(x, s) {
+                              @x-is-a-member |
+                                member(x, s)
+                                [by hypothesis given-x-is-a-member]
+                              @a-zero-exists |
+                                exists a: F;
+                                  fieldpoly.isZeroOf(a, p) and x = embedField(a)
+                                [using tautology membership-at-x x-is-a-member]
+                              @with-the-zero-a |
+                                unpack a: F from a-zero-exists {
+                                  @a-is-a-zero-and-embeds-to-x |
+                                    fieldpoly.isZeroOf(a, p) and x = embedField(a)
+                                    [by hypothesis with-the-zero-a]
+                                  @a-is-a-zero |
+                                    fieldpoly.isZeroOf(a, p)
+                                    [by and_lhs a-is-a-zero-and-embeds-to-x]
+                                  @there-are-no-zeros |
+                                    not fieldpoly.isZeroOf(a, p)
+                                    [using specialize aNonzeroConstantHasNoZeros(p, a) p-nonzero degree-at-most-zero]
+                                  @conclusion-absurd |
+                                    member(x, set.emptyset)
+                                    [by ex_falso a-is-a-zero there-are-no-zeros]
+                                }
+                              @conclusion-x-is-in-the-emptyset |
+                                member(x, set.emptyset)
+                                [by unpacked with-the-zero-a]
+                            }
+                          @conclusion-member-implies-empty |
+                            member(x, s) -> member(x, set.emptyset)
+                            [by discharge given-x-is-a-member]
+                        }
+                      @s-is-contained-in-the-emptyset |
+                        forall x: set.Element; member(x, s) -> member(x, set.emptyset)
+                        [by generalize generalize-x]
+                      // and the emptyset is contained in everything, vacuously
+                      @generalize-y |
+                        fix y: set.Element {
+                          @nothing-is-in-the-emptyset |
+                            not member(y, set.emptyset)
+                            [using specialize set.emptysetMember(y)]
+                          @conclusion-empty-implies-member |
+                            member(y, set.emptyset) -> member(y, s)
+                            [using tautology nothing-is-in-the-emptyset]
+                        }
+                      @the-emptyset-is-contained-in-s |
+                        forall y: set.Element; member(y, set.emptyset) -> member(y, s)
+                        [by generalize generalize-y]
+                      @conclusion-s-is-empty |
+                        s = set.emptyset
+                        [using specialize set.extensionality(s, set.emptyset) s-is-contained-in-the-emptyset the-emptyset-is-contained-in-s]
+                    }
+                  @the-zero-set-is-empty |
+                    isTheZeroSetOf(p, s) -> s = set.emptyset
+                    [by discharge given-s-is-the-zero-set]
+                }
+              @at-most-zero-implies-empty |
+                fieldpoly.degreeAtMost(p, ZERO) ->
+                  isTheZeroSetOf(p, s) -> s = set.emptyset
+                [by discharge given-degree-at-most-zero]
+            }
+          @nonzero-implies |
+            (not (p = ZEROP)) -> fieldpoly.degreeAtMost(p, ZERO) ->
+              isTheZeroSetOf(p, s) -> s = set.emptyset
+            [by discharge given-p-nonzero]
+        }
+      @discharge-s |
+        forall s9: Set;
+          (not (p = ZEROP)) -> fieldpoly.degreeAtMost(p, ZERO) ->
+          isTheZeroSetOf(p, s9) -> s9 = set.emptyset
+        [by generalize generalize-s]
+    }
+  @conclusion |
+    forall p: Poly; forall s: Set;
+      (not (p = ZEROP)) -> fieldpoly.degreeAtMost(p, ZERO) ->
+      isTheZeroSetOf(p, s) -> s = set.emptyset
+    [by generalize generalize-p]
+qed
+
+// INDUCTION STEP of Corollary 17.8, with the ONE missing lemma isolated as a hole.
+// Goal: identify whether multiplicative evaluation is the only gap.
+
+// b - al = 0 forces b = al: add al to both sides. Pure additive algebra over the field
+// axioms, which std/field.b4m does not happen to package.
+theorem aVanishingDifferenceMeansEqual: forall b, al: F;
+  fieldpoly.addF(b, fieldpoly.negF(al)) = zeroF -> b = al
+proof
+  @generalize-b |
+    fix b: F {
+      @generalize-al |
+        fix al: F {
+          @given-the-difference-vanishes |
+            assume fieldpoly.addF(b, fieldpoly.negF(al)) = zeroF {
+              @the-difference-vanishes |
+                fieldpoly.addF(b, fieldpoly.negF(al)) = zeroF
+                [by hypothesis given-the-difference-vanishes]
+              @reflexivity-of-the-sum |
+                fieldpoly.addF(fieldpoly.addF(b, fieldpoly.negF(al)), al) =
+                  fieldpoly.addF(fieldpoly.addF(b, fieldpoly.negF(al)), al)
+                [by reflexivity]
+              // add al to both sides of (b - al) = 0
+              @adding-al-to-both-sides |
+                fieldpoly.addF(fieldpoly.addF(b, fieldpoly.negF(al)), al) =
+                  fieldpoly.addF(zeroF, al)
+                [by rewrite the-difference-vanishes reflexivity-of-the-sum]
+              @the-left-side-collapses |
+                fieldpoly.addF(fieldpoly.addF(b, fieldpoly.negF(al)), al) = b
+                [using polynomial(field)]
+              @the-right-side-collapses |
+                fieldpoly.addF(zeroF, al) = al
+                [using specialize field.addZeroLeft(al)]
+              @b-equals-the-sum |
+                b = fieldpoly.addF(zeroF, al)
+                [using chain the-left-side-collapses-flipped adding-al-to-both-sides]
+              @the-left-side-collapses-flipped |
+                b = fieldpoly.addF(fieldpoly.addF(b, fieldpoly.negF(al)), al)
+                [by symmetry the-left-side-collapses]
+              @conclusion-they-are-equal |
+                b = al
+                [using chain b-equals-the-sum the-right-side-collapses]
+            }
+          @vanishing-implies-equal |
+            fieldpoly.addF(b, fieldpoly.negF(al)) = zeroF -> b = al
+            [by discharge given-the-difference-vanishes]
+        }
+      @discharge-al |
+        forall al9: F; fieldpoly.addF(b, fieldpoly.negF(al9)) = zeroF -> b = al9
+        [by generalize generalize-al]
+    }
+  @conclusion |
+    forall b, al: F; fieldpoly.addF(b, fieldpoly.negF(al)) = zeroF -> b = al
+    [by generalize generalize-b]
+qed
+
+// With it, Judson's "any other zero beta is a zero of q" follows: beta - alpha != 0 in a
+// field, so the linear factor does not vanish at beta, so the OTHER factor must.
+theorem anotherZeroIsAZeroOfTheCofactor: forall q: Poly; forall al, b: F;
+  (not (q = ZEROP)) ->
+  (not (b = al)) ->
+  fieldpoly.isZeroOf(b, fieldpoly.mulP(fieldpoly.linear(al), q)) ->
+  fieldpoly.isZeroOf(b, q)
+proof
+  @generalize-q |
+    fix q: Poly {
+      @generalize-al |
+        fix al: F {
+          @generalize-b |
+            fix b: F {
+              @given-q-nonzero |
+                assume not (q = ZEROP) {
+                  @q-nonzero |
+                    not (q = ZEROP)
+                    [by hypothesis given-q-nonzero]
+                  @given-b-differs |
+                    assume not (b = al) {
+                      @b-differs |
+                        not (b = al)
+                        [by hypothesis given-b-differs]
+                      @given-b-is-a-zero-of-the-product |
+                        assume fieldpoly.isZeroOf(b, fieldpoly.mulP(fieldpoly.linear(al), q)) {
+                          @b-is-a-zero-of-the-product |
+                            fieldpoly.isZeroOf(b, fieldpoly.mulP(fieldpoly.linear(al), q))
+                            [by hypothesis given-b-is-a-zero-of-the-product]
+                          @being-a-zero-of-the-product-unfolds |
+                            fieldpoly.isZeroOf(b, fieldpoly.mulP(fieldpoly.linear(al), q)) iff
+                              fieldpoly.evaluate(fieldpoly.mulP(fieldpoly.linear(al), q), b) = zeroF
+                            [using specialize fieldpoly.isZeroOfMeaning(b, fieldpoly.mulP(fieldpoly.linear(al), q))]
+                          @the-product-evaluates-to-zero |
+                            fieldpoly.evaluate(fieldpoly.mulP(fieldpoly.linear(al), q), b) = zeroF
+                            [using tautology being-a-zero-of-the-product-unfolds b-is-a-zero-of-the-product]
+                          // the linear factor pulls out of the evaluation
+                          @the-evaluation-splits |
+                            fieldpoly.evaluate(fieldpoly.mulP(fieldpoly.linear(al), q), b) =
+                              fieldpoly.mulF(fieldpoly.addF(b, fieldpoly.negF(al)),
+                              fieldpoly.evaluate(q, b))
+                            [using specialize fieldpoly.aLinearFactorMultipliesTheEvaluation(q, al, b) q-nonzero]
+                          @the-evaluation-splits-flipped |
+                            fieldpoly.mulF(fieldpoly.addF(b, fieldpoly.negF(al)),
+                              fieldpoly.evaluate(q, b)) =
+                              fieldpoly.evaluate(fieldpoly.mulP(fieldpoly.linear(al), q), b)
+                            [by symmetry the-evaluation-splits]
+                          @the-factors-multiply-to-zero |
+                            fieldpoly.mulF(fieldpoly.addF(b, fieldpoly.negF(al)),
+                              fieldpoly.evaluate(q, b)) = zeroF
+                            [using chain the-evaluation-splits-flipped the-product-evaluates-to-zero]
+                          // in a field a product vanishes only if a factor does
+                          @a-factor-vanishes |
+                            fieldpoly.addF(b, fieldpoly.negF(al)) = zeroF or
+                              fieldpoly.evaluate(q, b) = zeroF
+                            [using specialize field.noZeroDivisors(fieldpoly.addF(b, fieldpoly.negF(al)), fieldpoly.evaluate(q, b)) the-factors-multiply-to-zero]
+                          // and b - al does not vanish, since b != al
+                          @a-vanishing-difference-means-equal |
+                            fieldpoly.addF(b, fieldpoly.negF(al)) = zeroF -> b = al
+                            [using specialize aVanishingDifferenceMeansEqual(b, al)]
+                          @the-difference-does-not-vanish |
+                            not (fieldpoly.addF(b, fieldpoly.negF(al)) = zeroF)
+                            [using tautology a-vanishing-difference-means-equal b-differs]
+                          @q-vanishes-at-b |
+                            fieldpoly.evaluate(q, b) = zeroF
+                            [using tautology a-factor-vanishes the-difference-does-not-vanish]
+                          @being-a-zero-of-q-unfolds |
+                            fieldpoly.isZeroOf(b, q) iff fieldpoly.evaluate(q, b) = zeroF
+                            [using specialize fieldpoly.isZeroOfMeaning(b, q)]
+                          @conclusion-b-is-a-zero-of-q |
+                            fieldpoly.isZeroOf(b, q)
+                            [using tautology being-a-zero-of-q-unfolds q-vanishes-at-b]
+                        }
+                      @product-zero-implies-cofactor-zero |
+                        fieldpoly.isZeroOf(b, fieldpoly.mulP(fieldpoly.linear(al), q)) ->
+                          fieldpoly.isZeroOf(b, q)
+                        [by discharge given-b-is-a-zero-of-the-product]
+                    }
+                  @differs-implies |
+                    (not (b = al)) ->
+                      fieldpoly.isZeroOf(b, fieldpoly.mulP(fieldpoly.linear(al), q)) ->
+                      fieldpoly.isZeroOf(b, q)
+                    [by discharge given-b-differs]
+                }
+              @nonzero-implies |
+                (not (q = ZEROP)) -> (not (b = al)) ->
+                  fieldpoly.isZeroOf(b, fieldpoly.mulP(fieldpoly.linear(al), q)) ->
+                  fieldpoly.isZeroOf(b, q)
+                [by discharge given-q-nonzero]
+            }
+          @discharge-b |
+            forall b9: F;
+              (not (q = ZEROP)) -> (not (b9 = al)) ->
+              fieldpoly.isZeroOf(b9, fieldpoly.mulP(fieldpoly.linear(al), q)) ->
+              fieldpoly.isZeroOf(b9, q)
+            [by generalize generalize-b]
+        }
+      @discharge-al |
+        forall al9, b9: F;
+          (not (q = ZEROP)) -> (not (b9 = al9)) ->
+          fieldpoly.isZeroOf(b9, fieldpoly.mulP(fieldpoly.linear(al9), q)) ->
+          fieldpoly.isZeroOf(b9, q)
+        [by generalize generalize-al]
+    }
+  @conclusion |
+    forall q: Poly; forall al, b: F;
+      (not (q = ZEROP)) -> (not (b = al)) ->
+      fieldpoly.isZeroOf(b, fieldpoly.mulP(fieldpoly.linear(al), q)) ->
+      fieldpoly.isZeroOf(b, q)
+    [by generalize generalize-q]
+qed
+
+// Corollary 17.8: the pieces above the base case and the cofactor transfer.
+
+// Every coefficient of the zero polynomial vanishes, so it is bounded by any index.
+theorem theZeroPolynomialIsBoundedByZero: fieldpoly.degreeAtMost(ZEROP, ZERO)
+proof
+  @the-bound-unfolds |
+    fieldpoly.degreeAtMost(ZEROP, ZERO) iff
+      (forall i: Nat; peano.less_than(ZERO, i) -> fieldpoly.coeff(ZEROP, i) = fieldpoly.zeroF)
+    [using specialize fieldpoly.degreeAtMostMeaning(ZEROP, ZERO)]
+  @generalize-i |
+    fix i: Nat {
+      @the-coefficient-vanishes |
+        fieldpoly.coeff(ZEROP, i) = fieldpoly.zeroF
+        [using specialize fieldpoly.zeroPolyCoeff(i)]
+      @conclusion-above-zero-vanishes |
+        peano.less_than(ZERO, i) -> fieldpoly.coeff(ZEROP, i) = fieldpoly.zeroF
+        [using tautology the-coefficient-vanishes]
+    }
+  @every-coefficient-vanishes |
+    forall i: Nat; peano.less_than(ZERO, i) -> fieldpoly.coeff(ZEROP, i) = fieldpoly.zeroF
+    [by generalize generalize-i]
+  @conclusion |
+    fieldpoly.degreeAtMost(ZEROP, ZERO)
+    [using tautology the-bound-unfolds every-coefficient-vanishes]
+qed
+
+// Below one means zero: n < succ(ZERO) gives n <= ZERO, and ZERO <= n always.
+theorem belowOneIsZero: forall n: Nat; peano.less_than(n, succ(ZERO)) -> n = ZERO
+proof
+  @generalize-n |
+    fix n: Nat {
+      @given-below-one |
+        assume peano.less_than(n, succ(ZERO)) {
+          @below-one |
+            peano.less_than(n, succ(ZERO))
+            [by hypothesis given-below-one]
+          @at-most-zero |
+            peano_order.less_or_equal(n, ZERO)
+            [using specialize peano_order.lessThanSuccToLessOrEqual(n, ZERO) below-one]
+          @zero-is-at-most-n |
+            peano_order.less_or_equal(ZERO, n)
+            [using specialize fieldpoly.zeroIsAtMostAnything(n)]
+          @conclusion-n-is-zero |
+            n = ZERO
+            [using specialize peano_order.lessOrEqualAntisymmetric(n, ZERO) at-most-zero zero-is-at-most-n]
+        }
+      @below-one-implies-zero |
+        peano.less_than(n, succ(ZERO)) -> n = ZERO
+        [by discharge given-below-one]
+    }
+  @conclusion |
+    forall n: Nat; peano.less_than(n, succ(ZERO)) -> n = ZERO
+    [by generalize generalize-n]
+qed
+
+// A remainder from dividing by linear(al) is constant: the division algorithm gives
+// rem = ZEROP or deg rem < deg linear(al) = 1, and both bound it by ZERO.
+theorem aRemainderModuloALinearIsConstant: forall rem: Poly; forall al: F;
+  (rem = ZEROP or peano.less_than(fieldpoly.degree(rem),
+  fieldpoly.degree(fieldpoly.linear(al)))) ->
+  fieldpoly.degreeAtMost(rem, ZERO)
+proof
+  @generalize-rem |
+    fix rem: Poly {
+      @generalize-al |
+        fix al: F {
+          @given-the-disjunction |
+            assume rem = ZEROP or peano.less_than(fieldpoly.degree(rem),
+              fieldpoly.degree(fieldpoly.linear(al))) {
+              @the-disjunction |
+                rem = ZEROP or peano.less_than(fieldpoly.degree(rem),
+                  fieldpoly.degree(fieldpoly.linear(al)))
+                [by hypothesis given-the-disjunction]
+              @when-the-remainder-is-zero |
+                assume rem = ZEROP {
+                  @the-remainder-is-zero |
+                    rem = ZEROP
+                    [by hypothesis when-the-remainder-is-zero]
+                  @the-zero-polynomial-is-bounded |
+                    fieldpoly.degreeAtMost(ZEROP, ZERO)
+                    [by cite theZeroPolynomialIsBoundedByZero]
+                  @conclusion-bounded-when-zero |
+                    fieldpoly.degreeAtMost(rem, ZERO)
+                    [by rewrite the-remainder-is-zero the-zero-polynomial-is-bounded]
+                }
+              @when-the-degree-is-smaller |
+                assume peano.less_than(fieldpoly.degree(rem),
+                  fieldpoly.degree(fieldpoly.linear(al))) {
+                  @the-degree-is-smaller |
+                    peano.less_than(fieldpoly.degree(rem),
+                      fieldpoly.degree(fieldpoly.linear(al)))
+                    [by hypothesis when-the-degree-is-smaller]
+                  @the-linear-degree |
+                    fieldpoly.degree(fieldpoly.linear(al)) = succ(ZERO)
+                    [using specialize fieldpoly.theLinearPolynomialHasDegreeOne(al)]
+                  @the-degree-is-below-one |
+                    peano.less_than(fieldpoly.degree(rem), succ(ZERO))
+                    [by rewrite the-linear-degree the-degree-is-smaller]
+                  @the-degree-is-zero |
+                    fieldpoly.degree(rem) = ZERO
+                    [using specialize belowOneIsZero(fieldpoly.degree(rem)) the-degree-is-below-one]
+                  @the-remainder-is-zero-or-not |
+                    rem = ZEROP or (not (rem = ZEROP))
+                    [using tautology]
+                  @when-it-is-zero-again |
+                    assume rem = ZEROP {
+                      @it-is-zero |
+                        rem = ZEROP
+                        [by hypothesis when-it-is-zero-again]
+                      @zero-is-bounded |
+                        fieldpoly.degreeAtMost(ZEROP, ZERO)
+                        [by cite theZeroPolynomialIsBoundedByZero]
+                      @conclusion-zero-case |
+                        fieldpoly.degreeAtMost(rem, ZERO)
+                        [by rewrite it-is-zero zero-is-bounded]
+                    }
+                  @when-it-is-nonzero |
+                    assume not (rem = ZEROP) {
+                      @it-is-nonzero |
+                        not (rem = ZEROP)
+                        [by hypothesis when-it-is-nonzero]
+                      @bounded-by-its-own-degree |
+                        fieldpoly.degreeAtMost(rem, fieldpoly.degree(rem))
+                        [using specialize fieldpoly.degreeBoundsTheCoefficients(rem) it-is-nonzero]
+                      @conclusion-nonzero-case |
+                        fieldpoly.degreeAtMost(rem, ZERO)
+                        [by rewrite the-degree-is-zero bounded-by-its-own-degree]
+                    }
+                  @conclusion-bounded-when-smaller |
+                    fieldpoly.degreeAtMost(rem, ZERO)
+                    [by common_conclusion the-remainder-is-zero-or-not when-it-is-zero-again when-it-is-nonzero]
+                }
+              @conclusion-bounded |
+                fieldpoly.degreeAtMost(rem, ZERO)
+                [by common_conclusion the-disjunction when-the-remainder-is-zero when-the-degree-is-smaller]
+            }
+          @the-disjunction-implies |
+            (rem = ZEROP or peano.less_than(fieldpoly.degree(rem),
+              fieldpoly.degree(fieldpoly.linear(al)))) ->
+              fieldpoly.degreeAtMost(rem, ZERO)
+            [by discharge given-the-disjunction]
+        }
+      @discharge-al |
+        forall al9: F;
+          (rem = ZEROP or peano.less_than(fieldpoly.degree(rem),
+          fieldpoly.degree(fieldpoly.linear(al9)))) ->
+          fieldpoly.degreeAtMost(rem, ZERO)
+        [by generalize generalize-al]
+    }
+  @conclusion |
+    forall rem: Poly; forall al: F;
+      (rem = ZEROP or peano.less_than(fieldpoly.degree(rem),
+      fieldpoly.degree(fieldpoly.linear(al)))) ->
+      fieldpoly.degreeAtMost(rem, ZERO)
+    [by generalize generalize-rem]
+qed
+
+// A nonzero p of degree at most succ(k) with a zero al factors as linear(al)*q, with q
+// nonzero of degree at most k. The division algorithm supplies the quotient and remainder;
+// the remainder is constant by the lemma above, so aZeroGivesALinearFactor discards it;
+// and degreeOfAProduct turns deg(linear*q) = succ(deg q) <= succ(k) into deg q <= k.
+theorem aZeroPeelsOffALinearFactor: forall p: Poly; forall al: F; forall k: Nat;
+  (not (p = ZEROP)) ->
+  fieldpoly.degreeAtMost(p, succ(k)) ->
+  fieldpoly.isZeroOf(al, p) ->
+  exists q: Poly; (not (q = ZEROP)) and fieldpoly.degreeAtMost(q, k) and
+  p = fieldpoly.mulP(fieldpoly.linear(al), q)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-al |
+        fix al: F {
+          @generalize-k |
+            fix k: Nat {
+              @given-p-nonzero |
+                assume not (p = ZEROP) {
+                  @p-nonzero |
+                    not (p = ZEROP)
+                    [by hypothesis given-p-nonzero]
+                  @given-p-bounded |
+                    assume fieldpoly.degreeAtMost(p, succ(k)) {
+                      @p-bounded |
+                        fieldpoly.degreeAtMost(p, succ(k))
+                        [by hypothesis given-p-bounded]
+                      @given-al-is-a-zero |
+                        assume fieldpoly.isZeroOf(al, p) {
+                          @al-is-a-zero |
+                            fieldpoly.isZeroOf(al, p)
+                            [by hypothesis given-al-is-a-zero]
+                          @the-linear-is-nonzero |
+                            not (fieldpoly.linear(al) = ZEROP)
+                            [using specialize fieldpoly.theLinearPolynomialIsNonzero(al)]
+                          // divide p by linear(al)
+                          @the-division-exists |
+                            exists quo: Poly; exists rem: Poly;
+                              p = fieldpoly.addP(fieldpoly.mulP(fieldpoly.linear(al), quo), rem) and
+                              (rem = ZEROP or peano.less_than(fieldpoly.degree(rem),
+                              fieldpoly.degree(fieldpoly.linear(al))))
+                            [using specialize fieldpoly.theDivisionAlgorithmExists(fieldpoly.linear(al), p) the-linear-is-nonzero]
+                          @with-the-quotient-quo |
+                            unpack quo: Poly from the-division-exists {
+                              @a-remainder-exists |
+                                exists rem: Poly;
+                                  p = fieldpoly.addP(fieldpoly.mulP(fieldpoly.linear(al), quo), rem) and
+                                  (rem = ZEROP or peano.less_than(fieldpoly.degree(rem),
+                                  fieldpoly.degree(fieldpoly.linear(al))))
+                                [by hypothesis with-the-quotient-quo]
+                              @with-the-remainder-rem |
+                                unpack rem: Poly from a-remainder-exists {
+                                  @the-division |
+                                    p = fieldpoly.addP(fieldpoly.mulP(fieldpoly.linear(al), quo), rem) and
+                                      (rem = ZEROP or peano.less_than(fieldpoly.degree(rem),
+                                      fieldpoly.degree(fieldpoly.linear(al))))
+                                    [by hypothesis with-the-remainder-rem]
+                                  @the-equation |
+                                    p = fieldpoly.addP(fieldpoly.mulP(fieldpoly.linear(al), quo), rem)
+                                    [by and_lhs the-division]
+                                  @the-remainder-condition |
+                                    rem = ZEROP or peano.less_than(fieldpoly.degree(rem),
+                                      fieldpoly.degree(fieldpoly.linear(al)))
+                                    [by and_rhs the-division]
+                                  @the-remainder-is-constant |
+                                    fieldpoly.degreeAtMost(rem, ZERO)
+                                    [using specialize aRemainderModuloALinearIsConstant(rem, al) the-remainder-condition]
+                                  // the quotient cannot be zero, else p would be the remainder
+                                  // and so constant, contradicting that al is a zero of a
+                                  // nonzero p of positive degree -- instead derive it from
+                                  // the product form directly
+                                  @given-quo-is-zero |
+                                    assume quo = ZEROP {
+                                      @quo-is-zero |
+                                        quo = ZEROP
+                                        [by hypothesis given-quo-is-zero]
+                                      @the-product-is-zero |
+                                        fieldpoly.mulP(fieldpoly.linear(al), ZEROP) = ZEROP
+                                        [using specialize fieldpoly.polyMulZeroRight(fieldpoly.linear(al))]
+                                      @p-is-the-remainder-plus-zero |
+                                        p = fieldpoly.addP(fieldpoly.mulP(fieldpoly.linear(al), ZEROP), rem)
+                                        [by rewrite quo-is-zero the-equation]
+                                      @p-is-zero-plus-the-remainder |
+                                        p = fieldpoly.addP(ZEROP, rem)
+                                        [by rewrite the-product-is-zero p-is-the-remainder-plus-zero]
+                                      @adding-zero-on-the-left |
+                                        fieldpoly.addP(ZEROP, rem) = rem
+                                        [using specialize fieldpoly.polyAddZeroLeft(rem)]
+                                      @p-is-the-remainder |
+                                        p = rem
+                                        [using chain p-is-zero-plus-the-remainder adding-zero-on-the-left]
+                                      @p-is-constant |
+                                        fieldpoly.degreeAtMost(p, ZERO)
+                                        [by rewrite p-is-the-remainder the-remainder-is-constant]
+                                      // a nonzero constant has no zeros, but al is one
+                                      @p-has-no-zeros |
+                                        not fieldpoly.isZeroOf(al, p)
+                                        [using specialize aNonzeroConstantHasNoZeros(p, al) p-nonzero p-is-constant]
+                                      @conclusion-absurd |
+                                        not (quo = ZEROP)
+                                        [by ex_falso al-is-a-zero p-has-no-zeros]
+                                    }
+                                  @zero-quotient-is-absurd |
+                                    (quo = ZEROP) -> (not (quo = ZEROP))
+                                    [by discharge given-quo-is-zero]
+                                  @the-quotient-is-nonzero |
+                                    not (quo = ZEROP)
+                                    [using tautology zero-quotient-is-absurd]
+                                  // so p = linear(al) * quo
+                                  @p-is-the-product |
+                                    p = fieldpoly.mulP(fieldpoly.linear(al), quo)
+                                    [using specialize fieldpoly.aZeroGivesALinearFactor(p, quo, rem, al) p-nonzero the-quotient-is-nonzero al-is-a-zero the-equation the-remainder-is-constant]
+                                  // and the quotient's degree is at most k
+                                  @the-quotient-is-bounded |
+                                    fieldpoly.degreeAtMost(quo, k)
+                                    [using specialize theCofactorIsBounded(p, quo, al, k) p-nonzero the-quotient-is-nonzero p-bounded p-is-the-product]
+                                  @the-three-facts |
+                                    (not (quo = ZEROP)) and fieldpoly.degreeAtMost(quo, k) and
+                                      p = fieldpoly.mulP(fieldpoly.linear(al), quo)
+                                    [by both the-quotient-is-nonzero-and-bounded p-is-the-product]
+                                  @the-quotient-is-nonzero-and-bounded |
+                                    (not (quo = ZEROP)) and fieldpoly.degreeAtMost(quo, k)
+                                    [by both the-quotient-is-nonzero the-quotient-is-bounded]
+                                  @conclusion-a-factor-exists |
+                                    exists q: Poly;
+                                      (not (q = ZEROP)) and fieldpoly.degreeAtMost(q, k) and
+                                      p = fieldpoly.mulP(fieldpoly.linear(al), q)
+                                    [by witness(quo) the-three-facts]
+                                }
+                              @conclusion-from-the-remainder |
+                                exists q: Poly;
+                                  (not (q = ZEROP)) and fieldpoly.degreeAtMost(q, k) and
+                                  p = fieldpoly.mulP(fieldpoly.linear(al), q)
+                                [by unpacked with-the-remainder-rem]
+                            }
+                          @conclusion-from-the-quotient |
+                            exists q: Poly;
+                              (not (q = ZEROP)) and fieldpoly.degreeAtMost(q, k) and
+                              p = fieldpoly.mulP(fieldpoly.linear(al), q)
+                            [by unpacked with-the-quotient-quo]
+                        }
+                      @a-zero-gives-a-factor |
+                        fieldpoly.isZeroOf(al, p) ->
+                          exists q: Poly;
+                          (not (q = ZEROP)) and fieldpoly.degreeAtMost(q, k) and
+                          p = fieldpoly.mulP(fieldpoly.linear(al), q)
+                        [by discharge given-al-is-a-zero]
+                    }
+                  @bounded-implies |
+                    fieldpoly.degreeAtMost(p, succ(k)) -> fieldpoly.isZeroOf(al, p) ->
+                      exists q: Poly;
+                      (not (q = ZEROP)) and fieldpoly.degreeAtMost(q, k) and
+                      p = fieldpoly.mulP(fieldpoly.linear(al), q)
+                    [by discharge given-p-bounded]
+                }
+              @nonzero-implies |
+                (not (p = ZEROP)) -> fieldpoly.degreeAtMost(p, succ(k)) ->
+                  fieldpoly.isZeroOf(al, p) ->
+                  exists q: Poly;
+                  (not (q = ZEROP)) and fieldpoly.degreeAtMost(q, k) and
+                  p = fieldpoly.mulP(fieldpoly.linear(al), q)
+                [by discharge given-p-nonzero]
+            }
+          @discharge-k |
+            forall k9: Nat;
+              (not (p = ZEROP)) -> fieldpoly.degreeAtMost(p, succ(k9)) ->
+              fieldpoly.isZeroOf(al, p) ->
+              exists q: Poly;
+              (not (q = ZEROP)) and fieldpoly.degreeAtMost(q, k9) and
+              p = fieldpoly.mulP(fieldpoly.linear(al), q)
+            [by generalize generalize-k]
+        }
+      @discharge-al |
+        forall al9: F; forall k9: Nat;
+          (not (p = ZEROP)) -> fieldpoly.degreeAtMost(p, succ(k9)) ->
+          fieldpoly.isZeroOf(al9, p) ->
+          exists q: Poly;
+          (not (q = ZEROP)) and fieldpoly.degreeAtMost(q, k9) and
+          p = fieldpoly.mulP(fieldpoly.linear(al9), q)
+        [by generalize generalize-al]
+    }
+  @conclusion |
+    forall p: Poly; forall al: F; forall k: Nat;
+      (not (p = ZEROP)) -> fieldpoly.degreeAtMost(p, succ(k)) ->
+      fieldpoly.isZeroOf(al, p) ->
+      exists q: Poly;
+      (not (q = ZEROP)) and fieldpoly.degreeAtMost(q, k) and
+      p = fieldpoly.mulP(fieldpoly.linear(al), q)
+    [by generalize generalize-p]
+qed
+
+// m <= n and n < i give m < i: route through less_than(m, succ(n)) and transitivity.
+theorem atMostThenBelowIsBelow: forall m, n, i: Nat;
+  peano_order.less_or_equal(m, n) -> peano.less_than(n, i) -> peano.less_than(m, i)
+proof
+  @generalize-m |
+    fix m: Nat {
+      @generalize-n |
+        fix n: Nat {
+          @generalize-i |
+            fix i: Nat {
+              @given-m-at-most-n |
+                assume peano_order.less_or_equal(m, n) {
+                  @m-at-most-n |
+                    peano_order.less_or_equal(m, n)
+                    [by hypothesis given-m-at-most-n]
+                  @given-n-below-i |
+                    assume peano.less_than(n, i) {
+                      @n-below-i |
+                        peano.less_than(n, i)
+                        [by hypothesis given-n-below-i]
+                      // m <= n splits into m < n or m = n
+                      @the-split |
+                        peano.less_than(m, n) or m = n
+                        [using specialize peano_order.lessOrEqualSplit(m, n) m-at-most-n]
+                      @when-strictly-below |
+                        assume peano.less_than(m, n) {
+                          @strictly-below |
+                            peano.less_than(m, n)
+                            [by hypothesis when-strictly-below]
+                          @conclusion-by-transitivity |
+                            peano.less_than(m, i)
+                            [using specialize peano_order.lessThanTransitive(m, n, i) strictly-below n-below-i]
+                        }
+                      @when-equal |
+                        assume m = n {
+                          @they-are-equal |
+                            m = n
+                            [by hypothesis when-equal]
+                          @conclusion-by-substitution |
+                            peano.less_than(m, i)
+                            [by rewrite they-are-equal n-below-i]
+                        }
+                      @conclusion-m-below-i |
+                        peano.less_than(m, i)
+                        [by common_conclusion the-split when-strictly-below when-equal]
+                    }
+                  @below-implies |
+                    peano.less_than(n, i) -> peano.less_than(m, i)
+                    [by discharge given-n-below-i]
+                }
+              @at-most-implies |
+                peano_order.less_or_equal(m, n) -> peano.less_than(n, i) ->
+                  peano.less_than(m, i)
+                [by discharge given-m-at-most-n]
+            }
+          @discharge-i |
+            forall i9: Nat;
+              peano_order.less_or_equal(m, n) -> peano.less_than(n, i9) ->
+              peano.less_than(m, i9)
+            [by generalize generalize-i]
+        }
+      @discharge-n |
+        forall n9, i9: Nat;
+          peano_order.less_or_equal(m, n9) -> peano.less_than(n9, i9) ->
+          peano.less_than(m, i9)
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall m, n, i: Nat;
+      peano_order.less_or_equal(m, n) -> peano.less_than(n, i) -> peano.less_than(m, i)
+    [by generalize generalize-m]
+qed
+
+// succ(a) <= succ(b) gives a <= b: strip the successor through the less_than bridges.
+theorem successorsReflectAtMost: forall a, b: Nat;
+  peano_order.less_or_equal(succ(a), succ(b)) -> peano_order.less_or_equal(a, b)
+proof
+  @generalize-a |
+    fix a: Nat {
+      @generalize-b |
+        fix b: Nat {
+          @given-successors-at-most |
+            assume peano_order.less_or_equal(succ(a), succ(b)) {
+              @successors-at-most |
+                peano_order.less_or_equal(succ(a), succ(b))
+                [by hypothesis given-successors-at-most]
+              @successors-below-the-next |
+                peano.less_than(succ(a), succ(succ(b)))
+                [using specialize peano_order.lessOrEqualToLessThanSucc(succ(a), succ(b)) successors-at-most]
+              @a-below-succ-b |
+                peano.less_than(a, succ(b))
+                [using specialize peano_order.succReflectsOrder(a, succ(b)) successors-below-the-next]
+              @conclusion-a-at-most-b |
+                peano_order.less_or_equal(a, b)
+                [using specialize peano_order.lessThanSuccToLessOrEqual(a, b) a-below-succ-b]
+            }
+          @at-most-implies |
+            peano_order.less_or_equal(succ(a), succ(b)) ->
+              peano_order.less_or_equal(a, b)
+            [by discharge given-successors-at-most]
+        }
+      @discharge-b |
+        forall b9: Nat;
+          peano_order.less_or_equal(succ(a), succ(b9)) ->
+          peano_order.less_or_equal(a, b9)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Nat;
+      peano_order.less_or_equal(succ(a), succ(b)) -> peano_order.less_or_equal(a, b)
+    [by generalize generalize-a]
+qed
+
+// A degree bound WIDENS: if every index above m has a vanishing coefficient and m <= n,
+// then every index above n does too, since above n is above m.
+theorem aDegreeBoundWidens: forall p: Poly; forall m, n: Nat;
+  fieldpoly.degreeAtMost(p, m) -> peano_order.less_or_equal(m, n) ->
+  fieldpoly.degreeAtMost(p, n)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-m |
+        fix m: Nat {
+          @generalize-n |
+            fix n: Nat {
+              @given-bounded-by-m |
+                assume fieldpoly.degreeAtMost(p, m) {
+                  @bounded-by-m |
+                    fieldpoly.degreeAtMost(p, m)
+                    [by hypothesis given-bounded-by-m]
+                  @given-m-at-most-n |
+                    assume peano_order.less_or_equal(m, n) {
+                      @m-at-most-n |
+                        peano_order.less_or_equal(m, n)
+                        [by hypothesis given-m-at-most-n]
+                      @the-m-bound-unfolds |
+                        fieldpoly.degreeAtMost(p, m) iff
+                          (forall i: Nat; peano.less_than(m, i) ->
+                          fieldpoly.coeff(p, i) = fieldpoly.zeroF)
+                        [using specialize fieldpoly.degreeAtMostMeaning(p, m)]
+                      @above-m-vanishes |
+                        forall i: Nat; peano.less_than(m, i) ->
+                          fieldpoly.coeff(p, i) = fieldpoly.zeroF
+                        [using tautology the-m-bound-unfolds bounded-by-m]
+                      @generalize-i |
+                        fix i: Nat {
+                          @given-i-above-n |
+                            assume peano.less_than(n, i) {
+                              @i-above-n |
+                                peano.less_than(n, i)
+                                [by hypothesis given-i-above-n]
+                              // m <= n < i, so m < i
+                              @i-above-m |
+                                peano.less_than(m, i)
+                                [using specialize atMostThenBelowIsBelow(m, n, i) m-at-most-n i-above-n]
+                              @conclusion-the-coefficient-vanishes |
+                                fieldpoly.coeff(p, i) = fieldpoly.zeroF
+                                [using specialize above-m-vanishes(i) i-above-m]
+                            }
+                          @conclusion-above-n-vanishes |
+                            peano.less_than(n, i) ->
+                              fieldpoly.coeff(p, i) = fieldpoly.zeroF
+                            [by discharge given-i-above-n]
+                        }
+                      @above-n-vanishes |
+                        forall i: Nat; peano.less_than(n, i) ->
+                          fieldpoly.coeff(p, i) = fieldpoly.zeroF
+                        [by generalize generalize-i]
+                      @the-n-bound-unfolds |
+                        fieldpoly.degreeAtMost(p, n) iff
+                          (forall i: Nat; peano.less_than(n, i) ->
+                          fieldpoly.coeff(p, i) = fieldpoly.zeroF)
+                        [using specialize fieldpoly.degreeAtMostMeaning(p, n)]
+                      @conclusion-bounded-by-n |
+                        fieldpoly.degreeAtMost(p, n)
+                        [using tautology the-n-bound-unfolds above-n-vanishes]
+                    }
+                  @at-most-implies-bounded |
+                    peano_order.less_or_equal(m, n) -> fieldpoly.degreeAtMost(p, n)
+                    [by discharge given-m-at-most-n]
+                }
+              @bounded-implies |
+                fieldpoly.degreeAtMost(p, m) -> peano_order.less_or_equal(m, n) ->
+                  fieldpoly.degreeAtMost(p, n)
+                [by discharge given-bounded-by-m]
+            }
+          @discharge-n |
+            forall n9: Nat;
+              fieldpoly.degreeAtMost(p, m) -> peano_order.less_or_equal(m, n9) ->
+              fieldpoly.degreeAtMost(p, n9)
+            [by generalize generalize-n]
+        }
+      @discharge-m |
+        forall m9, n9: Nat;
+          fieldpoly.degreeAtMost(p, m9) -> peano_order.less_or_equal(m9, n9) ->
+          fieldpoly.degreeAtMost(p, n9)
+        [by generalize generalize-m]
+    }
+  @conclusion |
+    forall p: Poly; forall m, n: Nat;
+      fieldpoly.degreeAtMost(p, m) -> peano_order.less_or_equal(m, n) ->
+      fieldpoly.degreeAtMost(p, n)
+    [by generalize generalize-p]
+qed
+
+// The cofactor's degree: p = linear(al)*q with both nonzero gives
+// deg p = succ(deg q); with deg p <= succ k that forces deg q <= k, hence the bound.
+theorem theCofactorIsBounded: forall p, q: Poly; forall al: F; forall k: Nat;
+  (not (p = ZEROP)) -> (not (q = ZEROP)) ->
+  fieldpoly.degreeAtMost(p, succ(k)) ->
+  p = fieldpoly.mulP(fieldpoly.linear(al), q) ->
+  fieldpoly.degreeAtMost(q, k)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-al |
+            fix al: F {
+              @generalize-k |
+                fix k: Nat {
+                  @given-p-nonzero |
+                    assume not (p = ZEROP) {
+                      @p-nonzero |
+                        not (p = ZEROP)
+                        [by hypothesis given-p-nonzero]
+                      @given-q-nonzero |
+                        assume not (q = ZEROP) {
+                          @q-nonzero |
+                            not (q = ZEROP)
+                            [by hypothesis given-q-nonzero]
+                          @given-p-bounded |
+                            assume fieldpoly.degreeAtMost(p, succ(k)) {
+                              @p-bounded |
+                                fieldpoly.degreeAtMost(p, succ(k))
+                                [by hypothesis given-p-bounded]
+                              @given-the-factorisation |
+                                assume p = fieldpoly.mulP(fieldpoly.linear(al), q) {
+                                  @the-factorisation |
+                                    p = fieldpoly.mulP(fieldpoly.linear(al), q)
+                                    [by hypothesis given-the-factorisation]
+                                  // deg p <= succ k
+                                  @p-degree-at-most |
+                                    peano_order.less_or_equal(fieldpoly.degree(p), succ(k))
+                                    [using specialize fieldpoly.aBoundedPolynomialHasABoundedDegree(p, succ(k)) p-nonzero p-bounded]
+                                  // deg p = succ(deg q)
+                                  @the-linear-is-nonzero |
+                                    not (fieldpoly.linear(al) = ZEROP)
+                                    [using specialize fieldpoly.theLinearPolynomialIsNonzero(al)]
+                                  @the-product-degree |
+                                    fieldpoly.degree(fieldpoly.mulP(fieldpoly.linear(al), q)) =
+                                      peano.add(fieldpoly.degree(fieldpoly.linear(al)),
+                                      fieldpoly.degree(q))
+                                    [using specialize fieldpoly.degreeOfAProduct(fieldpoly.linear(al), q) the-linear-is-nonzero q-nonzero]
+                                  @the-linear-degree |
+                                    fieldpoly.degree(fieldpoly.linear(al)) = succ(ZERO)
+                                    [using specialize fieldpoly.theLinearPolynomialHasDegreeOne(al)]
+                                  @onePlusIsSuccAt |
+                                    peano.add(succ(ZERO), fieldpoly.degree(q)) =
+                                      succ(fieldpoly.degree(q))
+                                    [using specialize fieldpoly.onePlusIsSucc(fieldpoly.degree(q))]
+                                  @the-product-degree-is-a-successor |
+                                    fieldpoly.degree(fieldpoly.mulP(fieldpoly.linear(al), q)) =
+                                      succ(fieldpoly.degree(q))
+                                    [using simplify the-product-degree the-linear-degree onePlusIsSuccAt]
+                                  @p-degree-is-a-successor |
+                                    fieldpoly.degree(p) = succ(fieldpoly.degree(q))
+                                    [by rewrite the-factorisation the-product-degree-is-a-successor]
+                                  // so succ(deg q) <= succ k, hence deg q <= k
+                                  @the-successor-is-at-most |
+                                    peano_order.less_or_equal(succ(fieldpoly.degree(q)), succ(k))
+                                    [by rewrite p-degree-is-a-successor p-degree-at-most]
+                                  @the-degree-is-at-most-k |
+                                    peano_order.less_or_equal(fieldpoly.degree(q), k)
+                                    [using specialize successorsReflectAtMost(fieldpoly.degree(q), k) the-successor-is-at-most]
+                                  // and the bound follows from q's own degree bound
+                                  @q-bounded-by-its-degree |
+                                    fieldpoly.degreeAtMost(q, fieldpoly.degree(q))
+                                    [using specialize fieldpoly.degreeBoundsTheCoefficients(q) q-nonzero]
+                                  @conclusion-q-is-bounded |
+                                    fieldpoly.degreeAtMost(q, k)
+                                    [using specialize aDegreeBoundWidens(q, fieldpoly.degree(q), k) q-bounded-by-its-degree the-degree-is-at-most-k]
+                                }
+                              @factorisation-implies |
+                                p = fieldpoly.mulP(fieldpoly.linear(al), q) ->
+                                  fieldpoly.degreeAtMost(q, k)
+                                [by discharge given-the-factorisation]
+                            }
+                          @bounded-implies |
+                            fieldpoly.degreeAtMost(p, succ(k)) ->
+                              p = fieldpoly.mulP(fieldpoly.linear(al), q) ->
+                              fieldpoly.degreeAtMost(q, k)
+                            [by discharge given-p-bounded]
+                        }
+                      @q-nonzero-implies |
+                        (not (q = ZEROP)) -> fieldpoly.degreeAtMost(p, succ(k)) ->
+                          p = fieldpoly.mulP(fieldpoly.linear(al), q) ->
+                          fieldpoly.degreeAtMost(q, k)
+                        [by discharge given-q-nonzero]
+                    }
+                  @p-nonzero-implies |
+                    (not (p = ZEROP)) -> (not (q = ZEROP)) ->
+                      fieldpoly.degreeAtMost(p, succ(k)) ->
+                      p = fieldpoly.mulP(fieldpoly.linear(al), q) ->
+                      fieldpoly.degreeAtMost(q, k)
+                    [by discharge given-p-nonzero]
+                }
+              @discharge-k |
+                forall k9: Nat;
+                  (not (p = ZEROP)) -> (not (q = ZEROP)) ->
+                  fieldpoly.degreeAtMost(p, succ(k9)) ->
+                  p = fieldpoly.mulP(fieldpoly.linear(al), q) ->
+                  fieldpoly.degreeAtMost(q, k9)
+                [by generalize generalize-k]
+            }
+          @discharge-al |
+            forall al9: F; forall k9: Nat;
+              (not (p = ZEROP)) -> (not (q = ZEROP)) ->
+              fieldpoly.degreeAtMost(p, succ(k9)) ->
+              p = fieldpoly.mulP(fieldpoly.linear(al9), q) ->
+              fieldpoly.degreeAtMost(q, k9)
+            [by generalize generalize-al]
+        }
+      @discharge-q |
+        forall q9: Poly; forall al9: F; forall k9: Nat;
+          (not (p = ZEROP)) -> (not (q9 = ZEROP)) ->
+          fieldpoly.degreeAtMost(p, succ(k9)) ->
+          p = fieldpoly.mulP(fieldpoly.linear(al9), q9) ->
+          fieldpoly.degreeAtMost(q9, k9)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; forall al: F; forall k: Nat;
+      (not (p = ZEROP)) -> (not (q = ZEROP)) ->
+      fieldpoly.degreeAtMost(p, succ(k)) ->
+      p = fieldpoly.mulP(fieldpoly.linear(al), q) ->
+      fieldpoly.degreeAtMost(q, k)
+    [by generalize generalize-p]
+qed
+
+// COROLLARY 17.8: a nonzero polynomial of degree n over a field has at most n distinct
+// zeros. The induction's pieces are proved in base.b4m, factor.b4m and step.b4m; this
+// file states the counting statement and assembles them.
+
+// the embedding of the field into the countable universe: base.b4m's, so the zero-set
+// shape here is literally the one its lemmas are stated over
+
+// `s` is the set of zeros of `p`, as a set of embedded field elements.
+
+// every polynomial HAS such a set, by comprehension
+theorem everyPolynomialHasAZeroSet: forall p: Poly; exists s: Set; isTheZeroSetOf(p, s)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @conclusion-at-p |
+        exists s: Set;
+          forall x: set.Element;
+          member(x, s) iff
+          (exists a: F; fieldpoly.isZeroOf(a, p) and x = embedField(a))
+        [using instantiation set.setFromPredicate(fun x: set.Element => exists a: F; fieldpoly.isZeroOf(a, p) and x = embedField(a))]
+    }
+  @conclusion |
+    forall p: Poly; exists s: Set; isTheZeroSetOf(p, s)
+    [by generalize generalize-p]
+qed
+
+// THE STATEMENT, as the property the induction carries: the polynomial is quantified
+// INSIDE, so it may change between the hypothesis and the conclusion.
+define boundedZeros(k) =
+  forall p: Poly; forall s: Set;
+  (not (p = ZEROP)) ->
+  fieldpoly.degreeAtMost(p, k) ->
+  isTheZeroSetOf(p, s) ->
+  exists m: Nat; set_finite.hasSize(s, m) and peano_order.less_or_equal(m, k)
+
+// BASE CASE: a nonzero polynomial of degree at most ZERO has an EMPTY zero set, which has
+// size ZERO, and ZERO <= ZERO.
+theorem theBaseCase: boundedZeros(ZERO)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-s |
+        fix s: Set {
+          @given-p-nonzero |
+            assume not (p = ZEROP) {
+              @p-nonzero |
+                not (p = ZEROP)
+                [by hypothesis given-p-nonzero]
+              @given-p-constant |
+                assume fieldpoly.degreeAtMost(p, ZERO) {
+                  @p-constant |
+                    fieldpoly.degreeAtMost(p, ZERO)
+                    [by hypothesis given-p-constant]
+                  @given-s-is-the-zero-set |
+                    assume isTheZeroSetOf(p, s) {
+                      @s-is-the-zero-set |
+                        forall x: set.Element;
+                          member(x, s) iff
+                          (exists a: F; fieldpoly.isZeroOf(a, p) and x = embedField(a))
+                        [by hypothesis given-s-is-the-zero-set]
+                      // base.b4m: the zero set of a nonzero constant is empty
+                      @the-zero-set-is-empty |
+                        s = set.emptyset
+                        [using specialize theZeroSetOfAConstantIsEmpty(p, s) p-nonzero p-constant s-is-the-zero-set]
+                      @the-emptyset-has-size-zero |
+                        set_finite.hasSize(set.emptyset, ZERO)
+                        [by cite set_finite.emptysetHasSizeZero]
+                      @s-has-size-zero |
+                        set_finite.hasSize(s, ZERO)
+                        [by rewrite the-zero-set-is-empty the-emptyset-has-size-zero]
+                      @zero-is-at-most-zero |
+                        peano_order.less_or_equal(ZERO, ZERO)
+                        [using specialize peano_order.lessOrEqualRefl(ZERO)]
+                      @the-size-and-the-bound |
+                        set_finite.hasSize(s, ZERO) and peano_order.less_or_equal(ZERO, ZERO)
+                        [by both s-has-size-zero zero-is-at-most-zero]
+                      @conclusion-a-bounded-size-exists |
+                        exists m: Nat;
+                          set_finite.hasSize(s, m) and peano_order.less_or_equal(m, ZERO)
+                        [by witness(ZERO) the-size-and-the-bound]
+                    }
+                  @the-zero-set-implies |
+                    isTheZeroSetOf(p, s) ->
+                      exists m: Nat;
+                      set_finite.hasSize(s, m) and peano_order.less_or_equal(m, ZERO)
+                    [by discharge given-s-is-the-zero-set]
+                }
+              @constant-implies |
+                fieldpoly.degreeAtMost(p, ZERO) -> isTheZeroSetOf(p, s) ->
+                  exists m: Nat;
+                  set_finite.hasSize(s, m) and peano_order.less_or_equal(m, ZERO)
+                [by discharge given-p-constant]
+            }
+          @nonzero-implies |
+            (not (p = ZEROP)) -> fieldpoly.degreeAtMost(p, ZERO) ->
+              isTheZeroSetOf(p, s) ->
+              exists m: Nat;
+              set_finite.hasSize(s, m) and peano_order.less_or_equal(m, ZERO)
+            [by discharge given-p-nonzero]
+        }
+      @discharge-s |
+        forall s9: Set;
+          (not (p = ZEROP)) -> fieldpoly.degreeAtMost(p, ZERO) ->
+          isTheZeroSetOf(p, s9) ->
+          exists m: Nat;
+          set_finite.hasSize(s9, m) and peano_order.less_or_equal(m, ZERO)
+        [by generalize generalize-s]
+    }
+  @conclusion |
+    forall p: Poly; forall s: Set;
+      (not (p = ZEROP)) -> fieldpoly.degreeAtMost(p, ZERO) ->
+      isTheZeroSetOf(p, s) ->
+      exists m: Nat;
+      set_finite.hasSize(s, m) and peano_order.less_or_equal(m, ZERO)
+    [by generalize generalize-p]
+qed
+
+theorem zerosAreBoundedByTheDegree: forall n: Nat; boundedZeros(n)
+proof
+  @base-case |
+    boundedZeros(ZERO)
+    [by cite theBaseCase]
+  @induction-step-for-all-k |
+    forall k: Nat; boundedZeros(k) -> boundedZeros(succ(k))
+    [by cite theInductionStep]
+  @conclusion |
+    forall n: Nat; boundedZeros(n)
+    [using instantiation peano.induction((fun k: Nat => boundedZeros(k))) base-case induction-step-for-all-k]
+qed
+
+// INDUCTION STEP. Given the bound at k, prove it at succ(k).
+//
+// Judson: "given a zero alpha, p = (x - alpha)q with deg q = n - 1, and any other zero
+// beta is a zero of q because beta - alpha != 0 in a field." So the zeros of p sit inside
+// the zeros of q together with alpha, and the count rises by at most one.
+//
+// Two cases on whether p has a zero at all, and inside the second, two more on whether
+// alpha is ALSO a zero of q -- because addingAnElementRaisesTheSize needs the added
+// element to be outside the set, which we cannot know.
+theorem theInductionStep: forall k: Nat; boundedZeros(k) -> boundedZeros(succ(k))
+proof
+  @generalize-k |
+    fix k: Nat {
+      @given-the-bound-at-k |
+        assume boundedZeros(k) {
+          @the-bound-at-k |
+            forall p: Poly; forall s: Set;
+              (not (p = ZEROP)) ->
+              fieldpoly.degreeAtMost(p, k) ->
+              isTheZeroSetOf(p, s) ->
+              exists m: Nat;
+              set_finite.hasSize(s, m) and peano_order.less_or_equal(m, k)
+            [by hypothesis given-the-bound-at-k]
+          @generalize-p |
+            fix p: Poly {
+              @generalize-s |
+                fix s: Set {
+                  @given-p-nonzero |
+                    assume not (p = ZEROP) {
+                      @p-nonzero |
+                        not (p = ZEROP)
+                        [by hypothesis given-p-nonzero]
+                      @given-p-bounded |
+                        assume fieldpoly.degreeAtMost(p, succ(k)) {
+                          @p-bounded |
+                            fieldpoly.degreeAtMost(p, succ(k))
+                            [by hypothesis given-p-bounded]
+                          @given-s-is-the-zero-set |
+                            assume isTheZeroSetOf(p, s) {
+                              @s-is-the-zero-set |
+                                forall x: set.Element;
+                                  member(x, s) iff
+                                  (exists a: F; fieldpoly.isZeroOf(a, p) and
+                                  x = embedField(a))
+                                [by hypothesis given-s-is-the-zero-set]
+                              // does p have a zero at all?
+                              @p-has-a-zero-or-not |
+                                (exists al: F; fieldpoly.isZeroOf(al, p)) or
+                                  (not (exists al: F; fieldpoly.isZeroOf(al, p)))
+                                [using tautology]
+                              @when-p-has-no-zero |
+                                assume not (exists al: F; fieldpoly.isZeroOf(al, p)) {
+                                  @p-has-no-zero |
+                                    not (exists al: F; fieldpoly.isZeroOf(al, p))
+                                    [by hypothesis when-p-has-no-zero]
+                                  @the-zero-set-is-empty |
+                                    s = set.emptyset
+                                    [using specialize aZeroFreePolynomialHasAnEmptyZeroSet(p, s) p-has-no-zero s-is-the-zero-set]
+                                  @the-emptyset-has-size-zero |
+                                    set_finite.hasSize(set.emptyset, ZERO)
+                                    [by cite set_finite.emptysetHasSizeZero]
+                                  @s-has-size-zero |
+                                    set_finite.hasSize(s, ZERO)
+                                    [by rewrite the-zero-set-is-empty the-emptyset-has-size-zero]
+                                  @zero-is-at-most-succ-k |
+                                    peano_order.less_or_equal(ZERO, succ(k))
+                                    [using specialize fieldpoly.zeroIsAtMostAnything(succ(k))]
+                                  @the-size-and-the-bound |
+                                    set_finite.hasSize(s, ZERO) and
+                                      peano_order.less_or_equal(ZERO, succ(k))
+                                    [by both s-has-size-zero zero-is-at-most-succ-k]
+                                  @conclusion-when-no-zero |
+                                    exists m: Nat;
+                                      set_finite.hasSize(s, m) and
+                                      peano_order.less_or_equal(m, succ(k))
+                                    [by witness(ZERO) the-size-and-the-bound]
+                                }
+                              @when-p-has-a-zero |
+                                assume exists al: F; fieldpoly.isZeroOf(al, p) {
+                                  @a-zero-exists |
+                                    exists al: F; fieldpoly.isZeroOf(al, p)
+                                    [by hypothesis when-p-has-a-zero]
+                                  @with-the-zero-al |
+                                    unpack al: F from a-zero-exists {
+                                      @al-is-a-zero |
+                                        fieldpoly.isZeroOf(al, p)
+                                        [by hypothesis with-the-zero-al]
+                                      // peel off the linear factor
+                                      @a-cofactor-exists |
+                                        exists q: Poly;
+                                          (not (q = ZEROP)) and
+                                          fieldpoly.degreeAtMost(q, k) and
+                                          p = fieldpoly.mulP(fieldpoly.linear(al), q)
+                                        [using specialize aZeroPeelsOffALinearFactor(p, al, k) p-nonzero p-bounded al-is-a-zero]
+                                      @with-the-cofactor-q |
+                                        unpack q: Poly from a-cofactor-exists {
+                                          @the-cofactor-facts |
+                                            (not (q = ZEROP)) and
+                                              fieldpoly.degreeAtMost(q, k) and
+                                              p = fieldpoly.mulP(fieldpoly.linear(al), q)
+                                            [by hypothesis with-the-cofactor-q]
+                                          @the-factorisation |
+                                            p = fieldpoly.mulP(fieldpoly.linear(al), q)
+                                            [by and_rhs the-cofactor-facts]
+                                          @the-cofactor-is-nonzero-and-bounded |
+                                            (not (q = ZEROP)) and
+                                              fieldpoly.degreeAtMost(q, k)
+                                            [by and_lhs the-cofactor-facts]
+                                          @q-nonzero |
+                                            not (q = ZEROP)
+                                            [by and_lhs the-cofactor-is-nonzero-and-bounded]
+                                          @q-bounded |
+                                            fieldpoly.degreeAtMost(q, k)
+                                            [by and_rhs the-cofactor-is-nonzero-and-bounded]
+                                          // q has a zero set, and the hypothesis bounds it
+                                          @a-cofactor-zero-set-exists |
+                                            exists t: Set; isTheZeroSetOf(q, t)
+                                            [using specialize everyPolynomialHasAZeroSet(q)]
+                                          @with-the-cofactor-zero-set-t |
+                                            unpack t: Set from a-cofactor-zero-set-exists {
+                                              @t-is-the-cofactor-zero-set |
+                                                forall x: set.Element;
+                                                  member(x, t) iff
+                                                  (exists a: F;
+                                                  fieldpoly.isZeroOf(a, q) and
+                                                  x = embedField(a))
+                                                [by hypothesis with-the-cofactor-zero-set-t]
+                                              @a-cofactor-bound-exists |
+                                                exists m: Nat;
+                                                  set_finite.hasSize(t, m) and
+                                                  peano_order.less_or_equal(m, k)
+                                                [using specialize the-bound-at-k(q, t) q-nonzero q-bounded t-is-the-cofactor-zero-set]
+                                              @with-the-cofactor-size-m |
+                                                unpack m: Nat from a-cofactor-bound-exists {
+                                                  @the-cofactor-size-facts |
+                                                    set_finite.hasSize(t, m) and
+                                                      peano_order.less_or_equal(m, k)
+                                                    [by hypothesis with-the-cofactor-size-m]
+                                                  @t-has-size-m |
+                                                    set_finite.hasSize(t, m)
+                                                    [by and_lhs the-cofactor-size-facts]
+                                                  @m-is-at-most-k |
+                                                    peano_order.less_or_equal(m, k)
+                                                    [by and_rhs the-cofactor-size-facts]
+                                                  // every zero of p lies in t or is al
+                                                  @s-sits-inside-t-with-al |
+                                                    set.subset(s, set.union(t, set.singleton(embedField(al))))
+                                                    [using specialize theZerosSitInsideTheCofactorsWithTheRoot(p, q, s, t, al) q-nonzero the-factorisation s-is-the-zero-set t-is-the-cofactor-zero-set]
+                                                  // bound the size of t with al adjoined
+                                                  @the-adjoined-set-is-bounded |
+                                                    exists j: Nat;
+                                                      set_finite.hasSize(set.union(t, set.singleton(embedField(al))), j) and
+                                                      peano_order.less_or_equal(j, succ(m))
+                                                    [using specialize adjoiningOnePointRaisesTheSizeByAtMostOne(t, embedField(al), m) t-has-size-m]
+                                                  @with-the-adjoined-size-j |
+                                                    unpack j: Nat from the-adjoined-set-is-bounded {
+                                                      @the-adjoined-facts |
+                                                        set_finite.hasSize(set.union(t, set.singleton(embedField(al))), j) and
+                                                          peano_order.less_or_equal(j, succ(m))
+                                                        [by hypothesis with-the-adjoined-size-j]
+                                                      @the-adjoined-has-size-j |
+                                                        set_finite.hasSize(set.union(t, set.singleton(embedField(al))), j)
+                                                        [by and_lhs the-adjoined-facts]
+                                                      @j-is-at-most-succ-m |
+                                                        peano_order.less_or_equal(j, succ(m))
+                                                        [by and_rhs the-adjoined-facts]
+                                                      // s is a subset of a finite set, so it has a size at most j
+                                                      @s-is-bounded-by-j |
+                                                        exists i: Nat;
+                                                          set_finite.hasSize(s, i) and
+                                                          peano_order.less_or_equal(i, j)
+                                                        [using specialize set_finite.subsetOfFiniteIsFinite(j, set.union(t, set.singleton(embedField(al))), s) the-adjoined-has-size-j s-sits-inside-t-with-al]
+                                                      @with-the-size-i |
+                                                        unpack i: Nat from s-is-bounded-by-j {
+                                                          @the-size-facts |
+                                                            set_finite.hasSize(s, i) and
+                                                              peano_order.less_or_equal(i, j)
+                                                            [by hypothesis with-the-size-i]
+                                                          @s-has-size-i |
+                                                            set_finite.hasSize(s, i)
+                                                            [by and_lhs the-size-facts]
+                                                          @i-is-at-most-j |
+                                                            peano_order.less_or_equal(i, j)
+                                                            [by and_rhs the-size-facts]
+                                                          // i <= j <= succ m <= succ k
+                                                          @succ-m-is-at-most-succ-k |
+                                                            peano_order.less_or_equal(succ(m), succ(k))
+                                                            [using specialize successorsPreserveAtMost(m, k) m-is-at-most-k]
+                                                          @j-is-at-most-succ-k |
+                                                            peano_order.less_or_equal(j, succ(k))
+                                                            [using specialize peano_order.lessOrEqualTransitive(j, succ(m), succ(k)) j-is-at-most-succ-m succ-m-is-at-most-succ-k]
+                                                          @i-is-at-most-succ-k |
+                                                            peano_order.less_or_equal(i, succ(k))
+                                                            [using specialize peano_order.lessOrEqualTransitive(i, j, succ(k)) i-is-at-most-j j-is-at-most-succ-k]
+                                                          @the-size-and-the-bound |
+                                                            set_finite.hasSize(s, i) and
+                                                              peano_order.less_or_equal(i, succ(k))
+                                                            [by both s-has-size-i i-is-at-most-succ-k]
+                                                          @conclusion-a-bounded-size-exists |
+                                                            exists m2: Nat;
+                                                              set_finite.hasSize(s, m2) and
+                                                              peano_order.less_or_equal(m2, succ(k))
+                                                            [by witness(i) the-size-and-the-bound]
+                                                        }
+                                                      @conclusion-from-the-size |
+                                                        exists m2: Nat;
+                                                          set_finite.hasSize(s, m2) and
+                                                          peano_order.less_or_equal(m2, succ(k))
+                                                        [by unpacked with-the-size-i]
+                                                    }
+                                                  @conclusion-from-the-adjoined |
+                                                    exists m2: Nat;
+                                                      set_finite.hasSize(s, m2) and
+                                                      peano_order.less_or_equal(m2, succ(k))
+                                                    [by unpacked with-the-adjoined-size-j]
+                                                }
+                                              @conclusion-from-the-cofactor-size |
+                                                exists m2: Nat;
+                                                  set_finite.hasSize(s, m2) and
+                                                  peano_order.less_or_equal(m2, succ(k))
+                                                [by unpacked with-the-cofactor-size-m]
+                                            }
+                                          @conclusion-from-the-cofactor-zero-set |
+                                            exists m2: Nat;
+                                              set_finite.hasSize(s, m2) and
+                                              peano_order.less_or_equal(m2, succ(k))
+                                            [by unpacked with-the-cofactor-zero-set-t]
+                                        }
+                                      @conclusion-from-the-cofactor |
+                                        exists m2: Nat;
+                                          set_finite.hasSize(s, m2) and
+                                          peano_order.less_or_equal(m2, succ(k))
+                                        [by unpacked with-the-cofactor-q]
+                                    }
+                                  @conclusion-when-a-zero |
+                                    exists m2: Nat;
+                                      set_finite.hasSize(s, m2) and
+                                      peano_order.less_or_equal(m2, succ(k))
+                                    [by unpacked with-the-zero-al]
+                                }
+                              @conclusion-either-way |
+                                exists m: Nat;
+                                  set_finite.hasSize(s, m) and
+                                  peano_order.less_or_equal(m, succ(k))
+                                [by common_conclusion p-has-a-zero-or-not when-p-has-a-zero when-p-has-no-zero]
+                            }
+                          @the-zero-set-implies |
+                            isTheZeroSetOf(p, s) ->
+                              exists m: Nat;
+                              set_finite.hasSize(s, m) and
+                              peano_order.less_or_equal(m, succ(k))
+                            [by discharge given-s-is-the-zero-set]
+                        }
+                      @bounded-implies |
+                        fieldpoly.degreeAtMost(p, succ(k)) -> isTheZeroSetOf(p, s) ->
+                          exists m: Nat;
+                          set_finite.hasSize(s, m) and
+                          peano_order.less_or_equal(m, succ(k))
+                        [by discharge given-p-bounded]
+                    }
+                  @nonzero-implies |
+                    (not (p = ZEROP)) -> fieldpoly.degreeAtMost(p, succ(k)) ->
+                      isTheZeroSetOf(p, s) ->
+                      exists m: Nat;
+                      set_finite.hasSize(s, m) and
+                      peano_order.less_or_equal(m, succ(k))
+                    [by discharge given-p-nonzero]
+                }
+              @discharge-s |
+                forall s9: Set;
+                  (not (p = ZEROP)) -> fieldpoly.degreeAtMost(p, succ(k)) ->
+                  isTheZeroSetOf(p, s9) ->
+                  exists m: Nat;
+                  set_finite.hasSize(s9, m) and
+                  peano_order.less_or_equal(m, succ(k))
+                [by generalize generalize-s]
+            }
+          @the-bound-at-succ-k |
+            forall p: Poly; forall s: Set;
+              (not (p = ZEROP)) -> fieldpoly.degreeAtMost(p, succ(k)) ->
+              isTheZeroSetOf(p, s) ->
+              exists m: Nat;
+              set_finite.hasSize(s, m) and
+              peano_order.less_or_equal(m, succ(k))
+            [by generalize generalize-p]
+        }
+      @the-bound-rises |
+        boundedZeros(k) -> boundedZeros(succ(k))
+        [by discharge given-the-bound-at-k]
+    }
+  @conclusion |
+    forall k: Nat; boundedZeros(k) -> boundedZeros(succ(k))
+    [by generalize generalize-k]
+qed
+
+// a <= b gives succ a <= succ b: through the less_than bridges and succPreservesOrder.
+theorem successorsPreserveAtMost: forall a, b: Nat;
+  peano_order.less_or_equal(a, b) -> peano_order.less_or_equal(succ(a), succ(b))
+proof
+  @generalize-a |
+    fix a: Nat {
+      @generalize-b |
+        fix b: Nat {
+          @given-a-at-most-b |
+            assume peano_order.less_or_equal(a, b) {
+              @a-at-most-b |
+                peano_order.less_or_equal(a, b)
+                [by hypothesis given-a-at-most-b]
+              @a-below-succ-b |
+                peano.less_than(a, succ(b))
+                [using specialize peano_order.lessOrEqualToLessThanSucc(a, b) a-at-most-b]
+              @succ-a-below-succ-succ-b |
+                peano.less_than(succ(a), succ(succ(b)))
+                [using specialize peano_order.succPreservesOrder(a, succ(b)) a-below-succ-b]
+              @conclusion-successors-at-most |
+                peano_order.less_or_equal(succ(a), succ(b))
+                [using specialize peano_order.lessThanSuccToLessOrEqual(succ(a), succ(b)) succ-a-below-succ-succ-b]
+            }
+          @at-most-implies |
+            peano_order.less_or_equal(a, b) ->
+              peano_order.less_or_equal(succ(a), succ(b))
+            [by discharge given-a-at-most-b]
+        }
+      @discharge-b |
+        forall b9: Nat;
+          peano_order.less_or_equal(a, b9) ->
+          peano_order.less_or_equal(succ(a), succ(b9))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Nat;
+      peano_order.less_or_equal(a, b) ->
+      peano_order.less_or_equal(succ(a), succ(b))
+    [by generalize generalize-a]
+qed
+
+// Adjoining ONE point raises a size by at most one, whether or not the point was already
+// there: if it was, the union is the set itself; if not, addingAnElementRaisesTheSize
+// gives exactly succ m. finite.b4m has only the second case, which is why this splits.
+theorem adjoiningOnePointRaisesTheSizeByAtMostOne: forall t: Set;
+  forall x: set.Element; forall m: Nat;
+  set_finite.hasSize(t, m) ->
+  exists j: Nat; set_finite.hasSize(set.union(t, set.singleton(x)), j) and
+  peano_order.less_or_equal(j, succ(m))
+proof
+  @generalize-t |
+    fix t: Set {
+      @generalize-x |
+        fix x: set.Element {
+          @generalize-m |
+            fix m: Nat {
+              @given-t-has-size-m |
+                assume set_finite.hasSize(t, m) {
+                  @t-has-size-m |
+                    set_finite.hasSize(t, m)
+                    [by hypothesis given-t-has-size-m]
+                  @x-is-in-t-or-not |
+                    member(x, t) or (not member(x, t))
+                    [using tautology]
+                  @when-x-is-already-there |
+                    assume member(x, t) {
+                      @x-is-in-t |
+                        member(x, t)
+                        [by hypothesis when-x-is-already-there]
+                      // the union adds nothing
+                      @the-union-is-t |
+                        set.union(t, set.singleton(x)) = t
+                        [using specialize aUnionWithAnInteriorPointIsTheSet(t, x) x-is-in-t]
+                      @the-union-has-size-m |
+                        set_finite.hasSize(set.union(t, set.singleton(x)), m)
+                        [by rewrite the-union-is-t t-has-size-m]
+                      @m-is-at-most-succ-m |
+                        peano_order.less_or_equal(m, succ(m))
+                        [using specialize peano_order.lessThanToLessOrEqual(m, succ(m)) m-below-succ-m]
+                      @m-below-succ-m |
+                        peano.less_than(m, succ(m))
+                        [using specialize peano_order.lessThanSelf(m)]
+                      @the-size-and-the-bound-when-interior |
+                        set_finite.hasSize(set.union(t, set.singleton(x)), m) and
+                          peano_order.less_or_equal(m, succ(m))
+                        [by both the-union-has-size-m m-is-at-most-succ-m]
+                      @conclusion-when-interior |
+                        exists j: Nat;
+                          set_finite.hasSize(set.union(t, set.singleton(x)), j) and
+                          peano_order.less_or_equal(j, succ(m))
+                        [by witness(m) the-size-and-the-bound-when-interior]
+                    }
+                  @when-x-is-new |
+                    assume not member(x, t) {
+                      @x-is-not-in-t |
+                        not member(x, t)
+                        [by hypothesis when-x-is-new]
+                      @the-union-has-size-succ-m |
+                        set_finite.hasSize(set.union(t, set.singleton(x)), succ(m))
+                        [using specialize set_finite.addingAnElementRaisesTheSize(t, x, m) t-has-size-m x-is-not-in-t]
+                      @succ-m-is-at-most-succ-m |
+                        peano_order.less_or_equal(succ(m), succ(m))
+                        [using specialize peano_order.lessOrEqualRefl(succ(m))]
+                      @the-size-and-the-bound-when-new |
+                        set_finite.hasSize(set.union(t, set.singleton(x)), succ(m)) and
+                          peano_order.less_or_equal(succ(m), succ(m))
+                        [by both the-union-has-size-succ-m succ-m-is-at-most-succ-m]
+                      @conclusion-when-new |
+                        exists j: Nat;
+                          set_finite.hasSize(set.union(t, set.singleton(x)), j) and
+                          peano_order.less_or_equal(j, succ(m))
+                        [by witness(succ(m)) the-size-and-the-bound-when-new]
+                    }
+                  @conclusion-either-way |
+                    exists j: Nat;
+                      set_finite.hasSize(set.union(t, set.singleton(x)), j) and
+                      peano_order.less_or_equal(j, succ(m))
+                    [by common_conclusion x-is-in-t-or-not when-x-is-already-there when-x-is-new]
+                }
+              @has-size-implies |
+                set_finite.hasSize(t, m) ->
+                  exists j: Nat;
+                  set_finite.hasSize(set.union(t, set.singleton(x)), j) and
+                  peano_order.less_or_equal(j, succ(m))
+                [by discharge given-t-has-size-m]
+            }
+          @discharge-m |
+            forall m9: Nat;
+              set_finite.hasSize(t, m9) ->
+              exists j: Nat;
+              set_finite.hasSize(set.union(t, set.singleton(x)), j) and
+              peano_order.less_or_equal(j, succ(m9))
+            [by generalize generalize-m]
+        }
+      @discharge-x |
+        forall x9: set.Element; forall m9: Nat;
+          set_finite.hasSize(t, m9) ->
+          exists j: Nat;
+          set_finite.hasSize(set.union(t, set.singleton(x9)), j) and
+          peano_order.less_or_equal(j, succ(m9))
+        [by generalize generalize-x]
+    }
+  @conclusion |
+    forall t: Set; forall x: set.Element; forall m: Nat;
+      set_finite.hasSize(t, m) ->
+      exists j: Nat;
+      set_finite.hasSize(set.union(t, set.singleton(x)), j) and
+      peano_order.less_or_equal(j, succ(m))
+    [by generalize generalize-t]
+qed
+
+// A union with a point already inside changes nothing: both inclusions are immediate
+// from unionMember and singletonMember.
+theorem aUnionWithAnInteriorPointIsTheSet: forall t: Set; forall x: set.Element;
+  member(x, t) -> set.union(t, set.singleton(x)) = t
+proof
+  @generalize-t |
+    fix t: Set {
+      @generalize-x |
+        fix x: set.Element {
+          @given-x-is-in-t |
+            assume member(x, t) {
+              @x-is-in-t |
+                member(x, t)
+                [by hypothesis given-x-is-in-t]
+              @generalize-y |
+                fix y: set.Element {
+                  @union-membership |
+                    member(y, set.union(t, set.singleton(x))) iff
+                      (member(y, t) or member(y, set.singleton(x)))
+                    [using specialize set.unionMember(t, set.singleton(x), y)]
+                  @singleton-membership |
+                    member(y, set.singleton(x)) iff y = x
+                    [using specialize set.singletonMember(x, y)]
+                  @given-y-in-the-union |
+                    assume member(y, set.union(t, set.singleton(x))) {
+                      @y-in-the-union |
+                        member(y, set.union(t, set.singleton(x)))
+                        [by hypothesis given-y-in-the-union]
+                      @y-in-t-or-is-x |
+                        member(y, t) or y = x
+                        [using tautology union-membership singleton-membership y-in-the-union]
+                      @when-y-is-in-t |
+                        assume member(y, t) {
+                          @conclusion-already-in |
+                            member(y, t)
+                            [by hypothesis when-y-is-in-t]
+                        }
+                      @when-y-is-x |
+                        assume y = x {
+                          @y-is-x |
+                            y = x
+                            [by hypothesis when-y-is-x]
+                          @conclusion-x-is-in-t |
+                            member(y, t)
+                            [by rewrite y-is-x x-is-in-t]
+                        }
+                      @conclusion-y-is-in-t |
+                        member(y, t)
+                        [by common_conclusion y-in-t-or-is-x when-y-is-in-t when-y-is-x]
+                    }
+                  @conclusion-union-into-t |
+                    member(y, set.union(t, set.singleton(x))) -> member(y, t)
+                    [by discharge given-y-in-the-union]
+                }
+              @the-union-is-inside-t |
+                forall y: set.Element;
+                  member(y, set.union(t, set.singleton(x))) -> member(y, t)
+                [by generalize generalize-y]
+              @generalize-z |
+                fix z: set.Element {
+                  @union-membership-at-z |
+                    member(z, set.union(t, set.singleton(x))) iff
+                      (member(z, t) or member(z, set.singleton(x)))
+                    [using specialize set.unionMember(t, set.singleton(x), z)]
+                  @conclusion-t-into-the-union |
+                    member(z, t) -> member(z, set.union(t, set.singleton(x)))
+                    [using tautology union-membership-at-z]
+                }
+              @t-is-inside-the-union |
+                forall z: set.Element;
+                  member(z, t) -> member(z, set.union(t, set.singleton(x)))
+                [by generalize generalize-z]
+              @conclusion-they-are-equal |
+                set.union(t, set.singleton(x)) = t
+                [using specialize set.extensionality(set.union(t, set.singleton(x)), t) the-union-is-inside-t t-is-inside-the-union]
+            }
+          @in-t-implies |
+            member(x, t) -> set.union(t, set.singleton(x)) = t
+            [by discharge given-x-is-in-t]
+        }
+      @discharge-x |
+        forall x9: set.Element;
+          member(x9, t) -> set.union(t, set.singleton(x9)) = t
+        [by generalize generalize-x]
+    }
+  @conclusion |
+    forall t: Set; forall x: set.Element;
+      member(x, t) -> set.union(t, set.singleton(x)) = t
+    [by generalize generalize-t]
+qed
+
+// A polynomial with NO zero has an empty zero set: a member would name a zero.
+theorem aZeroFreePolynomialHasAnEmptyZeroSet: forall p: Poly; forall s: Set;
+  (not (exists al: F; fieldpoly.isZeroOf(al, p))) -> isTheZeroSetOf(p, s) ->
+  s = set.emptyset
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-s |
+        fix s: Set {
+          @given-no-zero |
+            assume not (exists al: F; fieldpoly.isZeroOf(al, p)) {
+              @no-zero |
+                not (exists al: F; fieldpoly.isZeroOf(al, p))
+                [by hypothesis given-no-zero]
+              @given-s-is-the-zero-set |
+                assume isTheZeroSetOf(p, s) {
+                  @s-is-the-zero-set |
+                    forall x: set.Element;
+                      member(x, s) iff
+                      (exists a: F; fieldpoly.isZeroOf(a, p) and x = embedField(a))
+                    [by hypothesis given-s-is-the-zero-set]
+                  @generalize-x |
+                    fix x: set.Element {
+                      @membership-at-x |
+                        member(x, s) iff
+                          (exists a: F; fieldpoly.isZeroOf(a, p) and x = embedField(a))
+                        [by apply_at(x) s-is-the-zero-set]
+                      @given-x-is-a-member |
+                        assume member(x, s) {
+                          @x-is-a-member |
+                            member(x, s)
+                            [by hypothesis given-x-is-a-member]
+                          @a-witnessed-zero-exists |
+                            exists a: F;
+                              fieldpoly.isZeroOf(a, p) and x = embedField(a)
+                            [using tautology membership-at-x x-is-a-member]
+                          @with-the-zero-a |
+                            unpack a: F from a-witnessed-zero-exists {
+                              @the-zero-facts |
+                                fieldpoly.isZeroOf(a, p) and x = embedField(a)
+                                [by hypothesis with-the-zero-a]
+                              @a-is-a-zero |
+                                fieldpoly.isZeroOf(a, p)
+                                [by and_lhs the-zero-facts]
+                              @a-zero-exists |
+                                exists al: F; fieldpoly.isZeroOf(al, p)
+                                [by witness(a) a-is-a-zero]
+                              @conclusion-absurd |
+                                member(x, set.emptyset)
+                                [by ex_falso a-zero-exists no-zero]
+                            }
+                          @conclusion-x-is-in-the-emptyset |
+                            member(x, set.emptyset)
+                            [by unpacked with-the-zero-a]
+                        }
+                      @conclusion-member-implies-empty |
+                        member(x, s) -> member(x, set.emptyset)
+                        [by discharge given-x-is-a-member]
+                    }
+                  @s-is-inside-the-emptyset |
+                    forall x: set.Element; member(x, s) -> member(x, set.emptyset)
+                    [by generalize generalize-x]
+                  @generalize-y |
+                    fix y: set.Element {
+                      @nothing-is-in-the-emptyset |
+                        not member(y, set.emptyset)
+                        [using specialize set.emptysetMember(y)]
+                      @conclusion-empty-implies-member |
+                        member(y, set.emptyset) -> member(y, s)
+                        [using tautology nothing-is-in-the-emptyset]
+                    }
+                  @the-emptyset-is-inside-s |
+                    forall y: set.Element; member(y, set.emptyset) -> member(y, s)
+                    [by generalize generalize-y]
+                  @conclusion-s-is-empty |
+                    s = set.emptyset
+                    [using specialize set.extensionality(s, set.emptyset) s-is-inside-the-emptyset the-emptyset-is-inside-s]
+                }
+              @the-zero-set-implies |
+                isTheZeroSetOf(p, s) -> s = set.emptyset
+                [by discharge given-s-is-the-zero-set]
+            }
+          @no-zero-implies |
+            (not (exists al: F; fieldpoly.isZeroOf(al, p))) ->
+              isTheZeroSetOf(p, s) -> s = set.emptyset
+            [by discharge given-no-zero]
+        }
+      @discharge-s |
+        forall s9: Set;
+          (not (exists al: F; fieldpoly.isZeroOf(al, p))) ->
+          isTheZeroSetOf(p, s9) -> s9 = set.emptyset
+        [by generalize generalize-s]
+    }
+  @conclusion |
+    forall p: Poly; forall s: Set;
+      (not (exists al: F; fieldpoly.isZeroOf(al, p))) ->
+      isTheZeroSetOf(p, s) -> s = set.emptyset
+    [by generalize generalize-p]
+qed
+
+// JUDSON'S KEY STEP, as a set inclusion: every zero of p = (x - al)q is either al itself
+// or a zero of q. "any other zero beta is a zero of q because beta - alpha != 0 in a
+// field" -- that is step.b4m's anotherZeroIsAZeroOfTheCofactor.
+theorem theZerosSitInsideTheCofactorsWithTheRoot: forall p, q: Poly; forall s, t: Set;
+  forall al: F;
+  (not (q = ZEROP)) ->
+  p = fieldpoly.mulP(fieldpoly.linear(al), q) ->
+  isTheZeroSetOf(p, s) -> isTheZeroSetOf(q, t) ->
+  set.subset(s, set.union(t, set.singleton(embedField(al))))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-s |
+            fix s: Set {
+              @generalize-t |
+                fix t: Set {
+                  @generalize-al |
+                    fix al: F {
+                      @given-q-nonzero |
+                        assume not (q = ZEROP) {
+                          @q-nonzero |
+                            not (q = ZEROP)
+                            [by hypothesis given-q-nonzero]
+                          @given-the-factorisation |
+                            assume p = fieldpoly.mulP(fieldpoly.linear(al), q) {
+                              @the-factorisation |
+                                p = fieldpoly.mulP(fieldpoly.linear(al), q)
+                                [by hypothesis given-the-factorisation]
+                              @given-s-is-the-zero-set |
+                                assume isTheZeroSetOf(p, s) {
+                                  @s-is-the-zero-set |
+                                    forall x: set.Element;
+                                      member(x, s) iff
+                                      (exists a: F; fieldpoly.isZeroOf(a, p) and
+                                      x = embedField(a))
+                                    [by hypothesis given-s-is-the-zero-set]
+                                  @given-t-is-the-cofactor-zero-set |
+                                    assume isTheZeroSetOf(q, t) {
+                                      @t-is-the-cofactor-zero-set |
+                                        forall x: set.Element;
+                                          member(x, t) iff
+                                          (exists a: F; fieldpoly.isZeroOf(a, q) and
+                                          x = embedField(a))
+                                        [by hypothesis given-t-is-the-cofactor-zero-set]
+                                      @generalize-x |
+                                        fix x: set.Element {
+                                          @membership-in-s |
+                                            member(x, s) iff
+                                              (exists a: F;
+                                              fieldpoly.isZeroOf(a, p) and
+                                              x = embedField(a))
+                                            [by apply_at(x) s-is-the-zero-set]
+                                          @membership-in-t |
+                                            member(x, t) iff
+                                              (exists a: F;
+                                              fieldpoly.isZeroOf(a, q) and
+                                              x = embedField(a))
+                                            [by apply_at(x) t-is-the-cofactor-zero-set]
+                                          @membership-in-the-union |
+                                            member(x, set.union(t, set.singleton(embedField(al)))) iff
+                                              (member(x, t) or
+                                              member(x, set.singleton(embedField(al))))
+                                            [using specialize set.unionMember(t, set.singleton(embedField(al)), x)]
+                                          @membership-in-the-singleton |
+                                            member(x, set.singleton(embedField(al))) iff
+                                              x = embedField(al)
+                                            [using specialize set.singletonMember(embedField(al), x)]
+                                          @given-x-is-in-s |
+                                            assume member(x, s) {
+                                              @x-is-in-s |
+                                                member(x, s)
+                                                [by hypothesis given-x-is-in-s]
+                                              @a-zero-of-p-exists |
+                                                exists a: F;
+                                                  fieldpoly.isZeroOf(a, p) and
+                                                  x = embedField(a)
+                                                [using tautology membership-in-s x-is-in-s]
+                                              @with-the-zero-a |
+                                                unpack a: F from a-zero-of-p-exists {
+                                                  @the-zero-facts |
+                                                    fieldpoly.isZeroOf(a, p) and
+                                                      x = embedField(a)
+                                                    [by hypothesis with-the-zero-a]
+                                                  @a-is-a-zero-of-p |
+                                                    fieldpoly.isZeroOf(a, p)
+                                                    [by and_lhs the-zero-facts]
+                                                  @x-is-a-embedded |
+                                                    x = embedField(a)
+                                                    [by and_rhs the-zero-facts]
+                                                  // is a the root al, or another zero?
+                                                  @a-is-al-or-not |
+                                                    a = al or (not (a = al))
+                                                    [using tautology]
+                                                  @when-a-is-the-root |
+                                                    assume a = al {
+                                                      @a-is-al |
+                                                        a = al
+                                                        [by hypothesis when-a-is-the-root]
+                                                      @x-is-the-embedded-root |
+                                                        x = embedField(al)
+                                                        [by rewrite a-is-al x-is-a-embedded]
+                                                      @conclusion-in-the-singleton |
+                                                        member(x, set.union(t, set.singleton(embedField(al))))
+                                                        [using tautology membership-in-the-union membership-in-the-singleton x-is-the-embedded-root]
+                                                    }
+                                                  @when-a-is-another-zero |
+                                                    assume not (a = al) {
+                                                      @a-differs |
+                                                        not (a = al)
+                                                        [by hypothesis when-a-is-another-zero]
+                                                      // a is a zero of the PRODUCT
+                                                      @a-is-a-zero-of-the-product |
+                                                        fieldpoly.isZeroOf(a, fieldpoly.mulP(fieldpoly.linear(al), q))
+                                                        [by rewrite the-factorisation a-is-a-zero-of-p]
+                                                      // step.b4m: so a is a zero of q
+                                                      @a-is-a-zero-of-q |
+                                                        fieldpoly.isZeroOf(a, q)
+                                                        [using specialize anotherZeroIsAZeroOfTheCofactor(q, al, a) q-nonzero a-differs a-is-a-zero-of-the-product]
+                                                      @a-witnesses-t |
+                                                        exists a2: F;
+                                                          fieldpoly.isZeroOf(a2, q) and
+                                                          x = embedField(a2)
+                                                        [by witness(a) the-cofactor-zero-facts]
+                                                      @the-cofactor-zero-facts |
+                                                        fieldpoly.isZeroOf(a, q) and
+                                                          x = embedField(a)
+                                                        [by both a-is-a-zero-of-q x-is-a-embedded]
+                                                      @x-is-in-t |
+                                                        member(x, t)
+                                                        [using tautology membership-in-t a-witnesses-t]
+                                                      @conclusion-in-t |
+                                                        member(x, set.union(t, set.singleton(embedField(al))))
+                                                        [using tautology membership-in-the-union x-is-in-t]
+                                                    }
+                                                  @conclusion-in-the-union |
+                                                    member(x, set.union(t, set.singleton(embedField(al))))
+                                                    [by common_conclusion a-is-al-or-not when-a-is-the-root when-a-is-another-zero]
+                                                }
+                                              @conclusion-from-the-zero |
+                                                member(x, set.union(t, set.singleton(embedField(al))))
+                                                [by unpacked with-the-zero-a]
+                                            }
+                                          @conclusion-s-into-the-union |
+                                            member(x, s) ->
+                                              member(x, set.union(t, set.singleton(embedField(al))))
+                                            [by discharge given-x-is-in-s]
+                                        }
+                                      @conclusion-the-inclusion |
+                                        forall x: set.Element;
+                                          member(x, s) ->
+                                          member(x, set.union(t, set.singleton(embedField(al))))
+                                        [by generalize generalize-x]
+                                    }
+                                  @the-cofactor-zero-set-implies |
+                                    isTheZeroSetOf(q, t) ->
+                                      set.subset(s, set.union(t, set.singleton(embedField(al))))
+                                    [by discharge given-t-is-the-cofactor-zero-set]
+                                }
+                              @the-zero-set-implies |
+                                isTheZeroSetOf(p, s) -> isTheZeroSetOf(q, t) ->
+                                  set.subset(s, set.union(t, set.singleton(embedField(al))))
+                                [by discharge given-s-is-the-zero-set]
+                            }
+                          @the-factorisation-implies |
+                            p = fieldpoly.mulP(fieldpoly.linear(al), q) ->
+                              isTheZeroSetOf(p, s) -> isTheZeroSetOf(q, t) ->
+                              set.subset(s, set.union(t, set.singleton(embedField(al))))
+                            [by discharge given-the-factorisation]
+                        }
+                      @q-nonzero-implies |
+                        (not (q = ZEROP)) ->
+                          p = fieldpoly.mulP(fieldpoly.linear(al), q) ->
+                          isTheZeroSetOf(p, s) -> isTheZeroSetOf(q, t) ->
+                          set.subset(s, set.union(t, set.singleton(embedField(al))))
+                        [by discharge given-q-nonzero]
+                    }
+                  @discharge-al |
+                    forall al9: F;
+                      (not (q = ZEROP)) ->
+                      p = fieldpoly.mulP(fieldpoly.linear(al9), q) ->
+                      isTheZeroSetOf(p, s) -> isTheZeroSetOf(q, t) ->
+                      set.subset(s, set.union(t, set.singleton(embedField(al9))))
+                    [by generalize generalize-al]
+                }
+              @discharge-t |
+                forall t9: Set; forall al9: F;
+                  (not (q = ZEROP)) ->
+                  p = fieldpoly.mulP(fieldpoly.linear(al9), q) ->
+                  isTheZeroSetOf(p, s) -> isTheZeroSetOf(q, t9) ->
+                  set.subset(s, set.union(t9, set.singleton(embedField(al9))))
+                [by generalize generalize-t]
+            }
+          @discharge-s |
+            forall s9, t9: Set; forall al9: F;
+              (not (q = ZEROP)) ->
+              p = fieldpoly.mulP(fieldpoly.linear(al9), q) ->
+              isTheZeroSetOf(p, s9) -> isTheZeroSetOf(q, t9) ->
+              set.subset(s9, set.union(t9, set.singleton(embedField(al9))))
+            [by generalize generalize-s]
+        }
+      @discharge-q |
+        forall q9: Poly; forall s9, t9: Set; forall al9: F;
+          (not (q9 = ZEROP)) ->
+          p = fieldpoly.mulP(fieldpoly.linear(al9), q9) ->
+          isTheZeroSetOf(p, s9) -> isTheZeroSetOf(q9, t9) ->
+          set.subset(s9, set.union(t9, set.singleton(embedField(al9))))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; forall s, t: Set; forall al: F;
+      (not (q = ZEROP)) ->
+      p = fieldpoly.mulP(fieldpoly.linear(al), q) ->
+      isTheZeroSetOf(p, s) -> isTheZeroSetOf(q, t) ->
+      set.subset(s, set.union(t, set.singleton(embedField(al))))
+    [by generalize generalize-p]
+qed
