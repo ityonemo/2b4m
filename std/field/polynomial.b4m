@@ -2112,6 +2112,150 @@ proof
     [by generalize generalize-f]
 qed
 
+// Two small facts the construction arm needs, both about its chosen coefficient.
+
+// A monomial with a nonzero coefficient is not the zero polynomial: they differ at index k.
+theorem aNonzeroMonomialIsNonzero: forall a: F; forall k: Nat;
+  (not (a = zeroF)) -> (not (monomial(a, k) = ZEROP))
+proof
+  @generalize-a |
+    fix a: F {
+      @generalize-k |
+        fix k: Nat {
+          @given-the-coefficient-is-nonzero |
+            assume not (a = zeroF) {
+              @the-coefficient-is-nonzero |
+                a != zeroF
+                [by hypothesis given-the-coefficient-is-nonzero]
+              @the-monomial-at-its-index |
+                coeff(monomial(a, k), k) = a
+                [using specialize monomialCoeffAtItsIndex(a, k)]
+              @given-the-monomial-is-zero |
+                assume monomial(a, k) = ZEROP {
+                  @the-monomial-is-zero |
+                    monomial(a, k) = ZEROP
+                    [by hypothesis given-the-monomial-is-zero]
+                  @the-zero-coefficient |
+                    coeff(ZEROP, k) = zeroF
+                    [using specialize zeroPolyCoeff(k)]
+                  @the-monomial-coefficient-is-zero |
+                    coeff(monomial(a, k), k) = zeroF
+                    [by rewrite the-monomial-is-zero the-zero-coefficient]
+                  @the-coefficient-is-zero |
+                    a = zeroF
+                    [using chain the-monomial-at-its-index-flipped the-monomial-coefficient-is-zero]
+                  @the-monomial-at-its-index-flipped |
+                    a = coeff(monomial(a, k), k)
+                    [by symmetry the-monomial-at-its-index]
+                  @contradiction |
+                    not (monomial(a, k) = ZEROP)
+                    [by ex_falso the-coefficient-is-zero the-coefficient-is-nonzero]
+                }
+              @being-zero-is-absurd |
+                monomial(a, k) = ZEROP -> (not (monomial(a, k) = ZEROP))
+                [by discharge given-the-monomial-is-zero]
+              @conclusion-the-monomial-is-nonzero |
+                not (monomial(a, k) = ZEROP)
+                [using tautology being-zero-is-absurd]
+            }
+          @nonzero-coefficient-implies-nonzero-monomial |
+            (not (a = zeroF)) -> (not (monomial(a, k) = ZEROP))
+            [by discharge given-the-coefficient-is-nonzero]
+        }
+      @discharge-k |
+        forall k: Nat; (not (a = zeroF)) -> (not (monomial(a, k) = ZEROP))
+        [by generalize generalize-k]
+    }
+  @conclusion |
+    forall a: F; forall k: Nat;
+      (not (a = zeroF)) -> (not (monomial(a, k) = ZEROP))
+    [by generalize generalize-a]
+qed
+
+// The chosen coefficient `a_n · recip(b_m)` is nonzero when both factors are: a field has no
+// zero divisors, and `recip` of a nonzero is nonzero (else multiplying it by `b_m` could not
+// give `1`).
+theorem theChosenCoefficientIsNonzero: forall leading, divisor_leading: F;
+  (not (leading = zeroF)) -> (not (divisor_leading = zeroF)) ->
+  (not (mulF(leading, recipF(divisor_leading)) = zeroF))
+proof
+  @generalize-leading |
+    fix leading: F {
+      @generalize-divisor |
+        fix divisor_leading: F {
+          @given-the-leading-is-nonzero |
+            assume not (leading = zeroF) {
+              @given-the-divisor-is-nonzero |
+                assume not (divisor_leading = zeroF) {
+                  @the-leading-is-nonzero |
+                    leading != zeroF
+                    [by hypothesis given-the-leading-is-nonzero]
+                  @the-divisor-is-nonzero |
+                    divisor_leading != zeroF
+                    [by hypothesis given-the-divisor-is-nonzero]
+                  // recip(b) is nonzero: if it were zero, b·recip(b) would be zero, not one.
+                  // recip(b) != 0: if it were, recip(b)·b would be 0, but it is 1.
+                  @given-the-reciprocal-is-zero |
+                    assume recipF(divisor_leading) = zeroF {
+                      @the-reciprocal-is-zero |
+                        recipF(divisor_leading) = zeroF
+                        [by hypothesis given-the-reciprocal-is-zero]
+                      @the-reciprocal-cancels |
+                        mulF(recipF(divisor_leading), divisor_leading) = oneF
+                        [using specialize field.recipMulLeft(divisor_leading) the-divisor-is-nonzero]
+                      @zero-times-the-divisor |
+                        mulF(zeroF, divisor_leading) = zeroF
+                        [using specialize field.mulZeroLeft(divisor_leading)]
+                      @one-would-be-zero |
+                        oneF = zeroF
+                        [using simplify the-reciprocal-cancels-flipped the-reciprocal-is-zero zero-times-the-divisor]
+                      @the-reciprocal-cancels-flipped |
+                        oneF = mulF(recipF(divisor_leading), divisor_leading)
+                        [by symmetry the-reciprocal-cancels]
+                      @one-is-not-zero |
+                        oneF != zeroF
+                        [by cite field.oneNotZero]
+                      @contradiction |
+                        recipF(divisor_leading) != zeroF
+                        [by ex_falso one-would-be-zero one-is-not-zero]
+                    }
+                  @a-zero-reciprocal-is-absurd |
+                    recipF(divisor_leading) = zeroF -> recipF(divisor_leading) != zeroF
+                    [by discharge given-the-reciprocal-is-zero]
+                  @the-reciprocal-is-nonzero |
+                    recipF(divisor_leading) != zeroF
+                    [using tautology a-zero-reciprocal-is-absurd]
+                  @the-product-splits |
+                    mulF(leading, recipF(divisor_leading)) = zeroF ->
+                      (leading = zeroF or recipF(divisor_leading) = zeroF)
+                    [using specialize field.noZeroDivisors(leading, recipF(divisor_leading))]
+                  @conclusion-the-coefficient-is-nonzero |
+                    not (mulF(leading, recipF(divisor_leading)) = zeroF)
+                    [using tautology the-product-splits the-leading-is-nonzero the-reciprocal-is-nonzero]
+                }
+              @divisor-nonzero-implies-the-product |
+                (not (divisor_leading = zeroF)) ->
+                  (not (mulF(leading, recipF(divisor_leading)) = zeroF))
+                [by discharge given-the-divisor-is-nonzero]
+            }
+          @both-nonzero-imply-the-product |
+            (not (leading = zeroF)) -> (not (divisor_leading = zeroF)) ->
+              (not (mulF(leading, recipF(divisor_leading)) = zeroF))
+            [by discharge given-the-leading-is-nonzero]
+        }
+      @discharge-divisor |
+        forall divisor_leading: F;
+          (not (leading = zeroF)) -> (not (divisor_leading = zeroF)) ->
+          (not (mulF(leading, recipF(divisor_leading)) = zeroF))
+        [by generalize generalize-divisor]
+    }
+  @conclusion |
+    forall leading, divisor_leading: F;
+      (not (leading = zeroF)) -> (not (divisor_leading = zeroF)) ->
+      (not (mulF(leading, recipF(divisor_leading)) = zeroF))
+    [by generalize generalize-leading]
+qed
+
 // == JUDSON'S DIVISION ALGORITHM (§17.2) ==================================================
 //
 // "Let f(x) and g(x) be polynomials in F[x], where F is a field and g(x) is a nonzero
