@@ -2859,6 +2859,271 @@ proof
     [by generalize generalize-f]
 qed
 
+// THE RECURSIVE LEAF, with its index arithmetic done once. Given a nonzero `ff` whose degree
+// is a successor and at least `gg`'s, plus the recursion at every smaller bound, `ff` divides.
+//
+// Judson's `n - m` becomes a gap WITNESS: `deg gg <= deg ff` means some `kk` has
+// `deg gg + kk = deg ff`, and commuting that sum gives the `k + m` shape the construction arm
+// wants. No truncated subtraction appears.
+//
+// Binder names are doubled (`ff`, `gg`, `nn`, `dd`) and the generalize steps use `f9`-style
+// names: the shadowing check rejects reusing a `fix`-bound name in an enclosing step's
+// statement, and this proof is nine levels deep.
+theorem theRecursiveCaseDivides: forall ff, gg: Poly; forall nn, dd: Nat;
+  (not (ff = ZEROP)) -> (not (gg = ZEROP)) ->
+  degreeAtMost(ff, nn) -> degree(ff) = succ(dd) ->
+  peano_order.less_or_equal(degree(gg), degree(ff)) ->
+  (forall jj: Nat; less_than(jj, nn) ->
+  forall red: Poly; degreeAtMost(red, jj) ->
+  exists quo: Poly; exists rem: Poly;
+  red = addP(mulP(gg, quo), rem) and
+  (rem = ZEROP or less_than(degree(rem), degree(gg)))) ->
+  exists quo: Poly; exists rem: Poly;
+  ff = addP(mulP(gg, quo), rem) and
+  (rem = ZEROP or less_than(degree(rem), degree(gg)))
+proof
+  @generalize-ff |
+    fix ff: Poly {
+      @generalize-gg |
+        fix gg: Poly {
+          @generalize-nn |
+            fix nn: Nat {
+              @generalize-dd |
+                fix dd: Nat {
+                  @given-ff-nonzero |
+                    assume not (ff = ZEROP) {
+                      @given-gg-nonzero |
+                        assume not (gg = ZEROP) {
+                          @given-ff-bounded |
+                            assume degreeAtMost(ff, nn) {
+                              @given-ff-degree |
+                                assume degree(ff) = succ(dd) {
+                                  @given-gg-fits |
+                                    assume peano_order.less_or_equal(degree(gg), degree(ff)) {
+                                      @given-recursion |
+                                        assume forall jj: Nat; less_than(jj, nn) ->
+                                          forall red: Poly; degreeAtMost(red, jj) ->
+                                          exists quo: Poly; exists rem: Poly;
+                                          red = addP(mulP(gg, quo), rem) and
+                                          (rem = ZEROP or less_than(degree(rem), degree(gg))) {
+                                          @ff-nonzero |
+                                            not (ff = ZEROP)
+                                            [by hypothesis given-ff-nonzero]
+                                          @gg-nonzero |
+                                            not (gg = ZEROP)
+                                            [by hypothesis given-gg-nonzero]
+                                          @ff-bounded |
+                                            degreeAtMost(ff, nn)
+                                            [by hypothesis given-ff-bounded]
+                                          @ff-degree |
+                                            degree(ff) = succ(dd)
+                                            [by hypothesis given-ff-degree]
+                                          @gg-fits |
+                                            peano_order.less_or_equal(degree(gg), degree(ff))
+                                            [by hypothesis given-gg-fits]
+                                          @recursion |
+                                            forall jj: Nat; less_than(jj, nn) ->
+                                              forall red: Poly; degreeAtMost(red, jj) ->
+                                              exists quo: Poly; exists rem: Poly;
+                                              red = addP(mulP(gg, quo), rem) and
+                                              (rem = ZEROP or less_than(degree(rem), degree(gg)))
+                                            [by hypothesis given-recursion]
+
+                                          @degree-bounded |
+                                            peano_order.less_or_equal(degree(ff), nn)
+                                            [using specialize aBoundedPolynomialHasABoundedDegree(ff, nn) ff-nonzero ff-bounded]
+                                          @successor-bounded |
+                                            peano_order.less_or_equal(succ(dd), nn)
+                                            [by rewrite ff-degree degree-bounded]
+                                          @successor-below-successor |
+                                            less_than(succ(dd), succ(nn))
+                                            [using specialize peano_order.lessOrEqualToLessThanSucc(succ(dd), nn) successor-bounded]
+                                          @dd-below-nn |
+                                            less_than(dd, nn)
+                                            [using specialize peano_order.succReflectsOrder(dd, nn) successor-below-successor]
+
+                                          @what-the-gap-means |
+                                            peano_order.less_or_equal(degree(gg), degree(ff)) iff
+                                              (exists kk: Nat; peano.add(degree(gg), kk) = degree(ff))
+                                            [using specialize peano_order.lessOrEqualIsGapExistential(degree(gg), degree(ff))]
+                                          @the-gap-exists |
+                                            exists kk: Nat; peano.add(degree(gg), kk) = degree(ff)
+                                            [using tautology gg-fits what-the-gap-means]
+                                          @with-the-gap |
+                                            unpack kk: Nat from the-gap-exists {
+                                              @the-gap-sums |
+                                                peano.add(degree(gg), kk) = degree(ff)
+                                                [by hypothesis with-the-gap]
+                                              @the-sum-commutes |
+                                                peano.add(kk, degree(gg)) = peano.add(degree(gg), kk)
+                                                [using specialize peano.addIsCommutative(kk, degree(gg))]
+                                              @the-commuted-sum |
+                                                peano.add(kk, degree(gg)) = degree(ff)
+                                                [using chain the-sum-commutes the-gap-sums]
+                                              @ff-degree-as-sum |
+                                                degree(ff) = peano.add(kk, degree(gg))
+                                                [by symmetry the-commuted-sum]
+                                              @sum-is-successor |
+                                                peano.add(kk, degree(gg)) = succ(dd)
+                                                [using chain the-commuted-sum ff-degree]
+                                              @gg-degree-itself |
+                                                degree(gg) = degree(gg)
+                                                [by reflexivity]
+                                              @recursion-at-dd |
+                                                forall red: Poly; degreeAtMost(red, dd) ->
+                                                  exists quo: Poly; exists rem: Poly;
+                                                  red = addP(mulP(gg, quo), rem) and
+                                                  (rem = ZEROP or less_than(degree(rem), degree(gg)))
+                                                [using specialize recursion(dd) dd-below-nn]
+                                              @the-construction-divides |
+                                                exists quo: Poly; exists rem: Poly;
+                                                  ff = addP(mulP(gg, quo), rem) and
+                                                  (rem = ZEROP or less_than(degree(rem), degree(gg)))
+                                                [using specialize theConstructionDividesGivenTheReduction(ff, gg, kk, degree(gg), dd) ff-nonzero gg-nonzero gg-degree-itself ff-degree-as-sum sum-is-successor recursion-at-dd]
+                                            }
+                                          @divides-from-the-gap |
+                                            exists quo: Poly; exists rem: Poly;
+                                              ff = addP(mulP(gg, quo), rem) and
+                                              (rem = ZEROP or less_than(degree(rem), degree(gg)))
+                                            [by unpacked with-the-gap]
+                                        }
+                                      @d6 |
+                                        (forall jj: Nat; less_than(jj, nn) ->
+                                          forall red: Poly; degreeAtMost(red, jj) ->
+                                          exists quo: Poly; exists rem: Poly;
+                                          red = addP(mulP(gg, quo), rem) and
+                                          (rem = ZEROP or less_than(degree(rem), degree(gg)))) ->
+                                          exists quo: Poly; exists rem: Poly;
+                                          ff = addP(mulP(gg, quo), rem) and
+                                          (rem = ZEROP or less_than(degree(rem), degree(gg)))
+                                        [by discharge given-recursion]
+                                    }
+                                  @d5 |
+                                    peano_order.less_or_equal(degree(gg), degree(ff)) ->
+                                      (forall jj: Nat; less_than(jj, nn) ->
+                                      forall red: Poly; degreeAtMost(red, jj) ->
+                                      exists quo: Poly; exists rem: Poly;
+                                      red = addP(mulP(gg, quo), rem) and
+                                      (rem = ZEROP or less_than(degree(rem), degree(gg)))) ->
+                                      exists quo: Poly; exists rem: Poly;
+                                      ff = addP(mulP(gg, quo), rem) and
+                                      (rem = ZEROP or less_than(degree(rem), degree(gg)))
+                                    [by discharge given-gg-fits]
+                                }
+                              @d4 |
+                                degree(ff) = succ(dd) ->
+                                  peano_order.less_or_equal(degree(gg), degree(ff)) ->
+                                  (forall jj: Nat; less_than(jj, nn) ->
+                                  forall red: Poly; degreeAtMost(red, jj) ->
+                                  exists quo: Poly; exists rem: Poly;
+                                  red = addP(mulP(gg, quo), rem) and
+                                  (rem = ZEROP or less_than(degree(rem), degree(gg)))) ->
+                                  exists quo: Poly; exists rem: Poly;
+                                  ff = addP(mulP(gg, quo), rem) and
+                                  (rem = ZEROP or less_than(degree(rem), degree(gg)))
+                                [by discharge given-ff-degree]
+                            }
+                          @d3 |
+                            degreeAtMost(ff, nn) -> degree(ff) = succ(dd) ->
+                              peano_order.less_or_equal(degree(gg), degree(ff)) ->
+                              (forall jj: Nat; less_than(jj, nn) ->
+                              forall red: Poly; degreeAtMost(red, jj) ->
+                              exists quo: Poly; exists rem: Poly;
+                              red = addP(mulP(gg, quo), rem) and
+                              (rem = ZEROP or less_than(degree(rem), degree(gg)))) ->
+                              exists quo: Poly; exists rem: Poly;
+                              ff = addP(mulP(gg, quo), rem) and
+                              (rem = ZEROP or less_than(degree(rem), degree(gg)))
+                            [by discharge given-ff-bounded]
+                        }
+                      @d2 |
+                        (not (gg = ZEROP)) -> degreeAtMost(ff, nn) -> degree(ff) = succ(dd) ->
+                          peano_order.less_or_equal(degree(gg), degree(ff)) ->
+                          (forall jj: Nat; less_than(jj, nn) ->
+                          forall red: Poly; degreeAtMost(red, jj) ->
+                          exists quo: Poly; exists rem: Poly;
+                          red = addP(mulP(gg, quo), rem) and
+                          (rem = ZEROP or less_than(degree(rem), degree(gg)))) ->
+                          exists quo: Poly; exists rem: Poly;
+                          ff = addP(mulP(gg, quo), rem) and
+                          (rem = ZEROP or less_than(degree(rem), degree(gg)))
+                        [by discharge given-gg-nonzero]
+                    }
+                  @d1 |
+                    (not (ff = ZEROP)) -> (not (gg = ZEROP)) -> degreeAtMost(ff, nn) ->
+                      degree(ff) = succ(dd) ->
+                      peano_order.less_or_equal(degree(gg), degree(ff)) ->
+                      (forall jj: Nat; less_than(jj, nn) ->
+                      forall red: Poly; degreeAtMost(red, jj) ->
+                      exists quo: Poly; exists rem: Poly;
+                      red = addP(mulP(gg, quo), rem) and
+                      (rem = ZEROP or less_than(degree(rem), degree(gg)))) ->
+                      exists quo: Poly; exists rem: Poly;
+                      ff = addP(mulP(gg, quo), rem) and
+                      (rem = ZEROP or less_than(degree(rem), degree(gg)))
+                    [by discharge given-ff-nonzero]
+                }
+              @gen-dd |
+                forall d9: Nat;
+                  (not (ff = ZEROP)) -> (not (gg = ZEROP)) -> degreeAtMost(ff, nn) ->
+                  degree(ff) = succ(d9) ->
+                  peano_order.less_or_equal(degree(gg), degree(ff)) ->
+                  (forall jj: Nat; less_than(jj, nn) ->
+                  forall red: Poly; degreeAtMost(red, jj) ->
+                  exists quo: Poly; exists rem: Poly;
+                  red = addP(mulP(gg, quo), rem) and
+                  (rem = ZEROP or less_than(degree(rem), degree(gg)))) ->
+                  exists quo: Poly; exists rem: Poly;
+                  ff = addP(mulP(gg, quo), rem) and
+                  (rem = ZEROP or less_than(degree(rem), degree(gg)))
+                [by generalize generalize-dd]
+            }
+          @gen-nn |
+            forall n9, d9: Nat;
+              (not (ff = ZEROP)) -> (not (gg = ZEROP)) -> degreeAtMost(ff, n9) ->
+              degree(ff) = succ(d9) ->
+              peano_order.less_or_equal(degree(gg), degree(ff)) ->
+              (forall jj: Nat; less_than(jj, n9) ->
+              forall red: Poly; degreeAtMost(red, jj) ->
+              exists quo: Poly; exists rem: Poly;
+              red = addP(mulP(gg, quo), rem) and
+              (rem = ZEROP or less_than(degree(rem), degree(gg)))) ->
+              exists quo: Poly; exists rem: Poly;
+              ff = addP(mulP(gg, quo), rem) and
+              (rem = ZEROP or less_than(degree(rem), degree(gg)))
+            [by generalize generalize-nn]
+        }
+      @gen-gg |
+        forall g9: Poly; forall n9, d9: Nat;
+          (not (ff = ZEROP)) -> (not (g9 = ZEROP)) -> degreeAtMost(ff, n9) ->
+          degree(ff) = succ(d9) ->
+          peano_order.less_or_equal(degree(g9), degree(ff)) ->
+          (forall jj: Nat; less_than(jj, n9) ->
+          forall red: Poly; degreeAtMost(red, jj) ->
+          exists quo: Poly; exists rem: Poly;
+          red = addP(mulP(g9, quo), rem) and
+          (rem = ZEROP or less_than(degree(rem), degree(g9)))) ->
+          exists quo: Poly; exists rem: Poly;
+          ff = addP(mulP(g9, quo), rem) and
+          (rem = ZEROP or less_than(degree(rem), degree(g9)))
+        [by generalize generalize-gg]
+    }
+  @conclusion |
+    forall f9, g9: Poly; forall n9, d9: Nat;
+      (not (f9 = ZEROP)) -> (not (g9 = ZEROP)) -> degreeAtMost(f9, n9) ->
+      degree(f9) = succ(d9) ->
+      peano_order.less_or_equal(degree(g9), degree(f9)) ->
+      (forall jj: Nat; less_than(jj, n9) ->
+      forall red: Poly; degreeAtMost(red, jj) ->
+      exists quo: Poly; exists rem: Poly;
+      red = addP(mulP(g9, quo), rem) and
+      (rem = ZEROP or less_than(degree(rem), degree(g9)))) ->
+      exists quo: Poly; exists rem: Poly;
+      f9 = addP(mulP(g9, quo), rem) and
+      (rem = ZEROP or less_than(degree(rem), degree(g9)))
+    [by generalize generalize-ff]
+qed
+
 // == JUDSON'S DIVISION ALGORITHM (§17.2) ==================================================
 //
 // "Let f(x) and g(x) be polynomials in F[x], where F is a field and g(x) is a nonzero
