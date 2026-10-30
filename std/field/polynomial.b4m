@@ -4081,6 +4081,147 @@ proof
     [by generalize generalize-q]
 qed
 
+// THE TELESCOPING INVARIANT. Summing (x-alpha)q's terms to limit succ(m) leaves exactly
+// -alpha^(m+1) * q_m: each step's new term cancels the previous residue.
+theorem theTelescopingPartialSum: forall q: Poly; forall al: F; forall m: Nat;
+  evalUpTo(mulP(linear(al), q), al, succ(m)) =
+  negF(mulF(power(al, succ(m)), coeff(q, m)))
+proof
+  @generalize-q |
+    fix q: Poly {
+      @generalize-al |
+        fix al: F {
+          // base: sum to limit 1 is the index-0 term, -al*q_0 * al^0 = -(al^1 * q_0)
+          @base-one-term |
+            evalUpTo(mulP(linear(al), q), al, succ(ZERO)) =
+              coeff(mulP(linear(al), q), ZERO)
+            [using specialize aConstantEvaluatesToItsCoefficient(mulP(linear(al), q), al)]
+          @base-coefficient |
+            coeff(mulP(linear(al), q), ZERO) = mulF(negF(al), coeff(q, ZERO))
+            [using specialize theProductCoefficientAtZero(q, al)]
+          @base-first-power |
+            power(al, succ(ZERO)) = al
+            [using specialize theFirstPowerIsTheBase(al)]
+          @base-negation-moves |
+            mulF(negF(al), coeff(q, ZERO)) = negF(mulF(al, coeff(q, ZERO)))
+            [using specialize field.mulNegLeft(al, coeff(q, ZERO))]
+          @base-case |
+            evalUpTo(mulP(linear(al), q), al, succ(ZERO)) =
+              negF(mulF(power(al, succ(ZERO)), coeff(q, ZERO)))
+            [using simplify base-one-term base-coefficient base-negation-moves base-first-power]
+
+          @induction-step |
+            fix m: Nat {
+              @given-inductive-hypothesis |
+                assume evalUpTo(mulP(linear(al), q), al, succ(m)) =
+                  negF(mulF(power(al, succ(m)), coeff(q, m))) {
+                  @inductive-hypothesis |
+                    evalUpTo(mulP(linear(al), q), al, succ(m)) =
+                      negF(mulF(power(al, succ(m)), coeff(q, m)))
+                    [by hypothesis given-inductive-hypothesis]
+                  @one-more-term |
+                    evalUpTo(mulP(linear(al), q), al, succ(succ(m))) =
+                      addF(evalUpTo(mulP(linear(al), q), al, succ(m)),
+                      mulF(coeff(mulP(linear(al), q), succ(m)), power(al, succ(m))))
+                    [using specialize evalSucc(mulP(linear(al), q), al, succ(m))]
+                  @the-new-coefficient |
+                    coeff(mulP(linear(al), q), succ(m)) =
+                      addF(mulF(negF(al), coeff(q, succ(m))), coeff(q, m))
+                    [using specialize theProductCoefficientAtSucc(q, al, m)]
+                  // substitute the hypothesis and the new coefficient into the step
+                  @the-sum-expanded |
+                    evalUpTo(mulP(linear(al), q), al, succ(succ(m))) =
+                      addF(negF(mulF(power(al, succ(m)), coeff(q, m))),
+                      mulF(addF(mulF(negF(al), coeff(q, succ(m))), coeff(q, m)),
+                      power(al, succ(m))))
+                    [using simplify one-more-term the-new-coefficient inductive-hypothesis]
+
+                  // distribute the new term over its sum
+                  @the-new-term-distributes |
+                    mulF(addF(mulF(negF(al), coeff(q, succ(m))), coeff(q, m)),
+                      power(al, succ(m))) =
+                      addF(mulF(mulF(negF(al), coeff(q, succ(m))), power(al, succ(m))),
+                      mulF(coeff(q, m), power(al, succ(m))))
+                    [using specialize field.mulAddDistribRight(mulF(negF(al), coeff(q, succ(m))), coeff(q, m), power(al, succ(m)))]
+
+                  // the first piece is -(al^(m+2) * q_(m+1))
+                  @the-negation-moves-out |
+                    mulF(mulF(negF(al), coeff(q, succ(m))), power(al, succ(m))) =
+                      negF(mulF(mulF(al, coeff(q, succ(m))), power(al, succ(m))))
+                    [using polynomial(field)]
+                  @the-power-step |
+                    power(al, succ(succ(m))) = mulF(al, power(al, succ(m)))
+                    [using specialize powerSucc(al, succ(m))]
+                  // regroup to put the two power factors adjacent, THEN fold them
+                  @the-factors-regroup |
+                    mulF(mulF(al, coeff(q, succ(m))), power(al, succ(m))) =
+                      mulF(mulF(al, power(al, succ(m))), coeff(q, succ(m)))
+                    [using polynomial(field)]
+                  @the-powers-combine |
+                    mulF(mulF(al, coeff(q, succ(m))), power(al, succ(m))) =
+                      mulF(power(al, succ(succ(m))), coeff(q, succ(m)))
+                    [by rewrite the-power-step-flipped the-factors-regroup]
+                  @the-power-step-flipped |
+                    mulF(al, power(al, succ(m))) = power(al, succ(succ(m)))
+                    [by symmetry the-power-step]
+                  @the-first-piece |
+                    mulF(mulF(negF(al), coeff(q, succ(m))), power(al, succ(m))) =
+                      negF(mulF(power(al, succ(succ(m))), coeff(q, succ(m))))
+                    [using simplify the-negation-moves-out the-powers-combine]
+
+                  // so the whole sum is  -A + (-B + A)  with A = al^(m+1)*q_m
+                  @the-sum-in-three-pieces |
+                    evalUpTo(mulP(linear(al), q), al, succ(succ(m))) =
+                      addF(negF(mulF(power(al, succ(m)), coeff(q, m))),
+                      addF(negF(mulF(power(al, succ(succ(m))), coeff(q, succ(m)))),
+                      mulF(coeff(q, m), power(al, succ(m)))))
+                    [using simplify the-sum-expanded the-new-term-distributes the-first-piece]
+
+                  // -A + (-B + A) = -B
+                  @the-two-cancel |
+                    addF(negF(mulF(power(al, succ(m)), coeff(q, m))),
+                      addF(negF(mulF(power(al, succ(succ(m))), coeff(q, succ(m)))),
+                      mulF(coeff(q, m), power(al, succ(m))))) =
+                      negF(mulF(power(al, succ(succ(m))), coeff(q, succ(m))))
+                    [using polynomial(field)]
+                  @conclusion-successor |
+                    evalUpTo(mulP(linear(al), q), al, succ(succ(m))) =
+                      negF(mulF(power(al, succ(succ(m))), coeff(q, succ(m))))
+                    [using chain the-sum-in-three-pieces the-two-cancel]
+                }
+              @induction-step-at-m |
+                (evalUpTo(mulP(linear(al), q), al, succ(m)) =
+                  negF(mulF(power(al, succ(m)), coeff(q, m)))) ->
+                  (evalUpTo(mulP(linear(al), q), al, succ(succ(m))) =
+                  negF(mulF(power(al, succ(succ(m))), coeff(q, succ(m)))))
+                [by discharge given-inductive-hypothesis]
+            }
+          @induction-step-for-all-m |
+            forall m: Nat;
+              (evalUpTo(mulP(linear(al), q), al, succ(m)) =
+              negF(mulF(power(al, succ(m)), coeff(q, m)))) ->
+              (evalUpTo(mulP(linear(al), q), al, succ(succ(m))) =
+              negF(mulF(power(al, succ(succ(m))), coeff(q, succ(m)))))
+            [by generalize induction-step]
+          @conclusion-for-all-m |
+            forall m: Nat;
+              evalUpTo(mulP(linear(al), q), al, succ(m)) =
+              negF(mulF(power(al, succ(m)), coeff(q, m)))
+            [using instantiation peano.induction((fun m: Nat => evalUpTo(mulP(linear(al), q), al, succ(m)) = negF(mulF(power(al, succ(m)), coeff(q, m))))) base-case induction-step-for-all-m]
+        }
+      @discharge-al |
+        forall al: F; forall m: Nat;
+          evalUpTo(mulP(linear(al), q), al, succ(m)) =
+          negF(mulF(power(al, succ(m)), coeff(q, m)))
+        [by generalize generalize-al]
+    }
+  @conclusion |
+    forall q: Poly; forall al: F; forall m: Nat;
+      evalUpTo(mulP(linear(al), q), al, succ(m)) =
+      negF(mulF(power(al, succ(m)), coeff(q, m)))
+    [by generalize generalize-q]
+qed
+
 // == THE EXISTENCE HALF ===================================================================
 //
 // "Let f(x) and g(x) be polynomials in F[x], where F is a field and g(x) is a nonzero
