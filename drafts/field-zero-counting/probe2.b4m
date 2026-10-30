@@ -1,0 +1,37 @@
+// PROBE 2: can the zero-set reification be stated with the POLYNOMIAL QUANTIFIED?
+// This is what Judson's induction on the degree needs: at each stage the polynomial
+// changes (p = (x-alpha)q, and the hypothesis is applied to q).
+
+import fieldpoly <<< "std/field/polynomial.b4m"
+import sized <<< "std/sized.b4m"
+import set <<< "std/set.b4m"
+
+sort F = fieldpoly.F
+sort Poly = fieldpoly.Poly
+sort Set = set.Set
+pred member = set.member
+
+func embedField(a: F) => sized.Element
+axiom embedFieldInjective: forall a, b: F; embedField(a) = embedField(b) -> a = b
+
+// The attempt: a zero set for an ARBITRARY p, p quantified.
+define isTheZeroSetOf(p, s) =
+  forall x: sized.Element;
+    member(x, s) iff (exists a: F; fieldpoly.isZeroOf(a, p) and x = embedField(a))
+
+// Can we even get existence, for every p? This needs comprehension at a formula with p
+// free, which `setFromPredicate` should supply directly -- no model needed.
+theorem everyPolynomialHasAZeroSet: forall p: Poly; exists s: Set; isTheZeroSetOf(p, s)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @conclusion-at-p |
+        exists s: Set;
+          forall x: sized.Element;
+            member(x, s) iff (exists a: F; fieldpoly.isZeroOf(a, p) and x = embedField(a))
+        [using instantiation set.setFromPredicate(fun x: sized.Element => exists a: F; fieldpoly.isZeroOf(a, p) and x = embedField(a))]
+    }
+  @conclusion |
+    forall p: Poly; exists s: Set; isTheZeroSetOf(p, s)
+    [by generalize generalize-p]
+qed
