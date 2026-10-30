@@ -1,0 +1,81 @@
+// PROBE: can the zeros of a fixed polynomial over F be COUNTED via std/sized.b4m?
+// The question Corollary 17.8 ("at most n distinct zeros") turns on.
+
+import fieldpoly <<< "std/field/polynomial.b4m"
+import sized <<< "std/sized.b4m"
+import set <<< "std/set.b4m"
+import set_finite <<< "std/set/finite.b4m"
+import peano <<< "std/peano.b4m"
+
+sort F = fieldpoly.F
+sort Poly = fieldpoly.Poly
+sort Set = set.Set
+pred member = set.member
+
+// The polynomial whose zeros we count is FIXED as a const: `holds` is unary on the
+// carrier, so the polynomial cannot be a parameter of it.
+const P: Poly
+const Q: Poly
+
+pred isZeroOfP(a: F)
+axiom isZeroOfPMeaning: forall a: F; isZeroOfP(a) iff fieldpoly.isZeroOf(a, P)
+
+pred isZeroOfQ(a: F)
+axiom isZeroOfQMeaning: forall a: F; isZeroOfQ(a) iff fieldpoly.isZeroOf(a, Q)
+
+func embedField(a: F) => sized.Element
+axiom embedFieldInjective: forall a, b: F; embedField(a) = embedField(b) -> a = b
+
+model ZerosAreSized {
+  sized.Carrier: F
+  sized.embed: embedField
+  sized.holds: isZeroOfP
+  sized.contains: isZeroOfQ
+  sized.embedInjective <- embedFieldInjective
+}
+
+define isTheZeroSetOfP(s) =
+  forall x: sized.Element; member(x, s) iff (exists a: F; isZeroOfP(a) and x = embedField(a))
+
+// 1. the zeros of P reify as a SET.
+theorem theZeroSetExists: exists s: Set; isTheZeroSetOfP(s)
+proof
+  @conclusion |
+    exists s: Set;
+      forall x: sized.Element; member(x, s) iff (exists a: F; isZeroOfP(a) and x = embedField(a))
+    [using model(ZerosAreSized) sized.theImageExists]
+qed
+
+// 2. membership in that set IS being a zero of P.
+theorem theZeroSetIsExactlyTheZeros: forall s: Set; isTheZeroSetOfP(s) ->
+  forall a: F; member(embedField(a), s) iff isZeroOfP(a)
+proof
+  @conclusion |
+    forall s: Set; isTheZeroSetOfP(s) ->
+      forall a: F; member(embedField(a), s) iff isZeroOfP(a)
+    [using model(ZerosAreSized) sized.theImageContainsExactlyTheSubobject]
+qed
+
+// 3. THE INDUCTION STEP, as a size fact: if every zero of P other than ALPHA is a zero of
+// Q, and Q's zero set has size m, then P's zero set has size at most succ(m).
+//
+// This is what Judson's induction needs at each stage. `imageRespectsImplication` turns the
+// pointwise containment into a subset; finite.b4m bounds the size from there.
+define isTheZeroSetOfQ(s) =
+  forall x: sized.Element; member(x, s) iff (exists a: F; isZeroOfQ(a) and x = embedField(a))
+
+theorem containedZerosAreBounded:
+  (forall a: F; isZeroOfP(a) -> isZeroOfQ(a)) ->
+  forall n: peano.Nat; forall s, b: Set;
+    isTheZeroSetOfP(s) -> isTheZeroSetOfQ(b) ->
+    set_finite.hasSize(b, n) ->
+    exists m: peano.Nat; set_finite.hasSize(s, m) and peano.less_or_equal(m, n)
+proof
+  @conclusion |
+    (forall a: F; isZeroOfP(a) -> isZeroOfQ(a)) ->
+    forall n: peano.Nat; forall s, b: Set;
+      isTheZeroSetOfP(s) -> isTheZeroSetOfQ(b) ->
+      set_finite.hasSize(b, n) ->
+      exists m: peano.Nat; set_finite.hasSize(s, m) and peano.less_or_equal(m, n)
+    [using model(ZerosAreSized) sized.aSubobjectOfAFiniteSubobjectIsFinite]
+qed
