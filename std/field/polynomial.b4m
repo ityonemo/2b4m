@@ -3124,6 +3124,178 @@ proof
     [by generalize generalize-ff]
 qed
 
+// -- EVALUATION, and what it means to be a ZERO -------------------------------------------
+//
+// Judson's factor theorem is stated in terms of a polynomial VANISHING at a point, so the
+// evaluation map has to be here. `evalUpTo(p, a, k)` is `a_0 + a_1 a + ... + a_{k-1} a^{k-1}`,
+// summed to a bound exactly as the convolution is; `p(a)` is then the sum to one past the
+// degree, which is the first bound that reaches every nonzero coefficient.
+func power(a: F, n: Nat) => F
+axiom powerZero: forall a: F; power(a, ZERO) = oneF
+axiom powerSucc: forall a: F; forall n: Nat; power(a, succ(n)) = mulF(a, power(a, n))
+
+func evalUpTo(p: Poly, a: F, k: Nat) => F
+axiom evalZero: forall p: Poly; forall a: F; evalUpTo(p, a, ZERO) = zeroF
+axiom evalSucc: forall p: Poly; forall a: F; forall k: Nat;
+  evalUpTo(p, a, succ(k)) = addF(evalUpTo(p, a, k), mulF(coeff(p, k), power(a, k)))
+
+// `evaluate(p, a)` is Judson's `p(a)`: the sum over every index up to and including the
+// degree. A bound of `succ(degree(p))` is what makes "up to" inclusive.
+define evaluate(p, a) = evalUpTo(p, a, succ(degree(p)))
+
+// `a` is a ZERO of `p` when `p` vanishes there.
+pred isZeroOf(a: F, p: Poly)
+axiom isZeroOfMeaning: forall a: F; forall p: Poly;
+  isZeroOf(a, p) iff evaluate(p, a) = zeroF
+
+// Evaluating the zero polynomial gives zero, at any bound: every term carries a zero
+// coefficient. Needed for the converse direction of the factor theorem.
+theorem theZeroPolynomialVanishesEverywhere: forall a: F; forall k: Nat;
+  evalUpTo(ZEROP, a, k) = zeroF
+proof
+  @generalize-a |
+    fix a: F {
+      @base-case |
+        evalUpTo(ZEROP, a, ZERO) = zeroF
+        [using specialize evalZero(ZEROP, a)]
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume evalUpTo(ZEROP, a, k) = zeroF {
+              @inductive-hypothesis |
+                evalUpTo(ZEROP, a, k) = zeroF
+                [by hypothesis given-inductive-hypothesis]
+              @one-more-term |
+                evalUpTo(ZEROP, a, succ(k)) =
+                  addF(evalUpTo(ZEROP, a, k), mulF(coeff(ZEROP, k), power(a, k)))
+                [using specialize evalSucc(ZEROP, a, k)]
+              @the-coefficient-vanishes |
+                coeff(ZEROP, k) = zeroF
+                [using specialize zeroPolyCoeff(k)]
+              @the-new-term-is-zero |
+                mulF(zeroF, power(a, k)) = zeroF
+                [using specialize field.mulZeroLeft(power(a, k))]
+              @the-sum-is-zero-plus-zero |
+                evalUpTo(ZEROP, a, succ(k)) = addF(zeroF, zeroF)
+                [using simplify one-more-term the-coefficient-vanishes the-new-term-is-zero inductive-hypothesis]
+              @zero-plus-zero |
+                addF(zeroF, zeroF) = zeroF
+                [using specialize addZeroLeftF(zeroF)]
+              @conclusion-successor |
+                evalUpTo(ZEROP, a, succ(k)) = zeroF
+                [using chain the-sum-is-zero-plus-zero zero-plus-zero]
+            }
+          @induction-step-at-k |
+            evalUpTo(ZEROP, a, k) = zeroF -> evalUpTo(ZEROP, a, succ(k)) = zeroF
+            [by discharge given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat;
+          evalUpTo(ZEROP, a, k) = zeroF -> evalUpTo(ZEROP, a, succ(k)) = zeroF
+        [by generalize induction-step]
+      @conclusion-for-all-k |
+        forall k: Nat; evalUpTo(ZEROP, a, k) = zeroF
+        [using instantiation peano.induction((fun k: Nat => evalUpTo(ZEROP, a, k) = zeroF)) base-case induction-step-for-all-k]
+    }
+  @conclusion |
+    forall a: F; forall k: Nat; evalUpTo(ZEROP, a, k) = zeroF
+    [by generalize generalize-a]
+qed
+
+// Evaluating a product at `a` where the FIRST factor vanishes gives zero. This is the
+// converse direction of Judson's factor theorem in its essential form: "suppose that
+// x - alpha is a factor of p(x); say p(x) = (x - alpha) q(x). Then p(alpha) = 0·q(alpha) = 0."
+//
+// Stated about a polynomial that IS the zero polynomial times anything, since that is what
+// the division algorithm hands back when the remainder vanishes.
+theorem theZeroPolynomialIsAZeroOfItself: forall a: F;
+  isZeroOf(a, ZEROP)
+proof
+  @generalize-a |
+    fix a: F {
+      @the-evaluation-vanishes |
+        evalUpTo(ZEROP, a, succ(degree(ZEROP))) = zeroF
+        [using specialize theZeroPolynomialVanishesEverywhere(a, succ(degree(ZEROP)))]
+      @what-being-a-zero-means |
+        isZeroOf(a, ZEROP) iff evaluate(ZEROP, a) = zeroF
+        [using specialize isZeroOfMeaning(a, ZEROP)]
+      @conclusion-the-zero-polynomial |
+        isZeroOf(a, ZEROP)
+        [using tautology the-evaluation-vanishes what-being-a-zero-means]
+    }
+  @conclusion |
+    forall a: F; isZeroOf(a, ZEROP)
+    [by generalize generalize-a]
+qed
+
+// `a^0 = 1` and `a^(n+1) = a·a^n` make the one-term evaluation `p(a) = a_0` for a CONSTANT
+// polynomial, which is the step Judson uses to read off `r(x) = a` from the division.
+theorem aConstantEvaluatesToItsCoefficient: forall p: Poly; forall a: F;
+  evalUpTo(p, a, succ(ZERO)) = coeff(p, ZERO)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-a |
+        fix a: F {
+          @the-one-term-sum |
+            evalUpTo(p, a, succ(ZERO)) =
+              addF(evalUpTo(p, a, ZERO), mulF(coeff(p, ZERO), power(a, ZERO)))
+            [using specialize evalSucc(p, a, ZERO)]
+          @the-empty-sum |
+            evalUpTo(p, a, ZERO) = zeroF
+            [using specialize evalZero(p, a)]
+          @the-zeroth-power |
+            power(a, ZERO) = oneF
+            [using specialize powerZero(a)]
+          @times-one |
+            mulF(coeff(p, ZERO), oneF) = coeff(p, ZERO)
+            [using specialize field.mulOneRight(coeff(p, ZERO))]
+          @the-sum-is-zero-plus-the-coefficient |
+            evalUpTo(p, a, succ(ZERO)) = addF(zeroF, coeff(p, ZERO))
+            [using simplify the-one-term-sum the-empty-sum the-zeroth-power times-one]
+          @zero-plus-the-coefficient |
+            addF(zeroF, coeff(p, ZERO)) = coeff(p, ZERO)
+            [using specialize addZeroLeftF(coeff(p, ZERO))]
+          @conclusion-the-constant-evaluation |
+            evalUpTo(p, a, succ(ZERO)) = coeff(p, ZERO)
+            [using chain the-sum-is-zero-plus-the-coefficient zero-plus-the-coefficient]
+        }
+      @discharge-a |
+        forall a: F; evalUpTo(p, a, succ(ZERO)) = coeff(p, ZERO)
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall p: Poly; forall a: F; evalUpTo(p, a, succ(ZERO)) = coeff(p, ZERO)
+    [by generalize generalize-p]
+qed
+
+// The successor power law in use: `a^(n+1) = a · a^n`, exercised by a simple consequence —
+// `a^1 = a`.
+theorem theFirstPowerIsTheBase: forall a: F; power(a, succ(ZERO)) = a
+proof
+  @generalize-a |
+    fix a: F {
+      @the-successor-power |
+        power(a, succ(ZERO)) = mulF(a, power(a, ZERO))
+        [using specialize powerSucc(a, ZERO)]
+      @the-zeroth-power |
+        power(a, ZERO) = oneF
+        [using specialize powerZero(a)]
+      @the-power-is-a-times-one |
+        power(a, succ(ZERO)) = mulF(a, oneF)
+        [using simplify the-successor-power the-zeroth-power]
+      @times-one |
+        mulF(a, oneF) = a
+        [using specialize field.mulOneRight(a)]
+      @conclusion-the-first-power |
+        power(a, succ(ZERO)) = a
+        [using chain the-power-is-a-times-one times-one]
+    }
+  @conclusion |
+    forall a: F; power(a, succ(ZERO)) = a
+    [by generalize generalize-a]
+qed
+
 // == THE EXISTENCE HALF ===================================================================
 //
 // "Let f(x) and g(x) be polynomials in F[x], where F is a field and g(x) is a nonzero
