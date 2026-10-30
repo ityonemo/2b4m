@@ -1,0 +1,381 @@
+// std/nested-sum.b4m — EXCHANGING A NESTED PAIR OF FINITE SUMS.
+//
+// THE OBSTRUCTION THIS REMOVES. Three results in the polynomial layer were blocked on one
+// move: turning a sum over `i` whose summand is itself a sum over `j` into a sum over the
+// INDEX PAIRS. `aata/17.1` records it as a divergent proof structure (Judson's
+// associativity display reindexes a double sum into a sum over triples `j+k+l = i`);
+// `std/ring/polynomial.b4m` leaves multiplicative associativity unproved because of it; and
+// `aata/17.2`'s Corollary 17.8 reduces to it through evaluation being multiplicative.
+//
+// WHY IT WAS HARD, AND WHAT THE SHAPE HAD TO BE. Every induction available peels ONE `Nat`,
+// and in a triangular double sum neither index alone is the recursion variable: shrinking
+// the outer index changes the inner sum's RANGE, and shrinking the inner one does not
+// decompose the outer sum at all. This file's answer is to induct on the ROW COUNT with the
+// bound held fixed (`raisingTheBoundAddsTheDiagonal`), which is a single-index induction
+// whose increment is exactly one anti-diagonal; the outer induction on the bound is then
+// three lines. Note this is NOT the §17.1 reindexing lemma, which reverses a SINGLE
+// convolution (one index moving, a two-bound segment grown at the top and peeled at the
+// base); here the inner bound DEPENDS on the outer index, which is what defeated the three
+// induction shapes tried there.
+//
+// Stated over an abstract commutative monoid so one proof serves every consumer: a
+// carrier supplies `Value`/`combine`/`IDENTITY` plus its doubly-indexed `term`, models this
+// theory, and gets the exchange. The guard `k <= n` on the row lemma is load-bearing —
+// `sub` truncates, so a row's bound only rises with the sum's bound while the row index
+// stays inside it.
+
+import peano <<< "std/peano.b4m"
+import peano_sub <<< "std/peano/subtraction.b4m"
+import peano_order <<< "std/peano/order.b4m"
+
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+func sub = peano_sub.sub
+
+// -- the commutative monoid ---------------------------------------------------------------
+sort Value
+const IDENTITY: Value
+func combine(a: Value, b: Value) => Value
+axiom combineIdentityRight: forall a: Value; combine(a, IDENTITY) = a
+axiom combineIsAssociative: forall a, b, c: Value;
+  combine(combine(a, b), c) = combine(a, combine(b, c))
+axiom combineIsCommutative: forall a, b: Value; combine(a, b) = combine(b, a)
+
+// the third member of the AC triple `assoc_commut` wants: a(bc) = b(ac), by
+// re-associating left, commuting the outer pair, and re-associating right.
+theorem combineLeftSwap: forall a, b, c: Value;
+  combine(a, combine(b, c)) = combine(b, combine(a, c))
+proof
+  @generalize-a |
+    fix a: Value {
+      @generalize-b |
+        fix b: Value {
+          @generalize-c |
+            fix c: Value {
+              @associate-left |
+                combine(combine(a, b), c) = combine(a, combine(b, c))
+                [using specialize combineIsAssociative(a, b, c)]
+              @commute-the-inner-pair |
+                combine(a, b) = combine(b, a)
+                [using specialize combineIsCommutative(a, b)]
+              @associate-the-swapped-left |
+                combine(combine(b, a), c) = combine(b, combine(a, c))
+                [using specialize combineIsAssociative(b, a, c)]
+              @the-swapped-grouping |
+                combine(combine(a, b), c) = combine(b, combine(a, c))
+                [by rewrite commute-the-inner-pair associate-the-swapped-left]
+              @associate-left-flipped |
+                combine(a, combine(b, c)) = combine(combine(a, b), c)
+                [by symmetry associate-left]
+              @conclusion-at-a-b-c |
+                combine(a, combine(b, c)) = combine(b, combine(a, c))
+                [using chain associate-left-flipped the-swapped-grouping]
+            }
+          @discharge-c |
+            forall c9: Value; combine(a, combine(b, c9)) = combine(b, combine(a, c9))
+            [by generalize generalize-c]
+        }
+      @discharge-b |
+        forall b9, c9: Value; combine(a, combine(b9, c9)) = combine(b9, combine(a, c9))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: Value; combine(a, combine(b, c)) = combine(b, combine(a, c))
+    [by generalize generalize-a]
+qed
+
+// -- the doubly-indexed family ------------------------------------------------------------
+func term(j: Nat, k: Nat) => Value
+
+// `rowUpTo(j, n)` = term(j,0) + ... + term(j,n-1): ONE row, truncated at n.
+func rowUpTo(j: Nat, n: Nat) => Value
+axiom rowZero: forall j: Nat; rowUpTo(j, ZERO) = IDENTITY
+axiom rowSucc: forall j, n: Nat;
+  rowUpTo(j, succ(n)) = combine(rowUpTo(j, n), term(j, n))
+
+// `diagUpTo(i, c)` = term(0,i) + term(1,i-1) + ... + term(c-1, i-c+1): the first c entries
+// of the i-th anti-diagonal. Recursion on the COUNT c, exactly like a row -- this is the
+// shape `convolution` already has in std/field/polynomial.b4m.
+func diagUpTo(i: Nat, c: Nat) => Value
+axiom diagZero: forall i: Nat; diagUpTo(i, ZERO) = IDENTITY
+axiom diagSucc: forall i, c: Nat;
+  diagUpTo(i, succ(c)) = combine(diagUpTo(i, c), term(c, sub(i, c)))
+
+// the FULL i-th anti-diagonal has i+1 entries (j runs 0..i)
+define antidiagonal(i) = diagUpTo(i, succ(i))
+
+// `triUpTo(n)` = antidiagonal(0) + ... + antidiagonal(n-1): the TRIANGLE.
+func triUpTo(n: Nat) => Value
+axiom triZero: triUpTo(ZERO) = IDENTITY
+axiom triSucc: forall n: Nat; triUpTo(succ(n)) = combine(triUpTo(n), antidiagonal(n))
+
+// `shortenedRows(m, n)` = sum over j<m of rowUpTo(j, n-j): the rows, each truncated so
+// the pair (j,k) is counted exactly when j+k < n.
+func shortenedRows(m: Nat, n: Nat) => Value
+axiom shortenedRowsZero: forall n: Nat; shortenedRows(ZERO, n) = IDENTITY
+axiom shortenedRowsSucc: forall m, n: Nat;
+  shortenedRows(succ(m), n) = combine(shortenedRows(m, n), rowUpTo(m, sub(n, m)))
+
+// -- the key sublemma ---------------------------------------------------------------------
+//
+// THE CONTENT OF THE WHOLE LEMMA. Going from bound n to bound succ(n), every row j <= n
+// gains exactly its last entry term(j, n-j), and those gained entries ARE the n-th
+// anti-diagonal. Stated with the row count m free of the bound so it can be inducted on:
+//
+//   shortenedRows(m, succ(n))  =  combine(shortenedRows(m, n), diagUpTo(n, m))
+//
+// At m = succ(n) this says shortenedRows(succ n, succ n) = shortenedRows(succ n, n) +
+// antidiagonal(n), which is the increment the outer induction needs.
+theorem raisingTheBoundAddsTheDiagonal: forall n: Nat; forall m: Nat;
+  peano_order.less_or_equal(m, succ(n)) ->
+  shortenedRows(m, succ(n)) = combine(shortenedRows(m, n), diagUpTo(n, m))
+proof
+  @generalize-n |
+    fix n: Nat {
+      // induction on the ROW COUNT m, with n fixed. The guard travels INSIDE the
+      // property, because the successor case needs it at k to raise the row's bound.
+      @the-empty-collection-is-unchanged |
+        forall n9: Nat;
+          shortenedRows(ZERO, succ(n9)) =
+          combine(shortenedRows(ZERO, n9), diagUpTo(n9, ZERO))
+        [by cite theEmptyRowCollectionIsUnchanged]
+      @the-empty-collection-at-n |
+        shortenedRows(ZERO, succ(n)) = combine(shortenedRows(ZERO, n), diagUpTo(n, ZERO))
+        [using specialize the-empty-collection-is-unchanged(n)]
+      @base-case |
+        peano_order.less_or_equal(ZERO, succ(n)) ->
+          shortenedRows(ZERO, succ(n)) = combine(shortenedRows(ZERO, n), diagUpTo(n, ZERO))
+        [using tautology the-empty-collection-at-n]
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume peano_order.less_or_equal(k, succ(n)) ->
+              shortenedRows(k, succ(n)) = combine(shortenedRows(k, n), diagUpTo(n, k)) {
+              @inductive-hypothesis |
+                peano_order.less_or_equal(k, succ(n)) ->
+                  shortenedRows(k, succ(n)) = combine(shortenedRows(k, n), diagUpTo(n, k))
+                [by hypothesis given-inductive-hypothesis]
+              @given-succ-k-is-at-most |
+                assume peano_order.less_or_equal(succ(k), succ(n)) {
+                  @succ-k-is-at-most |
+                    peano_order.less_or_equal(succ(k), succ(n))
+                    [by hypothesis given-succ-k-is-at-most]
+                  // k <= n, which both the hypothesis and the bound arithmetic need
+                  @succ-k-is-below-succ-succ-n |
+                    peano.less_than(succ(k), succ(succ(n)))
+                    [using specialize peano_order.lessOrEqualToLessThanSucc(succ(k), succ(n)) succ-k-is-at-most]
+                  @k-is-below-succ-n |
+                    peano.less_than(k, succ(n))
+                    [using specialize peano_order.succReflectsOrder(k, succ(n)) succ-k-is-below-succ-succ-n]
+                  @k-is-at-most-succ-n |
+                    peano_order.less_or_equal(k, succ(n))
+                    [using specialize peano_order.lessThanToLessOrEqual(k, succ(n)) k-is-below-succ-n]
+                  @the-hypothesis-applies |
+                    shortenedRows(k, succ(n)) = combine(shortenedRows(k, n), diagUpTo(n, k))
+                    [using tautology inductive-hypothesis k-is-at-most-succ-n]
+                  // peel the (k+1)-st row off each side
+                  @the-raised-side-peels |
+                    shortenedRows(succ(k), succ(n)) =
+                      combine(shortenedRows(k, succ(n)), rowUpTo(k, sub(succ(n), k)))
+                    [using specialize shortenedRowsSucc(k, succ(n))]
+                  @the-base-side-peels |
+                    shortenedRows(succ(k), n) =
+                      combine(shortenedRows(k, n), rowUpTo(k, sub(n, k)))
+                    [using specialize shortenedRowsSucc(k, n)]
+                  @the-diagonal-peels |
+                    diagUpTo(n, succ(k)) = combine(diagUpTo(n, k), term(k, sub(n, k)))
+                    [using specialize diagSucc(n, k)]
+                  // the raised row's bound is one higher, since k <= n
+                  @the-raised-bound |
+                    sub(succ(n), k) = succ(sub(n, k))
+                    [using specialize peano_sub.succOfSubLeft(k, n) k-is-below-succ-n]
+                  @the-raised-row-peels |
+                    rowUpTo(k, succ(sub(n, k))) =
+                      combine(rowUpTo(k, sub(n, k)), term(k, sub(n, k)))
+                    [using specialize rowSucc(k, sub(n, k))]
+                  @the-raised-row-gains-its-last-entry |
+                    rowUpTo(k, sub(succ(n), k)) =
+                      combine(rowUpTo(k, sub(n, k)), term(k, sub(n, k)))
+                    [by rewrite the-raised-bound the-raised-row-peels]
+                  // substitute the hypothesis and both peels into each side
+                  @the-raised-side-expanded |
+                    shortenedRows(succ(k), succ(n)) =
+                      combine(combine(shortenedRows(k, n), diagUpTo(n, k)),
+                      combine(rowUpTo(k, sub(n, k)), term(k, sub(n, k))))
+                    [using simplify the-raised-side-peels the-hypothesis-applies the-raised-row-gains-its-last-entry]
+                  @the-target-side-expanded |
+                    combine(shortenedRows(succ(k), n), diagUpTo(n, succ(k))) =
+                      combine(combine(shortenedRows(k, n), rowUpTo(k, sub(n, k))),
+                      combine(diagUpTo(n, k), term(k, sub(n, k))))
+                    [using simplify the-base-side-peels the-diagonal-peels]
+                  // the two expansions hold the SAME four summands, reassociated
+                  @the-two-expansions-agree |
+                    combine(combine(shortenedRows(k, n), diagUpTo(n, k)),
+                      combine(rowUpTo(k, sub(n, k)), term(k, sub(n, k)))) =
+                      combine(combine(shortenedRows(k, n), rowUpTo(k, sub(n, k))),
+                      combine(diagUpTo(n, k), term(k, sub(n, k))))
+                    [using assoc_commut(combineIsAssociative, combineIsCommutative, combineLeftSwap)]
+                  @the-target-side-flipped |
+                    combine(combine(shortenedRows(k, n), rowUpTo(k, sub(n, k))),
+                      combine(diagUpTo(n, k), term(k, sub(n, k)))) =
+                      combine(shortenedRows(succ(k), n), diagUpTo(n, succ(k)))
+                    [by symmetry the-target-side-expanded]
+                  @conclusion-at-succ-k |
+                    shortenedRows(succ(k), succ(n)) =
+                      combine(shortenedRows(succ(k), n), diagUpTo(n, succ(k)))
+                    [using chain the-raised-side-expanded the-two-expansions-agree the-target-side-flipped]
+                }
+              @at-most-implies-the-increment |
+                peano_order.less_or_equal(succ(k), succ(n)) ->
+                  shortenedRows(succ(k), succ(n)) =
+                  combine(shortenedRows(succ(k), n), diagUpTo(n, succ(k)))
+                [by discharge given-succ-k-is-at-most]
+            }
+          @induction-step-at-k |
+            (peano_order.less_or_equal(k, succ(n)) ->
+              shortenedRows(k, succ(n)) = combine(shortenedRows(k, n), diagUpTo(n, k))) ->
+              (peano_order.less_or_equal(succ(k), succ(n)) ->
+              shortenedRows(succ(k), succ(n)) =
+              combine(shortenedRows(succ(k), n), diagUpTo(n, succ(k))))
+            [by discharge given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat;
+          (peano_order.less_or_equal(k, succ(n)) ->
+          shortenedRows(k, succ(n)) = combine(shortenedRows(k, n), diagUpTo(n, k))) ->
+          (peano_order.less_or_equal(succ(k), succ(n)) ->
+          shortenedRows(succ(k), succ(n)) =
+          combine(shortenedRows(succ(k), n), diagUpTo(n, succ(k))))
+        [by generalize induction-step]
+      @conclusion-for-all-m |
+        forall m: Nat;
+          peano_order.less_or_equal(m, succ(n)) ->
+          shortenedRows(m, succ(n)) = combine(shortenedRows(m, n), diagUpTo(n, m))
+        [using instantiation peano.induction((fun m: Nat => peano_order.less_or_equal(m, succ(n)) -> shortenedRows(m, succ(n)) = combine(shortenedRows(m, n), diagUpTo(n, m)))) base-case induction-step-for-all-k]
+    }
+  @conclusion |
+    forall n: Nat; forall m: Nat;
+      peano_order.less_or_equal(m, succ(n)) ->
+      shortenedRows(m, succ(n)) = combine(shortenedRows(m, n), diagUpTo(n, m))
+    [by generalize generalize-n]
+qed
+
+// The empty row collection: both sides are IDENTITY, so the base case holds outright.
+theorem theEmptyRowCollectionIsUnchanged: forall n: Nat;
+  shortenedRows(ZERO, succ(n)) = combine(shortenedRows(ZERO, n), diagUpTo(n, ZERO))
+proof
+  @generalize-n |
+    fix n: Nat {
+      @the-raised-side-is-identity |
+        shortenedRows(ZERO, succ(n)) = IDENTITY
+        [using specialize shortenedRowsZero(succ(n))]
+      @the-base-side-is-identity |
+        shortenedRows(ZERO, n) = IDENTITY
+        [using specialize shortenedRowsZero(n)]
+      @the-diagonal-is-identity |
+        diagUpTo(n, ZERO) = IDENTITY
+        [using specialize diagZero(n)]
+      @combining-two-identities |
+        combine(IDENTITY, IDENTITY) = IDENTITY
+        [using specialize combineIdentityRight(IDENTITY)]
+      @the-target-collapses |
+        combine(shortenedRows(ZERO, n), diagUpTo(n, ZERO)) = IDENTITY
+        [using simplify the-base-side-is-identity the-diagonal-is-identity combining-two-identities]
+      @the-target-flipped |
+        IDENTITY = combine(shortenedRows(ZERO, n), diagUpTo(n, ZERO))
+        [by symmetry the-target-collapses]
+      @conclusion-at-n |
+        shortenedRows(ZERO, succ(n)) = combine(shortenedRows(ZERO, n), diagUpTo(n, ZERO))
+        [using chain the-raised-side-is-identity the-target-flipped]
+    }
+  @conclusion |
+    forall n: Nat;
+      shortenedRows(ZERO, succ(n)) = combine(shortenedRows(ZERO, n), diagUpTo(n, ZERO))
+    [by generalize generalize-n]
+qed
+
+// -- THE EXCHANGE LEMMA -------------------------------------------------------------------
+//
+// The triangular double sum equals the sum of the shortened rows: the pair (j,k) is
+// counted once on each side exactly when j + k < n. With the sublemma above the induction
+// is three lines -- the increment on the left is antidiagonal(n) by triSucc, and on the
+// right it is diagUpTo(n, succ(n)), which IS antidiagonal(n).
+theorem theTriangleIsTheShortenedRows: forall n: Nat;
+  triUpTo(n) = shortenedRows(n, n)
+proof
+  @the-increment-is-the-diagonal |
+    forall n9: Nat; forall m9: Nat;
+      peano_order.less_or_equal(m9, succ(n9)) ->
+      shortenedRows(m9, succ(n9)) = combine(shortenedRows(m9, n9), diagUpTo(n9, m9))
+    [by cite raisingTheBoundAddsTheDiagonal]
+  @base-case |
+    triUpTo(ZERO) = shortenedRows(ZERO, ZERO)
+    [using simplify triZero shortenedRowsZero-at-zero]
+  @shortenedRowsZero-at-zero |
+    shortenedRows(ZERO, ZERO) = IDENTITY
+    [using specialize shortenedRowsZero(ZERO)]
+  @induction-step |
+    fix k: Nat {
+      @given-inductive-hypothesis |
+        assume triUpTo(k) = shortenedRows(k, k) {
+          @inductive-hypothesis |
+            triUpTo(k) = shortenedRows(k, k)
+            [by hypothesis given-inductive-hypothesis]
+          // the triangle gains the k-th anti-diagonal
+          @the-triangle-grows |
+            triUpTo(succ(k)) = combine(triUpTo(k), diagUpTo(k, succ(k)))
+            [using specialize triSucc(k)]
+          // the rows gain their last entries, which ARE that anti-diagonal
+          @succ-k-is-at-most-succ-k |
+            peano_order.less_or_equal(succ(k), succ(k))
+            [using specialize peano_order.lessOrEqualRefl(succ(k))]
+          @the-rows-grow |
+            shortenedRows(succ(k), succ(k)) =
+              combine(shortenedRows(succ(k), k), diagUpTo(k, succ(k)))
+            [using specialize the-increment-is-the-diagonal(k, succ(k)) succ-k-is-at-most-succ-k]
+          // and the shorter row collection at bound k is the triangle at k: the (k+1)-st
+          // row is empty there, since sub(k, k) = ZERO
+          @the-last-row-is-empty |
+            sub(k, k) = ZERO
+            [using specialize peano_sub.subSelf(k)]
+          @the-extra-row-peels |
+            shortenedRows(succ(k), k) =
+              combine(shortenedRows(k, k), rowUpTo(k, sub(k, k)))
+            [using specialize shortenedRowsSucc(k, k)]
+          @the-empty-row-is-identity |
+            rowUpTo(k, ZERO) = IDENTITY
+            [using specialize rowZero(k)]
+          @the-extra-row-contributes-nothing |
+            shortenedRows(succ(k), k) = shortenedRows(k, k)
+            [using simplify the-extra-row-peels the-last-row-is-empty the-empty-row-is-identity combineIdentityRight-at-the-rows]
+          @combineIdentityRight-at-the-rows |
+            combine(shortenedRows(k, k), IDENTITY) = shortenedRows(k, k)
+            [using specialize combineIdentityRight(shortenedRows(k, k))]
+          // put the three together
+          @the-rows-grow-from-the-triangle |
+            shortenedRows(succ(k), succ(k)) =
+              combine(triUpTo(k), diagUpTo(k, succ(k)))
+            [using simplify the-rows-grow the-extra-row-contributes-nothing inductive-hypothesis]
+          @the-rows-grow-flipped |
+            combine(triUpTo(k), diagUpTo(k, succ(k))) =
+              shortenedRows(succ(k), succ(k))
+            [by symmetry the-rows-grow-from-the-triangle]
+          @conclusion-at-succ-k |
+            triUpTo(succ(k)) = shortenedRows(succ(k), succ(k))
+            [using chain the-triangle-grows the-rows-grow-flipped]
+        }
+      @induction-step-at-k |
+        (triUpTo(k) = shortenedRows(k, k)) ->
+          (triUpTo(succ(k)) = shortenedRows(succ(k), succ(k)))
+        [by discharge given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: Nat;
+      (triUpTo(k) = shortenedRows(k, k)) ->
+      (triUpTo(succ(k)) = shortenedRows(succ(k), succ(k)))
+    [by generalize induction-step]
+  @conclusion |
+    forall n: Nat; triUpTo(n) = shortenedRows(n, n)
+    [using instantiation peano.induction((fun n: Nat => triUpTo(n) = shortenedRows(n, n))) base-case induction-step-for-all-k]
+qed
