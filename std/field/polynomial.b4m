@@ -3753,6 +3753,210 @@ proof
     [by generalize generalize-alpha]
 qed
 
+// -- THE PRODUCT WITH x - alpha, COEFFICIENTWISE ------------------------------------------
+//
+// The factor theorem's forward direction needs `(x - alpha)·q` evaluated AT alpha. The
+// general evaluation homomorphism would give it, but its multiplicative half rests on the
+// double-sum reindexing that also blocks associativity. This specific case does NOT need
+// that: `x - alpha` has only TWO nonzero coefficients, so its convolution collapses to two
+// terms, and the resulting sum telescopes.
+//
+// STEP 1: the convolution against linear(al) at index succ(i), summed to the full limit,
+// collapses to two terms. Build it from the convolution's own recursion.
+// convolution(linear, q, i, k) for k >= 1 is:
+//   base j=0:  coeff(linear,0) * q_i       = neg(al) * q_i
+//   j=1:       coeff(linear,1) * q_{i-1}   = oneF * q_{i-1}
+//   j>=2:      coeff(linear,j) = 0         -> contributes nothing
+theorem theLinearConvolutionAtOne: forall q: Poly; forall al: F; forall i: Nat;
+  convolution(linear(al), q, i, succ(ZERO)) =
+  addF(mulF(negF(al), coeff(q, i)), coeff(q, subN(i, succ(ZERO))))
+proof
+  @generalize-q |
+    fix q: Poly {
+      @generalize-al |
+        fix al: F {
+          @generalize-i |
+            fix i: Nat {
+              @the-step |
+                convolution(linear(al), q, i, succ(ZERO)) =
+                  addF(convolution(linear(al), q, i, ZERO),
+                  mulF(coeff(linear(al), succ(ZERO)), coeff(q, subN(i, succ(ZERO)))))
+                [using specialize convolutionSucc(linear(al), q, i, ZERO)]
+              @the-base |
+                convolution(linear(al), q, i, ZERO) =
+                  mulF(coeff(linear(al), ZERO), coeff(q, i))
+                [using specialize convolutionZero(linear(al), q, i)]
+              @the-constant-term |
+                coeff(linear(al), ZERO) = negF(al)
+                [using specialize theLinearPolynomialHasNegatedConstantTerm(al)]
+              @the-leading-term |
+                coeff(linear(al), succ(ZERO)) = oneF
+                [using specialize theLinearPolynomialLeadsWithOne(al)]
+              @one-times |
+                mulF(oneF, coeff(q, subN(i, succ(ZERO)))) = coeff(q, subN(i, succ(ZERO)))
+                [using specialize mulOneLeftF(coeff(q, subN(i, succ(ZERO))))]
+              @conclusion-two-terms |
+                convolution(linear(al), q, i, succ(ZERO)) =
+                  addF(mulF(negF(al), coeff(q, i)), coeff(q, subN(i, succ(ZERO))))
+                [using simplify the-step the-base the-constant-term the-leading-term one-times]
+            }
+          @discharge-i |
+            forall i: Nat;
+              convolution(linear(al), q, i, succ(ZERO)) =
+              addF(mulF(negF(al), coeff(q, i)), coeff(q, subN(i, succ(ZERO))))
+            [by generalize generalize-i]
+        }
+      @discharge-al |
+        forall al: F; forall i: Nat;
+          convolution(linear(al), q, i, succ(ZERO)) =
+          addF(mulF(negF(al), coeff(q, i)), coeff(q, subN(i, succ(ZERO))))
+        [by generalize generalize-al]
+    }
+  @conclusion |
+    forall q: Poly; forall al: F; forall i: Nat;
+      convolution(linear(al), q, i, succ(ZERO)) =
+      addF(mulF(negF(al), coeff(q, i)), coeff(q, subN(i, succ(ZERO))))
+    [by generalize generalize-q]
+qed
+
+// STEP 2: above limit 1 the convolution against linear(al) stabilizes — every further term
+// carries a vanishing coefficient of linear(al).
+theorem theLinearConvolutionStabilizes: forall q: Poly; forall al: F; forall i, t: Nat;
+  convolution(linear(al), q, i, peano.add(succ(ZERO), t)) =
+  convolution(linear(al), q, i, succ(ZERO))
+proof
+  @generalize-q |
+    fix q: Poly {
+      @generalize-al |
+        fix al: F {
+          @generalize-i |
+            fix i: Nat {
+              @adding-zero |
+                peano.add(succ(ZERO), ZERO) = succ(ZERO)
+                [using specialize peano.addZeroRight(succ(ZERO))]
+              @the-sum-is-itself |
+                convolution(linear(al), q, i, succ(ZERO)) =
+                  convolution(linear(al), q, i, succ(ZERO))
+                [by reflexivity]
+              @base-case |
+                convolution(linear(al), q, i, peano.add(succ(ZERO), ZERO)) =
+                  convolution(linear(al), q, i, succ(ZERO))
+                [by rewrite adding-zero the-sum-is-itself]
+              @induction-step |
+                fix t: Nat {
+                  @given-inductive-hypothesis |
+                    assume convolution(linear(al), q, i, peano.add(succ(ZERO), t)) =
+                      convolution(linear(al), q, i, succ(ZERO)) {
+                      @inductive-hypothesis |
+                        convolution(linear(al), q, i, peano.add(succ(ZERO), t)) =
+                          convolution(linear(al), q, i, succ(ZERO))
+                        [by hypothesis given-inductive-hypothesis]
+                      @the-next-limit |
+                        peano.add(succ(ZERO), succ(t)) = succ(peano.add(succ(ZERO), t))
+                        [using specialize peano.addSuccRight(succ(ZERO), t)]
+                      @one-more-term |
+                        convolution(linear(al), q, i, succ(peano.add(succ(ZERO), t))) =
+                          addF(convolution(linear(al), q, i, peano.add(succ(ZERO), t)),
+                          mulF(coeff(linear(al), succ(peano.add(succ(ZERO), t))),
+                          coeff(q, subN(i, succ(peano.add(succ(ZERO), t))))))
+                        [using specialize convolutionSucc(linear(al), q, i, peano.add(succ(ZERO), t))]
+                      // succ(1+t) is above 1, so linear's coefficient there vanishes
+                      // 1 <= 1+t (t is the gap), so 1 < succ(1+t). NOT `arithmetic`: that
+                      // decision is sort-agnostic and reads t as possibly negative.
+                      @the-gap-exists |
+                        exists dd: Nat; peano.add(succ(ZERO), dd) = peano.add(succ(ZERO), t)
+                        [by witness(t) the-sum-is-reflexive]
+                      @the-sum-is-reflexive |
+                        peano.add(succ(ZERO), t) = peano.add(succ(ZERO), t)
+                        [by reflexivity]
+                      @what-a-bound-means |
+                        peano_order.less_or_equal(succ(ZERO), peano.add(succ(ZERO), t)) iff
+                          (exists dd: Nat; peano.add(succ(ZERO), dd) = peano.add(succ(ZERO), t))
+                        [using specialize peano_order.lessOrEqualIsGapExistential(succ(ZERO), peano.add(succ(ZERO), t))]
+                      @one-is-bounded-by-the-sum |
+                        peano_order.less_or_equal(succ(ZERO), peano.add(succ(ZERO), t))
+                        [using tautology the-gap-exists what-a-bound-means]
+                      @one-is-below-the-next |
+                        less_than(succ(ZERO), succ(peano.add(succ(ZERO), t)))
+                        [using specialize peano_order.lessOrEqualToLessThanSucc(succ(ZERO), peano.add(succ(ZERO), t)) one-is-bounded-by-the-sum]
+                      @the-coefficient-vanishes |
+                        coeff(linear(al), succ(peano.add(succ(ZERO), t))) = zeroF
+                        [using tautology the-bound-gives-vanishing one-is-below-the-next]
+                      @the-bound |
+                        degreeAtMost(linear(al), succ(ZERO))
+                        [using specialize theLinearPolynomialVanishesAboveOne(al)]
+                      @what-the-bound-means |
+                        degreeAtMost(linear(al), succ(ZERO)) iff
+                          (forall j: Nat; less_than(succ(ZERO), j) ->
+                          coeff(linear(al), j) = zeroF)
+                        [using specialize degreeAtMostMeaning(linear(al), succ(ZERO))]
+                      @vanishes-above-one |
+                        forall j: Nat; less_than(succ(ZERO), j) ->
+                          coeff(linear(al), j) = zeroF
+                        [using tautology the-bound what-the-bound-means]
+                      @the-bound-gives-vanishing |
+                        less_than(succ(ZERO), succ(peano.add(succ(ZERO), t))) ->
+                          coeff(linear(al), succ(peano.add(succ(ZERO), t))) = zeroF
+                        [using specialize vanishes-above-one(succ(peano.add(succ(ZERO), t)))]
+                      @the-new-term-is-zero |
+                        mulF(zeroF, coeff(q, subN(i, succ(peano.add(succ(ZERO), t))))) = zeroF
+                        [using specialize field.mulZeroLeft(coeff(q, subN(i, succ(peano.add(succ(ZERO), t)))))]
+                      @the-sum-gains-zero |
+                        convolution(linear(al), q, i, succ(peano.add(succ(ZERO), t))) =
+                          addF(convolution(linear(al), q, i, succ(ZERO)), zeroF)
+                        [using simplify one-more-term the-coefficient-vanishes the-new-term-is-zero inductive-hypothesis]
+                      @adding-zero-changes-nothing |
+                        addF(convolution(linear(al), q, i, succ(ZERO)), zeroF) =
+                          convolution(linear(al), q, i, succ(ZERO))
+                        [using specialize field.addZeroRight(convolution(linear(al), q, i, succ(ZERO)))]
+                      @the-value-at-the-next |
+                        convolution(linear(al), q, i, succ(peano.add(succ(ZERO), t))) =
+                          convolution(linear(al), q, i, succ(ZERO))
+                        [using chain the-sum-gains-zero adding-zero-changes-nothing]
+                      @conclusion-successor |
+                        convolution(linear(al), q, i, peano.add(succ(ZERO), succ(t))) =
+                          convolution(linear(al), q, i, succ(ZERO))
+                        [by rewrite the-next-limit the-value-at-the-next]
+                    }
+                  @induction-step-at-t |
+                    (convolution(linear(al), q, i, peano.add(succ(ZERO), t)) =
+                      convolution(linear(al), q, i, succ(ZERO))) ->
+                      (convolution(linear(al), q, i, peano.add(succ(ZERO), succ(t))) =
+                      convolution(linear(al), q, i, succ(ZERO)))
+                    [by discharge given-inductive-hypothesis]
+                }
+              @induction-step-for-all-t |
+                forall t: Nat;
+                  (convolution(linear(al), q, i, peano.add(succ(ZERO), t)) =
+                  convolution(linear(al), q, i, succ(ZERO))) ->
+                  (convolution(linear(al), q, i, peano.add(succ(ZERO), succ(t))) =
+                  convolution(linear(al), q, i, succ(ZERO)))
+                [by generalize induction-step]
+              @conclusion-for-all-t |
+                forall t: Nat;
+                  convolution(linear(al), q, i, peano.add(succ(ZERO), t)) =
+                  convolution(linear(al), q, i, succ(ZERO))
+                [using instantiation peano.induction((fun t: Nat => convolution(linear(al), q, i, peano.add(succ(ZERO), t)) = convolution(linear(al), q, i, succ(ZERO)))) base-case induction-step-for-all-t]
+            }
+          @discharge-i |
+            forall i, t: Nat;
+              convolution(linear(al), q, i, peano.add(succ(ZERO), t)) =
+              convolution(linear(al), q, i, succ(ZERO))
+            [by generalize generalize-i]
+        }
+      @discharge-al |
+        forall al: F; forall i, t: Nat;
+          convolution(linear(al), q, i, peano.add(succ(ZERO), t)) =
+          convolution(linear(al), q, i, succ(ZERO))
+        [by generalize generalize-al]
+    }
+  @conclusion |
+    forall q: Poly; forall al: F; forall i, t: Nat;
+      convolution(linear(al), q, i, peano.add(succ(ZERO), t)) =
+      convolution(linear(al), q, i, succ(ZERO))
+    [by generalize generalize-q]
+qed
+
 // == THE EXISTENCE HALF ===================================================================
 //
 // "Let f(x) and g(x) be polynomials in F[x], where F is a field and g(x) is a nonzero
