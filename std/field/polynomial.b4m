@@ -3499,6 +3499,160 @@ proof
     [by generalize generalize-alpha]
 qed
 
+// A remainder from dividing by `x - alpha` is a CONSTANT: either it is zero, or its degree
+// is below 1, which for a ℕ degree means it IS zero. Either way the remainder is bounded by
+// index 0 — Judson's "since the degree of r(x) is less than 1, r(x) = a for a in F".
+theorem aRemainderBelowDegreeOneIsConstant: forall r: Poly; forall alpha: F;
+  (r = ZEROP or less_than(degree(r), degree(linear(alpha)))) ->
+  degreeAtMost(r, ZERO)
+proof
+  @generalize-r |
+    fix r: Poly {
+      @generalize-alpha |
+        fix alpha: F {
+          @given-the-remainder-condition |
+            assume r = ZEROP or less_than(degree(r), degree(linear(alpha))) {
+              @the-remainder-condition |
+                r = ZEROP or less_than(degree(r), degree(linear(alpha)))
+                [by hypothesis given-the-remainder-condition]
+
+              @when-the-remainder-is-zero |
+                assume r = ZEROP {
+                  @the-remainder-is-zero |
+                    r = ZEROP
+                    [by hypothesis when-the-remainder-is-zero]
+                  // the zero polynomial is bounded by every index
+                  @generalize-index-zero-case |
+                    fix i: Nat {
+                      @given-above-zero-in-zero-case |
+                        assume less_than(ZERO, i) {
+                          @the-zero-coefficient |
+                            coeff(ZEROP, i) = zeroF
+                            [using specialize zeroPolyCoeff(i)]
+                          @the-remainder-coefficient-vanishes |
+                            coeff(r, i) = zeroF
+                            [by rewrite the-remainder-is-zero-flipped the-zero-coefficient]
+                          @the-remainder-is-zero-flipped |
+                            ZEROP = r
+                            [by symmetry the-remainder-is-zero]
+                        }
+                      @above-zero-implies-vanishing-in-zero-case |
+                        less_than(ZERO, i) -> coeff(r, i) = zeroF
+                        [by discharge given-above-zero-in-zero-case]
+                    }
+                  @vanishes-above-zero-in-zero-case |
+                    forall i: Nat; less_than(ZERO, i) -> coeff(r, i) = zeroF
+                    [by generalize generalize-index-zero-case]
+                  @what-bounding-means-in-zero-case |
+                    degreeAtMost(r, ZERO) iff
+                      (forall i: Nat; less_than(ZERO, i) -> coeff(r, i) = zeroF)
+                    [using specialize degreeAtMostMeaning(r, ZERO)]
+                  @bounded-when-zero |
+                    degreeAtMost(r, ZERO)
+                    [using tautology vanishes-above-zero-in-zero-case what-bounding-means-in-zero-case]
+                }
+
+              @when-the-degree-is-below-one |
+                assume less_than(degree(r), degree(linear(alpha))) {
+                  @the-degree-is-below |
+                    less_than(degree(r), degree(linear(alpha)))
+                    [by hypothesis when-the-degree-is-below-one]
+                  @the-divisor-degree |
+                    degree(linear(alpha)) = succ(ZERO)
+                    [using specialize theLinearPolynomialHasDegreeOne(alpha)]
+                  @the-degree-is-below-one |
+                    less_than(degree(r), succ(ZERO))
+                    [by rewrite the-divisor-degree the-degree-is-below]
+                  // deg r < 1 means deg r <= 0, i.e. deg r = ZERO
+                  @the-degree-is-at-most-zero |
+                    peano_order.less_or_equal(degree(r), ZERO)
+                    [using specialize peano_order.lessThanSuccToLessOrEqual(degree(r), ZERO) the-degree-is-below-one]
+                  @the-degree-splits |
+                    less_than(degree(r), ZERO) or degree(r) = ZERO
+                    [using specialize peano_order.lessOrEqualSplit(degree(r), ZERO) the-degree-is-at-most-zero]
+                  @nothing-is-below-zero |
+                    not less_than(degree(r), ZERO)
+                    [using specialize peano_order.notLessThanZero(degree(r))]
+                  @the-degree-is-zero |
+                    degree(r) = ZERO
+                    [using tautology the-degree-splits nothing-is-below-zero]
+                  // a nonzero r is bounded by its own degree; a zero one by anything
+                  @r-zero-or-not |
+                    r = ZEROP or (not (r = ZEROP))
+                    [using tautology]
+                  @when-r-is-zero-here |
+                    assume r = ZEROP {
+                      @r-is-zero-here |
+                        r = ZEROP
+                        [by hypothesis when-r-is-zero-here]
+                      @generalize-index-inner |
+                        fix i: Nat {
+                          @given-above-zero-inner |
+                            assume less_than(ZERO, i) {
+                              @the-zero-coefficient-inner |
+                                coeff(ZEROP, i) = zeroF
+                                [using specialize zeroPolyCoeff(i)]
+                              @r-is-zero-flipped-inner |
+                                ZEROP = r
+                                [by symmetry r-is-zero-here]
+                              @the-coefficient-vanishes-inner |
+                                coeff(r, i) = zeroF
+                                [by rewrite r-is-zero-flipped-inner the-zero-coefficient-inner]
+                            }
+                          @above-implies-vanishing-inner |
+                            less_than(ZERO, i) -> coeff(r, i) = zeroF
+                            [by discharge given-above-zero-inner]
+                        }
+                      @vanishes-above-zero-inner |
+                        forall i: Nat; less_than(ZERO, i) -> coeff(r, i) = zeroF
+                        [by generalize generalize-index-inner]
+                      @what-bounding-means-inner |
+                        degreeAtMost(r, ZERO) iff
+                          (forall i: Nat; less_than(ZERO, i) -> coeff(r, i) = zeroF)
+                        [using specialize degreeAtMostMeaning(r, ZERO)]
+                      @bounded-when-zero-inner |
+                        degreeAtMost(r, ZERO)
+                        [using tautology vanishes-above-zero-inner what-bounding-means-inner]
+                    }
+                  @when-r-is-nonzero-here |
+                    assume not (r = ZEROP) {
+                      @r-is-nonzero-here |
+                        not (r = ZEROP)
+                        [by hypothesis when-r-is-nonzero-here]
+                      @bounded-by-its-degree |
+                        degreeAtMost(r, degree(r))
+                        [using specialize degreeBoundsTheCoefficients(r) r-is-nonzero-here]
+                      @bounded-when-nonzero |
+                        degreeAtMost(r, ZERO)
+                        [by rewrite the-degree-is-zero bounded-by-its-degree]
+                    }
+                  @bounded-when-below-one |
+                    degreeAtMost(r, ZERO)
+                    [by common_conclusion r-zero-or-not when-r-is-zero-here when-r-is-nonzero-here]
+                }
+
+              @conclusion-the-remainder-is-constant |
+                degreeAtMost(r, ZERO)
+                [by common_conclusion the-remainder-condition when-the-remainder-is-zero when-the-degree-is-below-one]
+            }
+          @the-condition-implies-constant |
+            (r = ZEROP or less_than(degree(r), degree(linear(alpha)))) ->
+              degreeAtMost(r, ZERO)
+            [by discharge given-the-remainder-condition]
+        }
+      @discharge-alpha |
+        forall alpha: F;
+          (r = ZEROP or less_than(degree(r), degree(linear(alpha)))) ->
+          degreeAtMost(r, ZERO)
+        [by generalize generalize-alpha]
+    }
+  @conclusion |
+    forall r: Poly; forall alpha: F;
+      (r = ZEROP or less_than(degree(r), degree(linear(alpha)))) ->
+      degreeAtMost(r, ZERO)
+    [by generalize generalize-r]
+qed
+
 // == THE EXISTENCE HALF ===================================================================
 //
 // "Let f(x) and g(x) be polynomials in F[x], where F is a field and g(x) is a nonzero
