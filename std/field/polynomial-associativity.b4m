@@ -1,0 +1,1352 @@
+// std/field/polynomial-associativity.b4m — F[x] IS ASSOCIATIVE UNDER MULTIPLICATION.
+//
+// Judson's §17.1 exercise, and the last structural law F[x] was missing.
+//
+// His proof reindexes a double sum into a sum over triples j+k+l=i. std/nested-sum.b4m
+// proves that exchange abstractly, but cannot be INSTANTIATED here: its summand is a 2-arg
+// func, while the family needed carries p, q, r and i besides, and a model substitutes
+// names rather than partially applied terms. So the exchange is re-proved here at the
+// concrete family, with nested-sum's proof as the template: induct on the row count with
+// the bound fixed, increment by one anti-diagonal, regroup four atoms.
+import fieldpoly <<< "std/field/polynomial.b4m"
+import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
+import field <<< "std/field.b4m"
+import subtraction <<< "std/peano/subtraction.b4m"
+
+sort F = fieldpoly.F
+sort Poly = fieldpoly.Poly
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+func sub = subtraction.sub
+const zeroF = fieldpoly.zeroF
+func addF = fieldpoly.addF
+func mulF = fieldpoly.mulF
+func coeff = fieldpoly.coeff
+func mulP = fieldpoly.mulP
+
+// -- the triple family --------------------------------------------------------------------
+// term(j,k) = p_j * q_k * r_{(i-j)-k}: the (j,k) entry of the triple product's expansion.
+func tripleTerm(p: Poly, q: Poly, r: Poly, i: Nat, j: Nat, k: Nat) => F
+axiom tripleTermMeaning: forall p, q, r: Poly; forall i, j, k: Nat;
+  tripleTerm(p, q, r, i, j, k) =
+  mulF(mulF(coeff(p, j), coeff(q, k)), coeff(r, sub(sub(i, j), k)))
+
+// one ROW: the first n entries at a fixed j.
+func tripleRow(p: Poly, q: Poly, r: Poly, i: Nat, j: Nat, n: Nat) => F
+axiom tripleRowZero: forall p, q, r: Poly; forall i, j: Nat;
+  tripleRow(p, q, r, i, j, ZERO) = zeroF
+axiom tripleRowSucc: forall p, q, r: Poly; forall i, j, n: Nat;
+  tripleRow(p, q, r, i, j, succ(n)) =
+  addF(tripleRow(p, q, r, i, j, n), tripleTerm(p, q, r, i, j, n))
+
+// the first c entries of the m-th ANTI-DIAGONAL.
+func tripleDiag(p: Poly, q: Poly, r: Poly, i: Nat, m: Nat, c: Nat) => F
+axiom tripleDiagZero: forall p, q, r: Poly; forall i, m: Nat;
+  tripleDiag(p, q, r, i, m, ZERO) = zeroF
+axiom tripleDiagSucc: forall p, q, r: Poly; forall i, m, c: Nat;
+  tripleDiag(p, q, r, i, m, succ(c)) =
+  addF(tripleDiag(p, q, r, i, m, c), tripleTerm(p, q, r, i, c, sub(m, c)))
+
+// the TRIANGLE: anti-diagonals 0..n-1, each complete.
+func tripleTri(p: Poly, q: Poly, r: Poly, i: Nat, n: Nat) => F
+axiom tripleTriZero: forall p, q, r: Poly; forall i: Nat;
+  tripleTri(p, q, r, i, ZERO) = zeroF
+axiom tripleTriSucc: forall p, q, r: Poly; forall i, n: Nat;
+  tripleTri(p, q, r, i, succ(n)) =
+  addF(tripleTri(p, q, r, i, n), tripleDiag(p, q, r, i, n, succ(n)))
+
+// the SHORTENED ROWS: rows 0..m-1, row j truncated at sub(n,j).
+func tripleRows(p: Poly, q: Poly, r: Poly, i: Nat, m: Nat, n: Nat) => F
+axiom tripleRowsZero: forall p, q, r: Poly; forall i, n: Nat;
+  tripleRows(p, q, r, i, ZERO, n) = zeroF
+axiom tripleRowsSucc: forall p, q, r: Poly; forall i, m, n: Nat;
+  tripleRows(p, q, r, i, succ(m), n) =
+  addF(tripleRows(p, q, r, i, m, n), tripleRow(p, q, r, i, m, sub(n, m)))
+
+// -- LEMMA D: a row IS the cofactor's convolution, scaled by p_j --------------------------
+//
+// tripleRow(p,q,r,i,j,succ c) = p_j * convolution(q,r,sub(i,j),c). The row's entries all
+// carry the factor coeff(p,j), which does not depend on the summation index, so it pulls
+// out; what remains is exactly the convolution of q and r at sub(i,j). Induction on c.
+theorem aRowIsTheScaledConvolution: forall p, q, r: Poly; forall i, j, c: Nat;
+  tripleRow(p, q, r, i, j, succ(c)) =
+  mulF(coeff(p, j), fieldpoly.convolution(q, r, sub(i, j), c))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-i |
+                fix i: Nat {
+                  @generalize-j |
+                    fix j: Nat {
+                      // base: one entry, and the convolution's own base case
+                      @the-row-at-one |
+                        tripleRow(p, q, r, i, j, succ(ZERO)) =
+                          addF(tripleRow(p, q, r, i, j, ZERO),
+                          tripleTerm(p, q, r, i, j, ZERO))
+                        [using specialize tripleRowSucc(p, q, r, i, j, ZERO)]
+                      @the-empty-row |
+                        tripleRow(p, q, r, i, j, ZERO) = zeroF
+                        [using specialize tripleRowZero(p, q, r, i, j)]
+                      @the-first-entry |
+                        tripleTerm(p, q, r, i, j, ZERO) =
+                          mulF(mulF(coeff(p, j), coeff(q, ZERO)),
+                          coeff(r, sub(sub(i, j), ZERO)))
+                        [using specialize tripleTermMeaning(p, q, r, i, j, ZERO)]
+                      @the-convolution-at-zero |
+                        fieldpoly.convolution(q, r, sub(i, j), ZERO) =
+                          mulF(coeff(q, ZERO), coeff(r, sub(i, j)))
+                        [using specialize fieldpoly.convolutionZero(q, r, sub(i, j))]
+                      @subtracting-zero |
+                        sub(sub(i, j), ZERO) = sub(i, j)
+                        [using specialize subtraction.subZeroRight(sub(i, j))]
+                      @base-case |
+                        tripleRow(p, q, r, i, j, succ(ZERO)) =
+                          mulF(coeff(p, j), fieldpoly.convolution(q, r, sub(i, j), ZERO))
+                        [using simplify the-row-at-one the-empty-row the-first-entry subtracting-zero the-convolution-at-zero addZeroLeftAtTheEntry theProductRegroups]
+                      @addZeroLeftAtTheEntry |
+                        addF(zeroF, mulF(coeff(p, j),
+                          mulF(coeff(q, ZERO), coeff(r, sub(i, j))))) =
+                          mulF(coeff(p, j), mulF(coeff(q, ZERO), coeff(r, sub(i, j))))
+                        [using specialize fieldpoly.addZeroLeftF(mulF(coeff(p, j), mulF(coeff(q, ZERO), coeff(r, sub(i, j)))))]
+                      @theProductRegroups |
+                        mulF(mulF(coeff(p, j), coeff(q, ZERO)), coeff(r, sub(i, j))) =
+                          mulF(coeff(p, j),
+                          mulF(coeff(q, ZERO), coeff(r, sub(i, j))))
+                        [using specialize field.mulIsAssociative(coeff(p, j), coeff(q, ZERO), coeff(r, sub(i, j)))]
+                      // step
+                      @induction-step |
+                        fix k: Nat {
+                          @given-the-hypothesis |
+                            assume tripleRow(p, q, r, i, j, succ(k)) =
+                              mulF(coeff(p, j),
+                              fieldpoly.convolution(q, r, sub(i, j), k)) {
+                              @the-hypothesis |
+                                tripleRow(p, q, r, i, j, succ(k)) =
+                                  mulF(coeff(p, j),
+                                  fieldpoly.convolution(q, r, sub(i, j), k))
+                                [by hypothesis given-the-hypothesis]
+                              @the-row-grows |
+                                tripleRow(p, q, r, i, j, succ(succ(k))) =
+                                  addF(tripleRow(p, q, r, i, j, succ(k)),
+                                  tripleTerm(p, q, r, i, j, succ(k)))
+                                [using specialize tripleRowSucc(p, q, r, i, j, succ(k))]
+                              @the-new-entry |
+                                tripleTerm(p, q, r, i, j, succ(k)) =
+                                  mulF(mulF(coeff(p, j), coeff(q, succ(k))),
+                                  coeff(r, sub(sub(i, j), succ(k))))
+                                [using specialize tripleTermMeaning(p, q, r, i, j, succ(k))]
+                              @the-convolution-grows |
+                                fieldpoly.convolution(q, r, sub(i, j), succ(k)) =
+                                  addF(fieldpoly.convolution(q, r, sub(i, j), k),
+                                  mulF(coeff(q, succ(k)),
+                                  coeff(r, sub(sub(i, j), succ(k)))))
+                                [using specialize fieldpoly.convolutionSucc(q, r, sub(i, j), k)]
+                              // the scaled sum grows the same way: p_j distributes
+                              @the-scaling-distributes |
+                                mulF(coeff(p, j),
+                                  addF(fieldpoly.convolution(q, r, sub(i, j), k),
+                                  mulF(coeff(q, succ(k)),
+                                  coeff(r, sub(sub(i, j), succ(k)))))) =
+                                  addF(mulF(coeff(p, j),
+                                  fieldpoly.convolution(q, r, sub(i, j), k)),
+                                  mulF(coeff(p, j),
+                                  mulF(coeff(q, succ(k)),
+                                  coeff(r, sub(sub(i, j), succ(k))))))
+                                [using specialize field.mulAddDistribLeft(coeff(p, j), fieldpoly.convolution(q, r, sub(i, j), k), mulF(coeff(q, succ(k)), coeff(r, sub(sub(i, j), succ(k)))))]
+                              @the-new-entry-regroups |
+                                mulF(mulF(coeff(p, j), coeff(q, succ(k))),
+                                  coeff(r, sub(sub(i, j), succ(k)))) =
+                                  mulF(coeff(p, j),
+                                  mulF(coeff(q, succ(k)),
+                                  coeff(r, sub(sub(i, j), succ(k)))))
+                                [using specialize field.mulIsAssociative(coeff(p, j), coeff(q, succ(k)), coeff(r, sub(sub(i, j), succ(k))))]
+                              @conclusion-at-succ-k |
+                                tripleRow(p, q, r, i, j, succ(succ(k))) =
+                                  mulF(coeff(p, j),
+                                  fieldpoly.convolution(q, r, sub(i, j), succ(k)))
+                                [using simplify the-row-grows the-hypothesis the-new-entry the-new-entry-regroups the-convolution-grows the-scaling-distributes]
+                            }
+                          @induction-step-at-k |
+                            (tripleRow(p, q, r, i, j, succ(k)) =
+                              mulF(coeff(p, j),
+                              fieldpoly.convolution(q, r, sub(i, j), k))) ->
+                              (tripleRow(p, q, r, i, j, succ(succ(k))) =
+                              mulF(coeff(p, j),
+                              fieldpoly.convolution(q, r, sub(i, j), succ(k))))
+                            [by discharge given-the-hypothesis]
+                        }
+                      @induction-step-for-all-k |
+                        forall k: Nat;
+                          (tripleRow(p, q, r, i, j, succ(k)) =
+                          mulF(coeff(p, j),
+                          fieldpoly.convolution(q, r, sub(i, j), k))) ->
+                          (tripleRow(p, q, r, i, j, succ(succ(k))) =
+                          mulF(coeff(p, j),
+                          fieldpoly.convolution(q, r, sub(i, j), succ(k))))
+                        [by generalize induction-step]
+                      @conclusion-for-all-c |
+                        forall c: Nat;
+                          tripleRow(p, q, r, i, j, succ(c)) =
+                          mulF(coeff(p, j), fieldpoly.convolution(q, r, sub(i, j), c))
+                        [using instantiation peano.induction((fun c: Nat => tripleRow(p, q, r, i, j, succ(c)) = mulF(coeff(p, j), fieldpoly.convolution(q, r, sub(i, j), c)))) base-case induction-step-for-all-k]
+                    }
+                  @discharge-j |
+                    forall j9, c9: Nat;
+                      tripleRow(p, q, r, i, j9, succ(c9)) =
+                      mulF(coeff(p, j9), fieldpoly.convolution(q, r, sub(i, j9), c9))
+                    [by generalize generalize-j]
+                }
+              @discharge-i |
+                forall i9, j9, c9: Nat;
+                  tripleRow(p, q, r, i9, j9, succ(c9)) =
+                  mulF(coeff(p, j9), fieldpoly.convolution(q, r, sub(i9, j9), c9))
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r9: Poly; forall i9, j9, c9: Nat;
+              tripleRow(p, q, r9, i9, j9, succ(c9)) =
+              mulF(coeff(p, j9), fieldpoly.convolution(q, r9, sub(i9, j9), c9))
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q9, r9: Poly; forall i9, j9, c9: Nat;
+          tripleRow(p, q9, r9, i9, j9, succ(c9)) =
+          mulF(coeff(p, j9), fieldpoly.convolution(q9, r9, sub(i9, j9), c9))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall i, j, c: Nat;
+      tripleRow(p, q, r, i, j, succ(c)) =
+      mulF(coeff(p, j), fieldpoly.convolution(q, r, sub(i, j), c))
+    [by generalize generalize-p]
+qed
+
+// -- LEMMA C: an anti-diagonal IS the product's convolution, scaled by r_{i-m} ------------
+//
+// tripleDiag(p,q,r,i,m,succ c) = convolution(p,q,m,c) * r_{i-m}, for c <= m <= i.
+//
+// The guard is load-bearing: the m-th anti-diagonal has only m+1 entries, and past that
+// `sub(m,x)` saturates at ZERO so entries repeat. Within the guard each entry's third index
+// collapses, since sub(sub(i,x),sub(m,x)) = sub(i,m) for x <= m -- the std lemma
+// aCommonAmountCancelsUnderNestedSubtraction -- which is what lets r_{i-m} factor out.
+//
+// Induction on c, with p/q/r/i/m fixed and BOTH guards travelling inside the property.
+theorem aDiagonalIsTheScaledConvolution: forall p, q, r: Poly; forall i, m: Nat;
+  peano.less_than(m, succ(i)) ->
+  forall c: Nat;
+  peano.less_than(c, succ(m)) ->
+  tripleDiag(p, q, r, i, m, succ(c)) =
+  mulF(fieldpoly.convolution(p, q, m, c), coeff(r, sub(i, m)))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-i |
+                fix i: Nat {
+                  @generalize-m |
+                    fix m: Nat {
+                      @given-m-at-most-i |
+                        assume peano.less_than(m, succ(i)) {
+                          @m-at-most-i |
+                            peano.less_than(m, succ(i))
+                            [by hypothesis given-m-at-most-i]
+                          // base: one entry, x = ZERO, whose third index collapses
+                          @the-diagonal-at-one |
+                            tripleDiag(p, q, r, i, m, succ(ZERO)) =
+                              addF(tripleDiag(p, q, r, i, m, ZERO),
+                              tripleTerm(p, q, r, i, ZERO, sub(m, ZERO)))
+                            [using specialize tripleDiagSucc(p, q, r, i, m, ZERO)]
+                          @the-empty-diagonal |
+                            tripleDiag(p, q, r, i, m, ZERO) = zeroF
+                            [using specialize tripleDiagZero(p, q, r, i, m)]
+                          @m-minus-zero |
+                            sub(m, ZERO) = m
+                            [using specialize subtraction.subZeroRight(m)]
+                          @the-first-entry |
+                            tripleTerm(p, q, r, i, ZERO, m) =
+                              mulF(mulF(coeff(p, ZERO), coeff(q, m)),
+                              coeff(r, sub(sub(i, ZERO), m)))
+                            [using specialize tripleTermMeaning(p, q, r, i, ZERO, m)]
+                          @i-minus-zero |
+                            sub(i, ZERO) = i
+                            [using specialize subtraction.subZeroRight(i)]
+                          @the-convolution-at-zero |
+                            fieldpoly.convolution(p, q, m, ZERO) =
+                              mulF(coeff(p, ZERO), coeff(q, m))
+                            [using specialize fieldpoly.convolutionZero(p, q, m)]
+                          @dropping-the-leading-zero |
+                            addF(zeroF, mulF(mulF(coeff(p, ZERO), coeff(q, m)),
+                              coeff(r, sub(i, m)))) =
+                              mulF(mulF(coeff(p, ZERO), coeff(q, m)), coeff(r, sub(i, m)))
+                            [using specialize fieldpoly.addZeroLeftF(mulF(mulF(coeff(p, ZERO), coeff(q, m)), coeff(r, sub(i, m))))]
+                          @base-case |
+                            peano.less_than(ZERO, succ(m)) ->
+                              tripleDiag(p, q, r, i, m, succ(ZERO)) =
+                              mulF(fieldpoly.convolution(p, q, m, ZERO),
+                              coeff(r, sub(i, m)))
+                            [using tautology the-base-equality]
+                          @the-base-equality |
+                            tripleDiag(p, q, r, i, m, succ(ZERO)) =
+                              mulF(fieldpoly.convolution(p, q, m, ZERO),
+                              coeff(r, sub(i, m)))
+                            [using simplify the-diagonal-at-one the-empty-diagonal m-minus-zero the-first-entry i-minus-zero the-convolution-at-zero dropping-the-leading-zero]
+                          // step
+                          @induction-step |
+                            fix k: Nat {
+                              @given-the-hypothesis |
+                                assume peano.less_than(k, succ(m)) ->
+                                  tripleDiag(p, q, r, i, m, succ(k)) =
+                                  mulF(fieldpoly.convolution(p, q, m, k),
+                                  coeff(r, sub(i, m))) {
+                                  @the-hypothesis |
+                                    peano.less_than(k, succ(m)) ->
+                                      tripleDiag(p, q, r, i, m, succ(k)) =
+                                      mulF(fieldpoly.convolution(p, q, m, k),
+                                      coeff(r, sub(i, m)))
+                                    [by hypothesis given-the-hypothesis]
+                                  @given-succ-k-at-most-m |
+                                    assume peano.less_than(succ(k), succ(m)) {
+                                      @succ-k-at-most-m |
+                                        peano.less_than(succ(k), succ(m))
+                                        [by hypothesis given-succ-k-at-most-m]
+                                      // k < succ k <= m, so the hypothesis applies
+                                      @k-below-succ-k |
+                                        peano.less_than(k, succ(k))
+                                        [using specialize peano_order.lessThanSelf(k)]
+                                      @k-at-most-m |
+                                        peano.less_than(k, succ(m))
+                                        [using specialize peano_order.lessThanTransitive(k, succ(k), succ(m)) k-below-succ-k succ-k-at-most-m]
+                                      @the-hypothesis-applies |
+                                        tripleDiag(p, q, r, i, m, succ(k)) =
+                                          mulF(fieldpoly.convolution(p, q, m, k),
+                                          coeff(r, sub(i, m)))
+                                        [using tautology the-hypothesis k-at-most-m]
+                                      // the new entry, at x = succ k
+                                      @the-diagonal-grows |
+                                        tripleDiag(p, q, r, i, m, succ(succ(k))) =
+                                          addF(tripleDiag(p, q, r, i, m, succ(k)),
+                                          tripleTerm(p, q, r, i, succ(k),
+                                          sub(m, succ(k))))
+                                        [using specialize tripleDiagSucc(p, q, r, i, m, succ(k))]
+                                      @the-new-entry |
+                                        tripleTerm(p, q, r, i, succ(k), sub(m, succ(k))) =
+                                          mulF(mulF(coeff(p, succ(k)),
+                                          coeff(q, sub(m, succ(k)))),
+                                          coeff(r, sub(sub(i, succ(k)),
+                                          sub(m, succ(k)))))
+                                        [using specialize tripleTermMeaning(p, q, r, i, succ(k), sub(m, succ(k)))]
+                                      // THE INDEX COLLAPSE: succ k <= m <= i
+                                      @the-third-index-collapses |
+                                        sub(sub(i, succ(k)), sub(m, succ(k))) = sub(i, m)
+                                        [using specialize subtraction.aCommonAmountCancelsUnderNestedSubtraction(i, m, succ(k)) succ-k-at-most-m m-at-most-i]
+                                      // and the convolution grows by the same entry
+                                      @the-convolution-grows |
+                                        fieldpoly.convolution(p, q, m, succ(k)) =
+                                          addF(fieldpoly.convolution(p, q, m, k),
+                                          mulF(coeff(p, succ(k)),
+                                          coeff(q, sub(m, succ(k)))))
+                                        [using specialize fieldpoly.convolutionSucc(p, q, m, k)]
+                                      @the-scaling-distributes |
+                                        mulF(addF(fieldpoly.convolution(p, q, m, k),
+                                          mulF(coeff(p, succ(k)),
+                                          coeff(q, sub(m, succ(k))))),
+                                          coeff(r, sub(i, m))) =
+                                          addF(mulF(fieldpoly.convolution(p, q, m, k),
+                                          coeff(r, sub(i, m))),
+                                          mulF(mulF(coeff(p, succ(k)),
+                                          coeff(q, sub(m, succ(k)))),
+                                          coeff(r, sub(i, m))))
+                                        [using specialize fieldpoly.mulAddDistribRightF(fieldpoly.convolution(p, q, m, k), mulF(coeff(p, succ(k)), coeff(q, sub(m, succ(k)))), coeff(r, sub(i, m)))]
+                                      @conclusion-at-succ-k |
+                                        tripleDiag(p, q, r, i, m, succ(succ(k))) =
+                                          mulF(fieldpoly.convolution(p, q, m, succ(k)),
+                                          coeff(r, sub(i, m)))
+                                        [using simplify the-diagonal-grows the-hypothesis-applies the-new-entry the-third-index-collapses the-convolution-grows the-scaling-distributes]
+                                    }
+                                  @conclusion-guarded |
+                                    peano.less_than(succ(k), succ(m)) ->
+                                      tripleDiag(p, q, r, i, m, succ(succ(k))) =
+                                      mulF(fieldpoly.convolution(p, q, m, succ(k)),
+                                      coeff(r, sub(i, m)))
+                                    [by discharge given-succ-k-at-most-m]
+                                }
+                              @induction-step-at-k |
+                                (peano.less_than(k, succ(m)) ->
+                                  tripleDiag(p, q, r, i, m, succ(k)) =
+                                  mulF(fieldpoly.convolution(p, q, m, k),
+                                  coeff(r, sub(i, m)))) ->
+                                  (peano.less_than(succ(k), succ(m)) ->
+                                  tripleDiag(p, q, r, i, m, succ(succ(k))) =
+                                  mulF(fieldpoly.convolution(p, q, m, succ(k)),
+                                  coeff(r, sub(i, m))))
+                                [by discharge given-the-hypothesis]
+                            }
+                          @induction-step-for-all-k |
+                            forall k: Nat;
+                              (peano.less_than(k, succ(m)) ->
+                              tripleDiag(p, q, r, i, m, succ(k)) =
+                              mulF(fieldpoly.convolution(p, q, m, k),
+                              coeff(r, sub(i, m)))) ->
+                              (peano.less_than(succ(k), succ(m)) ->
+                              tripleDiag(p, q, r, i, m, succ(succ(k))) =
+                              mulF(fieldpoly.convolution(p, q, m, succ(k)),
+                              coeff(r, sub(i, m))))
+                            [by generalize induction-step]
+                          @conclusion-for-all-c |
+                            forall c: Nat;
+                              peano.less_than(c, succ(m)) ->
+                              tripleDiag(p, q, r, i, m, succ(c)) =
+                              mulF(fieldpoly.convolution(p, q, m, c),
+                              coeff(r, sub(i, m)))
+                            [using instantiation peano.induction((fun c: Nat => peano.less_than(c, succ(m)) -> tripleDiag(p, q, r, i, m, succ(c)) = mulF(fieldpoly.convolution(p, q, m, c), coeff(r, sub(i, m))))) base-case induction-step-for-all-k]
+                        }
+                      @m-at-most-implies |
+                        peano.less_than(m, succ(i)) ->
+                          forall c: Nat;
+                          peano.less_than(c, succ(m)) ->
+                          tripleDiag(p, q, r, i, m, succ(c)) =
+                          mulF(fieldpoly.convolution(p, q, m, c),
+                          coeff(r, sub(i, m)))
+                        [by discharge given-m-at-most-i]
+                    }
+                  @discharge-m |
+                    forall m9: Nat;
+                      peano.less_than(m9, succ(i)) ->
+                      forall c: Nat;
+                      peano.less_than(c, succ(m9)) ->
+                      tripleDiag(p, q, r, i, m9, succ(c)) =
+                      mulF(fieldpoly.convolution(p, q, m9, c),
+                      coeff(r, sub(i, m9)))
+                    [by generalize generalize-m]
+                }
+              @discharge-i |
+                forall i9, m9: Nat;
+                  peano.less_than(m9, succ(i9)) ->
+                  forall c: Nat;
+                  peano.less_than(c, succ(m9)) ->
+                  tripleDiag(p, q, r, i9, m9, succ(c)) =
+                  mulF(fieldpoly.convolution(p, q, m9, c),
+                  coeff(r, sub(i9, m9)))
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r9: Poly; forall i9, m9: Nat;
+              peano.less_than(m9, succ(i9)) ->
+              forall c: Nat;
+              peano.less_than(c, succ(m9)) ->
+              tripleDiag(p, q, r9, i9, m9, succ(c)) =
+              mulF(fieldpoly.convolution(p, q, m9, c),
+              coeff(r9, sub(i9, m9)))
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q9, r9: Poly; forall i9, m9: Nat;
+          peano.less_than(m9, succ(i9)) ->
+          forall c: Nat;
+          peano.less_than(c, succ(m9)) ->
+          tripleDiag(p, q9, r9, i9, m9, succ(c)) =
+          mulF(fieldpoly.convolution(p, q9, m9, c),
+          coeff(r9, sub(i9, m9)))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall i, m: Nat;
+      peano.less_than(m, succ(i)) ->
+      forall c: Nat;
+      peano.less_than(c, succ(m)) ->
+      tripleDiag(p, q, r, i, m, succ(c)) =
+      mulF(fieldpoly.convolution(p, q, m, c), coeff(r, sub(i, m)))
+    [by generalize generalize-p]
+qed
+
+// -- LEMMA A: raising the bound adds one anti-diagonal ------------------------------------
+//
+// std/nested-sum.b4m's `raisingTheBoundAddsTheDiagonal`, re-proved here at the concrete
+// family. Induction on the ROW COUNT with the bound FIXED: every row j <= n gains exactly
+// its last entry, and those gained entries ARE the n-th anti-diagonal. The guard travels
+// inside the property, because the successor case needs it to raise a row's bound.
+theorem raisingTheBoundAddsTheDiagonal: forall p, q, r: Poly; forall i, n, mm: Nat;
+  peano_order.less_or_equal(mm, succ(n)) ->
+  tripleRows(p, q, r, i, mm, succ(n)) =
+  addF(tripleRows(p, q, r, i, mm, n), tripleDiag(p, q, r, i, n, mm))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-i |
+                fix i: Nat {
+                  @generalize-n |
+                    fix n: Nat {
+                      // base: no rows, so both sides are zeroF
+                      @the-empty-rows-at-the-raised-bound |
+                        tripleRows(p, q, r, i, ZERO, succ(n)) = zeroF
+                        [using specialize tripleRowsZero(p, q, r, i, succ(n))]
+                      @the-empty-rows-at-the-bound |
+                        tripleRows(p, q, r, i, ZERO, n) = zeroF
+                        [using specialize tripleRowsZero(p, q, r, i, n)]
+                      @the-empty-diagonal |
+                        tripleDiag(p, q, r, i, n, ZERO) = zeroF
+                        [using specialize tripleDiagZero(p, q, r, i, n)]
+                      @combining-two-zeros |
+                        addF(zeroF, zeroF) = zeroF
+                        [using specialize fieldpoly.addZeroLeftF(zeroF)]
+                      @the-base-equality |
+                        tripleRows(p, q, r, i, ZERO, succ(n)) =
+                          addF(tripleRows(p, q, r, i, ZERO, n),
+                          tripleDiag(p, q, r, i, n, ZERO))
+                        [using simplify the-empty-rows-at-the-raised-bound the-empty-rows-at-the-bound the-empty-diagonal combining-two-zeros]
+                      @base-case |
+                        peano_order.less_or_equal(ZERO, succ(n)) ->
+                          tripleRows(p, q, r, i, ZERO, succ(n)) =
+                          addF(tripleRows(p, q, r, i, ZERO, n),
+                          tripleDiag(p, q, r, i, n, ZERO))
+                        [using tautology the-base-equality]
+                      // step
+                      @induction-step |
+                        fix k: Nat {
+                          @given-the-hypothesis |
+                            assume peano_order.less_or_equal(k, succ(n)) ->
+                              tripleRows(p, q, r, i, k, succ(n)) =
+                              addF(tripleRows(p, q, r, i, k, n),
+                              tripleDiag(p, q, r, i, n, k)) {
+                              @the-hypothesis |
+                                peano_order.less_or_equal(k, succ(n)) ->
+                                  tripleRows(p, q, r, i, k, succ(n)) =
+                                  addF(tripleRows(p, q, r, i, k, n),
+                                  tripleDiag(p, q, r, i, n, k))
+                                [by hypothesis given-the-hypothesis]
+                              @given-succ-k-at-most |
+                                assume peano_order.less_or_equal(succ(k), succ(n)) {
+                                  @succ-k-at-most |
+                                    peano_order.less_or_equal(succ(k), succ(n))
+                                    [by hypothesis given-succ-k-at-most]
+                                  // k <= n, which both the hypothesis and the bound need
+                                  @succ-k-below-succ-succ-n |
+                                    peano.less_than(succ(k), succ(succ(n)))
+                                    [using specialize peano_order.lessOrEqualToLessThanSucc(succ(k), succ(n)) succ-k-at-most]
+                                  @k-below-succ-n |
+                                    peano.less_than(k, succ(n))
+                                    [using specialize peano_order.succReflectsOrder(k, succ(n)) succ-k-below-succ-succ-n]
+                                  @k-at-most-succ-n |
+                                    peano_order.less_or_equal(k, succ(n))
+                                    [using specialize peano_order.lessThanToLessOrEqual(k, succ(n)) k-below-succ-n]
+                                  @the-hypothesis-applies |
+                                    tripleRows(p, q, r, i, k, succ(n)) =
+                                      addF(tripleRows(p, q, r, i, k, n),
+                                      tripleDiag(p, q, r, i, n, k))
+                                    [using tautology the-hypothesis k-at-most-succ-n]
+                                  // peel the (k+1)-st row off each side
+                                  @the-raised-side-peels |
+                                    tripleRows(p, q, r, i, succ(k), succ(n)) =
+                                      addF(tripleRows(p, q, r, i, k, succ(n)),
+                                      tripleRow(p, q, r, i, k, sub(succ(n), k)))
+                                    [using specialize tripleRowsSucc(p, q, r, i, k, succ(n))]
+                                  @the-base-side-peels |
+                                    tripleRows(p, q, r, i, succ(k), n) =
+                                      addF(tripleRows(p, q, r, i, k, n),
+                                      tripleRow(p, q, r, i, k, sub(n, k)))
+                                    [using specialize tripleRowsSucc(p, q, r, i, k, n)]
+                                  @the-diagonal-peels |
+                                    tripleDiag(p, q, r, i, n, succ(k)) =
+                                      addF(tripleDiag(p, q, r, i, n, k),
+                                      tripleTerm(p, q, r, i, k, sub(n, k)))
+                                    [using specialize tripleDiagSucc(p, q, r, i, n, k)]
+                                  // the raised row's bound is one higher, since k <= n
+                                  @the-raised-bound |
+                                    sub(succ(n), k) = succ(sub(n, k))
+                                    [using specialize subtraction.succOfSubLeft(k, n) k-below-succ-n]
+                                  @the-raised-row-peels |
+                                    tripleRow(p, q, r, i, k, succ(sub(n, k))) =
+                                      addF(tripleRow(p, q, r, i, k, sub(n, k)),
+                                      tripleTerm(p, q, r, i, k, sub(n, k)))
+                                    [using specialize tripleRowSucc(p, q, r, i, k, sub(n, k))]
+                                  @the-raised-row-gains-its-last-entry |
+                                    tripleRow(p, q, r, i, k, sub(succ(n), k)) =
+                                      addF(tripleRow(p, q, r, i, k, sub(n, k)),
+                                      tripleTerm(p, q, r, i, k, sub(n, k)))
+                                    [by rewrite the-raised-bound the-raised-row-peels]
+                                  // substitute into each side
+                                  @the-raised-side-expanded |
+                                    tripleRows(p, q, r, i, succ(k), succ(n)) =
+                                      addF(addF(tripleRows(p, q, r, i, k, n),
+                                      tripleDiag(p, q, r, i, n, k)),
+                                      addF(tripleRow(p, q, r, i, k, sub(n, k)),
+                                      tripleTerm(p, q, r, i, k, sub(n, k))))
+                                    [using simplify the-raised-side-peels the-hypothesis-applies the-raised-row-gains-its-last-entry]
+                                  @the-target-side-expanded |
+                                    addF(tripleRows(p, q, r, i, succ(k), n),
+                                      tripleDiag(p, q, r, i, n, succ(k))) =
+                                      addF(addF(tripleRows(p, q, r, i, k, n),
+                                      tripleRow(p, q, r, i, k, sub(n, k))),
+                                      addF(tripleDiag(p, q, r, i, n, k),
+                                      tripleTerm(p, q, r, i, k, sub(n, k))))
+                                    [using simplify the-base-side-peels the-diagonal-peels]
+                                  // the SAME four summands, reassociated and commuted
+                                  @the-two-expansions-agree |
+                                    addF(addF(tripleRows(p, q, r, i, k, n),
+                                      tripleDiag(p, q, r, i, n, k)),
+                                      addF(tripleRow(p, q, r, i, k, sub(n, k)),
+                                      tripleTerm(p, q, r, i, k, sub(n, k)))) =
+                                      addF(addF(tripleRows(p, q, r, i, k, n),
+                                      tripleRow(p, q, r, i, k, sub(n, k))),
+                                      addF(tripleDiag(p, q, r, i, n, k),
+                                      tripleTerm(p, q, r, i, k, sub(n, k))))
+                                    [using assoc_commut(fieldpoly.addIsAssociativeF, fieldpoly.addIsCommutativeF, field.addLeftSwap)]
+                                  @the-target-side-flipped |
+                                    addF(addF(tripleRows(p, q, r, i, k, n),
+                                      tripleRow(p, q, r, i, k, sub(n, k))),
+                                      addF(tripleDiag(p, q, r, i, n, k),
+                                      tripleTerm(p, q, r, i, k, sub(n, k)))) =
+                                      addF(tripleRows(p, q, r, i, succ(k), n),
+                                      tripleDiag(p, q, r, i, n, succ(k)))
+                                    [by symmetry the-target-side-expanded]
+                                  @conclusion-at-succ-k |
+                                    tripleRows(p, q, r, i, succ(k), succ(n)) =
+                                      addF(tripleRows(p, q, r, i, succ(k), n),
+                                      tripleDiag(p, q, r, i, n, succ(k)))
+                                    [using chain the-raised-side-expanded the-two-expansions-agree the-target-side-flipped]
+                                }
+                              @conclusion-guarded |
+                                peano_order.less_or_equal(succ(k), succ(n)) ->
+                                  tripleRows(p, q, r, i, succ(k), succ(n)) =
+                                  addF(tripleRows(p, q, r, i, succ(k), n),
+                                  tripleDiag(p, q, r, i, n, succ(k)))
+                                [by discharge given-succ-k-at-most]
+                            }
+                          @induction-step-at-k |
+                            (peano_order.less_or_equal(k, succ(n)) ->
+                              tripleRows(p, q, r, i, k, succ(n)) =
+                              addF(tripleRows(p, q, r, i, k, n),
+                              tripleDiag(p, q, r, i, n, k))) ->
+                              (peano_order.less_or_equal(succ(k), succ(n)) ->
+                              tripleRows(p, q, r, i, succ(k), succ(n)) =
+                              addF(tripleRows(p, q, r, i, succ(k), n),
+                              tripleDiag(p, q, r, i, n, succ(k))))
+                            [by discharge given-the-hypothesis]
+                        }
+                      @induction-step-for-all-k |
+                        forall k: Nat;
+                          (peano_order.less_or_equal(k, succ(n)) ->
+                          tripleRows(p, q, r, i, k, succ(n)) =
+                          addF(tripleRows(p, q, r, i, k, n),
+                          tripleDiag(p, q, r, i, n, k))) ->
+                          (peano_order.less_or_equal(succ(k), succ(n)) ->
+                          tripleRows(p, q, r, i, succ(k), succ(n)) =
+                          addF(tripleRows(p, q, r, i, succ(k), n),
+                          tripleDiag(p, q, r, i, n, succ(k))))
+                        [by generalize induction-step]
+                      @conclusion-for-all-mm |
+                        forall mm: Nat;
+                          peano_order.less_or_equal(mm, succ(n)) ->
+                          tripleRows(p, q, r, i, mm, succ(n)) =
+                          addF(tripleRows(p, q, r, i, mm, n),
+                          tripleDiag(p, q, r, i, n, mm))
+                        [using instantiation peano.induction((fun mm: Nat => peano_order.less_or_equal(mm, succ(n)) -> tripleRows(p, q, r, i, mm, succ(n)) = addF(tripleRows(p, q, r, i, mm, n), tripleDiag(p, q, r, i, n, mm)))) base-case induction-step-for-all-k]
+                    }
+                  @discharge-n |
+                    forall n9, mm9: Nat;
+                      peano_order.less_or_equal(mm9, succ(n9)) ->
+                      tripleRows(p, q, r, i, mm9, succ(n9)) =
+                      addF(tripleRows(p, q, r, i, mm9, n9),
+                      tripleDiag(p, q, r, i, n9, mm9))
+                    [by generalize generalize-n]
+                }
+              @discharge-i |
+                forall i9, n9, mm9: Nat;
+                  peano_order.less_or_equal(mm9, succ(n9)) ->
+                  tripleRows(p, q, r, i9, mm9, succ(n9)) =
+                  addF(tripleRows(p, q, r, i9, mm9, n9),
+                  tripleDiag(p, q, r, i9, n9, mm9))
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r9: Poly; forall i9, n9, mm9: Nat;
+              peano_order.less_or_equal(mm9, succ(n9)) ->
+              tripleRows(p, q, r9, i9, mm9, succ(n9)) =
+              addF(tripleRows(p, q, r9, i9, mm9, n9),
+              tripleDiag(p, q, r9, i9, n9, mm9))
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q9, r9: Poly; forall i9, n9, mm9: Nat;
+          peano_order.less_or_equal(mm9, succ(n9)) ->
+          tripleRows(p, q9, r9, i9, mm9, succ(n9)) =
+          addF(tripleRows(p, q9, r9, i9, mm9, n9),
+          tripleDiag(p, q9, r9, i9, n9, mm9))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall i, n, mm: Nat;
+      peano_order.less_or_equal(mm, succ(n)) ->
+      tripleRows(p, q, r, i, mm, succ(n)) =
+      addF(tripleRows(p, q, r, i, mm, n), tripleDiag(p, q, r, i, n, mm))
+    [by generalize generalize-p]
+qed
+
+// -- LEMMA B: THE EXCHANGE, at the concrete family ----------------------------------------
+//
+// The triangle equals the shortened rows: the pair (j,k) is counted once on each side
+// exactly when j + k < n. Given Lemma A the induction is three steps -- the triangle gains
+// the n-th full anti-diagonal, the rows gain their last entries which ARE that
+// anti-diagonal, and the extra row at bound n is empty since sub(n,n) = ZERO.
+theorem theTriangleIsTheShortenedRows: forall p, q, r: Poly; forall i, n: Nat;
+  tripleTri(p, q, r, i, n) = tripleRows(p, q, r, i, n, n)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-i |
+                fix i: Nat {
+                  @the-increment-is-the-diagonal |
+                    forall p9, q9, r9: Poly; forall i9, n9, mm9: Nat;
+                      peano_order.less_or_equal(mm9, succ(n9)) ->
+                      tripleRows(p9, q9, r9, i9, mm9, succ(n9)) =
+                      addF(tripleRows(p9, q9, r9, i9, mm9, n9),
+                      tripleDiag(p9, q9, r9, i9, n9, mm9))
+                    [by cite raisingTheBoundAddsTheDiagonal]
+                  // base: both sides empty
+                  @the-empty-triangle |
+                    tripleTri(p, q, r, i, ZERO) = zeroF
+                    [using specialize tripleTriZero(p, q, r, i)]
+                  @the-empty-rows |
+                    tripleRows(p, q, r, i, ZERO, ZERO) = zeroF
+                    [using specialize tripleRowsZero(p, q, r, i, ZERO)]
+                  @base-case |
+                    tripleTri(p, q, r, i, ZERO) = tripleRows(p, q, r, i, ZERO, ZERO)
+                    [using simplify the-empty-triangle the-empty-rows]
+                  @induction-step |
+                    fix k: Nat {
+                      @given-the-hypothesis |
+                        assume tripleTri(p, q, r, i, k) = tripleRows(p, q, r, i, k, k) {
+                          @the-hypothesis |
+                            tripleTri(p, q, r, i, k) = tripleRows(p, q, r, i, k, k)
+                            [by hypothesis given-the-hypothesis]
+                          // the triangle gains the k-th full anti-diagonal
+                          @the-triangle-grows |
+                            tripleTri(p, q, r, i, succ(k)) =
+                              addF(tripleTri(p, q, r, i, k),
+                              tripleDiag(p, q, r, i, k, succ(k)))
+                            [using specialize tripleTriSucc(p, q, r, i, k)]
+                          // the rows gain their last entries, which ARE that anti-diagonal
+                          @succ-k-at-most-succ-k |
+                            peano_order.less_or_equal(succ(k), succ(k))
+                            [using specialize peano_order.lessOrEqualRefl(succ(k))]
+                          @the-rows-grow |
+                            tripleRows(p, q, r, i, succ(k), succ(k)) =
+                              addF(tripleRows(p, q, r, i, succ(k), k),
+                              tripleDiag(p, q, r, i, k, succ(k)))
+                            [using specialize the-increment-is-the-diagonal(p, q, r, i, k, succ(k)) succ-k-at-most-succ-k]
+                          // and the extra row at bound k is EMPTY, since sub(k,k) = ZERO
+                          @the-last-row-is-empty |
+                            sub(k, k) = ZERO
+                            [using specialize subtraction.subSelf(k)]
+                          @the-extra-row-peels |
+                            tripleRows(p, q, r, i, succ(k), k) =
+                              addF(tripleRows(p, q, r, i, k, k),
+                              tripleRow(p, q, r, i, k, sub(k, k)))
+                            [using specialize tripleRowsSucc(p, q, r, i, k, k)]
+                          @the-empty-row-is-zero |
+                            tripleRow(p, q, r, i, k, ZERO) = zeroF
+                            [using specialize tripleRowZero(p, q, r, i, k)]
+                          @dropping-the-empty-row |
+                            addF(tripleRows(p, q, r, i, k, k), zeroF) =
+                              tripleRows(p, q, r, i, k, k)
+                            [using specialize field.addZeroRight(tripleRows(p, q, r, i, k, k))]
+                          @the-extra-row-contributes-nothing |
+                            tripleRows(p, q, r, i, succ(k), k) =
+                              tripleRows(p, q, r, i, k, k)
+                            [using simplify the-extra-row-peels the-last-row-is-empty the-empty-row-is-zero dropping-the-empty-row]
+                          // assemble
+                          @the-rows-grow-from-the-triangle |
+                            tripleRows(p, q, r, i, succ(k), succ(k)) =
+                              addF(tripleTri(p, q, r, i, k),
+                              tripleDiag(p, q, r, i, k, succ(k)))
+                            [using simplify the-rows-grow the-extra-row-contributes-nothing the-hypothesis]
+                          @the-rows-grow-flipped |
+                            addF(tripleTri(p, q, r, i, k),
+                              tripleDiag(p, q, r, i, k, succ(k))) =
+                              tripleRows(p, q, r, i, succ(k), succ(k))
+                            [by symmetry the-rows-grow-from-the-triangle]
+                          @conclusion-at-succ-k |
+                            tripleTri(p, q, r, i, succ(k)) =
+                              tripleRows(p, q, r, i, succ(k), succ(k))
+                            [using chain the-triangle-grows the-rows-grow-flipped]
+                        }
+                      @induction-step-at-k |
+                        (tripleTri(p, q, r, i, k) = tripleRows(p, q, r, i, k, k)) ->
+                          (tripleTri(p, q, r, i, succ(k)) =
+                          tripleRows(p, q, r, i, succ(k), succ(k)))
+                        [by discharge given-the-hypothesis]
+                    }
+                  @induction-step-for-all-k |
+                    forall k: Nat;
+                      (tripleTri(p, q, r, i, k) = tripleRows(p, q, r, i, k, k)) ->
+                      (tripleTri(p, q, r, i, succ(k)) =
+                      tripleRows(p, q, r, i, succ(k), succ(k)))
+                    [by generalize induction-step]
+                  @conclusion-for-all-n |
+                    forall n: Nat;
+                      tripleTri(p, q, r, i, n) = tripleRows(p, q, r, i, n, n)
+                    [using instantiation peano.induction((fun n: Nat => tripleTri(p, q, r, i, n) = tripleRows(p, q, r, i, n, n))) base-case induction-step-for-all-k]
+                }
+              @discharge-i |
+                forall i9, n9: Nat;
+                  tripleTri(p, q, r, i9, n9) = tripleRows(p, q, r, i9, n9, n9)
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r9: Poly; forall i9, n9: Nat;
+              tripleTri(p, q, r9, i9, n9) = tripleRows(p, q, r9, i9, n9, n9)
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q9, r9: Poly; forall i9, n9: Nat;
+          tripleTri(p, q9, r9, i9, n9) = tripleRows(p, q9, r9, i9, n9, n9)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall i, n: Nat;
+      tripleTri(p, q, r, i, n) = tripleRows(p, q, r, i, n, n)
+    [by generalize generalize-p]
+qed
+
+// -- LEMMA E: the triangle IS the left product's coefficient ------------------------------
+//
+// tripleTri(p,q,r,i,succ n) = convolution(mulP(p,q), r, i, n), for n <= i. Each step adds
+// the full n-th anti-diagonal, which by Lemma C is coeff(pq,n) * r_{i-n} -- exactly the
+// term convolution(pq,r,i,.) gains. Induction on n, with the guard inside.
+theorem theTriangleIsTheLeftCoefficient: forall p, q, r: Poly; forall i: Nat;
+  forall n: Nat;
+  peano.less_than(n, succ(i)) ->
+  tripleTri(p, q, r, i, succ(n)) = fieldpoly.convolution(mulP(p, q), r, i, n)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-i |
+                fix i: Nat {
+                  @the-diagonal-is-the-scaled-convolution |
+                    forall p9, q9, r9: Poly; forall i9, m9: Nat;
+                      peano.less_than(m9, succ(i9)) ->
+                      forall c9: Nat;
+                      peano.less_than(c9, succ(m9)) ->
+                      tripleDiag(p9, q9, r9, i9, m9, succ(c9)) =
+                      mulF(fieldpoly.convolution(p9, q9, m9, c9),
+                      coeff(r9, sub(i9, m9)))
+                    [by cite aDiagonalIsTheScaledConvolution]
+                  // base: the zeroth anti-diagonal, which is coeff(pq,0) * r_i
+                  @the-triangle-at-one |
+                    tripleTri(p, q, r, i, succ(ZERO)) =
+                      addF(tripleTri(p, q, r, i, ZERO),
+                      tripleDiag(p, q, r, i, ZERO, succ(ZERO)))
+                    [using specialize tripleTriSucc(p, q, r, i, ZERO)]
+                  @the-empty-triangle |
+                    tripleTri(p, q, r, i, ZERO) = zeroF
+                    [using specialize tripleTriZero(p, q, r, i)]
+                  @zero-is-at-most-i |
+                    peano.less_than(ZERO, succ(i))
+                    [using specialize peano_order.zeroBelowSucc(i)]
+                  @zero-is-at-most-zero |
+                    peano.less_than(ZERO, succ(ZERO))
+                    [using specialize peano_order.zeroBelowSucc(ZERO)]
+                  @the-zeroth-diagonal-at-i |
+                    forall c9: Nat;
+                      peano.less_than(c9, succ(ZERO)) ->
+                      tripleDiag(p, q, r, i, ZERO, succ(c9)) =
+                      mulF(fieldpoly.convolution(p, q, ZERO, c9),
+                      coeff(r, sub(i, ZERO)))
+                    [using specialize the-diagonal-is-the-scaled-convolution(p, q, r, i, ZERO) zero-is-at-most-i]
+                  @the-zeroth-diagonal |
+                    tripleDiag(p, q, r, i, ZERO, succ(ZERO)) =
+                      mulF(fieldpoly.convolution(p, q, ZERO, ZERO),
+                      coeff(r, sub(i, ZERO)))
+                    [using specialize the-zeroth-diagonal-at-i(ZERO) zero-is-at-most-zero]
+                  @the-product-coefficient-at-zero |
+                    coeff(mulP(p, q), ZERO) = fieldpoly.convolution(p, q, ZERO, ZERO)
+                    [using specialize fieldpoly.mulPolyCoeff(p, q, ZERO)]
+                  @the-left-convolution-at-zero |
+                    fieldpoly.convolution(mulP(p, q), r, i, ZERO) =
+                      mulF(coeff(mulP(p, q), ZERO), coeff(r, i))
+                    [using specialize fieldpoly.convolutionZero(mulP(p, q), r, i)]
+                  @i-minus-zero |
+                    sub(i, ZERO) = i
+                    [using specialize subtraction.subZeroRight(i)]
+                  @dropping-the-leading-zero |
+                    addF(zeroF, mulF(fieldpoly.convolution(p, q, ZERO, ZERO), coeff(r, i))) =
+                      mulF(fieldpoly.convolution(p, q, ZERO, ZERO), coeff(r, i))
+                    [using specialize fieldpoly.addZeroLeftF(mulF(fieldpoly.convolution(p, q, ZERO, ZERO), coeff(r, i)))]
+                  @the-base-equality |
+                    tripleTri(p, q, r, i, succ(ZERO)) =
+                      fieldpoly.convolution(mulP(p, q), r, i, ZERO)
+                    [using simplify the-triangle-at-one the-empty-triangle the-zeroth-diagonal i-minus-zero dropping-the-leading-zero the-left-convolution-at-zero the-product-coefficient-at-zero]
+                  @base-case |
+                    peano.less_than(ZERO, succ(i)) ->
+                      tripleTri(p, q, r, i, succ(ZERO)) =
+                      fieldpoly.convolution(mulP(p, q), r, i, ZERO)
+                    [using tautology the-base-equality]
+                  // step
+                  @induction-step |
+                    fix k: Nat {
+                      @given-the-hypothesis |
+                        assume peano.less_than(k, succ(i)) ->
+                          tripleTri(p, q, r, i, succ(k)) =
+                          fieldpoly.convolution(mulP(p, q), r, i, k) {
+                          @the-hypothesis |
+                            peano.less_than(k, succ(i)) ->
+                              tripleTri(p, q, r, i, succ(k)) =
+                              fieldpoly.convolution(mulP(p, q), r, i, k)
+                            [by hypothesis given-the-hypothesis]
+                          @given-succ-k-at-most-i |
+                            assume peano.less_than(succ(k), succ(i)) {
+                              @succ-k-at-most-i |
+                                peano.less_than(succ(k), succ(i))
+                                [by hypothesis given-succ-k-at-most-i]
+                              @k-below-succ-k |
+                                peano.less_than(k, succ(k))
+                                [using specialize peano_order.lessThanSelf(k)]
+                              @k-at-most-i |
+                                peano.less_than(k, succ(i))
+                                [using specialize peano_order.lessThanTransitive(k, succ(k), succ(i)) k-below-succ-k succ-k-at-most-i]
+                              @the-hypothesis-applies |
+                                tripleTri(p, q, r, i, succ(k)) =
+                                  fieldpoly.convolution(mulP(p, q), r, i, k)
+                                [using tautology the-hypothesis k-at-most-i]
+                              // the triangle gains the (succ k)-th full anti-diagonal
+                              @the-triangle-grows |
+                                tripleTri(p, q, r, i, succ(succ(k))) =
+                                  addF(tripleTri(p, q, r, i, succ(k)),
+                                  tripleDiag(p, q, r, i, succ(k), succ(succ(k))))
+                                [using specialize tripleTriSucc(p, q, r, i, succ(k))]
+                              // which by Lemma C is coeff(pq, succ k) * r_{i - succ k}
+                              @succ-k-at-most-succ-k |
+                                peano.less_than(succ(k), succ(succ(k)))
+                                [using specialize peano_order.lessThanSelf(succ(k))]
+                              @the-diagonal-at-succ-k |
+                                forall c9: Nat;
+                                  peano.less_than(c9, succ(succ(k))) ->
+                                  tripleDiag(p, q, r, i, succ(k), succ(c9)) =
+                                  mulF(fieldpoly.convolution(p, q, succ(k), c9),
+                                  coeff(r, sub(i, succ(k))))
+                                [using specialize the-diagonal-is-the-scaled-convolution(p, q, r, i, succ(k)) succ-k-at-most-i]
+                              @the-full-diagonal |
+                                tripleDiag(p, q, r, i, succ(k), succ(succ(k))) =
+                                  mulF(fieldpoly.convolution(p, q, succ(k), succ(k)),
+                                  coeff(r, sub(i, succ(k))))
+                                [using specialize the-diagonal-at-succ-k(succ(k)) succ-k-at-most-succ-k]
+                              @the-product-coefficient |
+                                coeff(mulP(p, q), succ(k)) =
+                                  fieldpoly.convolution(p, q, succ(k), succ(k))
+                                [using specialize fieldpoly.mulPolyCoeff(p, q, succ(k))]
+                              // and the left convolution gains exactly that term
+                              @the-left-convolution-grows |
+                                fieldpoly.convolution(mulP(p, q), r, i, succ(k)) =
+                                  addF(fieldpoly.convolution(mulP(p, q), r, i, k),
+                                  mulF(coeff(mulP(p, q), succ(k)),
+                                  coeff(r, sub(i, succ(k)))))
+                                [using specialize fieldpoly.convolutionSucc(mulP(p, q), r, i, k)]
+                              @conclusion-at-succ-k |
+                                tripleTri(p, q, r, i, succ(succ(k))) =
+                                  fieldpoly.convolution(mulP(p, q), r, i, succ(k))
+                                [using simplify the-triangle-grows the-hypothesis-applies the-full-diagonal the-product-coefficient the-left-convolution-grows]
+                            }
+                          @conclusion-guarded |
+                            peano.less_than(succ(k), succ(i)) ->
+                              tripleTri(p, q, r, i, succ(succ(k))) =
+                              fieldpoly.convolution(mulP(p, q), r, i, succ(k))
+                            [by discharge given-succ-k-at-most-i]
+                        }
+                      @induction-step-at-k |
+                        (peano.less_than(k, succ(i)) ->
+                          tripleTri(p, q, r, i, succ(k)) =
+                          fieldpoly.convolution(mulP(p, q), r, i, k)) ->
+                          (peano.less_than(succ(k), succ(i)) ->
+                          tripleTri(p, q, r, i, succ(succ(k))) =
+                          fieldpoly.convolution(mulP(p, q), r, i, succ(k)))
+                        [by discharge given-the-hypothesis]
+                    }
+                  @induction-step-for-all-k |
+                    forall k: Nat;
+                      (peano.less_than(k, succ(i)) ->
+                      tripleTri(p, q, r, i, succ(k)) =
+                      fieldpoly.convolution(mulP(p, q), r, i, k)) ->
+                      (peano.less_than(succ(k), succ(i)) ->
+                      tripleTri(p, q, r, i, succ(succ(k))) =
+                      fieldpoly.convolution(mulP(p, q), r, i, succ(k)))
+                    [by generalize induction-step]
+                  @conclusion-for-all-n |
+                    forall n: Nat;
+                      peano.less_than(n, succ(i)) ->
+                      tripleTri(p, q, r, i, succ(n)) =
+                      fieldpoly.convolution(mulP(p, q), r, i, n)
+                    [using instantiation peano.induction((fun n: Nat => peano.less_than(n, succ(i)) -> tripleTri(p, q, r, i, succ(n)) = fieldpoly.convolution(mulP(p, q), r, i, n))) base-case induction-step-for-all-k]
+                }
+              @discharge-i |
+                forall i9: Nat; forall n9: Nat;
+                  peano.less_than(n9, succ(i9)) ->
+                  tripleTri(p, q, r, i9, succ(n9)) =
+                  fieldpoly.convolution(mulP(p, q), r, i9, n9)
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r9: Poly; forall i9: Nat; forall n9: Nat;
+              peano.less_than(n9, succ(i9)) ->
+              tripleTri(p, q, r9, i9, succ(n9)) =
+              fieldpoly.convolution(mulP(p, q), r9, i9, n9)
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q9, r9: Poly; forall i9: Nat; forall n9: Nat;
+          peano.less_than(n9, succ(i9)) ->
+          tripleTri(p, q9, r9, i9, succ(n9)) =
+          fieldpoly.convolution(mulP(p, q9), r9, i9, n9)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall i: Nat; forall n: Nat;
+      peano.less_than(n, succ(i)) ->
+      tripleTri(p, q, r, i, succ(n)) = fieldpoly.convolution(mulP(p, q), r, i, n)
+    [by generalize generalize-p]
+qed
+
+// -- LEMMA F: the shortened rows ARE the right product's coefficient ----------------------
+//
+// tripleRows(p,q,r,i,succ mm,succ i) = convolution(p, mulP(q,r), i, mm), for mm <= i. Each
+// step adds row mm at bound sub(succ i, mm) = succ(sub(i,mm)), which by Lemma D is
+// p_mm * coeff(qr, sub(i,mm)) -- exactly the term convolution(p,qr,i,.) gains.
+theorem theShortenedRowsAreTheRightCoefficient: forall p, q, r: Poly; forall i: Nat;
+  forall mm: Nat;
+  peano.less_than(mm, succ(i)) ->
+  tripleRows(p, q, r, i, succ(mm), succ(i)) =
+  fieldpoly.convolution(p, mulP(q, r), i, mm)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-i |
+                fix i: Nat {
+                  @a-row-is-the-scaled-convolution |
+                    forall p9, q9, r9: Poly; forall i9, j9, c9: Nat;
+                      tripleRow(p9, q9, r9, i9, j9, succ(c9)) =
+                      mulF(coeff(p9, j9),
+                      fieldpoly.convolution(q9, r9, sub(i9, j9), c9))
+                    [by cite aRowIsTheScaledConvolution]
+                  // base: one row, at bound sub(succ i, ZERO) = succ i = succ(sub(i,ZERO))
+                  @the-rows-at-one |
+                    tripleRows(p, q, r, i, succ(ZERO), succ(i)) =
+                      addF(tripleRows(p, q, r, i, ZERO, succ(i)),
+                      tripleRow(p, q, r, i, ZERO, sub(succ(i), ZERO)))
+                    [using specialize tripleRowsSucc(p, q, r, i, ZERO, succ(i))]
+                  @the-empty-rows |
+                    tripleRows(p, q, r, i, ZERO, succ(i)) = zeroF
+                    [using specialize tripleRowsZero(p, q, r, i, succ(i))]
+                  @the-bound-at-zero |
+                    sub(succ(i), ZERO) = succ(i)
+                    [using specialize subtraction.subZeroRight(succ(i))]
+                  @i-minus-zero |
+                    sub(i, ZERO) = i
+                    [using specialize subtraction.subZeroRight(i)]
+                  @the-first-row |
+                    tripleRow(p, q, r, i, ZERO, succ(i)) =
+                      mulF(coeff(p, ZERO), fieldpoly.convolution(q, r, sub(i, ZERO), i))
+                    [using specialize a-row-is-the-scaled-convolution(p, q, r, i, ZERO, i)]
+                  @the-cofactor-coefficient-at-i |
+                    coeff(mulP(q, r), i) = fieldpoly.convolution(q, r, i, i)
+                    [using specialize fieldpoly.mulPolyCoeff(q, r, i)]
+                  @the-right-convolution-at-zero |
+                    fieldpoly.convolution(p, mulP(q, r), i, ZERO) =
+                      mulF(coeff(p, ZERO), coeff(mulP(q, r), i))
+                    [using specialize fieldpoly.convolutionZero(p, mulP(q, r), i)]
+                  @dropping-the-leading-zero |
+                    addF(zeroF, mulF(coeff(p, ZERO),
+                      fieldpoly.convolution(q, r, i, i))) =
+                      mulF(coeff(p, ZERO), fieldpoly.convolution(q, r, i, i))
+                    [using specialize fieldpoly.addZeroLeftF(mulF(coeff(p, ZERO), fieldpoly.convolution(q, r, i, i)))]
+                  @the-base-equality |
+                    tripleRows(p, q, r, i, succ(ZERO), succ(i)) =
+                      fieldpoly.convolution(p, mulP(q, r), i, ZERO)
+                    [using simplify the-rows-at-one the-empty-rows the-bound-at-zero the-first-row i-minus-zero dropping-the-leading-zero the-right-convolution-at-zero the-cofactor-coefficient-at-i]
+                  @base-case |
+                    peano.less_than(ZERO, succ(i)) ->
+                      tripleRows(p, q, r, i, succ(ZERO), succ(i)) =
+                      fieldpoly.convolution(p, mulP(q, r), i, ZERO)
+                    [using tautology the-base-equality]
+                  // step
+                  @induction-step |
+                    fix k: Nat {
+                      @given-the-hypothesis |
+                        assume peano.less_than(k, succ(i)) ->
+                          tripleRows(p, q, r, i, succ(k), succ(i)) =
+                          fieldpoly.convolution(p, mulP(q, r), i, k) {
+                          @the-hypothesis |
+                            peano.less_than(k, succ(i)) ->
+                              tripleRows(p, q, r, i, succ(k), succ(i)) =
+                              fieldpoly.convolution(p, mulP(q, r), i, k)
+                            [by hypothesis given-the-hypothesis]
+                          @given-succ-k-at-most-i |
+                            assume peano.less_than(succ(k), succ(i)) {
+                              @succ-k-at-most-i |
+                                peano.less_than(succ(k), succ(i))
+                                [by hypothesis given-succ-k-at-most-i]
+                              @k-below-succ-k |
+                                peano.less_than(k, succ(k))
+                                [using specialize peano_order.lessThanSelf(k)]
+                              @k-at-most-i |
+                                peano.less_than(k, succ(i))
+                                [using specialize peano_order.lessThanTransitive(k, succ(k), succ(i)) k-below-succ-k succ-k-at-most-i]
+                              @the-hypothesis-applies |
+                                tripleRows(p, q, r, i, succ(k), succ(i)) =
+                                  fieldpoly.convolution(p, mulP(q, r), i, k)
+                                [using tautology the-hypothesis k-at-most-i]
+                              // the rows gain row succ(k), at bound sub(succ i, succ k)
+                              @the-rows-grow |
+                                tripleRows(p, q, r, i, succ(succ(k)), succ(i)) =
+                                  addF(tripleRows(p, q, r, i, succ(k), succ(i)),
+                                  tripleRow(p, q, r, i, succ(k),
+                                  sub(succ(i), succ(k))))
+                                [using specialize tripleRowsSucc(p, q, r, i, succ(k), succ(i))]
+                              // that bound is succ(sub(i, succ k)), since succ k <= i
+                              @the-bound-strips |
+                                sub(succ(i), succ(k)) = sub(i, k)
+                                [using specialize subtraction.subSuccSucc(i, k)]
+                              @the-successor-recovers-the-bound |
+                                succ(sub(i, succ(k))) = sub(i, k)
+                                [using specialize subtraction.succOfSubSucc(k, i) k-below-i]
+                              @the-new-bound |
+                                sub(i, k) = succ(sub(i, succ(k)))
+                                [by symmetry the-successor-recovers-the-bound]
+                              @k-below-i |
+                                peano.less_than(k, i)
+                                [using specialize peano_order.succReflectsOrder(k, i) succ-k-at-most-i]
+                              @the-row-bound |
+                                sub(succ(i), succ(k)) = succ(sub(i, succ(k)))
+                                [using chain the-bound-strips the-new-bound]
+                              // so the new row is p_{succ k} * coeff(qr, sub(i, succ k))
+                              @the-new-row |
+                                tripleRow(p, q, r, i, succ(k), succ(sub(i, succ(k)))) =
+                                  mulF(coeff(p, succ(k)),
+                                  fieldpoly.convolution(q, r, sub(i, succ(k)),
+                                  sub(i, succ(k))))
+                                [using specialize a-row-is-the-scaled-convolution(p, q, r, i, succ(k), sub(i, succ(k)))]
+                              @the-cofactor-coefficient |
+                                coeff(mulP(q, r), sub(i, succ(k))) =
+                                  fieldpoly.convolution(q, r, sub(i, succ(k)),
+                                  sub(i, succ(k)))
+                                [using specialize fieldpoly.mulPolyCoeff(q, r, sub(i, succ(k)))]
+                              // and the right convolution gains exactly that term
+                              @the-right-convolution-grows |
+                                fieldpoly.convolution(p, mulP(q, r), i, succ(k)) =
+                                  addF(fieldpoly.convolution(p, mulP(q, r), i, k),
+                                  mulF(coeff(p, succ(k)),
+                                  coeff(mulP(q, r), sub(i, succ(k)))))
+                                [using specialize fieldpoly.convolutionSucc(p, mulP(q, r), i, k)]
+                              @conclusion-at-succ-k |
+                                tripleRows(p, q, r, i, succ(succ(k)), succ(i)) =
+                                  fieldpoly.convolution(p, mulP(q, r), i, succ(k))
+                                [using simplify the-rows-grow the-hypothesis-applies the-row-bound the-new-row the-cofactor-coefficient the-right-convolution-grows]
+                            }
+                          @conclusion-guarded |
+                            peano.less_than(succ(k), succ(i)) ->
+                              tripleRows(p, q, r, i, succ(succ(k)), succ(i)) =
+                              fieldpoly.convolution(p, mulP(q, r), i, succ(k))
+                            [by discharge given-succ-k-at-most-i]
+                        }
+                      @induction-step-at-k |
+                        (peano.less_than(k, succ(i)) ->
+                          tripleRows(p, q, r, i, succ(k), succ(i)) =
+                          fieldpoly.convolution(p, mulP(q, r), i, k)) ->
+                          (peano.less_than(succ(k), succ(i)) ->
+                          tripleRows(p, q, r, i, succ(succ(k)), succ(i)) =
+                          fieldpoly.convolution(p, mulP(q, r), i, succ(k)))
+                        [by discharge given-the-hypothesis]
+                    }
+                  @induction-step-for-all-k |
+                    forall k: Nat;
+                      (peano.less_than(k, succ(i)) ->
+                      tripleRows(p, q, r, i, succ(k), succ(i)) =
+                      fieldpoly.convolution(p, mulP(q, r), i, k)) ->
+                      (peano.less_than(succ(k), succ(i)) ->
+                      tripleRows(p, q, r, i, succ(succ(k)), succ(i)) =
+                      fieldpoly.convolution(p, mulP(q, r), i, succ(k)))
+                    [by generalize induction-step]
+                  @conclusion-for-all-mm |
+                    forall mm: Nat;
+                      peano.less_than(mm, succ(i)) ->
+                      tripleRows(p, q, r, i, succ(mm), succ(i)) =
+                      fieldpoly.convolution(p, mulP(q, r), i, mm)
+                    [using instantiation peano.induction((fun mm: Nat => peano.less_than(mm, succ(i)) -> tripleRows(p, q, r, i, succ(mm), succ(i)) = fieldpoly.convolution(p, mulP(q, r), i, mm))) base-case induction-step-for-all-k]
+                }
+              @discharge-i |
+                forall i9: Nat; forall mm9: Nat;
+                  peano.less_than(mm9, succ(i9)) ->
+                  tripleRows(p, q, r, i9, succ(mm9), succ(i9)) =
+                  fieldpoly.convolution(p, mulP(q, r), i9, mm9)
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r9: Poly; forall i9: Nat; forall mm9: Nat;
+              peano.less_than(mm9, succ(i9)) ->
+              tripleRows(p, q, r9, i9, succ(mm9), succ(i9)) =
+              fieldpoly.convolution(p, mulP(q, r9), i9, mm9)
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q9, r9: Poly; forall i9: Nat; forall mm9: Nat;
+          peano.less_than(mm9, succ(i9)) ->
+          tripleRows(p, q9, r9, i9, succ(mm9), succ(i9)) =
+          fieldpoly.convolution(p, mulP(q9, r9), i9, mm9)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall i: Nat; forall mm: Nat;
+      peano.less_than(mm, succ(i)) ->
+      tripleRows(p, q, r, i, succ(mm), succ(i)) =
+      fieldpoly.convolution(p, mulP(q, r), i, mm)
+    [by generalize generalize-p]
+qed
+
+// -- THE COEFFICIENTS AGREE, and hence ASSOCIATIVITY --------------------------------------
+//
+// At bound succ(i) the exchange's two sides are, by Lemmas E and F, the two products'
+// coefficients at i. So they agree at every index, and polyExtensionality finishes.
+theorem theProductCoefficientsAgree: forall p, q, r: Poly; forall i: Nat;
+  coeff(mulP(mulP(p, q), r), i) = coeff(mulP(p, mulP(q, r)), i)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-i |
+                fix i: Nat {
+                  @i-is-at-most-i |
+                    peano.less_than(i, succ(i))
+                    [using specialize peano_order.lessThanSelf(i)]
+                  // the left product's coefficient IS the triangle
+                  @the-triangle-is-the-left-coefficient |
+                    forall p9, q9, r9: Poly; forall i9: Nat; forall n9: Nat;
+                      peano.less_than(n9, succ(i9)) ->
+                      tripleTri(p9, q9, r9, i9, succ(n9)) =
+                      fieldpoly.convolution(mulP(p9, q9), r9, i9, n9)
+                    [by cite theTriangleIsTheLeftCoefficient]
+                  @the-triangle-at-i |
+                    tripleTri(p, q, r, i, succ(i)) =
+                      fieldpoly.convolution(mulP(p, q), r, i, i)
+                    [using specialize the-triangle-is-the-left-coefficient(p, q, r, i, i) i-is-at-most-i]
+                  @the-left-coefficient |
+                    coeff(mulP(mulP(p, q), r), i) =
+                      fieldpoly.convolution(mulP(p, q), r, i, i)
+                    [using specialize fieldpoly.mulPolyCoeff(mulP(p, q), r, i)]
+                  // the right product's coefficient IS the shortened rows
+                  @the-rows-are-the-right-coefficient |
+                    forall p9, q9, r9: Poly; forall i9: Nat; forall mm9: Nat;
+                      peano.less_than(mm9, succ(i9)) ->
+                      tripleRows(p9, q9, r9, i9, succ(mm9), succ(i9)) =
+                      fieldpoly.convolution(p9, mulP(q9, r9), i9, mm9)
+                    [by cite theShortenedRowsAreTheRightCoefficient]
+                  @the-rows-at-i |
+                    tripleRows(p, q, r, i, succ(i), succ(i)) =
+                      fieldpoly.convolution(p, mulP(q, r), i, i)
+                    [using specialize the-rows-are-the-right-coefficient(p, q, r, i, i) i-is-at-most-i]
+                  @the-right-coefficient |
+                    coeff(mulP(p, mulP(q, r)), i) =
+                      fieldpoly.convolution(p, mulP(q, r), i, i)
+                    [using specialize fieldpoly.mulPolyCoeff(p, mulP(q, r), i)]
+                  // and THE EXCHANGE equates the triangle with the rows
+                  @the-exchange |
+                    forall p9, q9, r9: Poly; forall i9, n9: Nat;
+                      tripleTri(p9, q9, r9, i9, n9) = tripleRows(p9, q9, r9, i9, n9, n9)
+                    [by cite theTriangleIsTheShortenedRows]
+                  @the-exchange-at-succ-i |
+                    tripleTri(p, q, r, i, succ(i)) =
+                      tripleRows(p, q, r, i, succ(i), succ(i))
+                    [using specialize the-exchange(p, q, r, i, succ(i))]
+                  // chain the five
+                  @the-triangle-flipped |
+                    fieldpoly.convolution(mulP(p, q), r, i, i) =
+                      tripleTri(p, q, r, i, succ(i))
+                    [by symmetry the-triangle-at-i]
+                  @conclusion-the-coefficients-agree |
+                    coeff(mulP(mulP(p, q), r), i) = coeff(mulP(p, mulP(q, r)), i)
+                    [using chain the-left-coefficient the-triangle-flipped the-exchange-at-succ-i the-rows-at-i the-right-coefficient-flipped]
+                  @the-right-coefficient-flipped |
+                    fieldpoly.convolution(p, mulP(q, r), i, i) =
+                      coeff(mulP(p, mulP(q, r)), i)
+                    [by symmetry the-right-coefficient]
+                }
+              @discharge-i |
+                forall i9: Nat;
+                  coeff(mulP(mulP(p, q), r), i9) = coeff(mulP(p, mulP(q, r)), i9)
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r9: Poly; forall i9: Nat;
+              coeff(mulP(mulP(p, q), r9), i9) = coeff(mulP(p, mulP(q, r9)), i9)
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q9, r9: Poly; forall i9: Nat;
+          coeff(mulP(mulP(p, q9), r9), i9) = coeff(mulP(p, mulP(q9, r9)), i9)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall i: Nat;
+      coeff(mulP(mulP(p, q), r), i) = coeff(mulP(p, mulP(q, r)), i)
+    [by generalize generalize-p]
+qed
+
+// JUDSON'S §17.1 EXERCISE: F[x] is associative under multiplication.
+theorem polyMulIsAssociative: forall p, q, r: Poly;
+  mulP(mulP(p, q), r) = mulP(p, mulP(q, r))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @the-coefficients-agree |
+                forall p9, q9, r9: Poly; forall i9: Nat;
+                  coeff(mulP(mulP(p9, q9), r9), i9) = coeff(mulP(p9, mulP(q9, r9)), i9)
+                [by cite theProductCoefficientsAgree]
+              @the-coefficients-agree-here |
+                forall i: Nat;
+                  coeff(mulP(mulP(p, q), r), i) = coeff(mulP(p, mulP(q, r)), i)
+                [using specialize the-coefficients-agree(p, q, r)]
+              @conclusion-associativity |
+                mulP(mulP(p, q), r) = mulP(p, mulP(q, r))
+                [using specialize fieldpoly.polyExtensionality(mulP(mulP(p, q), r), mulP(p, mulP(q, r))) the-coefficients-agree-here]
+            }
+          @discharge-r |
+            forall r9: Poly; mulP(mulP(p, q), r9) = mulP(p, mulP(q, r9))
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q9, r9: Poly; mulP(mulP(p, q9), r9) = mulP(p, mulP(q9, r9))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; mulP(mulP(p, q), r) = mulP(p, mulP(q, r))
+    [by generalize generalize-p]
+qed

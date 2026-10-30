@@ -843,3 +843,90 @@ proof
     forall b, a: Nat; less_than(b, succ(a)) -> sub(succ(a), b) = succ(sub(a, b))
     [using instantiation peano.induction((fun b: Nat => forall a: Nat; less_than(b, succ(a)) -> sub(succ(a), b) = succ(sub(a, b)))) base-case induction-step-for-all-k]
 qed
+
+// Subtracting the same amount from both sides of a difference: for x <= m <= i,
+// (i - x) - (m - x) = i - m. Both differences recover their minuends by addSubCancel,
+// then the common addend x cancels by subAddSameRight.
+theorem aCommonAmountCancelsUnderNestedSubtraction: forall i, m, x: Nat;
+  less_than(x, succ(m)) -> less_than(m, succ(i)) ->
+  sub(sub(i, x), sub(m, x)) = sub(i, m)
+proof
+  @generalize-i |
+    fix i: Nat {
+      @generalize-m |
+        fix m: Nat {
+          @generalize-x |
+            fix x: Nat {
+              @given-x-at-most-m |
+                assume less_than(x, succ(m)) {
+                  @x-at-most-m |
+                    less_than(x, succ(m))
+                    [by hypothesis given-x-at-most-m]
+                  @given-m-at-most-i |
+                    assume less_than(m, succ(i)) {
+                      @m-at-most-i |
+                        less_than(m, succ(i))
+                        [by hypothesis given-m-at-most-i]
+                      // x <= m and m <= i, so x <= i, by less_or_equal transitivity
+                      @x-is-at-most-m |
+                        ordering.less_or_equal(x, m)
+                        [using specialize ordering.lessThanSuccToLessOrEqual(x, m) x-at-most-m]
+                      @m-is-at-most-i |
+                        ordering.less_or_equal(m, i)
+                        [using specialize ordering.lessThanSuccToLessOrEqual(m, i) m-at-most-i]
+                      @x-is-at-most-i |
+                        ordering.less_or_equal(x, i)
+                        [using specialize ordering.lessOrEqualTransitive(x, m, i) x-is-at-most-m m-is-at-most-i]
+                      @x-at-most-i |
+                        less_than(x, succ(i))
+                        [using specialize ordering.lessOrEqualToLessThanSucc(x, i) x-is-at-most-i]
+                      // each difference recovers its minuend
+                      @i-recovers |
+                        add(sub(i, x), x) = i
+                        [using specialize addSubCancel(x, i) x-at-most-i]
+                      @m-recovers |
+                        add(sub(m, x), x) = m
+                        [using specialize addSubCancel(x, m) x-at-most-m]
+                      // cancel the common addend
+                      @the-common-addend-cancels |
+                        sub(add(sub(i, x), x), add(sub(m, x), x)) =
+                          sub(sub(i, x), sub(m, x))
+                        [using specialize subAddSameRight(sub(i, x), x, sub(m, x))]
+                      // rewrite the recovered minuends into the cancellation
+                      @the-cancellation-at-i |
+                        sub(i, add(sub(m, x), x)) = sub(sub(i, x), sub(m, x))
+                        [by rewrite i-recovers the-common-addend-cancels]
+                      @conclusion-the-amounts-cancel |
+                        sub(sub(i, x), sub(m, x)) = sub(i, m)
+                        [by rewrite m-recovers the-cancellation-at-i-flipped]
+                      @the-cancellation-at-i-flipped |
+                        sub(sub(i, x), sub(m, x)) = sub(i, add(sub(m, x), x))
+                        [by symmetry the-cancellation-at-i]
+                    }
+                  @m-at-most-implies |
+                    less_than(m, succ(i)) -> sub(sub(i, x), sub(m, x)) = sub(i, m)
+                    [by discharge given-m-at-most-i]
+                }
+              @x-at-most-implies |
+                less_than(x, succ(m)) -> less_than(m, succ(i)) ->
+                  sub(sub(i, x), sub(m, x)) = sub(i, m)
+                [by discharge given-x-at-most-m]
+            }
+          @discharge-x |
+            forall x9: Nat;
+              less_than(x9, succ(m)) -> less_than(m, succ(i)) ->
+                sub(sub(i, x9), sub(m, x9)) = sub(i, m)
+            [by generalize generalize-x]
+        }
+      @discharge-m |
+        forall m9, x9: Nat;
+          less_than(x9, succ(m9)) -> less_than(m9, succ(i)) ->
+            sub(sub(i, x9), sub(m9, x9)) = sub(i, m9)
+        [by generalize generalize-m]
+    }
+  @conclusion |
+    forall i, m, x: Nat;
+      less_than(x, succ(m)) -> less_than(m, succ(i)) ->
+        sub(sub(i, x), sub(m, x)) = sub(i, m)
+    [by generalize generalize-i]
+qed

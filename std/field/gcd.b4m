@@ -1,6 +1,18 @@
-// Proposition 17.10: a gcd is a linear combination, and is unique.
+// std/field/gcd.b4m — GREATEST COMMON DIVISORS IN F[x].
+//
+// Judson's Proposition 17.10: a gcd is a linear combination of its arguments, and is
+// unique. His first paragraph takes `d` to be the monic polynomial of SMALLEST DEGREE in
+// the set of all combinations, which needs a least element of a set of polynomials -- the
+// comprehension limit §16.4 also meets. So minimality is a HYPOTHESIS here rather than a
+// construction, the idiom §17.3's principal-ideal theorem uses: given a combination that
+// divides both arguments, it IS a gcd; and any two gcds divide each other.
+//
+// His second paragraph's algebra d = rp + sq = rud' + svd' = d'[ru + sv] needs F[x]
+// multiplicative associativity, which is his §17.1 exercise and is proved in
+// std/field/polynomial-associativity.b4m.
 import fieldpoly <<< "std/field/polynomial.b4m"
 import peano <<< "std/peano.b4m"
+import polyassoc <<< "std/field/polynomial-associativity.b4m"
 
 sort Poly = fieldpoly.Poly
 const ZERO = peano.ZERO
@@ -21,14 +33,14 @@ define ONEP = fieldpoly.monomial(oneF, ZERO)
 pred isAGcd(d: Poly, p: Poly, q: Poly)
 axiom gcdMeansGreatestCommonDivisor: forall d, p, q: Poly;
   isAGcd(d, p, q) iff
-    (dividesP(d, p) and dividesP(d, q) and
-     (forall e: Poly; dividesP(e, p) -> dividesP(e, q) -> dividesP(e, d)))
+  (dividesP(d, p) and dividesP(d, q) and
+  (forall e: Poly; dividesP(e, p) -> dividesP(e, q) -> dividesP(e, d)))
 
 // `f` is a linear combination of p and q
 pred isACombination(f: Poly, p: Poly, q: Poly)
 axiom combinationMeansRPPlusSQ: forall f, p, q: Poly;
   isACombination(f, p, q) iff
-    (exists r: Poly; exists s: Poly; f = addP(mulP(r, p), mulP(s, q)))
+  (exists r: Poly; exists s: Poly; f = addP(mulP(r, p), mulP(s, q)))
 
 // -- his second paragraph: a common divisor divides any combination ------------------------
 //
@@ -80,7 +92,7 @@ proof
                               @combination-unfolds |
                                 isACombination(f, p, q) iff
                                   (exists r: Poly; exists s: Poly;
-                                    f = addP(mulP(r, p), mulP(s, q)))
+                                  f = addP(mulP(r, p), mulP(s, q)))
                                 [using specialize combinationMeansRPPlusSQ(f, p, q)]
                               @the-coefficients-exist |
                                 exists r: Poly; exists s: Poly;
@@ -110,12 +122,12 @@ proof
                                               // substitute p = u e and q = v e
                                               @f-in-terms-of-e |
                                                 f = addP(mulP(r, mulP(u, e)),
-                                                         mulP(s, mulP(v, e)))
+                                                  mulP(s, mulP(v, e)))
                                                 [using simplify f-is-the-combination p-is-u-times-e q-is-v-times-e]
                                               // and factor e out: r(ue) + s(ve) = (ru + sv)e
                                               @factoring-e-out |
                                                 addP(mulP(r, mulP(u, e)),
-                                                     mulP(s, mulP(v, e))) =
+                                                  mulP(s, mulP(v, e))) =
                                                   mulP(addP(mulP(r, u), mulP(s, v)), e)
                                                 [using specialize theCombinationFactors(r, s, u, v, e)]
                                               @f-is-a-multiple-of-e |
@@ -164,19 +176,19 @@ proof
               @discharge-f |
                 forall f9: Poly;
                   dividesP(e, p) -> dividesP(e, q) -> isACombination(f9, p, q) ->
-                    dividesP(e, f9)
+                  dividesP(e, f9)
                 [by generalize generalize-f]
             }
           @discharge-q |
             forall q9, f9: Poly;
               dividesP(e, p) -> dividesP(e, q9) -> isACombination(f9, p, q9) ->
-                dividesP(e, f9)
+              dividesP(e, f9)
             [by generalize generalize-q]
         }
       @discharge-p |
         forall p9, q9, f9: Poly;
           dividesP(e, p9) -> dividesP(e, q9) -> isACombination(f9, p9, q9) ->
-            dividesP(e, f9)
+          dividesP(e, f9)
         [by generalize generalize-p]
     }
   @conclusion |
@@ -231,17 +243,10 @@ proof
     [by generalize generalize-a]
 qed
 
-// THE ONE DEPENDENCY: r(ue) + s(ve) = (ru + sv)e needs mulP to be ASSOCIATIVE, which
-// std/field/polynomial.b4m does not have -- it is Judson's own §17.1 exercise, whose proof
-// reindexes a double sum into a sum over triples j+k+l=i.
-//
-// std/nested-sum.b4m has that exchange, but it CANNOT be instantiated here: its `term` is
-// a 2-argument func, while the family needed is p_j * q_k * r_{(i-j)-k}, which carries four
-// more parameters. Mapping the derived sums at the wider arity fails with
-// `'triUpTo' expects 5 argument(s), got 1` -- a model substitutes NAMES, not partially
-// applied terms, so a parameterized family cannot be a model target.
-hole polyMulIsAssociative: forall a, b, c: Poly;
-  mulP(mulP(a, b), c) = mulP(a, mulP(b, c))
+// r(ue) + s(ve) = (ru + sv)e needs mulP to be ASSOCIATIVE -- Judson's own §17.1 exercise,
+// now proved in std/field/polynomial-associativity.b4m by re-proving the double-sum
+// exchange at the concrete coefficient family.
+fact polyMulIsAssociative = polyassoc.polyMulIsAssociative
 
 theorem theCombinationFactors: forall r, s, u, v, e: Poly;
   addP(mulP(r, mulP(u, e)), mulP(s, mulP(v, e))) = mulP(addP(mulP(r, u), mulP(s, v)), e)
@@ -279,31 +284,31 @@ proof
                   @discharge-e |
                     forall e9: Poly;
                       addP(mulP(r, mulP(u, e9)), mulP(s, mulP(v, e9))) =
-                        mulP(addP(mulP(r, u), mulP(s, v)), e9)
+                      mulP(addP(mulP(r, u), mulP(s, v)), e9)
                     [by generalize generalize-e]
                 }
               @discharge-v |
                 forall v9, e9: Poly;
                   addP(mulP(r, mulP(u, e9)), mulP(s, mulP(v9, e9))) =
-                    mulP(addP(mulP(r, u), mulP(s, v9)), e9)
+                  mulP(addP(mulP(r, u), mulP(s, v9)), e9)
                 [by generalize generalize-v]
             }
           @discharge-u |
             forall u9, v9, e9: Poly;
               addP(mulP(r, mulP(u9, e9)), mulP(s, mulP(v9, e9))) =
-                mulP(addP(mulP(r, u9), mulP(s, v9)), e9)
+              mulP(addP(mulP(r, u9), mulP(s, v9)), e9)
             [by generalize generalize-u]
         }
       @discharge-s |
         forall s9, u9, v9, e9: Poly;
           addP(mulP(r, mulP(u9, e9)), mulP(s9, mulP(v9, e9))) =
-            mulP(addP(mulP(r, u9), mulP(s9, v9)), e9)
+          mulP(addP(mulP(r, u9), mulP(s9, v9)), e9)
         [by generalize generalize-s]
     }
   @conclusion |
     forall r, s, u, v, e: Poly;
       addP(mulP(r, mulP(u, e)), mulP(s, mulP(v, e))) =
-        mulP(addP(mulP(r, u), mulP(s, v)), e)
+      mulP(addP(mulP(r, u), mulP(s, v)), e)
     [by generalize generalize-r]
 qed
 
@@ -371,13 +376,13 @@ proof
                           @the-three-conjuncts |
                             dividesP(d, p) and dividesP(d, q) and
                               (forall e: Poly;
-                                dividesP(e, p) -> dividesP(e, q) -> dividesP(e, d))
+                              dividesP(e, p) -> dividesP(e, q) -> dividesP(e, d))
                             [by both the-two-divisibilities every-common-divisor-divides-d]
                           @gcd-unfolds |
                             isAGcd(d, p, q) iff
                               (dividesP(d, p) and dividesP(d, q) and
-                               (forall e: Poly;
-                                 dividesP(e, p) -> dividesP(e, q) -> dividesP(e, d)))
+                              (forall e: Poly;
+                              dividesP(e, p) -> dividesP(e, q) -> dividesP(e, d)))
                             [using specialize gcdMeansGreatestCommonDivisor(d, p, q)]
                           @conclusion-d-is-a-gcd |
                             isAGcd(d, p, q)
@@ -399,13 +404,13 @@ proof
           @discharge-q |
             forall q9: Poly;
               dividesP(d, p) -> dividesP(d, q9) -> isACombination(d, p, q9) ->
-                isAGcd(d, p, q9)
+              isAGcd(d, p, q9)
             [by generalize generalize-q]
         }
       @discharge-p |
         forall p9, q9: Poly;
           dividesP(d, p9) -> dividesP(d, q9) -> isACombination(d, p9, q9) ->
-            isAGcd(d, p9, q9)
+          isAGcd(d, p9, q9)
         [by generalize generalize-p]
     }
   @conclusion |
@@ -443,24 +448,24 @@ proof
                           @d-gcd-unfolds |
                             isAGcd(d, p, q) iff
                               (dividesP(d, p) and dividesP(d, q) and
-                               (forall e2: Poly;
-                                 dividesP(e2, p) -> dividesP(e2, q) -> dividesP(e2, d)))
+                              (forall e2: Poly;
+                              dividesP(e2, p) -> dividesP(e2, q) -> dividesP(e2, d)))
                             [using specialize gcdMeansGreatestCommonDivisor(d, p, q)]
                           @e-gcd-unfolds |
                             isAGcd(e, p, q) iff
                               (dividesP(e, p) and dividesP(e, q) and
-                               (forall e2: Poly;
-                                 dividesP(e2, p) -> dividesP(e2, q) -> dividesP(e2, e)))
+                              (forall e2: Poly;
+                              dividesP(e2, p) -> dividesP(e2, q) -> dividesP(e2, e)))
                             [using specialize gcdMeansGreatestCommonDivisor(e, p, q)]
                           @d-facts |
                             dividesP(d, p) and dividesP(d, q) and
                               (forall e2: Poly;
-                                dividesP(e2, p) -> dividesP(e2, q) -> dividesP(e2, d))
+                              dividesP(e2, p) -> dividesP(e2, q) -> dividesP(e2, d))
                             [using tautology d-gcd-unfolds d-is-a-gcd]
                           @e-facts |
                             dividesP(e, p) and dividesP(e, q) and
                               (forall e2: Poly;
-                                dividesP(e2, p) -> dividesP(e2, q) -> dividesP(e2, e))
+                              dividesP(e2, p) -> dividesP(e2, q) -> dividesP(e2, e))
                             [using tautology e-gcd-unfolds e-is-a-gcd]
                           @d-is-a-common-divisor |
                             dividesP(d, p) and dividesP(d, q)
@@ -511,19 +516,19 @@ proof
               @discharge-q |
                 forall q9: Poly;
                   isAGcd(d, p, q9) -> isAGcd(e, p, q9) ->
-                    (dividesP(d, e) and dividesP(e, d))
+                  (dividesP(d, e) and dividesP(e, d))
                 [by generalize generalize-q]
             }
           @discharge-p |
             forall p9, q9: Poly;
               isAGcd(d, p9, q9) -> isAGcd(e, p9, q9) ->
-                (dividesP(d, e) and dividesP(e, d))
+              (dividesP(d, e) and dividesP(e, d))
             [by generalize generalize-p]
         }
       @discharge-e |
         forall e9, p9, q9: Poly;
           isAGcd(d, p9, q9) -> isAGcd(e9, p9, q9) ->
-            (dividesP(d, e9) and dividesP(e9, d))
+          (dividesP(d, e9) and dividesP(e9, d))
         [by generalize generalize-e]
     }
   @conclusion |
