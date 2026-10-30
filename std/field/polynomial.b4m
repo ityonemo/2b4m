@@ -1920,6 +1920,198 @@ proof
     [by generalize generalize-f]
 qed
 
+// -- EXISTENCE: the two easy arms, as named facts ------------------------------------------
+//
+// The induction's step splits three ways. Two arms need no recursion at all, and isolating
+// them here keeps the induction itself readable. Both produce the existential the induction
+// carries, so their statements are the induction's own conclusion shape.
+
+// ARM 1 — `f` is already small enough: quotient zero, remainder `f`. This covers both
+// Judson's `m > n` case and the degenerate `f = 0`.
+theorem aSmallPolynomialDividesTrivially: forall f, g: Poly;
+  (f = ZEROP or less_than(degree(f), degree(g))) ->
+  exists quotient: Poly; exists remainder: Poly;
+  f = addP(mulP(g, quotient), remainder) and
+  (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+proof
+  @generalize-f |
+    fix f: Poly {
+      @generalize-g |
+        fix g: Poly {
+          @given-f-is-small |
+            assume f = ZEROP or less_than(degree(f), degree(g)) {
+              @f-is-small |
+                f = ZEROP or less_than(degree(f), degree(g))
+                [by hypothesis given-f-is-small]
+              @the-trivial-division |
+                f = addP(mulP(g, ZEROP), f)
+                [using specialize theTrivialDivision(f, g)]
+              @the-division-with-its-remainder-condition |
+                f = addP(mulP(g, ZEROP), f) and
+                  (f = ZEROP or less_than(degree(f), degree(g)))
+                [by both the-trivial-division f-is-small]
+              @the-remainder-witness |
+                exists remainder: Poly;
+                  f = addP(mulP(g, ZEROP), remainder) and
+                  (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+                [by witness(f) the-division-with-its-remainder-condition]
+              @conclusion-the-trivial-witnesses |
+                exists quotient: Poly; exists remainder: Poly;
+                  f = addP(mulP(g, quotient), remainder) and
+                  (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+                [by witness(ZEROP) the-remainder-witness]
+            }
+          @small-implies-a-division |
+            (f = ZEROP or less_than(degree(f), degree(g))) ->
+              exists quotient: Poly; exists remainder: Poly;
+              f = addP(mulP(g, quotient), remainder) and
+              (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+            [by discharge given-f-is-small]
+        }
+      @discharge-g |
+        forall g: Poly;
+          (f = ZEROP or less_than(degree(f), degree(g))) ->
+          exists quotient: Poly; exists remainder: Poly;
+          f = addP(mulP(g, quotient), remainder) and
+          (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+        [by generalize generalize-g]
+    }
+  @conclusion |
+    forall f, g: Poly;
+      (f = ZEROP or less_than(degree(f), degree(g))) ->
+      exists quotient: Poly; exists remainder: Poly;
+      f = addP(mulP(g, quotient), remainder) and
+      (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+    [by generalize generalize-f]
+qed
+
+// ARM 2 — the recursive case, with the recursion's result taken as a hypothesis. Given that
+// the REDUCED polynomial `f - mono·g` divides, the ORIGINAL divides, with the quotient
+// extended by `mono`. This is `theQuotientExtendsByOneTerm` lifted through the existential,
+// which is the shape the induction needs: the remainder is carried through unchanged, so its
+// degree condition comes along for free.
+theorem extendingADivisionOfTheReduction: forall f, g, mono: Poly;
+  (exists quotient: Poly; exists remainder: Poly;
+  subP(f, mulP(mono, g)) = addP(mulP(g, quotient), remainder) and
+  (remainder = ZEROP or less_than(degree(remainder), degree(g)))) ->
+  exists quotient: Poly; exists remainder: Poly;
+  f = addP(mulP(g, quotient), remainder) and
+  (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+proof
+  @generalize-f |
+    fix f: Poly {
+      @generalize-g |
+        fix g: Poly {
+          @generalize-mono |
+            fix mono: Poly {
+              @given-the-reduction-divides |
+                assume exists quotient: Poly; exists remainder: Poly;
+                  subP(f, mulP(mono, g)) = addP(mulP(g, quotient), remainder) and
+                  (remainder = ZEROP or less_than(degree(remainder), degree(g))) {
+                  @the-reduction-divides |
+                    exists quotient: Poly; exists remainder: Poly;
+                      subP(f, mulP(mono, g)) = addP(mulP(g, quotient), remainder) and
+                      (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+                    [by hypothesis given-the-reduction-divides]
+                  @with-the-reduced-quotient |
+                    unpack reduced_quotient: Poly from the-reduction-divides {
+                      @the-reduced-remainder-exists |
+                        exists remainder: Poly;
+                          subP(f, mulP(mono, g)) =
+                          addP(mulP(g, reduced_quotient), remainder) and
+                          (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+                        [by hypothesis with-the-reduced-quotient]
+                      @with-the-reduced-remainder |
+                        unpack reduced_remainder: Poly from the-reduced-remainder-exists {
+                          @the-reduced-division-and-its-condition |
+                            subP(f, mulP(mono, g)) =
+                              addP(mulP(g, reduced_quotient), reduced_remainder) and
+                              (reduced_remainder = ZEROP or
+                              less_than(degree(reduced_remainder), degree(g)))
+                            [by hypothesis with-the-reduced-remainder]
+                          @the-reduced-division |
+                            subP(f, mulP(mono, g)) =
+                              addP(mulP(g, reduced_quotient), reduced_remainder)
+                            [by and_lhs the-reduced-division-and-its-condition]
+                          @the-remainder-condition |
+                            reduced_remainder = ZEROP or
+                              less_than(degree(reduced_remainder), degree(g))
+                            [by and_rhs the-reduced-division-and-its-condition]
+
+                          // extend the quotient by one term
+                          @the-extended-division |
+                            f = addP(mulP(g, addP(reduced_quotient, mono)), reduced_remainder)
+                            [using specialize theQuotientExtendsByOneTerm(f, g, mono, reduced_quotient, reduced_remainder) the-reduced-division]
+                          @the-extended-division-and-its-condition |
+                            f = addP(mulP(g, addP(reduced_quotient, mono)), reduced_remainder)
+                              and (reduced_remainder = ZEROP or
+                              less_than(degree(reduced_remainder), degree(g)))
+                            [by both the-extended-division the-remainder-condition]
+                          @the-extended-remainder-witness |
+                            exists remainder: Poly;
+                              f = addP(mulP(g, addP(reduced_quotient, mono)), remainder) and
+                              (remainder = ZEROP or
+                              less_than(degree(remainder), degree(g)))
+                            [by witness(reduced_remainder) the-extended-division-and-its-condition]
+                          @conclusion-the-extended-witnesses |
+                            exists quotient: Poly; exists remainder: Poly;
+                              f = addP(mulP(g, quotient), remainder) and
+                              (remainder = ZEROP or
+                              less_than(degree(remainder), degree(g)))
+                            [by witness(addP(reduced_quotient, mono)) the-extended-remainder-witness]
+                        }
+                      @the-division-from-the-remainder |
+                        exists quotient: Poly; exists remainder: Poly;
+                          f = addP(mulP(g, quotient), remainder) and
+                          (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+                        [by unpacked with-the-reduced-remainder]
+                    }
+                  @the-division-from-the-quotient |
+                    exists quotient: Poly; exists remainder: Poly;
+                      f = addP(mulP(g, quotient), remainder) and
+                      (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+                    [by unpacked with-the-reduced-quotient]
+                }
+              @the-reduction-dividing-implies-the-original |
+                (exists quotient: Poly; exists remainder: Poly;
+                  subP(f, mulP(mono, g)) = addP(mulP(g, quotient), remainder) and
+                  (remainder = ZEROP or less_than(degree(remainder), degree(g)))) ->
+                  exists quotient: Poly; exists remainder: Poly;
+                  f = addP(mulP(g, quotient), remainder) and
+                  (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+                [by discharge given-the-reduction-divides]
+            }
+          @discharge-mono |
+            forall mono: Poly;
+              (exists quotient: Poly; exists remainder: Poly;
+              subP(f, mulP(mono, g)) = addP(mulP(g, quotient), remainder) and
+              (remainder = ZEROP or less_than(degree(remainder), degree(g)))) ->
+              exists quotient: Poly; exists remainder: Poly;
+              f = addP(mulP(g, quotient), remainder) and
+              (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+            [by generalize generalize-mono]
+        }
+      @discharge-g |
+        forall g, mono: Poly;
+          (exists quotient: Poly; exists remainder: Poly;
+          subP(f, mulP(mono, g)) = addP(mulP(g, quotient), remainder) and
+          (remainder = ZEROP or less_than(degree(remainder), degree(g)))) ->
+          exists quotient: Poly; exists remainder: Poly;
+          f = addP(mulP(g, quotient), remainder) and
+          (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+        [by generalize generalize-g]
+    }
+  @conclusion |
+    forall f, g, mono: Poly;
+      (exists quotient: Poly; exists remainder: Poly;
+      subP(f, mulP(mono, g)) = addP(mulP(g, quotient), remainder) and
+      (remainder = ZEROP or less_than(degree(remainder), degree(g)))) ->
+      exists quotient: Poly; exists remainder: Poly;
+      f = addP(mulP(g, quotient), remainder) and
+      (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+    [by generalize generalize-f]
+qed
+
 // == JUDSON'S DIVISION ALGORITHM (§17.2) ==================================================
 //
 // "Let f(x) and g(x) be polynomials in F[x], where F is a field and g(x) is a nonzero
