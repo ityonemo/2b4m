@@ -22,6 +22,27 @@ Naming/label conventions are a SEPARATE doc — see `agents/style-guide.md`.
 
 ## Checking workflow (ITERATE FAST, CONFIRM STRICT)
 
+**FIRST: know what a check should COST.** On a release build, with a warm cache:
+
+| command | expect |
+|---|---|
+| `check <one std file>` | well under a second |
+| `check aata/<one file>` | ~5 s |
+| `check std --library` | ~6 s for 126 files |
+
+**If a check takes MINUTES, suspect a Debug binary before you believe the corpus is slow.**
+Debug is ~35x slower; `2b4m --help` prints which build you have, and plain `zig build` gives
+you ReleaseFast. This is not hypothetical — a whole session was once restructured around
+"the gates are slow" (moving them to background tasks, adding a commit hook to batch them)
+when the real cause was a Debug binary, and every premise of that restructuring was wrong.
+
+**SECOND: check the file you changed, not the corpus.** This is about LOAD, not latency: a
+full-corpus sweep re-verifies 126 unchanged files, which on a laptop is heat and battery
+spent for no information, however fast it is. The per-file check is the working loop. The
+whole-directory sweep belongs at the commit, which is what the pre-commit hook is for — and
+the hook filters by path so an unrelated commit does not pay for it either.
+
+
 While writing/fixing a proof, run **`2b4m check --fast <file>`** every iteration —
 it trusts accelerated verdicts and skips kernel-certificate generation, so it's
 much faster feedback for the write-check-fix loop. It gives you the same

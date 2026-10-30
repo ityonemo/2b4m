@@ -76,6 +76,12 @@ zig build
 ./zig-out/bin/2b4m check examples/peano.b4m
 ```
 
+`zig build` defaults to **ReleaseFast**. That default matters: a Debug build of the checker is
+roughly 35x slower, enough that the corpus looks inherently slow rather than
+badly built. `zig build -Doptimize=Debug` is the opt-in when you want the
+leak-detecting allocator or the runtime safety checks. `2b4m --help` prints which build you
+are running.
+
 ```
 OK: 18 declarations, 6 theorems proven (1 accelerated: arithmetic)
 ```
