@@ -2767,6 +2767,98 @@ proof
     [by generalize generalize-f]
 qed
 
+// A bounded nonzero polynomial has its DEGREE within that bound. `degreeAtMost` is a
+// statement about coefficients; this converts it to an order fact, which is what the
+// induction needs to know the recursion's target index is smaller.
+//
+// If the degree exceeded the bound, the bound would force that coefficient to vanish — but it
+// is the LEADING coefficient, which does not.
+theorem aBoundedPolynomialHasABoundedDegree: forall f: Poly; forall n: Nat;
+  (not (f = ZEROP)) -> degreeAtMost(f, n) -> peano_order.less_or_equal(degree(f), n)
+proof
+  @generalize-f |
+    fix pp: Poly {
+      @generalize-n |
+        fix nn: Nat {
+          @given-nonzero |
+            assume not (pp = ZEROP) {
+              @given-bounded |
+                assume degreeAtMost(pp, nn) {
+                  @nonzero |
+                    not (pp = ZEROP)
+                    [by hypothesis given-nonzero]
+                  @bounded |
+                    degreeAtMost(pp, nn)
+                    [by hypothesis given-bounded]
+                  @what-bounding-means |
+                    degreeAtMost(pp, nn) iff
+                      (forall i: Nat; less_than(nn, i) -> coeff(pp, i) = zeroF)
+                    [using specialize degreeAtMostMeaning(pp, nn)]
+                  @vanishes-above |
+                    forall i: Nat; less_than(nn, i) -> coeff(pp, i) = zeroF
+                    [using tautology bounded what-bounding-means]
+                  @the-leading-coefficient |
+                    not (coeff(pp, degree(pp)) = zeroF)
+                    [using specialize degreeIsALeadingIndex(pp) nonzero]
+                  @the-degree-would-vanish |
+                    less_than(nn, degree(pp)) -> coeff(pp, degree(pp)) = zeroF
+                    [using specialize vanishes-above(degree(pp))]
+                  @not-above |
+                    not less_than(nn, degree(pp))
+                    [using tautology the-degree-would-vanish the-leading-coefficient]
+                  @the-degrees-compare |
+                    less_than(degree(pp), nn) or degree(pp) = nn or less_than(nn, degree(pp))
+                    [using specialize peano_order.trichotomy(degree(pp), nn)]
+                  @below-or-equal |
+                    less_than(degree(pp), nn) or degree(pp) = nn
+                    [using tautology the-degrees-compare not-above]
+                  @when-below |
+                    assume less_than(degree(pp), nn) {
+                      @below |
+                        less_than(degree(pp), nn)
+                        [by hypothesis when-below]
+                      @bounded-when-below |
+                        peano_order.less_or_equal(degree(pp), nn)
+                        [using specialize peano_order.lessThanToLessOrEqual(degree(pp), nn) below]
+                    }
+                  @when-equal |
+                    assume degree(pp) = nn {
+                      @equal |
+                        degree(pp) = nn
+                        [by hypothesis when-equal]
+                      @reflexive |
+                        peano_order.less_or_equal(degree(pp), degree(pp))
+                        [using specialize peano_order.lessOrEqualRefl(degree(pp))]
+                      @bounded-when-equal |
+                        peano_order.less_or_equal(degree(pp), nn)
+                        [by rewrite equal reflexive]
+                    }
+                  @conclusion-bounded-degree |
+                    peano_order.less_or_equal(degree(pp), nn)
+                    [by common_conclusion below-or-equal when-below when-equal]
+                }
+              @bounded-implies-bound |
+                degreeAtMost(pp, nn) -> peano_order.less_or_equal(degree(pp), nn)
+                [by discharge given-bounded]
+            }
+          @nonzero-implies-bound |
+            (not (pp = ZEROP)) -> degreeAtMost(pp, nn) ->
+              peano_order.less_or_equal(degree(pp), nn)
+            [by discharge given-nonzero]
+        }
+      @discharge-n |
+        forall n: Nat;
+          (not (pp = ZEROP)) -> degreeAtMost(pp, n) ->
+          peano_order.less_or_equal(degree(pp), n)
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall f: Poly; forall n: Nat;
+      (not (f = ZEROP)) -> degreeAtMost(f, n) ->
+      peano_order.less_or_equal(degree(f), n)
+    [by generalize generalize-f]
+qed
+
 // == JUDSON'S DIVISION ALGORITHM (§17.2) ==================================================
 //
 // "Let f(x) and g(x) be polynomials in F[x], where F is a field and g(x) is a nonzero
