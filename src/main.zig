@@ -427,6 +427,18 @@ pub fn main(init: std.process.Init) !u8 {
             \\axioms/theorems/schemas it cites (its dependency audit).
             \\
         );
+        // WHICH BINARY IS THIS? A Debug build is ~35x slower than ReleaseFast, and every
+        // other output surface is pinned byte-exactly by the test gates, so this is the one
+        // place the mode can be disclosed. Printed in EVERY mode, not just Debug: the
+        // question "which build am I running" needs an answer, not a silence that has to be
+        // interpreted. `zig build` defaults to ReleaseFast; `-Doptimize=Debug` is the opt-in.
+        try out.print("\nbuilt: {s}{s}\n", .{
+            @tagName(@import("builtin").mode),
+            if (@import("builtin").mode == .Debug)
+                " — ~35x slower than ReleaseFast; rebuild with plain `zig build`"
+            else
+                "",
+        });
         try out.flush();
         return 0;
     }
