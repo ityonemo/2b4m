@@ -2492,6 +2492,281 @@ proof
     [by generalize generalize-f]
 qed
 
+// ARM 4 — THE CONSTANT CASE, which the other three miss.
+//
+// When `f` and `g` are both nonzero CONSTANTS (degree ZERO), `f` is not "small" (its degree
+// is not below `g`'s, they are equal) and the construction arm cannot apply either, since
+// its degree hypothesis is `succ`-shaped and `0 + 0` is not a successor. Judson does not
+// remark on it: in his induction this is the `n = 0` base, handled by the same long division.
+//
+// The division is exact: `f = g·(a_0/b_0)` with remainder zero. The difference vanishes AT
+// index 0 by the cancellation, and ABOVE index 0 because both sides are bounded by 0, so by
+// extensionality the difference IS the zero polynomial.
+theorem aConstantDividesAConstantExactly: forall f, g: Poly;
+  (not (f = ZEROP)) -> (not (g = ZEROP)) ->
+  degree(f) = ZERO -> degree(g) = ZERO ->
+  exists quotient: Poly; exists remainder: Poly;
+  f = addP(mulP(g, quotient), remainder) and
+  (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+proof
+  @generalize-f |
+    fix f: Poly {
+      @generalize-g |
+        fix g: Poly {
+          @given-f-nonzero |
+            assume not (f = ZEROP) {
+              @given-g-nonzero |
+                assume not (g = ZEROP) {
+                  @given-f-constant |
+                    assume degree(f) = ZERO {
+                      @given-g-constant |
+                        assume degree(g) = ZERO {
+                          @f-nonzero |
+                            not (f = ZEROP)
+                            [by hypothesis given-f-nonzero]
+                          @g-nonzero |
+                            not (g = ZEROP)
+                            [by hypothesis given-g-nonzero]
+                          @f-constant |
+                            degree(f) = ZERO
+                            [by hypothesis given-f-constant]
+                          @g-constant |
+                            degree(g) = ZERO
+                            [by hypothesis given-g-constant]
+
+                          @g-leads-at-its-degree |
+                            not (coeff(g, degree(g)) = zeroF)
+                            [using specialize degreeIsALeadingIndex(g) g-nonzero]
+                          @g-leads-at-zero |
+                            not (coeff(g, ZERO) = zeroF)
+                            [by rewrite g-constant g-leads-at-its-degree]
+
+                          // the cancellation at k = m = ZERO, where ZERO + ZERO = ZERO
+                          @the-indices-sum-to-zero |
+                            peano.add(ZERO, ZERO) = ZERO
+                            [using specialize peano.addZeroRight(ZERO)]
+                          @the-cancellation-at-the-sum |
+                            coeff(subP(f, mulP(monomial(mulF(coeff(f, peano.add(ZERO, ZERO)), recipF(coeff(g, ZERO))), ZERO), g)), peano.add(ZERO, ZERO)) = zeroF
+                            [using specialize theLeadingTermsCancel(f, g, ZERO, ZERO) g-leads-at-zero]
+                          // rewrite add(ZERO,ZERO) to ZERO everywhere it occurs at once
+                          @the-cancellation-at-zero |
+                            coeff(subP(f, mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g)), ZERO) = zeroF
+                            [by rewrite the-indices-sum-to-zero the-cancellation-at-the-sum]
+
+                          // both sides are bounded by ZERO, so the difference vanishes above it
+                          @f-is-bounded-by-its-degree |
+                            degreeAtMost(f, degree(f))
+                            [using specialize degreeBoundsTheCoefficients(f) f-nonzero]
+                          @f-is-bounded |
+                            degreeAtMost(f, ZERO)
+                            [by rewrite f-constant f-is-bounded-by-its-degree]
+                          @what-f-bounding-means |
+                            degreeAtMost(f, ZERO) iff
+                              (forall i: Nat; less_than(ZERO, i) -> coeff(f, i) = zeroF)
+                            [using specialize degreeAtMostMeaning(f, ZERO)]
+                          @f-vanishes-above-zero |
+                            forall i: Nat; less_than(ZERO, i) -> coeff(f, i) = zeroF
+                            [using tautology f-is-bounded what-f-bounding-means]
+
+                          @the-chosen-coefficient-is-nonzero |
+                            not (mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))) = zeroF)
+                            [using specialize theChosenCoefficientIsNonzero(coeff(f, ZERO), coeff(g, ZERO)) f-leads-at-zero g-leads-at-zero]
+                          @f-leads-at-its-degree |
+                            not (coeff(f, degree(f)) = zeroF)
+                            [using specialize degreeIsALeadingIndex(f) f-nonzero]
+                          @f-leads-at-zero |
+                            not (coeff(f, ZERO) = zeroF)
+                            [by rewrite f-constant f-leads-at-its-degree]
+                          @the-monomial-is-nonzero |
+                            not (monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO) = ZEROP)
+                            [using specialize aNonzeroMonomialIsNonzero(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO) the-chosen-coefficient-is-nonzero]
+                          @the-subtrahend-nonzero |
+                            not (mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g) = ZEROP)
+                            [using specialize aProductOfNonzerosIsNonzero(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g) the-monomial-is-nonzero g-nonzero]
+                          @the-monomial-degree |
+                            degree(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO)) = ZERO
+                            [using specialize aNonzeroMonomialHasItsIndexAsDegree(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO) the-chosen-coefficient-is-nonzero the-monomial-is-nonzero]
+                          @the-subtrahend-degree-is-a-sum |
+                            degree(mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g)) =
+                              peano.add(degree(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO)), degree(g))
+                            [using specialize degreeOfAProduct(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g) the-monomial-is-nonzero g-nonzero]
+                          @the-subtrahend-degree |
+                            degree(mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g)) = ZERO
+                            [using simplify the-subtrahend-degree-is-a-sum the-monomial-degree g-constant the-indices-sum-to-zero]
+                          @the-subtrahend-is-bounded-by-its-degree |
+                            degreeAtMost(mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g), degree(mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g)))
+                            [using specialize degreeBoundsTheCoefficients(mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g)) the-subtrahend-nonzero]
+                          @the-subtrahend-is-bounded |
+                            degreeAtMost(mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g), ZERO)
+                            [by rewrite the-subtrahend-degree the-subtrahend-is-bounded-by-its-degree]
+                          @what-the-subtrahend-bounding-means |
+                            degreeAtMost(mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g), ZERO) iff
+                              (forall i: Nat; less_than(ZERO, i) -> coeff(mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g), i) = zeroF)
+                            [using specialize degreeAtMostMeaning(mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g), ZERO)]
+                          @the-subtrahend-vanishes-above-zero |
+                            forall i: Nat; less_than(ZERO, i) -> coeff(mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g), i) = zeroF
+                            [using tautology the-subtrahend-is-bounded what-the-subtrahend-bounding-means]
+
+                          // so the difference vanishes at EVERY index
+                          @generalize-index |
+                            fix i: Nat {
+                              // trichotomy, with the i < ZERO arm ruled out
+                              @the-index-trichotomy |
+                                less_than(i, ZERO) or i = ZERO or less_than(ZERO, i)
+                                [using specialize peano_order.trichotomy(i, ZERO)]
+                              @nothing-is-below-zero |
+                                not less_than(i, ZERO)
+                                [using specialize peano_order.notLessThanZero(i)]
+                              @the-index-is-zero-or-above |
+                                i = ZERO or less_than(ZERO, i)
+                                [using tautology the-index-trichotomy nothing-is-below-zero]
+                              @when-the-index-is-zero |
+                                assume i = ZERO {
+                                  @the-index-is-zero |
+                                    i = ZERO
+                                    [by hypothesis when-the-index-is-zero]
+                                  @the-difference-vanishes-at-this-index |
+                                    coeff(subP(f, mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g)), i) = zeroF
+                                    [by rewrite the-index-is-zero-flipped the-cancellation-at-zero]
+                                  @the-index-is-zero-flipped |
+                                    ZERO = i
+                                    [by symmetry the-index-is-zero]
+                                }
+                              @when-the-index-is-positive |
+                                assume less_than(ZERO, i) {
+                                  @the-index-is-positive |
+                                    less_than(ZERO, i)
+                                    [by hypothesis when-the-index-is-positive]
+                                  @f-vanishes-here |
+                                    coeff(f, i) = zeroF
+                                    [using specialize f-vanishes-above-zero(i) the-index-is-positive]
+                                  @the-subtrahend-vanishes-here |
+                                    coeff(mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g), i) = zeroF
+                                    [using specialize the-subtrahend-vanishes-above-zero(i) the-index-is-positive]
+                                  @the-difference-here |
+                                    coeff(subP(f, mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g)), i) =
+                                      addF(coeff(f, i), negF(coeff(mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g), i)))
+                                    [using specialize subPolyCoeff(f, mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g), i)]
+                                  @the-difference-of-zeros |
+                                    coeff(subP(f, mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g)), i) = addF(zeroF, negF(zeroF))
+                                    [using simplify the-difference-here f-vanishes-here the-subtrahend-vanishes-here]
+                                  @negating-zero |
+                                    negF(zeroF) = zeroF
+                                    [by cite field.negZero]
+                                  @zero-plus-zero |
+                                    addF(zeroF, zeroF) = zeroF
+                                    [using specialize addZeroLeftF(zeroF)]
+                                  @the-difference-vanishes-at-this-index |
+                                    coeff(subP(f, mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g)), i) = zeroF
+                                    [using simplify the-difference-of-zeros negating-zero zero-plus-zero]
+                                }
+                              @the-difference-vanishes-either-way |
+                                coeff(subP(f, mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g)), i) = zeroF
+                                [by common_conclusion the-index-is-zero-or-above when-the-index-is-zero when-the-index-is-positive]
+                              @the-zero-coefficient-here |
+                                coeff(ZEROP, i) = zeroF
+                                [using specialize zeroPolyCoeff(i)]
+                              @the-zero-coefficient-flipped |
+                                zeroF = coeff(ZEROP, i)
+                                [by symmetry the-zero-coefficient-here]
+                              @coefficients-agree-at-index |
+                                coeff(subP(f, mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g)), i) = coeff(ZEROP, i)
+                                [using chain the-difference-vanishes-either-way the-zero-coefficient-flipped]
+                            }
+                          @corresponding-coefficients-are-equal |
+                            forall i: Nat;
+                              coeff(subP(f, mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g)), i) = coeff(ZEROP, i)
+                            [by generalize generalize-index]
+                          @the-difference-is-zero |
+                            subP(f, mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g)) = ZEROP
+                            [using specialize polyExtensionality(subP(f, mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g)), ZEROP) corresponding-coefficients-are-equal]
+
+                          // f = mono*g + 0, and mono*g = g*mono
+                          @f-recovered |
+                            f = addP(ZEROP, mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g))
+                            [using specialize aDifferenceRecoversItsMinuend(f, mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g), ZEROP) the-difference-is-zero]
+                          @the-sum-commutes |
+                            addP(ZEROP, mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g)) =
+                              addP(mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g), ZEROP)
+                            [using specialize polyAddIsCommutative(ZEROP, mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g))]
+                          @the-product-commutes |
+                            mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g) =
+                              mulP(g, monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO))
+                            [using specialize polyMulIsCommutative(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g)]
+                          // f = 0 + mono*g = mono*g + 0 = g*mono + 0, each step explicit
+                          // (a `simplify` with both commutativity rules loops).
+                          @f-with-the-sum-flipped |
+                            f = addP(mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g), ZEROP)
+                            [using chain f-recovered the-sum-commutes]
+                          @the-division |
+                            f = addP(mulP(g, monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO)), ZEROP)
+                            [by rewrite the-product-commutes f-with-the-sum-flipped]
+                          @the-remainder-is-zero |
+                            ZEROP = ZEROP or less_than(degree(ZEROP), degree(g))
+                            [by either_left the-zero-is-zero]
+                          @the-zero-is-zero |
+                            ZEROP = ZEROP
+                            [by reflexivity]
+                          @the-division-and-its-condition |
+                            f = addP(mulP(g, monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO)), ZEROP)
+                              and (ZEROP = ZEROP or less_than(degree(ZEROP), degree(g)))
+                            [by both the-division the-remainder-is-zero]
+                          @the-remainder-witness |
+                            exists remainder: Poly;
+                              f = addP(mulP(g, monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO)), remainder)
+                              and (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+                            [by witness(ZEROP) the-division-and-its-condition]
+                          @conclusion-the-constant-division |
+                            exists quotient: Poly; exists remainder: Poly;
+                              f = addP(mulP(g, quotient), remainder) and
+                              (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+                            [by witness(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO)) the-remainder-witness]
+                        }
+                      @g-constant-implies-the-division |
+                        degree(g) = ZERO ->
+                          exists quotient: Poly; exists remainder: Poly;
+                          f = addP(mulP(g, quotient), remainder) and
+                          (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+                        [by discharge given-g-constant]
+                    }
+                  @f-constant-implies-the-division |
+                    degree(f) = ZERO -> degree(g) = ZERO ->
+                      exists quotient: Poly; exists remainder: Poly;
+                      f = addP(mulP(g, quotient), remainder) and
+                      (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+                    [by discharge given-f-constant]
+                }
+              @g-nonzero-implies-the-division |
+                (not (g = ZEROP)) -> degree(f) = ZERO -> degree(g) = ZERO ->
+                  exists quotient: Poly; exists remainder: Poly;
+                  f = addP(mulP(g, quotient), remainder) and
+                  (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+                [by discharge given-g-nonzero]
+            }
+          @the-constant-arm |
+            (not (f = ZEROP)) -> (not (g = ZEROP)) -> degree(f) = ZERO -> degree(g) = ZERO ->
+              exists quotient: Poly; exists remainder: Poly;
+              f = addP(mulP(g, quotient), remainder) and
+              (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+            [by discharge given-f-nonzero]
+        }
+      @discharge-g |
+        forall g: Poly;
+          (not (f = ZEROP)) -> (not (g = ZEROP)) -> degree(f) = ZERO -> degree(g) = ZERO ->
+          exists quotient: Poly; exists remainder: Poly;
+          f = addP(mulP(g, quotient), remainder) and
+          (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+        [by generalize generalize-g]
+    }
+  @conclusion |
+    forall f, g: Poly;
+      (not (f = ZEROP)) -> (not (g = ZEROP)) -> degree(f) = ZERO -> degree(g) = ZERO ->
+      exists quotient: Poly; exists remainder: Poly;
+      f = addP(mulP(g, quotient), remainder) and
+      (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+    [by generalize generalize-f]
+qed
+
 // == JUDSON'S DIVISION ALGORITHM (§17.2) ==================================================
 //
 // "Let f(x) and g(x) be polynomials in F[x], where F is a field and g(x) is a nonzero
