@@ -1,0 +1,48 @@
+// PROBE 3: can the induction CARRY a quantified polynomial?
+// The property is prop(k) := "every nonzero p with degreeAtMost(p,k) has a zero set of
+// size at most k". The polynomial is quantified INSIDE prop, so it may change between
+// the hypothesis and the conclusion -- which is what Judson's induction does.
+
+import fieldpoly <<< "std/field/polynomial.b4m"
+import set <<< "std/set.b4m"
+import set_finite <<< "std/set/finite.b4m"
+import peano <<< "std/peano.b4m"
+
+sort F = fieldpoly.F
+sort Poly = fieldpoly.Poly
+sort Set = set.Set
+sort Nat = peano.Nat
+pred member = set.member
+
+func embedField(a: F) => set.Element
+axiom embedFieldInjective: forall a, b: F; embedField(a) = embedField(b) -> a = b
+
+define isTheZeroSetOf(p, s) =
+  forall x: set.Element;
+    member(x, s) iff (exists a: F; fieldpoly.isZeroOf(a, p) and x = embedField(a))
+
+// the property being inducted on -- note `p` and `s` are bound INSIDE
+define boundedZeros(k) =
+  forall p: Poly; forall s: Set;
+    (not (p = fieldpoly.ZEROP)) ->
+    fieldpoly.degreeAtMost(p, k) ->
+    isTheZeroSetOf(p, s) ->
+    exists m: Nat; set_finite.hasSize(s, m) and peano.less_or_equal(m, k)
+
+// Does the schema even ACCEPT this property? A hole for each half, to test the SHAPE
+// of the instantiation before doing any mathematics.
+hole theBaseCase: boundedZeros(peano.ZERO)
+hole theInductionStep: forall k: Nat; boundedZeros(k) -> boundedZeros(peano.succ(k))
+
+theorem zerosAreBoundedByTheDegree: forall n: Nat; boundedZeros(n)
+proof
+  @base-case |
+    boundedZeros(peano.ZERO)
+    [by cite theBaseCase]
+  @induction-step-for-all-k |
+    forall k: Nat; boundedZeros(k) -> boundedZeros(peano.succ(k))
+    [by cite theInductionStep]
+  @conclusion |
+    forall n: Nat; boundedZeros(n)
+    [using instantiation peano.induction((fun k: Nat => boundedZeros(k))) base-case induction-step-for-all-k]
+qed
