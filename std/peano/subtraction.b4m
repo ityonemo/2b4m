@@ -664,3 +664,182 @@ proof
     forall b, a: Nat; less_than(b, a) -> succ(sub(a, succ(b))) = sub(a, b)
     [by generalize generalize-b]
 qed
+
+// -- raising the MINUEND -------------------------------------------------------------------
+//
+// The three lemmas above shift the SUBTRAHEND. These shift the minuend, which is what an
+// iterated sum over a dependent bound needs: a row truncated at `sub(n, j)` gains exactly
+// one entry when `n` rises, provided `j` does not exceed `n`.
+
+// Subtracting ZERO changes neither side: the base of succOfSubLeft.
+theorem subtractingZeroRaisesWithTheMinuend:
+  forall a: Nat; less_than(ZERO, succ(a)) -> sub(succ(a), ZERO) = succ(sub(a, ZERO))
+proof
+  @generalize-a |
+    fix a: Nat {
+      @given-zero-is-below |
+        assume less_than(ZERO, succ(a)) {
+          @the-raised-minuend |
+            sub(succ(a), ZERO) = succ(a)
+            [using specialize subZeroRight(succ(a))]
+          @the-plain-minuend |
+            sub(a, ZERO) = a
+            [using specialize subZeroRight(a)]
+          @the-successor-of-the-plain |
+            succ(sub(a, ZERO)) = succ(a)
+            [by rewrite the-plain-minuend reflexivity-of-the-successor]
+          @reflexivity-of-the-successor |
+            succ(a) = succ(a)
+            [by reflexivity]
+          @the-plain-flipped |
+            succ(a) = succ(sub(a, ZERO))
+            [by symmetry the-successor-of-the-plain]
+          @conclusion-at-a |
+            sub(succ(a), ZERO) = succ(sub(a, ZERO))
+            [using chain the-raised-minuend the-plain-flipped]
+        }
+      @below-implies |
+        less_than(ZERO, succ(a)) -> sub(succ(a), ZERO) = succ(sub(a, ZERO))
+        [by discharge given-zero-is-below]
+    }
+  @conclusion |
+    forall a: Nat; less_than(ZERO, succ(a)) -> sub(succ(a), ZERO) = succ(sub(a, ZERO))
+    [by generalize generalize-a]
+qed
+
+// The inductive step of succOfSubLeft. At subtrahend succ(k) the hypothesis
+// less_than(succ k, succ a) forces a to be a successor, and then subSuccSucc strips the
+// successor from BOTH sides, leaving exactly the hypothesis at the predecessor.
+theorem theSubtrahendStepRaisesWithTheMinuend: forall k: Nat;
+  (forall a: Nat; less_than(k, succ(a)) -> sub(succ(a), k) = succ(sub(a, k))) ->
+  (forall a: Nat; less_than(succ(k), succ(a)) -> sub(succ(a), succ(k)) = succ(sub(a, succ(k))))
+proof
+  @generalize-k |
+    fix k: Nat {
+      @given-inductive-hypothesis |
+        assume forall a: Nat; less_than(k, succ(a)) -> sub(succ(a), k) = succ(sub(a, k)) {
+          @inductive-hypothesis |
+            forall a: Nat; less_than(k, succ(a)) -> sub(succ(a), k) = succ(sub(a, k))
+            [by hypothesis given-inductive-hypothesis]
+          @generalize-a |
+            fix a: Nat {
+              @given-succ-k-is-below |
+                assume less_than(succ(k), succ(a)) {
+                  @succ-k-is-below |
+                    less_than(succ(k), succ(a))
+                    [by hypothesis given-succ-k-is-below]
+                  // a is not ZERO, since succ(k) < succ(a) gives k < a
+                  @k-is-below-a |
+                    less_than(k, a)
+                    [using specialize ordering.succReflectsOrder(k, a) succ-k-is-below]
+                  @a-splits |
+                    a = ZERO or (exists m: Nat; a = succ(m))
+                    [using specialize peano.zeroOrSucc(a)]
+                  @when-a-is-zero |
+                    assume a = ZERO {
+                      @a-is-zero |
+                        a = ZERO
+                        [by hypothesis when-a-is-zero]
+                      @k-is-below-zero |
+                        less_than(k, ZERO)
+                        [by rewrite a-is-zero k-is-below-a]
+                      @nothing-is-below-zero |
+                        not less_than(k, ZERO)
+                        [using specialize ordering.notLessThanZero(k)]
+                      @conclusion-absurd |
+                        sub(succ(a), succ(k)) = succ(sub(a, succ(k)))
+                        [by ex_falso k-is-below-zero nothing-is-below-zero]
+                    }
+                  @when-a-is-a-successor |
+                    assume exists m: Nat; a = succ(m) {
+                      @a-is-a-successor |
+                        exists m: Nat; a = succ(m)
+                        [by hypothesis when-a-is-a-successor]
+                      @with-the-predecessor-m |
+                        unpack m: Nat from a-is-a-successor {
+                          @a-is-succ-m |
+                            a = succ(m)
+                            [by hypothesis with-the-predecessor-m]
+                          @k-is-below-succ-m |
+                            less_than(k, succ(m))
+                            [by rewrite a-is-succ-m k-is-below-a]
+                          // the hypothesis at the predecessor
+                          @the-hypothesis-at-m |
+                            less_than(k, succ(m)) -> sub(succ(m), k) = succ(sub(m, k))
+                            [using specialize inductive-hypothesis(m)]
+                          @the-difference-at-m |
+                            sub(succ(m), k) = succ(sub(m, k))
+                            [using tautology the-hypothesis-at-m k-is-below-succ-m]
+                          // strip one successor from each side
+                          @the-raised-side-strips |
+                            sub(succ(succ(m)), succ(k)) = sub(succ(m), k)
+                            [using specialize subSuccSucc(succ(m), k)]
+                          @the-plain-side-strips |
+                            sub(succ(m), succ(k)) = sub(m, k)
+                            [using specialize subSuccSucc(m, k)]
+                          @the-successor-of-the-plain |
+                            succ(sub(succ(m), succ(k))) = succ(sub(m, k))
+                            [by rewrite the-plain-side-strips reflexivity-of-the-successor]
+                          @reflexivity-of-the-successor |
+                            succ(sub(m, k)) = succ(sub(m, k))
+                            [by reflexivity]
+                          @the-successor-flipped |
+                            succ(sub(m, k)) = succ(sub(succ(m), succ(k)))
+                            [by symmetry the-successor-of-the-plain]
+                          @the-chain-at-m |
+                            sub(succ(succ(m)), succ(k)) = succ(sub(succ(m), succ(k)))
+                            [using chain the-raised-side-strips the-difference-at-m the-successor-flipped]
+                          @conclusion-at-succ-m |
+                            sub(succ(a), succ(k)) = succ(sub(a, succ(k)))
+                            [by rewrite a-is-succ-m the-chain-at-m]
+                        }
+                      @conclusion-from-the-successor |
+                        sub(succ(a), succ(k)) = succ(sub(a, succ(k)))
+                        [by unpacked with-the-predecessor-m]
+                    }
+                  @conclusion-at-a |
+                    sub(succ(a), succ(k)) = succ(sub(a, succ(k)))
+                    [by common_conclusion a-splits when-a-is-zero when-a-is-a-successor]
+                }
+              @below-implies |
+                less_than(succ(k), succ(a)) ->
+                  sub(succ(a), succ(k)) = succ(sub(a, succ(k)))
+                [by discharge given-succ-k-is-below]
+            }
+          @conclusion-for-all-a |
+            forall a: Nat; less_than(succ(k), succ(a)) ->
+              sub(succ(a), succ(k)) = succ(sub(a, succ(k)))
+            [by generalize generalize-a]
+        }
+      @hypothesis-implies |
+        (forall a: Nat; less_than(k, succ(a)) -> sub(succ(a), k) = succ(sub(a, k))) ->
+          (forall a: Nat; less_than(succ(k), succ(a)) ->
+          sub(succ(a), succ(k)) = succ(sub(a, succ(k))))
+        [by discharge given-inductive-hypothesis]
+    }
+  @conclusion |
+    forall k: Nat;
+      (forall a: Nat; less_than(k, succ(a)) -> sub(succ(a), k) = succ(sub(a, k))) ->
+      (forall a: Nat; less_than(succ(k), succ(a)) ->
+      sub(succ(a), succ(k)) = succ(sub(a, succ(k))))
+    [by generalize generalize-k]
+qed
+
+// Raising the MINUEND by one raises the difference by one, provided the subtrahend does
+// not exceed the minuend. Induction on the subtrahend b, with a universally quantified
+// inside so the successor case can apply the hypothesis at the predecessor of a.
+theorem succOfSubLeft: forall b, a: Nat;
+  less_than(b, succ(a)) -> sub(succ(a), b) = succ(sub(a, b))
+proof
+  @base-case |
+    forall a: Nat; less_than(ZERO, succ(a)) -> sub(succ(a), ZERO) = succ(sub(a, ZERO))
+    [by cite subtractingZeroRaisesWithTheMinuend]
+  @induction-step-for-all-k |
+    forall k: Nat;
+      (forall a: Nat; less_than(k, succ(a)) -> sub(succ(a), k) = succ(sub(a, k))) ->
+      (forall a: Nat; less_than(succ(k), succ(a)) -> sub(succ(a), succ(k)) = succ(sub(a, succ(k))))
+    [by cite theSubtrahendStepRaisesWithTheMinuend]
+  @conclusion |
+    forall b, a: Nat; less_than(b, succ(a)) -> sub(succ(a), b) = succ(sub(a, b))
+    [using instantiation peano.induction((fun b: Nat => forall a: Nat; less_than(b, succ(a)) -> sub(succ(a), b) = succ(sub(a, b)))) base-case induction-step-for-all-k]
+qed

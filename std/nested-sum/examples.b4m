@@ -1,0 +1,128 @@
+// std/nested-sum/examples.b4m — exercises std/nested-sum.b4m's axioms.
+//
+// `--library` fails on an axiom no theorem there rests on, so a library demonstrates its
+// own assumptions. Every axiom of the theory is a recursion clause or a monoid law, and the
+// exchange lemma's proof already rests on all of them; these theorems pin the small facts a
+// consumer reads off the clauses directly, so each clause is cited at least once HERE too.
+import nested_sum <<< "std/nested-sum.b4m"
+import peano <<< "std/peano.b4m"
+
+sort Value = nested_sum.Value
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func succ = peano.succ
+const IDENTITY = nested_sum.IDENTITY
+func combine = nested_sum.combine
+func term = nested_sum.term
+func rowUpTo = nested_sum.rowUpTo
+func diagUpTo = nested_sum.diagUpTo
+func triUpTo = nested_sum.triUpTo
+func shortenedRows = nested_sum.shortenedRows
+
+// A one-entry row is the entry itself: rowZero then rowSucc, with the identity law.
+theorem aOneEntryRowIsItsEntry: forall j: Nat;
+  rowUpTo(j, succ(ZERO)) = combine(IDENTITY, term(j, ZERO))
+proof
+  @generalize-j |
+    fix j: Nat {
+      @the-row-peels |
+        rowUpTo(j, succ(ZERO)) = combine(rowUpTo(j, ZERO), term(j, ZERO))
+        [using specialize nested_sum.rowSucc(j, ZERO)]
+      @the-empty-row-is-identity |
+        rowUpTo(j, ZERO) = IDENTITY
+        [using specialize nested_sum.rowZero(j)]
+      @conclusion-at-j |
+        rowUpTo(j, succ(ZERO)) = combine(IDENTITY, term(j, ZERO))
+        [using simplify the-row-peels the-empty-row-is-identity]
+    }
+  @conclusion |
+    forall j: Nat; rowUpTo(j, succ(ZERO)) = combine(IDENTITY, term(j, ZERO))
+    [by generalize generalize-j]
+qed
+
+// The zeroth anti-diagonal holds the single entry term(0,0): diagZero then diagSucc.
+theorem theZerothDiagonalIsTheCorner:
+  diagUpTo(ZERO, succ(ZERO)) = combine(IDENTITY, term(ZERO, nested_sum.sub(ZERO, ZERO)))
+proof
+  @the-diagonal-peels |
+    diagUpTo(ZERO, succ(ZERO)) =
+      combine(diagUpTo(ZERO, ZERO), term(ZERO, nested_sum.sub(ZERO, ZERO)))
+    [using specialize nested_sum.diagSucc(ZERO, ZERO)]
+  @the-empty-diagonal-is-identity |
+    diagUpTo(ZERO, ZERO) = IDENTITY
+    [using specialize nested_sum.diagZero(ZERO)]
+  @conclusion |
+    diagUpTo(ZERO, succ(ZERO)) = combine(IDENTITY, term(ZERO, nested_sum.sub(ZERO, ZERO)))
+    [using simplify the-diagonal-peels the-empty-diagonal-is-identity]
+qed
+
+// The triangle at bound one is the zeroth anti-diagonal: triZero then triSucc, with the
+// commutative law turning combine(IDENTITY, x) into x.
+theorem theTriangleAtOneIsTheZerothDiagonal:
+  triUpTo(succ(ZERO)) = combine(IDENTITY, diagUpTo(ZERO, succ(ZERO)))
+proof
+  @the-triangle-peels |
+    triUpTo(succ(ZERO)) = combine(triUpTo(ZERO), diagUpTo(ZERO, succ(ZERO)))
+    [using specialize nested_sum.triSucc(ZERO)]
+  @the-empty-triangle-is-identity |
+    triUpTo(ZERO) = IDENTITY
+    [by cite nested_sum.triZero]
+  @conclusion |
+    triUpTo(succ(ZERO)) = combine(IDENTITY, diagUpTo(ZERO, succ(ZERO)))
+    [using simplify the-triangle-peels the-empty-triangle-is-identity]
+qed
+
+// Combining with the identity on the LEFT also returns the value — the commutative law
+// paired with combineIdentityRight, which a consumer needs constantly.
+theorem combineIdentityLeft: forall a: Value; combine(IDENTITY, a) = a
+proof
+  @generalize-a |
+    fix a: Value {
+      @commute |
+        combine(IDENTITY, a) = combine(a, IDENTITY)
+        [using specialize nested_sum.combineIsCommutative(IDENTITY, a)]
+      @drop-the-identity |
+        combine(a, IDENTITY) = a
+        [using specialize nested_sum.combineIdentityRight(a)]
+      @conclusion-at-a |
+        combine(IDENTITY, a) = a
+        [using chain commute drop-the-identity]
+    }
+  @conclusion |
+    forall a: Value; combine(IDENTITY, a) = a
+    [by generalize generalize-a]
+qed
+
+// The one row collection is that row, shortened to the full bound: shortenedRowsZero and
+// shortenedRowsSucc, the two clauses the exchange lemma inducts over.
+theorem aOneRowCollectionIsItsRow: forall n: Nat;
+  shortenedRows(succ(ZERO), n) = combine(IDENTITY, rowUpTo(ZERO, nested_sum.sub(n, ZERO)))
+proof
+  @generalize-n |
+    fix n: Nat {
+      @the-collection-peels |
+        shortenedRows(succ(ZERO), n) =
+          combine(shortenedRows(ZERO, n), rowUpTo(ZERO, nested_sum.sub(n, ZERO)))
+        [using specialize nested_sum.shortenedRowsSucc(ZERO, n)]
+      @the-empty-collection-is-identity |
+        shortenedRows(ZERO, n) = IDENTITY
+        [using specialize nested_sum.shortenedRowsZero(n)]
+      @conclusion-at-n |
+        shortenedRows(succ(ZERO), n) =
+          combine(IDENTITY, rowUpTo(ZERO, nested_sum.sub(n, ZERO)))
+        [using simplify the-collection-peels the-empty-collection-is-identity]
+    }
+  @conclusion |
+    forall n: Nat;
+      shortenedRows(succ(ZERO), n) = combine(IDENTITY, rowUpTo(ZERO, nested_sum.sub(n, ZERO)))
+    [by generalize generalize-n]
+qed
+
+// And the exchange lemma itself, cited so the library's headline result is exercised.
+theorem theExchangeHoldsAtEveryBound: forall n: Nat;
+  triUpTo(n) = shortenedRows(n, n)
+proof
+  @conclusion |
+    forall n: Nat; triUpTo(n) = shortenedRows(n, n)
+    [by cite nested_sum.theTriangleIsTheShortenedRows]
+qed
