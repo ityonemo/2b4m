@@ -5270,6 +5270,190 @@ proof
     [by generalize generalize-p]
 qed
 
+// `x = -y + (y + x)`: adding a summand's negation recovers the other summand. The additive
+// cancellation F[x] lacks, derived from the inverse and associativity.
+theorem aSumRecoversItsSummand: forall y, x: Poly;
+  x = addP(negP(y), addP(y, x))
+proof
+  @generalize-y |
+    fix y: Poly {
+      @generalize-x |
+        fix x: Poly {
+          @regroup |
+            addP(addP(negP(y), y), x) = addP(negP(y), addP(y, x))
+            [using specialize polyAddIsAssociative(negP(y), y, x)]
+          @the-inverse-cancels |
+            addP(negP(y), y) = ZEROP
+            [using specialize polyAddNegLeft(y)]
+          @zero-plus-x |
+            addP(ZEROP, x) = x
+            [using specialize polyAddZeroLeft(x)]
+          @the-regrouped-sum-is-x |
+            addP(negP(y), addP(y, x)) = x
+            [using simplify regroup-flipped the-inverse-cancels zero-plus-x]
+          @regroup-flipped |
+            addP(negP(y), addP(y, x)) = addP(addP(negP(y), y), x)
+            [by symmetry regroup]
+          @conclusion-recovered |
+            x = addP(negP(y), addP(y, x))
+            [by symmetry the-regrouped-sum-is-x]
+        }
+      @discharge-x |
+        forall x9: Poly; x9 = addP(negP(y), addP(y, x9))
+        [by generalize generalize-x]
+    }
+  @conclusion |
+    forall y, x: Poly; x = addP(negP(y), addP(y, x))
+    [by generalize generalize-y]
+qed
+
+// The remainder's constant term vanishes, with the evaluation BOUND discharged. This is the
+// bound-free form of Judson's "0 = p(alpha) = 0·q(alpha) + a = a", for a consumer that has the
+// division in hand and should not have to reconstruct which bound to evaluate at.
+theorem theRemainderVanishesAtTheRootOfTheDivision: forall p, q, r: Poly; forall al: F;
+  (not (p = ZEROP)) -> (not (q = ZEROP)) ->
+  isZeroOf(al, p) ->
+  p = addP(mulP(linear(al), q), r) ->
+  degreeAtMost(r, ZERO) ->
+  coeff(r, ZERO) = zeroF
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-al |
+                fix al: F {
+                  @given-p-nonzero |
+                    assume not (p = ZEROP) {
+                      @given-q-nonzero |
+                        assume not (q = ZEROP) {
+                          @given-is-a-zero |
+                            assume isZeroOf(al, p) {
+                              @given-division |
+                                assume p = addP(mulP(linear(al), q), r) {
+                                  @given-constant |
+                                    assume degreeAtMost(r, ZERO) {
+                                      @p-nonzero |
+                                        not (p = ZEROP)
+                                        [by hypothesis given-p-nonzero]
+                                      @q-nonzero |
+                                        not (q = ZEROP)
+                                        [by hypothesis given-q-nonzero]
+                                      @is-a-zero |
+                                        isZeroOf(al, p)
+                                        [by hypothesis given-is-a-zero]
+                                      @division |
+                                        p = addP(mulP(linear(al), q), r)
+                                        [by hypothesis given-division]
+                                      @constant |
+                                        degreeAtMost(r, ZERO)
+                                        [by hypothesis given-constant]
+                                      // the factor theorem's own conclusion: p IS the product
+                                      @p-is-the-product |
+                                        p = mulP(linear(al), q)
+                                        [using specialize aZeroGivesALinearFactor(p, q, r, al) p-nonzero q-nonzero is-a-zero division constant]
+                                      // so the product plus r equals the product, forcing r = 0
+                                      @the-product-plus-r |
+                                        mulP(linear(al), q) = addP(mulP(linear(al), q), r)
+                                        [by rewrite p-is-the-product division]
+                                      @the-product-plus-zero |
+                                        addP(mulP(linear(al), q), ZEROP) = mulP(linear(al), q)
+                                        [using specialize polyAddZeroRight(mulP(linear(al), q))]
+                                      @the-two-sums-agree |
+                                        addP(mulP(linear(al), q), ZEROP) =
+                                          addP(mulP(linear(al), q), r)
+                                        [using chain the-product-plus-zero the-product-plus-r]
+                                      // product + 0 = product + r, so r = 0: add the
+                                      // product's negation to both sides. (No additive
+                                      // cancellation lemma exists for F[x] or for the field,
+                                      // so it is done here from the inverse directly.)
+                                      @the-sums-agree-flipped |
+                                        addP(mulP(linear(al), q), r) =
+                                          addP(mulP(linear(al), q), ZEROP)
+                                        [by symmetry the-two-sums-agree]
+                                      @r-recovered |
+                                        r = addP(negP(mulP(linear(al), q)),
+                                          addP(mulP(linear(al), q), r))
+                                        [using specialize aSumRecoversItsSummand(mulP(linear(al), q), r)]
+                                      @r-through-the-other-sum |
+                                        r = addP(negP(mulP(linear(al), q)),
+                                          addP(mulP(linear(al), q), ZEROP))
+                                        [by rewrite the-sums-agree-flipped r-recovered]
+                                      @zero-recovered |
+                                        ZEROP = addP(negP(mulP(linear(al), q)),
+                                          addP(mulP(linear(al), q), ZEROP))
+                                        [using specialize aSumRecoversItsSummand(mulP(linear(al), q), ZEROP)]
+                                      @zero-recovered-flipped |
+                                        addP(negP(mulP(linear(al), q)),
+                                          addP(mulP(linear(al), q), ZEROP)) = ZEROP
+                                        [by symmetry zero-recovered]
+                                      @the-remainder-is-zero |
+                                        r = ZEROP
+                                        [using chain r-through-the-other-sum zero-recovered-flipped]
+                                      @the-zero-coefficient |
+                                        coeff(ZEROP, ZERO) = zeroF
+                                        [using specialize zeroPolyCoeff(ZERO)]
+                                      @conclusion-the-remainder-term-vanishes |
+                                        coeff(r, ZERO) = zeroF
+                                        [by rewrite the-remainder-is-zero the-zero-coefficient]
+                                    }
+                                  @g5 |
+                                    degreeAtMost(r, ZERO) -> coeff(r, ZERO) = zeroF
+                                    [by discharge given-constant]
+                                }
+                              @g4 |
+                                p = addP(mulP(linear(al), q), r) ->
+                                  degreeAtMost(r, ZERO) -> coeff(r, ZERO) = zeroF
+                                [by discharge given-division]
+                            }
+                          @g3 |
+                            isZeroOf(al, p) -> p = addP(mulP(linear(al), q), r) ->
+                              degreeAtMost(r, ZERO) -> coeff(r, ZERO) = zeroF
+                            [by discharge given-is-a-zero]
+                        }
+                      @g2 |
+                        (not (q = ZEROP)) -> isZeroOf(al, p) ->
+                          p = addP(mulP(linear(al), q), r) ->
+                          degreeAtMost(r, ZERO) -> coeff(r, ZERO) = zeroF
+                        [by discharge given-q-nonzero]
+                    }
+                  @g1 |
+                    (not (p = ZEROP)) -> (not (q = ZEROP)) -> isZeroOf(al, p) ->
+                      p = addP(mulP(linear(al), q), r) ->
+                      degreeAtMost(r, ZERO) -> coeff(r, ZERO) = zeroF
+                    [by discharge given-p-nonzero]
+                }
+              @discharge-al |
+                forall a9: F;
+                  (not (p = ZEROP)) -> (not (q = ZEROP)) -> isZeroOf(a9, p) ->
+                  p = addP(mulP(linear(a9), q), r) ->
+                  degreeAtMost(r, ZERO) -> coeff(r, ZERO) = zeroF
+                [by generalize generalize-al]
+            }
+          @discharge-r |
+            forall r9: Poly; forall a9: F;
+              (not (p = ZEROP)) -> (not (q = ZEROP)) -> isZeroOf(a9, p) ->
+              p = addP(mulP(linear(a9), q), r9) ->
+              degreeAtMost(r9, ZERO) -> coeff(r9, ZERO) = zeroF
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q9, r9: Poly; forall a9: F;
+          (not (p = ZEROP)) -> (not (q9 = ZEROP)) -> isZeroOf(a9, p) ->
+          p = addP(mulP(linear(a9), q9), r9) ->
+          degreeAtMost(r9, ZERO) -> coeff(r9, ZERO) = zeroF
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall al: F;
+      (not (p = ZEROP)) -> (not (q = ZEROP)) -> isZeroOf(al, p) ->
+      p = addP(mulP(linear(al), q), r) ->
+      degreeAtMost(r, ZERO) -> coeff(r, ZERO) = zeroF
+    [by generalize generalize-p]
+qed
+
 // == THE EXISTENCE HALF ===================================================================
 //
 // "Let f(x) and g(x) be polynomials in F[x], where F is a field and g(x) is a nonzero
