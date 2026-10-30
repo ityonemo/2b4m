@@ -9907,15 +9907,22 @@ pub fn finish(self: *Prove, goal: TermId, goal_loc: u32) Allocator.Error!bool {
     };
     const proven = try k.check(.{ .steps = self.low_steps.items, .blocks = self.low_blocks.items }, goal, goal_loc);
     if (!proven) return false;
-    // The use-all-facts check is a lint over a COMPLETE citation graph. An ADMITTED step
-    // (`--fast`) builds no certificate and, in admit mode, never even computes its guard
-    // obligations — so it contributes none of the edges its certificate would carry (a
-    // hoisted `invertible(g)` discharged from a step the author never names, found by
-    // `requireKnown`'s search). Under that graph the check can only produce FALSE
-    // positives, and the invariant is that `--fast` never reports an error strict does not.
-    // So it runs only when every step in the proof was actually proved; strict always is,
-    // and strict is the gate.
-    if (!self.ctx.verify.draft and self.admitted.count() == 0) {
+    // The use-all-facts check is a lint over a COMPLETE citation graph, so it is STRICT-ONLY.
+    //
+    // Some steps are used ONLY WHEN A CERTIFICATE IS GENERATED. A proved step TEACHES its
+    // formula to the rest of its block (`teachAll`), and a later guard obligation can be
+    // discharged from it with NO citation in the source: `refForKnown` finds the taught fact
+    // and appends that step to `known.reachable`, which is what marks it used (see the
+    // `reachable` seeding in `checkAllStepsUsed`). That append happens while BUILDING the
+    // certificate. Skip the certificate and the edge never forms, so a step the author wired
+    // correctly looks dead.
+    //
+    // Gating on `admitted.count() == 0` was not enough: it made the lint fire or not depending
+    // on which tactics a proof happened to use, so the same dead step was caught in a
+    // `by`-only proof and missed in one using `specialize`. Keying it on the file's trust set
+    // instead makes the rule one sentence — `--fast` does not dead-check — and preserves the
+    // invariant that `--fast` never reports an error strict does not.
+    if (!self.ctx.verify.draft and self.ctx.verify.trusted.count() == 0) {
         if (!try self.checkAllStepsUsed()) return false;
     }
     return true;
