@@ -4323,6 +4323,498 @@ proof
     [by generalize generalize-q]
 qed
 
+// Evaluation is ADDITIVE: each new term (a_k + b_k)·x^k splits by distributivity, and the
+// two running sums stay separated because addition is associative and commutative.
+theorem evaluationPreservesAddition: forall p, q: Poly; forall a: F; forall k: Nat;
+  evalUpTo(addP(p, q), a, k) = addF(evalUpTo(p, a, k), evalUpTo(q, a, k))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-a |
+            fix a: F {
+              @empty-sum-of-the-sum |
+                evalUpTo(addP(p, q), a, ZERO) = zeroF
+                [using specialize evalZero(addP(p, q), a)]
+              @empty-sum-for-p |
+                evalUpTo(p, a, ZERO) = zeroF
+                [using specialize evalZero(p, a)]
+              @empty-sum-for-q |
+                evalUpTo(q, a, ZERO) = zeroF
+                [using specialize evalZero(q, a)]
+              @zero-plus-zero |
+                addF(zeroF, zeroF) = zeroF
+                [using specialize addZeroLeftF(zeroF)]
+              @base-case |
+                evalUpTo(addP(p, q), a, ZERO) =
+                  addF(evalUpTo(p, a, ZERO), evalUpTo(q, a, ZERO))
+                [using simplify empty-sum-of-the-sum empty-sum-for-p empty-sum-for-q zero-plus-zero]
+
+              @induction-step |
+                fix k: Nat {
+                  @given-inductive-hypothesis |
+                    assume evalUpTo(addP(p, q), a, k) =
+                      addF(evalUpTo(p, a, k), evalUpTo(q, a, k)) {
+                      @inductive-hypothesis |
+                        evalUpTo(addP(p, q), a, k) =
+                          addF(evalUpTo(p, a, k), evalUpTo(q, a, k))
+                        [by hypothesis given-inductive-hypothesis]
+                      @one-more-term-of-the-sum |
+                        evalUpTo(addP(p, q), a, succ(k)) =
+                          addF(evalUpTo(addP(p, q), a, k),
+                          mulF(coeff(addP(p, q), k), power(a, k)))
+                        [using specialize evalSucc(addP(p, q), a, k)]
+                      @the-new-coefficient-splits |
+                        coeff(addP(p, q), k) = addF(coeff(p, k), coeff(q, k))
+                        [using specialize addPolyCoeff(p, q, k)]
+                      @one-more-term-for-p |
+                        evalUpTo(p, a, succ(k)) =
+                          addF(evalUpTo(p, a, k), mulF(coeff(p, k), power(a, k)))
+                        [using specialize evalSucc(p, a, k)]
+                      @one-more-term-for-q |
+                        evalUpTo(q, a, succ(k)) =
+                          addF(evalUpTo(q, a, k), mulF(coeff(q, k), power(a, k)))
+                        [using specialize evalSucc(q, a, k)]
+                      @the-sum-side |
+                        evalUpTo(addP(p, q), a, succ(k)) =
+                          addF(addF(evalUpTo(p, a, k), evalUpTo(q, a, k)),
+                          mulF(addF(coeff(p, k), coeff(q, k)), power(a, k)))
+                        [using simplify one-more-term-of-the-sum the-new-coefficient-splits inductive-hypothesis]
+                      @the-value-side |
+                        addF(evalUpTo(p, a, succ(k)), evalUpTo(q, a, succ(k))) =
+                          addF(addF(evalUpTo(p, a, k), mulF(coeff(p, k), power(a, k))),
+                          addF(evalUpTo(q, a, k), mulF(coeff(q, k), power(a, k))))
+                        [using simplify one-more-term-for-p one-more-term-for-q]
+                      @the-four-summands-agree |
+                        addF(addF(evalUpTo(p, a, k), evalUpTo(q, a, k)),
+                          mulF(addF(coeff(p, k), coeff(q, k)), power(a, k))) =
+                          addF(addF(evalUpTo(p, a, k), mulF(coeff(p, k), power(a, k))),
+                          addF(evalUpTo(q, a, k), mulF(coeff(q, k), power(a, k))))
+                        [using polynomial(field)]
+                      @conclusion-successor |
+                        evalUpTo(addP(p, q), a, succ(k)) =
+                          addF(evalUpTo(p, a, succ(k)), evalUpTo(q, a, succ(k)))
+                        [using chain the-sum-side the-four-summands-agree the-value-side-flipped]
+                      @the-value-side-flipped |
+                        addF(addF(evalUpTo(p, a, k), mulF(coeff(p, k), power(a, k))),
+                          addF(evalUpTo(q, a, k), mulF(coeff(q, k), power(a, k)))) =
+                          addF(evalUpTo(p, a, succ(k)), evalUpTo(q, a, succ(k)))
+                        [by symmetry the-value-side]
+                    }
+                  @induction-step-at-k |
+                    (evalUpTo(addP(p, q), a, k) =
+                      addF(evalUpTo(p, a, k), evalUpTo(q, a, k))) ->
+                      (evalUpTo(addP(p, q), a, succ(k)) =
+                      addF(evalUpTo(p, a, succ(k)), evalUpTo(q, a, succ(k))))
+                    [by discharge given-inductive-hypothesis]
+                }
+              @induction-step-for-all-k |
+                forall k: Nat;
+                  (evalUpTo(addP(p, q), a, k) =
+                  addF(evalUpTo(p, a, k), evalUpTo(q, a, k))) ->
+                  (evalUpTo(addP(p, q), a, succ(k)) =
+                  addF(evalUpTo(p, a, succ(k)), evalUpTo(q, a, succ(k))))
+                [by generalize induction-step]
+              @conclusion-for-all-k |
+                forall k: Nat;
+                  evalUpTo(addP(p, q), a, k) =
+                  addF(evalUpTo(p, a, k), evalUpTo(q, a, k))
+                [using instantiation peano.induction((fun k: Nat => evalUpTo(addP(p, q), a, k) = addF(evalUpTo(p, a, k), evalUpTo(q, a, k)))) base-case induction-step-for-all-k]
+            }
+          @discharge-a |
+            forall a: F; forall k: Nat;
+              evalUpTo(addP(p, q), a, k) = addF(evalUpTo(p, a, k), evalUpTo(q, a, k))
+            [by generalize generalize-a]
+        }
+      @discharge-q |
+        forall q: Poly; forall a: F; forall k: Nat;
+          evalUpTo(addP(p, q), a, k) = addF(evalUpTo(p, a, k), evalUpTo(q, a, k))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; forall a: F; forall k: Nat;
+      evalUpTo(addP(p, q), a, k) = addF(evalUpTo(p, a, k), evalUpTo(q, a, k))
+    [by generalize generalize-p]
+qed
+
+// EVALUATION STABILIZES past a degree bound: once the sum has reached every nonzero
+// coefficient, extending it changes nothing. Stated for an arbitrary bound `n` that bounds
+// the polynomial, so it applies at `degree(p)` and at anything larger.
+theorem evaluationStabilizesPastTheBound: forall p: Poly; forall a: F; forall n: Nat;
+  degreeAtMost(p, n) ->
+  forall t: Nat;
+  evalUpTo(p, a, peano.add(succ(n), t)) = evalUpTo(p, a, succ(n))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-a |
+        fix a: F {
+          @generalize-n |
+            fix n: Nat {
+              @given-bounded |
+                assume degreeAtMost(p, n) {
+                  @bounded |
+                    degreeAtMost(p, n)
+                    [by hypothesis given-bounded]
+                  @what-bounding-means |
+                    degreeAtMost(p, n) iff
+                      (forall i: Nat; less_than(n, i) -> coeff(p, i) = zeroF)
+                    [using specialize degreeAtMostMeaning(p, n)]
+                  @vanishes-above |
+                    forall i: Nat; less_than(n, i) -> coeff(p, i) = zeroF
+                    [using tautology bounded what-bounding-means]
+
+                  @adding-zero |
+                    peano.add(succ(n), ZERO) = succ(n)
+                    [using specialize peano.addZeroRight(succ(n))]
+                  @the-sum-is-itself |
+                    evalUpTo(p, a, succ(n)) = evalUpTo(p, a, succ(n))
+                    [by reflexivity]
+                  @base-case |
+                    evalUpTo(p, a, peano.add(succ(n), ZERO)) = evalUpTo(p, a, succ(n))
+                    [by rewrite adding-zero the-sum-is-itself]
+
+                  @induction-step |
+                    fix t: Nat {
+                      @given-inductive-hypothesis |
+                        assume evalUpTo(p, a, peano.add(succ(n), t)) =
+                          evalUpTo(p, a, succ(n)) {
+                          @inductive-hypothesis |
+                            evalUpTo(p, a, peano.add(succ(n), t)) = evalUpTo(p, a, succ(n))
+                            [by hypothesis given-inductive-hypothesis]
+                          @the-next-bound |
+                            peano.add(succ(n), succ(t)) = succ(peano.add(succ(n), t))
+                            [using specialize peano.addSuccRight(succ(n), t)]
+                          @one-more-term |
+                            evalUpTo(p, a, succ(peano.add(succ(n), t))) =
+                              addF(evalUpTo(p, a, peano.add(succ(n), t)),
+                              mulF(coeff(p, peano.add(succ(n), t)),
+                              power(a, peano.add(succ(n), t))))
+                            [using specialize evalSucc(p, a, peano.add(succ(n), t))]
+                          // n < succ(n) + t, so that coefficient vanishes
+                          @the-gap-exists |
+                            exists dd: Nat;
+                              peano.add(succ(n), dd) = peano.add(succ(n), t)
+                            [by witness(t) the-sum-reflexive]
+                          @the-sum-reflexive |
+                            peano.add(succ(n), t) = peano.add(succ(n), t)
+                            [by reflexivity]
+                          @what-a-bound-means |
+                            peano_order.less_or_equal(succ(n), peano.add(succ(n), t)) iff
+                              (exists dd: Nat;
+                              peano.add(succ(n), dd) = peano.add(succ(n), t))
+                            [using specialize peano_order.lessOrEqualIsGapExistential(succ(n), peano.add(succ(n), t))]
+                          @the-successor-is-bounded |
+                            peano_order.less_or_equal(succ(n), peano.add(succ(n), t))
+                            [using tautology the-gap-exists what-a-bound-means]
+                          // succ(n) <= i gives succ(n) < succ(i), hence n < i
+                          @the-successors-compare |
+                            less_than(succ(n), succ(peano.add(succ(n), t)))
+                            [using specialize peano_order.lessOrEqualToLessThanSucc(succ(n), peano.add(succ(n), t)) the-successor-is-bounded]
+                          @n-is-below-the-index |
+                            less_than(n, peano.add(succ(n), t))
+                            [using specialize peano_order.succReflectsOrder(n, peano.add(succ(n), t)) the-successors-compare]
+                          @the-coefficient-vanishes |
+                            coeff(p, peano.add(succ(n), t)) = zeroF
+                            [using specialize vanishes-above(peano.add(succ(n), t)) n-is-below-the-index]
+                          @the-new-term-is-zero |
+                            mulF(zeroF, power(a, peano.add(succ(n), t))) = zeroF
+                            [using specialize field.mulZeroLeft(power(a, peano.add(succ(n), t)))]
+                          @the-sum-gains-zero |
+                            evalUpTo(p, a, succ(peano.add(succ(n), t))) =
+                              addF(evalUpTo(p, a, succ(n)), zeroF)
+                            [using simplify one-more-term the-coefficient-vanishes the-new-term-is-zero inductive-hypothesis]
+                          @adding-zero-changes-nothing |
+                            addF(evalUpTo(p, a, succ(n)), zeroF) = evalUpTo(p, a, succ(n))
+                            [using specialize field.addZeroRight(evalUpTo(p, a, succ(n)))]
+                          @the-value-at-the-next |
+                            evalUpTo(p, a, succ(peano.add(succ(n), t))) =
+                              evalUpTo(p, a, succ(n))
+                            [using chain the-sum-gains-zero adding-zero-changes-nothing]
+                          @conclusion-successor |
+                            evalUpTo(p, a, peano.add(succ(n), succ(t))) =
+                              evalUpTo(p, a, succ(n))
+                            [by rewrite the-next-bound the-value-at-the-next]
+                        }
+                      @induction-step-at-t |
+                        (evalUpTo(p, a, peano.add(succ(n), t)) = evalUpTo(p, a, succ(n))) ->
+                          (evalUpTo(p, a, peano.add(succ(n), succ(t))) =
+                          evalUpTo(p, a, succ(n)))
+                        [by discharge given-inductive-hypothesis]
+                    }
+                  @induction-step-for-all-t |
+                    forall t: Nat;
+                      (evalUpTo(p, a, peano.add(succ(n), t)) = evalUpTo(p, a, succ(n))) ->
+                      (evalUpTo(p, a, peano.add(succ(n), succ(t))) =
+                      evalUpTo(p, a, succ(n)))
+                    [by generalize induction-step]
+                  @conclusion-for-all-t |
+                    forall t: Nat;
+                      evalUpTo(p, a, peano.add(succ(n), t)) = evalUpTo(p, a, succ(n))
+                    [using instantiation peano.induction((fun t: Nat => evalUpTo(p, a, peano.add(succ(n), t)) = evalUpTo(p, a, succ(n)))) base-case induction-step-for-all-t]
+                }
+              @bounded-implies-stable |
+                degreeAtMost(p, n) ->
+                  forall t: Nat;
+                  evalUpTo(p, a, peano.add(succ(n), t)) = evalUpTo(p, a, succ(n))
+                [by discharge given-bounded]
+            }
+          @discharge-n |
+            forall n: Nat;
+              degreeAtMost(p, n) ->
+              forall t: Nat;
+              evalUpTo(p, a, peano.add(succ(n), t)) = evalUpTo(p, a, succ(n))
+            [by generalize generalize-n]
+        }
+      @discharge-a |
+        forall a: F; forall n: Nat;
+          degreeAtMost(p, n) ->
+          forall t: Nat;
+          evalUpTo(p, a, peano.add(succ(n), t)) = evalUpTo(p, a, succ(n))
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall p: Poly; forall a: F; forall n: Nat;
+      degreeAtMost(p, n) ->
+      forall t: Nat;
+      evalUpTo(p, a, peano.add(succ(n), t)) = evalUpTo(p, a, succ(n))
+    [by generalize generalize-p]
+qed
+
+// A constant polynomial whose constant term vanishes IS the zero polynomial: it agrees with
+// ZEROP at index 0 by hypothesis and above index 0 because both are bounded there.
+theorem aVanishingConstantIsZero: forall r: Poly;
+  degreeAtMost(r, ZERO) -> coeff(r, ZERO) = zeroF -> r = ZEROP
+proof
+  @generalize-r |
+    fix r: Poly {
+      @given-constant |
+        assume degreeAtMost(r, ZERO) {
+          @given-vanishes-at-zero |
+            assume coeff(r, ZERO) = zeroF {
+              @is-constant |
+                degreeAtMost(r, ZERO)
+                [by hypothesis given-constant]
+              @vanishes-at-zero |
+                coeff(r, ZERO) = zeroF
+                [by hypothesis given-vanishes-at-zero]
+              @what-bounding-means |
+                degreeAtMost(r, ZERO) iff
+                  (forall i: Nat; less_than(ZERO, i) -> coeff(r, i) = zeroF)
+                [using specialize degreeAtMostMeaning(r, ZERO)]
+              @vanishes-above-zero |
+                forall i: Nat; less_than(ZERO, i) -> coeff(r, i) = zeroF
+                [using tautology is-constant what-bounding-means]
+
+              @generalize-index |
+                fix i: Nat {
+                  @the-index-trichotomy |
+                    less_than(i, ZERO) or i = ZERO or less_than(ZERO, i)
+                    [using specialize peano_order.trichotomy(i, ZERO)]
+                  @nothing-below-zero |
+                    not less_than(i, ZERO)
+                    [using specialize peano_order.notLessThanZero(i)]
+                  @zero-or-above |
+                    i = ZERO or less_than(ZERO, i)
+                    [using tautology the-index-trichotomy nothing-below-zero]
+                  @when-index-is-zero |
+                    assume i = ZERO {
+                      @index-is-zero |
+                        i = ZERO
+                        [by hypothesis when-index-is-zero]
+                      @index-is-zero-flipped |
+                        ZERO = i
+                        [by symmetry index-is-zero]
+                      @vanishes-here-at-zero |
+                        coeff(r, i) = zeroF
+                        [by rewrite index-is-zero-flipped vanishes-at-zero]
+                    }
+                  @when-index-is-above |
+                    assume less_than(ZERO, i) {
+                      @index-is-above |
+                        less_than(ZERO, i)
+                        [by hypothesis when-index-is-above]
+                      @vanishes-here-above |
+                        coeff(r, i) = zeroF
+                        [using specialize vanishes-above-zero(i) index-is-above]
+                    }
+                  @vanishes-either-way |
+                    coeff(r, i) = zeroF
+                    [by common_conclusion zero-or-above when-index-is-zero when-index-is-above]
+                  @the-zero-coefficient |
+                    coeff(ZEROP, i) = zeroF
+                    [using specialize zeroPolyCoeff(i)]
+                  @the-zero-coefficient-flipped |
+                    zeroF = coeff(ZEROP, i)
+                    [by symmetry the-zero-coefficient]
+                  @coefficients-agree |
+                    coeff(r, i) = coeff(ZEROP, i)
+                    [using chain vanishes-either-way the-zero-coefficient-flipped]
+                }
+              @all-coefficients-agree |
+                forall i: Nat; coeff(r, i) = coeff(ZEROP, i)
+                [by generalize generalize-index]
+              @conclusion-is-zero |
+                r = ZEROP
+                [using specialize polyExtensionality(r, ZEROP) all-coefficients-agree]
+            }
+          @vanishing-implies-zero |
+            coeff(r, ZERO) = zeroF -> r = ZEROP
+            [by discharge given-vanishes-at-zero]
+        }
+      @constant-implies |
+        degreeAtMost(r, ZERO) -> coeff(r, ZERO) = zeroF -> r = ZEROP
+        [by discharge given-constant]
+    }
+  @conclusion |
+    forall r: Poly;
+      degreeAtMost(r, ZERO) -> coeff(r, ZERO) = zeroF -> r = ZEROP
+    [by generalize generalize-r]
+qed
+
+// THE FORWARD DIRECTION's core, with the common evaluation bound K taken as a hypothesis.
+//
+// Judson: "But 0 = p(alpha) = 0 * q(alpha) + a = a; consequently p(x) = (x - alpha) q(x)."
+// Read as: if p is the division's sum, and BOTH p and the product vanish at alpha when
+// summed to the same bound K, then the remainder's constant term is zero — hence (with
+// aVanishingConstantIsZero) the remainder IS zero and p is exactly the product.
+//
+// Isolating the bound as a hypothesis keeps this step about the ALGEBRA. Discharging it
+// needs degree bookkeeping (that deg p equals the product's degree once the remainder is a
+// constant), which is separate work and does not belong in the same proof.
+theorem theRemainderVanishesAtTheRoot: forall p, q, r: Poly; forall al: F; forall kk: Nat;
+  p = addP(mulP(linear(al), q), r) ->
+  evalUpTo(p, al, kk) = zeroF ->
+  evalUpTo(mulP(linear(al), q), al, kk) = zeroF ->
+  evalUpTo(r, al, kk) = coeff(r, ZERO) ->
+  coeff(r, ZERO) = zeroF
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-al |
+                fix al: F {
+                  @generalize-kk |
+                    fix kk: Nat {
+                      @given-the-division |
+                        assume p = addP(mulP(linear(al), q), r) {
+                          @given-p-vanishes |
+                            assume evalUpTo(p, al, kk) = zeroF {
+                              @given-product-vanishes |
+                                assume evalUpTo(mulP(linear(al), q), al, kk) = zeroF {
+                                  @given-remainder-is-its-constant |
+                                    assume evalUpTo(r, al, kk) = coeff(r, ZERO) {
+                                      @the-division |
+                                        p = addP(mulP(linear(al), q), r)
+                                        [by hypothesis given-the-division]
+                                      @p-vanishes |
+                                        evalUpTo(p, al, kk) = zeroF
+                                        [by hypothesis given-p-vanishes]
+                                      @product-vanishes |
+                                        evalUpTo(mulP(linear(al), q), al, kk) = zeroF
+                                        [by hypothesis given-product-vanishes]
+                                      @remainder-is-its-constant |
+                                        evalUpTo(r, al, kk) = coeff(r, ZERO)
+                                        [by hypothesis given-remainder-is-its-constant]
+
+                                      // evaluation splits across the division's sum
+                                      @the-sum-splits |
+                                        evalUpTo(addP(mulP(linear(al), q), r), al, kk) =
+                                          addF(evalUpTo(mulP(linear(al), q), al, kk),
+                                          evalUpTo(r, al, kk))
+                                        [using specialize evaluationPreservesAddition(mulP(linear(al), q), r, al, kk)]
+                                      @p-is-the-sum |
+                                        evalUpTo(p, al, kk) =
+                                          addF(evalUpTo(mulP(linear(al), q), al, kk),
+                                          evalUpTo(r, al, kk))
+                                        [by rewrite the-division the-sum-splits]
+                                      // rewrite the sum's two parts to their known values
+                                      @the-sum-in-known-values |
+                                        evalUpTo(p, al, kk) = addF(zeroF, coeff(r, ZERO))
+                                        [using simplify p-is-the-sum product-vanishes remainder-is-its-constant]
+                                      @zero-is-zero-plus-the-constant |
+                                        zeroF = addF(zeroF, coeff(r, ZERO))
+                                        [using chain p-vanishes-flipped the-sum-in-known-values]
+                                      @p-vanishes-flipped |
+                                        zeroF = evalUpTo(p, al, kk)
+                                        [by symmetry p-vanishes]
+                                      @zero-plus-the-constant |
+                                        addF(zeroF, coeff(r, ZERO)) = coeff(r, ZERO)
+                                        [using specialize addZeroLeftF(coeff(r, ZERO))]
+                                      @zero-is-the-constant |
+                                        zeroF = coeff(r, ZERO)
+                                        [using chain zero-is-zero-plus-the-constant zero-plus-the-constant]
+                                      @conclusion-the-constant-vanishes |
+                                        coeff(r, ZERO) = zeroF
+                                        [by symmetry zero-is-the-constant]
+                                    }
+                                  @d4 |
+                                    evalUpTo(r, al, kk) = coeff(r, ZERO) -> coeff(r, ZERO) = zeroF
+                                    [by discharge given-remainder-is-its-constant]
+                                }
+                              @d3 |
+                                evalUpTo(mulP(linear(al), q), al, kk) = zeroF ->
+                                  evalUpTo(r, al, kk) = coeff(r, ZERO) -> coeff(r, ZERO) = zeroF
+                                [by discharge given-product-vanishes]
+                            }
+                          @d2 |
+                            evalUpTo(p, al, kk) = zeroF ->
+                              evalUpTo(mulP(linear(al), q), al, kk) = zeroF ->
+                              evalUpTo(r, al, kk) = coeff(r, ZERO) -> coeff(r, ZERO) = zeroF
+                            [by discharge given-p-vanishes]
+                        }
+                      @d1 |
+                        p = addP(mulP(linear(al), q), r) ->
+                          evalUpTo(p, al, kk) = zeroF ->
+                          evalUpTo(mulP(linear(al), q), al, kk) = zeroF ->
+                          evalUpTo(r, al, kk) = coeff(r, ZERO) -> coeff(r, ZERO) = zeroF
+                        [by discharge given-the-division]
+                    }
+                  @gen-kk |
+                    forall k9: Nat;
+                      p = addP(mulP(linear(al), q), r) ->
+                      evalUpTo(p, al, k9) = zeroF ->
+                      evalUpTo(mulP(linear(al), q), al, k9) = zeroF ->
+                      evalUpTo(r, al, k9) = coeff(r, ZERO) -> coeff(r, ZERO) = zeroF
+                    [by generalize generalize-kk]
+                }
+              @gen-al |
+                forall a9: F; forall k9: Nat;
+                  p = addP(mulP(linear(a9), q), r) ->
+                  evalUpTo(p, a9, k9) = zeroF ->
+                  evalUpTo(mulP(linear(a9), q), a9, k9) = zeroF ->
+                  evalUpTo(r, a9, k9) = coeff(r, ZERO) -> coeff(r, ZERO) = zeroF
+                [by generalize generalize-al]
+            }
+          @gen-r |
+            forall r9: Poly; forall a9: F; forall k9: Nat;
+              p = addP(mulP(linear(a9), q), r9) ->
+              evalUpTo(p, a9, k9) = zeroF ->
+              evalUpTo(mulP(linear(a9), q), a9, k9) = zeroF ->
+              evalUpTo(r9, a9, k9) = coeff(r9, ZERO) -> coeff(r9, ZERO) = zeroF
+            [by generalize generalize-r]
+        }
+      @gen-q |
+        forall q9, r9: Poly; forall a9: F; forall k9: Nat;
+          p = addP(mulP(linear(a9), q9), r9) ->
+          evalUpTo(p, a9, k9) = zeroF ->
+          evalUpTo(mulP(linear(a9), q9), a9, k9) = zeroF ->
+          evalUpTo(r9, a9, k9) = coeff(r9, ZERO) -> coeff(r9, ZERO) = zeroF
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall al: F; forall kk: Nat;
+      p = addP(mulP(linear(al), q), r) ->
+      evalUpTo(p, al, kk) = zeroF ->
+      evalUpTo(mulP(linear(al), q), al, kk) = zeroF ->
+      evalUpTo(r, al, kk) = coeff(r, ZERO) -> coeff(r, ZERO) = zeroF
+    [by generalize generalize-p]
+qed
+
 // == THE EXISTENCE HALF ===================================================================
 //
 // "Let f(x) and g(x) be polynomials in F[x], where F is a field and g(x) is a nonzero
