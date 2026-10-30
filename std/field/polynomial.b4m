@@ -1512,6 +1512,8 @@ model FieldPolyModelsRingPoly {
   ring_poly.convolution: convolution
   ring_poly.tailConvolution: tailConvolution
   ring_poly.segment: segment
+  ring_poly.degreeAtMost: degreeAtMost
+  ring_poly.degreeAtMostMeaning <- degreeAtMostMeaning
   ring_poly.zeroPolyCoeff <- zeroPolyCoeff
   ring_poly.polyExtensionality <- polyExtensionality
   ring_poly.addPolyCoeff <- addPolyCoeff
@@ -4813,6 +4815,112 @@ proof
       evalUpTo(mulP(linear(al), q), al, kk) = zeroF ->
       evalUpTo(r, al, kk) = coeff(r, ZERO) -> coeff(r, ZERO) = zeroF
     [by generalize generalize-p]
+qed
+
+// The degree bound for a SUM, transferred: if neither summand reaches above n, the sum
+// does not either. (§17.1 proves this over a ring; the model carries it.)
+theorem polyAddDegreeBound: forall p, q: Poly; forall n: Nat;
+  degreeAtMost(p, n) -> degreeAtMost(q, n) -> degreeAtMost(addP(p, q), n)
+proof
+  @conclusion |
+    forall p, q: Poly; forall n: Nat;
+      degreeAtMost(p, n) -> degreeAtMost(q, n) -> degreeAtMost(addP(p, q), n)
+    [using model(FieldPolyModelsRingPoly) ring_poly.polyAddDegreeBound]
+qed
+
+// `evaluate(x, a)` equals the sum to ANY bound succ(n) with n >= degree(x), for a nonzero x.
+// This is the bridge the forward direction needs: it lets three different polynomials, each
+// with its own degree, be compared at one common bound.
+//
+// From `degree(x) <= n` take the gap `t` with degree(x) + t = n, so
+// succ(n) = add(succ(degree x), t), which is exactly the shape stabilization wants.
+theorem evaluateAtAnyLargerBound: forall x: Poly; forall a: F; forall n: Nat;
+  (not (x = ZEROP)) -> peano_order.less_or_equal(degree(x), n) ->
+  evalUpTo(x, a, succ(n)) = evaluate(x, a)
+proof
+  @generalize-x |
+    fix x: Poly {
+      @generalize-a |
+        fix a: F {
+          @generalize-n |
+            fix n: Nat {
+              @given-nonzero |
+                assume not (x = ZEROP) {
+                  @given-bounded |
+                    assume peano_order.less_or_equal(degree(x), n) {
+                      @nonzero |
+                        not (x = ZEROP)
+                        [by hypothesis given-nonzero]
+                      @bounded |
+                        peano_order.less_or_equal(degree(x), n)
+                        [by hypothesis given-bounded]
+                      @x-is-bounded-by-its-degree |
+                        degreeAtMost(x, degree(x))
+                        [using specialize degreeBoundsTheCoefficients(x) nonzero]
+                      // the gap: degree(x) + t = n
+                      @what-the-gap-means |
+                        peano_order.less_or_equal(degree(x), n) iff
+                          (exists t: Nat; peano.add(degree(x), t) = n)
+                        [using specialize peano_order.lessOrEqualIsGapExistential(degree(x), n)]
+                      @the-gap-exists |
+                        exists t: Nat; peano.add(degree(x), t) = n
+                        [using tautology bounded what-the-gap-means]
+                      @with-the-gap |
+                        unpack t: Nat from the-gap-exists {
+                          @the-gap-sums |
+                            peano.add(degree(x), t) = n
+                            [by hypothesis with-the-gap]
+                          // succ(degree x) + t = succ(degree x + t) = succ(n)
+                          @the-successor-sum |
+                            peano.add(succ(degree(x)), t) = succ(peano.add(degree(x), t))
+                            [using specialize peano.addSuccLeft(degree(x), t)]
+                          @the-successor-sum-at-n |
+                            peano.add(succ(degree(x)), t) = succ(n)
+                            [by rewrite the-gap-sums the-successor-sum]
+                          @stabilizes-for-all |
+                            forall tt: Nat;
+                              evalUpTo(x, a, peano.add(succ(degree(x)), tt)) =
+                              evalUpTo(x, a, succ(degree(x)))
+                            [using specialize evaluationStabilizesPastTheBound(x, a, degree(x)) x-is-bounded-by-its-degree]
+                          @stabilizes |
+                            evalUpTo(x, a, peano.add(succ(degree(x)), t)) =
+                              evalUpTo(x, a, succ(degree(x)))
+                            [using specialize stabilizes-for-all(t)]
+                          @conclusion-at-the-larger-bound |
+                            evalUpTo(x, a, succ(n)) = evaluate(x, a)
+                            [by rewrite the-successor-sum-at-n stabilizes]
+                        }
+                      @lifted |
+                        evalUpTo(x, a, succ(n)) = evaluate(x, a)
+                        [by unpacked with-the-gap]
+                    }
+                  @bounded-implies-lifted |
+                    peano_order.less_or_equal(degree(x), n) ->
+                      evalUpTo(x, a, succ(n)) = evaluate(x, a)
+                    [by discharge given-bounded]
+                }
+              @nonzero-implies |
+                (not (x = ZEROP)) -> peano_order.less_or_equal(degree(x), n) ->
+                  evalUpTo(x, a, succ(n)) = evaluate(x, a)
+                [by discharge given-nonzero]
+            }
+          @gen-n |
+            forall n9: Nat;
+              (not (x = ZEROP)) -> peano_order.less_or_equal(degree(x), n9) ->
+              evalUpTo(x, a, succ(n9)) = evaluate(x, a)
+            [by generalize generalize-n]
+        }
+      @gen-a |
+        forall a9: F; forall n9: Nat;
+          (not (x = ZEROP)) -> peano_order.less_or_equal(degree(x), n9) ->
+          evalUpTo(x, a9, succ(n9)) = evaluate(x, a9)
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall x: Poly; forall a: F; forall n: Nat;
+      (not (x = ZEROP)) -> peano_order.less_or_equal(degree(x), n) ->
+      evalUpTo(x, a, succ(n)) = evaluate(x, a)
+    [by generalize generalize-x]
 qed
 
 // == THE EXISTENCE HALF ===================================================================
