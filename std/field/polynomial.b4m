@@ -3296,6 +3296,209 @@ proof
     [by generalize generalize-a]
 qed
 
+// -- THE LINEAR POLYNOMIAL x - alpha ------------------------------------------------------
+//
+// The divisor in Judson's factor theorem. Built from the pieces already here: `x` is the
+// monomial `1·x^1`, `alpha` the constant `alpha·x^0`, and the difference is `subP`.
+define linear(alpha) = subP(monomial(oneF, succ(ZERO)), monomial(alpha, ZERO))
+
+// Its coefficient at index 1 is `1`, and above index 1 everything vanishes — the two facts
+// that pin its degree. Both read straight off the monomials' coefficient equations.
+theorem theLinearPolynomialLeadsWithOne: forall alpha: F;
+  coeff(linear(alpha), succ(ZERO)) = oneF
+proof
+  @generalize-alpha |
+    fix alpha: F {
+      @the-difference-coefficient |
+        coeff(linear(alpha), succ(ZERO)) =
+          addF(coeff(monomial(oneF, succ(ZERO)), succ(ZERO)),
+          negF(coeff(monomial(alpha, ZERO), succ(ZERO))))
+        [using specialize subPolyCoeff(monomial(oneF, succ(ZERO)), monomial(alpha, ZERO), succ(ZERO))]
+      @the-leading-monomial |
+        coeff(monomial(oneF, succ(ZERO)), succ(ZERO)) = oneF
+        [using specialize monomialCoeffAtItsIndex(oneF, succ(ZERO))]
+      @one-differs-from-zero-index |
+        succ(ZERO) != ZERO
+        [using specialize peano.succNotZero(ZERO)]
+      @the-constant-monomial-vanishes-here |
+        coeff(monomial(alpha, ZERO), succ(ZERO)) = zeroF
+        [using specialize monomialCoeffElsewhere(alpha, ZERO, succ(ZERO)) one-differs-from-zero-index]
+      @negating-zero |
+        negF(zeroF) = zeroF
+        [by cite field.negZero]
+      @the-coefficient-is-one-plus-zero |
+        coeff(linear(alpha), succ(ZERO)) = addF(oneF, zeroF)
+        [using simplify the-difference-coefficient the-leading-monomial the-constant-monomial-vanishes-here negating-zero]
+      @one-plus-zero |
+        addF(oneF, zeroF) = oneF
+        [using specialize field.addZeroRight(oneF)]
+      @conclusion-leads-with-one |
+        coeff(linear(alpha), succ(ZERO)) = oneF
+        [using chain the-coefficient-is-one-plus-zero one-plus-zero]
+    }
+  @conclusion |
+    forall alpha: F; coeff(linear(alpha), succ(ZERO)) = oneF
+    [by generalize generalize-alpha]
+qed
+
+// Above index 1 it vanishes: both monomials do.
+theorem theLinearPolynomialVanishesAboveOne: forall alpha: F;
+  degreeAtMost(linear(alpha), succ(ZERO))
+proof
+  @generalize-alpha |
+    fix alpha: F {
+      @generalize-index |
+        fix i: Nat {
+          @given-above-one |
+            assume less_than(succ(ZERO), i) {
+              @above-one |
+                less_than(succ(ZERO), i)
+                [by hypothesis given-above-one]
+              @i-differs-from-one |
+                succ(ZERO) != i
+                [using specialize peano_order.lessThanIsStrict(succ(ZERO), i) above-one]
+              @i-differs-from-one-flipped |
+                i != succ(ZERO)
+                [using specialize peano_order.natDisequalityIsSymmetric(succ(ZERO), i) i-differs-from-one]
+              @the-leading-monomial-vanishes |
+                coeff(monomial(oneF, succ(ZERO)), i) = zeroF
+                [using specialize monomialCoeffElsewhere(oneF, succ(ZERO), i) i-differs-from-one-flipped]
+              // i > 1 > 0 so i != 0
+              @one-is-below-i |
+                less_than(ZERO, succ(ZERO))
+                [using specialize peano_order.lessThanSelf(ZERO)]
+              @zero-is-below-i |
+                less_than(ZERO, i)
+                [using specialize peano_order.lessThanTransitive(ZERO, succ(ZERO), i) one-is-below-i above-one]
+              @i-differs-from-zero |
+                ZERO != i
+                [using specialize peano_order.lessThanIsStrict(ZERO, i) zero-is-below-i]
+              @i-differs-from-zero-flipped |
+                i != ZERO
+                [using specialize peano_order.natDisequalityIsSymmetric(ZERO, i) i-differs-from-zero]
+              @the-constant-monomial-vanishes |
+                coeff(monomial(alpha, ZERO), i) = zeroF
+                [using specialize monomialCoeffElsewhere(alpha, ZERO, i) i-differs-from-zero-flipped]
+              @the-difference-coefficient |
+                coeff(linear(alpha), i) =
+                  addF(coeff(monomial(oneF, succ(ZERO)), i),
+                  negF(coeff(monomial(alpha, ZERO), i)))
+                [using specialize subPolyCoeff(monomial(oneF, succ(ZERO)), monomial(alpha, ZERO), i)]
+              @negating-zero |
+                negF(zeroF) = zeroF
+                [by cite field.negZero]
+              @the-difference-of-zeros |
+                coeff(linear(alpha), i) = addF(zeroF, zeroF)
+                [using simplify the-difference-coefficient the-leading-monomial-vanishes the-constant-monomial-vanishes negating-zero]
+              @zero-plus-zero |
+                addF(zeroF, zeroF) = zeroF
+                [using specialize addZeroLeftF(zeroF)]
+              @the-coefficient-vanishes |
+                coeff(linear(alpha), i) = zeroF
+                [using chain the-difference-of-zeros zero-plus-zero]
+            }
+          @above-one-implies-vanishing |
+            less_than(succ(ZERO), i) -> coeff(linear(alpha), i) = zeroF
+            [by discharge given-above-one]
+        }
+      @vanishes-above-one |
+        forall i: Nat; less_than(succ(ZERO), i) -> coeff(linear(alpha), i) = zeroF
+        [by generalize generalize-index]
+      @what-bounding-means |
+        degreeAtMost(linear(alpha), succ(ZERO)) iff
+          (forall i: Nat; less_than(succ(ZERO), i) -> coeff(linear(alpha), i) = zeroF)
+        [using specialize degreeAtMostMeaning(linear(alpha), succ(ZERO))]
+      @conclusion-bounded-by-one |
+        degreeAtMost(linear(alpha), succ(ZERO))
+        [using tautology vanishes-above-one what-bounding-means]
+    }
+  @conclusion |
+    forall alpha: F; degreeAtMost(linear(alpha), succ(ZERO))
+    [by generalize generalize-alpha]
+qed
+
+// `x - alpha` is nonzero and has degree exactly 1. The degree is what makes the factor
+// theorem work: a remainder of degree below 1 is a CONSTANT, which is the step Judson takes
+// when he writes "since the degree of r(x) is less than 1, r(x) = a for a in F".
+theorem theLinearPolynomialIsNonzero: forall alpha: F;
+  not (linear(alpha) = ZEROP)
+proof
+  @generalize-alpha |
+    fix alpha: F {
+      @leads-with-one |
+        coeff(linear(alpha), succ(ZERO)) = oneF
+        [using specialize theLinearPolynomialLeadsWithOne(alpha)]
+      @one-is-not-zero |
+        oneF != zeroF
+        [by cite field.oneNotZero]
+      @given-it-is-zero |
+        assume linear(alpha) = ZEROP {
+          @it-is-zero |
+            linear(alpha) = ZEROP
+            [by hypothesis given-it-is-zero]
+          @the-zero-coefficient |
+            coeff(ZEROP, succ(ZERO)) = zeroF
+            [using specialize zeroPolyCoeff(succ(ZERO))]
+          @its-coefficient-would-vanish |
+            coeff(linear(alpha), succ(ZERO)) = zeroF
+            [by rewrite it-is-zero the-zero-coefficient]
+          @one-would-be-zero |
+            oneF = zeroF
+            [using chain leads-with-one-flipped its-coefficient-would-vanish]
+          @leads-with-one-flipped |
+            oneF = coeff(linear(alpha), succ(ZERO))
+            [by symmetry leads-with-one]
+          @contradiction |
+            not (linear(alpha) = ZEROP)
+            [by ex_falso one-would-be-zero one-is-not-zero]
+        }
+      @being-zero-is-absurd |
+        linear(alpha) = ZEROP -> (not (linear(alpha) = ZEROP))
+        [by discharge given-it-is-zero]
+      @conclusion-nonzero |
+        not (linear(alpha) = ZEROP)
+        [using tautology being-zero-is-absurd]
+    }
+  @conclusion |
+    forall alpha: F; not (linear(alpha) = ZEROP)
+    [by generalize generalize-alpha]
+qed
+
+theorem theLinearPolynomialHasDegreeOne: forall alpha: F;
+  degree(linear(alpha)) = succ(ZERO)
+proof
+  @generalize-alpha |
+    fix alpha: F {
+      @it-is-nonzero |
+        not (linear(alpha) = ZEROP)
+        [using specialize theLinearPolynomialIsNonzero(alpha)]
+      @leads-with-one |
+        coeff(linear(alpha), succ(ZERO)) = oneF
+        [using specialize theLinearPolynomialLeadsWithOne(alpha)]
+      @one-is-not-zero |
+        oneF != zeroF
+        [by cite field.oneNotZero]
+      @the-leading-coefficient-is-nonzero |
+        not (coeff(linear(alpha), succ(ZERO)) = zeroF)
+        [by rewrite leads-with-one-flipped one-is-not-zero]
+      @leads-with-one-flipped |
+        oneF = coeff(linear(alpha), succ(ZERO))
+        [by symmetry leads-with-one]
+      @bounded-by-one |
+        degreeAtMost(linear(alpha), succ(ZERO))
+        [using specialize theLinearPolynomialVanishesAboveOne(alpha)]
+      @one-is-the-degree |
+        succ(ZERO) = degree(linear(alpha))
+        [using specialize degreeIsUnique(linear(alpha), succ(ZERO)) it-is-nonzero the-leading-coefficient-is-nonzero bounded-by-one]
+      @conclusion-degree-one |
+        degree(linear(alpha)) = succ(ZERO)
+        [by symmetry one-is-the-degree]
+    }
+  @conclusion |
+    forall alpha: F; degree(linear(alpha)) = succ(ZERO)
+    [by generalize generalize-alpha]
+qed
+
 // == THE EXISTENCE HALF ===================================================================
 //
 // "Let f(x) and g(x) be polynomials in F[x], where F is a field and g(x) is a nonzero
