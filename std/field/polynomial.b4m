@@ -2256,6 +2256,242 @@ proof
     [by generalize generalize-leading]
 qed
 
+// ARM 3 — THE CONSTRUCTION, with the recursion's result taken as a hypothesis so the arm
+// itself is hypothesis-discharge rather than induction. Given `f` of degree `succ(d)`, `g`
+// of degree `m` with `k + m = succ(d)`, and that EVERY polynomial of degree at most `d`
+// divides, `f` divides.
+//
+// This is where the seven hypotheses of `theConstructionDropsADegree` get discharged: the
+// leading coefficients are nonzero because they ARE the degrees' coefficients, the monomial
+// is nonzero because its coefficient is, and that coefficient is nonzero because a field has
+// no zero divisors.
+theorem theConstructionDividesGivenTheReduction: forall f, g: Poly; forall k, m, d: Nat;
+  (not (f = ZEROP)) -> (not (g = ZEROP)) ->
+  degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
+  (forall reduced: Poly; degreeAtMost(reduced, d) ->
+  exists quotient: Poly; exists remainder: Poly;
+  reduced = addP(mulP(g, quotient), remainder) and
+  (remainder = ZEROP or less_than(degree(remainder), degree(g)))) ->
+  exists quotient: Poly; exists remainder: Poly;
+  f = addP(mulP(g, quotient), remainder) and
+  (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+proof
+  @generalize-f |
+    fix f: Poly {
+      @generalize-g |
+        fix g: Poly {
+          @generalize-k |
+            fix k: Nat {
+              @generalize-m |
+                fix m: Nat {
+                  @generalize-d |
+                    fix d: Nat {
+                      @given-f-nonzero |
+                        assume not (f = ZEROP) {
+                          @given-g-nonzero |
+                            assume not (g = ZEROP) {
+                              @given-g-degree |
+                                assume degree(g) = m {
+                                  @given-f-degree |
+                                    assume degree(f) = peano.add(k, m) {
+                                      @given-the-successor |
+                                        assume peano.add(k, m) = succ(d) {
+                                          @given-the-recursion |
+                                            assume forall reduced: Poly;
+                                              degreeAtMost(reduced, d) ->
+                                              exists quotient: Poly; exists remainder: Poly;
+                                              reduced = addP(mulP(g, quotient), remainder) and
+                                              (remainder = ZEROP or less_than(degree(remainder), degree(g))) {
+                                              @f-nonzero |
+                                                not (f = ZEROP)
+                                                [by hypothesis given-f-nonzero]
+                                              @g-nonzero |
+                                                not (g = ZEROP)
+                                                [by hypothesis given-g-nonzero]
+                                              @g-degree |
+                                                degree(g) = m
+                                                [by hypothesis given-g-degree]
+                                              @f-degree |
+                                                degree(f) = peano.add(k, m)
+                                                [by hypothesis given-f-degree]
+                                              @the-successor |
+                                                peano.add(k, m) = succ(d)
+                                                [by hypothesis given-the-successor]
+                                              @the-recursion |
+                                                forall reduced: Poly;
+                                                  degreeAtMost(reduced, d) ->
+                                                  exists quotient: Poly; exists remainder: Poly;
+                                                  reduced = addP(mulP(g, quotient), remainder) and
+                                                  (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+                                                [by hypothesis given-the-recursion]
+
+                                              // g's leading coefficient is nonzero
+                                              @g-leads-at-its-degree |
+                                                not (coeff(g, degree(g)) = zeroF)
+                                                [using specialize degreeIsALeadingIndex(g) g-nonzero]
+                                              @g-leads-at-m |
+                                                not (coeff(g, m) = zeroF)
+                                                [by rewrite g-degree g-leads-at-its-degree]
+
+                                              // f's leading coefficient is nonzero
+                                              @f-leads-at-its-degree |
+                                                not (coeff(f, degree(f)) = zeroF)
+                                                [using specialize degreeIsALeadingIndex(f) f-nonzero]
+                                              @f-leads-at-the-top |
+                                                not (coeff(f, peano.add(k, m)) = zeroF)
+                                                [by rewrite f-degree f-leads-at-its-degree]
+
+                                              // so the chosen coefficient, and the monomial, are nonzero
+                                              @the-chosen-coefficient-is-nonzero |
+                                                not (mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))) = zeroF)
+                                                [using specialize theChosenCoefficientIsNonzero(coeff(f, peano.add(k, m)), coeff(g, m)) f-leads-at-the-top g-leads-at-m]
+                                              @the-monomial-is-nonzero |
+                                                not (monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) = ZEROP)
+                                                [using specialize aNonzeroMonomialIsNonzero(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) the-chosen-coefficient-is-nonzero]
+
+                                              // the reduced polynomial's degree drops
+                                              @the-reduction-is-bounded |
+                                                degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
+                                                [using specialize theConstructionDropsADegree(f, g, k, m, d) f-nonzero g-nonzero the-monomial-is-nonzero g-leads-at-m the-chosen-coefficient-is-nonzero g-degree f-degree the-successor]
+
+                                              // the recursion divides it, and the quotient extends
+                                              @the-reduction-divides |
+                                                exists quotient: Poly; exists remainder: Poly;
+                                                  subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)) = addP(mulP(g, quotient), remainder) and
+                                                  (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+                                                [using specialize the-recursion(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g))) the-reduction-is-bounded]
+                                              @conclusion-f-divides |
+                                                exists quotient: Poly; exists remainder: Poly;
+                                                  f = addP(mulP(g, quotient), remainder) and
+                                                  (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+                                                [using specialize extendingADivisionOfTheReduction(f, g, monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k)) the-reduction-divides]
+                                            }
+                                          @recursion-implies-division |
+                                            (forall reduced: Poly; degreeAtMost(reduced, d) ->
+                                              exists quotient: Poly; exists remainder: Poly;
+                                              reduced = addP(mulP(g, quotient), remainder) and
+                                              (remainder = ZEROP or less_than(degree(remainder), degree(g)))) ->
+                                              exists quotient: Poly; exists remainder: Poly;
+                                              f = addP(mulP(g, quotient), remainder) and
+                                              (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+                                            [by discharge given-the-recursion]
+                                        }
+                                      @successor-implies-division |
+                                        peano.add(k, m) = succ(d) ->
+                                          (forall reduced: Poly; degreeAtMost(reduced, d) ->
+                                          exists quotient: Poly; exists remainder: Poly;
+                                          reduced = addP(mulP(g, quotient), remainder) and
+                                          (remainder = ZEROP or less_than(degree(remainder), degree(g)))) ->
+                                          exists quotient: Poly; exists remainder: Poly;
+                                          f = addP(mulP(g, quotient), remainder) and
+                                          (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+                                        [by discharge given-the-successor]
+                                    }
+                                  @f-degree-implies-division |
+                                    degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
+                                      (forall reduced: Poly; degreeAtMost(reduced, d) ->
+                                      exists quotient: Poly; exists remainder: Poly;
+                                      reduced = addP(mulP(g, quotient), remainder) and
+                                      (remainder = ZEROP or less_than(degree(remainder), degree(g)))) ->
+                                      exists quotient: Poly; exists remainder: Poly;
+                                      f = addP(mulP(g, quotient), remainder) and
+                                      (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+                                    [by discharge given-f-degree]
+                                }
+                              @g-degree-implies-division |
+                                degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
+                                  (forall reduced: Poly; degreeAtMost(reduced, d) ->
+                                  exists quotient: Poly; exists remainder: Poly;
+                                  reduced = addP(mulP(g, quotient), remainder) and
+                                  (remainder = ZEROP or less_than(degree(remainder), degree(g)))) ->
+                                  exists quotient: Poly; exists remainder: Poly;
+                                  f = addP(mulP(g, quotient), remainder) and
+                                  (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+                                [by discharge given-g-degree]
+                            }
+                          @g-nonzero-implies-division |
+                            (not (g = ZEROP)) -> degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
+                              (forall reduced: Poly; degreeAtMost(reduced, d) ->
+                              exists quotient: Poly; exists remainder: Poly;
+                              reduced = addP(mulP(g, quotient), remainder) and
+                              (remainder = ZEROP or less_than(degree(remainder), degree(g)))) ->
+                              exists quotient: Poly; exists remainder: Poly;
+                              f = addP(mulP(g, quotient), remainder) and
+                              (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+                            [by discharge given-g-nonzero]
+                        }
+                      @the-arm |
+                        (not (f = ZEROP)) -> (not (g = ZEROP)) -> degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
+                          (forall reduced: Poly; degreeAtMost(reduced, d) ->
+                          exists quotient: Poly; exists remainder: Poly;
+                          reduced = addP(mulP(g, quotient), remainder) and
+                          (remainder = ZEROP or less_than(degree(remainder), degree(g)))) ->
+                          exists quotient: Poly; exists remainder: Poly;
+                          f = addP(mulP(g, quotient), remainder) and
+                          (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+                        [by discharge given-f-nonzero]
+                    }
+                  @discharge-d |
+                    forall d: Nat;
+                      (not (f = ZEROP)) -> (not (g = ZEROP)) -> degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
+                      (forall reduced: Poly; degreeAtMost(reduced, d) ->
+                      exists quotient: Poly; exists remainder: Poly;
+                      reduced = addP(mulP(g, quotient), remainder) and
+                      (remainder = ZEROP or less_than(degree(remainder), degree(g)))) ->
+                      exists quotient: Poly; exists remainder: Poly;
+                      f = addP(mulP(g, quotient), remainder) and
+                      (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+                    [by generalize generalize-d]
+                }
+              @discharge-m |
+                forall m, d: Nat;
+                  (not (f = ZEROP)) -> (not (g = ZEROP)) -> degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
+                  (forall reduced: Poly; degreeAtMost(reduced, d) ->
+                  exists quotient: Poly; exists remainder: Poly;
+                  reduced = addP(mulP(g, quotient), remainder) and
+                  (remainder = ZEROP or less_than(degree(remainder), degree(g)))) ->
+                  exists quotient: Poly; exists remainder: Poly;
+                  f = addP(mulP(g, quotient), remainder) and
+                  (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+                [by generalize generalize-m]
+            }
+          @discharge-k |
+            forall k, m, d: Nat;
+              (not (f = ZEROP)) -> (not (g = ZEROP)) -> degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
+              (forall reduced: Poly; degreeAtMost(reduced, d) ->
+              exists quotient: Poly; exists remainder: Poly;
+              reduced = addP(mulP(g, quotient), remainder) and
+              (remainder = ZEROP or less_than(degree(remainder), degree(g)))) ->
+              exists quotient: Poly; exists remainder: Poly;
+              f = addP(mulP(g, quotient), remainder) and
+              (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+            [by generalize generalize-k]
+        }
+      @discharge-g |
+        forall g: Poly; forall k, m, d: Nat;
+          (not (f = ZEROP)) -> (not (g = ZEROP)) -> degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
+          (forall reduced: Poly; degreeAtMost(reduced, d) ->
+          exists quotient: Poly; exists remainder: Poly;
+          reduced = addP(mulP(g, quotient), remainder) and
+          (remainder = ZEROP or less_than(degree(remainder), degree(g)))) ->
+          exists quotient: Poly; exists remainder: Poly;
+          f = addP(mulP(g, quotient), remainder) and
+          (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+        [by generalize generalize-g]
+    }
+  @conclusion |
+    forall f, g: Poly; forall k, m, d: Nat;
+      (not (f = ZEROP)) -> (not (g = ZEROP)) -> degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
+      (forall reduced: Poly; degreeAtMost(reduced, d) ->
+      exists quotient: Poly; exists remainder: Poly;
+      reduced = addP(mulP(g, quotient), remainder) and
+      (remainder = ZEROP or less_than(degree(remainder), degree(g)))) ->
+      exists quotient: Poly; exists remainder: Poly;
+      f = addP(mulP(g, quotient), remainder) and
+      (remainder = ZEROP or less_than(degree(remainder), degree(g)))
+    [by generalize generalize-f]
+qed
+
 // == JUDSON'S DIVISION ALGORITHM (§17.2) ==================================================
 //
 // "Let f(x) and g(x) be polynomials in F[x], where F is a field and g(x) is a nonzero
