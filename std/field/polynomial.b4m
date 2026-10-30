@@ -4923,6 +4923,353 @@ proof
     [by generalize generalize-x]
 qed
 
+// A degree bound WEAKENS upward: bounded by m, and m at most n, so bounded by n. Needed to
+// bring a constant remainder up to whatever common bound the rest of an argument uses.
+theorem degreeAtMostWeakens: forall x: Poly; forall m, n: Nat;
+  degreeAtMost(x, m) -> peano_order.less_or_equal(m, n) -> degreeAtMost(x, n)
+proof
+  @generalize-x |
+    fix x: Poly {
+      @generalize-m |
+        fix m: Nat {
+          @generalize-n |
+            fix n: Nat {
+              @given-bounded |
+                assume degreeAtMost(x, m) {
+                  @given-m-below-n |
+                    assume peano_order.less_or_equal(m, n) {
+                      @bounded |
+                        degreeAtMost(x, m)
+                        [by hypothesis given-bounded]
+                      @m-below-n |
+                        peano_order.less_or_equal(m, n)
+                        [by hypothesis given-m-below-n]
+                      @what-m-bounding-means |
+                        degreeAtMost(x, m) iff
+                          (forall i: Nat; less_than(m, i) -> coeff(x, i) = zeroF)
+                        [using specialize degreeAtMostMeaning(x, m)]
+                      @vanishes-above-m |
+                        forall i: Nat; less_than(m, i) -> coeff(x, i) = zeroF
+                        [using tautology bounded what-m-bounding-means]
+                      @generalize-index |
+                        fix i: Nat {
+                          @given-above-n |
+                            assume less_than(n, i) {
+                              @above-n |
+                                less_than(n, i)
+                                [by hypothesis given-above-n]
+                              // m <= n < i, so m < i
+                              @n-below-i-or-equal |
+                                less_than(m, n) or m = n
+                                [using specialize peano_order.lessOrEqualSplit(m, n) m-below-n]
+                              @when-m-below-n |
+                                assume less_than(m, n) {
+                                  @strictly |
+                                    less_than(m, n)
+                                    [by hypothesis when-m-below-n]
+                                  @m-below-i-strict |
+                                    less_than(m, i)
+                                    [using specialize peano_order.lessThanTransitive(m, n, i) strictly above-n]
+                                }
+                              @when-m-equals-n |
+                                assume m = n {
+                                  @equal |
+                                    m = n
+                                    [by hypothesis when-m-equals-n]
+                                  @equal-flipped |
+                                    n = m
+                                    [by symmetry equal]
+                                  @m-below-i-equal |
+                                    less_than(m, i)
+                                    [by rewrite equal-flipped above-n]
+                                }
+                              @m-below-i |
+                                less_than(m, i)
+                                [by common_conclusion n-below-i-or-equal when-m-below-n when-m-equals-n]
+                              @vanishes-here |
+                                coeff(x, i) = zeroF
+                                [using specialize vanishes-above-m(i) m-below-i]
+                            }
+                          @above-n-implies-vanishing |
+                            less_than(n, i) -> coeff(x, i) = zeroF
+                            [by discharge given-above-n]
+                        }
+                      @vanishes-above-n |
+                        forall i: Nat; less_than(n, i) -> coeff(x, i) = zeroF
+                        [by generalize generalize-index]
+                      @what-n-bounding-means |
+                        degreeAtMost(x, n) iff
+                          (forall i: Nat; less_than(n, i) -> coeff(x, i) = zeroF)
+                        [using specialize degreeAtMostMeaning(x, n)]
+                      @conclusion-weakened |
+                        degreeAtMost(x, n)
+                        [using tautology vanishes-above-n what-n-bounding-means]
+                    }
+                  @below-implies-weakened |
+                    peano_order.less_or_equal(m, n) -> degreeAtMost(x, n)
+                    [by discharge given-m-below-n]
+                }
+              @bounded-implies |
+                degreeAtMost(x, m) -> peano_order.less_or_equal(m, n) ->
+                  degreeAtMost(x, n)
+                [by discharge given-bounded]
+            }
+          @gen-n |
+            forall n9: Nat;
+              degreeAtMost(x, m) -> peano_order.less_or_equal(m, n9) ->
+              degreeAtMost(x, n9)
+            [by generalize generalize-n]
+        }
+      @gen-m |
+        forall m9, n9: Nat;
+          degreeAtMost(x, m9) -> peano_order.less_or_equal(m9, n9) ->
+          degreeAtMost(x, n9)
+        [by generalize generalize-m]
+    }
+  @conclusion |
+    forall x: Poly; forall m, n: Nat;
+      degreeAtMost(x, m) -> peano_order.less_or_equal(m, n) -> degreeAtMost(x, n)
+    [by generalize generalize-x]
+qed
+
+// ZERO is at most anything.
+theorem zeroIsAtMostAnything: forall n: Nat; peano_order.less_or_equal(ZERO, n)
+proof
+  @generalize-n |
+    fix n: Nat {
+      @the-gap-exists |
+        exists d: Nat; peano.add(ZERO, d) = n
+        [by witness(n) zero-plus-n]
+      @zero-plus-n |
+        peano.add(ZERO, n) = n
+        [using specialize peano.addZeroLeft(n)]
+      @what-a-bound-means |
+        peano_order.less_or_equal(ZERO, n) iff (exists d: Nat; peano.add(ZERO, d) = n)
+        [using specialize peano_order.lessOrEqualIsGapExistential(ZERO, n)]
+      @conclusion-zero-is-least |
+        peano_order.less_or_equal(ZERO, n)
+        [using tautology the-gap-exists what-a-bound-means]
+    }
+  @conclusion |
+    forall n: Nat; peano_order.less_or_equal(ZERO, n)
+    [by generalize generalize-n]
+qed
+
+// THE FACTOR THEOREM, FORWARD DIRECTION. Judson: "Suppose that alpha in F and p(alpha) = 0.
+// By the division algorithm, there exist q(x) and r(x) such that p(x) = (x - alpha)q(x) +
+// r(x) ... But 0 = p(alpha) = 0*q(alpha) + a = a; consequently p(x) = (x - alpha)q(x)."
+//
+// The division's own output is taken as the hypothesis (the division algorithm supplies it),
+// along with the quotient being nonzero — which is Judson's implicit `deg p >= 1`: a nonzero
+// CONSTANT p vanishing at alpha would already be the zero polynomial, so the degenerate case
+// is vacuous rather than an omission.
+//
+// Everything is evaluated at ONE bound, succ(degree(product)): the product vanishes there by
+// the telescoping theorem, the constant remainder is lifted there from succ(ZERO), and p is
+// lifted there from its own degree.
+theorem aZeroGivesALinearFactor: forall p, q, r: Poly; forall al: F;
+  (not (p = ZEROP)) -> (not (q = ZEROP)) ->
+  isZeroOf(al, p) ->
+  p = addP(mulP(linear(al), q), r) ->
+  degreeAtMost(r, ZERO) ->
+  p = mulP(linear(al), q)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-al |
+                fix al: F {
+                  @given-p-nonzero |
+                    assume not (p = ZEROP) {
+                      @given-q-nonzero |
+                        assume not (q = ZEROP) {
+                          @given-p-vanishes |
+                            assume isZeroOf(al, p) {
+                              @given-division |
+                                assume p = addP(mulP(linear(al), q), r) {
+                                  @given-r-constant |
+                                    assume degreeAtMost(r, ZERO) {
+                                      @p-nonzero |
+                                        not (p = ZEROP)
+                                        [by hypothesis given-p-nonzero]
+                                      @q-nonzero |
+                                        not (q = ZEROP)
+                                        [by hypothesis given-q-nonzero]
+                                      @p-vanishes |
+                                        isZeroOf(al, p)
+                                        [by hypothesis given-p-vanishes]
+                                      @division |
+                                        p = addP(mulP(linear(al), q), r)
+                                        [by hypothesis given-division]
+                                      @r-constant |
+                                        degreeAtMost(r, ZERO)
+                                        [by hypothesis given-r-constant]
+
+                                      @linear-nonzero |
+                                        not (linear(al) = ZEROP)
+                                        [using specialize theLinearPolynomialIsNonzero(al)]
+                                      @product-nonzero |
+                                        not (mulP(linear(al), q) = ZEROP)
+                                        [using specialize aProductOfNonzerosIsNonzero(linear(al), q) linear-nonzero q-nonzero]
+
+                                      // (a) the product vanishes at the chosen bound
+                                      @product-is-a-zero |
+                                        isZeroOf(al, mulP(linear(al), q))
+                                        [using specialize theProductVanishesAtTheRoot(q, al) q-nonzero]
+                                      @what-product-vanishing-means |
+                                        isZeroOf(al, mulP(linear(al), q)) iff
+                                          evaluate(mulP(linear(al), q), al) = zeroF
+                                        [using specialize isZeroOfMeaning(al, mulP(linear(al), q))]
+                                      @product-vanishes-at-its-own-bound |
+                                        evalUpTo(mulP(linear(al), q), al,
+                                          succ(degree(mulP(linear(al), q)))) = zeroF
+                                        [using tautology product-is-a-zero what-product-vanishing-means]
+
+                                      // (b) p lifted to that bound. p is bounded by it,
+                                      // because both summands are.
+                                      @product-bounded-by-its-degree |
+                                        degreeAtMost(mulP(linear(al), q),
+                                          degree(mulP(linear(al), q)))
+                                        [using specialize degreeBoundsTheCoefficients(mulP(linear(al), q)) product-nonzero]
+                                      @zero-is-below-the-product-degree |
+                                        peano_order.less_or_equal(ZERO, degree(mulP(linear(al), q)))
+                                        [using specialize zeroIsAtMostAnything(degree(mulP(linear(al), q)))]
+                                      @r-bounded-by-the-product-degree |
+                                        degreeAtMost(r, degree(mulP(linear(al), q)))
+                                        [using specialize degreeAtMostWeakens(r, ZERO, degree(mulP(linear(al), q))) r-constant zero-is-below-the-product-degree]
+                                      @sum-bounded |
+                                        degreeAtMost(addP(mulP(linear(al), q), r),
+                                          degree(mulP(linear(al), q)))
+                                        [using specialize polyAddDegreeBound(mulP(linear(al), q), r, degree(mulP(linear(al), q))) product-bounded-by-its-degree r-bounded-by-the-product-degree]
+                                      @p-bounded |
+                                        degreeAtMost(p, degree(mulP(linear(al), q)))
+                                        [by rewrite division-flipped sum-bounded]
+                                      @division-flipped |
+                                        addP(mulP(linear(al), q), r) = p
+                                        [by symmetry division]
+                                      @p-degree-bounded |
+                                        peano_order.less_or_equal(degree(p),
+                                          degree(mulP(linear(al), q)))
+                                        [using specialize aBoundedPolynomialHasABoundedDegree(p, degree(mulP(linear(al), q))) p-nonzero p-bounded]
+                                      @p-lifted |
+                                        evalUpTo(p, al, succ(degree(mulP(linear(al), q)))) =
+                                          evaluate(p, al)
+                                        [using specialize evaluateAtAnyLargerBound(p, al, degree(mulP(linear(al), q))) p-nonzero p-degree-bounded]
+                                      @what-p-vanishing-means |
+                                        isZeroOf(al, p) iff evaluate(p, al) = zeroF
+                                        [using specialize isZeroOfMeaning(al, p)]
+                                      @p-evaluates-to-zero |
+                                        evaluate(p, al) = zeroF
+                                        [using tautology p-vanishes what-p-vanishing-means]
+                                      @p-vanishes-at-the-bound |
+                                        evalUpTo(p, al, succ(degree(mulP(linear(al), q)))) = zeroF
+                                        [using chain p-lifted p-evaluates-to-zero]
+
+                                      // (c) the remainder at that bound is its constant term
+                                      @r-at-one |
+                                        evalUpTo(r, al, succ(ZERO)) = coeff(r, ZERO)
+                                        [using specialize aConstantEvaluatesToItsCoefficient(r, al)]
+                                      @r-stabilizes |
+                                        forall tt: Nat;
+                                          evalUpTo(r, al, peano.add(succ(ZERO), tt)) =
+                                          evalUpTo(r, al, succ(ZERO))
+                                        [using specialize evaluationStabilizesPastTheBound(r, al, ZERO) r-constant]
+                                      @r-at-the-bound-via-the-sum |
+                                        evalUpTo(r, al,
+                                          peano.add(succ(ZERO), degree(mulP(linear(al), q)))) =
+                                          evalUpTo(r, al, succ(ZERO))
+                                        [using specialize r-stabilizes(degree(mulP(linear(al), q)))]
+                                      @the-bound-index |
+                                        peano.add(succ(ZERO), degree(mulP(linear(al), q))) =
+                                          succ(degree(mulP(linear(al), q)))
+                                        [using specialize onePlusIsSucc(degree(mulP(linear(al), q)))]
+                                      @r-at-the-bound |
+                                        evalUpTo(r, al, succ(degree(mulP(linear(al), q)))) =
+                                          evalUpTo(r, al, succ(ZERO))
+                                        [by rewrite the-bound-index r-at-the-bound-via-the-sum]
+                                      @r-at-the-bound-is-its-constant |
+                                        evalUpTo(r, al, succ(degree(mulP(linear(al), q)))) =
+                                          coeff(r, ZERO)
+                                        [using chain r-at-the-bound r-at-one]
+
+                                      // now the algebra: the remainder's constant is zero
+                                      @the-constant-vanishes |
+                                        coeff(r, ZERO) = zeroF
+                                        [using specialize theRemainderVanishesAtTheRoot(p, q, r, al, succ(degree(mulP(linear(al), q)))) division p-vanishes-at-the-bound product-vanishes-at-its-own-bound r-at-the-bound-is-its-constant]
+                                      @r-is-zero |
+                                        r = ZEROP
+                                        [using specialize aVanishingConstantIsZero(r) r-constant the-constant-vanishes]
+
+                                      // so p = product + 0 = product
+                                      @p-is-the-product-plus-zero |
+                                        p = addP(mulP(linear(al), q), ZEROP)
+                                        [by rewrite r-is-zero division]
+                                      @adding-zero |
+                                        addP(mulP(linear(al), q), ZEROP) =
+                                          mulP(linear(al), q)
+                                        [using specialize polyAddZeroRight(mulP(linear(al), q))]
+                                      @conclusion-the-linear-factor |
+                                        p = mulP(linear(al), q)
+                                        [using chain p-is-the-product-plus-zero adding-zero]
+                                    }
+                                  @e5 |
+                                    degreeAtMost(r, ZERO) -> p = mulP(linear(al), q)
+                                    [by discharge given-r-constant]
+                                }
+                              @e4 |
+                                p = addP(mulP(linear(al), q), r) ->
+                                  degreeAtMost(r, ZERO) -> p = mulP(linear(al), q)
+                                [by discharge given-division]
+                            }
+                          @e3 |
+                            isZeroOf(al, p) -> p = addP(mulP(linear(al), q), r) ->
+                              degreeAtMost(r, ZERO) -> p = mulP(linear(al), q)
+                            [by discharge given-p-vanishes]
+                        }
+                      @e2 |
+                        (not (q = ZEROP)) -> isZeroOf(al, p) ->
+                          p = addP(mulP(linear(al), q), r) ->
+                          degreeAtMost(r, ZERO) -> p = mulP(linear(al), q)
+                        [by discharge given-q-nonzero]
+                    }
+                  @e1 |
+                    (not (p = ZEROP)) -> (not (q = ZEROP)) -> isZeroOf(al, p) ->
+                      p = addP(mulP(linear(al), q), r) ->
+                      degreeAtMost(r, ZERO) -> p = mulP(linear(al), q)
+                    [by discharge given-p-nonzero]
+                }
+              @gen-al |
+                forall a9: F;
+                  (not (p = ZEROP)) -> (not (q = ZEROP)) -> isZeroOf(a9, p) ->
+                  p = addP(mulP(linear(a9), q), r) ->
+                  degreeAtMost(r, ZERO) -> p = mulP(linear(a9), q)
+                [by generalize generalize-al]
+            }
+          @gen-r |
+            forall r9: Poly; forall a9: F;
+              (not (p = ZEROP)) -> (not (q = ZEROP)) -> isZeroOf(a9, p) ->
+              p = addP(mulP(linear(a9), q), r9) ->
+              degreeAtMost(r9, ZERO) -> p = mulP(linear(a9), q)
+            [by generalize generalize-r]
+        }
+      @gen-q |
+        forall q9, r9: Poly; forall a9: F;
+          (not (p = ZEROP)) -> (not (q9 = ZEROP)) -> isZeroOf(a9, p) ->
+          p = addP(mulP(linear(a9), q9), r9) ->
+          degreeAtMost(r9, ZERO) -> p = mulP(linear(a9), q9)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall al: F;
+      (not (p = ZEROP)) -> (not (q = ZEROP)) -> isZeroOf(al, p) ->
+      p = addP(mulP(linear(al), q), r) ->
+      degreeAtMost(r, ZERO) -> p = mulP(linear(al), q)
+    [by generalize generalize-p]
+qed
+
 // == THE EXISTENCE HALF ===================================================================
 //
 // "Let f(x) and g(x) be polynomials in F[x], where F is a field and g(x) is a nonzero
@@ -5668,27 +6015,32 @@ qed
 
 // == WHAT IS NOT HERE ====================================================================
 //
-// §17.2's DIVISION ALGORITHM IS COMPLETE, both halves.
+// §17.2 IS COMPLETE through the factor theorem:
 //
-// THE FACTOR THEOREM (his first corollary): its CONVERSE is proved
-// (`theProductVanishesAtTheRoot`), and the FORWARD direction's algebra is proved
-// (`theRemainderVanishesAtTheRoot` plus `aVanishingConstantIsZero`). What is NOT done is
-// assembling the forward direction into one statement, and the obstacle is bookkeeping
-// rather than mathematics:
+//   `theDivisionAlgorithmExists` + `aSmallDegreeMultipleIsTheZeroMultiple`
+//        — the division algorithm, both halves
+//   `aZeroGivesALinearFactor`    — the factor theorem FORWARD (alpha a zero ⟹ x−alpha divides)
+//   `theProductVanishesAtTheRoot` — the factor theorem CONVERSE
 //
-//   `theRemainderVanishesAtTheRoot` takes the common evaluation BOUND as a hypothesis. To
-//   discharge it, all three of `p`, the product, and the remainder must be evaluated at ONE
-//   bound. `evaluationStabilizesPastTheBound` lifts each to a larger bound, so the remaining
-//   step is to show that bound can be chosen — which needs `degree(p) = degree(product)`
-//   once the remainder is a constant. That is a degree argument, not an evaluation one.
+// Neither direction needed the double-sum reindexing that blocks multiplicative
+// associativity. The forward direction evaluates everything at ONE bound,
+// `succ(degree(product))`: the product vanishes there by the telescoping theorem, the
+// constant remainder is lifted there by stabilization, and `p` is lifted there from its own
+// degree once `polyAddDegreeBound` shows the sum is bounded by the product's degree.
 //
-// AT MOST n ZEROS (his second corollary) inducts using the factor theorem, so it follows.
-// §17.3 (irreducibles, Gauss's Lemma, Eisenstein) rests on both.
+// STILL TO DO: his second corollary, AT MOST n ZEROS — "a nonzero polynomial of degree n can
+// have at most n distinct zeros". That is an induction on the degree: given a zero alpha, the
+// factor theorem splits `p = (x − alpha)q` with `deg q = n − 1`, and any OTHER zero beta of
+// `p` is a zero of `q` because `(beta − alpha) != 0` in a field. Everything it cites is now
+// here; what it needs built is a way to say "at most n distinct zeros", which means either a
+// finite-set count over `F` or an injection argument — a counting statement, not a polynomial
+// one, so it reaches outside this file.
+//
+// §17.3 (irreducibles, Gauss's Lemma, Eisenstein) rests on that corollary.
 //
 // Still open and unrelated: multiplicative ASSOCIATIVITY of a polynomial ring, which needs a
-// double-sum flattening. Note the factor theorem NO LONGER needs it — the telescoping route
-// (`theTelescopingPartialSum`) got around it for the one product that mattered, so
-// associativity is now the only consumer of that missing lemma.
+// double-sum flattening. It is now the ONLY consumer of that missing lemma — the telescoping
+// route removed the factor theorem's dependence on it.
 //
 // NOTE ON ORGANIZATION (user direction, 2026-10-29): the eventual std shape for polynomials
 // is Judson's CHAPTER 20 construction, `F[x]` as a VECTOR SPACE over `F`. The `R[x]` model
