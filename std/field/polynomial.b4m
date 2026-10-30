@@ -4222,6 +4222,107 @@ proof
     [by generalize generalize-q]
 qed
 
+// THE PAYOFF: alpha is a zero of (x - alpha)*q. This is the multiplicative fact both
+// directions of Judson's factor theorem need, obtained WITHOUT the general evaluation
+// homomorphism: the telescoping sum's residue sits at an index above q's degree, so it
+// vanishes.
+theorem theProductVanishesAtTheRoot: forall q: Poly; forall al: F;
+  (not (q = ZEROP)) -> isZeroOf(al, mulP(linear(al), q))
+proof
+  @generalize-q |
+    fix q: Poly {
+      @generalize-al |
+        fix al: F {
+          @given-q-nonzero |
+            assume not (q = ZEROP) {
+              @q-nonzero |
+                not (q = ZEROP)
+                [by hypothesis given-q-nonzero]
+              @linear-nonzero |
+                not (linear(al) = ZEROP)
+                [using specialize theLinearPolynomialIsNonzero(al)]
+
+              // the product's degree is 1 + deg q
+              @the-product-degree |
+                degree(mulP(linear(al), q)) =
+                  peano.add(degree(linear(al)), degree(q))
+                [using specialize degreeOfAProduct(linear(al), q) linear-nonzero q-nonzero]
+              @the-divisor-degree |
+                degree(linear(al)) = succ(ZERO)
+                [using specialize theLinearPolynomialHasDegreeOne(al)]
+              @the-product-degree-is-one-plus |
+                degree(mulP(linear(al), q)) = peano.add(succ(ZERO), degree(q))
+                [using simplify the-product-degree the-divisor-degree]
+              @the-index-bridge |
+                peano.add(succ(ZERO), degree(q)) = succ(degree(q))
+                [using specialize onePlusIsSucc(degree(q))]
+              @the-product-degree-is-a-successor |
+                degree(mulP(linear(al), q)) = succ(degree(q))
+                [using chain the-product-degree-is-one-plus the-index-bridge]
+
+              // q vanishes at that index, since it is above q's own degree
+              @q-is-bounded |
+                degreeAtMost(q, degree(q))
+                [using specialize degreeBoundsTheCoefficients(q) q-nonzero]
+              @what-bounding-means |
+                degreeAtMost(q, degree(q)) iff
+                  (forall i: Nat; less_than(degree(q), i) -> coeff(q, i) = zeroF)
+                [using specialize degreeAtMostMeaning(q, degree(q))]
+              @q-vanishes-above |
+                forall i: Nat; less_than(degree(q), i) -> coeff(q, i) = zeroF
+                [using tautology q-is-bounded what-bounding-means]
+              @the-degree-is-below-its-successor |
+                less_than(degree(q), succ(degree(q)))
+                [using specialize peano_order.lessThanSelf(degree(q))]
+              @q-vanishes-at-the-product-degree |
+                coeff(q, succ(degree(q))) = zeroF
+                [using specialize q-vanishes-above(succ(degree(q))) the-degree-is-below-its-successor]
+
+              // the telescoping value at that bound
+              @the-value |
+                evalUpTo(mulP(linear(al), q), al, succ(succ(degree(q)))) =
+                  negF(mulF(power(al, succ(succ(degree(q)))), coeff(q, succ(degree(q)))))
+                [using specialize theTelescopingPartialSum(q, al, succ(degree(q)))]
+              @times-zero |
+                mulF(power(al, succ(succ(degree(q)))), zeroF) = zeroF
+                [using specialize field.mulZeroRight(power(al, succ(succ(degree(q)))))]
+              @negating-zero |
+                negF(zeroF) = zeroF
+                [by cite field.negZero]
+              @the-value-is-zero |
+                evalUpTo(mulP(linear(al), q), al, succ(succ(degree(q)))) = zeroF
+                [using simplify the-value q-vanishes-at-the-product-degree times-zero negating-zero]
+
+              // and that bound IS succ(degree(product))
+              @the-evaluation-vanishes |
+                evalUpTo(mulP(linear(al), q), al,
+                  succ(degree(mulP(linear(al), q)))) = zeroF
+                [by rewrite the-product-degree-is-a-successor-flipped the-value-is-zero]
+              @the-product-degree-is-a-successor-flipped |
+                succ(degree(q)) = degree(mulP(linear(al), q))
+                [by symmetry the-product-degree-is-a-successor]
+              @what-being-a-zero-means |
+                isZeroOf(al, mulP(linear(al), q)) iff
+                  evaluate(mulP(linear(al), q), al) = zeroF
+                [using specialize isZeroOfMeaning(al, mulP(linear(al), q))]
+              @conclusion-the-product-vanishes |
+                isZeroOf(al, mulP(linear(al), q))
+                [using tautology the-evaluation-vanishes what-being-a-zero-means]
+            }
+          @nonzero-implies-vanishing |
+            (not (q = ZEROP)) -> isZeroOf(al, mulP(linear(al), q))
+            [by discharge given-q-nonzero]
+        }
+      @discharge-al |
+        forall al: F; (not (q = ZEROP)) -> isZeroOf(al, mulP(linear(al), q))
+        [by generalize generalize-al]
+    }
+  @conclusion |
+    forall q: Poly; forall al: F;
+      (not (q = ZEROP)) -> isZeroOf(al, mulP(linear(al), q))
+    [by generalize generalize-q]
+qed
+
 // == THE EXISTENCE HALF ===================================================================
 //
 // "Let f(x) and g(x) be polynomials in F[x], where F is a field and g(x) is a nonzero
@@ -4980,17 +5081,19 @@ qed
 //   `theRootOfTheLinearPolynomial` — that alpha really is a zero of `x - alpha`, the one
 //   concrete evaluation either direction of the corollary needs.
 //
-//   BLOCKED: the forward direction, "alpha a zero of p implies (x - alpha) divides p". His
-//   argument evaluates the division `p = (x - alpha)q + r` AT alpha, which needs the
-//   EVALUATION HOMOMORPHISM — that `evaluate` preserves both `+` and `·`. The additive half
-//   is provable (aata/17.1 proves it over a ring). The MULTIPLICATIVE half is the second
-//   display of Judson's Theorem 17.5, and it rests on the SAME convolution reindexing that
-//   multiplicative associativity needs: a double sum flattened into a sum over index pairs.
-//   So this is the associativity gap surfacing a second time, not a new obstacle.
+//   The CONVERSE IS PROVED: `theProductVanishesAtTheRoot` is "if (x - alpha) divides p then
+//   p(alpha) = 0", and it does NOT need the general evaluation homomorphism. `x - alpha` has
+//   only two nonzero coefficients, so its convolution collapses to two terms and the
+//   resulting sum TELESCOPES: summing to limit m+1 leaves exactly `-alpha^(m+1)·q_m`, whose
+//   residue at the product's own degree sits above `q`'s degree and so vanishes.
 //
-//   The CONVERSE ("if (x - alpha) divides p then p(alpha) = 0") needs only that evaluating a
-//   product with a vanishing factor gives zero — the multiplicative half again, at one
-//   specific argument.
+//   BLOCKED: the forward direction, "alpha a zero of p implies (x - alpha) divides p". His
+//   argument evaluates the division `p = (x - alpha)q + r` AT alpha, which needs evaluation
+//   to be ADDITIVE across that sum — and the additive half, unlike the multiplicative one,
+//   is provable (aata/17.1 proves it over a ring); what is missing here is only that it has
+//   not been lifted to this file. The remaining genuine obstacle is narrower than it looked:
+//   the forward direction also needs `evaluate(mulP(linear, q), alpha)` in the SAME form the
+//   telescoping theorem gives, which it now has. This is worth attempting again.
 //
 // AT MOST n ZEROS (his second corollary) inducts using the factor theorem, so it follows it.
 // §17.3 (irreducibles, Gauss's Lemma, Eisenstein) rests on both.
