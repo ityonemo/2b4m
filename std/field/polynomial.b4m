@@ -3957,6 +3957,130 @@ proof
     [by generalize generalize-q]
 qed
 
+// one plus m is succ(m) -- the index bridge the stabilization needs
+theorem onePlusIsSucc: forall m: Nat; peano.add(succ(ZERO), m) = succ(m)
+proof
+  @generalize-m |
+    fix m: Nat {
+      @the-successor-moves-out |
+        peano.add(succ(ZERO), m) = succ(peano.add(ZERO, m))
+        [using specialize peano.addSuccLeft(ZERO, m)]
+      @zero-on-the-left |
+        peano.add(ZERO, m) = m
+        [using specialize peano.addZeroLeft(m)]
+      @conclusion-one-plus |
+        peano.add(succ(ZERO), m) = succ(m)
+        [using simplify the-successor-moves-out zero-on-the-left]
+    }
+  @conclusion |
+    forall m: Nat; peano.add(succ(ZERO), m) = succ(m)
+    [by generalize generalize-m]
+qed
+
+// THE PRODUCT'S COEFFICIENT at a successor index: -al*q_{succ m} + q_m.
+theorem theProductCoefficientAtSucc: forall q: Poly; forall al: F; forall m: Nat;
+  coeff(mulP(linear(al), q), succ(m)) =
+  addF(mulF(negF(al), coeff(q, succ(m))), coeff(q, m))
+proof
+  @generalize-q |
+    fix q: Poly {
+      @generalize-al |
+        fix al: F {
+          @generalize-m |
+            fix m: Nat {
+              @the-coefficient-is-the-convolution |
+                coeff(mulP(linear(al), q), succ(m)) =
+                  convolution(linear(al), q, succ(m), succ(m))
+                [using specialize mulPolyCoeff(linear(al), q, succ(m))]
+              @the-index-bridge |
+                peano.add(succ(ZERO), m) = succ(m)
+                [using specialize onePlusIsSucc(m)]
+              @stabilizes-from-the-sum |
+                convolution(linear(al), q, succ(m), peano.add(succ(ZERO), m)) =
+                  convolution(linear(al), q, succ(m), succ(ZERO))
+                [using specialize theLinearConvolutionStabilizes(q, al, succ(m), m)]
+              @stabilizes-at-succ |
+                convolution(linear(al), q, succ(m), succ(m)) =
+                  convolution(linear(al), q, succ(m), succ(ZERO))
+                [by rewrite the-index-bridge stabilizes-from-the-sum]
+              @the-two-terms |
+                convolution(linear(al), q, succ(m), succ(ZERO)) =
+                  addF(mulF(negF(al), coeff(q, succ(m))),
+                  coeff(q, subN(succ(m), succ(ZERO))))
+                [using specialize theLinearConvolutionAtOne(q, al, succ(m))]
+              @the-shift-strips |
+                subN(succ(m), succ(ZERO)) = subN(m, ZERO)
+                [using specialize subtraction.subSuccSucc(m, ZERO)]
+              @the-shift-at-zero |
+                subN(m, ZERO) = m
+                [using specialize subtraction.subZeroRight(m)]
+              @the-shift |
+                subN(succ(m), succ(ZERO)) = m
+                [using chain the-shift-strips the-shift-at-zero]
+              @the-two-terms-shifted |
+                convolution(linear(al), q, succ(m), succ(ZERO)) =
+                  addF(mulF(negF(al), coeff(q, succ(m))), coeff(q, m))
+                [using simplify the-two-terms the-shift the-shift-at-zero]
+              @conclusion-the-coefficient |
+                coeff(mulP(linear(al), q), succ(m)) =
+                  addF(mulF(negF(al), coeff(q, succ(m))), coeff(q, m))
+                [using chain the-coefficient-is-the-convolution stabilizes-at-succ the-two-terms-shifted]
+            }
+          @discharge-m |
+            forall m: Nat;
+              coeff(mulP(linear(al), q), succ(m)) =
+              addF(mulF(negF(al), coeff(q, succ(m))), coeff(q, m))
+            [by generalize generalize-m]
+        }
+      @discharge-al |
+        forall al: F; forall m: Nat;
+          coeff(mulP(linear(al), q), succ(m)) =
+          addF(mulF(negF(al), coeff(q, succ(m))), coeff(q, m))
+        [by generalize generalize-al]
+    }
+  @conclusion |
+    forall q: Poly; forall al: F; forall m: Nat;
+      coeff(mulP(linear(al), q), succ(m)) =
+      addF(mulF(negF(al), coeff(q, succ(m))), coeff(q, m))
+    [by generalize generalize-q]
+qed
+
+// and at index ZERO: just -al*q_0
+theorem theProductCoefficientAtZero: forall q: Poly; forall al: F;
+  coeff(mulP(linear(al), q), ZERO) = mulF(negF(al), coeff(q, ZERO))
+proof
+  @generalize-q |
+    fix q: Poly {
+      @generalize-al |
+        fix al: F {
+          @the-coefficient-is-the-convolution |
+            coeff(mulP(linear(al), q), ZERO) =
+              convolution(linear(al), q, ZERO, ZERO)
+            [using specialize mulPolyCoeff(linear(al), q, ZERO)]
+          @the-base |
+            convolution(linear(al), q, ZERO, ZERO) =
+              mulF(coeff(linear(al), ZERO), coeff(q, ZERO))
+            [using specialize convolutionZero(linear(al), q, ZERO)]
+          @the-constant-term |
+            coeff(linear(al), ZERO) = negF(al)
+            [using specialize theLinearPolynomialHasNegatedConstantTerm(al)]
+          @the-base-negated |
+            convolution(linear(al), q, ZERO, ZERO) = mulF(negF(al), coeff(q, ZERO))
+            [using simplify the-base the-constant-term]
+          @conclusion-at-zero |
+            coeff(mulP(linear(al), q), ZERO) = mulF(negF(al), coeff(q, ZERO))
+            [using chain the-coefficient-is-the-convolution the-base-negated]
+        }
+      @discharge-al |
+        forall al: F; coeff(mulP(linear(al), q), ZERO) = mulF(negF(al), coeff(q, ZERO))
+        [by generalize generalize-al]
+    }
+  @conclusion |
+    forall q: Poly; forall al: F;
+      coeff(mulP(linear(al), q), ZERO) = mulF(negF(al), coeff(q, ZERO))
+    [by generalize generalize-q]
+qed
+
 // == THE EXISTENCE HALF ===================================================================
 //
 // "Let f(x) and g(x) be polynomials in F[x], where F is a field and g(x) is a nonzero
