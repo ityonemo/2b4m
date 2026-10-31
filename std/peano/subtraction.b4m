@@ -26,6 +26,8 @@ fact lessThanIntro = ordering.lessThanIntro
 fact lessThanElim = ordering.lessThanElim
 fact addZeroRight = peano.addZeroRight
 fact addIsCommutative = peano.addIsCommutative
+fact addIsAssociative = peano.addIsAssociative
+fact addLeftSwap = peano.addLeftSwap
 fact addSuccRight = peano.addSuccRight
 fact mulZeroRight = peano.mulZeroRight
 fact mulSuccRight = peano.mulSuccRight
@@ -915,18 +917,95 @@ proof
           @discharge-x |
             forall x9: Nat;
               less_than(x9, succ(m)) -> less_than(m, succ(i)) ->
-                sub(sub(i, x9), sub(m, x9)) = sub(i, m)
+              sub(sub(i, x9), sub(m, x9)) = sub(i, m)
             [by generalize generalize-x]
         }
       @discharge-m |
         forall m9, x9: Nat;
           less_than(x9, succ(m9)) -> less_than(m9, succ(i)) ->
-            sub(sub(i, x9), sub(m9, x9)) = sub(i, m9)
+          sub(sub(i, x9), sub(m9, x9)) = sub(i, m9)
         [by generalize generalize-m]
     }
   @conclusion |
     forall i, m, x: Nat;
       less_than(x, succ(m)) -> less_than(m, succ(i)) ->
-        sub(sub(i, x), sub(m, x)) = sub(i, m)
+      sub(sub(i, x), sub(m, x)) = sub(i, m)
     [by generalize generalize-i]
+qed
+
+// x + j < i leaves x below the difference: from the gap, i = (x+j) + succ(d), so
+// i - j = x + succ(d), which exceeds x. The companion to addSubCancel for strict bounds.
+theorem aSumBelowGivesADifferenceAbove: forall x, j, i: Nat;
+  less_than(add(x, j), i) -> less_than(x, sub(i, j))
+proof
+  @generalize-x |
+    fix x: Nat {
+      @generalize-j |
+        fix j: Nat {
+          @generalize-i |
+            fix i: Nat {
+              @given-the-sum-is-below |
+                assume less_than(add(x, j), i) {
+                  @the-sum-is-below |
+                    less_than(add(x, j), i)
+                    [by hypothesis given-the-sum-is-below]
+                  // name the gap
+                  @the-gap-exists |
+                    exists d: Nat; add(add(x, j), succ(d)) = i
+                    [using specialize ordering.lessThanElim(add(x, j), i) the-sum-is-below]
+                  @with-the-gap-d |
+                    unpack d: Nat from the-gap-exists {
+                      @the-gap |
+                        add(add(x, j), succ(d)) = i
+                        [by hypothesis with-the-gap-d]
+                      // regroup so j is the outermost addend
+                      @the-regrouping |
+                        add(add(x, j), succ(d)) = add(add(x, succ(d)), j)
+                        [using assoc_commut]
+                      @i-regrouped |
+                        add(add(x, succ(d)), j) = i
+                        [using chain the-regrouping-flipped the-gap]
+                      @the-regrouping-flipped |
+                        add(add(x, succ(d)), j) = add(add(x, j), succ(d))
+                        [by symmetry the-regrouping]
+                      // so i - j is x + succ(d)
+                      @the-cancellation |
+                        sub(add(add(x, succ(d)), j), j) = add(x, succ(d))
+                        [using specialize subAddCancel(add(x, succ(d)), j)]
+                      @the-difference |
+                        sub(i, j) = add(x, succ(d))
+                        [by rewrite i-regrouped the-cancellation]
+                      // and x + succ(d) exceeds x
+                      @x-is-below-the-gap-sum |
+                        less_than(x, add(x, succ(d)))
+                        [using specialize ordering.lessThanIntro(x, d, add(x, succ(d))) reflexivity-of-the-gap-sum]
+                      @reflexivity-of-the-gap-sum |
+                        add(x, succ(d)) = add(x, succ(d))
+                        [by reflexivity]
+                      @conclusion-x-is-below-the-difference |
+                        less_than(x, sub(i, j))
+                        [by rewrite the-difference x-is-below-the-gap-sum]
+                    }
+                  @conclusion-from-the-gap |
+                    less_than(x, sub(i, j))
+                    [by unpacked with-the-gap-d]
+                }
+              @below-implies |
+                less_than(add(x, j), i) -> less_than(x, sub(i, j))
+                [by discharge given-the-sum-is-below]
+            }
+          @discharge-i |
+            forall i9: Nat;
+              less_than(add(x, j), i9) -> less_than(x, sub(i9, j))
+            [by generalize generalize-i]
+        }
+      @discharge-j |
+        forall j9, i9: Nat;
+          less_than(add(x, j9), i9) -> less_than(x, sub(i9, j9))
+        [by generalize generalize-j]
+    }
+  @conclusion |
+    forall x, j, i: Nat;
+      less_than(add(x, j), i) -> less_than(x, sub(i, j))
+    [by generalize generalize-x]
 qed

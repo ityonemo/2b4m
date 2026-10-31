@@ -2123,3 +2123,108 @@ proof
     forall a, b: Nat; less_than(a, b) -> a != b
     [by generalize generalize-a]
 qed
+
+// -- mixed strict/non-strict transitivity ------------------------------------------------
+// `lessOrEqualTransitive` chains two non-strict steps and `lessThanTransitive` two strict
+// ones; the mixed forms were missing, and a bounded-index argument needs them constantly.
+
+// a <= b and b < c give a < c.
+theorem atMostThenBelowIsBelow: forall a, b, c: Nat;
+  less_or_equal(a, b) -> less_than(b, c) -> less_than(a, c)
+proof
+  @generalize-a |
+    fix a: Nat {
+      @generalize-b |
+        fix b: Nat {
+          @generalize-c |
+            fix c: Nat {
+              @given-a-at-most-b |
+                assume less_or_equal(a, b) {
+                  @a-at-most-b |
+                    less_or_equal(a, b)
+                    [by hypothesis given-a-at-most-b]
+                  @given-b-below-c |
+                    assume less_than(b, c) {
+                      @b-below-c |
+                        less_than(b, c)
+                        [by hypothesis given-b-below-c]
+                      @the-split |
+                        less_than(a, b) or a = b
+                        [using specialize lessOrEqualSplit(a, b) a-at-most-b]
+                      @when-strictly-below |
+                        assume less_than(a, b) {
+                          @a-below-b |
+                            less_than(a, b)
+                            [by hypothesis when-strictly-below]
+                          @conclusion-by-transitivity |
+                            less_than(a, c)
+                            [using specialize lessThanTransitive(a, b, c) a-below-b b-below-c]
+                        }
+                      @when-equal |
+                        assume a = b {
+                          @they-are-equal |
+                            a = b
+                            [by hypothesis when-equal]
+                          @conclusion-by-substitution |
+                            less_than(a, c)
+                            [by rewrite they-are-equal b-below-c]
+                        }
+                      @conclusion-a-below-c |
+                        less_than(a, c)
+                        [by common_conclusion the-split when-strictly-below when-equal]
+                    }
+                  @below-implies |
+                    less_than(b, c) -> less_than(a, c)
+                    [by discharge given-b-below-c]
+                }
+              @at-most-implies |
+                less_or_equal(a, b) -> less_than(b, c) -> less_than(a, c)
+                [by discharge given-a-at-most-b]
+            }
+          @discharge-c |
+            forall c9: Nat;
+              less_or_equal(a, b) -> less_than(b, c9) -> less_than(a, c9)
+            [by generalize generalize-c]
+        }
+      @discharge-b |
+        forall b9, c9: Nat;
+          less_or_equal(a, b9) -> less_than(b9, c9) -> less_than(a, c9)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: Nat;
+      less_or_equal(a, b) -> less_than(b, c) -> less_than(a, c)
+    [by generalize generalize-a]
+qed
+
+// A summand never exceeds its sum: n <= a + n, by the gap existential at d = a after
+// commuting.
+theorem aSummandIsAtMostTheSum: forall a, n: Nat;
+  less_or_equal(n, add(a, n))
+proof
+  @generalize-a |
+    fix a: Nat {
+      @generalize-n |
+        fix n: Nat {
+          @commuting |
+            add(n, a) = add(a, n)
+            [using specialize peano.addIsCommutative(n, a)]
+          @the-gap-exists |
+            exists d: Nat; add(n, d) = add(a, n)
+            [by witness(a) commuting]
+          @the-gap-existential |
+            less_or_equal(n, add(a, n)) iff
+              (exists d: Nat; add(n, d) = add(a, n))
+            [using specialize lessOrEqualIsGapExistential(n, add(a, n))]
+          @conclusion-the-summand-is-at-most |
+            less_or_equal(n, add(a, n))
+            [using tautology the-gap-existential the-gap-exists]
+        }
+      @discharge-n |
+        forall n9: Nat; less_or_equal(n9, add(a, n9))
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall a, n: Nat; less_or_equal(n, add(a, n))
+    [by generalize generalize-a]
+qed
