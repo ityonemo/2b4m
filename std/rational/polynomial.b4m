@@ -1,0 +1,140 @@
+// std/rational/polynomial.b4m — ℚ[x], WITH INTEGER COEFFICIENTS NAMEABLE.
+//
+// Judson's §17.3 Lemma 17.12 needs one polynomial seen over ℚ *and* over ℤ: it rewrites a
+// rational-coefficient p(x) as (r/s) times an integer-coefficient polynomial. That needs a
+// polynomial sort whose coefficients are ℚ, where `isInteger` can pick out the integer ones.
+//
+// HOW THIS RELATES TO std/field/polynomial.b4m. That file's F[x] is over an opaque field, so
+// it cannot say "this coefficient is an integer" — ℚ's `isInteger` has no counterpart in an
+// abstract F. ℚ[x] is therefore its OWN sort here, and F[x]'s corpus is transferred onto it
+// by `RationalPolynomials` below. What makes that work is mapping the whole POLYNOMIAL layer
+// (`Poly`, `coeff`, `ZEROP`, the operations), not just the coefficient field: a transfer
+// re-checks the source PROOF, and those proofs mention `coeff`, whose result sort is F.
+// Mapping only the field leaves `coeff` at the abstract sort and the transfer fails with
+// `expected sort 'Q', got 'Field'`.
+//
+// Each axiom of F[x] that a transferred proof reaches must be restated here and discharged.
+// They are restated as axioms rather than derived because they are ℚ[x]'s own primitives —
+// the same posture std/field/polynomial.b4m takes toward its own coefficient equations.
+//
+// NOTE the transfers CHAIN: a theorem of F[x] that is itself proved by
+// `model(FieldPolyModelsRingPoly)` re-checks that inner transfer when carried here, and so
+// demands std/ring/polynomial.b4m's layer too. Theorems proved DIRECTLY in F[x] travel with
+// only what is mapped below.
+import fieldpoly <<< "std/field/polynomial.b4m"
+import rational <<< "std/rational.b4m"
+import peano <<< "std/peano.b4m"
+
+sort Q = rational.Q
+sort Nat = peano.Nat
+pred isInteger = rational.isInteger
+
+// -- ℚ[x] ---------------------------------------------------------------------------------
+sort QPoly
+func qcoeff(p: QPoly, i: Nat) => Q
+const QZEROP: QPoly
+func qaddP(p: QPoly, q: QPoly) => QPoly
+func qnegP(p: QPoly) => QPoly
+func qmulP(p: QPoly, q: QPoly) => QPoly
+
+// the coefficient equations: ℚ[x]'s own primitives
+axiom qPolyExtensionality: forall p, q: QPoly;
+  (forall i: Nat; qcoeff(p, i) = qcoeff(q, i)) -> p = q
+axiom qZeroPolyCoeff: forall i: Nat; qcoeff(QZEROP, i) = rational.ZERO
+axiom qAddPolyCoeff: forall p, q: QPoly; forall i: Nat;
+  qcoeff(qaddP(p, q), i) = rational.add(qcoeff(p, i), qcoeff(q, i))
+axiom qNegPolyCoeff: forall p: QPoly; forall i: Nat;
+  qcoeff(qnegP(p), i) = rational.neg(qcoeff(p, i))
+
+// F[x]'s corpus, transferred. The coefficient field AND the polynomial layer both travel.
+model RationalPolynomials {
+  fieldpoly.F: Q
+  fieldpoly.zeroF: rational.ZERO
+  fieldpoly.oneF: rational.ONE
+  fieldpoly.addF: rational.add
+  fieldpoly.mulF: rational.mul
+  fieldpoly.negF: rational.neg
+  fieldpoly.recipF: rational.recip
+  fieldpoly.Poly: QPoly
+  fieldpoly.coeff: qcoeff
+  fieldpoly.ZEROP: QZEROP
+  fieldpoly.addP: qaddP
+  fieldpoly.negP: qnegP
+  fieldpoly.mulP: qmulP
+  fieldpoly.polyExtensionality <- qPolyExtensionality
+  fieldpoly.zeroPolyCoeff <- qZeroPolyCoeff
+  fieldpoly.addPolyCoeff <- qAddPolyCoeff
+  fieldpoly.negPolyCoeff <- qNegPolyCoeff
+}
+
+// -- integer coefficients -----------------------------------------------------------------
+
+// `hasIntegerCoefficientsUpTo(p, n)` — every coefficient below n is an integer. Bounded
+// because Lemma 17.12 works with a polynomial of some stated degree; `isInteger` is ℚ's own
+// subring predicate, so no embedding function is involved.
+pred hasIntegerCoefficientsUpTo(p: QPoly, n: Nat)
+axiom integerCoefficientsMeaning: forall p: QPoly; forall n: Nat;
+  hasIntegerCoefficientsUpTo(p, n) iff
+  (forall i: Nat; peano.less_than(i, n) -> isInteger(qcoeff(p, i)))
+
+// The zero polynomial has integer coefficients: every one of them is ℚ's ZERO, which is an
+// integer. The first fact a consumer needs, and a check that the layer is wired up.
+theorem theZeroPolynomialHasIntegerCoefficients: forall n: Nat;
+  hasIntegerCoefficientsUpTo(QZEROP, n)
+proof
+  @generalize-n |
+    fix n: Nat {
+      @generalize-i |
+        fix i: Nat {
+          @the-coefficient-is-zero |
+            qcoeff(QZEROP, i) = rational.ZERO
+            [using specialize qZeroPolyCoeff(i)]
+          @zero-is-an-integer |
+            isInteger(rational.ZERO)
+            [by cite rational.isIntegerZero]
+          @the-coefficient-is-an-integer |
+            isInteger(qcoeff(QZEROP, i))
+            [by rewrite the-coefficient-is-zero zero-is-an-integer]
+          @conclusion-below-n-is-an-integer |
+            peano.less_than(i, n) -> isInteger(qcoeff(QZEROP, i))
+            [using tautology the-coefficient-is-an-integer]
+        }
+      @every-coefficient-is-an-integer |
+        forall i: Nat;
+          peano.less_than(i, n) -> isInteger(qcoeff(QZEROP, i))
+        [by generalize generalize-i]
+      @the-definition |
+        hasIntegerCoefficientsUpTo(QZEROP, n) iff
+          (forall i: Nat; peano.less_than(i, n) -> isInteger(qcoeff(QZEROP, i)))
+        [using specialize integerCoefficientsMeaning(QZEROP, n)]
+      @conclusion-the-zero-polynomial-qualifies |
+        hasIntegerCoefficientsUpTo(QZEROP, n)
+        [using tautology the-definition every-coefficient-is-an-integer]
+    }
+  @conclusion |
+    forall n: Nat; hasIntegerCoefficientsUpTo(QZEROP, n)
+    [by generalize generalize-n]
+qed
+
+// -- the transfer in action ----------------------------------------------------------------
+
+// A difference's coefficients, carried over from F[x]'s `subPolyCoeff`. This is the file's
+// reason to exist in miniature: a theorem proved once over an abstract coefficient field,
+// reused at ℚ without restating its proof. It also exercises the three mapped coefficient
+// axioms, which otherwise only the model block touches.
+theorem qSubPolyCoeff: forall p, q: QPoly; forall i: Nat;
+  qcoeff(qaddP(p, qnegP(q)), i) =
+  rational.add(qcoeff(p, i), rational.neg(qcoeff(q, i)))
+proof
+  @conclusion |
+    forall p, q: QPoly; forall i: Nat;
+      qcoeff(qaddP(p, qnegP(q)), i) =
+      rational.add(qcoeff(p, i), rational.neg(qcoeff(q, i)))
+    [using model(RationalPolynomials) fieldpoly.subPolyCoeff]
+qed
+
+// NOT transferable without more mapping: `polyAddIsCommutative`. F[x] proves it by its own
+// `model(FieldPolyModelsRingPoly)`, so carrying it here re-checks that INNER transfer and
+// demands std/ring/polynomial.b4m's layer as well — `expected sort 'Field', got 'Q'`.
+// Chained transfers need every link mapped, and this file maps one link. A consumer needing
+// the ring laws at ℚ[x] should map `ring_poly`'s layer too, or restate the law directly.
