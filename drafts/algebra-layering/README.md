@@ -74,14 +74,101 @@ So the clean shape is:
 with each concrete sort discharging an order model and an algebra model rather than
 restating 11 + 3 axioms.
 
+## The polynomial half, now measured (2026-10-30 — all five layers exist)
+
+The note above guessed that the polynomial duplication "has the same cause". With ℤ[x]
+landed there are **five** polynomial layers and the guess can be replaced with a count.
+
+| file | coefficient sort | own axioms | theorems | models |
+|---|---|---|---|---|
+| `std/ring/polynomial.b4m` | `R` (abstract commutative ring) | 18 | 19 | — (it IS the layer) |
+| `std/field/polynomial.b4m` | `F` (abstract field) | 21 | 81 | `ring_poly` |
+| `std/rational/polynomial.b4m` | ℚ | 8 | 6 | `fieldpoly` |
+| `std/integer/mod-n-polynomial.b4m` | ℤ_n | 12 | 3 | `ring_poly` + `ring` |
+| `std/integer/polynomial.b4m` | ℤ | 13 | 5 | `ring_poly` + `ring` |
+
+**54 axioms below the abstract layer, and essentially all of them are the same equations.**
+
+### What is identical across every layer
+
+Line up ℤ_n[x]'s twelve against ℤ[x]'s thirteen and they are the same list with one letter
+changed (`z` → `i`) — extensionality, the zero/one coefficients, `addP`/`negP`/`mulP`
+coefficientwise, the two convolution clauses, `degreeAtMost`'s meaning, and the two degree
+facts. ℚ[x] carries a six-axiom subset (it needs no `degree`, having `fieldpoly`'s). The
+**only** thing that differs between any two of them is the *name of the coefficient sort
+appearing in the equation*, e.g.
+
+    axiom zZeroPolyCoeff: forall i: Nat; zcoeff(ZZEROP, i) = mod_n.ZERO
+    axiom iZeroPolyCoeff: forall i: Nat; icoeff(IZEROP, i) = IZERO
+
+Nothing else varies. Not the index sort (ℕ everywhere), not the convolution recursion, not
+`degreeAtMost`'s characterization, not extensionality.
+
+### What genuinely varies — and it is only two things
+
+1. **The coefficient sort and its ring laws.** This is the real parameter, and it is what
+   the `ring.*` / `ring_poly.*R` half of each model block supplies: seven ring axioms plus
+   `mulOneLeft` and `mulIsCommutative`. These maps are *not* duplication — each one is a
+   genuine discharge, pointing at a theorem the coefficient theory actually proved
+   (`integer.mulIsAssociative`, `mod_n_domain.mulIsCommutativeInZn`).
+2. **What is TRUE of that coefficient sort beyond being a commutative ring.** This is the
+   only mathematically interesting axis, and it is small:
+   - ℚ[x]: the coefficients have a *cut* (`dividesOnTheCut`, `coefficientsAreRelativelyPrimeUpTo`)
+   - ℤ_n[x]: the coefficients form a *domain* at prime `N` (`modNPolynomialsHaveNoZeroDivisors`)
+   - ℤ[x]: the coefficients map *into* ℤ_n (`reduce`, `reduceCoefficientwise`)
+   - F[x]: the coefficients are *invertible* (division algorithm, monic, irreducible, …)
+
+So the shape a generic polynomial theory has to hit is: **one layer parameterized by a
+coefficient ring, with the coefficient sort as the ONLY thing a user supplies — and an
+extension point for the four facts above.** The twelve coefficient equations should never
+be written a sixth time.
+
+### The specific thing blocking it, named
+
+`std/ring/polynomial.b4m` *is already* parameterized in the sense that matters: it declares
+`sort R` abstractly and all 19 theorems are about an arbitrary commutative ring. The problem
+is **not** the abstraction, it is that **a `model` can only re-point a symbol onto a symbol
+the target file already declares.** So the only way to use R[x] at a new coefficient sort is
+to declare a fresh `Poly` sort locally, restate every coefficient equation over it, and map
+them across — which is exactly what the four lower files do.
+
+That is the same disease as Thread 1 above (a theory that fixes its parameter by aliasing a
+specific sort cannot be re-pointed), but with a sharper diagnosis: here the theory does
+*not* fix its parameter — it is genuinely generic — and the duplication is entirely in the
+**instantiation mechanism**. There is no way to say "give me `ring_poly` at coefficient sort
+`Int`" and have the sort and its twelve axioms come into being. Each instantiation mints
+them by hand.
+
+Two further findings from building the last two layers, both worth keeping:
+
+- **A transfer must map every symbol the transferred PROOF mentions**, not merely the
+  theorem's statement. `std/ring/polynomial.b4m` aliases `ring.Ring`, so a model onto a new
+  coefficient sort must *also* map `std/ring.b4m`'s own seven axioms — and the error surfaces
+  inside `std/ring.b4m`, far from the model block. Both ℤ_n[x] and ℤ[x] carry that second
+  half, with a comment saying why.
+- **Transfers chain.** A theorem that was itself proved by a model transfer re-checks that
+  inner transfer when you transfer it again, demanding the inner layer too. This is why
+  `polyMulIsCommutative` is *not* transferred into ℤ[x]: R[x] proves it through
+  `tailConvolution` and `segment`, so carrying it would mean restating two more layers of
+  recursion axioms for a fact Gauss does not need.
+
+### Revised order of work
+
+The polynomial case is now the **better** motivating example than the field case, because
+its duplication is larger (54 axioms vs 44), purely mechanical (one letter differs), and has
+no competing design question — nobody disputes what a polynomial over a ring is. Thread 1
+still goes first on size, but the instantiation mechanism it needs is the same one, and the
+polynomial layers are the cleaner test of whether it works.
+
 ## Why this is queued, not done
 
 It touches `rational.b4m`, `real.b4m`, `complex.b4m` and `integer/order.b4m` — the number
 tower's foundations, all four of which just absorbed changes. It is also adjacent to the
-**generic polynomial theory** the user raised (polynomials over ring / field / ℚ / ℝ): the
-duplication there has the same cause — a theory that fixes its parameter by aliasing a
-specific sort cannot be re-pointed, so each new coefficient domain restates the layer. Both
-are the same refactor seen from two sides, and they should be designed together.
+**generic polynomial theory** the user raised — measured in the section above, which
+supersedes the guess that once stood here: the polynomial duplication is *not* a theory
+fixing its parameter (R[x] is genuinely generic) but the **instantiation mechanism** having
+no way to mint a sort and its axioms. Still the same refactor seen from two sides, and they
+should be designed together.
 
 **Order of work, suggested:** Thread 1 first (smallest, and `std/order.b4m` already exists
 to model), then Thread 3 (new file, no existing consumers to break), then the generic
