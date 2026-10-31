@@ -1,0 +1,215 @@
+// std/integer/family-gcd.b4m — A GCD OF AN INDEXED FAMILY, RELATIONALLY.
+//
+// `std/integer/lattice.b4m` takes a gcd EXISTENTIALLY (`isGcd(d, a, b)`: positive, a common
+// divisor, divisible by every common divisor) and deliberately declares no `gcd` FUNCTION,
+// so that no sign facts about a concrete gcd are needed. This file extends that idiom along
+// an index: `isFamilyGcd(d, s, k)` says d is a gcd of the first k entries of s.
+//
+// WHY NOT A FOLD. `std/sequence.b4m`'s fold would give this in two lines, but its `combine`
+// is a total `func` with no guard slot, so using it would require a TOTAL gcd function —
+// and a total gcd must invent a value at gcd(0,0), which the standard convention sets to 0
+// but which is a totalized operation all the same. The library does not ship those, so the
+// recursion is carried by a PREDICATE instead: every step's existence comes from
+// `gcdExists`, which is guarded on its arguments being nonzero exactly as lattice.b4m
+// intends. Nothing here is total that should not be.
+//
+// WHY THE BASE IS THE FIRST ENTRY, not an identity. `isGcd` requires d > 0, so an identity
+// element would have to be 1 — and gcd(1, x) = 1 for every x, collapsing the whole family
+// to 1. The recursion therefore starts at k = ONE with the first entry itself.
+import integer <<< "std/integer.b4m"
+import int_order <<< "std/integer/order.b4m"
+import lattice <<< "std/integer/lattice.b4m"
+import seq <<< "std/integer/sequence.b4m"
+
+sort Int = integer.Int
+sort NonNegZ = integer.NonNeg
+sort Seq = seq.Seq
+const ZERO = integer.ZERO
+func succ = integer.succ
+func at = seq.at
+pred less_than = int_order.less_than
+pred nonneg = integer.nonneg
+define isGcd(d, a, b) = lattice.isGcd(d, a, b)
+
+// ONE as a NonNegZ index: the guard `nonneg(succ(ZERO))` that every use of the base index
+// owes, proved once here from integer.b4m's two nonneg facts.
+theorem oneIsNonneg: nonneg(succ(ZERO))
+proof
+  @zero-is-nonneg |
+    nonneg(ZERO)
+    [by cite integer.nonnegZero]
+  @conclusion |
+    nonneg(succ(ZERO))
+    [using specialize integer.nonnegSucc(ZERO) zero-is-nonneg]
+qed
+
+// d is a gcd of the first k entries of s. The base takes the first entry alone; each step
+// folds in one more entry through the binary gcd relation.
+pred isFamilyGcd(d: Int, s: Seq, k: NonNegZ)
+// the empty family covers nothing, so nothing is its gcd
+axiom familyGcdAtZero: forall d: Int; forall s: Seq;
+  not isFamilyGcd(d, s, ZERO)
+// one more entry: either this is the FIRST entry (and d is its own gcd), or d is a gcd of
+// the running gcd with it
+axiom familyGcdAtSucc: forall d: Int; forall s: Seq; forall k: NonNegZ;
+  isFamilyGcd(d, s, succ(k)) iff
+  ((k = ZERO and isGcd(d, at(s, ZERO), at(s, ZERO))) or
+  (exists e: Int; isFamilyGcd(e, s, k) and isGcd(d, e, at(s, k))))
+
+// A family gcd is positive, and divides every entry it covers — the two facts a consumer
+// reads off the definition. Both come straight from `isGcd`'s clauses at the last step.
+theorem aFamilyGcdIsPositive: forall d: Int; forall s: Seq; forall k: NonNegZ;
+  isFamilyGcd(d, s, succ(k)) -> less_than(ZERO, d)
+proof
+  @generalize-d |
+    fix d: Int {
+      @generalize-s |
+        fix s: Seq {
+          @generalize-k |
+            fix k: NonNegZ {
+              // ZERO and succ(k) are legal indices
+              @zero-is-nonneg |
+                nonneg(ZERO)
+                [by cite integer.nonnegZero]
+              @k-is-nonneg |
+                nonneg(k)
+                [by predicate generalize-k]
+              @succ-k-is-nonneg |
+                nonneg(succ(k))
+                [using specialize integer.nonnegSucc(k) k-is-nonneg]
+              @given-the-family-gcd |
+                assume isFamilyGcd(d, s, succ(k)) {
+                  @the-family-gcd |
+                    isFamilyGcd(d, s, succ(k))
+                    [by hypothesis given-the-family-gcd]
+                  @the-step-unfolds |
+                    isFamilyGcd(d, s, succ(k)) iff
+                      ((k = ZERO and isGcd(d, at(s, ZERO), at(s, ZERO))) or
+                      (exists e: Int;
+                      isFamilyGcd(e, s, k) and isGcd(d, e, at(s, k))))
+                    [using specialize familyGcdAtSucc(d, s, k)]
+                  @the-two-cases |
+                    (k = ZERO and isGcd(d, at(s, ZERO), at(s, ZERO))) or
+                      (exists e: Int;
+                      isFamilyGcd(e, s, k) and isGcd(d, e, at(s, k)))
+                    [using tautology the-step-unfolds the-family-gcd]
+                  @when-the-first-entry |
+                    assume k = ZERO and isGcd(d, at(s, ZERO), at(s, ZERO)) {
+                      @the-first-entry-case |
+                        k = ZERO and isGcd(d, at(s, ZERO), at(s, ZERO))
+                        [by hypothesis when-the-first-entry]
+                      @d-is-the-first-gcd |
+                        isGcd(d, at(s, ZERO), at(s, ZERO))
+                        [by and_rhs the-first-entry-case]
+                      @conclusion-positive-at-the-base |
+                        less_than(ZERO, d)
+                        [using tautology d-is-the-first-gcd]
+                    }
+                  @when-a-running-gcd |
+                    assume exists e: Int;
+                      isFamilyGcd(e, s, k) and isGcd(d, e, at(s, k)) {
+                      @a-running-gcd-exists |
+                        exists e: Int;
+                          isFamilyGcd(e, s, k) and isGcd(d, e, at(s, k))
+                        [by hypothesis when-a-running-gcd]
+                      @with-the-running-gcd-e |
+                        unpack e: Int from a-running-gcd-exists {
+                          @the-running-facts |
+                            isFamilyGcd(e, s, k) and isGcd(d, e, at(s, k))
+                            [by hypothesis with-the-running-gcd-e]
+                          @d-is-the-running-gcd |
+                            isGcd(d, e, at(s, k))
+                            [by and_rhs the-running-facts]
+                          @conclusion-positive-at-the-step |
+                            less_than(ZERO, d)
+                            [using tautology d-is-the-running-gcd]
+                        }
+                      @conclusion-from-the-running-gcd |
+                        less_than(ZERO, d)
+                        [by unpacked with-the-running-gcd-e]
+                    }
+                  @conclusion-positive-either-way |
+                    less_than(ZERO, d)
+                    [by common_conclusion the-two-cases when-the-first-entry when-a-running-gcd]
+                }
+              @the-family-gcd-implies |
+                isFamilyGcd(d, s, succ(k)) -> less_than(ZERO, d)
+                [by discharge given-the-family-gcd]
+            }
+          @discharge-k |
+            forall k9: NonNegZ;
+              isFamilyGcd(d, s, succ(k9)) -> less_than(ZERO, d)
+            [by generalize generalize-k]
+        }
+      @discharge-s |
+        forall s9: Seq; forall k9: NonNegZ;
+          isFamilyGcd(d, s9, succ(k9)) -> less_than(ZERO, d)
+        [by generalize generalize-s]
+    }
+  @conclusion |
+    forall d: Int; forall s: Seq; forall k: NonNegZ;
+      isFamilyGcd(d, s, succ(k)) -> less_than(ZERO, d)
+    [by generalize generalize-d]
+qed
+
+// The empty family has no gcd, so a family gcd always covers at least one entry: its index
+// is a successor. This is the base axiom's content, and the guard a consumer needs before
+// reading a family gcd off an index.
+theorem aFamilyGcdCoversAnEntry: forall d: Int; forall s: Seq; forall k: NonNegZ;
+  isFamilyGcd(d, s, k) -> (not (k = ZERO))
+proof
+  @generalize-d |
+    fix d: Int {
+      @generalize-s |
+        fix s: Seq {
+          @generalize-k |
+            fix k: NonNegZ {
+              @zero-is-nonneg |
+                nonneg(ZERO)
+                [by cite integer.nonnegZero]
+              @nothing-is-an-empty-gcd |
+                not isFamilyGcd(d, s, ZERO)
+                [using specialize familyGcdAtZero(d, s)]
+              @given-the-family-gcd |
+                assume isFamilyGcd(d, s, k) {
+                  @the-family-gcd |
+                    isFamilyGcd(d, s, k)
+                    [by hypothesis given-the-family-gcd]
+                  @given-k-is-zero |
+                    assume k = ZERO {
+                      @k-is-zero |
+                        k = ZERO
+                        [by hypothesis given-k-is-zero]
+                      @the-empty-family-has-a-gcd |
+                        isFamilyGcd(d, s, ZERO)
+                        [by rewrite k-is-zero the-family-gcd]
+                      @conclusion-absurd |
+                        not (k = ZERO)
+                        [by ex_falso the-empty-family-has-a-gcd nothing-is-an-empty-gcd]
+                    }
+                  @zero-is-absurd |
+                    (k = ZERO) -> (not (k = ZERO))
+                    [by discharge given-k-is-zero]
+                  @conclusion-the-index-is-positive |
+                    not (k = ZERO)
+                    [using tautology zero-is-absurd]
+                }
+              @the-family-gcd-implies |
+                isFamilyGcd(d, s, k) -> (not (k = ZERO))
+                [by discharge given-the-family-gcd]
+            }
+          @discharge-k |
+            forall k9: NonNegZ;
+              isFamilyGcd(d, s, k9) -> (not (k9 = ZERO))
+            [by generalize generalize-k]
+        }
+      @discharge-s |
+        forall s9: Seq; forall k9: NonNegZ;
+          isFamilyGcd(d, s9, k9) -> (not (k9 = ZERO))
+        [by generalize generalize-s]
+    }
+  @conclusion |
+    forall d: Int; forall s: Seq; forall k: NonNegZ;
+      isFamilyGcd(d, s, k) -> (not (k = ZERO))
+    [by generalize generalize-d]
+qed
