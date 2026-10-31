@@ -1,0 +1,657 @@
+// std/rational/integer-order.b4m — THE INTEGERS INSIDE ℚ ARE DISCRETE.
+//
+// `std/rational.b4m` carves ℤ out of ℚ as a CUT (`isInteger`) and runs
+// `IntegersInRational` to transfer ℤ's algebra onto it. That model maps ℤ's ring layer only:
+// `std/integer/order.b4m`'s two axioms are NOT discharged, so none of ℤ's order corpus
+// travels, and any ℚ-side proof needing an integer sign argument stalls.
+//
+// The reason the order half was left out is real mathematics, not an oversight. ℤ's order is
+// axiomatized by the NONNEG-GAP form
+//
+//     lessThanIntro:  nonneg(d) -> a + succ(d) = b -> a < b
+//     lessThanElim:   a < b -> exists d; nonneg(d) and a + succ(d) = b
+//
+// and `lessThanElim` is FALSE on all of ℚ — between any two rationals lie infinitely many
+// others, so no `a + (d+1) = b` gap exists. It holds only ON THE CUT. That is exactly the
+// statement that ℚ's integers are DISCRETE, and this file proves it, which lets a consumer
+// discharge ℤ's order axioms relativized to `isInteger` and so pull the whole ℤ-order corpus
+// onto the cut.
+//
+// The engine of the proof is `naturalInduction`: a natural is ZERO or at least ONE. Density
+// is never contradicted — the gap is produced only when both endpoints are integers.
+import rational <<< "std/rational.b4m"
+import field_order <<< "std/field/order.b4m"
+
+sort Q = rational.Q
+const ZERO = rational.ZERO
+const ONE = rational.ONE
+func add = rational.add
+func neg = rational.neg
+func succ = rational.succ
+pred less_than = rational.less_than
+pred isInteger = rational.isInteger
+pred isNatural = rational.isNatural
+
+// -- a natural is ZERO or at least ONE ----------------------------------------------------
+// The discreteness seed. ℚ's order alone cannot say this — it is `isNatural`'s induction that
+// rules out anything strictly between.
+
+// Strategy: naturalInduction on n. Base: ZERO = ZERO. Step: succ(k) = k + ONE, and in either
+// case for k the sum is at least ONE — if k = ZERO then succ(k) = ONE, and if ONE ≤ k then
+// adding ONE keeps it above ONE, hence above ZERO.
+theorem aNaturalIsZeroOrPositive: forall n: Q;
+  isNatural(n) -> (n = ZERO or less_than(ZERO, n))
+proof
+  @base-case |
+    ZERO = ZERO or less_than(ZERO, ZERO)
+    [by either_left base-case-reflexivity]
+
+  @base-case-reflexivity |
+    ZERO = ZERO
+    [by reflexivity]
+
+  @induction-step |
+    fix k: Q {
+      @given-k-is-natural |
+        assume isNatural(k) {
+          @given-inductive-hypothesis |
+            assume k = ZERO or less_than(ZERO, k) {
+              @inductive-hypothesis |
+                k = ZERO or less_than(ZERO, k)
+                [by hypothesis given-inductive-hypothesis]
+              @succ-is-plus-one |
+                succ(k) = add(k, ONE)
+                [using specialize rational.succDefinition(k)]
+              @the-successor-of-k |
+                succ(k) = succ(k)
+                [by reflexivity]
+              @one-positive |
+                less_than(ZERO, ONE)
+                [using model(rational.RationalOrderedField) field_order.zeroLessThanOne]
+              @the-successor-is-positive |
+                less_than(ZERO, succ(k))
+                case inductive-hypothesis {
+                  @when-k-is-zero |
+                    assume k = ZERO {
+                      @k-is-zero |
+                        k = ZERO
+                        [by hypothesis when-k-is-zero]
+                      @one-is-succ-zero |
+                        ONE = succ(ZERO)
+                        [by cite rational.oneIsSuccZero]
+                      @the-successor-is-succ-zero |
+                        succ(k) = succ(ZERO)
+                        [by rewrite k-is-zero the-successor-of-k]
+                      @the-successor-is-one |
+                        succ(k) = ONE
+                        [by rewrite one-is-succ-zero the-successor-is-succ-zero]
+                      @conclusion-the-successor-is-positive-at-zero |
+                        less_than(ZERO, succ(k))
+                        [by rewrite the-successor-is-one one-positive]
+                    }
+                  @when-k-is-positive |
+                    assume less_than(ZERO, k) {
+                      @k-is-positive |
+                        less_than(ZERO, k)
+                        [by hypothesis when-k-is-positive]
+                      // 0 < k and 0 < 1 give 0 < k + 1 by adding ONE to both sides of 0 < k
+                      @shifting-k-up |
+                        less_than(add(ZERO, ONE), add(k, ONE))
+                        [using specialize rational.lessThanAddRight(ZERO, k, ONE) k-is-positive]
+                      @zero-plus-one |
+                        add(ZERO, ONE) = ONE
+                        [using specialize rational.addZeroLeft(ONE)]
+                      @one-below-the-successor |
+                        less_than(ONE, add(k, ONE))
+                        [by rewrite zero-plus-one shifting-k-up]
+                      @zero-below-the-sum |
+                        less_than(ZERO, add(k, ONE))
+                        [using specialize rational.lessThanTransitive(ZERO, ONE, add(k, ONE)) one-positive one-below-the-successor]
+                      @conclusion-the-successor-is-positive-at-k |
+                        less_than(ZERO, succ(k))
+                        [by rewrite succ-is-plus-one zero-below-the-sum]
+                    }
+                }
+              @conclusion-the-successor-is-zero-or-positive |
+                succ(k) = ZERO or less_than(ZERO, succ(k))
+                [by either_right the-successor-is-positive]
+            }
+          @inductive-hypothesis-implies-successor |
+            (k = ZERO or less_than(ZERO, k)) ->
+              (succ(k) = ZERO or less_than(ZERO, succ(k)))
+            [by discharge given-inductive-hypothesis]
+        }
+      @natural-implies-the-step |
+        isNatural(k) ->
+          (k = ZERO or less_than(ZERO, k)) ->
+          (succ(k) = ZERO or less_than(ZERO, succ(k)))
+        [by discharge given-k-is-natural]
+    }
+  @induction-step-for-all-k |
+    forall k: Q;
+      isNatural(k) ->
+      (k = ZERO or less_than(ZERO, k)) ->
+      (succ(k) = ZERO or less_than(ZERO, succ(k)))
+    [by generalize induction-step]
+
+  @conclusion |
+    forall n: Q; isNatural(n) -> (n = ZERO or less_than(ZERO, n))
+    [using instantiation rational.naturalInduction((fun t: Q => (t = ZERO or less_than(ZERO, t)))) base-case induction-step-for-all-k]
+qed
+
+// -- a nonzero natural is a successor of a natural ----------------------------------------
+// The other half of discreteness: there is nothing between a natural and its successor,
+// because every natural but ZERO IS a successor. Again `naturalInduction` — ℚ's order has no
+// such fact.
+
+// Strategy: naturalInduction on n. Base: ZERO is zero, so the disjunction's left arm holds
+// vacuously under the implication. Step: succ(k) is a successor of k, and k is natural by the
+// step's own guard, so the witness is k itself — the inductive hypothesis is not needed.
+theorem aNonzeroNaturalIsASuccessor: forall n: Q;
+  isNatural(n) -> (not (n = ZERO)) -> (exists d: Q; isNatural(d) and n = succ(d))
+proof
+  @base-case-proof |
+    assume not (ZERO = ZERO) {
+      @zero-is-not-zero |
+        not (ZERO = ZERO)
+        [by hypothesis base-case-proof]
+      @zero-is-zero |
+        ZERO = ZERO
+        [by reflexivity]
+      @conclusion-anything |
+        exists d: Q; isNatural(d) and ZERO = succ(d)
+        [by ex_falso zero-is-zero zero-is-not-zero]
+    }
+  @base-case |
+    (not (ZERO = ZERO)) -> (exists d: Q; isNatural(d) and ZERO = succ(d))
+    [by discharge base-case-proof]
+
+  @induction-step |
+    fix k: Q {
+      @given-k-is-natural |
+        assume isNatural(k) {
+          @k-is-natural |
+            isNatural(k)
+            [by hypothesis given-k-is-natural]
+          @given-inductive-hypothesis |
+            assume (not (k = ZERO)) -> (exists d: Q; isNatural(d) and k = succ(d)) {
+              @given-the-successor-is-not-zero |
+                assume not (succ(k) = ZERO) {
+                  // the witness is k itself, natural by the step's guard
+                  @the-successor-is-the-successor |
+                    succ(k) = succ(k)
+                    [by reflexivity]
+                  @the-witness-works |
+                    isNatural(k) and succ(k) = succ(k)
+                    [by both k-is-natural the-successor-is-the-successor]
+                  @conclusion-the-successor-has-a-predecessor |
+                    exists d: Q; isNatural(d) and succ(k) = succ(d)
+                    [by witness(k) the-witness-works]
+                }
+              @conclusion-the-step-at-k |
+                (not (succ(k) = ZERO)) ->
+                  (exists d: Q; isNatural(d) and succ(k) = succ(d))
+                [by discharge given-the-successor-is-not-zero]
+            }
+          @inductive-hypothesis-implies-successor |
+            ((not (k = ZERO)) -> (exists d: Q; isNatural(d) and k = succ(d))) ->
+              ((not (succ(k) = ZERO)) ->
+              (exists d: Q; isNatural(d) and succ(k) = succ(d)))
+            [by discharge given-inductive-hypothesis]
+        }
+      @natural-implies-the-step |
+        isNatural(k) ->
+          ((not (k = ZERO)) -> (exists d: Q; isNatural(d) and k = succ(d))) ->
+          ((not (succ(k) = ZERO)) ->
+          (exists d: Q; isNatural(d) and succ(k) = succ(d)))
+        [by discharge given-k-is-natural]
+    }
+  @induction-step-for-all-k |
+    forall k: Q;
+      isNatural(k) ->
+      ((not (k = ZERO)) -> (exists d: Q; isNatural(d) and k = succ(d))) ->
+      ((not (succ(k) = ZERO)) ->
+      (exists d: Q; isNatural(d) and succ(k) = succ(d)))
+    [by generalize induction-step]
+
+  @conclusion |
+    forall n: Q;
+      isNatural(n) -> (not (n = ZERO)) -> (exists d: Q; isNatural(d) and n = succ(d))
+    [using instantiation rational.naturalInduction((fun t: Q => ((not (t = ZERO)) -> (exists d: Q; isNatural(d) and t = succ(d))))) base-case induction-step-for-all-k]
+qed
+
+// -- three small bridges ------------------------------------------------------------------
+
+// A positive element is nonzero: irreflexivity rules out 0 < 0.
+theorem aPositiveIsNonzero: forall x: Q;
+  less_than(ZERO, x) -> (not (x = ZERO))
+proof
+  @generalize-x |
+    fix x: Q {
+      @given-x-is-positive |
+        assume less_than(ZERO, x) {
+          @x-is-positive |
+            less_than(ZERO, x)
+            [by hypothesis given-x-is-positive]
+          @given-x-is-zero |
+            assume x = ZERO {
+              @x-is-zero |
+                x = ZERO
+                [by hypothesis given-x-is-zero]
+              @zero-is-positive |
+                less_than(ZERO, ZERO)
+                [by rewrite x-is-zero x-is-positive]
+              @zero-is-not-below-itself |
+                not less_than(ZERO, ZERO)
+                [using specialize rational.lessThanIrreflexive(ZERO)]
+            }
+          @conclusion-x-is-nonzero-step |
+            not (x = ZERO)
+            [by contradiction given-x-is-zero zero-is-positive zero-is-not-below-itself]
+        }
+      @positive-implies-nonzero |
+        less_than(ZERO, x) -> (not (x = ZERO))
+        [by discharge given-x-is-positive]
+    }
+  @conclusion |
+    forall x: Q; less_than(ZERO, x) -> (not (x = ZERO))
+    [by generalize generalize-x]
+qed
+
+// a + (b − a) = b: the field identity, through associativity and cancellation.
+theorem theDifferenceAddsBack: forall a, b: Q;
+  add(a, add(b, neg(a))) = b
+proof
+  @generalize-a |
+    fix a: Q {
+      @generalize-b |
+        fix b: Q {
+          @conclusion-the-difference-adds-back |
+            add(a, add(b, neg(a))) = b
+            [using polynomial(rational)]
+        }
+      @discharge-b |
+        forall b9: Q; add(a, add(b9, neg(a))) = b9
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Q; add(a, add(b, neg(a))) = b
+    [by generalize generalize-a]
+qed
+
+// A positive integer is natural: integerCases offers natural-or-negation-natural, and the
+// negation of a positive cannot be natural, since naturals are non-negative.
+theorem aPositiveIntegerIsNatural: forall x: Q;
+  isInteger(x) -> less_than(ZERO, x) -> isNatural(x)
+proof
+  @generalize-x |
+    fix x: Q {
+      @given-x-is-an-integer |
+        assume isInteger(x) {
+          @x-is-an-integer |
+            isInteger(x)
+            [by hypothesis given-x-is-an-integer]
+          @given-x-is-positive |
+            assume less_than(ZERO, x) {
+              @x-is-positive |
+                less_than(ZERO, x)
+                [by hypothesis given-x-is-positive]
+              @the-cases |
+                isNatural(x) or isNatural(neg(x))
+                [using specialize rational.integerCases(x) x-is-an-integer]
+              @conclusion-x-is-natural |
+                isNatural(x)
+                case the-cases {
+                  @when-x-is-natural |
+                    assume isNatural(x) {
+                      @x-is-natural |
+                        isNatural(x)
+                        [by hypothesis when-x-is-natural]
+                    }
+                  @when-the-negation-is-natural |
+                    assume isNatural(neg(x)) {
+                      @the-negation-is-natural |
+                        isNatural(neg(x))
+                        [by hypothesis when-the-negation-is-natural]
+                      // neg(x) is negative because x is positive, so it is neither zero nor
+                      // positive — but a natural is one of those two
+                      @negatives-of-positives |
+                        forall y: Q; less_than(ZERO, y) -> less_than(neg(y), ZERO)
+                        [using model(rational.RationalOrderedField) field_order.negOfPositiveIsNegative]
+                      @the-negation-is-negative |
+                        less_than(neg(x), ZERO)
+                        [using specialize negatives-of-positives(x) x-is-positive]
+                      @the-negation-is-zero-or-positive |
+                        neg(x) = ZERO or less_than(ZERO, neg(x))
+                        [using specialize aNaturalIsZeroOrPositive(neg(x)) the-negation-is-natural]
+                      @conclusion-x-is-natural-vacuously |
+                        isNatural(x)
+                        case the-negation-is-zero-or-positive {
+                          @when-the-negation-is-zero |
+                            assume neg(x) = ZERO {
+                              @the-negation-is-zero |
+                                neg(x) = ZERO
+                                [by hypothesis when-the-negation-is-zero]
+                              @zero-is-negative |
+                                less_than(ZERO, ZERO)
+                                [by rewrite the-negation-is-zero the-negation-is-negative]
+                              @zero-is-not-below-itself |
+                                not less_than(ZERO, ZERO)
+                                [using specialize rational.lessThanIrreflexive(ZERO)]
+                              @conclusion-vacuous-at-zero |
+                                isNatural(x)
+                                [by ex_falso zero-is-negative zero-is-not-below-itself]
+                            }
+                          @when-the-negation-is-positive |
+                            assume less_than(ZERO, neg(x)) {
+                              @the-negation-is-positive |
+                                less_than(ZERO, neg(x))
+                                [by hypothesis when-the-negation-is-positive]
+                              @order-is-asymmetric |
+                                forall y, z: Q; less_than(y, z) -> (not less_than(z, y))
+                                [using model(rational.RationalOrderedField) field_order.lessThanAsymmetric]
+                              @the-negation-is-not-positive |
+                                not less_than(neg(x), ZERO)
+                                [using specialize order-is-asymmetric(ZERO, neg(x)) the-negation-is-positive]
+                              @conclusion-vacuous-at-positive |
+                                isNatural(x)
+                                [by ex_falso the-negation-is-negative the-negation-is-not-positive]
+                            }
+                        }
+                    }
+                }
+            }
+          @positive-implies-natural |
+            less_than(ZERO, x) -> isNatural(x)
+            [by discharge given-x-is-positive]
+        }
+      @integer-implies-positive-natural |
+        isInteger(x) -> less_than(ZERO, x) -> isNatural(x)
+        [by discharge given-x-is-an-integer]
+    }
+  @conclusion |
+    forall x: Q; isInteger(x) -> less_than(ZERO, x) -> isNatural(x)
+    [by generalize generalize-x]
+qed
+
+// -- THE INTEGERS INSIDE ℚ ARE DISCRETE ---------------------------------------------------
+// For integers a < b there is a NONNEG GAP: a natural d with a + succ(d) = b. This is ℤ's
+// `lessThanElim` relativized to the cut, and the fact that is false off it.
+
+// Strategy: b − a is an integer (isIntegerSub) and positive, so by integerCases it is
+// natural — its negation cannot be, being negative. A positive natural is nonzero, hence a
+// successor (aNonzeroNaturalIsASuccessor), giving the gap; then a + succ(d) = a + (b − a) = b.
+theorem theIntegersInRationalAreDiscrete: forall a, b: Q;
+  isInteger(a) -> isInteger(b) -> less_than(a, b) ->
+  (exists d: Q; isNatural(d) and add(a, succ(d)) = b)
+proof
+  @generalize-a |
+    fix a: Q {
+      @generalize-b |
+        fix b: Q {
+          @given-a-is-an-integer |
+            assume isInteger(a) {
+              @a-is-an-integer |
+                isInteger(a)
+                [by hypothesis given-a-is-an-integer]
+              @given-b-is-an-integer |
+                assume isInteger(b) {
+                  @b-is-an-integer |
+                    isInteger(b)
+                    [by hypothesis given-b-is-an-integer]
+                  @given-a-below-b |
+                    assume less_than(a, b) {
+                      @a-below-b |
+                        less_than(a, b)
+                        [by hypothesis given-a-below-b]
+                      // the difference is an integer
+                      @the-difference-is-an-integer |
+                        isInteger(add(b, neg(a)))
+                        [using specialize rational.isIntegerSub(b, a) b-is-an-integer a-is-an-integer]
+                      // and it is positive: a < b shifts to 0 < b − a
+                      @shifting-by-minus-a |
+                        less_than(add(a, neg(a)), add(b, neg(a)))
+                        [using specialize rational.lessThanAddRight(a, b, neg(a)) a-below-b]
+                      @a-cancels |
+                        add(a, neg(a)) = ZERO
+                        [using specialize rational.addNegRight(a)]
+                      @the-difference-is-positive |
+                        less_than(ZERO, add(b, neg(a)))
+                        [by rewrite a-cancels shifting-by-minus-a]
+                      // a positive integer is natural: its negation is negative, so
+                      // integerCases must take the left arm
+                      @the-difference-is-natural |
+                        isNatural(add(b, neg(a)))
+                        [using specialize aPositiveIntegerIsNatural(add(b, neg(a))) the-difference-is-an-integer the-difference-is-positive]
+                      // nonzero, being positive
+                      @the-difference-is-nonzero |
+                        not (add(b, neg(a)) = ZERO)
+                        [using specialize aPositiveIsNonzero(add(b, neg(a))) the-difference-is-positive]
+                      // so it is a successor
+                      @the-difference-is-a-successor |
+                        exists d: Q; isNatural(d) and add(b, neg(a)) = succ(d)
+                        [using specialize aNonzeroNaturalIsASuccessor(add(b, neg(a))) the-difference-is-natural the-difference-is-nonzero]
+                      @the-gap |
+                        unpack d: Q from the-difference-is-a-successor {
+                          @with-gap-d |
+                            isNatural(d) and add(b, neg(a)) = succ(d)
+                            [by hypothesis the-gap]
+                          @d-is-natural |
+                            isNatural(d)
+                            [by and_lhs with-gap-d]
+                          @the-difference-is-succ-d |
+                            add(b, neg(a)) = succ(d)
+                            [by and_rhs with-gap-d]
+                          // a + (b − a) = b, so a + succ(d) = b
+                          @adding-a-back |
+                            add(a, add(b, neg(a))) = b
+                            [using specialize theDifferenceAddsBack(a, b)]
+                          @the-witness-equation |
+                            add(a, succ(d)) = b
+                            [by rewrite the-difference-is-succ-d adding-a-back]
+                          @the-witness-works |
+                            isNatural(d) and add(a, succ(d)) = b
+                            [by both d-is-natural the-witness-equation]
+                          @conclusion-the-gap-exists |
+                            exists d2: Q; isNatural(d2) and add(a, succ(d2)) = b
+                            [by witness(d) the-witness-works]
+                        }
+                      @conclusion-the-gap |
+                        exists d: Q; isNatural(d) and add(a, succ(d)) = b
+                        [by unpacked the-gap]
+                    }
+                  @a-below-b-implies-the-gap |
+                    less_than(a, b) ->
+                      (exists d: Q; isNatural(d) and add(a, succ(d)) = b)
+                    [by discharge given-a-below-b]
+                }
+              @b-integer-implies-the-gap |
+                isInteger(b) -> less_than(a, b) ->
+                  (exists d: Q; isNatural(d) and add(a, succ(d)) = b)
+                [by discharge given-b-is-an-integer]
+            }
+          @a-integer-implies-the-gap |
+            isInteger(a) -> isInteger(b) -> less_than(a, b) ->
+              (exists d: Q; isNatural(d) and add(a, succ(d)) = b)
+            [by discharge given-a-is-an-integer]
+        }
+      @discharge-b |
+        forall b9: Q;
+          isInteger(a) -> isInteger(b9) -> less_than(a, b9) ->
+          (exists d: Q; isNatural(d) and add(a, succ(d)) = b9)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Q;
+      isInteger(a) -> isInteger(b) -> less_than(a, b) ->
+      (exists d: Q; isNatural(d) and add(a, succ(d)) = b)
+    [by generalize generalize-a]
+qed
+
+// -- ℤ's ORDER, TRANSFERRED ONTO THE CUT --------------------------------------------------
+// With discreteness proved, ℤ's two order axioms are dischargeable on the `isInteger` cut, so
+// `std/integer/order.b4m`'s whole corpus travels. `lessThanElim` IS the discreteness theorem;
+// `lessThanIntro` is its converse, and follows from ℚ's order alone — a nonneg gap makes the
+// endpoints ordered whether or not they are integers.
+
+// Strategy: a + succ(d) = b with d natural. succ(d) = d + ONE is positive (d ≥ 0, 1 > 0), and
+// adding a positive to a moves it up, so a < a + succ(d) = b.
+theorem aNonnegGapMakesItLess: forall a, b, d: Q;
+  isNatural(d) -> add(a, succ(d)) = b -> less_than(a, b)
+proof
+  @generalize-a |
+    fix a: Q {
+      @generalize-b |
+        fix b: Q {
+          @generalize-d |
+            fix d: Q {
+              @given-d-is-natural |
+                assume isNatural(d) {
+                  @d-is-natural |
+                    isNatural(d)
+                    [by hypothesis given-d-is-natural]
+                  @given-the-gap |
+                    assume add(a, succ(d)) = b {
+                      @the-gap |
+                        add(a, succ(d)) = b
+                        [by hypothesis given-the-gap]
+                      // succ(d) is positive: d is zero or positive, and either way d + 1 > 0
+                      @d-is-zero-or-positive |
+                        d = ZERO or less_than(ZERO, d)
+                        [using specialize aNaturalIsZeroOrPositive(d) d-is-natural]
+                      @one-positive |
+                        less_than(ZERO, ONE)
+                        [using model(rational.RationalOrderedField) field_order.zeroLessThanOne]
+                      @succ-is-plus-one |
+                        succ(d) = add(d, ONE)
+                        [using specialize rational.succDefinition(d)]
+                      @the-successor-is-positive |
+                        less_than(ZERO, succ(d))
+                        case d-is-zero-or-positive {
+                          @when-d-is-zero |
+                            assume d = ZERO {
+                              @d-is-zero |
+                                d = ZERO
+                                [by hypothesis when-d-is-zero]
+                              @one-is-succ-zero |
+                                ONE = succ(ZERO)
+                                [by cite rational.oneIsSuccZero]
+                              @the-successor-of-d |
+                                succ(d) = succ(d)
+                                [by reflexivity]
+                              @the-successor-is-succ-zero |
+                                succ(d) = succ(ZERO)
+                                [by rewrite d-is-zero the-successor-of-d]
+                              @the-successor-is-one |
+                                succ(d) = ONE
+                                [by rewrite one-is-succ-zero the-successor-is-succ-zero]
+                              @conclusion-positive-at-zero |
+                                less_than(ZERO, succ(d))
+                                [by rewrite the-successor-is-one one-positive]
+                            }
+                          @when-d-is-positive |
+                            assume less_than(ZERO, d) {
+                              @d-is-positive |
+                                less_than(ZERO, d)
+                                [by hypothesis when-d-is-positive]
+                              @shifting-d-up |
+                                less_than(add(ZERO, ONE), add(d, ONE))
+                                [using specialize rational.lessThanAddRight(ZERO, d, ONE) d-is-positive]
+                              @zero-plus-one |
+                                add(ZERO, ONE) = ONE
+                                [using specialize rational.addZeroLeft(ONE)]
+                              @one-below-the-sum |
+                                less_than(ONE, add(d, ONE))
+                                [by rewrite zero-plus-one shifting-d-up]
+                              @zero-below-the-sum |
+                                less_than(ZERO, add(d, ONE))
+                                [using specialize rational.lessThanTransitive(ZERO, ONE, add(d, ONE)) one-positive one-below-the-sum]
+                              @conclusion-positive-at-d |
+                                less_than(ZERO, succ(d))
+                                [by rewrite succ-is-plus-one zero-below-the-sum]
+                            }
+                        }
+                      // adding a positive to a moves it up
+                      @shifting-by-a |
+                        less_than(add(ZERO, a), add(succ(d), a))
+                        [using specialize rational.lessThanAddRight(ZERO, succ(d), a) the-successor-is-positive]
+                      @zero-plus-a |
+                        add(ZERO, a) = a
+                        [using specialize rational.addZeroLeft(a)]
+                      @a-below-the-shift |
+                        less_than(a, add(succ(d), a))
+                        [by rewrite zero-plus-a shifting-by-a]
+                      @the-sum-commutes |
+                        add(succ(d), a) = add(a, succ(d))
+                        [using specialize rational.addIsCommutative(succ(d), a)]
+                      @a-below-the-gap-sum |
+                        less_than(a, add(a, succ(d)))
+                        [by rewrite the-sum-commutes a-below-the-shift]
+                      @conclusion-a-below-b |
+                        less_than(a, b)
+                        [by rewrite the-gap a-below-the-gap-sum]
+                    }
+                  @the-gap-implies-less |
+                    add(a, succ(d)) = b -> less_than(a, b)
+                    [by discharge given-the-gap]
+                }
+              @natural-implies-the-gap-orders |
+                isNatural(d) -> add(a, succ(d)) = b -> less_than(a, b)
+                [by discharge given-d-is-natural]
+            }
+          @discharge-d |
+            forall d9: Q;
+              isNatural(d9) -> add(a, succ(d9)) = b -> less_than(a, b)
+            [by generalize generalize-d]
+        }
+      @discharge-b |
+        forall b9: Q; forall d: Q;
+          isNatural(d) -> add(a, succ(d)) = b9 -> less_than(a, b9)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b, d: Q;
+      isNatural(d) -> add(a, succ(d)) = b -> less_than(a, b)
+    [by generalize generalize-a]
+qed
+
+// ONE is natural. Proved inline inside `rational.oneIsAnInteger` but never exported there,
+// and the guarded model's guard search needs it by name: every ℤ-order theorem mentioning ONE
+// owes `isNatural(ONE)` once `nonneg` is interpreted as `isNatural`.
+theorem oneIsNatural: isNatural(ONE)
+proof
+  @zero-is-natural |
+    isNatural(ZERO)
+    [by cite rational.isNaturalZero]
+  @succ-zero-is-natural |
+    isNatural(succ(ZERO))
+    [using specialize rational.isNaturalSucc(ZERO) zero-is-natural]
+  @one-is-succ-zero |
+    ONE = succ(ZERO)
+    [by cite rational.oneIsSuccZero]
+  @conclusion |
+    isNatural(ONE)
+    [by rewrite one-is-succ-zero succ-zero-is-natural]
+qed
+
+// -- WHY THE GUARDED ORDER MODEL IS NOT HERE ----------------------------------------------
+// The two theorems above are exactly `std/integer/order.b4m`'s two axioms relativized to the
+// cut, so a guarded `model` mapping `int_order.lessThanIntro <- aNonnegGapMakesItLess` and
+// `int_order.lessThanElim <- theIntegersInRationalAreDiscrete` SHOULD transfer ℤ's whole
+// order corpus onto ℚ's integers. It does not, and the blocker is upstream of this file.
+//
+// `std/rational.b4m`'s own `IntegersInRational` — the guarded ℤ model that has been declared
+// there for months — cannot transfer even `integer.addIsCommutative`:
+//
+//     std/integer.b4m:200: IntegersInRational@negNegNonneg: step claims
+//       'neg(prev(neg(k))) = succ(neg(neg(k)))' but apply_at derives
+//       'isInteger(neg(k)) -> neg(prev(neg(k))) = succ(neg(neg(k)))'
+//
+// A guard relativization is being inserted into a step's claim but not into what the step's
+// own `apply_at` produces, so the two disagree by one `isInteger(...) ->`. NOTHING in the
+// corpus transfers through `IntegersInRational` (its only consumer is `scratch-needswork/`),
+// which is why the bug has stayed latent since the model was written.
+//
+// So this file stops at the mathematics: the four facts below ARE the discreteness of ℚ's
+// integers, each proved from `naturalInduction` and ℚ's order, and they are what a working
+// guarded model would need. Wiring them into one is blocked on the relativization bug.
