@@ -20,6 +20,7 @@ import peano_order <<< "std/peano/order.b4m"
 import qpoly <<< "std/rational/polynomial.b4m"
 import field_order <<< "std/field/order.b4m"
 import rational_integer_order <<< "std/rational/integer-order.b4m"
+import natural_wellordering <<< "std/rational/natural-wellordering.b4m"
 
 sort Q = rational.Q
 sort Nat = peano.Nat
@@ -35,6 +36,7 @@ pred less_than = rational.less_than
 // 2026-10-31; the prefix spelling is the style guide's, not `NZERO`).
 pred nat_less_than = peano_order.less_than
 pred isInteger = rational.isInteger
+pred isNatural = rational.isNatural
 
 // -- a ℚ-valued product fold --------------------------------------------------------------
 sort QSeq
@@ -4334,5 +4336,174 @@ proof
       (forall i: Nat; dividesIntegrally(e, qat(q, i))) ->
       (exists smaller: Q;
       aFirstQuotientOf(s, n, smaller) and less_than(smaller, qat(q, NAT_ZERO)))
+    [by generalize generalize-s]
+qed
+
+// Inhabitation: ONE is a positive integer common divisor leaving s as its own quotient, so
+// the first entry IS a first quotient — what well-ordering needs to start from.
+theorem theFirstEntryIsAFirstQuotient: forall s: QSeq; forall n: Nat;
+  (forall i: Nat; nat_less_than(i, n) -> isInteger(qat(s, i))) ->
+  aFirstQuotientOf(s, n, qat(s, NAT_ZERO))
+proof
+  @generalize-s |
+    fix s: QSeq {
+      @generalize-n |
+        fix n: Nat {
+          @given-the-entries |
+            assume forall i: Nat; nat_less_than(i, n) -> isInteger(qat(s, i)) {
+              @the-entries |
+                forall i: Nat; nat_less_than(i, n) -> isInteger(qat(s, i))
+                [by hypothesis given-the-entries]
+              @one-works |
+                isACommonDivisorUpTo(ONE, s, n) and
+                  aQuotientSequenceFor(ONE, s, s, n)
+                [using specialize theTrivialDivisorWorks(s, n) the-entries]
+              @one-divides |
+                isACommonDivisorUpTo(ONE, s, n)
+                [by and_lhs one-works]
+              @s-is-its-own-quotient |
+                aQuotientSequenceFor(ONE, s, s, n)
+                [by and_rhs one-works]
+              @one-is-an-integer |
+                isInteger(ONE)
+                [by cite rational.oneIsAnInteger]
+              @one-is-positive |
+                less_than(ZERO, ONE)
+                [using model(rational.RationalOrderedField) field_order.zeroLessThanOne]
+              @conclusion-the-first-entry |
+                aFirstQuotientOf(s, n, qat(s, NAT_ZERO))
+                [using specialize aDivisorWitnessesItsFirstQuotient(s, s, n, ONE) one-is-an-integer one-is-positive one-divides s-is-its-own-quotient]
+            }
+          @the-implication |
+            (forall i: Nat; nat_less_than(i, n) -> isInteger(qat(s, i))) ->
+              aFirstQuotientOf(s, n, qat(s, NAT_ZERO))
+            [by discharge given-the-entries]
+        }
+      @discharge-n |
+        forall n9: Nat;
+          (forall i: Nat; nat_less_than(i, n9) -> isInteger(qat(s, i))) ->
+          aFirstQuotientOf(s, n9, qat(s, NAT_ZERO))
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall s: QSeq; forall n: Nat;
+      (forall i: Nat; nat_less_than(i, n) -> isInteger(qat(s, i))) ->
+      aFirstQuotientOf(s, n, qat(s, NAT_ZERO))
+    [by generalize generalize-s]
+qed
+
+// -- LEMMA 17.12's DIVISOR EXISTS ---------------------------------------------------------
+// THE ASSEMBLY. Well-order on the first quotient: the property is inhabited (ONE leaves s_0),
+// so there is a LEAST first quotient, and the divisor achieving it leaves COPRIME quotients —
+// a non-unit common divisor of them would give a strictly smaller first quotient
+// (`aNonUnitDivisorGivesASmallerFirstQuotient`), contradicting leastness.
+//
+// Well-ordering is stated over `isNatural`, and a first quotient here is a positive integer,
+// which `aPositiveIntegerIsNatural` makes natural — so the property is well-ordered as stated.
+//
+// This closes Lemma 17.12's construction: steps 3 and 4 take their divisor as a hypothesis,
+// and this is its existence.
+theorem aLeastFirstQuotientExists: forall s: QSeq; forall n: Nat;
+  nat_less_than(NAT_ZERO, n) ->
+  (forall i: Nat; nat_less_than(i, n) -> isInteger(qat(s, i))) ->
+  less_than(ZERO, qat(s, NAT_ZERO)) ->
+  (exists least: Q; isNatural(least) and aFirstQuotientOf(s, n, least) and
+  (forall m: Q; isNatural(m) -> aFirstQuotientOf(s, n, m) ->
+  (not less_than(m, least))))
+proof
+  @generalize-s |
+    fix s: QSeq {
+      @generalize-n |
+        fix n: Nat {
+          @given-the-setup |
+            assume nat_less_than(NAT_ZERO, n) and
+              (forall i: Nat; nat_less_than(i, n) ->
+              isInteger(qat(s, i))) and
+              less_than(ZERO, qat(s, NAT_ZERO)) {
+              @the-setup |
+                nat_less_than(NAT_ZERO, n) and
+                  (forall i: Nat; nat_less_than(i, n) ->
+                  isInteger(qat(s, i))) and
+                  less_than(ZERO, qat(s, NAT_ZERO))
+                [by hypothesis given-the-setup]
+              @zero-in-range |
+                nat_less_than(NAT_ZERO, n)
+                [using tautology the-setup]
+              @the-entries |
+                forall i: Nat; nat_less_than(i, n) -> isInteger(qat(s, i))
+                [using tautology the-setup]
+              @first-positive |
+                less_than(ZERO, qat(s, NAT_ZERO))
+                [using tautology the-setup]
+              // s_0 is a first quotient (ONE's), and it is natural
+              @the-first-entry-is-a-first-quotient |
+                aFirstQuotientOf(s, n, qat(s, NAT_ZERO))
+                [using specialize theFirstEntryIsAFirstQuotient(s, n) the-entries]
+              @the-first-entry-is-an-integer |
+                isInteger(qat(s, NAT_ZERO))
+                [using specialize the-entries(NAT_ZERO) zero-in-range]
+              @the-first-entry-is-natural |
+                isNatural(qat(s, NAT_ZERO))
+                [using specialize rational_integer_order.aPositiveIntegerIsNatural(qat(s, NAT_ZERO)) the-first-entry-is-an-integer first-positive]
+              @the-inhabitant |
+                isNatural(qat(s, NAT_ZERO)) and
+                  aFirstQuotientOf(s, n, qat(s, NAT_ZERO))
+                [by both the-first-entry-is-natural the-first-entry-is-a-first-quotient]
+              @inhabited |
+                exists m: Q; isNatural(m) and aFirstQuotientOf(s, n, m)
+                [by witness(qat(s, NAT_ZERO)) the-inhabitant]
+              // well-order it
+              @the-well-ordering |
+                (exists m: Q; isNatural(m) and aFirstQuotientOf(s, n, m)) ->
+                  (exists least: Q; isNatural(least) and
+                  aFirstQuotientOf(s, n, least) and
+                  (forall m: Q; isNatural(m) -> aFirstQuotientOf(s, n, m) ->
+                  (not less_than(m, least))))
+                [using instantiation natural_wellordering.naturalWellOrdering(fun m: Q => aFirstQuotientOf(s, n, m))]
+              @conclusion-a-least |
+                exists least: Q; isNatural(least) and
+                  aFirstQuotientOf(s, n, least) and
+                  (forall m: Q; isNatural(m) -> aFirstQuotientOf(s, n, m) ->
+                  (not less_than(m, least)))
+                [by modus_ponens the-well-ordering inhabited]
+            }
+          @the-implication |
+            (nat_less_than(NAT_ZERO, n) and
+              (forall i: Nat; nat_less_than(i, n) -> isInteger(qat(s, i))) and
+              less_than(ZERO, qat(s, NAT_ZERO))) ->
+              (exists least: Q; isNatural(least) and
+              aFirstQuotientOf(s, n, least) and
+              (forall m: Q; isNatural(m) -> aFirstQuotientOf(s, n, m) ->
+              (not less_than(m, least))))
+            [by discharge given-the-setup]
+          @curried |
+            nat_less_than(NAT_ZERO, n) ->
+              (forall i: Nat; nat_less_than(i, n) -> isInteger(qat(s, i))) ->
+              less_than(ZERO, qat(s, NAT_ZERO)) ->
+              (exists least: Q; isNatural(least) and
+              aFirstQuotientOf(s, n, least) and
+              (forall m: Q; isNatural(m) -> aFirstQuotientOf(s, n, m) ->
+              (not less_than(m, least))))
+            [using tautology the-implication]
+        }
+      @discharge-n |
+        forall n9: Nat;
+          nat_less_than(NAT_ZERO, n9) ->
+          (forall i: Nat; nat_less_than(i, n9) -> isInteger(qat(s, i))) ->
+          less_than(ZERO, qat(s, NAT_ZERO)) ->
+          (exists least: Q; isNatural(least) and
+          aFirstQuotientOf(s, n9, least) and
+          (forall m: Q; isNatural(m) -> aFirstQuotientOf(s, n9, m) ->
+          (not less_than(m, least))))
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall s: QSeq; forall n: Nat;
+      nat_less_than(NAT_ZERO, n) ->
+      (forall i: Nat; nat_less_than(i, n) -> isInteger(qat(s, i))) ->
+      less_than(ZERO, qat(s, NAT_ZERO)) ->
+      (exists least: Q; isNatural(least) and aFirstQuotientOf(s, n, least) and
+      (forall m: Q; isNatural(m) -> aFirstQuotientOf(s, n, m) ->
+      (not less_than(m, least))))
     [by generalize generalize-s]
 qed
