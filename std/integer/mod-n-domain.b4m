@@ -1,0 +1,170 @@
+// std/integer/mod-n-domain.b4m — ℤ_p IS AN INTEGRAL DOMAIN, for prime modulus.
+//
+// The fact Gauss's Lemma (AATA §17.3) needs, phrased there as "ℤ_p[x] is an integral
+// domain" — the coefficient-level half of it.
+//
+// Gauss's Lemma (AATA §17.3) needs exactly this, phrased as "ℤ_p[x] is an integral domain".
+// The coefficient-level fact comes first: a product of nonzero classes is nonzero.
+//
+// A class cls(a) is ZERO exactly when p divides a (clsCongruent against cls(0), plus
+// a - 0 = a). So "cls(a)·cls(b) = 0" is "p | ab", and Euclid's lemma turns that into
+// "p | a or p | b", i.e. one of the classes was already zero.
+import integer <<< "std/integer.b4m"
+import int_divides <<< "std/integer/divides.b4m"
+import mod_n <<< "std/integer/mod-n.b4m"
+import mod_n_prime <<< "std/integer/mod-n-prime.b4m"
+import primes <<< "std/primes.b4m"
+
+sort Int = integer.Int
+sort Zn = mod_n.Zn
+const IZERO = integer.ZERO
+const N = mod_n.N
+const ZERO = mod_n.ZERO
+func cls = mod_n.cls
+func imul = integer.mul
+func isub = integer.sub
+func mul = mod_n.mul
+pred divides = int_divides.divides
+pred is_prime = primes.is_prime
+
+// A class vanishes exactly when the modulus divides its representative.
+theorem aClassIsZeroWhenTheModulusDivides: forall a: Int;
+  cls(a) = ZERO iff divides(N, a)
+proof
+  @generalize-a |
+    fix a: Int {
+      @zero-is-the-zero-class |
+        ZERO = cls(IZERO)
+        [by cite mod_n.zeroIsClsZero]
+      @the-congruence |
+        cls(a) = cls(IZERO) iff divides(N, isub(a, IZERO))
+        [using specialize mod_n.clsCongruent(a, IZERO)]
+      @subtracting-zero |
+        isub(a, IZERO) = a
+        [using specialize mod_n_prime.subZeroRight(a)]
+      @the-congruence-at-a |
+        cls(a) = cls(IZERO) iff divides(N, a)
+        [by rewrite subtracting-zero the-congruence]
+      @conclusion-the-class-vanishes |
+        cls(a) = ZERO iff divides(N, a)
+        [by rewrite zero-is-the-zero-class the-congruence-at-a]
+    }
+  @conclusion |
+    forall a: Int; cls(a) = ZERO iff divides(N, a)
+    [by generalize generalize-a]
+qed
+
+// ℤ_p HAS NO ZERO DIVISORS: a product of classes vanishes only if a factor does.
+theorem aPrimeModulusHasNoZeroDivisors: forall x, y: Zn;
+  is_prime(N) -> mul(x, y) = ZERO -> (x = ZERO or y = ZERO)
+proof
+  @representatives-exist |
+    forall z: Zn; exists k: Int; z = cls(k)
+    [by cite mod_n.clsSurjective]
+  @generalize-x |
+    fix x: Zn {
+      @generalize-y |
+        fix y: Zn {
+          @given-the-modulus-is-prime |
+            assume is_prime(N) {
+              @the-modulus-is-prime |
+                is_prime(N)
+                [by hypothesis given-the-modulus-is-prime]
+              @given-the-product-vanishes |
+                assume mul(x, y) = ZERO {
+                  @the-product-vanishes |
+                    mul(x, y) = ZERO
+                    [by hypothesis given-the-product-vanishes]
+                  @a-representative-of-x-exists |
+                    exists k: Int; x = cls(k)
+                    [using specialize representatives-exist(x)]
+                  @with-the-representative-a |
+                    unpack a: Int from a-representative-of-x-exists {
+                      @x-is-the-class-of-a |
+                        x = cls(a)
+                        [by hypothesis with-the-representative-a]
+                      @a-representative-of-y-exists |
+                        exists k: Int; y = cls(k)
+                        [using specialize representatives-exist(y)]
+                      @with-the-representative-b |
+                        unpack b: Int from a-representative-of-y-exists {
+                          @y-is-the-class-of-b |
+                            y = cls(b)
+                            [by hypothesis with-the-representative-b]
+                          // the product is the class of the integer product
+                          @the-product-is-a-class |
+                            mul(cls(a), cls(b)) = cls(imul(a, b))
+                            [using specialize mod_n.mulHom(a, b)]
+                          @the-product-at-the-classes |
+                            mul(x, y) = mul(cls(a), cls(b))
+                            [using simplify x-is-the-class-of-a y-is-the-class-of-b]
+                          @the-product-at-the-classes-flipped |
+                            mul(cls(a), cls(b)) = mul(x, y)
+                            [by symmetry the-product-at-the-classes]
+                          @the-class-product-vanishes |
+                            mul(cls(a), cls(b)) = ZERO
+                            [using chain the-product-at-the-classes-flipped the-product-vanishes]
+                          @the-integer-product-class-vanishes |
+                            cls(imul(a, b)) = ZERO
+                            [using chain the-product-is-a-class-flipped the-class-product-vanishes]
+                          @the-product-is-a-class-flipped |
+                            cls(imul(a, b)) = mul(cls(a), cls(b))
+                            [by symmetry the-product-is-a-class]
+                          // so the modulus divides the integer product
+                          @vanishing-means-divisible |
+                            cls(imul(a, b)) = ZERO iff divides(N, imul(a, b))
+                            [using specialize aClassIsZeroWhenTheModulusDivides(imul(a, b))]
+                          @the-modulus-divides-the-product |
+                            divides(N, imul(a, b))
+                            [using tautology vanishing-means-divisible the-integer-product-class-vanishes]
+                          // Euclid: it divides a factor
+                          @euclid-at-the-factors |
+                            divides(N, imul(a, b)) ->
+                              (divides(N, a) or divides(N, b))
+                            [using specialize primes.euclidsLemma(a, b, N) the-modulus-is-prime]
+                          @the-modulus-divides-a-factor |
+                            divides(N, a) or divides(N, b)
+                            [using tautology euclid-at-the-factors the-modulus-divides-the-product]
+                          // and a divided representative is a vanishing class
+                          @a-vanishes-when-divided |
+                            cls(a) = ZERO iff divides(N, a)
+                            [using specialize aClassIsZeroWhenTheModulusDivides(a)]
+                          @b-vanishes-when-divided |
+                            cls(b) = ZERO iff divides(N, b)
+                            [using specialize aClassIsZeroWhenTheModulusDivides(b)]
+                          @a-class-vanishes |
+                            cls(a) = ZERO or cls(b) = ZERO
+                            [using tautology the-modulus-divides-a-factor a-vanishes-when-divided b-vanishes-when-divided]
+                          @x-or-the-class-of-b-vanishes |
+                            x = ZERO or cls(b) = ZERO
+                            [by rewrite x-is-the-class-of-a a-class-vanishes]
+                          @conclusion-a-factor-vanishes |
+                            x = ZERO or y = ZERO
+                            [by rewrite y-is-the-class-of-b x-or-the-class-of-b-vanishes]
+                        }
+                      @conclusion-from-b |
+                        x = ZERO or y = ZERO
+                        [by unpacked with-the-representative-b]
+                    }
+                  @conclusion-from-a |
+                    x = ZERO or y = ZERO
+                    [by unpacked with-the-representative-a]
+                }
+              @the-product-implies |
+                mul(x, y) = ZERO -> (x = ZERO or y = ZERO)
+                [by discharge given-the-product-vanishes]
+            }
+          @prime-implies |
+            is_prime(N) -> mul(x, y) = ZERO -> (x = ZERO or y = ZERO)
+            [by discharge given-the-modulus-is-prime]
+        }
+      @discharge-y |
+        forall y9: Zn;
+          is_prime(N) -> mul(x, y9) = ZERO -> (x = ZERO or y9 = ZERO)
+        [by generalize generalize-y]
+    }
+  @conclusion |
+    forall x, y: Zn;
+      is_prime(N) -> mul(x, y) = ZERO -> (x = ZERO or y = ZERO)
+    [by generalize generalize-x]
+qed
