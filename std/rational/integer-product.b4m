@@ -1822,3 +1822,677 @@ proof
       isInteger(rational.mul(whole, qpoly.qcoeff(theSubject, i)))
     [by generalize generalize-i]
 qed
+
+// -- LEMMA 17.12, STEP 3: DIVIDING OUT A COMMON FACTOR ------------------------------------
+// "Let d be the greatest common divisor of d_0, …, d_n. Then p(x) = d/(c_0 ⋯ c_n)(a_0 + … +
+// a_n x^n), where d_i = d a_i and the a_i's are relatively prime."
+//
+// The gcd VALUE is not what 17.12's statement needs. `coefficientsAreRelativelyPrimeUpTo` is
+// a quantification over common divisors — "every integer dividing all of them divides ONE" —
+// so what must be produced is a divisor `d` of every entry such that the quotients have no
+// common factor beyond a unit. That is a weaker, purely relational obligation, and it is
+// stated and proved here on the cut, exactly as `std/rational/polynomial.b4m` states
+// divisibility and coprimality on the cut rather than transferring ℤ's.
+//
+// (Transferring ℤ's `lattice.gcdExists` was tried and does NOT work: its proof routes through
+// wellordering into `peano.zeroOrSucc`, whose own proof is a model transfer, so the chain
+// ℕ → ℤ's NonNeg → ℚ's isInteger hits the nested-composition limit —
+// `std/peano.b4m:857: expected sort 'Int', got 'Q'`. Same wall as `dividesOneImpliesUnit`,
+// same answer: prove it on the cut.)
+
+// `isACommonDivisorUpTo(d, s, n)` — d divides every entry below n.
+pred isACommonDivisorUpTo(d: Q, s: QSeq, n: Nat)
+axiom commonDivisorMeaning: forall d: Q; forall s: QSeq; forall n: Nat;
+  isACommonDivisorUpTo(d, s, n) iff
+  (forall i: Nat; less_than(i, n) -> dividesIntegrally(d, qat(s, i)))
+
+// ONE is a common divisor of anything: every integer is ONE times itself.
+theorem oneIsACommonDivisor: forall s: QSeq; forall n: Nat;
+  (forall i: Nat; less_than(i, n) -> isInteger(qat(s, i))) ->
+  isACommonDivisorUpTo(QONE, s, n)
+proof
+  @generalize-s |
+    fix s: QSeq {
+      @generalize-n |
+        fix n: Nat {
+          @given-the-entries-are-integers |
+            assume forall i: Nat; less_than(i, n) -> isInteger(qat(s, i)) {
+              @the-entries-are-integers |
+                forall i: Nat; less_than(i, n) -> isInteger(qat(s, i))
+                [by hypothesis given-the-entries-are-integers]
+              @one-divides-each |
+                fix i: Nat {
+                  @given-i-below-n |
+                    assume less_than(i, n) {
+                      @i-below-n |
+                        less_than(i, n)
+                        [by hypothesis given-i-below-n]
+                      @the-entry-is-an-integer |
+                        isInteger(qat(s, i))
+                        [using specialize the-entries-are-integers(i) i-below-n]
+                      // the witness quotient is the entry itself: entry = 1 · entry
+                      @one-times-the-entry |
+                        rational.mul(QONE, qat(s, i)) = qat(s, i)
+                        [using specialize rational.mulOneLeft(qat(s, i))]
+                      @the-entry-is-one-times-itself |
+                        qat(s, i) = rational.mul(QONE, qat(s, i))
+                        [by symmetry one-times-the-entry]
+                      @the-witness-works |
+                        isInteger(qat(s, i)) and
+                          qat(s, i) = rational.mul(QONE, qat(s, i))
+                        [by both the-entry-is-an-integer the-entry-is-one-times-itself]
+                      @a-quotient-exists |
+                        exists k: Q; isInteger(k) and
+                          qat(s, i) = rational.mul(QONE, k)
+                        [by witness(qat(s, i)) the-witness-works]
+                      @the-divides-meaning |
+                        dividesIntegrally(QONE, qat(s, i)) iff
+                          (exists k: Q; isInteger(k) and
+                          qat(s, i) = rational.mul(QONE, k))
+                        [using specialize dividesIntegrallyMeaning(QONE, qat(s, i))]
+                      @conclusion-one-divides |
+                        dividesIntegrally(QONE, qat(s, i))
+                        [using tautology the-divides-meaning a-quotient-exists]
+                    }
+                  @below-n-implies |
+                    less_than(i, n) -> dividesIntegrally(QONE, qat(s, i))
+                    [by discharge given-i-below-n]
+                }
+              @all-divided |
+                forall i: Nat;
+                  less_than(i, n) -> dividesIntegrally(QONE, qat(s, i))
+                [by generalize one-divides-each]
+              @the-common-divisor-meaning |
+                isACommonDivisorUpTo(QONE, s, n) iff
+                  (forall i: Nat;
+                  less_than(i, n) -> dividesIntegrally(QONE, qat(s, i)))
+                [using specialize commonDivisorMeaning(QONE, s, n)]
+              @conclusion-one-is-common |
+                isACommonDivisorUpTo(QONE, s, n)
+                [using tautology the-common-divisor-meaning all-divided]
+            }
+          @integers-imply-one-is-common |
+            (forall i: Nat; less_than(i, n) -> isInteger(qat(s, i))) ->
+              isACommonDivisorUpTo(QONE, s, n)
+            [by discharge given-the-entries-are-integers]
+        }
+      @discharge-n |
+        forall n9: Nat;
+          (forall i: Nat; less_than(i, n9) -> isInteger(qat(s, i))) ->
+          isACommonDivisorUpTo(QONE, s, n9)
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall s: QSeq; forall n: Nat;
+      (forall i: Nat; less_than(i, n) -> isInteger(qat(s, i))) ->
+      isACommonDivisorUpTo(QONE, s, n)
+    [by generalize generalize-s]
+qed
+
+// -- WHAT STEP 3 MUST PRODUCE -------------------------------------------------------------
+// A common divisor `d` of the entries whose quotient sequence is RELATIVELY PRIME: every
+// integer dividing all the quotients divides ONE. For `d` the greatest common divisor this is
+// Judson's "the a_i's are relatively prime"; stated relationally it is the obligation itself,
+// with no gcd value and no fold.
+pred isAMaximalCommonDivisorUpTo(d: Q, s: QSeq, n: Nat)
+axiom maximalCommonDivisorMeaning: forall d: Q; forall s: QSeq; forall n: Nat;
+  isAMaximalCommonDivisorUpTo(d, s, n) iff
+  (isInteger(d) and (not (d = rational.ZERO)) and
+  isACommonDivisorUpTo(d, s, n) and
+  (forall e: Q; isInteger(e) -> isACommonDivisorUpTo(e, s, n) ->
+  dividesIntegrally(e, d)))
+
+// Cancellation at ℚ: a nonzero factor cancels. From `fieldInverse` directly — ℚ has no
+// cancellation lemma of its own, and `std/field/units.b4m`'s is over the Nonzero subsort.
+theorem aNonzeroFactorCancels: forall a, b, c: Q;
+  (not (a = rational.ZERO)) -> rational.mul(a, b) = rational.mul(a, c) -> b = c
+proof
+  @generalize-a |
+    fix a: Q {
+      @generalize-b |
+        fix b: Q {
+          @generalize-c |
+            fix c: Q {
+              @given-a-nonzero |
+                assume not (a = rational.ZERO) {
+                  @a-nonzero |
+                    not (a = rational.ZERO)
+                    [by hypothesis given-a-nonzero]
+                  @given-the-products-agree |
+                    assume rational.mul(a, b) = rational.mul(a, c) {
+                      @the-products-agree |
+                        rational.mul(a, b) = rational.mul(a, c)
+                        [by hypothesis given-the-products-agree]
+                      @the-inverse |
+                        rational.mul(a, recip(a)) = QONE
+                        [using specialize rational.fieldInverse(a) a-nonzero]
+                      @the-inverse-commutes |
+                        rational.mul(recip(a), a) = rational.mul(a, recip(a))
+                        [using specialize rational.mulIsCommutative(recip(a), a)]
+                      @the-reciprocal |
+                        rational.mul(recip(a), a) = QONE
+                        [using simplify the-inverse-commutes the-inverse]
+                      // b = 1·b = (a⁻¹a)b = a⁻¹(ab) = a⁻¹(ac) = (a⁻¹a)c = 1·c = c
+                      @scaling-b-flipped |
+                        rational.mul(rational.mul(recip(a), a), b) =
+                          rational.mul(recip(a), rational.mul(a, b))
+                        [using specialize rational.mulIsAssociative(recip(a), a, b)]
+                      @scaling-c |
+                        rational.mul(rational.mul(recip(a), a), c) =
+                          rational.mul(recip(a), rational.mul(a, c))
+                        [using specialize rational.mulIsAssociative(recip(a), a, c)]
+                      @scaled-products-agree |
+                        rational.mul(recip(a), rational.mul(a, b)) =
+                          rational.mul(recip(a), rational.mul(a, c))
+                        [using simplify the-products-agree]
+                      // (a⁻¹a)b = a⁻¹(ab) = a⁻¹(ac) = (a⁻¹a)c
+                      @through-the-middle |
+                        rational.mul(rational.mul(recip(a), a), b) =
+                          rational.mul(recip(a), rational.mul(a, c))
+                        [by rewrite scaled-products-agree scaling-b-flipped]
+                      @scaling-c-flipped |
+                        rational.mul(recip(a), rational.mul(a, c)) =
+                          rational.mul(rational.mul(recip(a), a), c)
+                        [by symmetry scaling-c]
+                      @regrouped-agree |
+                        rational.mul(rational.mul(recip(a), a), b) =
+                          rational.mul(rational.mul(recip(a), a), c)
+                        [by rewrite scaling-c-flipped through-the-middle]
+                      @one-times-agree |
+                        rational.mul(QONE, b) = rational.mul(QONE, c)
+                        [by rewrite the-reciprocal regrouped-agree]
+                      @one-times-b |
+                        rational.mul(QONE, b) = b
+                        [using specialize rational.mulOneLeft(b)]
+                      @one-times-c |
+                        rational.mul(QONE, c) = c
+                        [using specialize rational.mulOneLeft(c)]
+                      @b-is-one-times-c |
+                        b = rational.mul(QONE, c)
+                        [by rewrite one-times-b one-times-agree]
+                      @conclusion-they-agree |
+                        b = c
+                        [by rewrite one-times-c b-is-one-times-c]
+                    }
+                  @products-agree-implies |
+                    rational.mul(a, b) = rational.mul(a, c) -> b = c
+                    [by discharge given-the-products-agree]
+                }
+              @nonzero-implies |
+                (not (a = rational.ZERO)) ->
+                  rational.mul(a, b) = rational.mul(a, c) -> b = c
+                [by discharge given-a-nonzero]
+            }
+          @discharge-c |
+            forall c9: Q;
+              (not (a = rational.ZERO)) ->
+              rational.mul(a, b) = rational.mul(a, c9) -> b = c9
+            [by generalize generalize-c]
+        }
+      @discharge-b |
+        forall b9: Q; forall c9: Q;
+          (not (a = rational.ZERO)) ->
+          rational.mul(a, b9) = rational.mul(a, c9) -> b9 = c9
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: Q;
+      (not (a = rational.ZERO)) ->
+      rational.mul(a, b) = rational.mul(a, c) -> b = c
+    [by generalize generalize-a]
+qed
+
+// If e divides every quotient and each entry is d·quotient, then d·e divides every entry:
+// quotient = e·m gives entry = d·(e·m) = (d·e)·m.
+theorem theScaledDivisorDividesTheScaledEntries:
+  forall d, e: Q; forall s, q: QSeq; forall n: Nat;
+  isACommonDivisorUpTo(e, q, n) ->
+  (forall i: Nat; less_than(i, n) -> qat(s, i) = rational.mul(d, qat(q, i))) ->
+  isACommonDivisorUpTo(rational.mul(d, e), s, n)
+proof
+  @generalize-d |
+    fix d: Q {
+      @generalize-e |
+        fix e: Q {
+          @generalize-s |
+            fix s: QSeq {
+              @generalize-q |
+                fix q: QSeq {
+                  @generalize-n |
+                    fix n: Nat {
+                      @given-e-divides-the-quotients |
+                        assume isACommonDivisorUpTo(e, q, n) {
+                          @e-divides-the-quotients |
+                            isACommonDivisorUpTo(e, q, n)
+                            [by hypothesis given-e-divides-the-quotients]
+                          @the-quotient-divisor-meaning |
+                            isACommonDivisorUpTo(e, q, n) iff
+                              (forall i: Nat; less_than(i, n) ->
+                              dividesIntegrally(e, qat(q, i)))
+                            [using specialize commonDivisorMeaning(e, q, n)]
+                          @e-divides-each-quotient |
+                            forall i: Nat; less_than(i, n) ->
+                              dividesIntegrally(e, qat(q, i))
+                            [using tautology the-quotient-divisor-meaning e-divides-the-quotients]
+                          @given-the-factorization |
+                            assume forall i: Nat; less_than(i, n) ->
+                              qat(s, i) = rational.mul(d, qat(q, i)) {
+                              @the-factorization |
+                                forall i: Nat; less_than(i, n) ->
+                                  qat(s, i) = rational.mul(d, qat(q, i))
+                                [by hypothesis given-the-factorization]
+                              @each-entry-divided |
+                                fix i: Nat {
+                                  @given-i-below-n |
+                                    assume less_than(i, n) {
+                                      @i-below-n |
+                                        less_than(i, n)
+                                        [by hypothesis given-i-below-n]
+                                      @e-divides-this-quotient |
+                                        dividesIntegrally(e, qat(q, i))
+                                        [using specialize e-divides-each-quotient(i) i-below-n]
+                                      @this-entry |
+                                        qat(s, i) = rational.mul(d, qat(q, i))
+                                        [using specialize the-factorization(i) i-below-n]
+                                      @the-quotient-meaning |
+                                        dividesIntegrally(e, qat(q, i)) iff
+                                          (exists k: Q; isInteger(k) and
+                                          qat(q, i) = rational.mul(e, k))
+                                        [using specialize dividesIntegrallyMeaning(e, qat(q, i))]
+                                      @a-quotient-exists |
+                                        exists k: Q; isInteger(k) and
+                                          qat(q, i) = rational.mul(e, k)
+                                        [using tautology the-quotient-meaning e-divides-this-quotient]
+                                      @with-the-quotient |
+                                        unpack m: Q from a-quotient-exists {
+                                          @with-quotient-m |
+                                            isInteger(m) and
+                                              qat(q, i) = rational.mul(e, m)
+                                            [by hypothesis with-the-quotient]
+                                          @m-is-an-integer |
+                                            isInteger(m)
+                                            [by and_lhs with-quotient-m]
+                                          @the-quotient-is-e-times-m |
+                                            qat(q, i) = rational.mul(e, m)
+                                            [by and_rhs with-quotient-m]
+                                          // entry = d·(e·m) = (d·e)·m
+                                          @the-entry-expanded |
+                                            qat(s, i) =
+                                              rational.mul(d, rational.mul(e, m))
+                                            [by rewrite the-quotient-is-e-times-m this-entry]
+                                          @reassociate |
+                                            rational.mul(rational.mul(d, e), m) =
+                                              rational.mul(d, rational.mul(e, m))
+                                            [using specialize rational.mulIsAssociative(d, e, m)]
+                                          @the-entry-regrouped |
+                                            qat(s, i) =
+                                              rational.mul(rational.mul(d, e), m)
+                                            [by rewrite reassociate the-entry-expanded]
+                                          @the-witness-works |
+                                            isInteger(m) and
+                                              qat(s, i) =
+                                              rational.mul(rational.mul(d, e), m)
+                                            [by both m-is-an-integer the-entry-regrouped]
+                                          @the-scaled-quotient-exists |
+                                            exists k: Q; isInteger(k) and
+                                              qat(s, i) =
+                                              rational.mul(rational.mul(d, e), k)
+                                            [by witness(m) the-witness-works]
+                                          @the-scaled-meaning |
+                                            dividesIntegrally(rational.mul(d, e),
+                                              qat(s, i)) iff
+                                              (exists k: Q; isInteger(k) and
+                                              qat(s, i) =
+                                              rational.mul(rational.mul(d, e), k))
+                                            [using specialize dividesIntegrallyMeaning(rational.mul(d, e), qat(s, i))]
+                                          @conclusion-divides-this-entry |
+                                            dividesIntegrally(rational.mul(d, e),
+                                              qat(s, i))
+                                            [using tautology the-scaled-meaning the-scaled-quotient-exists]
+                                        }
+                                      @conclusion-this-entry-divided |
+                                        dividesIntegrally(rational.mul(d, e),
+                                          qat(s, i))
+                                        [by unpacked with-the-quotient]
+                                    }
+                                  @below-n-implies |
+                                    less_than(i, n) ->
+                                      dividesIntegrally(rational.mul(d, e), qat(s, i))
+                                    [by discharge given-i-below-n]
+                                }
+                              @all-entries-divided |
+                                forall i: Nat; less_than(i, n) ->
+                                  dividesIntegrally(rational.mul(d, e), qat(s, i))
+                                [by generalize each-entry-divided]
+                              @the-entry-divisor-meaning |
+                                isACommonDivisorUpTo(rational.mul(d, e), s, n) iff
+                                  (forall i: Nat; less_than(i, n) ->
+                                  dividesIntegrally(rational.mul(d, e),
+                                  qat(s, i)))
+                                [using specialize commonDivisorMeaning(rational.mul(d, e), s, n)]
+                              @conclusion-scaled-divides |
+                                isACommonDivisorUpTo(rational.mul(d, e), s, n)
+                                [using tautology the-entry-divisor-meaning all-entries-divided]
+                            }
+                          @factorization-implies |
+                            (forall i: Nat; less_than(i, n) ->
+                              qat(s, i) = rational.mul(d, qat(q, i))) ->
+                              isACommonDivisorUpTo(rational.mul(d, e), s, n)
+                            [by discharge given-the-factorization]
+                        }
+                      @quotient-divisor-implies |
+                        isACommonDivisorUpTo(e, q, n) ->
+                          (forall i: Nat; less_than(i, n) ->
+                          qat(s, i) = rational.mul(d, qat(q, i))) ->
+                          isACommonDivisorUpTo(rational.mul(d, e), s, n)
+                        [by discharge given-e-divides-the-quotients]
+                    }
+                  @discharge-n |
+                    forall n9: Nat;
+                      isACommonDivisorUpTo(e, q, n9) ->
+                      (forall i: Nat; less_than(i, n9) ->
+                      qat(s, i) = rational.mul(d, qat(q, i))) ->
+                      isACommonDivisorUpTo(rational.mul(d, e), s, n9)
+                    [by generalize generalize-n]
+                }
+              @discharge-q |
+                forall q9: QSeq; forall n9: Nat;
+                  isACommonDivisorUpTo(e, q9, n9) ->
+                  (forall i: Nat; less_than(i, n9) ->
+                  qat(s, i) = rational.mul(d, qat(q9, i))) ->
+                  isACommonDivisorUpTo(rational.mul(d, e), s, n9)
+                [by generalize generalize-q]
+            }
+          @discharge-s |
+            forall s9: QSeq; forall q9: QSeq; forall n9: Nat;
+              isACommonDivisorUpTo(e, q9, n9) ->
+              (forall i: Nat; less_than(i, n9) ->
+              qat(s9, i) = rational.mul(d, qat(q9, i))) ->
+              isACommonDivisorUpTo(rational.mul(d, e), s9, n9)
+            [by generalize generalize-s]
+        }
+      @discharge-e |
+        forall e9: Q; forall s9: QSeq; forall q9: QSeq; forall n9: Nat;
+          isACommonDivisorUpTo(e9, q9, n9) ->
+          (forall i: Nat; less_than(i, n9) ->
+          qat(s9, i) = rational.mul(d, qat(q9, i))) ->
+          isACommonDivisorUpTo(rational.mul(d, e9), s9, n9)
+        [by generalize generalize-e]
+    }
+  @conclusion |
+    forall d, e: Q; forall s, q: QSeq; forall n: Nat;
+      isACommonDivisorUpTo(e, q, n) ->
+      (forall i: Nat; less_than(i, n) ->
+      qat(s, i) = rational.mul(d, qat(q, i))) ->
+      isACommonDivisorUpTo(rational.mul(d, e), s, n)
+    [by generalize generalize-d]
+qed
+
+// d·e | d with d nonzero forces e | ONE: write d = (d·e)·m, regroup to d·(e·m), cancel d.
+theorem cancellingTheDivisorLeavesAUnit: forall d, e: Q;
+  (not (d = rational.ZERO)) ->
+  dividesIntegrally(rational.mul(d, e), d) ->
+  dividesIntegrally(e, QONE)
+proof
+  @generalize-d |
+    fix d: Q {
+      @generalize-e |
+        fix e: Q {
+          @given-d-nonzero |
+            assume not (d = rational.ZERO) {
+              @d-nonzero |
+                not (d = rational.ZERO)
+                [by hypothesis given-d-nonzero]
+              @given-the-division |
+                assume dividesIntegrally(rational.mul(d, e), d) {
+                  @the-division |
+                    dividesIntegrally(rational.mul(d, e), d)
+                    [by hypothesis given-the-division]
+                  @the-division-meaning |
+                    dividesIntegrally(rational.mul(d, e), d) iff
+                      (exists k: Q; isInteger(k) and
+                      d = rational.mul(rational.mul(d, e), k))
+                    [using specialize dividesIntegrallyMeaning(rational.mul(d, e), d)]
+                  @a-quotient-exists |
+                    exists k: Q; isInteger(k) and
+                      d = rational.mul(rational.mul(d, e), k)
+                    [using tautology the-division-meaning the-division]
+                  @with-the-quotient |
+                    unpack m: Q from a-quotient-exists {
+                      @with-quotient-m |
+                        isInteger(m) and
+                          d = rational.mul(rational.mul(d, e), m)
+                        [by hypothesis with-the-quotient]
+                      @m-is-an-integer |
+                        isInteger(m)
+                        [by and_lhs with-quotient-m]
+                      @d-is-the-product |
+                        d = rational.mul(rational.mul(d, e), m)
+                        [by and_rhs with-quotient-m]
+                      // d·1 = d = (d·e)·m = d·(e·m); cancel d
+                      @reassociate |
+                        rational.mul(rational.mul(d, e), m) =
+                          rational.mul(d, rational.mul(e, m))
+                        [using specialize rational.mulIsAssociative(d, e, m)]
+                      @d-is-d-times-em |
+                        d = rational.mul(d, rational.mul(e, m))
+                        [by rewrite reassociate d-is-the-product]
+                      @d-times-one |
+                        rational.mul(d, QONE) = d
+                        [using specialize rational.mulOneRight(d)]
+                      @the-products-agree |
+                        rational.mul(d, QONE) =
+                          rational.mul(d, rational.mul(e, m))
+                        [by rewrite d-times-one d-is-d-times-em]
+                      @one-is-e-times-m |
+                        QONE = rational.mul(e, m)
+                        [using specialize aNonzeroFactorCancels(d, QONE, rational.mul(e, m)) d-nonzero the-products-agree]
+                      @the-witness-works |
+                        isInteger(m) and QONE = rational.mul(e, m)
+                        [by both m-is-an-integer one-is-e-times-m]
+                      @a-unit-quotient-exists |
+                        exists k: Q; isInteger(k) and QONE = rational.mul(e, k)
+                        [by witness(m) the-witness-works]
+                      @the-unit-meaning |
+                        dividesIntegrally(e, QONE) iff
+                          (exists k: Q; isInteger(k) and
+                          QONE = rational.mul(e, k))
+                        [using specialize dividesIntegrallyMeaning(e, QONE)]
+                      @conclusion-e-divides-one |
+                        dividesIntegrally(e, QONE)
+                        [using tautology the-unit-meaning a-unit-quotient-exists]
+                    }
+                  @conclusion-the-unit |
+                    dividesIntegrally(e, QONE)
+                    [by unpacked with-the-quotient]
+                }
+              @division-implies |
+                dividesIntegrally(rational.mul(d, e), d) ->
+                  dividesIntegrally(e, QONE)
+                [by discharge given-the-division]
+            }
+          @nonzero-implies |
+            (not (d = rational.ZERO)) ->
+              dividesIntegrally(rational.mul(d, e), d) ->
+              dividesIntegrally(e, QONE)
+            [by discharge given-d-nonzero]
+        }
+      @discharge-e |
+        forall e9: Q;
+          (not (d = rational.ZERO)) ->
+          dividesIntegrally(rational.mul(d, e9), d) ->
+          dividesIntegrally(e9, QONE)
+        [by generalize generalize-e]
+    }
+  @conclusion |
+    forall d, e: Q;
+      (not (d = rational.ZERO)) ->
+      dividesIntegrally(rational.mul(d, e), d) ->
+      dividesIntegrally(e, QONE)
+    [by generalize generalize-d]
+qed
+
+// The quotients by a maximal common divisor are RELATIVELY PRIME — the relative-primality
+// 17.12's statement asks for, from maximality alone.
+//
+// Strategy: let e be an integer dividing every quotient. Then d·e divides every ENTRY (entry
+// = d·quotient and e | quotient give d·e | d·quotient), so d·e | d by maximality. Writing
+// d = (d·e)·m and cancelling the nonzero d leaves ONE = e·m, so e | ONE.
+theorem theQuotientsByAMaximalDivisorAreRelativelyPrime:
+  forall d: Q; forall s, q: QSeq; forall n: Nat; forall e: Q;
+  isAMaximalCommonDivisorUpTo(d, s, n) ->
+  (forall i: Nat; less_than(i, n) -> qat(s, i) = rational.mul(d, qat(q, i))) ->
+  isInteger(e) -> isACommonDivisorUpTo(e, q, n) ->
+  dividesIntegrally(e, QONE)
+proof
+  @generalize-d |
+    fix d: Q {
+      @generalize-s |
+        fix s: QSeq {
+          @generalize-q |
+            fix q: QSeq {
+              @generalize-n |
+                fix n: Nat {
+                  @generalize-e |
+                    fix e: Q {
+                      @given-d-is-maximal |
+                        assume isAMaximalCommonDivisorUpTo(d, s, n) {
+                          @d-is-maximal |
+                            isAMaximalCommonDivisorUpTo(d, s, n)
+                            [by hypothesis given-d-is-maximal]
+                          @the-maximal-meaning |
+                            isAMaximalCommonDivisorUpTo(d, s, n) iff
+                              (isInteger(d) and (not (d = rational.ZERO)) and
+                              isACommonDivisorUpTo(d, s, n) and
+                              (forall e2: Q; isInteger(e2) ->
+                              isACommonDivisorUpTo(e2, s, n) ->
+                              dividesIntegrally(e2, d)))
+                            [using specialize maximalCommonDivisorMeaning(d, s, n)]
+                          @the-maximal-parts |
+                            isInteger(d) and (not (d = rational.ZERO)) and
+                              isACommonDivisorUpTo(d, s, n) and
+                              (forall e2: Q; isInteger(e2) ->
+                              isACommonDivisorUpTo(e2, s, n) ->
+                              dividesIntegrally(e2, d))
+                            [using tautology the-maximal-meaning d-is-maximal]
+                          @the-integer-d |
+                            isInteger(d)
+                            [using tautology the-maximal-parts]
+                          @d-is-nonzero |
+                            not (d = rational.ZERO)
+                            [using tautology the-maximal-parts]
+                          @maximality |
+                            forall e2: Q; isInteger(e2) ->
+                              isACommonDivisorUpTo(e2, s, n) ->
+                              dividesIntegrally(e2, d)
+                            [using tautology the-maximal-parts]
+                          @given-the-factorization |
+                            assume forall i: Nat; less_than(i, n) ->
+                              qat(s, i) = rational.mul(d, qat(q, i)) {
+                              @the-factorization |
+                                forall i: Nat; less_than(i, n) ->
+                                  qat(s, i) = rational.mul(d, qat(q, i))
+                                [by hypothesis given-the-factorization]
+                              @given-e-is-an-integer |
+                                assume isInteger(e) {
+                                  @e-is-an-integer |
+                                    isInteger(e)
+                                    [by hypothesis given-e-is-an-integer]
+                                  @given-e-divides-the-quotients |
+                                    assume isACommonDivisorUpTo(e, q, n) {
+                                      @e-divides-the-quotients |
+                                        isACommonDivisorUpTo(e, q, n)
+                                        [by hypothesis given-e-divides-the-quotients]
+                                      // d·e is a common divisor of the ENTRIES
+                                      @d-times-e-is-an-integer |
+                                        isInteger(rational.mul(d, e))
+                                        [using specialize rational.isIntegerMul(d, e) the-integer-d e-is-an-integer]
+                                      @d-times-e-divides-the-entries |
+                                        isACommonDivisorUpTo(rational.mul(d, e), s, n)
+                                        [using specialize theScaledDivisorDividesTheScaledEntries(d, e, s, q, n) e-divides-the-quotients the-factorization]
+                                      // so it divides d
+                                      @d-times-e-divides-d |
+                                        dividesIntegrally(rational.mul(d, e), d)
+                                        [using specialize maximality(rational.mul(d, e)) d-times-e-is-an-integer d-times-e-divides-the-entries]
+                                      // cancel d: ONE = e·m
+                                      @conclusion-e-is-a-unit |
+                                        dividesIntegrally(e, QONE)
+                                        [using specialize cancellingTheDivisorLeavesAUnit(d, e) d-is-nonzero d-times-e-divides-d]
+                                    }
+                                  @quotient-divisor-implies |
+                                    isACommonDivisorUpTo(e, q, n) ->
+                                      dividesIntegrally(e, QONE)
+                                    [by discharge given-e-divides-the-quotients]
+                                }
+                              @integer-implies |
+                                isInteger(e) ->
+                                  isACommonDivisorUpTo(e, q, n) ->
+                                  dividesIntegrally(e, QONE)
+                                [by discharge given-e-is-an-integer]
+                            }
+                          @factorization-implies |
+                            (forall i: Nat; less_than(i, n) ->
+                              qat(s, i) = rational.mul(d, qat(q, i))) ->
+                              isInteger(e) ->
+                              isACommonDivisorUpTo(e, q, n) ->
+                              dividesIntegrally(e, QONE)
+                            [by discharge given-the-factorization]
+                        }
+                      @maximal-implies |
+                        isAMaximalCommonDivisorUpTo(d, s, n) ->
+                          (forall i: Nat; less_than(i, n) ->
+                          qat(s, i) = rational.mul(d, qat(q, i))) ->
+                          isInteger(e) ->
+                          isACommonDivisorUpTo(e, q, n) ->
+                          dividesIntegrally(e, QONE)
+                        [by discharge given-d-is-maximal]
+                    }
+                  @discharge-e |
+                    forall e9: Q;
+                      isAMaximalCommonDivisorUpTo(d, s, n) ->
+                      (forall i: Nat; less_than(i, n) ->
+                      qat(s, i) = rational.mul(d, qat(q, i))) ->
+                      isInteger(e9) ->
+                      isACommonDivisorUpTo(e9, q, n) ->
+                      dividesIntegrally(e9, QONE)
+                    [by generalize generalize-e]
+                }
+              @discharge-n |
+                forall n9: Nat; forall e9: Q;
+                  isAMaximalCommonDivisorUpTo(d, s, n9) ->
+                  (forall i: Nat; less_than(i, n9) ->
+                  qat(s, i) = rational.mul(d, qat(q, i))) ->
+                  isInteger(e9) ->
+                  isACommonDivisorUpTo(e9, q, n9) ->
+                  dividesIntegrally(e9, QONE)
+                [by generalize generalize-n]
+            }
+          @discharge-q |
+            forall q9: QSeq; forall n9: Nat; forall e9: Q;
+              isAMaximalCommonDivisorUpTo(d, s, n9) ->
+              (forall i: Nat; less_than(i, n9) ->
+              qat(s, i) = rational.mul(d, qat(q9, i))) ->
+              isInteger(e9) ->
+              isACommonDivisorUpTo(e9, q9, n9) ->
+              dividesIntegrally(e9, QONE)
+            [by generalize generalize-q]
+        }
+      @discharge-s |
+        forall s9: QSeq; forall q9: QSeq; forall n9: Nat; forall e9: Q;
+          isAMaximalCommonDivisorUpTo(d, s9, n9) ->
+          (forall i: Nat; less_than(i, n9) ->
+          qat(s9, i) = rational.mul(d, qat(q9, i))) ->
+          isInteger(e9) ->
+          isACommonDivisorUpTo(e9, q9, n9) ->
+          dividesIntegrally(e9, QONE)
+        [by generalize generalize-s]
+    }
+  @conclusion |
+    forall d: Q; forall s, q: QSeq; forall n: Nat; forall e: Q;
+      isAMaximalCommonDivisorUpTo(d, s, n) ->
+      (forall i: Nat; less_than(i, n) ->
+      qat(s, i) = rational.mul(d, qat(q, i))) ->
+      isInteger(e) -> isACommonDivisorUpTo(e, q, n) ->
+      dividesIntegrally(e, QONE)
+    [by generalize generalize-d]
+qed
