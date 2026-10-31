@@ -17,6 +17,7 @@ import sequence <<< "std/sequence.b4m"
 import rational <<< "std/rational.b4m"
 import peano <<< "std/peano.b4m"
 import peano_order <<< "std/peano/order.b4m"
+import qpoly <<< "std/rational/polynomial.b4m"
 
 sort Q = rational.Q
 sort Nat = peano.Nat
@@ -1247,4 +1248,368 @@ proof
       (exists s: QSeq; forall i: Nat; less_than(i, n) ->
       (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO))))
     [by generalize final-reorder]
+qed
+
+// -- INDEX-PINNED CHOICE: the general form ------------------------------------------------
+// `theReciprocalSequenceExists` MAPS a given sequence; Lemma 17.12 must CHOOSE one — a
+// denominator per coefficient, pinned at that coefficient's index, from a non-unique
+// existential. That is this theorem, and it is the last construction the lemma needs.
+//
+// Same induction as the mapped case (append a one-entry sequence at position k via concat),
+// but the k-th entry comes from the hypothesis's existential rather than from f. The spec is
+// a schema parameter because it relates an index to a value.
+//
+// No choice principle is added: the bound makes the extraction finite, and each witness is
+// unpacked from a hypothesis the caller already proved.
+theorem anIndexPinnedChoiceIsRealized(spec(Nat, Q)):
+  (forall i: Nat; exists v: Q; spec(i, v)) ->
+  forall n: Nat; exists t: QSeq; forall i: Nat; less_than(i, n) -> spec(i, qat(t, i))
+
+proof
+  @given-the-witnesses |
+    assume forall i: Nat; exists v: Q; spec(i, v) {
+      @the-witnesses |
+        forall i: Nat; exists v: Q; spec(i, v)
+        [by hypothesis given-the-witnesses]
+
+      // base: nothing below ZERO, so any sequence serves
+      @the-witness-at-zero |
+        exists v: Q; spec(ZERO, v)
+        [using specialize the-witnesses(ZERO)]
+      @base-case |
+        unpack v0: Q from the-witness-at-zero {
+          @some-sequence-exists |
+            exists t: QSeq; qat(t, ZERO) = v0
+            [using specialize qSeqSingletonOnly(v0)]
+          @with-some-sequence |
+            unpack t0: QSeq from some-sequence-exists {
+              @nothing-below-zero |
+                fix i: Nat {
+                  @given-i-below-zero |
+                    assume less_than(i, ZERO) {
+                      @i-below-zero |
+                        less_than(i, ZERO)
+                        [by hypothesis given-i-below-zero]
+                      @nothing-is-below-zero |
+                        not less_than(i, ZERO)
+                        [using specialize peano_order.notLessThanZero(i)]
+                      @conclusion-vacuous |
+                        spec(i, qat(t0, i))
+                        [by ex_falso i-below-zero nothing-is-below-zero]
+                    }
+                  @below-zero-implies |
+                    less_than(i, ZERO) -> spec(i, qat(t0, i))
+                    [by discharge given-i-below-zero]
+                }
+              @all-below-zero |
+                forall i: Nat; less_than(i, ZERO) -> spec(i, qat(t0, i))
+                [by generalize nothing-below-zero]
+              @conclusion-base-inner |
+                exists t: QSeq; forall i: Nat;
+                  less_than(i, ZERO) -> spec(i, qat(t, i))
+                [by witness(t0) all-below-zero]
+            }
+          @conclusion-base-middle |
+            exists t: QSeq; forall i: Nat;
+              less_than(i, ZERO) -> spec(i, qat(t, i))
+            [by unpacked with-some-sequence]
+        }
+      @base-case-exported |
+        exists t: QSeq; forall i: Nat;
+          less_than(i, ZERO) -> spec(i, qat(t, i))
+        [by unpacked base-case]
+
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume exists t: QSeq; forall i: Nat;
+              less_than(i, k) -> spec(i, qat(t, i)) {
+              @inductive-hypothesis |
+                exists t: QSeq; forall i: Nat;
+                  less_than(i, k) -> spec(i, qat(t, i))
+                [by hypothesis given-inductive-hypothesis]
+              @the-witness-at-k |
+                exists v: Q; spec(k, v)
+                [using specialize the-witnesses(k)]
+              @conclusion-the-step |
+                unpack vk: Q from the-witness-at-k {
+                  @the-k-th-spec |
+                    spec(k, vk)
+                    [by hypothesis conclusion-the-step]
+                  @with-previous |
+                    unpack tk: QSeq from inductive-hypothesis {
+                      @with-previous-tk |
+                        forall i: Nat; less_than(i, k) -> spec(i, qat(tk, i))
+                        [by hypothesis with-previous]
+                      @the-new-entry-exists |
+                        exists w: QSeq; qat(w, ZERO) = vk
+                        [using specialize qSeqSingletonOnly(vk)]
+                      @with-the-new-entry |
+                        unpack w: QSeq from the-new-entry-exists {
+                          @the-new-entry |
+                            qat(w, ZERO) = vk
+                            [by hypothesis with-the-new-entry]
+                          @the-concat-exists |
+                            exists u: QSeq;
+                              (forall i: Nat; less_than(i, k) ->
+                              qat(u, i) = qat(tk, i))
+                              and (forall i: Nat; less_than(i, succ(ZERO)) ->
+                              qat(u, add(k, i)) = qat(w, i))
+                            [using specialize qSeqConcatOnly(tk, w, k, succ(ZERO))]
+                          @with-the-concat |
+                            unpack u: QSeq from the-concat-exists {
+                              @with-concat-u |
+                                (forall i: Nat; less_than(i, k) ->
+                                  qat(u, i) = qat(tk, i))
+                                  and (forall i: Nat; less_than(i, succ(ZERO)) ->
+                                  qat(u, add(k, i)) = qat(w, i))
+                                [by hypothesis with-the-concat]
+                              @below-k-unchanged |
+                                forall i: Nat; less_than(i, k) ->
+                                  qat(u, i) = qat(tk, i)
+                                [by and_lhs with-concat-u]
+                              @at-k-is-the-new-entry |
+                                forall i: Nat; less_than(i, succ(ZERO)) ->
+                                  qat(u, add(k, i)) = qat(w, i)
+                                [by and_rhs with-concat-u]
+                              @zero-below-one |
+                                less_than(ZERO, succ(ZERO))
+                                [using specialize peano_order.lessThanSelf(ZERO)]
+                              @at-k-plus-zero |
+                                qat(u, add(k, ZERO)) = qat(w, ZERO)
+                                [using specialize at-k-is-the-new-entry(ZERO) zero-below-one]
+                              @k-plus-zero |
+                                add(k, ZERO) = k
+                                [using specialize peano.addZeroRight(k)]
+                              @at-k |
+                                qat(u, k) = qat(w, ZERO)
+                                [by rewrite k-plus-zero at-k-plus-zero]
+                              @at-k-is-vk |
+                                qat(u, k) = vk
+                                [by rewrite the-new-entry at-k]
+                              @good-below-succ-k |
+                                fix i: Nat {
+                                  @given-i-below-succ-k |
+                                    assume less_than(i, succ(k)) {
+                                      @i-below-succ-k |
+                                        less_than(i, succ(k))
+                                        [by hypothesis given-i-below-succ-k]
+                                      @the-split |
+                                        less_than(i, k) or i = k
+                                        [using specialize peano_order.lessThanSuccSplit(i, k) i-below-succ-k]
+                                      @conclusion-this-entry |
+                                        spec(i, qat(u, i))
+                                        case the-split {
+                                          @when-i-below-k |
+                                            assume less_than(i, k) {
+                                              @i-below-k |
+                                                less_than(i, k)
+                                                [by hypothesis when-i-below-k]
+                                              @unchanged-at-i |
+                                                qat(u, i) = qat(tk, i)
+                                                [using specialize below-k-unchanged(i) i-below-k]
+                                              @the-old-spec |
+                                                spec(i, qat(tk, i))
+                                                [using specialize with-previous-tk(i) i-below-k]
+                                              @conclusion-below-k |
+                                                spec(i, qat(u, i))
+                                                [by rewrite unchanged-at-i the-old-spec]
+                                            }
+                                          @when-i-is-k |
+                                            assume i = k {
+                                              @i-is-k |
+                                                i = k
+                                                [by hypothesis when-i-is-k]
+                                              @the-spec-at-k |
+                                                spec(k, qat(u, k))
+                                                [by rewrite at-k-is-vk the-k-th-spec]
+                                              @conclusion-at-k |
+                                                spec(i, qat(u, i))
+                                                [by rewrite i-is-k the-spec-at-k]
+                                            }
+                                        }
+                                    }
+                                  @below-succ-k-implies |
+                                    less_than(i, succ(k)) -> spec(i, qat(u, i))
+                                    [by discharge given-i-below-succ-k]
+                                }
+                              @all-good-below-succ-k |
+                                forall i: Nat;
+                                  less_than(i, succ(k)) -> spec(i, qat(u, i))
+                                [by generalize good-below-succ-k]
+                              @conclusion-the-extended |
+                                exists t: QSeq; forall i: Nat;
+                                  less_than(i, succ(k)) -> spec(i, qat(t, i))
+                                [by witness(u) all-good-below-succ-k]
+                            }
+                          @conclusion-concat-exported |
+                            exists t: QSeq; forall i: Nat;
+                              less_than(i, succ(k)) -> spec(i, qat(t, i))
+                            [by unpacked with-the-concat]
+                        }
+                      @conclusion-entry-exported |
+                        exists t: QSeq; forall i: Nat;
+                          less_than(i, succ(k)) -> spec(i, qat(t, i))
+                        [by unpacked with-the-new-entry]
+                    }
+                  @conclusion-previous-exported |
+                    exists t: QSeq; forall i: Nat;
+                      less_than(i, succ(k)) -> spec(i, qat(t, i))
+                    [by unpacked with-previous]
+                }
+              @the-step-exported |
+                exists t: QSeq; forall i: Nat;
+                  less_than(i, succ(k)) -> spec(i, qat(t, i))
+                [by unpacked conclusion-the-step]
+            }
+          @induction-step-at-k |
+            (exists t: QSeq; forall i: Nat;
+              less_than(i, k) -> spec(i, qat(t, i))) ->
+              (exists t: QSeq; forall i: Nat;
+              less_than(i, succ(k)) -> spec(i, qat(t, i)))
+            [by discharge given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat;
+          (exists t: QSeq; forall i: Nat;
+          less_than(i, k) -> spec(i, qat(t, i))) ->
+          (exists t: QSeq; forall i: Nat;
+          less_than(i, succ(k)) -> spec(i, qat(t, i)))
+        [by generalize induction-step]
+      @all-bounds |
+        forall n: Nat;
+          exists t: QSeq; forall i: Nat; less_than(i, n) -> spec(i, qat(t, i))
+        [using instantiation peano.induction((fun z: Nat => (exists t: QSeq; forall i: Nat; less_than(i, z) -> spec(i, qat(t, i))))) base-case-exported induction-step-for-all-k]
+    }
+  @conclusion |
+    (forall i: Nat; exists v: Q; spec(i, v)) ->
+      forall n: Nat; exists t: QSeq; forall i: Nat;
+      less_than(i, n) -> spec(i, qat(t, i))
+    [by discharge given-the-witnesses]
+qed
+
+// -- LEMMA 17.12, STEP 1: THE DENOMINATOR SEQUENCE ----------------------------------------
+// Instantiating the choice at Judson's own spec — and this is what verifies the schema, since
+// a schema is checked at its instantiations.
+//
+// "Suppose p(x) = b_0/c_0 + b_1/c_1 x + … + b_n/c_n x^n, where the b_i's and the c_i's are
+// integers." Each coefficient of a ℚ[x] polynomial IS such a ratio
+// (`everyCoefficientIsARatioOfIntegers`), so the spec "v is a nonzero integer denominator for
+// index i" has a witness at every index, and the choice pins one per coefficient.
+// The spec is about a FIXED polynomial, so the polynomial is a parameter of the predicate.
+// `isADenominatorFor(i, v)` reads: v is a nonzero integer, and the i-th coefficient of p is
+// an integer over v.
+// 2-ARY, over (Nat, Q) — the shape the choice schema's `spec` parameter takes. The subject
+// polynomial cannot be a third argument: a schema-arg lambda carries ONE shared sort
+// annotation for all its binders (`fun y, z: Element => …`, as `functionFromGraph`'s callers
+// write it), so `fun i: Nat, v: Q => …` is a parse error and there is no way to close over a
+// polynomial. Instead the spec reads the coefficient through `theSubject`, a func the caller
+// pins — which is enough, because 17.12 is proved for an ARBITRARY but fixed p.
+func theSubject() => qpoly.QPoly
+pred isADenominatorFor(i: Nat, v: Q)
+axiom denominatorMeaning: forall i: Nat; forall v: Q;
+  isADenominatorFor(i, v) iff
+  (isInteger(v) and (not (v = rational.ZERO)) and
+  (exists b: Q; isInteger(b) and
+  qpoly.qcoeff(theSubject, i) = rational.mul(b, recip(v))))
+
+// The spec HOLDS at every index — ℚ's fraction axiom read at the i-th coefficient. A theorem,
+// not an axiom: `everyCoefficientIsARatioOfIntegers` already provides the witness.
+theorem aDenominatorExistsForEveryIndex: forall i: Nat;
+  exists v: Q; isADenominatorFor(i, v)
+proof
+  @generalize-i |
+    fix i: Nat {
+      @every-coefficient-is-a-ratio |
+        forall p2: qpoly.QPoly; forall i2: Nat;
+          exists b, c: Q;
+          isInteger(b) and isInteger(c) and c != rational.ZERO and
+          qpoly.qcoeff(p2, i2) = rational.mul(b, recip(c))
+        [using import(qpoly) everyCoefficientIsARatioOfIntegers]
+      @the-ratio |
+        exists b, c: Q;
+          isInteger(b) and isInteger(c) and c != rational.ZERO and
+          qpoly.qcoeff(theSubject, i) = rational.mul(b, recip(c))
+        [using specialize every-coefficient-is-a-ratio(theSubject, i)]
+      @with-the-ratio |
+        unpack b: Q from the-ratio {
+          @with-numerator-b |
+            exists c: Q;
+              isInteger(b) and isInteger(c) and c != rational.ZERO and
+              qpoly.qcoeff(theSubject, i) = rational.mul(b, recip(c))
+            [by hypothesis with-the-ratio]
+          @with-the-denominator |
+            unpack c: Q from with-numerator-b {
+              @the-parts |
+                isInteger(b) and isInteger(c) and c != rational.ZERO and
+                  qpoly.qcoeff(theSubject, i) = rational.mul(b, recip(c))
+                [by hypothesis with-the-denominator]
+              @b-is-an-integer |
+                isInteger(b)
+                [using tautology the-parts]
+              @c-is-an-integer |
+                isInteger(c)
+                [using tautology the-parts]
+              @c-is-nonzero |
+                not (c = rational.ZERO)
+                [using tautology the-parts]
+              @the-coefficient |
+                qpoly.qcoeff(theSubject, i) = rational.mul(b, recip(c))
+                [using tautology the-parts]
+              @the-numerator-works |
+                isInteger(b) and
+                  qpoly.qcoeff(theSubject, i) = rational.mul(b, recip(c))
+                [by both b-is-an-integer the-coefficient]
+              @a-numerator-exists |
+                exists b2: Q; isInteger(b2) and
+                  qpoly.qcoeff(theSubject, i) = rational.mul(b2, recip(c))
+                [by witness(b) the-numerator-works]
+              @the-spec-parts |
+                isInteger(c) and (not (c = rational.ZERO)) and
+                  (exists b2: Q; isInteger(b2) and
+                  qpoly.qcoeff(theSubject, i) = rational.mul(b2, recip(c)))
+                [using tautology c-is-an-integer c-is-nonzero a-numerator-exists]
+              @the-spec-meaning |
+                isADenominatorFor(i, c) iff
+                  (isInteger(c) and (not (c = rational.ZERO)) and
+                  (exists b2: Q; isInteger(b2) and
+                  qpoly.qcoeff(theSubject, i) = rational.mul(b2, recip(c))))
+                [using specialize denominatorMeaning(i, c)]
+              @c-is-a-denominator |
+                isADenominatorFor(i, c)
+                [using tautology the-spec-meaning the-spec-parts]
+              @conclusion-a-denominator-exists |
+                exists v: Q; isADenominatorFor(i, v)
+                [by witness(c) c-is-a-denominator]
+            }
+          @conclusion-inner |
+            exists v: Q; isADenominatorFor(i, v)
+            [by unpacked with-the-denominator]
+        }
+      @conclusion-at-i |
+        exists v: Q; isADenominatorFor(i, v)
+        [by unpacked with-the-ratio]
+    }
+  @conclusion |
+    forall i: Nat; exists v: Q; isADenominatorFor(i, v)
+    [by generalize generalize-i]
+qed
+
+theorem aDenominatorSequenceExists: forall n: Nat;
+  exists t: QSeq; forall i: Nat;
+  less_than(i, n) -> isADenominatorFor(i, qat(t, i))
+proof
+  @the-witnesses |
+    forall i: Nat; exists v: Q; isADenominatorFor(i, v)
+    [by cite aDenominatorExistsForEveryIndex]
+  @the-choice |
+    (forall i: Nat; exists v: Q; isADenominatorFor(i, v)) ->
+      forall n: Nat; exists t: QSeq; forall i: Nat;
+      less_than(i, n) -> isADenominatorFor(i, qat(t, i))
+    [using instantiation anIndexPinnedChoiceIsRealized(isADenominatorFor)]
+  @conclusion |
+    forall n: Nat;
+      exists t: QSeq; forall i: Nat;
+      less_than(i, n) -> isADenominatorFor(i, qat(t, i))
+    [by modus_ponens the-choice the-witnesses]
 qed
