@@ -1821,3 +1821,135 @@ proof
       (less_than(m, k) or m = k)
     [by generalize generalize-m]
 qed
+
+// -- A PROPER FACTOR SHRINKS THE QUOTIENT --------------------------------------------------
+// If a = e·q with a positive and e not a unit (so e > 1, taking e positive), then q < a. This
+// is the descent any "greatest common divisor exists" argument runs on: dividing by a
+// non-unit strictly decreases the quotient, so well-ordering terminates.
+
+// Strategy: a = e·q with e > 1 and q > 0. Then a = e·q > 1·q = q, by scaling q > 0 up by
+// e > 1 — `lessThanMulPositiveRight` at (ONE, e, q).
+theorem aProperFactorShrinksTheQuotient: forall a, e, q: Q;
+  less_than(ONE, e) -> less_than(ZERO, q) -> a = rational.mul(e, q) ->
+  less_than(q, a)
+proof
+  @generalize-a |
+    fix a: Q {
+      @generalize-e |
+        fix e: Q {
+          @generalize-q |
+            fix q: Q {
+              @given-e-above-one |
+                assume less_than(ONE, e) {
+                  @e-above-one |
+                    less_than(ONE, e)
+                    [by hypothesis given-e-above-one]
+                  @given-q-positive |
+                    assume less_than(ZERO, q) {
+                      @q-positive |
+                        less_than(ZERO, q)
+                        [by hypothesis given-q-positive]
+                      @given-the-factorization |
+                        assume a = rational.mul(e, q) {
+                          @the-factorization |
+                            a = rational.mul(e, q)
+                            [by hypothesis given-the-factorization]
+                          @scaling-up |
+                            forall x, y, z: Q;
+                              less_than(x, y) -> less_than(ZERO, z) ->
+                              less_than(rational.mul(x, z), rational.mul(y, z))
+                            [using model(rational.RationalOrderedField) field_order.lessThanMulPositiveRight]
+                          @one-times-q-below-e-times-q |
+                            less_than(rational.mul(ONE, q), rational.mul(e, q))
+                            [using specialize scaling-up(ONE, e, q) e-above-one q-positive]
+                          @one-times-q |
+                            rational.mul(ONE, q) = q
+                            [using specialize rational.mulOneLeft(q)]
+                          @q-below-e-times-q |
+                            less_than(q, rational.mul(e, q))
+                            [by rewrite one-times-q one-times-q-below-e-times-q]
+                          @conclusion-q-below-a |
+                            less_than(q, a)
+                            [by rewrite the-factorization q-below-e-times-q]
+                        }
+                      @factorization-implies |
+                        a = rational.mul(e, q) -> less_than(q, a)
+                        [by discharge given-the-factorization]
+                    }
+                  @q-positive-implies |
+                    less_than(ZERO, q) -> a = rational.mul(e, q) ->
+                      less_than(q, a)
+                    [by discharge given-q-positive]
+                }
+              @e-above-one-implies |
+                less_than(ONE, e) -> less_than(ZERO, q) ->
+                  a = rational.mul(e, q) -> less_than(q, a)
+                [by discharge given-e-above-one]
+            }
+          @discharge-q |
+            forall q9: Q;
+              less_than(ONE, e) -> less_than(ZERO, q9) ->
+              a = rational.mul(e, q9) -> less_than(q9, a)
+            [by generalize generalize-q]
+        }
+      @discharge-e |
+        forall e9: Q; forall q9: Q;
+          less_than(ONE, e9) -> less_than(ZERO, q9) ->
+          a = rational.mul(e9, q9) -> less_than(q9, a)
+        [by generalize generalize-e]
+    }
+  @conclusion |
+    forall a, e, q: Q;
+      less_than(ONE, e) -> less_than(ZERO, q) -> a = rational.mul(e, q) ->
+      less_than(q, a)
+    [by generalize generalize-a]
+qed
+
+// A positive integer that is not a unit exceeds ONE: it is at least ONE
+// (`aPositiveIntegerIsAtLeastOne`), and not equal to ONE by hypothesis.
+theorem aPositiveNonUnitExceedsOne: forall e: Q;
+  isInteger(e) -> less_than(ZERO, e) -> (not (e = ONE)) -> less_than(ONE, e)
+proof
+  @generalize-e |
+    fix e: Q {
+      @given-e-is-an-integer |
+        assume isInteger(e) {
+          @e-is-an-integer |
+            isInteger(e)
+            [by hypothesis given-e-is-an-integer]
+          @given-e-positive |
+            assume less_than(ZERO, e) {
+              @e-positive |
+                less_than(ZERO, e)
+                [by hypothesis given-e-positive]
+              @given-e-not-one |
+                assume not (e = ONE) {
+                  @e-not-one |
+                    not (e = ONE)
+                    [by hypothesis given-e-not-one]
+                  @e-at-least-one |
+                    e = ONE or less_than(ONE, e)
+                    [using specialize aPositiveIntegerIsAtLeastOne(e) e-is-an-integer e-positive]
+                  @conclusion-above-one |
+                    less_than(ONE, e)
+                    [using tautology e-at-least-one e-not-one]
+                }
+              @not-one-implies |
+                (not (e = ONE)) -> less_than(ONE, e)
+                [by discharge given-e-not-one]
+            }
+          @positive-implies |
+            less_than(ZERO, e) -> (not (e = ONE)) -> less_than(ONE, e)
+            [by discharge given-e-positive]
+        }
+      @integer-implies |
+        isInteger(e) -> less_than(ZERO, e) -> (not (e = ONE)) ->
+          less_than(ONE, e)
+        [by discharge given-e-is-an-integer]
+    }
+  @conclusion |
+    forall e: Q;
+      isInteger(e) -> less_than(ZERO, e) -> (not (e = ONE)) ->
+      less_than(ONE, e)
+    [by generalize generalize-e]
+qed
