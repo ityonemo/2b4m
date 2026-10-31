@@ -406,6 +406,16 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/model_accel_arithmetic.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/model_accel_extensionality.b4m" });
 
+    // A GUARDED model transferring a theorem whose proof `specialize`s a LOCAL universal step.
+    // The instance's param guards are injected in PARAM order and the args' free variables are
+    // APPENDED after the schema's own params, so the chain is `head -> guard(freevar) -> hyp`
+    // with the guard in position 1 — not a leading run. Discharging the first
+    // (total - prems.len) antecedents as guards tried to discharge the HEAD, and NO guarded
+    // model in the corpus could transfer such a theorem (which is nearly every inductive ℤ
+    // proof). `withGuardPremises` now matches each antecedent by POSITION: take the next cited
+    // ref when it matches, else synthesize a discharge. drafts/guard-relativization-bug/.
+    ctx.okSilent(&.{ "check", "tests/cases/model_guarded_local_head_specialize.b4m" });
+
     // PREDICATED SORT `sort H = G where inH` — binder positions: ∀/∃
     // inject the guard (implies/and), `fix h: H` carries it on the block (surfaced
     // by `[by predicate <lbl>]`, made the generalize antecedent), `unpack h: H`

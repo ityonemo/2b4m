@@ -3196,14 +3196,36 @@ fn withGuardPremises(self: *Prove, kb: kernel.BlockId, loc: u32, instance: TermI
             return self.fail(loc, "the claim does not match the instance's conclusion:\n  claim:      {s}\n  instance:   {s}", .{ try self.renderTerm(goal), try self.renderTerm(instance) });
         const k = total - prems.len;
         const all = try self.ctx.arena.alloc(kernel.SRef, total);
+        // MATCH BY POSITION, NOT BY PREFIX. The guards are not always a leading run: an
+        // instance's param guards are injected in PARAM order, and `freeFvarParams` APPENDS
+        // the args' free variables after the schema's own params — so for a LOCAL-head
+        // `specialize` under a guarded model the chain is
+        //   head -> guard(freevar) -> hyp -> goal
+        // with the guard in position 1. Walking the first k antecedents as guards then tries
+        // to discharge the HEAD and fails ("cannot discharge the guard premise", or a premise
+        // mismatch downstream). Instead, walk the whole chain and at each antecedent take the
+        // next caller ref when it MATCHES, else synthesize a discharge. (drafts/
+        // guard-relativization-bug/)
         var gf = instance;
-        for (0..k) |i| {
+        var pi: usize = 0;
+        for (0..total) |i| {
             const n = self.pool.get(gf);
-            all[i] = (try self.emitDischargeStep(kb, loc, n.bin.lhs)) orelse
-                return self.fail(loc, "cannot discharge the guard premise '{s}' at this call site", .{try self.renderTerm(n.bin.lhs)});
+            const ant = n.bin.lhs;
+            if (pi < prems.len and
+                self.pool.alphaEq(self.low_steps.items[@intFromEnum(prems[pi].id)].formula, ant))
+            {
+                all[i] = prems[pi];
+                pi += 1;
+            } else {
+                all[i] = (try self.emitDischargeStep(kb, loc, ant)) orelse
+                    return self.fail(loc, "cannot discharge the guard premise '{s}' at this call site", .{try self.renderTerm(ant)});
+            }
             gf = n.bin.rhs;
         }
-        @memcpy(all[k..], prems);
+        if (pi != prems.len) {
+            return self.fail(loc, "instantiate: {d} of {d} cited premise(s) matched no antecedent of '{s}'", .{ prems.len - pi, prems.len, try self.renderTerm(instance) });
+        }
+        _ = k;
         return .{ .schema_instance = .{ .instance = instance, .premises = all } };
     }
     return .{ .schema_instance = .{ .instance = instance, .premises = prems } };
