@@ -18,6 +18,7 @@
 
 import field <<< "std/field.b4m"
 import ring_poly <<< "std/ring/polynomial.b4m"
+import ring_leading <<< "std/ring/polynomial-leading.b4m"
 import peano <<< "std/peano.b4m"
 import peano_order <<< "std/peano/order.b4m"
 import subtraction <<< "std/peano/subtraction.b4m"
@@ -101,19 +102,19 @@ func mulP(p: Poly, q: Poly) => Poly
 axiom mulPolyCoeff: forall p, q: Poly; forall i: Nat;
   coeff(mulP(p, q), i) = convolution(p, q, i, i)
 
-// Judson's Proposition 17.4 over a field: the degree of a product is the sum of the degrees.
-// A field is an integral domain, so the leading product a_m b_n cannot vanish. Stated as an
-// axiom here rather than re-derived: its proof is the §17.1 convolution argument over a
-// different coefficient sort, and `std/ring/polynomial.b4m` already carries the leading-term
-// step it turns on.
-// A field is an integral domain, so a product of nonzeros is nonzero — the other half of
-// Judson's Proposition 17.4, needed here to know the subtrahend has a degree at all.
-axiom aProductOfNonzerosIsNonzero: forall p, q: Poly;
-  (not (p = ZEROP)) -> (not (q = ZEROP)) -> (not (mulP(p, q) = ZEROP))
-
-axiom degreeOfAProduct: forall p, q: Poly;
-  (not (p = ZEROP)) -> (not (q = ZEROP)) ->
-  degree(mulP(p, q)) = peano.add(degree(p), degree(q))
+// Judson's Proposition 17.4 over a field: a product of nonzeros is nonzero, and the degree
+// of a product is the sum of the degrees. BOTH ARE THEOREMS, proved near the end of this
+// file from `std/ring/polynomial-leading.b4m`'s two convolution facts transferred through
+// `FieldPolyModelsRingPoly`:
+//
+//   theProductsLeadingCoefficient       coeff(p·q, m+n) = p_m · q_n
+//   theProductVanishesAboveTheDegreeSum above m+n every coefficient dies
+//
+// plus the field's own `noZeroDivisors`. They were axioms here until the convolution facts
+// existed; the comment that justified them pointed at a lemma of std/ring/polynomial.b4m
+// that had never been written.
+intheory aProductOfNonzerosIsNonzero
+intheory degreeOfAProduct
 
 // `degree` is DETERMINED by its two halves: any index that is nonzero and bounds the rest
 // IS the degree. Same statement and same trichotomy argument as `std/ring/polynomial.b4m`'s
@@ -6279,8 +6280,8 @@ qed
 theorem theTelescopingStepIsRingAlgebra: forall b, al, u, c, d, bigE, bigV: F;
   bigE = addF(mulF(addF(b, negF(al)), bigV), negF(mulF(u, c))) ->
   addF(bigE, mulF(addF(mulF(negF(al), d), c), u)) =
-    addF(mulF(addF(b, negF(al)), addF(bigV, mulF(d, u))),
-         negF(mulF(mulF(b, u), d)))
+  addF(mulF(addF(b, negF(al)), addF(bigV, mulF(d, u))),
+  negF(mulF(mulF(b, u), d)))
 proof
   @generalize-b |
     fix b: F {
@@ -6306,8 +6307,8 @@ proof
                                   @substituting-the-hypothesis |
                                     addF(bigE, mulF(addF(mulF(negF(al), d), c), u)) =
                                       addF(addF(mulF(addF(b, negF(al)), bigV),
-                                                negF(mulF(u, c))),
-                                           mulF(addF(mulF(negF(al), d), c), u))
+                                      negF(mulF(u, c))),
+                                      mulF(addF(mulF(negF(al), d), c), u))
                                     [by rewrite the-hypothesis reflexivity-of-the-sum]
                                   @reflexivity-of-the-sum |
                                     addF(bigE, mulF(addF(mulF(negF(al), d), c), u)) =
@@ -6315,81 +6316,81 @@ proof
                                     [by reflexivity]
                                   @the-expansion-is-the-target |
                                     addF(addF(mulF(addF(b, negF(al)), bigV),
-                                              negF(mulF(u, c))),
-                                         mulF(addF(mulF(negF(al), d), c), u)) =
+                                      negF(mulF(u, c))),
+                                      mulF(addF(mulF(negF(al), d), c), u)) =
                                       addF(mulF(addF(b, negF(al)), addF(bigV, mulF(d, u))),
-                                           negF(mulF(mulF(b, u), d)))
+                                      negF(mulF(mulF(b, u), d)))
                                     [using polynomial(field)]
                                   @conclusion-at-all-seven |
                                     addF(bigE, mulF(addF(mulF(negF(al), d), c), u)) =
                                       addF(mulF(addF(b, negF(al)), addF(bigV, mulF(d, u))),
-                                           negF(mulF(mulF(b, u), d)))
+                                      negF(mulF(mulF(b, u), d)))
                                     [using chain substituting-the-hypothesis the-expansion-is-the-target]
                                 }
                               @the-hypothesis-implies |
                                 bigE =
                                   addF(mulF(addF(b, negF(al)), bigV), negF(mulF(u, c))) ->
                                   addF(bigE, mulF(addF(mulF(negF(al), d), c), u)) =
-                                    addF(mulF(addF(b, negF(al)), addF(bigV, mulF(d, u))),
-                                         negF(mulF(mulF(b, u), d)))
+                                  addF(mulF(addF(b, negF(al)), addF(bigV, mulF(d, u))),
+                                  negF(mulF(mulF(b, u), d)))
                                 [by discharge given-the-hypothesis]
                             }
                           @discharge-bigV |
                             forall bigV9: F;
                               bigE =
-                                addF(mulF(addF(b, negF(al)), bigV9), negF(mulF(u, c))) ->
-                                addF(bigE, mulF(addF(mulF(negF(al), d), c), u)) =
-                                  addF(mulF(addF(b, negF(al)), addF(bigV9, mulF(d, u))),
-                                       negF(mulF(mulF(b, u), d)))
+                              addF(mulF(addF(b, negF(al)), bigV9), negF(mulF(u, c))) ->
+                              addF(bigE, mulF(addF(mulF(negF(al), d), c), u)) =
+                              addF(mulF(addF(b, negF(al)), addF(bigV9, mulF(d, u))),
+                              negF(mulF(mulF(b, u), d)))
                             [by generalize generalize-bigV]
                         }
                       @discharge-bigE |
                         forall bigE9, bigV9: F;
                           bigE9 =
-                            addF(mulF(addF(b, negF(al)), bigV9), negF(mulF(u, c))) ->
-                            addF(bigE9, mulF(addF(mulF(negF(al), d), c), u)) =
-                              addF(mulF(addF(b, negF(al)), addF(bigV9, mulF(d, u))),
-                                   negF(mulF(mulF(b, u), d)))
+                          addF(mulF(addF(b, negF(al)), bigV9), negF(mulF(u, c))) ->
+                          addF(bigE9, mulF(addF(mulF(negF(al), d), c), u)) =
+                          addF(mulF(addF(b, negF(al)), addF(bigV9, mulF(d, u))),
+                          negF(mulF(mulF(b, u), d)))
                         [by generalize generalize-bigE]
                     }
                   @discharge-d |
                     forall d9, bigE9, bigV9: F;
                       bigE9 = addF(mulF(addF(b, negF(al)), bigV9), negF(mulF(u, c))) ->
-                        addF(bigE9, mulF(addF(mulF(negF(al), d9), c), u)) =
-                          addF(mulF(addF(b, negF(al)), addF(bigV9, mulF(d9, u))),
-                               negF(mulF(mulF(b, u), d9)))
+                      addF(bigE9, mulF(addF(mulF(negF(al), d9), c), u)) =
+                      addF(mulF(addF(b, negF(al)), addF(bigV9, mulF(d9, u))),
+                      negF(mulF(mulF(b, u), d9)))
                     [by generalize generalize-d]
                 }
               @discharge-c |
                 forall c9, d9, bigE9, bigV9: F;
                   bigE9 = addF(mulF(addF(b, negF(al)), bigV9), negF(mulF(u, c9))) ->
-                    addF(bigE9, mulF(addF(mulF(negF(al), d9), c9), u)) =
-                      addF(mulF(addF(b, negF(al)), addF(bigV9, mulF(d9, u))),
-                           negF(mulF(mulF(b, u), d9)))
+                  addF(bigE9, mulF(addF(mulF(negF(al), d9), c9), u)) =
+                  addF(mulF(addF(b, negF(al)), addF(bigV9, mulF(d9, u))),
+                  negF(mulF(mulF(b, u), d9)))
                 [by generalize generalize-c]
             }
           @discharge-u |
             forall u9, c9, d9, bigE9, bigV9: F;
               bigE9 = addF(mulF(addF(b, negF(al)), bigV9), negF(mulF(u9, c9))) ->
-                addF(bigE9, mulF(addF(mulF(negF(al), d9), c9), u9)) =
-                  addF(mulF(addF(b, negF(al)), addF(bigV9, mulF(d9, u9))),
-                       negF(mulF(mulF(b, u9), d9)))
+              addF(bigE9, mulF(addF(mulF(negF(al), d9), c9), u9)) =
+              addF(mulF(addF(b, negF(al)), addF(bigV9, mulF(d9, u9))),
+              negF(mulF(mulF(b, u9), d9)))
             [by generalize generalize-u]
         }
       @discharge-al |
         forall al9, u9, c9, d9, bigE9, bigV9: F;
           bigE9 = addF(mulF(addF(b, negF(al9)), bigV9), negF(mulF(u9, c9))) ->
-            addF(bigE9, mulF(addF(mulF(negF(al9), d9), c9), u9)) =
-              addF(mulF(addF(b, negF(al9)), addF(bigV9, mulF(d9, u9))),
-                   negF(mulF(mulF(b, u9), d9)))
+          addF(bigE9, mulF(addF(mulF(negF(al9), d9), c9), u9)) =
+          addF(mulF(addF(b, negF(al9)), addF(bigV9, mulF(d9, u9))),
+          negF(mulF(mulF(b, u9), d9)))
         [by generalize generalize-al]
     }
   @conclusion |
     forall b, al, u, c, d, bigE, bigV: F;
       bigE = addF(mulF(addF(b, negF(al)), bigV), negF(mulF(u, c))) ->
-        addF(bigE, mulF(addF(mulF(negF(al), d), c), u)) =
-          addF(mulF(addF(b, negF(al)), addF(bigV, mulF(d, u))),
-               negF(mulF(mulF(b, u), d)))
+      addF(bigE, mulF(addF(mulF(negF(al), d), c), u)) =
+      addF(mulF(addF(b, negF(al)), addF(bigV, mulF(d, u))),
+      negF(mulF(mulF(b, u), d)))
     [by generalize generalize-b]
 qed
 
@@ -6397,8 +6398,8 @@ qed
 // coeff(linear(al)*q, 0) = -al*q_0, while (b-al)*q_0 - b*q_0 = -al*q_0 by field algebra.
 theorem theGeneralTelescopingBase: forall q: Poly; forall al, b: F;
   evalUpTo(mulP(linear(al), q), b, succ(ZERO)) =
-    addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(ZERO))),
-         negF(mulF(power(b, succ(ZERO)), coeff(q, ZERO))))
+  addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(ZERO))),
+  negF(mulF(power(b, succ(ZERO)), coeff(q, ZERO))))
 proof
   @generalize-q |
     fix q: Poly {
@@ -6428,49 +6429,49 @@ proof
                 [using chain the-product-at-bound-one the-product-constant-term]
               @the-right-side |
                 addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(ZERO))),
-                     negF(mulF(power(b, succ(ZERO)), coeff(q, ZERO)))) =
+                  negF(mulF(power(b, succ(ZERO)), coeff(q, ZERO)))) =
                   addF(mulF(addF(b, negF(al)), coeff(q, ZERO)),
-                       negF(mulF(b, coeff(q, ZERO))))
+                  negF(mulF(b, coeff(q, ZERO))))
                 [using simplify the-cofactor-at-bound-one the-first-power]
               @the-right-side-collapses |
                 addF(mulF(addF(b, negF(al)), coeff(q, ZERO)),
-                     negF(mulF(b, coeff(q, ZERO)))) = mulF(negF(al), coeff(q, ZERO))
+                  negF(mulF(b, coeff(q, ZERO)))) = mulF(negF(al), coeff(q, ZERO))
                 [using specialize theLinearCoefficientCollapses(b, al, coeff(q, ZERO))]
               @the-right-side-is-the-left |
                 addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(ZERO))),
-                     negF(mulF(power(b, succ(ZERO)), coeff(q, ZERO)))) =
+                  negF(mulF(power(b, succ(ZERO)), coeff(q, ZERO)))) =
                   mulF(negF(al), coeff(q, ZERO))
                 [using chain the-right-side the-right-side-collapses]
               @the-right-side-flipped |
                 mulF(negF(al), coeff(q, ZERO)) =
                   addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(ZERO))),
-                       negF(mulF(power(b, succ(ZERO)), coeff(q, ZERO))))
+                  negF(mulF(power(b, succ(ZERO)), coeff(q, ZERO))))
                 [by symmetry the-right-side-is-the-left]
               @conclusion-at-q-al-b |
                 evalUpTo(mulP(linear(al), q), b, succ(ZERO)) =
                   addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(ZERO))),
-                       negF(mulF(power(b, succ(ZERO)), coeff(q, ZERO))))
+                  negF(mulF(power(b, succ(ZERO)), coeff(q, ZERO))))
                 [using chain the-left-side the-right-side-flipped]
             }
           @discharge-b |
             forall b9: F;
               evalUpTo(mulP(linear(al), q), b9, succ(ZERO)) =
-                addF(mulF(addF(b9, negF(al)), evalUpTo(q, b9, succ(ZERO))),
-                     negF(mulF(power(b9, succ(ZERO)), coeff(q, ZERO))))
+              addF(mulF(addF(b9, negF(al)), evalUpTo(q, b9, succ(ZERO))),
+              negF(mulF(power(b9, succ(ZERO)), coeff(q, ZERO))))
             [by generalize generalize-b]
         }
       @discharge-al |
         forall al9, b9: F;
           evalUpTo(mulP(linear(al9), q), b9, succ(ZERO)) =
-            addF(mulF(addF(b9, negF(al9)), evalUpTo(q, b9, succ(ZERO))),
-                 negF(mulF(power(b9, succ(ZERO)), coeff(q, ZERO))))
+          addF(mulF(addF(b9, negF(al9)), evalUpTo(q, b9, succ(ZERO))),
+          negF(mulF(power(b9, succ(ZERO)), coeff(q, ZERO))))
         [by generalize generalize-al]
     }
   @conclusion |
     forall q: Poly; forall al, b: F;
       evalUpTo(mulP(linear(al), q), b, succ(ZERO)) =
-        addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(ZERO))),
-             negF(mulF(power(b, succ(ZERO)), coeff(q, ZERO))))
+      addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(ZERO))),
+      negF(mulF(power(b, succ(ZERO)), coeff(q, ZERO))))
     [by generalize generalize-q]
 qed
 
@@ -6479,11 +6480,11 @@ qed
 // and the remaining equality is theTelescopingStepIsRingAlgebra at those seven elements.
 theorem theGeneralTelescopingStep: forall q: Poly; forall al, b: F; forall k: Nat;
   (evalUpTo(mulP(linear(al), q), b, succ(k)) =
-     addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(k))),
-          negF(mulF(power(b, succ(k)), coeff(q, k))))) ->
+  addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(k))),
+  negF(mulF(power(b, succ(k)), coeff(q, k))))) ->
   (evalUpTo(mulP(linear(al), q), b, succ(succ(k))) =
-     addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(succ(k)))),
-          negF(mulF(power(b, succ(succ(k))), coeff(q, succ(k))))))
+  addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(succ(k)))),
+  negF(mulF(power(b, succ(succ(k))), coeff(q, succ(k))))))
 proof
   @generalize-q |
     fix q: Poly {
@@ -6496,23 +6497,23 @@ proof
                   @given-the-inductive-hypothesis |
                     assume evalUpTo(mulP(linear(al), q), b, succ(k)) =
                       addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(k))),
-                           negF(mulF(power(b, succ(k)), coeff(q, k)))) {
+                      negF(mulF(power(b, succ(k)), coeff(q, k)))) {
                       @the-inductive-hypothesis |
                         evalUpTo(mulP(linear(al), q), b, succ(k)) =
                           addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(k))),
-                               negF(mulF(power(b, succ(k)), coeff(q, k))))
+                          negF(mulF(power(b, succ(k)), coeff(q, k))))
                         [by hypothesis given-the-inductive-hypothesis]
                       // unfold one step of each partial sum
                       @the-product-sum-grows |
                         evalUpTo(mulP(linear(al), q), b, succ(succ(k))) =
                           addF(evalUpTo(mulP(linear(al), q), b, succ(k)),
-                               mulF(coeff(mulP(linear(al), q), succ(k)),
-                                    power(b, succ(k))))
+                          mulF(coeff(mulP(linear(al), q), succ(k)),
+                          power(b, succ(k))))
                         [using specialize evalSucc(mulP(linear(al), q), b, succ(k))]
                       @the-cofactor-sum-grows |
                         evalUpTo(q, b, succ(succ(k))) =
                           addF(evalUpTo(q, b, succ(k)),
-                               mulF(coeff(q, succ(k)), power(b, succ(k))))
+                          mulF(coeff(q, succ(k)), power(b, succ(k))))
                         [using specialize evalSucc(q, b, succ(k))]
                       // the product's coefficient at succ(k)
                       @the-product-coefficient |
@@ -6527,78 +6528,78 @@ proof
                       @the-ring-identity |
                         evalUpTo(mulP(linear(al), q), b, succ(k)) =
                           addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(k))),
-                               negF(mulF(power(b, succ(k)), coeff(q, k)))) ->
+                          negF(mulF(power(b, succ(k)), coeff(q, k)))) ->
                           addF(evalUpTo(mulP(linear(al), q), b, succ(k)),
-                               mulF(addF(mulF(negF(al), coeff(q, succ(k))), coeff(q, k)),
-                                    power(b, succ(k)))) =
-                            addF(mulF(addF(b, negF(al)),
-                                      addF(evalUpTo(q, b, succ(k)),
-                                           mulF(coeff(q, succ(k)), power(b, succ(k))))),
-                                 negF(mulF(mulF(b, power(b, succ(k))), coeff(q, succ(k)))))
+                          mulF(addF(mulF(negF(al), coeff(q, succ(k))), coeff(q, k)),
+                          power(b, succ(k)))) =
+                          addF(mulF(addF(b, negF(al)),
+                          addF(evalUpTo(q, b, succ(k)),
+                          mulF(coeff(q, succ(k)), power(b, succ(k))))),
+                          negF(mulF(mulF(b, power(b, succ(k))), coeff(q, succ(k)))))
                         [using specialize theTelescopingStepIsRingAlgebra(b, al, power(b, succ(k)), coeff(q, k), coeff(q, succ(k)), evalUpTo(mulP(linear(al), q), b, succ(k)), evalUpTo(q, b, succ(k)))]
                       @the-identity-applies |
                         addF(evalUpTo(mulP(linear(al), q), b, succ(k)),
-                             mulF(addF(mulF(negF(al), coeff(q, succ(k))), coeff(q, k)),
-                                  power(b, succ(k)))) =
+                          mulF(addF(mulF(negF(al), coeff(q, succ(k))), coeff(q, k)),
+                          power(b, succ(k)))) =
                           addF(mulF(addF(b, negF(al)),
-                                    addF(evalUpTo(q, b, succ(k)),
-                                         mulF(coeff(q, succ(k)), power(b, succ(k))))),
-                               negF(mulF(mulF(b, power(b, succ(k))), coeff(q, succ(k)))))
+                          addF(evalUpTo(q, b, succ(k)),
+                          mulF(coeff(q, succ(k)), power(b, succ(k))))),
+                          negF(mulF(mulF(b, power(b, succ(k))), coeff(q, succ(k)))))
                         [using tautology the-ring-identity the-inductive-hypothesis]
                       // rewrite the identity's two sides back into the goal's shape
                       @conclusion-at-succ-k |
                         evalUpTo(mulP(linear(al), q), b, succ(succ(k))) =
                           addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(succ(k)))),
-                               negF(mulF(power(b, succ(succ(k))), coeff(q, succ(k)))))
+                          negF(mulF(power(b, succ(succ(k))), coeff(q, succ(k)))))
                         [using simplify the-product-sum-grows the-product-coefficient the-identity-applies the-cofactor-sum-grows the-next-power]
                     }
                   @the-hypothesis-implies |
                     (evalUpTo(mulP(linear(al), q), b, succ(k)) =
-                       addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(k))),
-                            negF(mulF(power(b, succ(k)), coeff(q, k))))) ->
+                      addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(k))),
+                      negF(mulF(power(b, succ(k)), coeff(q, k))))) ->
                       (evalUpTo(mulP(linear(al), q), b, succ(succ(k))) =
-                         addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(succ(k)))),
-                              negF(mulF(power(b, succ(succ(k))), coeff(q, succ(k))))))
+                      addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(succ(k)))),
+                      negF(mulF(power(b, succ(succ(k))), coeff(q, succ(k))))))
                     [by discharge given-the-inductive-hypothesis]
                 }
               @discharge-k |
                 forall k9: Nat;
                   (evalUpTo(mulP(linear(al), q), b, succ(k9)) =
-                     addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(k9))),
-                          negF(mulF(power(b, succ(k9)), coeff(q, k9))))) ->
-                    (evalUpTo(mulP(linear(al), q), b, succ(succ(k9))) =
-                       addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(succ(k9)))),
-                            negF(mulF(power(b, succ(succ(k9))), coeff(q, succ(k9))))))
+                  addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(k9))),
+                  negF(mulF(power(b, succ(k9)), coeff(q, k9))))) ->
+                  (evalUpTo(mulP(linear(al), q), b, succ(succ(k9))) =
+                  addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(succ(k9)))),
+                  negF(mulF(power(b, succ(succ(k9))), coeff(q, succ(k9))))))
                 [by generalize generalize-k]
             }
           @discharge-b |
             forall b9: F; forall k9: Nat;
               (evalUpTo(mulP(linear(al), q), b9, succ(k9)) =
-                 addF(mulF(addF(b9, negF(al)), evalUpTo(q, b9, succ(k9))),
-                      negF(mulF(power(b9, succ(k9)), coeff(q, k9))))) ->
-                (evalUpTo(mulP(linear(al), q), b9, succ(succ(k9))) =
-                   addF(mulF(addF(b9, negF(al)), evalUpTo(q, b9, succ(succ(k9)))),
-                        negF(mulF(power(b9, succ(succ(k9))), coeff(q, succ(k9))))))
+              addF(mulF(addF(b9, negF(al)), evalUpTo(q, b9, succ(k9))),
+              negF(mulF(power(b9, succ(k9)), coeff(q, k9))))) ->
+              (evalUpTo(mulP(linear(al), q), b9, succ(succ(k9))) =
+              addF(mulF(addF(b9, negF(al)), evalUpTo(q, b9, succ(succ(k9)))),
+              negF(mulF(power(b9, succ(succ(k9))), coeff(q, succ(k9))))))
             [by generalize generalize-b]
         }
       @discharge-al |
         forall al9, b9: F; forall k9: Nat;
           (evalUpTo(mulP(linear(al9), q), b9, succ(k9)) =
-             addF(mulF(addF(b9, negF(al9)), evalUpTo(q, b9, succ(k9))),
-                  negF(mulF(power(b9, succ(k9)), coeff(q, k9))))) ->
-            (evalUpTo(mulP(linear(al9), q), b9, succ(succ(k9))) =
-               addF(mulF(addF(b9, negF(al9)), evalUpTo(q, b9, succ(succ(k9)))),
-                    negF(mulF(power(b9, succ(succ(k9))), coeff(q, succ(k9))))))
+          addF(mulF(addF(b9, negF(al9)), evalUpTo(q, b9, succ(k9))),
+          negF(mulF(power(b9, succ(k9)), coeff(q, k9))))) ->
+          (evalUpTo(mulP(linear(al9), q), b9, succ(succ(k9))) =
+          addF(mulF(addF(b9, negF(al9)), evalUpTo(q, b9, succ(succ(k9)))),
+          negF(mulF(power(b9, succ(succ(k9))), coeff(q, succ(k9))))))
         [by generalize generalize-al]
     }
   @conclusion |
     forall q: Poly; forall al, b: F; forall k: Nat;
       (evalUpTo(mulP(linear(al), q), b, succ(k)) =
-         addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(k))),
-              negF(mulF(power(b, succ(k)), coeff(q, k))))) ->
-        (evalUpTo(mulP(linear(al), q), b, succ(succ(k))) =
-           addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(succ(k)))),
-                negF(mulF(power(b, succ(succ(k))), coeff(q, succ(k))))))
+      addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(k))),
+      negF(mulF(power(b, succ(k)), coeff(q, k))))) ->
+      (evalUpTo(mulP(linear(al), q), b, succ(succ(k))) =
+      addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(succ(k)))),
+      negF(mulF(power(b, succ(succ(k))), coeff(q, succ(k))))))
     [by generalize generalize-q]
 qed
 
@@ -6609,8 +6610,8 @@ qed
 // coefficients, so the convolution never opens into a double sum.
 theorem theGeneralTelescopingPartialSum: forall q: Poly; forall al, b: F; forall n: Nat;
   evalUpTo(mulP(linear(al), q), b, succ(n)) =
-    addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(n))),
-         negF(mulF(power(b, succ(n)), coeff(q, n))))
+  addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(n))),
+  negF(mulF(power(b, succ(n)), coeff(q, n))))
 proof
   @generalize-q |
     fix q: Poly {
@@ -6621,61 +6622,60 @@ proof
               @the-base-everywhere |
                 forall q9: Poly; forall al9, b9: F;
                   evalUpTo(mulP(linear(al9), q9), b9, succ(ZERO)) =
-                    addF(mulF(addF(b9, negF(al9)), evalUpTo(q9, b9, succ(ZERO))),
-                         negF(mulF(power(b9, succ(ZERO)), coeff(q9, ZERO))))
+                  addF(mulF(addF(b9, negF(al9)), evalUpTo(q9, b9, succ(ZERO))),
+                  negF(mulF(power(b9, succ(ZERO)), coeff(q9, ZERO))))
                 [by cite theGeneralTelescopingBase]
               @base-case |
                 evalUpTo(mulP(linear(al), q), b, succ(ZERO)) =
                   addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(ZERO))),
-                       negF(mulF(power(b, succ(ZERO)), coeff(q, ZERO))))
+                  negF(mulF(power(b, succ(ZERO)), coeff(q, ZERO))))
                 [using specialize the-base-everywhere(q, al, b)]
               @the-step-everywhere |
                 forall q9: Poly; forall al9, b9: F; forall k: Nat;
                   (evalUpTo(mulP(linear(al9), q9), b9, succ(k)) =
-                     addF(mulF(addF(b9, negF(al9)), evalUpTo(q9, b9, succ(k))),
-                          negF(mulF(power(b9, succ(k)), coeff(q9, k))))) ->
+                  addF(mulF(addF(b9, negF(al9)), evalUpTo(q9, b9, succ(k))),
+                  negF(mulF(power(b9, succ(k)), coeff(q9, k))))) ->
                   (evalUpTo(mulP(linear(al9), q9), b9, succ(succ(k))) =
-                     addF(mulF(addF(b9, negF(al9)), evalUpTo(q9, b9, succ(succ(k)))),
-                          negF(mulF(power(b9, succ(succ(k))), coeff(q9, succ(k))))))
+                  addF(mulF(addF(b9, negF(al9)), evalUpTo(q9, b9, succ(succ(k)))),
+                  negF(mulF(power(b9, succ(succ(k))), coeff(q9, succ(k))))))
                 [by cite theGeneralTelescopingStep]
               @induction-step-for-all-k-at-q |
                 forall k: Nat;
                   (evalUpTo(mulP(linear(al), q), b, succ(k)) =
-                     addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(k))),
-                          negF(mulF(power(b, succ(k)), coeff(q, k))))) ->
+                  addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(k))),
+                  negF(mulF(power(b, succ(k)), coeff(q, k))))) ->
                   (evalUpTo(mulP(linear(al), q), b, succ(succ(k))) =
-                     addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(succ(k)))),
-                          negF(mulF(power(b, succ(succ(k))), coeff(q, succ(k))))))
+                  addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(succ(k)))),
+                  negF(mulF(power(b, succ(succ(k))), coeff(q, succ(k))))))
                 [using specialize the-step-everywhere(q, al, b)]
               @conclusion-for-all-n |
                 forall n: Nat;
                   evalUpTo(mulP(linear(al), q), b, succ(n)) =
-                    addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(n))),
-                         negF(mulF(power(b, succ(n)), coeff(q, n))))
+                  addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(n))),
+                  negF(mulF(power(b, succ(n)), coeff(q, n))))
                 [using instantiation peano.induction((fun n: Nat => evalUpTo(mulP(linear(al), q), b, succ(n)) = addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(n))), negF(mulF(power(b, succ(n)), coeff(q, n)))))) base-case induction-step-for-all-k-at-q]
             }
           @discharge-b |
             forall b9: F; forall n: Nat;
               evalUpTo(mulP(linear(al), q), b9, succ(n)) =
-                addF(mulF(addF(b9, negF(al)), evalUpTo(q, b9, succ(n))),
-                     negF(mulF(power(b9, succ(n)), coeff(q, n))))
+              addF(mulF(addF(b9, negF(al)), evalUpTo(q, b9, succ(n))),
+              negF(mulF(power(b9, succ(n)), coeff(q, n))))
             [by generalize generalize-b]
         }
       @discharge-al |
         forall al9, b9: F; forall n: Nat;
           evalUpTo(mulP(linear(al9), q), b9, succ(n)) =
-            addF(mulF(addF(b9, negF(al9)), evalUpTo(q, b9, succ(n))),
-                 negF(mulF(power(b9, succ(n)), coeff(q, n))))
+          addF(mulF(addF(b9, negF(al9)), evalUpTo(q, b9, succ(n))),
+          negF(mulF(power(b9, succ(n)), coeff(q, n))))
         [by generalize generalize-al]
     }
   @conclusion |
     forall q: Poly; forall al, b: F; forall n: Nat;
       evalUpTo(mulP(linear(al), q), b, succ(n)) =
-        addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(n))),
-             negF(mulF(power(b, succ(n)), coeff(q, n))))
+      addF(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(n))),
+      negF(mulF(power(b, succ(n)), coeff(q, n))))
     [by generalize generalize-q]
 qed
-
 
 // x * 0 = 0, negated: the boundary term's shape.
 theorem theNegatedZeroProductVanishes: forall x: F;
@@ -6701,7 +6701,7 @@ qed
 theorem aLinearFactorMultipliesTheEvaluation: forall q: Poly; forall al, b: F;
   (not (q = ZEROP)) ->
   evaluate(mulP(linear(al), q), b) =
-    mulF(addF(b, negF(al)), evaluate(q, b))
+  mulF(addF(b, negF(al)), evaluate(q, b))
 proof
   @generalize-q |
     fix q: Poly {
@@ -6718,9 +6718,9 @@ proof
                   @the-telescoping |
                     evalUpTo(mulP(linear(al), q), b, succ(succ(degree(q)))) =
                       addF(mulF(addF(b, negF(al)),
-                                evalUpTo(q, b, succ(succ(degree(q))))),
-                           negF(mulF(power(b, succ(succ(degree(q)))),
-                                     coeff(q, succ(degree(q))))))
+                      evalUpTo(q, b, succ(succ(degree(q))))),
+                      negF(mulF(power(b, succ(succ(degree(q)))),
+                      coeff(q, succ(degree(q))))))
                     [using specialize theGeneralTelescopingPartialSum(q, al, b, succ(degree(q)))]
                   // the boundary coefficient is above q's degree, so it vanishes
                   @q-is-bounded-by-its-degree |
@@ -6729,7 +6729,7 @@ proof
                   @the-bound-unfolds |
                     degreeAtMost(q, degree(q)) iff
                       (forall i: Nat; peano.less_than(degree(q), i) ->
-                        coeff(q, i) = zeroF)
+                      coeff(q, i) = zeroF)
                     [using specialize degreeAtMostMeaning(q, degree(q))]
                   @coefficients-above-the-degree-vanish |
                     forall i: Nat; peano.less_than(degree(q), i) ->
@@ -6744,7 +6744,7 @@ proof
                   // so the boundary term is zero and drops out
                   @the-boundary-term-vanishes |
                     negF(mulF(power(b, succ(succ(degree(q)))),
-                              coeff(q, succ(degree(q))))) = zeroF
+                      coeff(q, succ(degree(q))))) = zeroF
                     [using simplify the-boundary-coefficient-vanishes theNegatedZeroProductVanishes-at-the-power]
                   @theNegatedZeroProductVanishes-at-the-power |
                     negF(mulF(power(b, succ(succ(degree(q)))), zeroF)) =
@@ -6753,20 +6753,20 @@ proof
                   @the-telescoping-without-the-boundary |
                     evalUpTo(mulP(linear(al), q), b, succ(succ(degree(q)))) =
                       addF(mulF(addF(b, negF(al)),
-                                evalUpTo(q, b, succ(succ(degree(q))))),
-                           zeroF)
+                      evalUpTo(q, b, succ(succ(degree(q))))),
+                      zeroF)
                     [using simplify the-telescoping the-boundary-term-vanishes]
                   @dropping-the-zero |
                     addF(mulF(addF(b, negF(al)),
-                              evalUpTo(q, b, succ(succ(degree(q))))),
-                         zeroF) =
+                      evalUpTo(q, b, succ(succ(degree(q))))),
+                      zeroF) =
                       mulF(addF(b, negF(al)),
-                           evalUpTo(q, b, succ(succ(degree(q)))))
+                      evalUpTo(q, b, succ(succ(degree(q)))))
                     [using specialize field.addZeroRight(mulF(addF(b, negF(al)), evalUpTo(q, b, succ(succ(degree(q))))))]
                   @the-telescoping-collapsed |
                     evalUpTo(mulP(linear(al), q), b, succ(succ(degree(q)))) =
                       mulF(addF(b, negF(al)),
-                           evalUpTo(q, b, succ(succ(degree(q)))))
+                      evalUpTo(q, b, succ(succ(degree(q)))))
                     [using chain the-telescoping-without-the-boundary dropping-the-zero]
                   // both evalUpTo's are at or past their own degrees, so each IS evaluate
                   @the-cofactor-evaluation |
@@ -6801,11 +6801,11 @@ proof
                     [using specialize evaluateAtAnyLargerBound(mulP(linear(al), q), b, succ(degree(q))) the-product-is-nonzero the-product-degree-is-at-most]
                   @the-product-degree-is-at-most |
                     peano_order.less_or_equal(degree(mulP(linear(al), q)),
-                                              succ(degree(q)))
+                      succ(degree(q)))
                     [by rewrite the-product-degree-is-a-successor theRefl-at-succ]
                   @theRefl-at-succ |
                     peano_order.less_or_equal(succ(degree(q)),
-                                              succ(degree(q)))
+                      succ(degree(q)))
                     [using specialize peano_order.lessOrEqualRefl(succ(degree(q)))]
                   @the-product-evaluation-flipped |
                     evaluate(mulP(linear(al), q), b) =
@@ -6813,14 +6813,14 @@ proof
                     [by symmetry the-product-evaluation]
                   @the-cofactor-scaled |
                     mulF(addF(b, negF(al)),
-                         evalUpTo(q, b, succ(succ(degree(q))))) =
+                      evalUpTo(q, b, succ(succ(degree(q))))) =
                       mulF(addF(b, negF(al)), evaluate(q, b))
                     [by rewrite the-cofactor-evaluation reflexivity-of-the-scaled-cofactor]
                   @reflexivity-of-the-scaled-cofactor |
                     mulF(addF(b, negF(al)),
-                         evalUpTo(q, b, succ(succ(degree(q))))) =
+                      evalUpTo(q, b, succ(succ(degree(q))))) =
                       mulF(addF(b, negF(al)),
-                           evalUpTo(q, b, succ(succ(degree(q)))))
+                      evalUpTo(q, b, succ(succ(degree(q)))))
                     [by reflexivity]
                   @conclusion-the-linear-factor-multiplies |
                     evaluate(mulP(linear(al), q), b) =
@@ -6830,27 +6830,364 @@ proof
               @nonzero-implies |
                 (not (q = ZEROP)) ->
                   evaluate(mulP(linear(al), q), b) =
-                    mulF(addF(b, negF(al)), evaluate(q, b))
+                  mulF(addF(b, negF(al)), evaluate(q, b))
                 [by discharge given-q-nonzero]
             }
           @discharge-b |
             forall b9: F;
               (not (q = ZEROP)) ->
-                evaluate(mulP(linear(al), q), b9) =
-                  mulF(addF(b9, negF(al)), evaluate(q, b9))
+              evaluate(mulP(linear(al), q), b9) =
+              mulF(addF(b9, negF(al)), evaluate(q, b9))
             [by generalize generalize-b]
         }
       @discharge-al |
         forall al9, b9: F;
           (not (q = ZEROP)) ->
-            evaluate(mulP(linear(al9), q), b9) =
-              mulF(addF(b9, negF(al9)), evaluate(q, b9))
+          evaluate(mulP(linear(al9), q), b9) =
+          mulF(addF(b9, negF(al9)), evaluate(q, b9))
         [by generalize generalize-al]
     }
   @conclusion |
     forall q: Poly; forall al, b: F;
       (not (q = ZEROP)) ->
-        evaluate(mulP(linear(al), q), b) =
-          mulF(addF(b, negF(al)), evaluate(q, b))
+      evaluate(mulP(linear(al), q), b) =
+      mulF(addF(b, negF(al)), evaluate(q, b))
     [by generalize generalize-q]
+qed
+
+// -- Proposition 17.4, discharged ----------------------------------------------------------
+// The two facts forward-declared near the top. Both follow from the convolution picture in
+// `std/ring/polynomial-leading.b4m`, transferred here, plus the field having no zero
+// divisors.
+
+// The product's coefficient at m+n is the product of the leading coefficients.
+theorem theProductsLeadingCoefficient: forall p, q: Poly; forall m, n: Nat;
+  degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+  coeff(mulP(p, q), peano.add(m, n)) = mulF(coeff(p, m), coeff(q, n))
+proof
+  @conclusion |
+    forall p, q: Poly; forall m, n: Nat;
+      degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+      coeff(mulP(p, q), peano.add(m, n)) = mulF(coeff(p, m), coeff(q, n))
+    [using model(FieldPolyModelsRingPoly) ring_leading.theProductsLeadingCoefficient]
+qed
+
+// Above m+n the product's coefficients vanish.
+theorem theProductVanishesAboveTheDegreeSum: forall p, q: Poly; forall m, n, i: Nat;
+  degreeAtMost(p, m) -> degreeAtMost(q, n) -> less_than(peano.add(m, n), i) ->
+  forall k: Nat; convolution(p, q, i, k) = zeroF
+proof
+  @conclusion |
+    forall p, q: Poly; forall m, n, i: Nat;
+      degreeAtMost(p, m) -> degreeAtMost(q, n) -> less_than(peano.add(m, n), i) ->
+      forall k: Nat; convolution(p, q, i, k) = zeroF
+    [using model(FieldPolyModelsRingPoly) ring_leading.theProductVanishesAboveTheDegreeSum]
+qed
+
+// A polynomial with a nonvanishing coefficient is not the zero polynomial.
+theorem aNonvanishingCoefficientMakesItNonzero: forall p: Poly; forall i: Nat;
+  (not (coeff(p, i) = zeroF)) -> (not (p = ZEROP))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-i |
+        fix i: Nat {
+          @given-the-coefficient-survives |
+            assume not (coeff(p, i) = zeroF) {
+              @the-coefficient-survives |
+                not (coeff(p, i) = zeroF)
+                [by hypothesis given-the-coefficient-survives]
+              @given-p-is-zero |
+                assume p = ZEROP {
+                  @p-is-zero |
+                    p = ZEROP
+                    [by hypothesis given-p-is-zero]
+                  @the-zero-coefficient |
+                    coeff(ZEROP, i) = zeroF
+                    [using specialize zeroPolyCoeff(i)]
+                  @the-coefficient-vanishes |
+                    coeff(p, i) = zeroF
+                    [by rewrite p-is-zero the-zero-coefficient]
+                  @conclusion-absurd |
+                    not (p = ZEROP)
+                    [by ex_falso the-coefficient-vanishes the-coefficient-survives]
+                }
+              @zero-is-absurd |
+                (p = ZEROP) -> (not (p = ZEROP))
+                [by discharge given-p-is-zero]
+              @conclusion-p-is-nonzero |
+                not (p = ZEROP)
+                [using tautology zero-is-absurd]
+            }
+          @survives-implies-nonzero |
+            (not (coeff(p, i) = zeroF)) -> (not (p = ZEROP))
+            [by discharge given-the-coefficient-survives]
+        }
+      @discharge-i |
+        forall i9: Nat;
+          (not (coeff(p, i9) = zeroF)) -> (not (p = ZEROP))
+        [by generalize generalize-i]
+    }
+  @conclusion |
+    forall p: Poly; forall i: Nat;
+      (not (coeff(p, i) = zeroF)) -> (not (p = ZEROP))
+    [by generalize generalize-p]
+qed
+
+// A PRODUCT OF NONZEROS IS NONZERO: its coefficient at the degree sum is the product of two
+// nonvanishing leading coefficients, and a field has no zero divisors.
+theorem aProductOfNonzerosIsNonzero: forall p, q: Poly;
+  (not (p = ZEROP)) -> (not (q = ZEROP)) -> (not (mulP(p, q) = ZEROP))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @given-p-nonzero |
+            assume not (p = ZEROP) {
+              @p-nonzero |
+                not (p = ZEROP)
+                [by hypothesis given-p-nonzero]
+              @given-q-nonzero |
+                assume not (q = ZEROP) {
+                  @q-nonzero |
+                    not (q = ZEROP)
+                    [by hypothesis given-q-nonzero]
+                  // each is bounded by its own degree, with a surviving leading coefficient
+                  @p-bounded |
+                    degreeAtMost(p, degree(p))
+                    [using specialize degreeBoundsTheCoefficients(p) p-nonzero]
+                  @q-bounded |
+                    degreeAtMost(q, degree(q))
+                    [using specialize degreeBoundsTheCoefficients(q) q-nonzero]
+                  @p-leads |
+                    not (coeff(p, degree(p)) = zeroF)
+                    [using specialize degreeIsALeadingIndex(p) p-nonzero]
+                  @q-leads |
+                    not (coeff(q, degree(q)) = zeroF)
+                    [using specialize degreeIsALeadingIndex(q) q-nonzero]
+                  // the product's coefficient at the degree sum
+                  @the-leading-product |
+                    coeff(mulP(p, q), peano.add(degree(p), degree(q))) =
+                      mulF(coeff(p, degree(p)), coeff(q, degree(q)))
+                    [using specialize theProductsLeadingCoefficient(p, q, degree(p), degree(q)) p-bounded q-bounded]
+                  // a field has no zero divisors
+                  @the-field-has-no-zero-divisors |
+                    mulF(coeff(p, degree(p)), coeff(q, degree(q))) = zeroF ->
+                      (coeff(p, degree(p)) = zeroF or coeff(q, degree(q)) = zeroF)
+                    [using specialize field.noZeroDivisors(coeff(p, degree(p)), coeff(q, degree(q)))]
+                  @the-leading-product-survives |
+                    not (mulF(coeff(p, degree(p)), coeff(q, degree(q))) = zeroF)
+                    [using tautology the-field-has-no-zero-divisors p-leads q-leads]
+                  @the-products-coefficient-survives |
+                    not (coeff(mulP(p, q), peano.add(degree(p), degree(q))) = zeroF)
+                    [by rewrite the-leading-product the-leading-product-survives]
+                  @conclusion-the-product-is-nonzero |
+                    not (mulP(p, q) = ZEROP)
+                    [using specialize aNonvanishingCoefficientMakesItNonzero(mulP(p, q), peano.add(degree(p), degree(q))) the-products-coefficient-survives]
+                }
+              @q-nonzero-implies |
+                (not (q = ZEROP)) -> (not (mulP(p, q) = ZEROP))
+                [by discharge given-q-nonzero]
+            }
+          @p-nonzero-implies |
+            (not (p = ZEROP)) -> (not (q = ZEROP)) -> (not (mulP(p, q) = ZEROP))
+            [by discharge given-p-nonzero]
+        }
+      @discharge-q |
+        forall q9: Poly;
+          (not (p = ZEROP)) -> (not (q9 = ZEROP)) -> (not (mulP(p, q9) = ZEROP))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly;
+      (not (p = ZEROP)) -> (not (q = ZEROP)) -> (not (mulP(p, q) = ZEROP))
+    [by generalize generalize-p]
+qed
+
+// THE DEGREE OF A PRODUCT is the sum of the degrees. `degreeIsUnique` needs three things of
+// the index m+n: the product is nonzero, its coefficient there survives, and it bounds the
+// rest. The first two are the theorem above and its ingredient; the third is the
+// vanishing-above fact, read through `mulPolyCoeff`.
+theorem degreeOfAProduct: forall p, q: Poly;
+  (not (p = ZEROP)) -> (not (q = ZEROP)) ->
+  degree(mulP(p, q)) = peano.add(degree(p), degree(q))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @given-p-nonzero |
+            assume not (p = ZEROP) {
+              @p-nonzero |
+                not (p = ZEROP)
+                [by hypothesis given-p-nonzero]
+              @given-q-nonzero |
+                assume not (q = ZEROP) {
+                  @q-nonzero |
+                    not (q = ZEROP)
+                    [by hypothesis given-q-nonzero]
+                  @p-bounded |
+                    degreeAtMost(p, degree(p))
+                    [using specialize degreeBoundsTheCoefficients(p) p-nonzero]
+                  @q-bounded |
+                    degreeAtMost(q, degree(q))
+                    [using specialize degreeBoundsTheCoefficients(q) q-nonzero]
+                  @p-leads |
+                    not (coeff(p, degree(p)) = zeroF)
+                    [using specialize degreeIsALeadingIndex(p) p-nonzero]
+                  @q-leads |
+                    not (coeff(q, degree(q)) = zeroF)
+                    [using specialize degreeIsALeadingIndex(q) q-nonzero]
+                  // (1) the product is nonzero
+                  @the-product-is-nonzero |
+                    not (mulP(p, q) = ZEROP)
+                    [using specialize aProductOfNonzerosIsNonzero(p, q) p-nonzero q-nonzero]
+                  // (2) its coefficient at the degree sum survives
+                  @the-leading-product |
+                    coeff(mulP(p, q), peano.add(degree(p), degree(q))) =
+                      mulF(coeff(p, degree(p)), coeff(q, degree(q)))
+                    [using specialize theProductsLeadingCoefficient(p, q, degree(p), degree(q)) p-bounded q-bounded]
+                  @the-field-has-no-zero-divisors |
+                    mulF(coeff(p, degree(p)), coeff(q, degree(q))) = zeroF ->
+                      (coeff(p, degree(p)) = zeroF or coeff(q, degree(q)) = zeroF)
+                    [using specialize field.noZeroDivisors(coeff(p, degree(p)), coeff(q, degree(q)))]
+                  @the-leading-product-survives |
+                    not (mulF(coeff(p, degree(p)), coeff(q, degree(q))) = zeroF)
+                    [using tautology the-field-has-no-zero-divisors p-leads q-leads]
+                  @the-coefficient-survives |
+                    not (coeff(mulP(p, q), peano.add(degree(p), degree(q))) = zeroF)
+                    [by rewrite the-leading-product the-leading-product-survives]
+                  // (3) the degree sum bounds the product
+                  @the-product-is-bounded |
+                    degreeAtMost(mulP(p, q), peano.add(degree(p), degree(q)))
+                    [using specialize theDegreeSumBoundsTheProduct(p, q, degree(p), degree(q)) p-bounded q-bounded]
+                  // degreeIsUnique closes it
+                  @the-degree-sum-is-the-degree |
+                    peano.add(degree(p), degree(q)) = degree(mulP(p, q))
+                    [using specialize degreeIsUnique(mulP(p, q), peano.add(degree(p), degree(q))) the-product-is-nonzero the-coefficient-survives the-product-is-bounded]
+                  @conclusion-the-degrees-add |
+                    degree(mulP(p, q)) = peano.add(degree(p), degree(q))
+                    [by symmetry the-degree-sum-is-the-degree]
+                }
+              @q-nonzero-implies |
+                (not (q = ZEROP)) ->
+                  degree(mulP(p, q)) = peano.add(degree(p), degree(q))
+                [by discharge given-q-nonzero]
+            }
+          @p-nonzero-implies |
+            (not (p = ZEROP)) -> (not (q = ZEROP)) ->
+              degree(mulP(p, q)) = peano.add(degree(p), degree(q))
+            [by discharge given-p-nonzero]
+        }
+      @discharge-q |
+        forall q9: Poly;
+          (not (p = ZEROP)) -> (not (q9 = ZEROP)) ->
+          degree(mulP(p, q9)) = peano.add(degree(p), degree(q9))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly;
+      (not (p = ZEROP)) -> (not (q = ZEROP)) ->
+      degree(mulP(p, q)) = peano.add(degree(p), degree(q))
+    [by generalize generalize-p]
+qed
+
+// The degree sum bounds the product: above it every coefficient is a convolution that
+// vanishes term by term.
+theorem theDegreeSumBoundsTheProduct: forall p, q: Poly; forall m, n: Nat;
+  degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+  degreeAtMost(mulP(p, q), peano.add(m, n))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-m |
+            fix m: Nat {
+              @generalize-n |
+                fix n: Nat {
+                  @given-p-bounded |
+                    assume degreeAtMost(p, m) {
+                      @p-bounded |
+                        degreeAtMost(p, m)
+                        [by hypothesis given-p-bounded]
+                      @given-q-bounded |
+                        assume degreeAtMost(q, n) {
+                          @q-bounded |
+                            degreeAtMost(q, n)
+                            [by hypothesis given-q-bounded]
+                          @generalize-i |
+                            fix i: Nat {
+                              @given-i-is-high |
+                                assume less_than(peano.add(m, n), i) {
+                                  @i-is-high |
+                                    less_than(peano.add(m, n), i)
+                                    [by hypothesis given-i-is-high]
+                                  @the-convolution-vanishes |
+                                    forall k: Nat; convolution(p, q, i, k) = zeroF
+                                    [using specialize theProductVanishesAboveTheDegreeSum(p, q, m, n, i) p-bounded q-bounded i-is-high]
+                                  @the-convolution-at-i |
+                                    convolution(p, q, i, i) = zeroF
+                                    [using specialize the-convolution-vanishes(i)]
+                                  @the-coefficient-is-the-convolution |
+                                    coeff(mulP(p, q), i) = convolution(p, q, i, i)
+                                    [using specialize mulPolyCoeff(p, q, i)]
+                                  @conclusion-the-coefficient-vanishes |
+                                    coeff(mulP(p, q), i) = zeroF
+                                    [using chain the-coefficient-is-the-convolution the-convolution-at-i]
+                                }
+                              @conclusion-high-implies-vanishing |
+                                less_than(peano.add(m, n), i) ->
+                                  coeff(mulP(p, q), i) = zeroF
+                                [by discharge given-i-is-high]
+                            }
+                          @everything-above-vanishes |
+                            forall i: Nat;
+                              less_than(peano.add(m, n), i) ->
+                              coeff(mulP(p, q), i) = zeroF
+                            [by generalize generalize-i]
+                          @the-bound-unfolds |
+                            degreeAtMost(mulP(p, q), peano.add(m, n)) iff
+                              (forall i: Nat;
+                              less_than(peano.add(m, n), i) ->
+                              coeff(mulP(p, q), i) = zeroF)
+                            [using specialize degreeAtMostMeaning(mulP(p, q), peano.add(m, n))]
+                          @conclusion-the-product-is-bounded |
+                            degreeAtMost(mulP(p, q), peano.add(m, n))
+                            [using tautology the-bound-unfolds everything-above-vanishes]
+                        }
+                      @q-bounded-implies |
+                        degreeAtMost(q, n) ->
+                          degreeAtMost(mulP(p, q), peano.add(m, n))
+                        [by discharge given-q-bounded]
+                    }
+                  @p-bounded-implies |
+                    degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+                      degreeAtMost(mulP(p, q), peano.add(m, n))
+                    [by discharge given-p-bounded]
+                }
+              @discharge-n |
+                forall n9: Nat;
+                  degreeAtMost(p, m) -> degreeAtMost(q, n9) ->
+                  degreeAtMost(mulP(p, q), peano.add(m, n9))
+                [by generalize generalize-n]
+            }
+          @discharge-m |
+            forall m9, n9: Nat;
+              degreeAtMost(p, m9) -> degreeAtMost(q, n9) ->
+              degreeAtMost(mulP(p, q), peano.add(m9, n9))
+            [by generalize generalize-m]
+        }
+      @discharge-q |
+        forall q9: Poly; forall m9, n9: Nat;
+          degreeAtMost(p, m9) -> degreeAtMost(q9, n9) ->
+          degreeAtMost(mulP(p, q9), peano.add(m9, n9))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; forall m, n: Nat;
+      degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+      degreeAtMost(mulP(p, q), peano.add(m, n))
+    [by generalize generalize-p]
 qed
