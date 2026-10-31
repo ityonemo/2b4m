@@ -21,6 +21,7 @@ import ring <<< "std/ring.b4m"
 import peano <<< "std/peano.b4m"
 import peano_order <<< "std/peano/order.b4m"
 import subtraction <<< "std/peano/subtraction.b4m"
+import irreducible <<< "std/field/irreducible.b4m"
 
 sort Poly = ring_poly.Poly
 sort Nat = peano.Nat
@@ -35,6 +36,11 @@ func coeff = ring_poly.coeff
 func convolution = ring_poly.convolution
 pred less_than = peano.less_than
 pred degreeAtMost = ring_poly.degreeAtMost
+
+// ℕ's AC triple, by bare name, for `assoc_commut` on the index arithmetic
+fact addIsAssociative = peano.addIsAssociative
+fact addIsCommutative = peano.addIsCommutative
+fact addLeftSwap = peano.addLeftSwap
 
 // THE UPPER HALF: the convolution does not change as its bound rises above m, because each
 // new term carries a coefficient of p past p's degree. Induction on the excess t.
@@ -195,3 +201,228 @@ proof
     forall m, k: Nat; less_than(m, succ(add(m, k)))
     [by generalize generalize-m]
 qed
+
+// The index fact the lower half needs: subtracting less than m from m+n leaves more than n.
+// Writing m as sub(m,j) + j (j < m) makes m+n = sub(m,j) + (j+n), so sub(m+n, j) is
+// sub(m,j) + n, and sub(m,j) is positive.
+theorem subtractingBelowTheFirstSummandLeavesMoreThanTheSecond: forall m, n, j: Nat;
+  less_than(j, m) -> less_than(n, sub(add(m, n), j))
+proof
+  @generalize-m |
+    fix m: Nat {
+      @generalize-n |
+        fix n: Nat {
+          @generalize-j |
+            fix j: Nat {
+              @given-j-below-m |
+                assume less_than(j, m) {
+                  @j-below-m |
+                    less_than(j, m)
+                    [by hypothesis given-j-below-m]
+                  // m recovers as sub(m,j) + j, since j <= m
+                  @j-at-most-m |
+                    less_than(j, succ(m))
+                    [using specialize peano_order.lessThanSuccRight(j, m) j-below-m]
+                  @m-recovers |
+                    add(sub(m, j), j) = m
+                    [using specialize subtraction.addSubCancel(j, m) j-at-most-m]
+                  // so m + n = (sub(m,j) + n) + j, and subtracting j leaves sub(m,j) + n
+                  @the-sum-regroups |
+                    add(add(sub(m, j), n), j) = add(add(sub(m, j), j), n)
+                    [using assoc_commut]
+                  @the-sum-is-m-plus-n |
+                    add(add(sub(m, j), j), n) = add(m, n)
+                    [by rewrite m-recovers reflexivity-of-the-sum]
+                  @reflexivity-of-the-sum |
+                    add(m, n) = add(m, n)
+                    [by reflexivity]
+                  @the-regrouped-sum |
+                    add(add(sub(m, j), n), j) = add(m, n)
+                    [using chain the-sum-regroups the-sum-is-m-plus-n]
+                  // cancelling j off both sides of the difference
+                  @the-cancellation |
+                    sub(add(add(sub(m, j), n), j), add(ZERO, j)) =
+                      sub(add(sub(m, j), n), ZERO)
+                    [using specialize subtraction.subAddSameRight(add(sub(m, j), n), j, ZERO)]
+                  @zero-plus-j |
+                    add(ZERO, j) = j
+                    [using specialize peano.addZeroLeft(j)]
+                  @dropping-the-zero |
+                    sub(add(sub(m, j), n), ZERO) = add(sub(m, j), n)
+                    [using specialize subtraction.subZeroRight(add(sub(m, j), n))]
+                  // the cancellation, with both sides put in terms of m+n and j
+                  @the-cancellation-at-j |
+                    sub(add(add(sub(m, j), n), j), j) =
+                      sub(add(sub(m, j), n), ZERO)
+                    [by rewrite zero-plus-j the-cancellation]
+                  @the-cancellation-at-the-sum |
+                    sub(add(m, n), j) = sub(add(sub(m, j), n), ZERO)
+                    [by rewrite the-regrouped-sum the-cancellation-at-j]
+                  @the-difference-is-the-regrouped-sum |
+                    sub(add(m, n), j) = add(sub(m, j), n)
+                    [using chain the-cancellation-at-the-sum dropping-the-zero]
+                  // and sub(m,j) is positive, so the sum exceeds n
+                  @the-remainder-is-positive |
+                    less_than(ZERO, sub(m, j))
+                    [using specialize aDifferenceBelowIsPositive(j, m) j-below-m]
+                  @n-is-below-the-sum |
+                    less_than(n, add(sub(m, j), n))
+                    [using specialize aPositiveSummandExceedsTheOther(sub(m, j), n) the-remainder-is-positive]
+                  @conclusion-the-difference-exceeds-n |
+                    less_than(n, sub(add(m, n), j))
+                    [by rewrite the-difference-is-the-regrouped-sum n-is-below-the-sum]
+                }
+              @below-implies |
+                less_than(j, m) -> less_than(n, sub(add(m, n), j))
+                [by discharge given-j-below-m]
+            }
+          @discharge-j |
+            forall j9: Nat;
+              less_than(j9, m) -> less_than(n, sub(add(m, n), j9))
+            [by generalize generalize-j]
+        }
+      @discharge-n |
+        forall n9, j9: Nat;
+          less_than(j9, m) -> less_than(n9, sub(add(m, n9), j9))
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall m, n, j: Nat;
+      less_than(j, m) -> less_than(n, sub(add(m, n), j))
+    [by generalize generalize-m]
+qed
+
+// j < m leaves a positive difference: were sub(m,j) zero, m would recover as 0 + j = j,
+// contradicting j < m.
+theorem aDifferenceBelowIsPositive: forall j, m: Nat;
+  less_than(j, m) -> less_than(ZERO, sub(m, j))
+proof
+  @generalize-j |
+    fix j: Nat {
+      @generalize-m |
+        fix m: Nat {
+          @given-j-below-m |
+            assume less_than(j, m) {
+              @j-below-m |
+                less_than(j, m)
+                [by hypothesis given-j-below-m]
+              @j-at-most-m |
+                less_than(j, succ(m))
+                [using specialize peano_order.lessThanSuccRight(j, m) j-below-m]
+              @m-recovers |
+                add(sub(m, j), j) = m
+                [using specialize subtraction.addSubCancel(j, m) j-at-most-m]
+              @the-difference-splits |
+                sub(m, j) = ZERO or less_than(ZERO, sub(m, j))
+                [using specialize aNatIsZeroOrPositive(sub(m, j))]
+              @when-the-difference-vanishes |
+                assume sub(m, j) = ZERO {
+                  @the-difference-is-zero |
+                    sub(m, j) = ZERO
+                    [by hypothesis when-the-difference-vanishes]
+                  @m-recovers-as-j |
+                    add(ZERO, j) = m
+                    [by rewrite the-difference-is-zero m-recovers]
+                  @zero-plus-j-is-j |
+                    add(ZERO, j) = j
+                    [using specialize peano.addZeroLeft(j)]
+                  @j-is-m |
+                    j = m
+                    [using chain zero-plus-j-is-j-flipped m-recovers-as-j]
+                  @zero-plus-j-is-j-flipped |
+                    j = add(ZERO, j)
+                    [by symmetry zero-plus-j-is-j]
+                  @j-is-below-itself |
+                    less_than(j, j)
+                    [by rewrite j-is-m j-below-m]
+                  @nothing-is-below-itself |
+                    not less_than(j, j)
+                    [using specialize peano_order.lessThanIrreflexive(j)]
+                  @conclusion-absurd |
+                    less_than(ZERO, sub(m, j))
+                    [by ex_falso j-is-below-itself nothing-is-below-itself]
+                }
+              @when-the-difference-is-positive |
+                assume less_than(ZERO, sub(m, j)) {
+                  @conclusion-already-positive |
+                    less_than(ZERO, sub(m, j))
+                    [by hypothesis when-the-difference-is-positive]
+                }
+              @conclusion-the-difference-is-positive |
+                less_than(ZERO, sub(m, j))
+                [by common_conclusion the-difference-splits when-the-difference-vanishes when-the-difference-is-positive]
+            }
+          @below-implies-positive |
+            less_than(j, m) -> less_than(ZERO, sub(m, j))
+            [by discharge given-j-below-m]
+        }
+      @discharge-m |
+        forall m9: Nat; less_than(j, m9) -> less_than(ZERO, sub(m9, j))
+        [by generalize generalize-m]
+    }
+  @conclusion |
+    forall j, m: Nat; less_than(j, m) -> less_than(ZERO, sub(m, j))
+    [by generalize generalize-j]
+qed
+
+// A positive summand makes the sum exceed the other summand: a is succ(d), so
+// n + succ(d) = succ(n + d) witnesses n < a + n after commuting.
+theorem aPositiveSummandExceedsTheOther: forall a, n: Nat;
+  less_than(ZERO, a) -> less_than(n, add(a, n))
+proof
+  @generalize-a |
+    fix a: Nat {
+      @generalize-n |
+        fix n: Nat {
+          @given-a-positive |
+            assume less_than(ZERO, a) {
+              @a-positive |
+                less_than(ZERO, a)
+                [by hypothesis given-a-positive]
+              @a-splits |
+                a = ZERO or (exists d: Nat; a = succ(d))
+                [using specialize peano.zeroOrSucc(a)]
+              @a-is-not-zero |
+                not (a = ZERO)
+                [using specialize aPositiveNatIsNonzero(a) a-positive]
+              @a-is-a-successor |
+                exists d: Nat; a = succ(d)
+                [using tautology a-splits a-is-not-zero]
+              @with-the-predecessor-d |
+                unpack d: Nat from a-is-a-successor {
+                  @a-is-succ-d |
+                    a = succ(d)
+                    [by hypothesis with-the-predecessor-d]
+                  @the-gap-witnesses |
+                    add(n, succ(d)) = add(succ(d), n) ->
+                      less_than(n, add(succ(d), n))
+                    [using specialize peano_order.lessThanIntro(n, d, add(succ(d), n))]
+                  @commuting |
+                    add(n, succ(d)) = add(succ(d), n)
+                    [using specialize peano.addIsCommutative(n, succ(d))]
+                  @n-is-below-the-successor-sum |
+                    less_than(n, add(succ(d), n))
+                    [using tautology the-gap-witnesses commuting]
+                  @conclusion-n-is-below-the-sum |
+                    less_than(n, add(a, n))
+                    [by rewrite a-is-succ-d n-is-below-the-successor-sum]
+                }
+              @conclusion-from-the-successor |
+                less_than(n, add(a, n))
+                [by unpacked with-the-predecessor-d]
+            }
+          @positive-implies |
+            less_than(ZERO, a) -> less_than(n, add(a, n))
+            [by discharge given-a-positive]
+        }
+      @discharge-n |
+        forall n9: Nat; less_than(ZERO, a) -> less_than(n9, add(a, n9))
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall a, n: Nat; less_than(ZERO, a) -> less_than(n, add(a, n))
+    [by generalize generalize-a]
+qed
+
+fact aNatIsZeroOrPositive = irreducible.aNatIsZeroOrPositive
+fact aPositiveNatIsNonzero = irreducible.aPositiveNatIsNotZero
