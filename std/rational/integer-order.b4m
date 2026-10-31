@@ -1231,3 +1231,369 @@ proof
       ONE = rational.mul(e, k) -> e = ONE
     [by generalize generalize-e]
 qed
+
+// If e > 0 and e·k = 1 then k > 0: a positive times a non-positive cannot be ONE.
+// Strategy: trichotomy on k. k = 0 gives e·0 = 0 ≠ 1. k < 0 makes e·k < 0, and 0 < 1, so
+// e·k = 1 would put ONE below ZERO.
+theorem theCofactorIsPositive: forall e, k: Q;
+  less_than(ZERO, e) -> ONE = rational.mul(e, k) -> less_than(ZERO, k)
+proof
+  @generalize-e |
+    fix e: Q {
+      @generalize-k |
+        fix k: Q {
+          @given-e-positive |
+            assume less_than(ZERO, e) {
+              @e-positive |
+                less_than(ZERO, e)
+                [by hypothesis given-e-positive]
+              @given-the-product-is-one |
+                assume ONE = rational.mul(e, k) {
+                  @the-product-is-one |
+                    ONE = rational.mul(e, k)
+                    [by hypothesis given-the-product-is-one]
+                  @one-positive |
+                    less_than(ZERO, ONE)
+                    [using model(rational.RationalOrderedField) field_order.zeroLessThanOne]
+                  @the-product-positive |
+                    less_than(ZERO, rational.mul(e, k))
+                    [by rewrite the-product-is-one one-positive]
+                  @the-sign-cases |
+                    less_than(k, ZERO) or k = ZERO or less_than(ZERO, k)
+                    [using specialize rational.lessThanTrichotomy(k, ZERO)]
+                  @conclusion-k-positive |
+                    less_than(ZERO, k)
+                    case the-sign-cases {
+                      @when-k-negative-or-zero |
+                        assume less_than(k, ZERO) or k = ZERO {
+                          @k-negative-or-zero |
+                            less_than(k, ZERO) or k = ZERO
+                            [by hypothesis when-k-negative-or-zero]
+                          @conclusion-nonpositive |
+                            less_than(ZERO, k)
+                            case k-negative-or-zero {
+                              @when-k-negative |
+                                assume less_than(k, ZERO) {
+                                  @k-negative |
+                                    less_than(k, ZERO)
+                                    [by hypothesis when-k-negative]
+                                  // 0 < e and k < 0 give e·k < 0, contradicting 0 < e·k
+                                  @scaling-k |
+                                    forall a, b, c: Q;
+                                      less_than(a, b) -> less_than(ZERO, c) ->
+                                      less_than(rational.mul(a, c), rational.mul(b, c))
+                                    [using model(rational.RationalOrderedField) field_order.lessThanMulPositiveRight]
+                                  @k-times-e-below-zero-times-e |
+                                    less_than(rational.mul(k, e), rational.mul(ZERO, e))
+                                    [using specialize scaling-k(k, ZERO, e) k-negative e-positive]
+                                  @zero-times-e |
+                                    rational.mul(ZERO, e) = ZERO
+                                    [using specialize rational.mulZeroLeft(e)]
+                                  @k-times-e-negative |
+                                    less_than(rational.mul(k, e), ZERO)
+                                    [by rewrite zero-times-e k-times-e-below-zero-times-e]
+                                  @the-product-commutes |
+                                    rational.mul(k, e) = rational.mul(e, k)
+                                    [using specialize rational.mulIsCommutative(k, e)]
+                                  @the-product-negative |
+                                    less_than(rational.mul(e, k), ZERO)
+                                    [by rewrite the-product-commutes k-times-e-negative]
+                                  @order-is-asymmetric |
+                                    forall a, b: Q; less_than(a, b) -> (not less_than(b, a))
+                                    [using model(rational.RationalOrderedField) field_order.lessThanAsymmetric]
+                                  @not-both |
+                                    not less_than(ZERO, rational.mul(e, k))
+                                    [using specialize order-is-asymmetric(rational.mul(e, k), ZERO) the-product-negative]
+                                  @conclusion-vacuous-negative |
+                                    less_than(ZERO, k)
+                                    [by ex_falso the-product-positive not-both]
+                                }
+                              @when-k-zero |
+                                assume k = ZERO {
+                                  @k-zero |
+                                    k = ZERO
+                                    [by hypothesis when-k-zero]
+                                  @e-times-zero |
+                                    rational.mul(e, ZERO) = ZERO
+                                    [using specialize rational.mulZeroRight(e)]
+                                  @the-product-at-zero |
+                                    less_than(ZERO, rational.mul(e, ZERO))
+                                    [by rewrite k-zero the-product-positive]
+                                  @zero-below-zero |
+                                    less_than(ZERO, ZERO)
+                                    [by rewrite e-times-zero the-product-at-zero]
+                                  @zero-not-below-itself |
+                                    not less_than(ZERO, ZERO)
+                                    [using specialize rational.lessThanIrreflexive(ZERO)]
+                                  @conclusion-vacuous-zero |
+                                    less_than(ZERO, k)
+                                    [by ex_falso zero-below-zero zero-not-below-itself]
+                                }
+                            }
+                        }
+                      @when-k-positive |
+                        assume less_than(ZERO, k) {
+                          @k-positive |
+                            less_than(ZERO, k)
+                            [by hypothesis when-k-positive]
+                        }
+                    }
+                }
+              @product-implies-k-positive |
+                ONE = rational.mul(e, k) -> less_than(ZERO, k)
+                [by discharge given-the-product-is-one]
+            }
+          @e-positive-implies |
+            less_than(ZERO, e) -> ONE = rational.mul(e, k) -> less_than(ZERO, k)
+            [by discharge given-e-positive]
+        }
+      @discharge-k |
+        forall k9: Q;
+          less_than(ZERO, e) -> ONE = rational.mul(e, k9) -> less_than(ZERO, k9)
+        [by generalize generalize-k]
+    }
+  @conclusion |
+    forall e, k: Q;
+      less_than(ZERO, e) -> ONE = rational.mul(e, k) -> less_than(ZERO, k)
+    [by generalize generalize-e]
+qed
+
+// e < 0 with e·k = 1: then -e > 0 and (-e)·(-k) = e·k = 1, so -e = 1 by the positive case,
+// hence e = -1.
+// Strategy: negate both factors, apply the positive case to (-e, -k), then undo the negation.
+theorem theNegativeCase: forall e, k: Q;
+  isInteger(e) -> isInteger(k) -> less_than(e, ZERO) ->
+  ONE = rational.mul(e, k) -> (e = ONE or e = neg(ONE))
+proof
+  @generalize-e |
+    fix e: Q {
+      @generalize-k |
+        fix k: Q {
+          @given-e-is-an-integer |
+            assume isInteger(e) {
+              @e-is-an-integer |
+                isInteger(e)
+                [by hypothesis given-e-is-an-integer]
+              @given-k-is-an-integer |
+                assume isInteger(k) {
+                  @k-is-an-integer |
+                    isInteger(k)
+                    [by hypothesis given-k-is-an-integer]
+                  @given-e-negative |
+                    assume less_than(e, ZERO) {
+                      @e-negative |
+                        less_than(e, ZERO)
+                        [by hypothesis given-e-negative]
+                      @given-the-product-is-one |
+                        assume ONE = rational.mul(e, k) {
+                          @the-product-is-one |
+                            ONE = rational.mul(e, k)
+                            [by hypothesis given-the-product-is-one]
+                          // -e is a positive integer
+                          @negatives-of-negatives |
+                            forall x: Q; less_than(x, ZERO) -> less_than(ZERO, neg(x))
+                            [using model(rational.RationalOrderedField) field_order.negOfNegativeIsPositive]
+                          @minus-e-positive |
+                            less_than(ZERO, neg(e))
+                            [using specialize negatives-of-negatives(e) e-negative]
+                          @minus-e-is-an-integer |
+                            isInteger(neg(e))
+                            [using specialize rational.isIntegerNeg(e) e-is-an-integer]
+                          @minus-k-is-an-integer |
+                            isInteger(neg(k))
+                            [using specialize rational.isIntegerNeg(k) k-is-an-integer]
+                          // (-e)·(-k) = e·k = 1
+                          @the-negated-product |
+                            forall a, b: Q;
+                              rational.mul(neg(a), neg(b)) = rational.mul(a, b)
+                            [using model(rational.RationalOrderedField) field_order.negMulNeg]
+                          @negated-product-at-e-k |
+                            rational.mul(neg(e), neg(k)) = rational.mul(e, k)
+                            [using specialize the-negated-product(e, k)]
+                          @the-negated-product-is-one |
+                            ONE = rational.mul(neg(e), neg(k))
+                            [by rewrite negated-product-at-e-k the-product-is-one]
+                          // so -k is positive too, and the positive case gives -e = 1
+                          @minus-k-positive |
+                            less_than(ZERO, neg(k))
+                            [using specialize theCofactorIsPositive(neg(e), neg(k)) minus-e-positive the-negated-product-is-one]
+                          @minus-e-is-one |
+                            neg(e) = ONE
+                            [using specialize aPositiveIntegerDividingOneIsOne(neg(e), neg(k)) minus-e-is-an-integer minus-k-is-an-integer minus-e-positive minus-k-positive the-negated-product-is-one]
+                          // hence e = -1
+                          @double-negation |
+                            forall x: Q; neg(neg(x)) = x
+                            [using model(rational.RationalOrderedField) field_order.negNeg]
+                          @neg-neg-e |
+                            neg(neg(e)) = e
+                            [using specialize double-negation(e)]
+                          @neg-one-is-e |
+                            neg(ONE) = e
+                            [by rewrite minus-e-is-one neg-neg-e]
+                          @e-is-neg-one |
+                            e = neg(ONE)
+                            [by symmetry neg-one-is-e]
+                          @conclusion-e-is-minus-one |
+                            e = ONE or e = neg(ONE)
+                            [by either_right e-is-neg-one]
+                        }
+                      @product-implies-unit |
+                        ONE = rational.mul(e, k) -> (e = ONE or e = neg(ONE))
+                        [by discharge given-the-product-is-one]
+                    }
+                  @e-negative-implies |
+                    less_than(e, ZERO) -> ONE = rational.mul(e, k) ->
+                      (e = ONE or e = neg(ONE))
+                    [by discharge given-e-negative]
+                }
+              @k-integer-implies |
+                isInteger(k) -> less_than(e, ZERO) -> ONE = rational.mul(e, k) ->
+                  (e = ONE or e = neg(ONE))
+                [by discharge given-k-is-an-integer]
+            }
+          @e-integer-implies |
+            isInteger(e) -> isInteger(k) -> less_than(e, ZERO) ->
+              ONE = rational.mul(e, k) -> (e = ONE or e = neg(ONE))
+            [by discharge given-e-is-an-integer]
+        }
+      @discharge-k |
+        forall k9: Q;
+          isInteger(e) -> isInteger(k9) -> less_than(e, ZERO) ->
+          ONE = rational.mul(e, k9) -> (e = ONE or e = neg(ONE))
+        [by generalize generalize-k]
+    }
+  @conclusion |
+    forall e, k: Q;
+      isInteger(e) -> isInteger(k) -> less_than(e, ZERO) ->
+      ONE = rational.mul(e, k) -> (e = ONE or e = neg(ONE))
+    [by generalize generalize-e]
+qed
+
+// -- AN INTEGER DIVIDING ONE IS A UNIT ----------------------------------------------------
+// `std/integer/divides.b4m`'s `dividesOneImpliesUnit`, on ℚ's cut: AATA 17.13's "either c = 1
+// or c = -1". Reproved here rather than transferred, because the ℤ proof routes through
+// `integer.nonnegCases` — itself a model transfer — and a nested transfer cannot compose (see
+// the note at `IntegerOrderOnTheCut`).
+//
+// Judson needs this for `c a_m b_n = 1`: with p(x) monic the leading coefficients multiply to
+// 1 in ℤ, so c is a unit and the monic integer factors follow.
+
+// Strategy: trichotomy on e. e = 0 contradicts 0·k = 0 ≠ 1. e > 0 is the positive case. For
+// e < 0 both e and k are negative, so (-e)·(-k) = e·k = 1 with both positive, giving -e = 1.
+theorem anIntegerDividingOneIsAUnit: forall e, k: Q;
+  isInteger(e) -> isInteger(k) -> ONE = rational.mul(e, k) ->
+  (e = ONE or e = neg(ONE))
+proof
+  @generalize-e |
+    fix e: Q {
+      @generalize-k |
+        fix k: Q {
+          @given-e-is-an-integer |
+            assume isInteger(e) {
+              @e-is-an-integer |
+                isInteger(e)
+                [by hypothesis given-e-is-an-integer]
+              @given-k-is-an-integer |
+                assume isInteger(k) {
+                  @k-is-an-integer |
+                    isInteger(k)
+                    [by hypothesis given-k-is-an-integer]
+                  @given-the-product-is-one |
+                    assume ONE = rational.mul(e, k) {
+                      @the-product-is-one |
+                        ONE = rational.mul(e, k)
+                        [by hypothesis given-the-product-is-one]
+                      @one-not-zero |
+                        not (ONE = ZERO)
+                        [by cite rational.oneNotZero]
+                      @the-sign-cases |
+                        less_than(e, ZERO) or e = ZERO or less_than(ZERO, e)
+                        [using specialize rational.lessThanTrichotomy(e, ZERO)]
+                      @conclusion-e-is-a-unit |
+                        e = ONE or e = neg(ONE)
+                        case the-sign-cases {
+                          // trichotomy parses as `(e < 0 or e = 0) or 0 < e` — `or` is
+                          // LEFT-associative, so the first arm carries two cases.
+                          @when-e-not-positive |
+                            assume less_than(e, ZERO) or e = ZERO {
+                              @e-not-positive |
+                                less_than(e, ZERO) or e = ZERO
+                                [by hypothesis when-e-not-positive]
+                              @conclusion-nonpositive-case |
+                                e = ONE or e = neg(ONE)
+                                case e-not-positive {
+                                  // e < 0: the negatives multiply to the same product
+                                  @when-e-negative |
+                                    assume less_than(e, ZERO) {
+                                      @e-negative |
+                                        less_than(e, ZERO)
+                                        [by hypothesis when-e-negative]
+                                      @conclusion-negative-case |
+                                        e = ONE or e = neg(ONE)
+                                        [using specialize theNegativeCase(e, k) e-is-an-integer k-is-an-integer e-negative the-product-is-one]
+                                    }
+                                  // e = 0: 1 = 0·k = 0, impossible
+                                  @when-e-zero |
+                                    assume e = ZERO {
+                                      @e-zero |
+                                        e = ZERO
+                                        [by hypothesis when-e-zero]
+                                      @zero-times-k |
+                                        rational.mul(ZERO, k) = ZERO
+                                        [using specialize rational.mulZeroLeft(k)]
+                                      @the-product-at-zero |
+                                        ONE = rational.mul(ZERO, k)
+                                        [by rewrite e-zero the-product-is-one]
+                                      @one-is-zero |
+                                        ONE = ZERO
+                                        [by rewrite zero-times-k the-product-at-zero]
+                                      @conclusion-vacuous-at-zero |
+                                        e = ONE or e = neg(ONE)
+                                        [by ex_falso one-is-zero one-not-zero]
+                                    }
+                                }
+                            }
+                          // e > 0: k > 0 too, and the positive case applies
+                          @when-e-positive |
+                            assume less_than(ZERO, e) {
+                              @e-positive |
+                                less_than(ZERO, e)
+                                [by hypothesis when-e-positive]
+                              @k-positive |
+                                less_than(ZERO, k)
+                                [using specialize theCofactorIsPositive(e, k) e-positive the-product-is-one]
+                              @e-is-one |
+                                e = ONE
+                                [using specialize aPositiveIntegerDividingOneIsOne(e, k) e-is-an-integer k-is-an-integer e-positive k-positive the-product-is-one]
+                              @conclusion-positive-case |
+                                e = ONE or e = neg(ONE)
+                                [by either_left e-is-one]
+                            }
+                        }
+                    }
+                  @product-one-implies-unit |
+                    ONE = rational.mul(e, k) -> (e = ONE or e = neg(ONE))
+                    [by discharge given-the-product-is-one]
+                }
+              @k-integer-implies |
+                isInteger(k) -> ONE = rational.mul(e, k) ->
+                  (e = ONE or e = neg(ONE))
+                [by discharge given-k-is-an-integer]
+            }
+          @e-integer-implies |
+            isInteger(e) -> isInteger(k) -> ONE = rational.mul(e, k) ->
+              (e = ONE or e = neg(ONE))
+            [by discharge given-e-is-an-integer]
+        }
+      @discharge-k |
+        forall k9: Q;
+          isInteger(e) -> isInteger(k9) -> ONE = rational.mul(e, k9) ->
+          (e = ONE or e = neg(ONE))
+        [by generalize generalize-k]
+    }
+  @conclusion |
+    forall e, k: Q;
+      isInteger(e) -> isInteger(k) -> ONE = rational.mul(e, k) ->
+      (e = ONE or e = neg(ONE))
+    [by generalize generalize-e]
+qed
