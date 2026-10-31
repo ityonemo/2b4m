@@ -8,13 +8,28 @@
 // quotient/pair sorts) and hosts an algebra model (RationalOrderedField, cited for
 // its field/order theorems).
 //
-// The integers-inside-ℚ are marked by `isInteger`, an OPAQUE predicate with closure
-// axioms (contains 0/1, closed under +, ×, neg — but NOT recip: that is exactly what
-// distinguishes the integers from a subfield). There is no `fromInt` embedding
-// FUNCTION: cross-sort arithmetic is not carried by a homomorphism but, when needed,
-// by carving `sort SomeInt = Q where isInteger` and running a guarded model that
-// transfers ℤ's theorems onto the carved subset (the nonneg(ℤ)-models-ℕ move, one
-// level up). The predicate is that carve's prerequisite; it costs only its axioms.
+// The integers-inside-ℚ are marked by `isInteger`, an OPAQUE predicate closed under
+// +, ×, neg — but NOT under recip: that is exactly what separates the integers (a
+// subRING) from a subfield. There is no `fromInt` embedding FUNCTION: cross-sort
+// arithmetic is not carried by a homomorphism but by carving
+// `sort Integer = Q where isInteger` and running a guarded model that transfers ℤ's
+// theorems onto the carved subset (the nonneg(ℤ)-models-ℕ move, one level up).
+//
+// WHAT PINS THIS SORT DOWN, in two halves — worth stating because the ordered-field
+// axioms alone do NOT: ℝ satisfies every one of them, so without more, √2 was in `Q`.
+//
+//   * `naturalInduction` pins the CUT. The ordered-field theory has models whose
+//     "integers" satisfy every closure law yet are not reached from 0 by finitely many
+//     ±1 steps; induction is the minimality that makes `isNatural`/`isInteger` the
+//     STANDARD naturals and integers.
+//   * `everyRationalIsAQuotientOfIntegers` pins the FIELD. With the cut standard, saying
+//     every element is one integer over a nonzero integer forces `Q` to be ℚ — it is the
+//     counterpart to real.b4m's `completeness`, and it is what excludes √2.
+//
+// Both are postulated, mirroring peano's `induction` and integer's `nonnegInduction`.
+// Only a handful of ℚ's own facts are genuinely primitive besides: `isInteger(ZERO)`,
+// `isInteger(ONE)` and closure under succ/prev were once axioms here and are now
+// theorems, derived from the naturals and the three closure laws.
 
 import field <<< "std/field.b4m"
 import field_order <<< "std/field/order.b4m"
@@ -109,17 +124,30 @@ model RationalField {
 }
 
 // -- the integers inside ℚ (a predicate, NOT an embedding function) ----------
-// `isInteger` marks the integer subring of ℚ — an OPAQUE predicate pinned down by
-// closure axioms: it contains 0 and 1 and is closed under +, ×, and neg. It is
-// deliberately NOT closed under recip — that is exactly what separates the integers
-// (a subRING) from a subfield. This is the carve a future `sort SomeInt = Q where
-// isInteger` + guarded ℤ-theorem-transfer model would build on.
+// Three primitives, all CLOSURE laws — not closed under recip, which is what makes the
+// cut a subring rather than a subfield. `isInteger(ZERO)` and `isInteger(ONE)` are NOT
+// primitive: they follow from the naturals below (`isNaturalZero` / `isNaturalSucc` /
+// `isNaturalIsInteger`) and are proved as `zeroIsAnInteger` / `oneIsAnInteger`. No
+// derivation touches the axiom it replaces; `--axioms` on each confirms it.
 pred isInteger(q: Q)
-axiom isIntegerZero: isInteger(ZERO)
-axiom isIntegerOne: isInteger(ONE)
 axiom isIntegerAdd: forall a, b: Q; isInteger(a) -> isInteger(b) -> isInteger(add(a, b))
 axiom isIntegerMul: forall a, b: Q; isInteger(a) -> isInteger(b) -> isInteger(mul(a, b))
 axiom isIntegerNeg: forall a: Q; isInteger(a) -> isInteger(neg(a))
+
+// ℚ IS THE FIELD OF FRACTIONS of that subring: every rational is one integer over a
+// nonzero integer. Standard — it is what "the rationals" means — and it is what makes this
+// sort ℚ rather than some larger ordered field with ℚ's integers sitting inside it. ℝ with
+// its own integers satisfied every other axiom in this file, `naturalInduction` included,
+// so √2 was in `Q` until this was added.
+//
+// Nothing in the corpus noticed, because ℚ had only ever been used AS A FIELD: all 28
+// theorems here are field laws or ℤ-transfer support, real.b4m models ℚ's ordered-field
+// core, and the AATA chapters cite `addLeftSwap` / `mulLeftSwap` / `succInjective`. The gap
+// surfaced only when Judson's §17.3 Lemma 17.12 opened on "suppose
+// p(x) = b_0/c_0 + … + b_n/c_n x^n, where the b_i's and c_i's are integers".
+axiom everyRationalIsAQuotientOfIntegers: forall q: Q;
+  exists b, c: Q;
+  isInteger(b) and isInteger(c) and c != ZERO and q = mul(b, recip(c))
 
 // -- successor / predecessor on ℚ (the discrete step, for the integer model) --
 // ℤ's theory is built on succ/prev; to model it on ℚ's integers we realize the
@@ -145,9 +173,11 @@ axiom isNaturalSuccNotZero: forall q: Q; isNatural(q) -> succ(q) != ZERO
 // obligation of the integer model, on the cut.
 axiom integerCases: forall q: Q; isInteger(q) -> (isNatural(q) or isNatural(neg(q)))
 
-// -- integer succ/prev closure ----------------------------------------------
-axiom isIntegerSucc: forall q: Q; isInteger(q) -> isInteger(succ(q))
-axiom isIntegerPrev: forall q: Q; isInteger(q) -> isInteger(prev(q))
+// -- integer succ/prev closure (DERIVED, below) ------------------------------
+// `isIntegerSucc` / `isIntegerPrev` were axioms; they are not primitive. succ(q) is
+// q + ONE and prev(q) is q + neg(ONE), so each is `isIntegerAdd` against
+// `oneIsAnInteger`. Proved as `succOfAnIntegerIsAnInteger` /
+// `prevOfAnIntegerIsAnInteger` with the other derived facts.
 
 // -- induction on the cuts (the minimality axioms) --------------------------
 // Neither induction principle is derivable from ℚ's ordered-field axioms — the
@@ -469,6 +499,112 @@ proof
   @conclusion |
     ONE = succ(ZERO)
     [by symmetry succ-zero-is-one]
+qed
+
+// -- the integer-cut facts that were once axioms -----------------------------
+// Four `isInteger` axioms turn out to be consequences of the naturals plus the three
+// closure laws. Kept as theorems so `--axioms` reports ℚ's real assumptions: every
+// derivation below rests on isNaturalZero/Succ/IsInteger and the closure laws, never on
+// the fact it replaces.
+
+// ZERO is an integer because it is a natural.
+theorem zeroIsAnInteger: isInteger(ZERO)
+proof
+  @zero-is-natural |
+    isNatural(ZERO)
+    [by cite isNaturalZero]
+  @conclusion |
+    isInteger(ZERO)
+    [using specialize isNaturalIsInteger(ZERO) zero-is-natural]
+qed
+
+// ONE is an integer: it is succ(ZERO), and succ preserves naturalness.
+theorem oneIsAnInteger: isInteger(ONE)
+proof
+  @zero-is-natural |
+    isNatural(ZERO)
+    [by cite isNaturalZero]
+  @succ-zero-is-natural |
+    isNatural(succ(ZERO))
+    [using specialize isNaturalSucc(ZERO) zero-is-natural]
+  @one-is-succ-zero |
+    ONE = succ(ZERO)
+    [by cite oneIsSuccZero]
+  @one-is-natural |
+    isNatural(ONE)
+    [by rewrite one-is-succ-zero succ-zero-is-natural]
+  @conclusion |
+    isInteger(ONE)
+    [using specialize isNaturalIsInteger(ONE) one-is-natural]
+qed
+
+// succ(q) = q + ONE, so the integer cut is closed under it.
+theorem succOfAnIntegerIsAnInteger: forall q: Q;
+  isInteger(q) -> isInteger(succ(q))
+proof
+  @generalize-q |
+    fix q: Q {
+      @given-q-is-an-integer |
+        assume isInteger(q) {
+          @q-is-an-integer |
+            isInteger(q)
+            [by hypothesis given-q-is-an-integer]
+          @one-is-an-integer |
+            isInteger(ONE)
+            [by cite oneIsAnInteger]
+          @the-sum-is-an-integer |
+            isInteger(add(q, ONE))
+            [using specialize isIntegerAdd(q, ONE) q-is-an-integer one-is-an-integer]
+          @succ-is-the-sum |
+            succ(q) = add(q, ONE)
+            [using specialize succDefinition(q)]
+          @conclusion-the-successor-is-an-integer |
+            isInteger(succ(q))
+            [by rewrite succ-is-the-sum the-sum-is-an-integer]
+        }
+      @integer-implies-successor |
+        isInteger(q) -> isInteger(succ(q))
+        [by discharge given-q-is-an-integer]
+    }
+  @conclusion |
+    forall q: Q; isInteger(q) -> isInteger(succ(q))
+    [by generalize generalize-q]
+qed
+
+// prev(q) = q + neg(ONE), so likewise.
+theorem prevOfAnIntegerIsAnInteger: forall q: Q;
+  isInteger(q) -> isInteger(prev(q))
+proof
+  @generalize-q |
+    fix q: Q {
+      @given-q-is-an-integer |
+        assume isInteger(q) {
+          @q-is-an-integer |
+            isInteger(q)
+            [by hypothesis given-q-is-an-integer]
+          @one-is-an-integer |
+            isInteger(ONE)
+            [by cite oneIsAnInteger]
+          @negative-one-is-an-integer |
+            isInteger(neg(ONE))
+            [using specialize isIntegerNeg(ONE) one-is-an-integer]
+          @the-sum-is-an-integer |
+            isInteger(add(q, neg(ONE)))
+            [using specialize isIntegerAdd(q, neg(ONE)) q-is-an-integer negative-one-is-an-integer]
+          @prev-is-the-sum |
+            prev(q) = add(q, neg(ONE))
+            [using specialize prevDefinition(q)]
+          @conclusion-the-predecessor-is-an-integer |
+            isInteger(prev(q))
+            [by rewrite prev-is-the-sum the-sum-is-an-integer]
+        }
+      @integer-implies-predecessor |
+        isInteger(q) -> isInteger(prev(q))
+        [by discharge given-q-is-an-integer]
+    }
+  @conclusion |
+    forall q: Q; isInteger(q) -> isInteger(prev(q))
+    [by generalize generalize-q]
 qed
 
 // add(succ a, b) = succ(add a b): (a+1)+b = (a+b)+1.
