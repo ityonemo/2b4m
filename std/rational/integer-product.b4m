@@ -5125,3 +5125,337 @@ proof
       qpoly.arePairwiseRelativelyPrime(r, s)
     [by generalize generalize-g]
 qed
+
+// The extension step: a polynomial matching `t` below `k` can be corrected to match below
+// `succ(k)` by adding the monomial `(t_k - p_k) · x^k`.
+//
+// The CORRECTION TERM is what makes this work for ANY p: at index k the added coefficient is
+// exactly the shortfall, and below k the monomial contributes ZERO because it lives at index k.
+// Tracking "p vanishes at and above k" as an induction invariant would also work but is
+// strictly more bookkeeping.
+theorem theMonomialExtendsTheMatch: forall t: QSeq; forall p: qpoly.QPoly; forall k: Nat;
+  (forall i: Nat; nat_less_than(i, k) -> qpoly.qcoeff(p, i) = qat(t, i)) ->
+  (exists p2: qpoly.QPoly; forall i: Nat;
+  nat_less_than(i, nat_succ(k)) -> qpoly.qcoeff(p2, i) = qat(t, i))
+proof
+  @generalize-t |
+    fix t: QSeq {
+      @generalize-p |
+        fix p: qpoly.QPoly {
+          @generalize-k |
+            fix k: Nat {
+              @given-the-match |
+                assume forall i: Nat; nat_less_than(i, k) ->
+                  qpoly.qcoeff(p, i) = qat(t, i) {
+                  @the-match |
+                    forall i: Nat; nat_less_than(i, k) ->
+                      qpoly.qcoeff(p, i) = qat(t, i)
+                    [by hypothesis given-the-match]
+                  // the corrected polynomial
+                  @the-add-law |
+                    forall a, b: qpoly.QPoly; forall i: Nat;
+                      qpoly.qcoeff(qpoly.qaddP(a, b), i) =
+                      rational.add(qpoly.qcoeff(a, i), qpoly.qcoeff(b, i))
+                    [using import(qpoly) qAddPolyCoeff]
+                  @the-correction |
+                    forall i: Nat;
+                      qpoly.qcoeff(qpoly.qaddP(p,
+                      qpoly.qmonomial(rational.add(qat(t, k),
+                      rational.neg(qpoly.qcoeff(p, k))), k)), i) =
+                      rational.add(qpoly.qcoeff(p, i),
+                      qpoly.qcoeff(qpoly.qmonomial(rational.add(qat(t, k),
+                      rational.neg(qpoly.qcoeff(p, k))), k), i))
+                    [using specialize the-add-law(p, qpoly.qmonomial(rational.add(qat(t, k), rational.neg(qpoly.qcoeff(p, k))), k))]
+                  @matches-below-succ-k |
+                    fix i: Nat {
+                      @given-i-below-succ-k |
+                        assume nat_less_than(i, nat_succ(k)) {
+                          @i-below-succ-k |
+                            nat_less_than(i, nat_succ(k))
+                            [by hypothesis given-i-below-succ-k]
+                          @the-sum-at-i |
+                            qpoly.qcoeff(qpoly.qaddP(p,
+                              qpoly.qmonomial(rational.add(qat(t, k),
+                              rational.neg(qpoly.qcoeff(p, k))), k)), i) =
+                              rational.add(qpoly.qcoeff(p, i),
+                              qpoly.qcoeff(qpoly.qmonomial(rational.add(qat(t, k),
+                              rational.neg(qpoly.qcoeff(p, k))), k), i))
+                            [using specialize the-correction(i)]
+                          @the-split |
+                            nat_less_than(i, k) or i = k
+                            [using specialize peano_order.lessThanSuccSplit(i, k) i-below-succ-k]
+                          @conclusion-matches-at-i |
+                            qpoly.qcoeff(qpoly.qaddP(p,
+                              qpoly.qmonomial(rational.add(qat(t, k),
+                              rational.neg(qpoly.qcoeff(p, k))), k)), i) =
+                              qat(t, i)
+                            case the-split {
+                              // below k: the monomial contributes ZERO, so the old match stands
+                              @when-below-k |
+                                assume nat_less_than(i, k) {
+                                  @i-below-k |
+                                    nat_less_than(i, k)
+                                    [by hypothesis when-below-k]
+                                  // i < k makes i != k: otherwise k < k
+                                  @given-i-is-k |
+                                    assume i = k {
+                                      @i-equals-k |
+                                        i = k
+                                        [by hypothesis given-i-is-k]
+                                      @k-below-k |
+                                        nat_less_than(k, k)
+                                        [by rewrite i-equals-k i-below-k]
+                                      @k-not-below-k |
+                                        not nat_less_than(k, k)
+                                        [using specialize peano_order.lessThanIrreflexive(k)]
+                                    }
+                                  @i-is-not-k |
+                                    not (i = k)
+                                    [by contradiction given-i-is-k k-below-k k-not-below-k]
+                                  @the-monomial-elsewhere-law |
+                                    forall a: Q; forall m, j: Nat;
+                                      (not (j = m)) ->
+                                      qpoly.qcoeff(qpoly.qmonomial(a, m), j) = ZERO
+                                    [using import(qpoly) qMonomialCoeffElsewhere]
+                                  @the-monomial-vanishes |
+                                    qpoly.qcoeff(qpoly.qmonomial(
+                                      rational.add(qat(t, k),
+                                      rational.neg(qpoly.qcoeff(p, k))), k), i) =
+                                      ZERO
+                                    [using specialize the-monomial-elsewhere-law(rational.add(qat(t, k), rational.neg(qpoly.qcoeff(p, k))), k, i) i-is-not-k]
+                                  @the-sum-with-zero |
+                                    qpoly.qcoeff(qpoly.qaddP(p,
+                                      qpoly.qmonomial(rational.add(qat(t, k),
+                                      rational.neg(qpoly.qcoeff(p, k))), k)), i) =
+                                      rational.add(qpoly.qcoeff(p, i), ZERO)
+                                    [by rewrite the-monomial-vanishes the-sum-at-i]
+                                  @adding-zero |
+                                    rational.add(qpoly.qcoeff(p, i), ZERO) =
+                                      qpoly.qcoeff(p, i)
+                                    [using specialize rational.addZeroRight(qpoly.qcoeff(p, i))]
+                                  @the-sum-is-the-old |
+                                    qpoly.qcoeff(qpoly.qaddP(p,
+                                      qpoly.qmonomial(rational.add(qat(t, k),
+                                      rational.neg(qpoly.qcoeff(p, k))), k)), i) =
+                                      qpoly.qcoeff(p, i)
+                                    [by rewrite adding-zero the-sum-with-zero]
+                                  @the-old-match-at-i |
+                                    qpoly.qcoeff(p, i) = qat(t, i)
+                                    [using specialize the-match(i) i-below-k]
+                                  @conclusion-below |
+                                    qpoly.qcoeff(qpoly.qaddP(p,
+                                      qpoly.qmonomial(rational.add(qat(t, k),
+                                      rational.neg(qpoly.qcoeff(p, k))), k)), i) =
+                                      qat(t, i)
+                                    [using simplify the-sum-is-the-old the-old-match-at-i]
+                                }
+                              // at k: the correction term lands exactly
+                              @when-at-k |
+                                assume i = k {
+                                  @i-is-k |
+                                    i = k
+                                    [by hypothesis when-at-k]
+                                  @the-monomial-at-index-law |
+                                    forall a: Q; forall m: Nat;
+                                      qpoly.qcoeff(qpoly.qmonomial(a, m), m) = a
+                                    [using import(qpoly) qMonomialCoeffAtItsIndex]
+                                  @the-monomial-at-its-index |
+                                    qpoly.qcoeff(qpoly.qmonomial(
+                                      rational.add(qat(t, k),
+                                      rational.neg(qpoly.qcoeff(p, k))), k), k) =
+                                      rational.add(qat(t, k),
+                                      rational.neg(qpoly.qcoeff(p, k)))
+                                    [using specialize the-monomial-at-index-law(rational.add(qat(t, k), rational.neg(qpoly.qcoeff(p, k))), k)]
+                                  @the-sum-at-k |
+                                    qpoly.qcoeff(qpoly.qaddP(p,
+                                      qpoly.qmonomial(rational.add(qat(t, k),
+                                      rational.neg(qpoly.qcoeff(p, k))), k)), k) =
+                                      rational.add(qpoly.qcoeff(p, k),
+                                      qpoly.qcoeff(qpoly.qmonomial(
+                                      rational.add(qat(t, k),
+                                      rational.neg(qpoly.qcoeff(p, k))), k), k))
+                                    [using specialize the-correction(k)]
+                                  @the-sum-expanded |
+                                    qpoly.qcoeff(qpoly.qaddP(p,
+                                      qpoly.qmonomial(rational.add(qat(t, k),
+                                      rational.neg(qpoly.qcoeff(p, k))), k)), k) =
+                                      rational.add(qpoly.qcoeff(p, k),
+                                      rational.add(qat(t, k),
+                                      rational.neg(qpoly.qcoeff(p, k))))
+                                    [by rewrite the-monomial-at-its-index the-sum-at-k]
+                                  // p_k + (t_k - p_k) = t_k
+                                  @the-correction-cancels |
+                                    rational.add(qpoly.qcoeff(p, k),
+                                      rational.add(qat(t, k),
+                                      rational.neg(qpoly.qcoeff(p, k)))) =
+                                      qat(t, k)
+                                    [using polynomial(rational)]
+                                  @the-sum-is-the-target |
+                                    qpoly.qcoeff(qpoly.qaddP(p,
+                                      qpoly.qmonomial(rational.add(qat(t, k),
+                                      rational.neg(qpoly.qcoeff(p, k))), k)), k) =
+                                      qat(t, k)
+                                    [using simplify the-sum-expanded the-correction-cancels]
+                                  @conclusion-at-k |
+                                    qpoly.qcoeff(qpoly.qaddP(p,
+                                      qpoly.qmonomial(rational.add(qat(t, k),
+                                      rational.neg(qpoly.qcoeff(p, k))), k)), i) =
+                                      qat(t, i)
+                                    [by rewrite i-is-k the-sum-is-the-target]
+                                }
+                            }
+                        }
+                      @below-succ-k-implies |
+                        nat_less_than(i, nat_succ(k)) ->
+                          qpoly.qcoeff(qpoly.qaddP(p,
+                          qpoly.qmonomial(rational.add(qat(t, k),
+                          rational.neg(qpoly.qcoeff(p, k))), k)), i) =
+                          qat(t, i)
+                        [by discharge given-i-below-succ-k]
+                    }
+                  @all-match |
+                    forall i: Nat; nat_less_than(i, nat_succ(k)) ->
+                      qpoly.qcoeff(qpoly.qaddP(p,
+                      qpoly.qmonomial(rational.add(qat(t, k),
+                      rational.neg(qpoly.qcoeff(p, k))), k)), i) =
+                      qat(t, i)
+                    [by generalize matches-below-succ-k]
+                  @conclusion-extended |
+                    exists p2: qpoly.QPoly; forall i: Nat;
+                      nat_less_than(i, nat_succ(k)) ->
+                      qpoly.qcoeff(p2, i) = qat(t, i)
+                    [by witness(qpoly.qaddP(p, qpoly.qmonomial(rational.add(qat(t, k), rational.neg(qpoly.qcoeff(p, k))), k))) all-match]
+                }
+              @the-implication |
+                (forall i: Nat; nat_less_than(i, k) ->
+                  qpoly.qcoeff(p, i) = qat(t, i)) ->
+                  (exists p2: qpoly.QPoly; forall i: Nat;
+                  nat_less_than(i, nat_succ(k)) ->
+                  qpoly.qcoeff(p2, i) = qat(t, i))
+                [by discharge given-the-match]
+            }
+          @discharge-k |
+            forall k9: Nat;
+              (forall i: Nat; nat_less_than(i, k9) ->
+              qpoly.qcoeff(p, i) = qat(t, i)) ->
+              (exists p2: qpoly.QPoly; forall i: Nat;
+              nat_less_than(i, nat_succ(k9)) ->
+              qpoly.qcoeff(p2, i) = qat(t, i))
+            [by generalize generalize-k]
+        }
+      @discharge-p |
+        forall p9: qpoly.QPoly; forall k9: Nat;
+          (forall i: Nat; nat_less_than(i, k9) ->
+          qpoly.qcoeff(p9, i) = qat(t, i)) ->
+          (exists p2: qpoly.QPoly; forall i: Nat;
+          nat_less_than(i, nat_succ(k9)) ->
+          qpoly.qcoeff(p2, i) = qat(t, i))
+        [by generalize generalize-p]
+    }
+  @conclusion |
+    forall t: QSeq; forall p: qpoly.QPoly; forall k: Nat;
+      (forall i: Nat; nat_less_than(i, k) -> qpoly.qcoeff(p, i) = qat(t, i)) ->
+      (exists p2: qpoly.QPoly; forall i: Nat;
+      nat_less_than(i, nat_succ(k)) -> qpoly.qcoeff(p2, i) = qat(t, i))
+    [by generalize generalize-t]
+qed
+
+// -- A POLYNOMIAL FROM A SEQUENCE ---------------------------------------------------------
+// The bridges take `qcoeff(p, i) = qat(t, i)` as a HYPOTHESIS; something must supply it, and
+// nothing in std did — there was no construction of a polynomial from a sequence at all.
+//
+// `qmonomial` and `qaddP` suffice: build it by induction on the bound, adding the monomial
+// `t_k · x^k` at each step. Below k the new monomial contributes ZERO (it lives at index k),
+// so earlier coefficients are untouched; at k the previous polynomial contributes ZERO if its
+// own coefficients vanish there — which they need not, so the induction carries the match as
+// its invariant rather than claiming the polynomials are equal.
+theorem aPolynomialMatchesASequence: forall t: QSeq; forall n: Nat;
+  exists p: qpoly.QPoly; forall i: Nat;
+  nat_less_than(i, n) -> qpoly.qcoeff(p, i) = qat(t, i)
+proof
+  @generalize-t |
+    fix t: QSeq {
+      // base: nothing below ZERO, so the zero polynomial serves
+      @nothing-below-zero |
+        fix i: Nat {
+          @given-i-below-zero |
+            assume nat_less_than(i, NAT_ZERO) {
+              @i-below-zero |
+                nat_less_than(i, NAT_ZERO)
+                [by hypothesis given-i-below-zero]
+              @nothing-is-below-zero |
+                not nat_less_than(i, NAT_ZERO)
+                [using specialize peano_order.notLessThanZero(i)]
+              @conclusion-vacuous |
+                qpoly.qcoeff(qpoly.QZEROP, i) = qat(t, i)
+                [by ex_falso i-below-zero nothing-is-below-zero]
+            }
+          @below-zero-implies |
+            nat_less_than(i, NAT_ZERO) ->
+              qpoly.qcoeff(qpoly.QZEROP, i) = qat(t, i)
+            [by discharge given-i-below-zero]
+        }
+      @all-below-zero |
+        forall i: Nat; nat_less_than(i, NAT_ZERO) ->
+          qpoly.qcoeff(qpoly.QZEROP, i) = qat(t, i)
+        [by generalize nothing-below-zero]
+      @base-case |
+        exists p: qpoly.QPoly; forall i: Nat;
+          nat_less_than(i, NAT_ZERO) -> qpoly.qcoeff(p, i) = qat(t, i)
+        [by witness(qpoly.QZEROP) all-below-zero]
+
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume exists p: qpoly.QPoly; forall i: Nat;
+              nat_less_than(i, k) -> qpoly.qcoeff(p, i) = qat(t, i) {
+              @inductive-hypothesis |
+                exists p: qpoly.QPoly; forall i: Nat;
+                  nat_less_than(i, k) -> qpoly.qcoeff(p, i) = qat(t, i)
+                [by hypothesis given-inductive-hypothesis]
+              @conclusion-the-step |
+                unpack p: qpoly.QPoly from inductive-hypothesis {
+                  @the-match-below-k |
+                    forall i: Nat; nat_less_than(i, k) ->
+                      qpoly.qcoeff(p, i) = qat(t, i)
+                    [by hypothesis conclusion-the-step]
+                  @conclusion-extended |
+                    exists p2: qpoly.QPoly; forall i: Nat;
+                      nat_less_than(i, nat_succ(k)) ->
+                      qpoly.qcoeff(p2, i) = qat(t, i)
+                    [using specialize theMonomialExtendsTheMatch(t, p, k) the-match-below-k]
+                }
+              @the-step-exported |
+                exists p2: qpoly.QPoly; forall i: Nat;
+                  nat_less_than(i, nat_succ(k)) ->
+                  qpoly.qcoeff(p2, i) = qat(t, i)
+                [by unpacked conclusion-the-step]
+            }
+          @induction-step-at-k |
+            (exists p: qpoly.QPoly; forall i: Nat;
+              nat_less_than(i, k) -> qpoly.qcoeff(p, i) = qat(t, i)) ->
+              (exists p2: qpoly.QPoly; forall i: Nat;
+              nat_less_than(i, nat_succ(k)) ->
+              qpoly.qcoeff(p2, i) = qat(t, i))
+            [by discharge given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat;
+          (exists p: qpoly.QPoly; forall i: Nat;
+          nat_less_than(i, k) -> qpoly.qcoeff(p, i) = qat(t, i)) ->
+          (exists p2: qpoly.QPoly; forall i: Nat;
+          nat_less_than(i, nat_succ(k)) ->
+          qpoly.qcoeff(p2, i) = qat(t, i))
+        [by generalize induction-step]
+      @all-bounds |
+        forall n: Nat;
+          exists p: qpoly.QPoly; forall i: Nat;
+          nat_less_than(i, n) -> qpoly.qcoeff(p, i) = qat(t, i)
+        [using instantiation peano.induction((fun z: Nat => (exists p: qpoly.QPoly; forall i: Nat; nat_less_than(i, z) -> qpoly.qcoeff(p, i) = qat(t, i)))) base-case induction-step-for-all-k]
+    }
+  @conclusion |
+    forall t: QSeq; forall n: Nat;
+      exists p: qpoly.QPoly; forall i: Nat;
+      nat_less_than(i, n) -> qpoly.qcoeff(p, i) = qat(t, i)
+    [by generalize generalize-t]
+qed
