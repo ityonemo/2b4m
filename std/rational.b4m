@@ -508,6 +508,53 @@ qed
 // the fact it replaces.
 
 // ZERO is an integer because it is a natural.
+// `sub` is the cut's own operation, so its closure needs stating in terms of `sub` itself
+// rather than `add(a, neg(b))` — that is what the guarded model's `-|` nomination matches
+// against. Immediate from subDefinition plus isIntegerSub.
+theorem isIntegerSubClosed: forall a, b: Q;
+  isInteger(a) -> isInteger(b) -> isInteger(sub(a, b))
+proof
+  @generalize-a |
+    fix a: Q {
+      @generalize-b |
+        fix b: Q {
+          @given-a-is-an-integer |
+            assume isInteger(a) {
+              @a-is-an-integer |
+                isInteger(a)
+                [by hypothesis given-a-is-an-integer]
+              @given-b-is-an-integer |
+                assume isInteger(b) {
+                  @b-is-an-integer |
+                    isInteger(b)
+                    [by hypothesis given-b-is-an-integer]
+                  @the-difference-as-a-sum |
+                    isInteger(add(a, neg(b)))
+                    [using specialize isIntegerSub(a, b) a-is-an-integer b-is-an-integer]
+                  @sub-is-that-sum |
+                    sub(a, b) = add(a, neg(b))
+                    [using specialize subDefinition(a, b)]
+                  @conclusion-the-difference-is-an-integer |
+                    isInteger(sub(a, b))
+                    [by rewrite sub-is-that-sum the-difference-as-a-sum]
+                }
+              @b-integer-implies |
+                isInteger(b) -> isInteger(sub(a, b))
+                [by discharge given-b-is-an-integer]
+            }
+          @a-integer-implies |
+            isInteger(a) -> isInteger(b) -> isInteger(sub(a, b))
+            [by discharge given-a-is-an-integer]
+        }
+      @discharge-b |
+        forall b9: Q; isInteger(a) -> isInteger(b9) -> isInteger(sub(a, b9))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Q; isInteger(a) -> isInteger(b) -> isInteger(sub(a, b))
+    [by generalize generalize-a]
+qed
+
 theorem zeroIsAnInteger: isInteger(ZERO)
 proof
   @zero-is-natural |
@@ -1043,14 +1090,19 @@ sort Integer = Q where isInteger
 model IntegersInRational {
   integer.Int: Integer
   integer.nonneg: isNatural
-  integer.ZERO: ZERO
-  integer.ONE: ONE
-  integer.succ: succ
-  integer.prev: prev
-  integer.add: add
-  integer.mul: mul
-  integer.neg: neg
-  integer.sub: sub
+  // MEMBERSHIP DISCHARGERS. The cut sort is refined, so every transferred theorem's binders
+  // relativize to `isInteger(...) ->` and each const/func owes its membership: a CONST names a
+  // ground fact in parens, a FUNC names closure facts after `-|`. Without these NOTHING
+  // transfers — a transferred proof's own `apply_at` leaks the guard it cannot discharge, e.g.
+  // `isInteger(neg(k))` inside integer.negNegNonneg.
+  integer.ZERO: ZERO(zeroIsAnInteger)
+  integer.ONE: ONE(oneIsAnInteger)
+  integer.succ: succ -| succOfAnIntegerIsAnInteger
+  integer.prev: prev -| prevOfAnIntegerIsAnInteger
+  integer.add: add -| isIntegerAdd
+  integer.mul: mul -| isIntegerMul
+  integer.neg: neg -| isIntegerNeg
+  integer.sub: sub -| isIntegerSubClosed
   integer.prevSucc <- prevOfSucc
   integer.succPrev <- succOfPrev
   integer.oneIsSuccZero <- oneIsSuccZero
