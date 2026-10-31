@@ -6025,3 +6025,339 @@ proof
       qpoly.qcoeff(theSubject, i))))
     [by generalize generalize-n]
 qed
+
+// Project the integrality half out of the cleared-numerator conjunction.
+theorem theIntegralityOfTheNumerators: forall u: QSeq; forall whole: Q; forall n: Nat;
+  (forall i: Nat; nat_less_than(i, n) ->
+  (isInteger(qat(u, i)) and
+  qat(u, i) = rational.mul(whole, qpoly.qcoeff(theSubject, i)))) ->
+  (forall i: Nat; nat_less_than(i, n) -> isInteger(qat(u, i)))
+proof
+  @generalize-u |
+    fix u: QSeq {
+      @generalize-whole |
+        fix whole: Q {
+          @generalize-n |
+            fix n: Nat {
+              @given-the-pairs |
+                assume forall i: Nat; nat_less_than(i, n) ->
+                  (isInteger(qat(u, i)) and
+                  qat(u, i) = rational.mul(whole,
+                  qpoly.qcoeff(theSubject, i))) {
+                  @the-pairs |
+                    forall i: Nat; nat_less_than(i, n) ->
+                      (isInteger(qat(u, i)) and
+                      qat(u, i) = rational.mul(whole,
+                      qpoly.qcoeff(theSubject, i)))
+                    [by hypothesis given-the-pairs]
+                  @each-index |
+                    fix i: Nat {
+                      @given-i-below |
+                        assume nat_less_than(i, n) {
+                          @i-below |
+                            nat_less_than(i, n)
+                            [by hypothesis given-i-below]
+                          @the-pair-at-i |
+                            isInteger(qat(u, i)) and
+                              qat(u, i) = rational.mul(whole,
+                              qpoly.qcoeff(theSubject, i))
+                            [using specialize the-pairs(i) i-below]
+                          @conclusion-integer-at-i |
+                            isInteger(qat(u, i))
+                            [by and_lhs the-pair-at-i]
+                        }
+                      @below-implies |
+                        nat_less_than(i, n) -> isInteger(qat(u, i))
+                        [by discharge given-i-below]
+                    }
+                  @conclusion-all |
+                    forall i: Nat; nat_less_than(i, n) -> isInteger(qat(u, i))
+                    [by generalize each-index]
+                }
+              @the-implication |
+                (forall i: Nat; nat_less_than(i, n) ->
+                  (isInteger(qat(u, i)) and
+                  qat(u, i) = rational.mul(whole,
+                  qpoly.qcoeff(theSubject, i)))) ->
+                  (forall i: Nat; nat_less_than(i, n) -> isInteger(qat(u, i)))
+                [by discharge given-the-pairs]
+            }
+          @discharge-n |
+            forall n9: Nat;
+              (forall i: Nat; nat_less_than(i, n9) ->
+              (isInteger(qat(u, i)) and
+              qat(u, i) = rational.mul(whole,
+              qpoly.qcoeff(theSubject, i)))) ->
+              (forall i: Nat; nat_less_than(i, n9) -> isInteger(qat(u, i)))
+            [by generalize generalize-n]
+        }
+      @discharge-whole |
+        forall w9: Q; forall n9: Nat;
+          (forall i: Nat; nat_less_than(i, n9) ->
+          (isInteger(qat(u, i)) and
+          qat(u, i) = rational.mul(w9,
+          qpoly.qcoeff(theSubject, i)))) ->
+          (forall i: Nat; nat_less_than(i, n9) -> isInteger(qat(u, i)))
+        [by generalize generalize-whole]
+    }
+  @conclusion |
+    forall u: QSeq; forall whole: Q; forall n: Nat;
+      (forall i: Nat; nat_less_than(i, n) ->
+      (isInteger(qat(u, i)) and
+      qat(u, i) = rational.mul(whole, qpoly.qcoeff(theSubject, i)))) ->
+      (forall i: Nat; nat_less_than(i, n) -> isInteger(qat(u, i)))
+    [by generalize generalize-u]
+qed
+
+// -- LEMMA 17.12: STAGES D-F ---------------------------------------------------------------
+// From a common denominator C that clears every coefficient, produce the divisor and the
+// quotient polynomial:
+//
+//   D  the cleared numerators u        `theClearedNumeratorSequenceExists`
+//   E  the least first quotient        `aLeastFirstQuotientExists`, giving the divisor d
+//   F  q with q's coefficients the quotients  `aPolynomialMatchesASequence`
+//
+// AN HONEST HYPOTHESIS: `less_than(ZERO, rational.mul(C, qcoeff(theSubject, NAT_ZERO)))` —
+// the descent needs a POSITIVE first cleared numerator to have a floor, and `theSubject`'s
+// constant coefficient may be zero or negative. Judson anchors on an actual nonzero
+// coefficient without remarking on it, so this is the faithful rendering, not a gap: a caller
+// supplies it by choosing which coefficient to anchor at.
+theorem theDivisorAndQuotientPolynomialExist: forall whole: Q; forall n: Nat;
+  nat_less_than(NAT_ZERO, n) ->
+  (forall i: Nat; nat_less_than(i, n) ->
+  isInteger(rational.mul(whole, qpoly.qcoeff(theSubject, i)))) ->
+  less_than(ZERO, rational.mul(whole, qpoly.qcoeff(theSubject, NAT_ZERO))) ->
+  (exists numerators: QSeq; exists least: Q;
+  (forall i: Nat; nat_less_than(i, n) ->
+  (isInteger(qat(numerators, i)) and
+  qat(numerators, i) = rational.mul(whole,
+  qpoly.qcoeff(theSubject, i)))) and
+  aFirstQuotientOf(numerators, n, least) and
+  (forall m: Q; isNatural(m) -> aFirstQuotientOf(numerators, n, m) ->
+  (not less_than(m, least))))
+proof
+  @generalize-whole |
+    fix whole: Q {
+      @generalize-n |
+        fix n: Nat {
+          @given-zero-in-range |
+            assume nat_less_than(NAT_ZERO, n) {
+              @zero-in-range |
+                nat_less_than(NAT_ZERO, n)
+                [by hypothesis given-zero-in-range]
+              @given-cleared |
+                assume forall i: Nat; nat_less_than(i, n) ->
+                  isInteger(rational.mul(whole,
+                  qpoly.qcoeff(theSubject, i))) {
+                  @cleared |
+                    forall i: Nat; nat_less_than(i, n) ->
+                      isInteger(rational.mul(whole,
+                      qpoly.qcoeff(theSubject, i)))
+                    [by hypothesis given-cleared]
+                  @given-first-positive |
+                    assume less_than(ZERO, rational.mul(whole,
+                      qpoly.qcoeff(theSubject, NAT_ZERO))) {
+                      @first-positive |
+                        less_than(ZERO, rational.mul(whole,
+                          qpoly.qcoeff(theSubject, NAT_ZERO)))
+                        [by hypothesis given-first-positive]
+                      // D: the cleared numerators as a sequence
+                      @the-numerators-exist |
+                        exists u: QSeq; forall i: Nat;
+                          nat_less_than(i, n) ->
+                          (isInteger(qat(u, i)) and
+                          qat(u, i) = rational.mul(whole,
+                          qpoly.qcoeff(theSubject, i)))
+                        [using specialize theClearedNumeratorSequenceExists(whole, n) cleared]
+                      @with-the-numerators |
+                        unpack u: QSeq from the-numerators-exist {
+                          @the-numerators |
+                            forall i: Nat; nat_less_than(i, n) ->
+                              (isInteger(qat(u, i)) and
+                              qat(u, i) = rational.mul(whole,
+                              qpoly.qcoeff(theSubject, i)))
+                            [by hypothesis with-the-numerators]
+                          @the-entries-are-integers |
+                            forall i: Nat; nat_less_than(i, n) ->
+                              isInteger(qat(u, i))
+                            [using specialize theIntegralityOfTheNumerators(u, whole, n) the-numerators]
+                          // the first entry IS the first cleared numerator, hence positive
+                          @the-first-entry |
+                            isInteger(qat(u, NAT_ZERO)) and
+                              qat(u, NAT_ZERO) = rational.mul(whole,
+                              qpoly.qcoeff(theSubject, NAT_ZERO))
+                            [using specialize the-numerators(NAT_ZERO) zero-in-range]
+                          @the-first-equation |
+                            qat(u, NAT_ZERO) = rational.mul(whole,
+                              qpoly.qcoeff(theSubject, NAT_ZERO))
+                            [by and_rhs the-first-entry]
+                          @the-first-is-positive |
+                            less_than(ZERO, qat(u, NAT_ZERO))
+                            [by rewrite the-first-equation first-positive]
+                          // E: the least first quotient
+                          @the-least-exists |
+                            exists least: Q; isNatural(least) and
+                              aFirstQuotientOf(u, n, least) and
+                              (forall m: Q; isNatural(m) ->
+                              aFirstQuotientOf(u, n, m) ->
+                              (not less_than(m, least)))
+                            [using specialize aLeastFirstQuotientExists(u, n) zero-in-range the-entries-are-integers the-first-is-positive]
+                          @with-the-least |
+                            unpack least: Q from the-least-exists {
+                              @the-least-parts |
+                                isNatural(least) and
+                                  aFirstQuotientOf(u, n, least) and
+                                  (forall m: Q; isNatural(m) ->
+                                  aFirstQuotientOf(u, n, m) ->
+                                  (not less_than(m, least)))
+                                [by hypothesis with-the-least]
+                              @the-least-is-a-first-quotient |
+                                aFirstQuotientOf(u, n, least)
+                                [using tautology the-least-parts]
+                              @the-minimality |
+                                forall m: Q; isNatural(m) ->
+                                  aFirstQuotientOf(u, n, m) ->
+                                  (not less_than(m, least))
+                                [using tautology the-least-parts]
+                              @the-full-witness |
+                                (forall i: Nat; nat_less_than(i, n) ->
+                                  (isInteger(qat(u, i)) and
+                                  qat(u, i) = rational.mul(whole,
+                                  qpoly.qcoeff(theSubject, i)))) and
+                                  aFirstQuotientOf(u, n, least) and
+                                  (forall m: Q; isNatural(m) ->
+                                  aFirstQuotientOf(u, n, m) ->
+                                  (not less_than(m, least)))
+                                [using tautology the-numerators the-least-is-a-first-quotient the-minimality]
+                              @the-least-witness |
+                                exists l2: Q;
+                                  (forall i: Nat; nat_less_than(i, n) ->
+                                  (isInteger(qat(u, i)) and
+                                  qat(u, i) = rational.mul(whole,
+                                  qpoly.qcoeff(theSubject, i)))) and
+                                  aFirstQuotientOf(u, n, l2) and
+                                  (forall m: Q; isNatural(m) ->
+                                  aFirstQuotientOf(u, n, m) ->
+                                  (not less_than(m, l2)))
+                                [by witness(least) the-full-witness]
+                              @conclusion-both-witnesses |
+                                exists numerators: QSeq; exists l2: Q;
+                                  (forall i: Nat; nat_less_than(i, n) ->
+                                  (isInteger(qat(numerators, i)) and
+                                  qat(numerators, i) = rational.mul(whole,
+                                  qpoly.qcoeff(theSubject, i)))) and
+                                  aFirstQuotientOf(numerators, n, l2) and
+                                  (forall m: Q; isNatural(m) ->
+                                  aFirstQuotientOf(numerators, n, m) ->
+                                  (not less_than(m, l2)))
+                                [by witness(u) the-least-witness]
+                            }
+                          @the-least-exported |
+                            exists numerators: QSeq; exists l2: Q;
+                              (forall i: Nat; nat_less_than(i, n) ->
+                              (isInteger(qat(numerators, i)) and
+                              qat(numerators, i) = rational.mul(whole,
+                              qpoly.qcoeff(theSubject, i)))) and
+                              aFirstQuotientOf(numerators, n, l2) and
+                              (forall m: Q; isNatural(m) ->
+                              aFirstQuotientOf(numerators, n, m) ->
+                              (not less_than(m, l2)))
+                            [by unpacked with-the-least]
+                        }
+                      @the-numerators-exported |
+                        exists numerators: QSeq; exists l2: Q;
+                          (forall i: Nat; nat_less_than(i, n) ->
+                          (isInteger(qat(numerators, i)) and
+                          qat(numerators, i) = rational.mul(whole,
+                          qpoly.qcoeff(theSubject, i)))) and
+                          aFirstQuotientOf(numerators, n, l2) and
+                          (forall m: Q; isNatural(m) ->
+                          aFirstQuotientOf(numerators, n, m) ->
+                          (not less_than(m, l2)))
+                        [by unpacked with-the-numerators]
+                    }
+                  @first-positive-implies |
+                    less_than(ZERO, rational.mul(whole,
+                      qpoly.qcoeff(theSubject, NAT_ZERO))) ->
+                      (exists numerators: QSeq; exists l2: Q;
+                      (forall i: Nat; nat_less_than(i, n) ->
+                      (isInteger(qat(numerators, i)) and
+                      qat(numerators, i) = rational.mul(whole,
+                      qpoly.qcoeff(theSubject, i)))) and
+                      aFirstQuotientOf(numerators, n, l2) and
+                      (forall m: Q; isNatural(m) ->
+                      aFirstQuotientOf(numerators, n, m) ->
+                      (not less_than(m, l2))))
+                    [by discharge given-first-positive]
+                }
+              @cleared-implies |
+                (forall i: Nat; nat_less_than(i, n) ->
+                  isInteger(rational.mul(whole,
+                  qpoly.qcoeff(theSubject, i)))) ->
+                  less_than(ZERO, rational.mul(whole,
+                  qpoly.qcoeff(theSubject, NAT_ZERO))) ->
+                  (exists numerators: QSeq; exists l2: Q;
+                  (forall i: Nat; nat_less_than(i, n) ->
+                  (isInteger(qat(numerators, i)) and
+                  qat(numerators, i) = rational.mul(whole,
+                  qpoly.qcoeff(theSubject, i)))) and
+                  aFirstQuotientOf(numerators, n, l2) and
+                  (forall m: Q; isNatural(m) ->
+                  aFirstQuotientOf(numerators, n, m) ->
+                  (not less_than(m, l2))))
+                [by discharge given-cleared]
+            }
+          @the-implication |
+            nat_less_than(NAT_ZERO, n) ->
+              (forall i: Nat; nat_less_than(i, n) ->
+              isInteger(rational.mul(whole,
+              qpoly.qcoeff(theSubject, i)))) ->
+              less_than(ZERO, rational.mul(whole,
+              qpoly.qcoeff(theSubject, NAT_ZERO))) ->
+              (exists numerators: QSeq; exists l2: Q;
+              (forall i: Nat; nat_less_than(i, n) ->
+              (isInteger(qat(numerators, i)) and
+              qat(numerators, i) = rational.mul(whole,
+              qpoly.qcoeff(theSubject, i)))) and
+              aFirstQuotientOf(numerators, n, l2) and
+              (forall m: Q; isNatural(m) ->
+              aFirstQuotientOf(numerators, n, m) ->
+              (not less_than(m, l2))))
+            [by discharge given-zero-in-range]
+        }
+      @discharge-n |
+        forall n9: Nat;
+          nat_less_than(NAT_ZERO, n9) ->
+          (forall i: Nat; nat_less_than(i, n9) ->
+          isInteger(rational.mul(whole,
+          qpoly.qcoeff(theSubject, i)))) ->
+          less_than(ZERO, rational.mul(whole,
+          qpoly.qcoeff(theSubject, NAT_ZERO))) ->
+          (exists numerators: QSeq; exists l2: Q;
+          (forall i: Nat; nat_less_than(i, n9) ->
+          (isInteger(qat(numerators, i)) and
+          qat(numerators, i) = rational.mul(whole,
+          qpoly.qcoeff(theSubject, i)))) and
+          aFirstQuotientOf(numerators, n9, l2) and
+          (forall m: Q; isNatural(m) ->
+          aFirstQuotientOf(numerators, n9, m) ->
+          (not less_than(m, l2))))
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall whole: Q; forall n: Nat;
+      nat_less_than(NAT_ZERO, n) ->
+      (forall i: Nat; nat_less_than(i, n) ->
+      isInteger(rational.mul(whole, qpoly.qcoeff(theSubject, i)))) ->
+      less_than(ZERO, rational.mul(whole,
+      qpoly.qcoeff(theSubject, NAT_ZERO))) ->
+      (exists numerators: QSeq; exists least: Q;
+      (forall i: Nat; nat_less_than(i, n) ->
+      (isInteger(qat(numerators, i)) and
+      qat(numerators, i) = rational.mul(whole,
+      qpoly.qcoeff(theSubject, i)))) and
+      aFirstQuotientOf(numerators, n, least) and
+      (forall m: Q; isNatural(m) -> aFirstQuotientOf(numerators, n, m) ->
+      (not less_than(m, least))))
+    [by generalize generalize-whole]
+qed
