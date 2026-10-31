@@ -1,0 +1,46 @@
+// SOURCE: a theorem whose proof unpacks an existential and RESTATES the body by hypothesis.
+sort Src
+pred ok(x: Src)
+pred P(x: Src)
+pred Goal(x: Src)
+axiom bodyExists: forall a: Src; ok(a) -> (exists w: Src; ok(w) and P(w))
+axiom bodyGivesGoal: forall a, w: Src; P(w) -> Goal(a)
+
+theorem reached: forall a: Src; ok(a) -> Goal(a)
+proof
+  @generalize-a |
+    fix a: Src {
+      @given-ok |
+        assume ok(a) {
+          @a-ok |
+            ok(a)
+            [by hypothesis given-ok]
+          @the-witness-exists |
+            exists w: Src; ok(w) and P(w)
+            [using specialize bodyExists(a) a-ok]
+          @with-witness-w |
+            unpack w: Src from the-witness-exists {
+              // THE STEP THAT BROKE: restating the opened body by hypothesis. Under a guarded
+              // model the body gains a leading guard conjunct, so this must and_elim past it.
+              @the-body |
+                ok(w) and P(w)
+                [by hypothesis with-witness-w]
+              @just-p |
+                P(w)
+                [by and_rhs the-body]
+              @conclusion-goal |
+                Goal(a)
+                [using specialize bodyGivesGoal(a, w) just-p]
+            }
+          @conclusion-unpacked |
+            Goal(a)
+            [by unpacked with-witness-w]
+        }
+      @ok-implies-goal |
+        ok(a) -> Goal(a)
+        [by discharge given-ok]
+    }
+  @conclusion |
+    forall a: Src; ok(a) -> Goal(a)
+    [by generalize generalize-a]
+qed

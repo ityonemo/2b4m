@@ -3637,6 +3637,18 @@ fn projectBlockGuard(self: *Prove, kb: kernel.BlockId, bref: kernel.BRef, goal: 
     const whole = switch (b.kind) {
         .fix => |fx| fx.guard orelse return null,
         .assume => |a| a,
+        // AN UNPACK BLOCK'S HYPOTHESIS IS ALSO A CONJUNCTION TO PROJECT FROM. Under a model
+        // transfer a relativized `∃x: H` opens as `inH(w) and <body>`, so a `[by hypothesis]`
+        // restating just `<body>` — which is what the SOURCE proof wrote — must and_elim past
+        // the guard conjunct. `refForKnown` already did this for a KNOWN prop; without it here
+        // the explicit hypothesis restatement inside a transferred unpack fails, which is how
+        // every ℤ-order theorem citing `lessThanElim` broke (std/integer/order.b4m:802).
+        .unpack => |uv| blk: {
+            const src_f = self.low_steps.items[@intFromEnum(uv.source.id)].formula;
+            const sn = self.pool.get(src_f);
+            if (sn != .quant or sn.quant.q != .exists) return null;
+            break :blk try self.pool.open(sn.quant.body, try self.pool.add(.{ .fvar = uv.v }));
+        },
         else => return null,
     };
     if (whole == goal) return null; // the plain hypothesis arm handles it

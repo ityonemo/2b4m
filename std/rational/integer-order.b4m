@@ -21,6 +21,8 @@
 // is never contradicted — the gap is produced only when both endpoints are integers.
 import rational <<< "std/rational.b4m"
 import field_order <<< "std/field/order.b4m"
+import integer <<< "std/integer.b4m"
+import int_order <<< "std/integer/order.b4m"
 
 sort Q = rational.Q
 const ZERO = rational.ZERO
@@ -381,9 +383,12 @@ qed
 // Strategy: b − a is an integer (isIntegerSub) and positive, so by integerCases it is
 // natural — its negation cannot be, being negative. A positive natural is nonzero, hence a
 // successor (aNonzeroNaturalIsASuccessor), giving the gap; then a + succ(d) = a + (b − a) = b.
+// The ∃ binder carries BOTH guards: `isInteger(d)` because `std/integer/order.b4m`'s `d: Int`
+// relativizes to the cut, and `isNatural(d)` because `lessThanElim` states `nonneg(d)`. A
+// transferred `∃x: Int` becomes `∃x; isInteger(x) and <body>`, so the conjunct is not optional.
 theorem theIntegersInRationalAreDiscrete: forall a, b: Q;
   isInteger(a) -> isInteger(b) -> less_than(a, b) ->
-  (exists d: Q; isNatural(d) and add(a, succ(d)) = b)
+  (exists d: Q; isInteger(d) and (isNatural(d) and add(a, succ(d)) = b))
 proof
   @generalize-a |
     fix a: Q {
@@ -449,42 +454,48 @@ proof
                           @the-witness-equation |
                             add(a, succ(d)) = b
                             [by rewrite the-difference-is-succ-d adding-a-back]
-                          @the-witness-works |
+                          @d-is-an-integer |
+                            isInteger(d)
+                            [using specialize rational.isNaturalIsInteger(d) d-is-natural]
+                          @the-natural-gap |
                             isNatural(d) and add(a, succ(d)) = b
                             [by both d-is-natural the-witness-equation]
+                          @the-witness-works |
+                            isInteger(d) and (isNatural(d) and add(a, succ(d)) = b)
+                            [by both d-is-an-integer the-natural-gap]
                           @conclusion-the-gap-exists |
-                            exists d2: Q; isNatural(d2) and add(a, succ(d2)) = b
+                            exists d2: Q; isInteger(d2) and (isNatural(d2) and add(a, succ(d2)) = b)
                             [by witness(d) the-witness-works]
                         }
                       @conclusion-the-gap |
-                        exists d: Q; isNatural(d) and add(a, succ(d)) = b
+                        exists d: Q; isInteger(d) and (isNatural(d) and add(a, succ(d)) = b)
                         [by unpacked the-gap]
                     }
                   @a-below-b-implies-the-gap |
                     less_than(a, b) ->
-                      (exists d: Q; isNatural(d) and add(a, succ(d)) = b)
+                      (exists d: Q; isInteger(d) and (isNatural(d) and add(a, succ(d)) = b))
                     [by discharge given-a-below-b]
                 }
               @b-integer-implies-the-gap |
                 isInteger(b) -> less_than(a, b) ->
-                  (exists d: Q; isNatural(d) and add(a, succ(d)) = b)
+                  (exists d: Q; isInteger(d) and (isNatural(d) and add(a, succ(d)) = b))
                 [by discharge given-b-is-an-integer]
             }
           @a-integer-implies-the-gap |
             isInteger(a) -> isInteger(b) -> less_than(a, b) ->
-              (exists d: Q; isNatural(d) and add(a, succ(d)) = b)
+              (exists d: Q; isInteger(d) and (isNatural(d) and add(a, succ(d)) = b))
             [by discharge given-a-is-an-integer]
         }
       @discharge-b |
         forall b9: Q;
           isInteger(a) -> isInteger(b9) -> less_than(a, b9) ->
-          (exists d: Q; isNatural(d) and add(a, succ(d)) = b9)
+          (exists d: Q; isInteger(d) and (isNatural(d) and add(a, succ(d)) = b9))
         [by generalize generalize-b]
     }
   @conclusion |
     forall a, b: Q;
       isInteger(a) -> isInteger(b) -> less_than(a, b) ->
-      (exists d: Q; isNatural(d) and add(a, succ(d)) = b)
+      (exists d: Q; isInteger(d) and (isNatural(d) and add(a, succ(d)) = b))
     [by generalize generalize-a]
 qed
 
@@ -496,15 +507,20 @@ qed
 
 // Strategy: a + succ(d) = b with d natural. succ(d) = d + ONE is positive (d ≥ 0, 1 > 0), and
 // adding a positive to a moves it up, so a < a + succ(d) = b.
-theorem aNonnegGapMakesItLess: forall a, b, d: Q;
+// NOTE the binder order is `a, d, b` — MATCHING `std/integer/order.b4m`'s `lessThanIntro`,
+// which the guarded model discharges with this theorem. A model maps a name to a name; it does
+// NOT reorder binders, so a mismatch here silently rebinds the transferred axiom's arguments
+// (writing `a, b, d` made `lessThanIntro(ZERO, ZERO, ONE)` bind d := ONE, b := ZERO, and every
+// ℤ-order theorem transferred a false instance).
+theorem aNonnegGapMakesItLess: forall a, d, b: Q;
   isNatural(d) -> add(a, succ(d)) = b -> less_than(a, b)
 proof
   @generalize-a |
     fix a: Q {
-      @generalize-b |
-        fix b: Q {
-          @generalize-d |
-            fix d: Q {
+      @generalize-d |
+        fix d: Q {
+          @generalize-b |
+            fix b: Q {
               @given-d-is-natural |
                 assume isNatural(d) {
                   @d-is-natural |
@@ -599,18 +615,18 @@ proof
                 isNatural(d) -> add(a, succ(d)) = b -> less_than(a, b)
                 [by discharge given-d-is-natural]
             }
-          @discharge-d |
-            forall d9: Q;
-              isNatural(d9) -> add(a, succ(d9)) = b -> less_than(a, b)
-            [by generalize generalize-d]
+          @discharge-b |
+            forall b9: Q;
+              isNatural(d) -> add(a, succ(d)) = b9 -> less_than(a, b9)
+            [by generalize generalize-b]
         }
-      @discharge-b |
-        forall b9: Q; forall d: Q;
-          isNatural(d) -> add(a, succ(d)) = b9 -> less_than(a, b9)
-        [by generalize generalize-b]
+      @discharge-d |
+        forall d9: Q; forall b: Q;
+          isNatural(d9) -> add(a, succ(d9)) = b -> less_than(a, b)
+        [by generalize generalize-d]
     }
   @conclusion |
-    forall a, b, d: Q;
+    forall a, d, b: Q;
       isNatural(d) -> add(a, succ(d)) = b -> less_than(a, b)
     [by generalize generalize-a]
 qed
@@ -634,24 +650,54 @@ proof
     [by rewrite one-is-succ-zero succ-zero-is-natural]
 qed
 
-// -- WHY THE GUARDED ORDER MODEL IS NOT HERE ----------------------------------------------
-// The two theorems above are exactly `std/integer/order.b4m`'s two axioms relativized to the
-// cut, so a guarded `model` mapping `int_order.lessThanIntro <- aNonnegGapMakesItLess` and
-// `int_order.lessThanElim <- theIntegersInRationalAreDiscrete` SHOULD transfer ℤ's whole
-// order corpus onto ℚ's integers. It does not, and the blocker is upstream of this file.
+// -- ℤ's ORDER, TRANSFERRED ONTO THE CUT --------------------------------------------------
+// The two theorems above are `std/integer/order.b4m`'s two axioms relativized to the cut, so a
+// guarded model discharges them and ℤ's order corpus becomes available about ℚ's integers.
 //
-// `std/rational.b4m`'s own `IntegersInRational` — the guarded ℤ model that has been declared
-// there for months — cannot transfer even `integer.addIsCommutative`:
-//
-//     std/integer.b4m:200: IntegersInRational@negNegNonneg: step claims
-//       'neg(prev(neg(k))) = succ(neg(neg(k)))' but apply_at derives
-//       'isInteger(neg(k)) -> neg(prev(neg(k))) = succ(neg(neg(k)))'
-//
-// A guard relativization is being inserted into a step's claim but not into what the step's
-// own `apply_at` produces, so the two disagree by one `isInteger(...) ->`. NOTHING in the
-// corpus transfers through `IntegersInRational` (its only consumer is `scratch-needswork/`),
-// which is why the bug has stayed latent since the model was written.
-//
-// So this file stops at the mathematics: the four facts below ARE the discreteness of ℚ's
-// integers, each proved from `naturalInduction` and ℚ's order, and they are what a working
-// guarded model would need. Wiring them into one is blocked on the relativization bug.
+// NOTE `std/integer/order.b4m` ALIASES ℤ's base layer (`pred nonneg = nonnegatives.nonneg`,
+// `func add = integer.add`, …) rather than redeclaring it, and alias-collapse means those are
+// the SAME symbols. So they are mapped ONCE, under `integer.*`; naming them again under
+// `int_order.*` maps one symbol through two names. Only `less_than` and the two order axioms
+// are genuinely `int_order`'s own.
+sort Integer = rational.Integer
+
+model IntegerOrderOnTheCut {
+  integer.Int: Integer
+  integer.nonneg: isNatural
+  integer.ZERO: ZERO(rational.zeroIsAnInteger)
+  integer.ONE: ONE(rational.oneIsAnInteger)
+  integer.succ: succ -| rational.succOfAnIntegerIsAnInteger
+  integer.prev: rational.prev -| rational.prevOfAnIntegerIsAnInteger
+  integer.add: add -| rational.isIntegerAdd
+  integer.mul: rational.mul -| rational.isIntegerMul
+  integer.neg: neg -| rational.isIntegerNeg
+  integer.sub: rational.sub -| rational.isIntegerSubClosed
+  integer.prevSucc <- rational.prevOfSucc
+  integer.succPrev <- rational.succOfPrev
+  integer.oneIsSuccZero <- rational.oneIsSuccZero
+  integer.addZeroLeft <- rational.addZeroLeft
+  integer.addSuccLeft <- rational.addSuccLeft
+  integer.addPrevLeft <- rational.addPrevLeft
+  integer.negZero <- rational.negZero
+  integer.negSucc <- rational.negSucc
+  integer.negPrev <- rational.negPrev
+  integer.mulZeroLeft <- rational.mulZeroLeft
+  integer.mulSuccLeft <- rational.mulSuccLeft
+  integer.mulPrevLeft <- rational.mulPrevLeft
+  integer.nonnegZero <- rational.isNaturalZero
+  integer.nonnegSucc <- rational.isNaturalSucc
+  integer.nonnegSuccNotZero <- rational.isNaturalSuccNotZero
+  integer.intCases <- rational.integerCases
+  integer.nonnegInduction <- rational.naturalInductionOnInteger
+  integer.definitionOfSubtraction <- rational.subDefinition
+  int_order.less_than: less_than
+  int_order.lessThanIntro <- aNonnegGapMakesItLess
+  int_order.lessThanElim <- theIntegersInRationalAreDiscrete
+}
+
+// NOT YET: `dividesOneImpliesUnit` on the cut, which is what Gauss's d = 1 branch needs
+// (c·a_m·b_n = 1 forces c = ±1). Its proof reaches through `std/integer/divides.b4m` into
+// `std/integer/wellordering.b4m`, `std/divisibility.b4m` AND `std/peano.b4m`, so the transfer
+// wants all four layers mapped, not just the order one. Each is mechanical — the same shape as
+// this block — but it is a wider job than this file, and `anIntegerDividingOneIsAUnit` should
+// land with those mappings rather than half of them. The order layer below is what unblocks it.
