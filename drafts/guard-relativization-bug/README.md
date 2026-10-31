@@ -182,7 +182,7 @@ pins it (`integer.negNeg` onto the cut) and fails without the change. `std --lib
 `aata` 495 both green; `zig build test` has 12 failures before AND after, all pre-existing
 (missing arithmetic countermodel lines).
 
-### Half three — ARGUMENT BINDING is wrong under a guarded model (open)
+### Half three — ~~ARGUMENT BINDING is wrong under a guarded model~~ **NOT A BUG. My error.**
 
 Trying to wire `IntegerOrderOnTheCut` (mapping `std/integer/order.b4m` so `dividesOneImpliesUnit`
 reaches the cut) hits a failure that is **not** about premise order. Traced at
@@ -222,3 +222,54 @@ would produce exactly this symptom.
 Gauss's `d != 1` case is proved and transcribed. The `d = 1` branch, 17.14 and 17.15 remain
 blocked — now on half three rather than half two. The mathematics they need
 (`std/rational/integer-order.b4m`'s four discreteness facts) is done and committed.
+
+
+---
+
+## Update 3: half three was MY BUG, not the engine's; half four found and fixed
+
+### Half three retracted
+
+The mis-substituted instance recorded above was **not an engine defect**. Tracing
+`produceSpecialize`'s arg/param counts showed `nargs=3 fargs=0 cargs=3 params=3 pnames=3` —
+everything agreeing — and the transferred head printed as
+
+    forall a: Q; forall b: Q; forall d: Q; isNatural(d) -> add(a, succ(d)) = b -> less_than(a, b)
+
+with binder order **a, b, d**, while `std/integer/order.b4m`'s `lessThanIntro` declares
+**a, d, b**. My `aNonnegGapMakesItLess` had the binders in the wrong order. A model maps a NAME
+to a name; it does not reorder binders, so `lessThanIntro(ZERO, ZERO, ONE)` bound `d := ONE`
+and `b := ZERO` — exactly the symptom I had attributed to the engine.
+
+**Lesson, and it generalizes: a discharger's binder order is part of its interface.** Nothing
+checks it, and a mismatch is silent — the model is accepted and every transferred theorem gets
+a subtly wrong instance. Worth a check: when a `<-` discharges an axiom, compare binder sorts
+positionally and reject a permutation.
+
+**Process lesson:** I filed this as an engine bug on the strength of a trace showing a wrong
+instance, without checking my own discharger first. The minimal repro I then built (a guarded
+model with a 3-binder axiom at 3 distinct consts) **passed**, which should have redirected me
+immediately — a repro that does not reproduce is evidence about the hypothesis, not a reason to
+look for a more elaborate engine fault.
+
+### Half four — `projectBlockGuard` ignored `.unpack` blocks (fixed, `61ead93`)
+
+With the binder order corrected, the next failure was real. A relativized `∃x: H` opens as
+`inH(w) and <body>`, so a `[by hypothesis]` restating just `<body>` must and_elim past the
+guard conjunct. `refForKnown` did this for a KNOWN prop, but `projectBlockGuard` — the path an
+explicit `[by hypothesis]` takes — handled only `.fix` and `.assume`, returning null for
+`.unpack`. That broke every ℤ-order theorem citing `lessThanElim`.
+
+Fixed by giving `.unpack` its hypothesis formula (the opened existential body) in that switch.
+`tests/cases/model_guarded_unpack_hypothesis.b4m` pins it.
+
+### Where this leaves it
+
+**`IntegerOrderOnTheCut` transfers** — ℤ's order corpus is now available about ℚ's integers
+(`std/rational/integer-order.b4m`, `zeroLessThanOneOnTheCut` demonstrates it).
+
+`dividesOneImpliesUnit` on the cut — Gauss's `d = 1` branch — is still not done, and the reason
+is breadth rather than any bug: its proof reaches through `std/integer/divides.b4m` into
+`std/integer/wellordering.b4m`, `std/divisibility.b4m` and `std/peano.b4m`, so the transfer
+wants all four layers mapped. Each mapping is mechanical and the same shape as the order one.
+That is the remaining work for chapter 17's last three deferrals.
