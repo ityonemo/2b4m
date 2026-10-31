@@ -1613,3 +1613,212 @@ proof
       less_than(i, n) -> isADenominatorFor(i, qat(t, i))
     [by modus_ponens the-choice the-witnesses]
 qed
+
+// (v·k)·(b·v⁻¹) = k·b for nonzero v: the denominator cancels against its own reciprocal.
+// Pure field algebra; `polynomial(rational)` cannot do it because recip is not a ring op, so
+// it goes through fieldInverse explicitly.
+theorem theDenominatorCancels: forall v, k, b: Q;
+  (not (v = rational.ZERO)) ->
+  rational.mul(rational.mul(v, k), rational.mul(b, recip(v))) =
+  rational.mul(k, b)
+proof
+  @generalize-v |
+    fix v: Q {
+      @generalize-k |
+        fix k: Q {
+          @generalize-b |
+            fix b: Q {
+              @given-v-nonzero |
+                assume not (v = rational.ZERO) {
+                  @v-nonzero |
+                    not (v = rational.ZERO)
+                    [by hypothesis given-v-nonzero]
+                  @v-times-its-reciprocal |
+                    rational.mul(v, recip(v)) = rational.ONE
+                    [using specialize rational.fieldInverse(v) v-nonzero]
+                  // regroup to (v · v⁻¹) · (k · b) and collapse
+                  @the-regrouping |
+                    rational.mul(rational.mul(v, k), rational.mul(b, recip(v))) =
+                      rational.mul(rational.mul(v, recip(v)), rational.mul(k, b))
+                    [using assoc_commut(rational.mulIsAssociative, rational.mulIsCommutative, rational.mulLeftSwap)]
+                  @with-one-in-front |
+                    rational.mul(rational.mul(v, k), rational.mul(b, recip(v))) =
+                      rational.mul(rational.ONE, rational.mul(k, b))
+                    [by rewrite v-times-its-reciprocal the-regrouping]
+                  @one-times |
+                    rational.mul(rational.ONE, rational.mul(k, b)) =
+                      rational.mul(k, b)
+                    [using specialize rational.mulOneLeft(rational.mul(k, b))]
+                  @conclusion-cancels |
+                    rational.mul(rational.mul(v, k), rational.mul(b, recip(v))) =
+                      rational.mul(k, b)
+                    [using simplify with-one-in-front one-times]
+                }
+              @nonzero-implies |
+                (not (v = rational.ZERO)) ->
+                  rational.mul(rational.mul(v, k), rational.mul(b, recip(v))) =
+                  rational.mul(k, b)
+                [by discharge given-v-nonzero]
+            }
+          @discharge-b |
+            forall b9: Q;
+              (not (v = rational.ZERO)) ->
+              rational.mul(rational.mul(v, k), rational.mul(b9, recip(v))) =
+              rational.mul(k, b9)
+            [by generalize generalize-b]
+        }
+      @discharge-k |
+        forall k9: Q; forall b9: Q;
+          (not (v = rational.ZERO)) ->
+          rational.mul(rational.mul(v, k9), rational.mul(b9, recip(v))) =
+          rational.mul(k9, b9)
+        [by generalize generalize-k]
+    }
+  @conclusion |
+    forall v, k, b: Q;
+      (not (v = rational.ZERO)) ->
+      rational.mul(rational.mul(v, k), rational.mul(b, recip(v))) =
+      rational.mul(k, b)
+    [by generalize generalize-v]
+qed
+
+// -- LEMMA 17.12, STEP 2: THE COMMON DENOMINATOR CLEARS EVERY COEFFICIENT -----------------
+// "We can rewrite p(x) as p(x) = 1/(c_0 ⋯ c_n) (d_0 + d_1 x + … + d_n x^n), where d_0, …, d_n
+// are integers."
+//
+// The point is per-coefficient: C·(b_i/c_i) is an integer, because c_i divides C
+// (`everyEntryDividesTheProduct`) and b_i is an integer. That is what makes every d_i an
+// integer, and it is the whole content of the step — the polynomial-level restatement is
+// bookkeeping on top.
+
+// Scaling a coefficient by a multiple of its own denominator lands on the cut.
+theorem theCommonDenominatorClearsACoefficient: forall i: Nat; forall v, whole: Q;
+  isADenominatorFor(i, v) -> dividesIntegrally(v, whole) ->
+  isInteger(rational.mul(whole, qpoly.qcoeff(theSubject, i)))
+proof
+  @generalize-i |
+    fix i: Nat {
+      @generalize-v |
+        fix v: Q {
+          @generalize-whole |
+            fix whole: Q {
+              @given-v-is-a-denominator |
+                assume isADenominatorFor(i, v) {
+                  @v-is-a-denominator |
+                    isADenominatorFor(i, v)
+                    [by hypothesis given-v-is-a-denominator]
+                  @the-spec |
+                    isADenominatorFor(i, v) iff
+                      (isInteger(v) and (not (v = rational.ZERO)) and
+                      (exists b: Q; isInteger(b) and
+                      qpoly.qcoeff(theSubject, i) = rational.mul(b, recip(v))))
+                    [using specialize denominatorMeaning(i, v)]
+                  @the-parts |
+                    isInteger(v) and (not (v = rational.ZERO)) and
+                      (exists b: Q; isInteger(b) and
+                      qpoly.qcoeff(theSubject, i) = rational.mul(b, recip(v)))
+                    [using tautology the-spec v-is-a-denominator]
+                  @v-is-nonzero |
+                    not (v = rational.ZERO)
+                    [using tautology the-parts]
+                  @a-numerator-exists |
+                    exists b: Q; isInteger(b) and
+                      qpoly.qcoeff(theSubject, i) = rational.mul(b, recip(v))
+                    [using tautology the-parts]
+                  @given-v-divides-whole |
+                    assume dividesIntegrally(v, whole) {
+                      @v-divides-whole |
+                        dividesIntegrally(v, whole)
+                        [by hypothesis given-v-divides-whole]
+                      @the-divides-meaning |
+                        dividesIntegrally(v, whole) iff
+                          (exists k: Q; isInteger(k) and
+                          whole = rational.mul(v, k))
+                        [using specialize dividesIntegrallyMeaning(v, whole)]
+                      @a-quotient-exists |
+                        exists k: Q; isInteger(k) and whole = rational.mul(v, k)
+                        [using tautology the-divides-meaning v-divides-whole]
+                      @with-the-numerator |
+                        unpack b: Q from a-numerator-exists {
+                          @with-numerator-b |
+                            isInteger(b) and
+                              qpoly.qcoeff(theSubject, i) = rational.mul(b, recip(v))
+                            [by hypothesis with-the-numerator]
+                          @b-is-an-integer |
+                            isInteger(b)
+                            [by and_lhs with-numerator-b]
+                          @the-coefficient |
+                            qpoly.qcoeff(theSubject, i) = rational.mul(b, recip(v))
+                            [by and_rhs with-numerator-b]
+                          @with-the-quotient |
+                            unpack k: Q from a-quotient-exists {
+                              @with-quotient-k |
+                                isInteger(k) and whole = rational.mul(v, k)
+                                [by hypothesis with-the-quotient]
+                              @k-is-an-integer |
+                                isInteger(k)
+                                [by and_lhs with-quotient-k]
+                              @whole-is-v-times-k |
+                                whole = rational.mul(v, k)
+                                [by and_rhs with-quotient-k]
+                              // whole · coeff = (v·k) · (b·v⁻¹) = k·b, an integer
+                              @the-product |
+                                rational.mul(whole, qpoly.qcoeff(theSubject, i)) =
+                                  rational.mul(rational.mul(v, k),
+                                  rational.mul(b, recip(v)))
+                                [using simplify whole-is-v-times-k the-coefficient]
+                              @the-cancellation |
+                                rational.mul(rational.mul(v, k),
+                                  rational.mul(b, recip(v))) =
+                                  rational.mul(k, b)
+                                [using specialize theDenominatorCancels(v, k, b) v-is-nonzero]
+                              @the-product-is-k-times-b |
+                                rational.mul(whole, qpoly.qcoeff(theSubject, i)) =
+                                  rational.mul(k, b)
+                                [using simplify the-product the-cancellation]
+                              @k-times-b-is-an-integer |
+                                isInteger(rational.mul(k, b))
+                                [using specialize rational.isIntegerMul(k, b) k-is-an-integer b-is-an-integer]
+                              @conclusion-the-scaled-coefficient |
+                                isInteger(rational.mul(whole,
+                                  qpoly.qcoeff(theSubject, i)))
+                                [by rewrite the-product-is-k-times-b k-times-b-is-an-integer]
+                            }
+                          @conclusion-quotient-exported |
+                            isInteger(rational.mul(whole,
+                              qpoly.qcoeff(theSubject, i)))
+                            [by unpacked with-the-quotient]
+                        }
+                      @conclusion-numerator-exported |
+                        isInteger(rational.mul(whole,
+                          qpoly.qcoeff(theSubject, i)))
+                        [by unpacked with-the-numerator]
+                    }
+                  @divides-implies-integral |
+                    dividesIntegrally(v, whole) ->
+                      isInteger(rational.mul(whole, qpoly.qcoeff(theSubject, i)))
+                    [by discharge given-v-divides-whole]
+                }
+              @denominator-implies |
+                isADenominatorFor(i, v) -> dividesIntegrally(v, whole) ->
+                  isInteger(rational.mul(whole, qpoly.qcoeff(theSubject, i)))
+                [by discharge given-v-is-a-denominator]
+            }
+          @discharge-whole |
+            forall w9: Q;
+              isADenominatorFor(i, v) -> dividesIntegrally(v, w9) ->
+              isInteger(rational.mul(w9, qpoly.qcoeff(theSubject, i)))
+            [by generalize generalize-whole]
+        }
+      @discharge-v |
+        forall v9: Q; forall w9: Q;
+          isADenominatorFor(i, v9) -> dividesIntegrally(v9, w9) ->
+          isInteger(rational.mul(w9, qpoly.qcoeff(theSubject, i)))
+        [by generalize generalize-v]
+    }
+  @conclusion |
+    forall i: Nat; forall v, whole: Q;
+      isADenominatorFor(i, v) -> dividesIntegrally(v, whole) ->
+      isInteger(rational.mul(whole, qpoly.qcoeff(theSubject, i)))
+    [by generalize generalize-i]
+qed
