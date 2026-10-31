@@ -5459,3 +5459,77 @@ proof
       nat_less_than(i, n) -> qpoly.qcoeff(p, i) = qat(t, i)
     [by generalize generalize-t]
 qed
+
+// -- THE CLEARED NUMERATORS AS A SEQUENCE -------------------------------------------------
+// Judson's step 2 produces `d_i = C · (b_i/c_i)`, the cleared numerators. Step 2's theorem
+// (`theCommonDenominatorClearsACoefficient`) gives their integrality ONE INDEX AT A TIME; the
+// descent and the least-first-quotient argument need them as a SEQUENCE.
+//
+// The index-pinned choice supplies it: "v is the cleared numerator at index i" is
+// `v = C · coeff(p, i)` together with `isInteger(v)`, which has a witness at every index —
+// the value itself, integral by step 2.
+theorem theClearedNumeratorSequenceExists: forall whole: Q;
+  (forall i: Nat; isInteger(rational.mul(whole, qpoly.qcoeff(theSubject, i)))) ->
+  (forall n: Nat; exists u: QSeq; forall i: Nat; nat_less_than(i, n) ->
+  (isInteger(qat(u, i)) and
+  qat(u, i) = rational.mul(whole, qpoly.qcoeff(theSubject, i))))
+proof
+  @generalize-whole |
+    fix whole: Q {
+      @given-all-integral |
+        assume forall i: Nat;
+          isInteger(rational.mul(whole, qpoly.qcoeff(theSubject, i))) {
+          @all-integral |
+            forall i: Nat;
+              isInteger(rational.mul(whole, qpoly.qcoeff(theSubject, i)))
+            [by hypothesis given-all-integral]
+          @each-index |
+            fix i: Nat {
+              @integral-here |
+                isInteger(rational.mul(whole, qpoly.qcoeff(theSubject, i)))
+                [using specialize all-integral(i)]
+              @the-value-is-itself |
+                rational.mul(whole, qpoly.qcoeff(theSubject, i)) =
+                  rational.mul(whole, qpoly.qcoeff(theSubject, i))
+                [by reflexivity]
+              @the-witness-works |
+                isInteger(rational.mul(whole, qpoly.qcoeff(theSubject, i))) and
+                  rational.mul(whole, qpoly.qcoeff(theSubject, i)) =
+                  rational.mul(whole, qpoly.qcoeff(theSubject, i))
+                [by both integral-here the-value-is-itself]
+              @conclusion-a-witness |
+                exists v: Q;
+                  (isInteger(v) and
+                  v = rational.mul(whole, qpoly.qcoeff(theSubject, i)))
+                [by witness(rational.mul(whole, qpoly.qcoeff(theSubject, i))) the-witness-works]
+            }
+          @the-witnesses |
+            forall i: Nat; exists v: Q;
+              (isInteger(v) and
+              v = rational.mul(whole, qpoly.qcoeff(theSubject, i)))
+            [by generalize each-index]
+          @the-sequences |
+            forall m: Nat; exists u: QSeq; forall i: Nat;
+              nat_less_than(i, m) ->
+              (isInteger(qat(u, i)) and
+              qat(u, i) = rational.mul(whole, qpoly.qcoeff(theSubject, i)))
+            [using instantiation anIndexPinnedChoiceIsRealized(fun i: Nat, v: Q => (isInteger(v) and v = rational.mul(whole, qpoly.qcoeff(theSubject, i)))) the-witnesses]
+        }
+      @the-implication |
+        (forall i: Nat;
+          isInteger(rational.mul(whole, qpoly.qcoeff(theSubject, i)))) ->
+          (forall m: Nat; exists u: QSeq; forall i: Nat;
+          nat_less_than(i, m) ->
+          (isInteger(qat(u, i)) and
+          qat(u, i) = rational.mul(whole, qpoly.qcoeff(theSubject, i))))
+        [by discharge given-all-integral]
+    }
+  @conclusion |
+    forall whole: Q;
+      (forall i: Nat;
+      isInteger(rational.mul(whole, qpoly.qcoeff(theSubject, i)))) ->
+      (forall n: Nat; exists u: QSeq; forall i: Nat; nat_less_than(i, n) ->
+      (isInteger(qat(u, i)) and
+      qat(u, i) = rational.mul(whole, qpoly.qcoeff(theSubject, i))))
+    [by generalize generalize-whole]
+qed
