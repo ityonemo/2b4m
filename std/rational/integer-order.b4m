@@ -1597,3 +1597,227 @@ proof
       (e = ONE or e = neg(ONE))
     [by generalize generalize-e]
 qed
+
+// -- two order facts the well-ordering file needs -----------------------------------------
+
+// n < succ(n): the gap is ZERO, and `aNonnegGapMakesItLess` wants `a + succ(d) = b`, i.e.
+// n + succ(ZERO) = succ(n) — which is `succ(n) = n + ONE` with ONE = succ(ZERO).
+theorem aNaturalIsBelowItsSuccessor: forall n: Q;
+  less_than(n, succ(n))
+proof
+  @generalize-n |
+    fix n: Q {
+      @zero-is-natural |
+        isNatural(ZERO)
+        [by cite rational.isNaturalZero]
+      @succ-is-plus-one |
+        succ(n) = add(n, ONE)
+        [using specialize rational.succDefinition(n)]
+      @one-is-succ-zero |
+        ONE = succ(ZERO)
+        [by cite rational.oneIsSuccZero]
+      @succ-is-plus-succ-zero |
+        succ(n) = add(n, succ(ZERO))
+        [by rewrite one-is-succ-zero succ-is-plus-one]
+      @the-gap-equation |
+        add(n, succ(ZERO)) = succ(n)
+        [by symmetry succ-is-plus-succ-zero]
+      @conclusion-below-its-successor |
+        less_than(n, succ(n))
+        [using specialize aNonnegGapMakesItLess(n, ZERO, succ(n)) zero-is-natural the-gap-equation]
+    }
+  @conclusion |
+    forall n: Q; less_than(n, succ(n))
+    [by generalize generalize-n]
+qed
+
+// Nothing sits strictly between a natural and its successor: m < succ(k) splits as m < k or
+// m = k. The discreteness gap, read at a successor — ℚ's order alone cannot say it.
+//
+// Strategy: m < succ(k) gives a natural gap d with m + succ(d) = succ(k). If d = ZERO then
+// m + ONE = k + ONE, so m = k; otherwise d = succ(e) and m + succ(e) = k, putting m below k.
+theorem theNaturalSuccSplit: forall m, k: Q;
+  isNatural(m) -> isNatural(k) -> less_than(m, succ(k)) ->
+  (less_than(m, k) or m = k)
+proof
+  @generalize-m |
+    fix m: Q {
+      @generalize-k |
+        fix k: Q {
+          @given-m-is-natural |
+            assume isNatural(m) {
+              @m-is-natural |
+                isNatural(m)
+                [by hypothesis given-m-is-natural]
+              @m-is-an-integer |
+                isInteger(m)
+                [using specialize rational.isNaturalIsInteger(m) m-is-natural]
+              @given-k-is-natural |
+                assume isNatural(k) {
+                  @k-is-natural |
+                    isNatural(k)
+                    [by hypothesis given-k-is-natural]
+                  @succ-k-is-natural |
+                    isNatural(succ(k))
+                    [using specialize rational.isNaturalSucc(k) k-is-natural]
+                  @succ-k-is-an-integer |
+                    isInteger(succ(k))
+                    [using specialize rational.isNaturalIsInteger(succ(k)) succ-k-is-natural]
+                  @given-m-below-succ-k |
+                    assume less_than(m, succ(k)) {
+                      @m-below-succ-k |
+                        less_than(m, succ(k))
+                        [by hypothesis given-m-below-succ-k]
+                      @the-gap |
+                        exists d: Q; isInteger(d) and
+                          (isNatural(d) and add(m, succ(d)) = succ(k))
+                        [using specialize theIntegersInRationalAreDiscrete(m, succ(k)) m-is-an-integer succ-k-is-an-integer m-below-succ-k]
+                      @with-the-gap |
+                        unpack d: Q from the-gap {
+                          @with-gap-d |
+                            isInteger(d) and
+                              (isNatural(d) and add(m, succ(d)) = succ(k))
+                            [by hypothesis with-the-gap]
+                          @the-natural-gap |
+                            isNatural(d) and add(m, succ(d)) = succ(k)
+                            [by and_rhs with-gap-d]
+                          @d-is-natural |
+                            isNatural(d)
+                            [by and_lhs the-natural-gap]
+                          @the-gap-equation |
+                            add(m, succ(d)) = succ(k)
+                            [by and_rhs the-natural-gap]
+                          @d-is-zero-or-positive |
+                            d = ZERO or less_than(ZERO, d)
+                            [using specialize aNaturalIsZeroOrPositive(d) d-is-natural]
+                          @conclusion-the-split |
+                            less_than(m, k) or m = k
+                            case d-is-zero-or-positive {
+                              // d = 0: m + 1 = k + 1, so m = k
+                              @when-d-is-zero |
+                                assume d = ZERO {
+                                  @d-is-zero |
+                                    d = ZERO
+                                    [by hypothesis when-d-is-zero]
+                                  @the-equation-at-zero |
+                                    add(m, succ(ZERO)) = succ(k)
+                                    [by rewrite d-is-zero the-gap-equation]
+                                  @one-is-succ-zero |
+                                    ONE = succ(ZERO)
+                                    [by cite rational.oneIsSuccZero]
+                                  @m-plus-one |
+                                    add(m, ONE) = succ(k)
+                                    [by rewrite one-is-succ-zero the-equation-at-zero]
+                                  @succ-m-is-plus-one |
+                                    succ(m) = add(m, ONE)
+                                    [using specialize rational.succDefinition(m)]
+                                  @succ-m-is-succ-k |
+                                    succ(m) = succ(k)
+                                    [using simplify succ-m-is-plus-one m-plus-one]
+                                  @m-is-k |
+                                    m = k
+                                    [using specialize rational.succInjective(m, k) succ-m-is-succ-k]
+                                  @conclusion-equal |
+                                    less_than(m, k) or m = k
+                                    [by either_right m-is-k]
+                                }
+                              // d > 0: d is a nonzero natural, so d = succ(e), and
+                              // m + succ(e) = k puts m below k
+                              @when-d-is-positive |
+                                assume less_than(ZERO, d) {
+                                  @d-is-positive |
+                                    less_than(ZERO, d)
+                                    [by hypothesis when-d-is-positive]
+                                  @d-is-nonzero |
+                                    not (d = ZERO)
+                                    [using specialize aPositiveIsNonzero(d) d-is-positive]
+                                  @d-is-a-successor |
+                                    exists e: Q; isNatural(e) and d = succ(e)
+                                    [using specialize aNonzeroNaturalIsASuccessor(d) d-is-natural d-is-nonzero]
+                                  @with-the-predecessor |
+                                    unpack e: Q from d-is-a-successor {
+                                      @with-predecessor-e |
+                                        isNatural(e) and d = succ(e)
+                                        [by hypothesis with-the-predecessor]
+                                      @e-is-natural |
+                                        isNatural(e)
+                                        [by and_lhs with-predecessor-e]
+                                      @d-is-succ-e |
+                                        d = succ(e)
+                                        [by and_rhs with-predecessor-e]
+                                      // m + succ(succ e) = succ k, so m + succ e = k
+                                      @the-equation-at-succ-e |
+                                        add(m, succ(succ(e))) = succ(k)
+                                        [by rewrite d-is-succ-e the-gap-equation]
+                                      // ℚ has addSuccLeft only, so commute both sides
+                                      @commute-outer |
+                                        add(m, succ(succ(e))) =
+                                          add(succ(succ(e)), m)
+                                        [using specialize rational.addIsCommutative(m, succ(succ(e)))]
+                                      @push-left |
+                                        add(succ(succ(e)), m) =
+                                          succ(add(succ(e), m))
+                                        [using specialize rational.addSuccLeft(succ(e), m)]
+                                      @commute-inner |
+                                        add(succ(e), m) = add(m, succ(e))
+                                        [using specialize rational.addIsCommutative(succ(e), m)]
+                                      @push-left-commuted |
+                                        add(succ(succ(e)), m) =
+                                          succ(add(m, succ(e)))
+                                        [by rewrite commute-inner push-left]
+                                      @pushing-succ-out |
+                                        add(m, succ(succ(e))) = succ(add(m, succ(e)))
+                                        [by rewrite commute-outer push-left-commuted]
+                                      @pushing-succ-out-flipped |
+                                        succ(add(m, succ(e))) =
+                                          add(m, succ(succ(e)))
+                                        [by symmetry pushing-succ-out]
+                                      @succ-of-the-sum |
+                                        succ(add(m, succ(e))) = succ(k)
+                                        [by rewrite pushing-succ-out-flipped the-equation-at-succ-e]
+                                      @the-sum-is-k |
+                                        add(m, succ(e)) = k
+                                        [using specialize rational.succInjective(add(m, succ(e)), k) succ-of-the-sum]
+                                      @m-below-k |
+                                        less_than(m, k)
+                                        [using specialize aNonnegGapMakesItLess(m, e, k) e-is-natural the-sum-is-k]
+                                      @conclusion-below |
+                                        less_than(m, k) or m = k
+                                        [by either_left m-below-k]
+                                    }
+                                  @conclusion-positive-exported |
+                                    less_than(m, k) or m = k
+                                    [by unpacked with-the-predecessor]
+                                }
+                            }
+                        }
+                      @conclusion-split-exported |
+                        less_than(m, k) or m = k
+                        [by unpacked with-the-gap]
+                    }
+                  @below-succ-k-implies |
+                    less_than(m, succ(k)) -> (less_than(m, k) or m = k)
+                    [by discharge given-m-below-succ-k]
+                }
+              @k-natural-implies |
+                isNatural(k) -> less_than(m, succ(k)) ->
+                  (less_than(m, k) or m = k)
+                [by discharge given-k-is-natural]
+            }
+          @m-natural-implies |
+            isNatural(m) -> isNatural(k) -> less_than(m, succ(k)) ->
+              (less_than(m, k) or m = k)
+            [by discharge given-m-is-natural]
+        }
+      @discharge-k |
+        forall k9: Q;
+          isNatural(m) -> isNatural(k9) -> less_than(m, succ(k9)) ->
+          (less_than(m, k9) or m = k9)
+        [by generalize generalize-k]
+    }
+  @conclusion |
+    forall m, k: Q;
+      isNatural(m) -> isNatural(k) -> less_than(m, succ(k)) ->
+      (less_than(m, k) or m = k)
+    [by generalize generalize-m]
+qed
