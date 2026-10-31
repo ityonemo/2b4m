@@ -32,6 +32,7 @@ const ZERO = peano.ZERO
 const IZERO = integer.ZERO
 func add = peano.add
 pred divides = int_divides.divides
+pred is_prime = mod_n_domain.is_prime
 
 // -- ℤ[x] ----------------------------------------------------------------------------------
 sort IntPoly
@@ -233,4 +234,383 @@ proof
       peano.less_than(add(m, n), i) ->
       forall k: Nat; iconvolution(p, q, i, k) = IZERO
     [using model(IntegerPolynomials) ring_leading.theProductVanishesAboveTheDegreeSum]
+qed
+
+// -- reduction is a ring homomorphism ------------------------------------------------------
+// Judson writes "let α₁'(x) and β₁'(x) be the polynomials in ℤ_p[x] obtained by reducing the
+// coefficients of α₁(x) and β₁(x) modulo p", then uses α₁'·β₁' where he means (α₁·β₁)'. That
+// step is only legitimate because `reduce` commutes with multiplication, which he leaves to
+// the reader. It does, and this is the proof: the two convolution recursions are the same
+// recursion, and `cls` is an add- and mul-homomorphism at every step, so induct on the
+// convolution's second index.
+
+// Strategy: induction on k. Base: both clauses give a product of coefficients, bridged by
+// mulHom. Step: both clauses add a product onto the previous convolution, bridged by addHom
+// and mulHom with the inductive hypothesis rewriting the left summand.
+theorem reduceCommutesWithTheConvolution: forall p, q: IntPoly; forall i, k: Nat;
+  mod_n_poly.zconvolution(reduce(p), reduce(q), i, k) =
+  mod_n.cls(iconvolution(p, q, i, k))
+proof
+  @generalize-p |
+    fix p: IntPoly {
+      @generalize-q |
+        fix q: IntPoly {
+          @generalize-i |
+            fix i: Nat {
+              // base case: convolution at ZERO is a single coefficient product
+              @the-reduced-convolution-at-zero |
+                mod_n_poly.zconvolution(reduce(p), reduce(q), i, ZERO) =
+                  mod_n.mul(mod_n_poly.zcoeff(reduce(p), ZERO),
+                  mod_n_poly.zcoeff(reduce(q), i))
+                [using specialize mod_n_poly.zConvolutionZero(reduce(p), reduce(q), i)]
+              @the-integer-convolution-at-zero |
+                iconvolution(p, q, i, ZERO) =
+                  integer.mul(icoeff(p, ZERO), icoeff(q, i))
+                [using specialize iConvolutionZero(p, q, i)]
+              @the-reduced-coefficient-at-zero |
+                mod_n_poly.zcoeff(reduce(p), ZERO) = mod_n.cls(icoeff(p, ZERO))
+                [using specialize reduceCoefficientwise(p, ZERO)]
+              @the-reduced-coefficient-at-i |
+                mod_n_poly.zcoeff(reduce(q), i) = mod_n.cls(icoeff(q, i))
+                [using specialize reduceCoefficientwise(q, i)]
+              @the-product-of-classes-at-zero |
+                mod_n.mul(mod_n.cls(icoeff(p, ZERO)), mod_n.cls(icoeff(q, i))) =
+                  mod_n.cls(integer.mul(icoeff(p, ZERO), icoeff(q, i)))
+                [using specialize mod_n.mulHom(icoeff(p, ZERO), icoeff(q, i))]
+              @base-case |
+                mod_n_poly.zconvolution(reduce(p), reduce(q), i, ZERO) =
+                  mod_n.cls(iconvolution(p, q, i, ZERO))
+                [using simplify the-reduced-convolution-at-zero
+                  the-reduced-coefficient-at-zero
+                  the-reduced-coefficient-at-i
+                  the-product-of-classes-at-zero
+                  the-integer-convolution-at-zero]
+
+              // inductive step: peel one term off each recursion and match them up
+              @induction-step |
+                fix k: Nat {
+                  @given-inductive-hypothesis |
+                    assume mod_n_poly.zconvolution(reduce(p), reduce(q), i, k) =
+                      mod_n.cls(iconvolution(p, q, i, k)) {
+                      @inductive-hypothesis |
+                        mod_n_poly.zconvolution(reduce(p), reduce(q), i, k) =
+                          mod_n.cls(iconvolution(p, q, i, k))
+                        [by hypothesis given-inductive-hypothesis]
+                      @the-reduced-convolution-at-succ |
+                        mod_n_poly.zconvolution(reduce(p), reduce(q), i, peano.succ(k)) =
+                          mod_n.add(mod_n_poly.zconvolution(reduce(p), reduce(q), i, k),
+                          mod_n.mul(mod_n_poly.zcoeff(reduce(p), peano.succ(k)),
+                          mod_n_poly.zcoeff(reduce(q), subtraction.sub(i, peano.succ(k)))))
+                        [using specialize mod_n_poly.zConvolutionSucc(reduce(p), reduce(q), i, k)]
+                      @the-integer-convolution-at-succ |
+                        iconvolution(p, q, i, peano.succ(k)) =
+                          integer.add(iconvolution(p, q, i, k),
+                          integer.mul(icoeff(p, peano.succ(k)),
+                          icoeff(q, subtraction.sub(i, peano.succ(k)))))
+                        [using specialize iConvolutionSucc(p, q, i, k)]
+                      @the-reduced-coefficient-at-succ |
+                        mod_n_poly.zcoeff(reduce(p), peano.succ(k)) =
+                          mod_n.cls(icoeff(p, peano.succ(k)))
+                        [using specialize reduceCoefficientwise(p, peano.succ(k))]
+                      @the-reduced-coefficient-at-the-complement |
+                        mod_n_poly.zcoeff(reduce(q), subtraction.sub(i, peano.succ(k))) =
+                          mod_n.cls(icoeff(q, subtraction.sub(i, peano.succ(k))))
+                        [using specialize reduceCoefficientwise(q, subtraction.sub(i, peano.succ(k)))]
+                      @the-product-of-classes-at-succ |
+                        mod_n.mul(mod_n.cls(icoeff(p, peano.succ(k))),
+                          mod_n.cls(icoeff(q, subtraction.sub(i, peano.succ(k))))) =
+                          mod_n.cls(integer.mul(icoeff(p, peano.succ(k)),
+                          icoeff(q, subtraction.sub(i, peano.succ(k)))))
+                        [using specialize mod_n.mulHom(icoeff(p, peano.succ(k)), icoeff(q, subtraction.sub(i, peano.succ(k))))]
+                      @the-sum-of-classes |
+                        mod_n.add(mod_n.cls(iconvolution(p, q, i, k)),
+                          mod_n.cls(integer.mul(icoeff(p, peano.succ(k)),
+                          icoeff(q, subtraction.sub(i, peano.succ(k)))))) =
+                          mod_n.cls(integer.add(iconvolution(p, q, i, k),
+                          integer.mul(icoeff(p, peano.succ(k)),
+                          icoeff(q, subtraction.sub(i, peano.succ(k))))))
+                        [using specialize mod_n.addHom(iconvolution(p, q, i, k), integer.mul(icoeff(p, peano.succ(k)), icoeff(q, subtraction.sub(i, peano.succ(k)))))]
+                      @conclusion-the-reduction-commutes-at-succ |
+                        mod_n_poly.zconvolution(reduce(p), reduce(q), i, peano.succ(k)) =
+                          mod_n.cls(iconvolution(p, q, i, peano.succ(k)))
+                        [using simplify the-reduced-convolution-at-succ
+                          inductive-hypothesis
+                          the-reduced-coefficient-at-succ
+                          the-reduced-coefficient-at-the-complement
+                          the-product-of-classes-at-succ
+                          the-sum-of-classes
+                          the-integer-convolution-at-succ]
+                    }
+                  @induction-step-at-k |
+                    (mod_n_poly.zconvolution(reduce(p), reduce(q), i, k) =
+                      mod_n.cls(iconvolution(p, q, i, k))) ->
+                      (mod_n_poly.zconvolution(reduce(p), reduce(q), i, peano.succ(k)) =
+                      mod_n.cls(iconvolution(p, q, i, peano.succ(k))))
+                    [by discharge given-inductive-hypothesis]
+                }
+              @induction-step-for-all-k |
+                forall k: Nat;
+                  (mod_n_poly.zconvolution(reduce(p), reduce(q), i, k) =
+                  mod_n.cls(iconvolution(p, q, i, k))) ->
+                  (mod_n_poly.zconvolution(reduce(p), reduce(q), i, peano.succ(k)) =
+                  mod_n.cls(iconvolution(p, q, i, peano.succ(k))))
+                [by generalize induction-step]
+              @the-reduction-commutes-for-all-k |
+                forall k: Nat;
+                  mod_n_poly.zconvolution(reduce(p), reduce(q), i, k) =
+                  mod_n.cls(iconvolution(p, q, i, k))
+                [using instantiation peano.induction((fun t: Nat => mod_n_poly.zconvolution(reduce(p), reduce(q), i, t) = mod_n.cls(iconvolution(p, q, i, t)))) base-case induction-step-for-all-k]
+            }
+          @discharge-i |
+            forall i9: Nat; forall k: Nat;
+              mod_n_poly.zconvolution(reduce(p), reduce(q), i9, k) =
+              mod_n.cls(iconvolution(p, q, i9, k))
+            [by generalize generalize-i]
+        }
+      @discharge-q |
+        forall q9: IntPoly; forall i, k: Nat;
+          mod_n_poly.zconvolution(reduce(p), reduce(q9), i, k) =
+          mod_n.cls(iconvolution(p, q9, i, k))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: IntPoly; forall i, k: Nat;
+      mod_n_poly.zconvolution(reduce(p), reduce(q), i, k) =
+      mod_n.cls(iconvolution(p, q, i, k))
+    [by generalize generalize-p]
+qed
+
+// reduce(p·q) = reduce(p)·reduce(q): the convolution result read off through `mulPolyCoeff`
+// on both sides, then extensionality. This is the step Judson's α₁'·β₁' silently assumes.
+theorem reduceIsMultiplicative: forall p, q: IntPoly;
+  mod_n_poly.zmulP(reduce(p), reduce(q)) = reduce(imulP(p, q))
+proof
+  @generalize-p |
+    fix p: IntPoly {
+      @generalize-q |
+        fix q: IntPoly {
+          @the-coefficients-agree |
+            fix i: Nat {
+              @the-reduced-product-coefficient |
+                mod_n_poly.zcoeff(mod_n_poly.zmulP(reduce(p), reduce(q)), i) =
+                  mod_n_poly.zconvolution(reduce(p), reduce(q), i, i)
+                [using specialize mod_n_poly.zMulPolyCoeff(reduce(p), reduce(q), i)]
+              @the-convolutions-agree |
+                mod_n_poly.zconvolution(reduce(p), reduce(q), i, i) =
+                  mod_n.cls(iconvolution(p, q, i, i))
+                [using specialize reduceCommutesWithTheConvolution(p, q, i, i)]
+              @the-integer-product-coefficient |
+                icoeff(imulP(p, q), i) = iconvolution(p, q, i, i)
+                [using specialize iMulPolyCoeff(p, q, i)]
+              @the-reduction-of-the-product |
+                mod_n_poly.zcoeff(reduce(imulP(p, q)), i) =
+                  mod_n.cls(icoeff(imulP(p, q), i))
+                [using specialize reduceCoefficientwise(imulP(p, q), i)]
+              @conclusion-this-coefficient-agrees |
+                mod_n_poly.zcoeff(mod_n_poly.zmulP(reduce(p), reduce(q)), i) =
+                  mod_n_poly.zcoeff(reduce(imulP(p, q)), i)
+                [using simplify the-reduced-product-coefficient
+                  the-convolutions-agree
+                  the-reduction-of-the-product
+                  the-integer-product-coefficient]
+            }
+          @discharge-i |
+            forall i9: Nat;
+              mod_n_poly.zcoeff(mod_n_poly.zmulP(reduce(p), reduce(q)), i9) =
+              mod_n_poly.zcoeff(reduce(imulP(p, q)), i9)
+            [by generalize the-coefficients-agree]
+          @conclusion-the-products-agree |
+            mod_n_poly.zmulP(reduce(p), reduce(q)) = reduce(imulP(p, q))
+            [using specialize mod_n_poly.zPolyExtensionality(mod_n_poly.zmulP(reduce(p), reduce(q)), reduce(imulP(p, q))) discharge-i]
+        }
+      @discharge-q |
+        forall q9: IntPoly;
+          mod_n_poly.zmulP(reduce(p), reduce(q9)) = reduce(imulP(p, q9))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: IntPoly;
+      mod_n_poly.zmulP(reduce(p), reduce(q)) = reduce(imulP(p, q))
+    [by generalize generalize-p]
+qed
+
+// A polynomial all of whose coefficients the modulus divides reduces to the zero polynomial.
+// This is Judson's "since p | d, α₁'(x) β₁'(x) = 0 in ℤ_p[x]": every coefficient of
+// d·p(x) = c α₁(x) β₁(x) carries the factor d, so each one dies under reduction.
+theorem aPolynomialTheModulusDividesReducesToZero: forall f: IntPoly;
+  (forall i: Nat; divides(N, icoeff(f, i))) -> reduce(f) = mod_n_poly.ZZEROP
+proof
+  @generalize-f |
+    fix f: IntPoly {
+      @given-the-modulus-divides-every-coefficient |
+        assume forall i: Nat; divides(N, icoeff(f, i)) {
+          @the-modulus-divides-every-coefficient |
+            forall i: Nat; divides(N, icoeff(f, i))
+            [by hypothesis given-the-modulus-divides-every-coefficient]
+          @every-reduced-coefficient-vanishes |
+            fix i: Nat {
+              @the-modulus-divides-this-coefficient |
+                divides(N, icoeff(f, i))
+                [using specialize the-modulus-divides-every-coefficient(i)]
+              @vanishing-means-divisible |
+                mod_n.cls(icoeff(f, i)) = mod_n.ZERO iff divides(N, icoeff(f, i))
+                [using specialize mod_n_domain.aClassIsZeroWhenTheModulusDivides(icoeff(f, i))]
+              @the-class-vanishes |
+                mod_n.cls(icoeff(f, i)) = mod_n.ZERO
+                [using tautology vanishing-means-divisible the-modulus-divides-this-coefficient]
+              @the-reduced-coefficient |
+                mod_n_poly.zcoeff(reduce(f), i) = mod_n.cls(icoeff(f, i))
+                [using specialize reduceCoefficientwise(f, i)]
+              @the-zero-polynomials-coefficient |
+                mod_n_poly.zcoeff(mod_n_poly.ZZEROP, i) = mod_n.ZERO
+                [using specialize mod_n_poly.zZeroPolyCoeff(i)]
+              @conclusion-this-coefficient-agrees |
+                mod_n_poly.zcoeff(reduce(f), i) =
+                  mod_n_poly.zcoeff(mod_n_poly.ZZEROP, i)
+                [using simplify the-reduced-coefficient the-class-vanishes
+                  the-zero-polynomials-coefficient]
+            }
+          @discharge-i |
+            forall i9: Nat;
+              mod_n_poly.zcoeff(reduce(f), i9) =
+              mod_n_poly.zcoeff(mod_n_poly.ZZEROP, i9)
+            [by generalize every-reduced-coefficient-vanishes]
+          @conclusion-the-reduction-is-zero |
+            reduce(f) = mod_n_poly.ZZEROP
+            [using specialize mod_n_poly.zPolyExtensionality(reduce(f), mod_n_poly.ZZEROP) discharge-i]
+        }
+      @divisible-implies-reduces-to-zero |
+        (forall i: Nat; divides(N, icoeff(f, i))) -> reduce(f) = mod_n_poly.ZZEROP
+        [by discharge given-the-modulus-divides-every-coefficient]
+    }
+  @conclusion |
+    forall f: IntPoly;
+      (forall i: Nat; divides(N, icoeff(f, i))) -> reduce(f) = mod_n_poly.ZZEROP
+    [by generalize generalize-f]
+qed
+
+// -- GAUSS'S LEMMA: the d ≠ 1 case is impossible -------------------------------------------
+// Judson's closing paragraph, which is the whole substance of the lemma. Suppose the
+// denominator does not come out to 1. Then some prime N divides it, and because α₁'s
+// coefficients are relatively prime (and likewise β₁'s) there is a coefficient of each that
+// N misses. Reduce both modulo N: the product α₁'β₁' is zero, because N divides every
+// coefficient of α₁β₁ (that is what N | d buys). But ℤ_N[x] is an integral domain and
+// neither factor reduced to zero. Contradiction — so d = 1.
+//
+// The hypotheses are exactly Judson's three: N is prime, N misses a coefficient of each
+// factor, and N divides every coefficient of the product. The conclusion is the absurdity.
+theorem theDenominatorCannotExceedOne: forall f, g: IntPoly; forall i, j: Nat;
+  is_prime(N) ->
+  (not divides(N, icoeff(f, i))) ->
+  (not divides(N, icoeff(g, j))) ->
+  (not (forall t: Nat; divides(N, icoeff(imulP(f, g), t))))
+proof
+  @generalize-f |
+    fix f: IntPoly {
+      @generalize-g |
+        fix g: IntPoly {
+          @generalize-i |
+            fix i: Nat {
+              @generalize-j |
+                fix j: Nat {
+                  @given-the-modulus-is-prime |
+                    assume is_prime(N) {
+                      @the-modulus-is-prime |
+                        is_prime(N)
+                        [by hypothesis given-the-modulus-is-prime]
+                      @given-the-modulus-misses-f |
+                        assume not divides(N, icoeff(f, i)) {
+                          @the-modulus-misses-f |
+                            not divides(N, icoeff(f, i))
+                            [by hypothesis given-the-modulus-misses-f]
+                          @given-the-modulus-misses-g |
+                            assume not divides(N, icoeff(g, j)) {
+                              @the-modulus-misses-g |
+                                not divides(N, icoeff(g, j))
+                                [by hypothesis given-the-modulus-misses-g]
+                              // each factor survives reduction
+                              @the-reduction-of-f-is-nonzero |
+                                not (reduce(f) = mod_n_poly.ZZEROP)
+                                [using specialize aSurvivingCoefficientSurvivesReduction(f, i) the-modulus-misses-f]
+                              @the-reduction-of-g-is-nonzero |
+                                not (reduce(g) = mod_n_poly.ZZEROP)
+                                [using specialize aSurvivingCoefficientSurvivesReduction(g, j) the-modulus-misses-g]
+                              // so, ℤ_N[x] being a domain, their product does too
+                              @the-product-of-the-reductions-is-nonzero |
+                                not (mod_n_poly.zmulP(reduce(f), reduce(g)) = mod_n_poly.ZZEROP)
+                                [using specialize mod_n_poly.modNPolynomialsHaveNoZeroDivisors(reduce(f), reduce(g)) the-modulus-is-prime the-reduction-of-f-is-nonzero the-reduction-of-g-is-nonzero]
+                              @the-reductions-multiply |
+                                mod_n_poly.zmulP(reduce(f), reduce(g)) = reduce(imulP(f, g))
+                                [using specialize reduceIsMultiplicative(f, g)]
+                              @the-reduction-of-the-product-is-nonzero |
+                                not (reduce(imulP(f, g)) = mod_n_poly.ZZEROP)
+                                [by rewrite the-reductions-multiply the-product-of-the-reductions-is-nonzero]
+                              // but if the modulus divided every coefficient of the product
+                              // it WOULD have reduced to zero
+                              @given-the-modulus-divides-the-product |
+                                assume forall t: Nat; divides(N, icoeff(imulP(f, g), t)) {
+                                  @the-modulus-divides-the-product |
+                                    forall t: Nat; divides(N, icoeff(imulP(f, g), t))
+                                    [by hypothesis given-the-modulus-divides-the-product]
+                                  @conclusion-the-reduction-of-the-product-is-zero |
+                                    reduce(imulP(f, g)) = mod_n_poly.ZZEROP
+                                    [using specialize aPolynomialTheModulusDividesReducesToZero(imulP(f, g)) the-modulus-divides-the-product]
+                                }
+                              @divides-the-product-implies-it-reduces-to-zero |
+                                (forall t: Nat; divides(N, icoeff(imulP(f, g), t))) ->
+                                  reduce(imulP(f, g)) = mod_n_poly.ZZEROP
+                                [by discharge given-the-modulus-divides-the-product]
+                              @conclusion-the-modulus-misses-the-product |
+                                not (forall t: Nat; divides(N, icoeff(imulP(f, g), t)))
+                                [using tautology divides-the-product-implies-it-reduces-to-zero the-reduction-of-the-product-is-nonzero]
+                            }
+                          @misses-g-implies-misses-the-product |
+                            (not divides(N, icoeff(g, j))) ->
+                              (not (forall t: Nat; divides(N, icoeff(imulP(f, g), t))))
+                            [by discharge given-the-modulus-misses-g]
+                        }
+                      @misses-f-implies-misses-the-product |
+                        (not divides(N, icoeff(f, i))) ->
+                          (not divides(N, icoeff(g, j))) ->
+                          (not (forall t: Nat; divides(N, icoeff(imulP(f, g), t))))
+                        [by discharge given-the-modulus-misses-f]
+                    }
+                  @prime-implies-misses-the-product |
+                    is_prime(N) ->
+                      (not divides(N, icoeff(f, i))) ->
+                      (not divides(N, icoeff(g, j))) ->
+                      (not (forall t: Nat; divides(N, icoeff(imulP(f, g), t))))
+                    [by discharge given-the-modulus-is-prime]
+                }
+              @discharge-j |
+                forall j9: Nat;
+                  is_prime(N) ->
+                  (not divides(N, icoeff(f, i))) ->
+                  (not divides(N, icoeff(g, j9))) ->
+                  (not (forall t: Nat; divides(N, icoeff(imulP(f, g), t))))
+                [by generalize generalize-j]
+            }
+          @discharge-i |
+            forall i9: Nat; forall j: Nat;
+              is_prime(N) ->
+              (not divides(N, icoeff(f, i9))) ->
+              (not divides(N, icoeff(g, j))) ->
+              (not (forall t: Nat; divides(N, icoeff(imulP(f, g), t))))
+            [by generalize generalize-i]
+        }
+      @discharge-g |
+        forall g9: IntPoly; forall i, j: Nat;
+          is_prime(N) ->
+          (not divides(N, icoeff(f, i))) ->
+          (not divides(N, icoeff(g9, j))) ->
+          (not (forall t: Nat; divides(N, icoeff(imulP(f, g9), t))))
+        [by generalize generalize-g]
+    }
+  @conclusion |
+    forall f, g: IntPoly; forall i, j: Nat;
+      is_prime(N) ->
+      (not divides(N, icoeff(f, i))) ->
+      (not divides(N, icoeff(g, j))) ->
+      (not (forall t: Nat; divides(N, icoeff(imulP(f, g), t))))
+    [by generalize generalize-f]
 qed
