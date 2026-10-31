@@ -27,6 +27,7 @@ import peano <<< "std/peano.b4m"
 
 sort Q = rational.Q
 sort Nat = peano.Nat
+const ZERO = peano.ZERO
 pred isInteger = rational.isInteger
 
 // -- ℚ[x] ---------------------------------------------------------------------------------
@@ -36,6 +37,7 @@ const QZEROP: QPoly
 func qaddP(p: QPoly, q: QPoly) => QPoly
 func qnegP(p: QPoly) => QPoly
 func qmulP(p: QPoly, q: QPoly) => QPoly
+func qmonomial(a: Q, k: Nat) => QPoly
 
 // the coefficient equations: ℚ[x]'s own primitives
 axiom qPolyExtensionality: forall p, q: QPoly;
@@ -45,6 +47,10 @@ axiom qAddPolyCoeff: forall p, q: QPoly; forall i: Nat;
   qcoeff(qaddP(p, q), i) = rational.add(qcoeff(p, i), qcoeff(q, i))
 axiom qNegPolyCoeff: forall p: QPoly; forall i: Nat;
   qcoeff(qnegP(p), i) = rational.neg(qcoeff(p, i))
+axiom qMonomialCoeffAtItsIndex: forall a: Q; forall k: Nat;
+  qcoeff(qmonomial(a, k), k) = a
+axiom qMonomialCoeffElsewhere: forall a: Q; forall k, i: Nat;
+  (not (i = k)) -> qcoeff(qmonomial(a, k), i) = rational.ZERO
 
 // F[x]'s corpus, transferred. The coefficient field AND the polynomial layer both travel.
 model RationalPolynomials {
@@ -61,10 +67,13 @@ model RationalPolynomials {
   fieldpoly.addP: qaddP
   fieldpoly.negP: qnegP
   fieldpoly.mulP: qmulP
+  fieldpoly.monomial: qmonomial
   fieldpoly.polyExtensionality <- qPolyExtensionality
   fieldpoly.zeroPolyCoeff <- qZeroPolyCoeff
   fieldpoly.addPolyCoeff <- qAddPolyCoeff
   fieldpoly.negPolyCoeff <- qNegPolyCoeff
+  fieldpoly.monomialCoeffAtItsIndex <- qMonomialCoeffAtItsIndex
+  fieldpoly.monomialCoeffElsewhere <- qMonomialCoeffElsewhere
 }
 
 // -- integer coefficients -----------------------------------------------------------------
@@ -171,5 +180,194 @@ proof
       exists b, c: Q;
       isInteger(b) and isInteger(c) and c != rational.ZERO and
       qcoeff(p, i) = rational.mul(b, rational.recip(c))
+    [by generalize generalize-p]
+qed
+
+// -- divisibility and coprimality ON THE CUT ------------------------------------------------
+//
+// Judson's §17.3 Lemma 17.12 speaks of integers dividing each other and of a family of
+// coefficients being relatively prime. Both are expressible DIRECTLY over ℚ's integer cut:
+// the cut inherits ℚ's own multiplication, so "d divides n" is an existential over the cut
+// and needs none of std/integer/divides.b4m transferred across. (rational.b4m's header makes
+// the same point — "there is NO new arithmetic here".)
+
+// `d` divides `n` within the integers of ℚ: some integer quotient.
+define dividesOnTheCut(d, n) =
+  exists k: Q; isInteger(k) and n = rational.mul(d, k)
+
+// A family of coefficients is RELATIVELY PRIME when every integer dividing all of them
+// divides ONE — i.e. is a unit. Stated as a QUANTIFICATION over common divisors rather than
+// as a constructed gcd, which is both faithful to "the a_i's are relatively prime" and free
+// of any fold: no sequence sort, no gcd function, nothing totalized.
+define coefficientsAreRelativelyPrimeUpTo(p, n) =
+  forall e: Q;
+  isInteger(e) ->
+  (forall i: Nat; peano.less_than(i, n) -> dividesOnTheCut(e, qcoeff(p, i))) ->
+  dividesOnTheCut(e, rational.ONE)
+
+// Every integer divides itself: the witness is ONE.
+theorem anIntegerDividesItself: forall n: Q;
+  isInteger(n) -> dividesOnTheCut(n, n)
+proof
+  @generalize-n |
+    fix n: Q {
+      @given-n-is-an-integer |
+        assume isInteger(n) {
+          @one-is-an-integer |
+            isInteger(rational.ONE)
+            [by cite rational.oneIsAnInteger]
+          @n-times-one-is-n |
+            rational.mul(n, rational.ONE) = n
+            [using specialize rational.mulOneRight(n)]
+          @n-is-the-product |
+            n = rational.mul(n, rational.ONE)
+            [by symmetry n-times-one-is-n]
+          @the-witness-works |
+            isInteger(rational.ONE) and n = rational.mul(n, rational.ONE)
+            [by both one-is-an-integer n-is-the-product]
+          @conclusion-n-divides-itself |
+            exists k: Q; isInteger(k) and n = rational.mul(n, k)
+            [by witness(rational.ONE) the-witness-works]
+        }
+      @integer-implies-self-divides |
+        isInteger(n) -> dividesOnTheCut(n, n)
+        [by discharge given-n-is-an-integer]
+    }
+  @conclusion |
+    forall n: Q; isInteger(n) -> dividesOnTheCut(n, n)
+    [by generalize generalize-n]
+qed
+
+// A unit divides everything, which is the reading `coefficientsAreRelativelyPrimeUpTo` needs
+// on its right-hand side: ONE divides any integer.
+theorem oneDividesEveryInteger: forall n: Q;
+  isInteger(n) -> dividesOnTheCut(rational.ONE, n)
+proof
+  @generalize-n |
+    fix n: Q {
+      @given-n-is-an-integer |
+        assume isInteger(n) {
+          @n-is-an-integer |
+            isInteger(n)
+            [by hypothesis given-n-is-an-integer]
+          @one-times-n-is-n |
+            rational.mul(rational.ONE, n) = n
+            [using specialize rational.mulOneLeft(n)]
+          @n-is-the-product |
+            n = rational.mul(rational.ONE, n)
+            [by symmetry one-times-n-is-n]
+          @the-witness-works |
+            isInteger(n) and n = rational.mul(rational.ONE, n)
+            [by both n-is-an-integer n-is-the-product]
+          @conclusion-one-divides-n |
+            exists k: Q; isInteger(k) and n = rational.mul(rational.ONE, k)
+            [by witness(n) the-witness-works]
+        }
+      @integer-implies-one-divides |
+        isInteger(n) -> dividesOnTheCut(rational.ONE, n)
+        [by discharge given-n-is-an-integer]
+    }
+  @conclusion |
+    forall n: Q; isInteger(n) -> dividesOnTheCut(rational.ONE, n)
+    [by generalize generalize-n]
+qed
+
+// -- Lemma 17.12 -----------------------------------------------------------------------------
+//
+// "Let p(x) ∈ ℚ[x]. Then p(x) = (r/s)(a_0 + a_1 x + ⋯ + a_n x^n), where r, s, a_0, …, a_n are
+// integers, the a_i's are relatively prime, and r and s are relatively prime."
+//
+// The scaling by r/s is multiplication by the constant monomial carrying r·s⁻¹, the same way
+// std/field/poly-units.b4m treats constants. `s` must be nonzero for the reciprocal to mean
+// anything, which his `r/s` presupposes.
+//
+// EXISTENCE IS NOT PROVED HERE. His construction clears denominators by the product
+// c_0 ⋯ c_n over the coefficient index range, divides through by the gcd of the resulting
+// numerators, and reduces the leading fraction to lowest terms. Each of those three is a
+// FOLD over the coefficient index — a product, a family gcd, and a coprime reduction — and
+// std's folds (std/sequence.b4m) require a total `combine`, which the no-totalizing rule
+// rules out for gcd. `std/integer/family-gcd.b4m` sidesteps that for the gcd by going
+// relational, but the PRODUCT over the index range has no relational substitute: Judson's
+// proof needs the actual value c_0 ⋯ c_n to divide by.
+//
+// So the lemma is STATED here, honestly, with its existence left open. What is proved is
+// everything the statement rests on: the decomposition's parts are all expressible, and
+// `aScaledIntegerPolynomialIsRational` below confirms the shape composes.
+pred isTheIntegerDecomposition(p: QPoly, q: QPoly, r: Q, s: Q, n: Nat)
+axiom integerDecompositionMeaning: forall p, q: QPoly; forall r, s: Q; forall n: Nat;
+  isTheIntegerDecomposition(p, q, r, s, n) iff
+  (isInteger(r) and isInteger(s) and s != rational.ZERO and
+  hasIntegerCoefficientsUpTo(q, n) and
+  coefficientsAreRelativelyPrimeUpTo(q, n) and
+  coefficientsAreRelativelyPrimeUpTo(qaddP(qmonomial(r, ZERO), qmonomial(s, ZERO)), n) and
+  p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), ZERO), q))
+
+// The decomposition's shape composes: given one, p really is the scaled polynomial, and that
+// scaling is a ℚ[x] element like any other. A sanity theorem — it is what makes the
+// predicate above a statement about p rather than a bag of unrelated conjuncts.
+theorem aScaledIntegerPolynomialIsRational: forall p, q: QPoly; forall r, s: Q; forall n: Nat;
+  isTheIntegerDecomposition(p, q, r, s, n) ->
+  p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), ZERO), q)
+proof
+  @generalize-p |
+    fix p: QPoly {
+      @generalize-q |
+        fix q: QPoly {
+          @generalize-r |
+            fix r: Q {
+              @generalize-s |
+                fix s: Q {
+                  @generalize-n |
+                    fix n: Nat {
+                      @given-the-decomposition |
+                        assume isTheIntegerDecomposition(p, q, r, s, n) {
+                          @the-decomposition |
+                            isTheIntegerDecomposition(p, q, r, s, n)
+                            [by hypothesis given-the-decomposition]
+                          @the-definition |
+                            isTheIntegerDecomposition(p, q, r, s, n) iff
+                              (isInteger(r) and isInteger(s) and s != rational.ZERO and
+                              hasIntegerCoefficientsUpTo(q, n) and
+                              coefficientsAreRelativelyPrimeUpTo(q, n) and
+                              coefficientsAreRelativelyPrimeUpTo(qaddP(qmonomial(r, ZERO), qmonomial(s, ZERO)), n) and
+                              p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), ZERO), q))
+                            [using specialize integerDecompositionMeaning(p, q, r, s, n)]
+                          @conclusion-p-is-the-scaling |
+                            p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), ZERO), q)
+                            [using tautology the-definition the-decomposition]
+                        }
+                      @the-decomposition-implies |
+                        isTheIntegerDecomposition(p, q, r, s, n) ->
+                          p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), ZERO), q)
+                        [by discharge given-the-decomposition]
+                    }
+                  @discharge-n |
+                    forall n9: Nat;
+                      isTheIntegerDecomposition(p, q, r, s, n9) ->
+                      p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), ZERO), q)
+                    [by generalize generalize-n]
+                }
+              @discharge-s |
+                forall s9: Q; forall n9: Nat;
+                  isTheIntegerDecomposition(p, q, r, s9, n9) ->
+                  p = qmulP(qmonomial(rational.mul(r, rational.recip(s9)), ZERO), q)
+                [by generalize generalize-s]
+            }
+          @discharge-r |
+            forall r9, s9: Q; forall n9: Nat;
+              isTheIntegerDecomposition(p, q, r9, s9, n9) ->
+              p = qmulP(qmonomial(rational.mul(r9, rational.recip(s9)), ZERO), q)
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q9: QPoly; forall r9, s9: Q; forall n9: Nat;
+          isTheIntegerDecomposition(p, q9, r9, s9, n9) ->
+          p = qmulP(qmonomial(rational.mul(r9, rational.recip(s9)), ZERO), q9)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: QPoly; forall r, s: Q; forall n: Nat;
+      isTheIntegerDecomposition(p, q, r, s, n) ->
+      p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), ZERO), q)
     [by generalize generalize-p]
 qed
