@@ -4957,3 +4957,171 @@ proof
       qpoly.hasIntegerCoefficientsUpTo(p, n)
     [by generalize generalize-p]
 qed
+
+// -- STEP 4 IN THE DECOMPOSITION'S OWN TERMS ----------------------------------------------
+// `theReducedFractionIsInLowestTerms` is stated per-candidate-divisor `e`; the decomposition
+// asks for the generalized form. Generalizing over `e` IS `arePairwiseRelativelyPrime(r, s)`,
+// since `qpoly.dividesOnTheCut` is a `define` with exactly `dividesIntegrally`'s body.
+//
+// (Before the 2026-10-31 correction this conjunct was a polynomial condition and would have
+// needed a bridge; it is a pair condition now, so it does not.)
+theorem theReducedFractionIsCoprime: forall g, a, b, r, s: Q;
+  isAMaximalCommonDivisorOfThePair(g, a, b) ->
+  a = rational.mul(g, r) -> b = rational.mul(g, s) ->
+  qpoly.arePairwiseRelativelyPrime(r, s)
+proof
+  @generalize-g |
+    fix g: Q {
+      @generalize-a |
+        fix a: Q {
+          @generalize-b |
+            fix b: Q {
+              @generalize-r |
+                fix r: Q {
+                  @generalize-s |
+                    fix s: Q {
+                      @given-the-setup |
+                        assume isAMaximalCommonDivisorOfThePair(g, a, b) and
+                          a = rational.mul(g, r) and
+                          b = rational.mul(g, s) {
+                          @the-setup |
+                            isAMaximalCommonDivisorOfThePair(g, a, b) and
+                              a = rational.mul(g, r) and
+                              b = rational.mul(g, s)
+                            [by hypothesis given-the-setup]
+                          @g-is-maximal |
+                            isAMaximalCommonDivisorOfThePair(g, a, b)
+                            [using tautology the-setup]
+                          @a-factors |
+                            a = rational.mul(g, r)
+                            [using tautology the-setup]
+                          @b-factors |
+                            b = rational.mul(g, s)
+                            [using tautology the-setup]
+                          @each-candidate |
+                            fix e: Q {
+                              @given-e-is-an-integer |
+                                assume isInteger(e) {
+                                  @e-is-an-integer |
+                                    isInteger(e)
+                                    [by hypothesis given-e-is-an-integer]
+                                  @given-e-divides-r |
+                                    assume exists k: Q; isInteger(k) and
+                                      r = rational.mul(e, k) {
+                                      @the-r-quotient |
+                                        exists k: Q; isInteger(k) and
+                                          r = rational.mul(e, k)
+                                        [by hypothesis given-e-divides-r]
+                                      @the-r-meaning |
+                                        dividesIntegrally(e, r) iff
+                                          (exists k: Q; isInteger(k) and
+                                          r = rational.mul(e, k))
+                                        [using specialize dividesIntegrallyMeaning(e, r)]
+                                      @e-divides-r |
+                                        dividesIntegrally(e, r)
+                                        [using tautology the-r-meaning the-r-quotient]
+                                      @given-e-divides-s |
+                                        assume exists k: Q; isInteger(k) and
+                                          s = rational.mul(e, k) {
+                                          @the-s-quotient |
+                                            exists k: Q; isInteger(k) and
+                                              s = rational.mul(e, k)
+                                            [by hypothesis given-e-divides-s]
+                                          @the-s-meaning |
+                                            dividesIntegrally(e, s) iff
+                                              (exists k: Q; isInteger(k) and
+                                              s = rational.mul(e, k))
+                                            [using specialize dividesIntegrallyMeaning(e, s)]
+                                          @e-divides-s |
+                                            dividesIntegrally(e, s)
+                                            [using tautology the-s-meaning the-s-quotient]
+                                          @e-divides-one |
+                                            dividesIntegrally(e, ONE)
+                                            [using specialize theReducedFractionIsInLowestTerms(g, a, b, r, s, e) g-is-maximal a-factors b-factors e-is-an-integer e-divides-r e-divides-s]
+                                          @the-unit-meaning |
+                                            dividesIntegrally(e, ONE) iff
+                                              (exists k: Q; isInteger(k) and
+                                              ONE = rational.mul(e, k))
+                                            [using specialize dividesIntegrallyMeaning(e, ONE)]
+                                          @conclusion-e-is-a-unit |
+                                            exists k: Q; isInteger(k) and
+                                              ONE = rational.mul(e, k)
+                                            [using tautology the-unit-meaning e-divides-one]
+                                        }
+                                      @s-implies |
+                                        (exists k: Q; isInteger(k) and
+                                          s = rational.mul(e, k)) ->
+                                          (exists k: Q; isInteger(k) and
+                                          ONE = rational.mul(e, k))
+                                        [by discharge given-e-divides-s]
+                                    }
+                                  @r-implies |
+                                    (exists k: Q; isInteger(k) and
+                                      r = rational.mul(e, k)) ->
+                                      (exists k: Q; isInteger(k) and
+                                      s = rational.mul(e, k)) ->
+                                      (exists k: Q; isInteger(k) and
+                                      ONE = rational.mul(e, k))
+                                    [by discharge given-e-divides-r]
+                                }
+                              @integer-implies |
+                                isInteger(e) ->
+                                  (exists k: Q; isInteger(k) and
+                                  r = rational.mul(e, k)) ->
+                                  (exists k: Q; isInteger(k) and
+                                  s = rational.mul(e, k)) ->
+                                  (exists k: Q; isInteger(k) and
+                                  ONE = rational.mul(e, k))
+                                [by discharge given-e-is-an-integer]
+                            }
+                          @conclusion-coprime |
+                            qpoly.arePairwiseRelativelyPrime(r, s)
+                            [by generalize each-candidate]
+                        }
+                      @the-implication |
+                        (isAMaximalCommonDivisorOfThePair(g, a, b) and
+                          a = rational.mul(g, r) and
+                          b = rational.mul(g, s)) ->
+                          qpoly.arePairwiseRelativelyPrime(r, s)
+                        [by discharge given-the-setup]
+                      @curried |
+                        isAMaximalCommonDivisorOfThePair(g, a, b) ->
+                          a = rational.mul(g, r) -> b = rational.mul(g, s) ->
+                          qpoly.arePairwiseRelativelyPrime(r, s)
+                        [using tautology the-implication]
+                    }
+                  @discharge-s |
+                    forall s9: Q;
+                      isAMaximalCommonDivisorOfThePair(g, a, b) ->
+                      a = rational.mul(g, r) -> b = rational.mul(g, s9) ->
+                      qpoly.arePairwiseRelativelyPrime(r, s9)
+                    [by generalize generalize-s]
+                }
+              @discharge-r |
+                forall r9: Q; forall s9: Q;
+                  isAMaximalCommonDivisorOfThePair(g, a, b) ->
+                  a = rational.mul(g, r9) -> b = rational.mul(g, s9) ->
+                  qpoly.arePairwiseRelativelyPrime(r9, s9)
+                [by generalize generalize-r]
+            }
+          @discharge-b |
+            forall b9: Q; forall r9: Q; forall s9: Q;
+              isAMaximalCommonDivisorOfThePair(g, a, b9) ->
+              a = rational.mul(g, r9) -> b9 = rational.mul(g, s9) ->
+              qpoly.arePairwiseRelativelyPrime(r9, s9)
+            [by generalize generalize-b]
+        }
+      @discharge-a |
+        forall a9: Q; forall b9: Q; forall r9: Q; forall s9: Q;
+          isAMaximalCommonDivisorOfThePair(g, a9, b9) ->
+          a9 = rational.mul(g, r9) -> b9 = rational.mul(g, s9) ->
+          qpoly.arePairwiseRelativelyPrime(r9, s9)
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall g, a, b, r, s: Q;
+      isAMaximalCommonDivisorOfThePair(g, a, b) ->
+      a = rational.mul(g, r) -> b = rational.mul(g, s) ->
+      qpoly.arePairwiseRelativelyPrime(r, s)
+    [by generalize generalize-g]
+qed
