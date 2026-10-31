@@ -1081,3 +1081,153 @@ proof
       isInteger(e) -> less_than(ZERO, e) -> (e = ONE or less_than(ONE, e))
     [by generalize generalize-e]
 qed
+
+// -- A POSITIVE INTEGER DIVIDING ONE IS ONE -----------------------------------------------
+// Judson's `c a_m b_n = 1` step, in the positive case. Both factors are at least ONE; if
+// either exceeded ONE the product would too (`productAboveOne`, which transfers through ℚ's
+// UNGUARDED ordered-field model — no cut composition involved), contradicting e·k = 1.
+
+// Strategy: e and k are both ≥ ONE. If e = ONE we are done. Otherwise ONE < e, and then
+// k = ONE forces e = e·ONE = e·k = ONE (contradiction), while ONE < k makes ONE < e·k = ONE.
+theorem aPositiveIntegerDividingOneIsOne: forall e, k: Q;
+  isInteger(e) -> isInteger(k) ->
+  less_than(ZERO, e) -> less_than(ZERO, k) ->
+  ONE = rational.mul(e, k) -> e = ONE
+proof
+  @generalize-e |
+    fix e: Q {
+      @generalize-k |
+        fix k: Q {
+          @given-e-is-an-integer |
+            assume isInteger(e) {
+              @e-is-an-integer |
+                isInteger(e)
+                [by hypothesis given-e-is-an-integer]
+              @given-k-is-an-integer |
+                assume isInteger(k) {
+                  @k-is-an-integer |
+                    isInteger(k)
+                    [by hypothesis given-k-is-an-integer]
+                  @given-e-positive |
+                    assume less_than(ZERO, e) {
+                      @e-positive |
+                        less_than(ZERO, e)
+                        [by hypothesis given-e-positive]
+                      @given-k-positive |
+                        assume less_than(ZERO, k) {
+                          @k-positive |
+                            less_than(ZERO, k)
+                            [by hypothesis given-k-positive]
+                          @given-the-product-is-one |
+                            assume ONE = rational.mul(e, k) {
+                              @the-product-is-one |
+                                ONE = rational.mul(e, k)
+                                [by hypothesis given-the-product-is-one]
+                              @e-at-least-one |
+                                e = ONE or less_than(ONE, e)
+                                [using specialize aPositiveIntegerIsAtLeastOne(e) e-is-an-integer e-positive]
+                              @k-at-least-one |
+                                k = ONE or less_than(ONE, k)
+                                [using specialize aPositiveIntegerIsAtLeastOne(k) k-is-an-integer k-positive]
+                              @conclusion-e-is-one |
+                                e = ONE
+                                case e-at-least-one {
+                                  @when-e-is-one |
+                                    assume e = ONE {
+                                      @e-is-one |
+                                        e = ONE
+                                        [by hypothesis when-e-is-one]
+                                    }
+                                  @when-e-above-one |
+                                    assume less_than(ONE, e) {
+                                      @e-above-one |
+                                        less_than(ONE, e)
+                                        [by hypothesis when-e-above-one]
+                                      @conclusion-contradiction |
+                                        e = ONE
+                                        case k-at-least-one {
+                                          // k = 1: then e·k = e·1 = e, so 1 = e, contradicting 1 < e
+                                          @when-k-is-one |
+                                            assume k = ONE {
+                                              @k-is-one |
+                                                k = ONE
+                                                [by hypothesis when-k-is-one]
+                                              @e-times-one |
+                                                rational.mul(e, ONE) = e
+                                                [using specialize rational.mulOneRight(e)]
+                                              @the-product-at-k-one |
+                                                ONE = rational.mul(e, ONE)
+                                                [by rewrite k-is-one the-product-is-one]
+                                              @one-is-e |
+                                                ONE = e
+                                                [by rewrite e-times-one the-product-at-k-one]
+                                              @conclusion-e-is-one-here |
+                                                e = ONE
+                                                [by symmetry one-is-e]
+                                            }
+                                          // 1 < k: then 1 < e·k = 1, impossible
+                                          @when-k-above-one |
+                                            assume less_than(ONE, k) {
+                                              @k-above-one |
+                                                less_than(ONE, k)
+                                                [by hypothesis when-k-above-one]
+                                              @products-above-one |
+                                                forall a, b: Q;
+                                                  less_than(ONE, a) -> less_than(ONE, b) ->
+                                                  less_than(ONE, rational.mul(a, b))
+                                                [using model(rational.RationalOrderedField) field_order.productAboveOne]
+                                              @the-product-above-one |
+                                                less_than(ONE, rational.mul(e, k))
+                                                [using specialize products-above-one(e, k) e-above-one k-above-one]
+                                              @one-below-one |
+                                                less_than(ONE, ONE)
+                                                [by rewrite the-product-is-one the-product-above-one]
+                                              @one-not-below-itself |
+                                                not less_than(ONE, ONE)
+                                                [using specialize rational.lessThanIrreflexive(ONE)]
+                                              @conclusion-vacuous |
+                                                e = ONE
+                                                [by ex_falso one-below-one one-not-below-itself]
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                          @product-one-implies-e-one |
+                            ONE = rational.mul(e, k) -> e = ONE
+                            [by discharge given-the-product-is-one]
+                        }
+                      @k-positive-implies |
+                        less_than(ZERO, k) -> ONE = rational.mul(e, k) -> e = ONE
+                        [by discharge given-k-positive]
+                    }
+                  @e-positive-implies |
+                    less_than(ZERO, e) -> less_than(ZERO, k) ->
+                      ONE = rational.mul(e, k) -> e = ONE
+                    [by discharge given-e-positive]
+                }
+              @k-integer-implies |
+                isInteger(k) -> less_than(ZERO, e) -> less_than(ZERO, k) ->
+                  ONE = rational.mul(e, k) -> e = ONE
+                [by discharge given-k-is-an-integer]
+            }
+          @e-integer-implies |
+            isInteger(e) -> isInteger(k) ->
+              less_than(ZERO, e) -> less_than(ZERO, k) ->
+              ONE = rational.mul(e, k) -> e = ONE
+            [by discharge given-e-is-an-integer]
+        }
+      @discharge-k |
+        forall k9: Q;
+          isInteger(e) -> isInteger(k9) ->
+          less_than(ZERO, e) -> less_than(ZERO, k9) ->
+          ONE = rational.mul(e, k9) -> e = ONE
+        [by generalize generalize-k]
+    }
+  @conclusion |
+    forall e, k: Q;
+      isInteger(e) -> isInteger(k) ->
+      less_than(ZERO, e) -> less_than(ZERO, k) ->
+      ONE = rational.mul(e, k) -> e = ONE
+    [by generalize generalize-e]
+qed
