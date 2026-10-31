@@ -18,6 +18,7 @@ import fieldpoly <<< "std/field/polynomial.b4m"
 import irreducible <<< "std/field/irreducible.b4m"
 import polyunits <<< "std/field/poly-units.b4m"
 import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
 import field <<< "std/field.b4m"
 import monic <<< "std/field/monic.b4m"
 import polyassoc <<< "std/field/polynomial-associativity.b4m"
@@ -859,4 +860,232 @@ proof
   @conclusion |
     forall a, b, c: Poly; mulP(a, mulP(b, c)) = mulP(b, mulP(a, c))
     [by generalize generalize-a]
+qed
+
+// -- Theorem 17.17, forward ----------------------------------------------------------------
+
+// A sum never sits below its own left summand — the inequality the forward direction's
+// contradiction turns on. Were it below, transitivity against a <= a+b would put the sum
+// strictly below itself.
+theorem aSumIsNotBelowItsSummand: forall a, b: peano.Nat;
+  not less_than(peano.add(a, b), a)
+proof
+  @generalize-a |
+    fix a: peano.Nat {
+      @generalize-b |
+        fix b: peano.Nat {
+          // a <= a + b, by the gap existential at d = b
+          @reflexivity-of-the-sum |
+            peano.add(a, b) = peano.add(a, b)
+            [by reflexivity]
+          @the-gap-exists |
+            exists d: peano.Nat; peano.add(a, d) = peano.add(a, b)
+            [by witness(b) reflexivity-of-the-sum]
+          @the-gap-existential |
+            peano_order.less_or_equal(a, peano.add(a, b)) iff
+              (exists d: peano.Nat; peano.add(a, d) = peano.add(a, b))
+            [using specialize peano_order.lessOrEqualIsGapExistential(a, peano.add(a, b))]
+          @a-is-at-most-the-sum |
+            peano_order.less_or_equal(a, peano.add(a, b))
+            [using tautology the-gap-existential the-gap-exists]
+          // so the sum cannot be strictly below a
+          @given-the-sum-is-below |
+            assume less_than(peano.add(a, b), a) {
+              @the-sum-is-below |
+                less_than(peano.add(a, b), a)
+                [by hypothesis given-the-sum-is-below]
+              @the-sum-is-below-itself |
+                less_than(peano.add(a, b), peano.add(a, b))
+                [using specialize atMostThenBelowIsBelowTheSum(peano.add(a, b), a, peano.add(a, b)) the-sum-is-below a-is-at-most-the-sum]
+              @nothing-is-below-itself |
+                not less_than(peano.add(a, b), peano.add(a, b))
+                [using specialize peano_order.lessThanIrreflexive(peano.add(a, b))]
+              @conclusion-absurd |
+                not less_than(peano.add(a, b), a)
+                [by ex_falso the-sum-is-below-itself nothing-is-below-itself]
+            }
+          @below-is-absurd |
+            less_than(peano.add(a, b), a) -> (not less_than(peano.add(a, b), a))
+            [by discharge given-the-sum-is-below]
+          @conclusion-the-sum-is-not-below |
+            not less_than(peano.add(a, b), a)
+            [using tautology below-is-absurd]
+        }
+      @discharge-b |
+        forall b9: peano.Nat; not less_than(peano.add(a, b9), a)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: peano.Nat; not less_than(peano.add(a, b), a)
+    [by generalize generalize-a]
+qed
+
+// x < y and y <= z give x < z
+theorem atMostThenBelowIsBelowTheSum: forall x, y, z: peano.Nat;
+  less_than(x, y) -> peano_order.less_or_equal(y, z) -> less_than(x, z)
+proof
+  @generalize-x |
+    fix x: peano.Nat {
+      @generalize-y |
+        fix y: peano.Nat {
+          @generalize-z |
+            fix z: peano.Nat {
+              @given-x-below-y |
+                assume less_than(x, y) {
+                  @x-below-y |
+                    less_than(x, y)
+                    [by hypothesis given-x-below-y]
+                  @given-y-at-most-z |
+                    assume peano_order.less_or_equal(y, z) {
+                      @y-at-most-z |
+                        peano_order.less_or_equal(y, z)
+                        [by hypothesis given-y-at-most-z]
+                      @the-split |
+                        less_than(y, z) or y = z
+                        [using specialize peano_order.lessOrEqualSplit(y, z) y-at-most-z]
+                      @when-strictly-below |
+                        assume less_than(y, z) {
+                          @y-below-z |
+                            less_than(y, z)
+                            [by hypothesis when-strictly-below]
+                          @conclusion-by-transitivity |
+                            less_than(x, z)
+                            [using specialize peano_order.lessThanTransitive(x, y, z) x-below-y y-below-z]
+                        }
+                      @when-equal |
+                        assume y = z {
+                          @they-are-equal |
+                            y = z
+                            [by hypothesis when-equal]
+                          @conclusion-by-substitution |
+                            less_than(x, z)
+                            [by rewrite they-are-equal x-below-y]
+                        }
+                      @conclusion-x-below-z |
+                        less_than(x, z)
+                        [by common_conclusion the-split when-strictly-below when-equal]
+                    }
+                  @at-most-implies |
+                    peano_order.less_or_equal(y, z) -> less_than(x, z)
+                    [by discharge given-y-at-most-z]
+                }
+              @below-implies |
+                less_than(x, y) -> peano_order.less_or_equal(y, z) -> less_than(x, z)
+                [by discharge given-x-below-y]
+            }
+          @discharge-z |
+            forall z9: peano.Nat;
+              less_than(x, y) -> peano_order.less_or_equal(y, z9) -> less_than(x, z9)
+            [by generalize generalize-z]
+        }
+      @discharge-y |
+        forall y9, z9: peano.Nat;
+          less_than(x, y9) -> peano_order.less_or_equal(y9, z9) -> less_than(x, z9)
+        [by generalize generalize-y]
+    }
+  @conclusion |
+    forall x, y, z: peano.Nat;
+      less_than(x, y) -> peano_order.less_or_equal(y, z) -> less_than(x, z)
+    [by generalize generalize-x]
+qed
+
+// "Since <p(x)> is a prime ideal one of these factors, say f(x), is in <p(x)> and therefore
+// be a multiple of p(x). But this would imply that <p(x)> is properly contained in <f(x)>,
+// which is impossible since <p(x)> is maximal."
+//
+// The contradiction is a DEGREE one: f being a multiple of p makes deg f = deg p + deg h,
+// which never sits below deg p — yet the assumed factorisation has deg f < deg p. Judson
+// phrases the same impossibility through ideal containment; the degrees carry it directly.
+//
+// Stated as the refutation it is: a factor of strictly smaller degree is never a multiple
+// of p. That is what rules out his assumed factorisation, and with
+// anIrreducibleFactorisationHasAConstantFactor's converse reading it gives irreducibility.
+theorem aLowerDegreeFactorIsNotAMultiple: forall p, f, h: Poly;
+  (not (p = ZEROP)) -> (not (h = ZEROP)) ->
+  less_than(degree(f), degree(p)) ->
+  (not (f = mulP(p, h)))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-f |
+        fix f: Poly {
+          @generalize-h |
+            fix h: Poly {
+              @given-p-nonzero |
+                assume not (p = ZEROP) {
+                  @p-nonzero |
+                    not (p = ZEROP)
+                    [by hypothesis given-p-nonzero]
+                  @given-h-nonzero |
+                    assume not (h = ZEROP) {
+                      @h-nonzero |
+                        not (h = ZEROP)
+                        [by hypothesis given-h-nonzero]
+                      @given-f-is-lower |
+                        assume less_than(degree(f), degree(p)) {
+                          @f-is-lower |
+                            less_than(degree(f), degree(p))
+                            [by hypothesis given-f-is-lower]
+                          @given-f-is-a-multiple |
+                            assume f = mulP(p, h) {
+                              @f-is-a-multiple |
+                                f = mulP(p, h)
+                                [by hypothesis given-f-is-a-multiple]
+                              // a multiple's degree is the sum of the degrees
+                              @the-product-degree |
+                                degree(mulP(p, h)) =
+                                  peano.add(degree(p), degree(h))
+                                [using specialize fieldpoly.degreeOfAProduct(p, h) p-nonzero h-nonzero]
+                              @f-degree-is-the-sum |
+                                degree(f) = peano.add(degree(p), degree(h))
+                                [by rewrite f-is-a-multiple the-product-degree]
+                              // which never sits below deg p
+                              @the-sum-is-not-below |
+                                not less_than(peano.add(degree(p), degree(h)), degree(p))
+                                [using specialize aSumIsNotBelowItsSummand(degree(p), degree(h))]
+                              @f-is-not-lower |
+                                not less_than(degree(f), degree(p))
+                                [by rewrite f-degree-is-the-sum the-sum-is-not-below]
+                              @conclusion-absurd |
+                                not (f = mulP(p, h))
+                                [by ex_falso f-is-lower f-is-not-lower]
+                            }
+                          @the-multiple-is-absurd |
+                            (f = mulP(p, h)) -> (not (f = mulP(p, h)))
+                            [by discharge given-f-is-a-multiple]
+                          @conclusion-not-a-multiple |
+                            not (f = mulP(p, h))
+                            [using tautology the-multiple-is-absurd]
+                        }
+                      @lower-implies |
+                        less_than(degree(f), degree(p)) -> (not (f = mulP(p, h)))
+                        [by discharge given-f-is-lower]
+                    }
+                  @h-nonzero-implies |
+                    (not (h = ZEROP)) -> less_than(degree(f), degree(p)) ->
+                      (not (f = mulP(p, h)))
+                    [by discharge given-h-nonzero]
+                }
+              @p-nonzero-implies |
+                (not (p = ZEROP)) -> (not (h = ZEROP)) ->
+                  less_than(degree(f), degree(p)) -> (not (f = mulP(p, h)))
+                [by discharge given-p-nonzero]
+            }
+          @discharge-h |
+            forall h9: Poly;
+              (not (p = ZEROP)) -> (not (h9 = ZEROP)) ->
+              less_than(degree(f), degree(p)) -> (not (f = mulP(p, h9)))
+            [by generalize generalize-h]
+        }
+      @discharge-f |
+        forall f9, h9: Poly;
+          (not (p = ZEROP)) -> (not (h9 = ZEROP)) ->
+          less_than(degree(f9), degree(p)) -> (not (f9 = mulP(p, h9)))
+        [by generalize generalize-f]
+    }
+  @conclusion |
+    forall p, f, h: Poly;
+      (not (p = ZEROP)) -> (not (h = ZEROP)) ->
+      less_than(degree(f), degree(p)) -> (not (f = mulP(p, h)))
+    [by generalize generalize-p]
 qed
