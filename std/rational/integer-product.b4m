@@ -1,0 +1,579 @@
+// std/rational/integer-product.b4m — PRODUCTS OF INTEGER COEFFICIENTS, ON ℚ's CUT.
+//
+// Lemma 17.12 (AATA §17.3) clears a ℚ[x] polynomial's denominators by multiplying through by
+// the product of them all. That product is a FOLD over the coefficient index range, and the
+// fact the proof turns on is that every factor divides the whole product — which is what lets
+// each coefficient's denominator cancel.
+//
+// `std/integer/product.b4m` has exactly this over ℤ (`productUpTo`, `everyEntryDividesProduct`),
+// but its statements are over ℤ's own sorts. Reaching them at ℚ's `isInteger` cut would mean a
+// guarded transfer whose source proofs are nonneg-ℤ inductions; since the fact is a short
+// induction, it is proved DIRECTLY here instead — the same choice, for the same reason, as
+// `std/rational/integer-order.b4m`'s `anIntegerDividingOneIsAUnit`.
+//
+// The fold itself needs no cut: `std/sequence.b4m` instantiates with `Value: Q` UNGUARDED, so
+// a ℚ-valued product is an ordinary unguarded model.
+import sequence <<< "std/sequence.b4m"
+import rational <<< "std/rational.b4m"
+import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
+
+sort Q = rational.Q
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+const QONE = rational.ONE
+func succ = peano.succ
+pred less_than = peano_order.less_than
+pred isInteger = rational.isInteger
+
+// -- a ℚ-valued product fold --------------------------------------------------------------
+sort QSeq
+func qat(s: QSeq, i: Nat) => Q
+func qProductUpTo(s: QSeq, k: Nat) => Q
+axiom qProductUpToZero: forall s: QSeq; qProductUpTo(s, ZERO) = QONE
+axiom qProductUpToSucc: forall s: QSeq; forall k: Nat;
+  qProductUpTo(s, succ(k)) = rational.mul(qProductUpTo(s, k), qat(s, k))
+
+// UNGUARDED: the value sort is all of ℚ, so this composes freely — no cut, no relativization.
+model RationalSeq {
+  sequence.Nat: Nat
+  sequence.ZERO: ZERO
+  sequence.succ: succ
+  sequence.Value: Q
+  sequence.Seq: QSeq
+  sequence.at: qat
+  sequence.IDENTITY: QONE
+  sequence.combine: rational.mul
+  sequence.foldUpTo: qProductUpTo
+  sequence.foldZero <- qProductUpToZero
+  sequence.foldSucc <- qProductUpToSucc
+}
+
+// The one-entry product, from the shared fold theory.
+theorem theOneEntryProduct: forall s: QSeq;
+  qProductUpTo(s, succ(ZERO)) = rational.mul(QONE, qat(s, ZERO))
+proof
+  @conclusion |
+    forall s: QSeq;
+      qProductUpTo(s, succ(ZERO)) = rational.mul(QONE, qat(s, ZERO))
+    [using model(RationalSeq) sequence.foldOneCombinesIdentity]
+qed
+
+// -- divisibility on the cut --------------------------------------------------------------
+// `dividesOnTheCut(d, n)`: an integer quotient exists. Same reading as
+// `std/rational/polynomial.b4m`'s, written out here because a `define` is a macro and cannot
+// be imported.
+pred dividesIntegrally(d: Q, n: Q)
+axiom dividesIntegrallyMeaning: forall d, n: Q;
+  dividesIntegrally(d, n) iff
+  (exists k: Q; isInteger(k) and n = rational.mul(d, k))
+
+// A product of integers is an integer: induction on the bound, using ℚ's `isIntegerMul`.
+theorem theProductOfIntegersIsAnInteger: forall s: QSeq; forall n: Nat;
+  (forall i: Nat; less_than(i, n) -> isInteger(qat(s, i))) ->
+  isInteger(qProductUpTo(s, n))
+proof
+  @generalize-s |
+    fix s: QSeq {
+      // base: the empty product is ONE, hence an integer
+      @base-case-proof |
+        assume forall i: Nat; less_than(i, ZERO) -> isInteger(qat(s, i)) {
+          @the-empty-product-inner |
+            qProductUpTo(s, ZERO) = QONE
+            [using specialize qProductUpToZero(s)]
+          @one-is-an-integer-inner |
+            isInteger(QONE)
+            [by cite rational.oneIsAnInteger]
+          @the-empty-product-again |
+            isInteger(qProductUpTo(s, ZERO))
+            [by rewrite the-empty-product-inner one-is-an-integer-inner]
+        }
+      @base-case |
+        (forall i: Nat; less_than(i, ZERO) -> isInteger(qat(s, i))) ->
+          isInteger(qProductUpTo(s, ZERO))
+        [by discharge base-case-proof]
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume (forall i: Nat; less_than(i, k) -> isInteger(qat(s, i))) ->
+              isInteger(qProductUpTo(s, k)) {
+              @inductive-hypothesis |
+                (forall i: Nat; less_than(i, k) -> isInteger(qat(s, i))) ->
+                  isInteger(qProductUpTo(s, k))
+                [by hypothesis given-inductive-hypothesis]
+              @given-all-below-succ-k |
+                assume forall i: Nat; less_than(i, succ(k)) -> isInteger(qat(s, i)) {
+                  @all-below-succ-k |
+                    forall i: Nat; less_than(i, succ(k)) -> isInteger(qat(s, i))
+                    [by hypothesis given-all-below-succ-k]
+                  // everything below k is below succ(k)
+                  @all-below-k |
+                    fix i: Nat {
+                      @given-i-below-k |
+                        assume less_than(i, k) {
+                          @i-below-k |
+                            less_than(i, k)
+                            [by hypothesis given-i-below-k]
+                          @k-below-its-successor |
+                            less_than(k, succ(k))
+                            [using specialize peano_order.lessThanSelf(k)]
+                          @i-below-succ-k |
+                            less_than(i, succ(k))
+                            [using specialize peano_order.lessThanTransitive(i, k, succ(k)) i-below-k k-below-its-successor]
+                          @conclusion-this-entry-is-an-integer |
+                            isInteger(qat(s, i))
+                            [using specialize all-below-succ-k(i) i-below-succ-k]
+                        }
+                      @below-k-implies-integer |
+                        less_than(i, k) -> isInteger(qat(s, i))
+                        [by discharge given-i-below-k]
+                    }
+                  @all-below-k-generalized |
+                    forall i: Nat; less_than(i, k) -> isInteger(qat(s, i))
+                    [by generalize all-below-k]
+                  @the-partial-product-is-an-integer |
+                    isInteger(qProductUpTo(s, k))
+                    [by modus_ponens inductive-hypothesis all-below-k-generalized]
+                  // and the k-th entry itself is an integer
+                  @k-below-succ-k |
+                    less_than(k, succ(k))
+                    [using specialize peano_order.lessThanSelf(k)]
+                  @the-k-th-entry-is-an-integer |
+                    isInteger(qat(s, k))
+                    [using specialize all-below-succ-k(k) k-below-succ-k]
+                  @the-next-product |
+                    qProductUpTo(s, succ(k)) =
+                      rational.mul(qProductUpTo(s, k), qat(s, k))
+                    [using specialize qProductUpToSucc(s, k)]
+                  @the-product-is-an-integer |
+                    isInteger(rational.mul(qProductUpTo(s, k), qat(s, k)))
+                    [using specialize rational.isIntegerMul(qProductUpTo(s, k), qat(s, k)) the-partial-product-is-an-integer the-k-th-entry-is-an-integer]
+                  @conclusion-the-next-product-is-an-integer |
+                    isInteger(qProductUpTo(s, succ(k)))
+                    [by rewrite the-next-product the-product-is-an-integer]
+                }
+              @conclusion-the-step |
+                (forall i: Nat; less_than(i, succ(k)) -> isInteger(qat(s, i))) ->
+                  isInteger(qProductUpTo(s, succ(k)))
+                [by discharge given-all-below-succ-k]
+            }
+          @induction-step-at-k |
+            ((forall i: Nat; less_than(i, k) -> isInteger(qat(s, i))) ->
+              isInteger(qProductUpTo(s, k))) ->
+              ((forall i: Nat; less_than(i, succ(k)) -> isInteger(qat(s, i))) ->
+              isInteger(qProductUpTo(s, succ(k))))
+            [by discharge given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat;
+          ((forall i: Nat; less_than(i, k) -> isInteger(qat(s, i))) ->
+          isInteger(qProductUpTo(s, k))) ->
+          ((forall i: Nat; less_than(i, succ(k)) -> isInteger(qat(s, i))) ->
+          isInteger(qProductUpTo(s, succ(k))))
+        [by generalize induction-step]
+      @all-bounds |
+        forall n: Nat;
+          (forall i: Nat; less_than(i, n) -> isInteger(qat(s, i))) ->
+          isInteger(qProductUpTo(s, n))
+        [using instantiation peano.induction((fun t: Nat => ((forall i: Nat; less_than(i, t) -> isInteger(qat(s, i))) -> isInteger(qProductUpTo(s, t))))) base-case induction-step-for-all-k]
+    }
+  @conclusion |
+    forall s: QSeq; forall n: Nat;
+      (forall i: Nat; less_than(i, n) -> isInteger(qat(s, i))) ->
+      isInteger(qProductUpTo(s, n))
+    [by generalize generalize-s]
+qed
+
+// A factor divides a product whose other factor is an integer: the quotient IS that factor.
+// Stated with the product given as an equation so the caller can supply its own shape.
+theorem aFactorDividesTheProduct: forall d, q, whole: Q;
+  isInteger(q) -> whole = rational.mul(q, d) -> dividesIntegrally(d, whole)
+proof
+  @generalize-d |
+    fix d: Q {
+      @generalize-q |
+        fix q: Q {
+          @generalize-whole |
+            fix whole: Q {
+              @given-q-is-an-integer |
+                assume isInteger(q) {
+                  @q-is-an-integer |
+                    isInteger(q)
+                    [by hypothesis given-q-is-an-integer]
+                  @given-the-product |
+                    assume whole = rational.mul(q, d) {
+                      @the-product |
+                        whole = rational.mul(q, d)
+                        [by hypothesis given-the-product]
+                      // d · q = q · d, so the witness quotient is q
+                      @the-product-commutes |
+                        rational.mul(q, d) = rational.mul(d, q)
+                        [using specialize rational.mulIsCommutative(q, d)]
+                      @the-product-as-d-times-q |
+                        whole = rational.mul(d, q)
+                        [by rewrite the-product-commutes the-product]
+                      @the-witness-works |
+                        isInteger(q) and whole = rational.mul(d, q)
+                        [by both q-is-an-integer the-product-as-d-times-q]
+                      @the-quotient-exists |
+                        exists k: Q; isInteger(k) and whole = rational.mul(d, k)
+                        [by witness(q) the-witness-works]
+                      @divides-meaning |
+                        dividesIntegrally(d, whole) iff
+                          (exists k: Q; isInteger(k) and whole = rational.mul(d, k))
+                        [using specialize dividesIntegrallyMeaning(d, whole)]
+                      @conclusion-d-divides |
+                        dividesIntegrally(d, whole)
+                        [using tautology divides-meaning the-quotient-exists]
+                    }
+                  @product-implies-divides |
+                    whole = rational.mul(q, d) -> dividesIntegrally(d, whole)
+                    [by discharge given-the-product]
+                }
+              @integer-implies |
+                isInteger(q) -> whole = rational.mul(q, d) ->
+                  dividesIntegrally(d, whole)
+                [by discharge given-q-is-an-integer]
+            }
+          @discharge-whole |
+            forall w9: Q;
+              isInteger(q) -> w9 = rational.mul(q, d) -> dividesIntegrally(d, w9)
+            [by generalize generalize-whole]
+        }
+      @discharge-q |
+        forall q9: Q; forall w9: Q;
+          isInteger(q9) -> w9 = rational.mul(q9, d) -> dividesIntegrally(d, w9)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall d, q, whole: Q;
+      isInteger(q) -> whole = rational.mul(q, d) -> dividesIntegrally(d, whole)
+    [by generalize generalize-d]
+qed
+
+// If d divides a factor, it divides the product: multiply d's quotient by the other factor,
+// which must itself be an integer for the quotient to stay one.
+theorem aDivisorOfTheFactorDividesTheProduct: forall d, factor, other: Q;
+  dividesIntegrally(d, factor) -> isInteger(other) ->
+  forall whole: Q; whole = rational.mul(factor, other) ->
+  dividesIntegrally(d, whole)
+proof
+  @generalize-d |
+    fix d: Q {
+      @generalize-factor |
+        fix factor: Q {
+          @generalize-other |
+            fix other: Q {
+              @given-d-divides-the-factor |
+                assume dividesIntegrally(d, factor) {
+                  @d-divides-the-factor |
+                    dividesIntegrally(d, factor)
+                    [by hypothesis given-d-divides-the-factor]
+                  @given-other-is-an-integer |
+                    assume isInteger(other) {
+                      @other-is-an-integer |
+                        isInteger(other)
+                        [by hypothesis given-other-is-an-integer]
+                      @generalize-whole |
+                        fix whole: Q {
+                          @given-the-product |
+                            assume whole = rational.mul(factor, other) {
+                              @the-product |
+                                whole = rational.mul(factor, other)
+                                [by hypothesis given-the-product]
+                              @divides-meaning-factor |
+                                dividesIntegrally(d, factor) iff
+                                  (exists k: Q; isInteger(k) and
+                                  factor = rational.mul(d, k))
+                                [using specialize dividesIntegrallyMeaning(d, factor)]
+                              @the-quotient-exists |
+                                exists k: Q; isInteger(k) and
+                                  factor = rational.mul(d, k)
+                                [using tautology divides-meaning-factor d-divides-the-factor]
+                              @with-quotient |
+                                unpack k: Q from the-quotient-exists {
+                                  @with-quotient-k |
+                                    isInteger(k) and factor = rational.mul(d, k)
+                                    [by hypothesis with-quotient]
+                                  @k-is-an-integer |
+                                    isInteger(k)
+                                    [by and_lhs with-quotient-k]
+                                  @the-factor-is-d-times-k |
+                                    factor = rational.mul(d, k)
+                                    [by and_rhs with-quotient-k]
+                                  // whole = (d·k)·other = d·(k·other)
+                                  @the-product-at-the-quotient |
+                                    whole = rational.mul(rational.mul(d, k), other)
+                                    [by rewrite the-factor-is-d-times-k the-product]
+                                  @reassociate |
+                                    rational.mul(rational.mul(d, k), other) =
+                                      rational.mul(d, rational.mul(k, other))
+                                    [using specialize rational.mulIsAssociative(d, k, other)]
+                                  @the-product-reassociated |
+                                    whole = rational.mul(d, rational.mul(k, other))
+                                    [by rewrite reassociate the-product-at-the-quotient]
+                                  @the-new-quotient-is-an-integer |
+                                    isInteger(rational.mul(k, other))
+                                    [using specialize rational.isIntegerMul(k, other) k-is-an-integer other-is-an-integer]
+                                  @the-witness-works |
+                                    isInteger(rational.mul(k, other)) and
+                                      whole = rational.mul(d, rational.mul(k, other))
+                                    [by both the-new-quotient-is-an-integer the-product-reassociated]
+                                  @the-new-quotient-exists |
+                                    exists k2: Q; isInteger(k2) and
+                                      whole = rational.mul(d, k2)
+                                    [by witness(rational.mul(k, other)) the-witness-works]
+                                  @divides-meaning-whole |
+                                    dividesIntegrally(d, whole) iff
+                                      (exists k2: Q; isInteger(k2) and
+                                      whole = rational.mul(d, k2))
+                                    [using specialize dividesIntegrallyMeaning(d, whole)]
+                                  @conclusion-d-divides-whole |
+                                    dividesIntegrally(d, whole)
+                                    [using tautology divides-meaning-whole the-new-quotient-exists]
+                                }
+                              @conclusion-divides |
+                                dividesIntegrally(d, whole)
+                                [by unpacked with-quotient]
+                            }
+                          @product-implies-divides |
+                            whole = rational.mul(factor, other) ->
+                              dividesIntegrally(d, whole)
+                            [by discharge given-the-product]
+                        }
+                      @conclusion-all-wholes |
+                        forall whole: Q;
+                          whole = rational.mul(factor, other) ->
+                          dividesIntegrally(d, whole)
+                        [by generalize generalize-whole]
+                    }
+                  @other-integer-implies |
+                    isInteger(other) ->
+                      forall whole: Q; whole = rational.mul(factor, other) ->
+                      dividesIntegrally(d, whole)
+                    [by discharge given-other-is-an-integer]
+                }
+              @divides-implies |
+                dividesIntegrally(d, factor) -> isInteger(other) ->
+                  forall whole: Q; whole = rational.mul(factor, other) ->
+                  dividesIntegrally(d, whole)
+                [by discharge given-d-divides-the-factor]
+            }
+          @discharge-other |
+            forall o9: Q;
+              dividesIntegrally(d, factor) -> isInteger(o9) ->
+              forall whole: Q; whole = rational.mul(factor, o9) ->
+              dividesIntegrally(d, whole)
+            [by generalize generalize-other]
+        }
+      @discharge-factor |
+        forall f9: Q; forall o9: Q;
+          dividesIntegrally(d, f9) -> isInteger(o9) ->
+          forall whole: Q; whole = rational.mul(f9, o9) ->
+          dividesIntegrally(d, whole)
+        [by generalize generalize-factor]
+    }
+  @conclusion |
+    forall d, factor, other: Q;
+      dividesIntegrally(d, factor) -> isInteger(other) ->
+      forall whole: Q; whole = rational.mul(factor, other) ->
+      dividesIntegrally(d, whole)
+    [by generalize generalize-d]
+qed
+
+// -- EVERY ENTRY DIVIDES THE PRODUCT ------------------------------------------------------
+// The fact Lemma 17.12's denominator-clearing turns on: multiplying through by c_0 ⋯ c_n
+// clears EVERY denominator because each c_i divides the whole product. Induction on the bound:
+// at succ(k) the product is (previous)·c_k, so c_k divides it directly, and anything dividing
+// the previous product still divides this one.
+theorem everyEntryDividesTheProduct: forall s: QSeq; forall n: Nat;
+  (forall i: Nat; less_than(i, n) -> isInteger(qat(s, i))) ->
+  (forall i: Nat; less_than(i, n) -> dividesIntegrally(qat(s, i), qProductUpTo(s, n)))
+proof
+  @generalize-s |
+    fix s: QSeq {
+      // base: nothing is below ZERO, so the claim is vacuous
+      @base-case-proof |
+        assume forall i: Nat; less_than(i, ZERO) -> isInteger(qat(s, i)) {
+          @nothing-below-zero |
+            fix i: Nat {
+              @given-i-below-zero |
+                assume less_than(i, ZERO) {
+                  @i-below-zero |
+                    less_than(i, ZERO)
+                    [by hypothesis given-i-below-zero]
+                  @nothing-is-below-zero |
+                    not less_than(i, ZERO)
+                    [using specialize peano_order.notLessThanZero(i)]
+                  @conclusion-vacuous |
+                    dividesIntegrally(qat(s, i), qProductUpTo(s, ZERO))
+                    [by ex_falso i-below-zero nothing-is-below-zero]
+                }
+              @below-zero-implies |
+                less_than(i, ZERO) ->
+                  dividesIntegrally(qat(s, i), qProductUpTo(s, ZERO))
+                [by discharge given-i-below-zero]
+            }
+          @conclusion-base |
+            forall i: Nat; less_than(i, ZERO) ->
+              dividesIntegrally(qat(s, i), qProductUpTo(s, ZERO))
+            [by generalize nothing-below-zero]
+        }
+      @base-case |
+        (forall i: Nat; less_than(i, ZERO) -> isInteger(qat(s, i))) ->
+          (forall i: Nat; less_than(i, ZERO) ->
+          dividesIntegrally(qat(s, i), qProductUpTo(s, ZERO)))
+        [by discharge base-case-proof]
+
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume (forall i: Nat; less_than(i, k) -> isInteger(qat(s, i))) ->
+              (forall i: Nat; less_than(i, k) ->
+              dividesIntegrally(qat(s, i), qProductUpTo(s, k))) {
+              @inductive-hypothesis |
+                (forall i: Nat; less_than(i, k) -> isInteger(qat(s, i))) ->
+                  (forall i: Nat; less_than(i, k) ->
+                  dividesIntegrally(qat(s, i), qProductUpTo(s, k)))
+                [by hypothesis given-inductive-hypothesis]
+              @given-all-integers-below-succ-k |
+                assume forall i: Nat; less_than(i, succ(k)) -> isInteger(qat(s, i)) {
+                  @all-integers-below-succ-k |
+                    forall i: Nat; less_than(i, succ(k)) -> isInteger(qat(s, i))
+                    [by hypothesis given-all-integers-below-succ-k]
+                  @k-below-its-successor |
+                    less_than(k, succ(k))
+                    [using specialize peano_order.lessThanSelf(k)]
+                  // weaken the integer hypothesis to below k
+                  @all-integers-below-k |
+                    fix i: Nat {
+                      @given-i-below-k |
+                        assume less_than(i, k) {
+                          @i-below-k |
+                            less_than(i, k)
+                            [by hypothesis given-i-below-k]
+                          @i-below-succ-k |
+                            less_than(i, succ(k))
+                            [using specialize peano_order.lessThanTransitive(i, k, succ(k)) i-below-k k-below-its-successor]
+                          @conclusion-this-is-an-integer |
+                            isInteger(qat(s, i))
+                            [using specialize all-integers-below-succ-k(i) i-below-succ-k]
+                        }
+                      @below-k-implies-integer |
+                        less_than(i, k) -> isInteger(qat(s, i))
+                        [by discharge given-i-below-k]
+                    }
+                  @all-integers-below-k-generalized |
+                    forall i: Nat; less_than(i, k) -> isInteger(qat(s, i))
+                    [by generalize all-integers-below-k]
+                  @the-divisors-below-k |
+                    forall i: Nat; less_than(i, k) ->
+                      dividesIntegrally(qat(s, i), qProductUpTo(s, k))
+                    [by modus_ponens inductive-hypothesis all-integers-below-k-generalized]
+                  // the product at succ(k) is (product at k) · entry k
+                  @the-next-product |
+                    qProductUpTo(s, succ(k)) =
+                      rational.mul(qProductUpTo(s, k), qat(s, k))
+                    [using specialize qProductUpToSucc(s, k)]
+                  @the-k-th-entry-is-an-integer |
+                    isInteger(qat(s, k))
+                    [using specialize all-integers-below-succ-k(k) k-below-its-successor]
+                  @the-partial-product-is-an-integer |
+                    isInteger(qProductUpTo(s, k))
+                    [using specialize theProductOfIntegersIsAnInteger(s, k) all-integers-below-k-generalized]
+                  @each-entry-divides |
+                    fix i: Nat {
+                      @given-i-below-succ-k |
+                        assume less_than(i, succ(k)) {
+                          @i-below-succ-k |
+                            less_than(i, succ(k))
+                            [by hypothesis given-i-below-succ-k]
+                          @the-split |
+                            less_than(i, k) or i = k
+                            [using specialize peano_order.lessThanSuccSplit(i, k) i-below-succ-k]
+                          @conclusion-this-entry-divides |
+                            dividesIntegrally(qat(s, i), qProductUpTo(s, succ(k)))
+                            case the-split {
+                              // i < k: entry i divides the PARTIAL product, which divides the
+                              // next one (multiply the quotient by entry k)
+                              @when-i-below-k |
+                                assume less_than(i, k) {
+                                  @i-below-k |
+                                    less_than(i, k)
+                                    [by hypothesis when-i-below-k]
+                                  @divides-the-partial-product |
+                                    dividesIntegrally(qat(s, i), qProductUpTo(s, k))
+                                    [using specialize the-divisors-below-k(i) i-below-k]
+                                  @for-every-whole |
+                                    forall whole: Q;
+                                      whole = rational.mul(qProductUpTo(s, k), qat(s, k)) ->
+                                      dividesIntegrally(qat(s, i), whole)
+                                    [using specialize aDivisorOfTheFactorDividesTheProduct(qat(s, i), qProductUpTo(s, k), qat(s, k)) divides-the-partial-product the-k-th-entry-is-an-integer]
+                                  @conclusion-divides-via-the-partial |
+                                    dividesIntegrally(qat(s, i), qProductUpTo(s, succ(k)))
+                                    [using specialize for-every-whole(qProductUpTo(s, succ(k))) the-next-product]
+                                }
+                              // i = k: entry k divides (partial)·(entry k) with quotient the
+                              // partial product, which is an integer
+                              @when-i-is-k |
+                                assume i = k {
+                                  @i-is-k |
+                                    i = k
+                                    [by hypothesis when-i-is-k]
+                                  @the-k-th-entry-divides |
+                                    dividesIntegrally(qat(s, k), qProductUpTo(s, succ(k)))
+                                    [using specialize aFactorDividesTheProduct(qat(s, k), qProductUpTo(s, k), qProductUpTo(s, succ(k))) the-partial-product-is-an-integer the-next-product]
+                                  @conclusion-divides-at-k |
+                                    dividesIntegrally(qat(s, i), qProductUpTo(s, succ(k)))
+                                    [by rewrite i-is-k the-k-th-entry-divides]
+                                }
+                            }
+                        }
+                      @below-succ-k-implies-divides |
+                        less_than(i, succ(k)) ->
+                          dividesIntegrally(qat(s, i), qProductUpTo(s, succ(k)))
+                        [by discharge given-i-below-succ-k]
+                    }
+                  @conclusion-all-divide |
+                    forall i: Nat; less_than(i, succ(k)) ->
+                      dividesIntegrally(qat(s, i), qProductUpTo(s, succ(k)))
+                    [by generalize each-entry-divides]
+                }
+              @conclusion-the-step |
+                (forall i: Nat; less_than(i, succ(k)) -> isInteger(qat(s, i))) ->
+                  (forall i: Nat; less_than(i, succ(k)) ->
+                  dividesIntegrally(qat(s, i), qProductUpTo(s, succ(k))))
+                [by discharge given-all-integers-below-succ-k]
+            }
+          @induction-step-at-k |
+            ((forall i: Nat; less_than(i, k) -> isInteger(qat(s, i))) ->
+              (forall i: Nat; less_than(i, k) ->
+              dividesIntegrally(qat(s, i), qProductUpTo(s, k)))) ->
+              ((forall i: Nat; less_than(i, succ(k)) -> isInteger(qat(s, i))) ->
+              (forall i: Nat; less_than(i, succ(k)) ->
+              dividesIntegrally(qat(s, i), qProductUpTo(s, succ(k)))))
+            [by discharge given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat;
+          ((forall i: Nat; less_than(i, k) -> isInteger(qat(s, i))) ->
+          (forall i: Nat; less_than(i, k) ->
+          dividesIntegrally(qat(s, i), qProductUpTo(s, k)))) ->
+          ((forall i: Nat; less_than(i, succ(k)) -> isInteger(qat(s, i))) ->
+          (forall i: Nat; less_than(i, succ(k)) ->
+          dividesIntegrally(qat(s, i), qProductUpTo(s, succ(k)))))
+        [by generalize induction-step]
+      @all-bounds |
+        forall n: Nat;
+          (forall i: Nat; less_than(i, n) -> isInteger(qat(s, i))) ->
+          (forall i: Nat; less_than(i, n) ->
+          dividesIntegrally(qat(s, i), qProductUpTo(s, n)))
+        [using instantiation peano.induction((fun t: Nat => ((forall i: Nat; less_than(i, t) -> isInteger(qat(s, i))) -> (forall i: Nat; less_than(i, t) -> dividesIntegrally(qat(s, i), qProductUpTo(s, t)))))) base-case induction-step-for-all-k]
+    }
+  @conclusion |
+    forall s: QSeq; forall n: Nat;
+      (forall i: Nat; less_than(i, n) -> isInteger(qat(s, i))) ->
+      (forall i: Nat; less_than(i, n) ->
+      dividesIntegrally(qat(s, i), qProductUpTo(s, n)))
+    [by generalize generalize-s]
+qed
