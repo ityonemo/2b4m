@@ -168,3 +168,78 @@ proof
       is_prime(N) -> mul(x, y) = ZERO -> (x = ZERO or y = ZERO)
     [by generalize generalize-x]
 qed
+
+// ℤ_n's multiplication commutes: lifted from ℤ's through mulHom, the same idiom
+// mod-n.b4m uses for associativity.
+theorem mulIsCommutativeInZn: forall x, y: Zn;
+  mul(x, y) = mul(y, x)
+proof
+  @representatives-exist |
+    forall z: Zn; exists k: Int; z = cls(k)
+    [by cite mod_n.clsSurjective]
+  @generalize-x |
+    fix x: Zn {
+      @generalize-y |
+        fix y: Zn {
+          @a-representative-of-x-exists |
+            exists k: Int; x = cls(k)
+            [using specialize representatives-exist(x)]
+          @with-the-representative-a |
+            unpack a: Int from a-representative-of-x-exists {
+              @x-is-the-class-of-a |
+                x = cls(a)
+                [by hypothesis with-the-representative-a]
+              @a-representative-of-y-exists |
+                exists k: Int; y = cls(k)
+                [using specialize representatives-exist(y)]
+              @with-the-representative-b |
+                unpack b: Int from a-representative-of-y-exists {
+                  @y-is-the-class-of-b |
+                    y = cls(b)
+                    [by hypothesis with-the-representative-b]
+                  // both products are classes of integer products
+                  @the-left-product |
+                    mul(cls(a), cls(b)) = cls(imul(a, b))
+                    [using specialize mod_n.mulHom(a, b)]
+                  @the-right-product |
+                    mul(cls(b), cls(a)) = cls(imul(b, a))
+                    [using specialize mod_n.mulHom(b, a)]
+                  // and ℤ's multiplication commutes
+                  @the-integers-commute |
+                    imul(a, b) = imul(b, a)
+                    [using specialize integer.mulIsCommutative(a, b)]
+                  @the-classes-agree |
+                    mul(cls(a), cls(b)) = mul(cls(b), cls(a))
+                    [using simplify the-left-product the-integers-commute the-right-product]
+                  @the-left-side |
+                    mul(x, y) = mul(cls(a), cls(b))
+                    [using simplify x-is-the-class-of-a y-is-the-class-of-b]
+                  @the-right-side |
+                    mul(cls(b), cls(a)) = mul(y, x)
+                    [using simplify x-is-the-class-of-a-flipped y-is-the-class-of-b-flipped]
+                  @x-is-the-class-of-a-flipped |
+                    cls(a) = x
+                    [by symmetry x-is-the-class-of-a]
+                  @y-is-the-class-of-b-flipped |
+                    cls(b) = y
+                    [by symmetry y-is-the-class-of-b]
+                  @conclusion-they-commute |
+                    mul(x, y) = mul(y, x)
+                    [using chain the-left-side the-classes-agree the-right-side]
+                }
+              @conclusion-from-b |
+                mul(x, y) = mul(y, x)
+                [by unpacked with-the-representative-b]
+            }
+          @conclusion-from-a |
+            mul(x, y) = mul(y, x)
+            [by unpacked with-the-representative-a]
+        }
+      @discharge-y |
+        forall y9: Zn; mul(x, y9) = mul(y9, x)
+        [by generalize generalize-y]
+    }
+  @conclusion |
+    forall x, y: Zn; mul(x, y) = mul(y, x)
+    [by generalize generalize-x]
+qed

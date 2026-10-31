@@ -1,0 +1,284 @@
+// std/integer/mod-n-polynomial.b4m — ℤ_p[x], AND ITS DOMAIN PROPERTY.
+//
+// Gauss's Lemma (AATA §17.3) reduces the coefficients of a ℤ[x] factorisation modulo a prime
+// and argues in ℤ_p[x], where "neither factor is the zero polynomial, and ℤ_p[x] is an
+// integral domain" gives the contradiction. This file is that ℤ_p[x].
+//
+// ℤ_p[x] is its OWN sort with `std/ring/polynomial.b4m`'s corpus transferred onto it, the
+// same shape as `std/rational/polynomial.b4m`'s ℚ[x]: the whole POLYNOMIAL layer travels
+// (`Poly`, `coeff`, `ZEROP`, the operations), not just the coefficient ring, because a
+// transfer re-checks the source PROOF and those proofs mention `coeff`, whose result sort is
+// the coefficient ring.
+//
+// THE DOMAIN PROPERTY is the point. It needs two things, both now available:
+//   * ℤ_p has no zero divisors — `std/integer/mod-n-domain.b4m`;
+//   * the product's leading coefficient is the product of the leadings —
+//     `std/ring/polynomial-leading.b4m`'s `theProductsLeadingCoefficient`.
+// Together: for nonzero p, q the coefficient at deg p + deg q is a product of two surviving
+// leading coefficients, so it survives, so the product is not the zero polynomial.
+import ring <<< "std/ring.b4m"
+import ring_poly <<< "std/ring/polynomial.b4m"
+import ring_leading <<< "std/ring/polynomial-leading.b4m"
+import mod_n <<< "std/integer/mod-n.b4m"
+import mod_n_domain <<< "std/integer/mod-n-domain.b4m"
+import primes <<< "std/primes.b4m"
+import peano <<< "std/peano.b4m"
+import subtraction <<< "std/peano/subtraction.b4m"
+
+sort Zn = mod_n.Zn
+sort Nat = peano.Nat
+const N = mod_n.N
+const ZERO = peano.ZERO
+func add = peano.add
+pred is_prime = primes.is_prime
+
+// -- ℤ_p[x] --------------------------------------------------------------------------------
+sort ZnPoly
+func zcoeff(p: ZnPoly, i: Nat) => Zn
+const ZZEROP: ZnPoly
+const ZONEP: ZnPoly
+func zaddP(p: ZnPoly, q: ZnPoly) => ZnPoly
+func znegP(p: ZnPoly) => ZnPoly
+func zmulP(p: ZnPoly, q: ZnPoly) => ZnPoly
+func zconvolution(p: ZnPoly, q: ZnPoly, i: Nat, k: Nat) => Zn
+func zdegree(p: ZnPoly) => Nat
+pred zdegreeAtMost(p: ZnPoly, n: Nat)
+
+// the coefficient equations: ℤ_p[x]'s own primitives, mirroring ring/polynomial.b4m's
+axiom zPolyExtensionality: forall p, q: ZnPoly;
+  (forall i: Nat; zcoeff(p, i) = zcoeff(q, i)) -> p = q
+axiom zDegreeAtMostMeaning: forall p: ZnPoly; forall n: Nat;
+  zdegreeAtMost(p, n) iff
+  (forall i: Nat; peano.less_than(n, i) -> zcoeff(p, i) = mod_n.ZERO)
+axiom zZeroPolyCoeff: forall i: Nat; zcoeff(ZZEROP, i) = mod_n.ZERO
+axiom zOnePolyCoeffZero: zcoeff(ZONEP, ZERO) = mod_n.ONE
+axiom zOnePolyCoeffHigher: forall i: Nat;
+  zcoeff(ZONEP, peano.succ(i)) = mod_n.ZERO
+axiom zAddPolyCoeff: forall p, q: ZnPoly; forall i: Nat;
+  zcoeff(zaddP(p, q), i) = mod_n.add(zcoeff(p, i), zcoeff(q, i))
+axiom zNegPolyCoeff: forall p: ZnPoly; forall i: Nat;
+  zcoeff(znegP(p), i) = mod_n.neg(zcoeff(p, i))
+axiom zConvolutionZero: forall p, q: ZnPoly; forall i: Nat;
+  zconvolution(p, q, i, ZERO) =
+  mod_n.mul(zcoeff(p, ZERO), zcoeff(q, i))
+axiom zConvolutionSucc: forall p, q: ZnPoly; forall i, k: Nat;
+  zconvolution(p, q, i, peano.succ(k)) =
+  mod_n.add(zconvolution(p, q, i, k),
+  mod_n.mul(zcoeff(p, peano.succ(k)),
+  zcoeff(q, subtraction.sub(i, peano.succ(k)))))
+axiom zMulPolyCoeff: forall p, q: ZnPoly; forall i: Nat;
+  zcoeff(zmulP(p, q), i) = zconvolution(p, q, i, i)
+axiom zDegreeIsALeadingIndex: forall p: ZnPoly;
+  (not (p = ZZEROP)) -> (not (zcoeff(p, zdegree(p)) = mod_n.ZERO))
+axiom zDegreeBoundsTheCoefficients: forall p: ZnPoly;
+  (not (p = ZZEROP)) -> zdegreeAtMost(p, zdegree(p))
+
+// R[x]'s corpus, transferred. ℤ_p is the coefficient ring; the polynomial layer travels too.
+model ModNPolynomials {
+  ring_poly.R: Zn
+  ring_poly.zeroR: mod_n.ZERO
+  ring_poly.oneR: mod_n.ONE
+  ring_poly.addR: mod_n.add
+  ring_poly.mulR: mod_n.mul
+  ring_poly.negR: mod_n.neg
+  ring_poly.mulOneLeftR <- mod_n.mulOneLeft
+  ring_poly.mulIsCommutativeR <- mod_n_domain.mulIsCommutativeInZn
+
+  // ring.b4m's own axioms: ring_poly aliases ring.Ring, so the ring theory under it
+  // travels too. ℤ_n proves all seven, under its own names.
+  ring.Ring: Zn
+  ring.ZERO: mod_n.ZERO
+  ring.ONE: mod_n.ONE
+  ring.add: mod_n.add
+  ring.mul: mod_n.mul
+  ring.neg: mod_n.neg
+  ring.addIsAssociative <- mod_n.addAssoc
+  ring.addZeroLeft <- mod_n.addIdentityLeft
+  ring.addNegLeft <- mod_n.addInverseLeft
+  ring.addIsCommutative <- mod_n.addCommutes
+  ring.mulIsAssociative <- mod_n.mulAssoc
+  ring.mulAddDistribLeft <- mod_n.mulDistribLeft
+  ring.mulAddDistribRight <- mod_n.mulDistribRight
+  ring_poly.Nat: Nat
+  ring_poly.ZERO: ZERO
+  ring_poly.succ: peano.succ
+  ring_poly.addN: add
+  ring_poly.Poly: ZnPoly
+  ring_poly.coeff: zcoeff
+  ring_poly.ZEROP: ZZEROP
+  ring_poly.ONEP: ZONEP
+  ring_poly.addP: zaddP
+  ring_poly.negP: znegP
+  ring_poly.mulP: zmulP
+  ring_poly.convolution: zconvolution
+  ring_poly.degree: zdegree
+  ring_poly.degreeAtMost: zdegreeAtMost
+  ring_poly.polyExtensionality <- zPolyExtensionality
+  ring_poly.degreeAtMostMeaning <- zDegreeAtMostMeaning
+  ring_poly.zeroPolyCoeff <- zZeroPolyCoeff
+  ring_poly.onePolyCoeffZero <- zOnePolyCoeffZero
+  ring_poly.onePolyCoeffHigher <- zOnePolyCoeffHigher
+  ring_poly.addPolyCoeff <- zAddPolyCoeff
+  ring_poly.negPolyCoeff <- zNegPolyCoeff
+  ring_poly.convolutionZero <- zConvolutionZero
+  ring_poly.convolutionSucc <- zConvolutionSucc
+  ring_poly.mulPolyCoeff <- zMulPolyCoeff
+  ring_poly.degreeIsALeadingIndex <- zDegreeIsALeadingIndex
+  ring_poly.degreeBoundsTheCoefficients <- zDegreeBoundsTheCoefficients
+}
+
+// -- the domain property -------------------------------------------------------------------
+
+// The product's leading coefficient, transferred.
+theorem theProductsLeadingCoefficientInZn: forall p, q: ZnPoly; forall m, n: Nat;
+  zdegreeAtMost(p, m) -> zdegreeAtMost(q, n) ->
+  zcoeff(zmulP(p, q), add(m, n)) =
+  mod_n.mul(zcoeff(p, m), zcoeff(q, n))
+proof
+  @conclusion |
+    forall p, q: ZnPoly; forall m, n: Nat;
+      zdegreeAtMost(p, m) -> zdegreeAtMost(q, n) ->
+      zcoeff(zmulP(p, q), add(m, n)) =
+      mod_n.mul(zcoeff(p, m), zcoeff(q, n))
+    [using model(ModNPolynomials) ring_leading.theProductsLeadingCoefficient]
+qed
+
+// A polynomial with a surviving coefficient is not the zero polynomial.
+theorem aSurvivingCoefficientMakesItNonzero: forall p: ZnPoly; forall i: Nat;
+  (not (zcoeff(p, i) = mod_n.ZERO)) -> (not (p = ZZEROP))
+proof
+  @generalize-p |
+    fix p: ZnPoly {
+      @generalize-i |
+        fix i: Nat {
+          @given-the-coefficient-survives |
+            assume not (zcoeff(p, i) = mod_n.ZERO) {
+              @the-coefficient-survives |
+                not (zcoeff(p, i) = mod_n.ZERO)
+                [by hypothesis given-the-coefficient-survives]
+              @given-p-is-zero |
+                assume p = ZZEROP {
+                  @p-is-zero |
+                    p = ZZEROP
+                    [by hypothesis given-p-is-zero]
+                  @the-zero-coefficient |
+                    zcoeff(ZZEROP, i) = mod_n.ZERO
+                    [using specialize zZeroPolyCoeff(i)]
+                  @the-coefficient-vanishes |
+                    zcoeff(p, i) = mod_n.ZERO
+                    [by rewrite p-is-zero the-zero-coefficient]
+                  @conclusion-absurd |
+                    not (p = ZZEROP)
+                    [by ex_falso the-coefficient-vanishes the-coefficient-survives]
+                }
+              @zero-is-absurd |
+                (p = ZZEROP) -> (not (p = ZZEROP))
+                [by discharge given-p-is-zero]
+              @conclusion-p-is-nonzero |
+                not (p = ZZEROP)
+                [using tautology zero-is-absurd]
+            }
+          @survives-implies-nonzero |
+            (not (zcoeff(p, i) = mod_n.ZERO)) -> (not (p = ZZEROP))
+            [by discharge given-the-coefficient-survives]
+        }
+      @discharge-i |
+        forall i9: Nat;
+          (not (zcoeff(p, i9) = mod_n.ZERO)) -> (not (p = ZZEROP))
+        [by generalize generalize-i]
+    }
+  @conclusion |
+    forall p: ZnPoly; forall i: Nat;
+      (not (zcoeff(p, i) = mod_n.ZERO)) -> (not (p = ZZEROP))
+    [by generalize generalize-p]
+qed
+
+// ℤ_p[x] IS AN INTEGRAL DOMAIN: for prime N, a product of nonzero polynomials is nonzero.
+// This is what Gauss's Lemma needs — his "this is impossible since neither α₁'(x) nor
+// β₁'(x) is the zero polynomial and ℤ_p[x] is an integral domain".
+theorem modNPolynomialsHaveNoZeroDivisors: forall p, q: ZnPoly;
+  is_prime(N) -> (not (p = ZZEROP)) -> (not (q = ZZEROP)) ->
+  (not (zmulP(p, q) = ZZEROP))
+proof
+  @generalize-p |
+    fix p: ZnPoly {
+      @generalize-q |
+        fix q: ZnPoly {
+          @given-the-modulus-is-prime |
+            assume is_prime(N) {
+              @the-modulus-is-prime |
+                is_prime(N)
+                [by hypothesis given-the-modulus-is-prime]
+              @given-p-nonzero |
+                assume not (p = ZZEROP) {
+                  @p-nonzero |
+                    not (p = ZZEROP)
+                    [by hypothesis given-p-nonzero]
+                  @given-q-nonzero |
+                    assume not (q = ZZEROP) {
+                      @q-nonzero |
+                        not (q = ZZEROP)
+                        [by hypothesis given-q-nonzero]
+                      // each is bounded by its degree, with a surviving leading coefficient
+                      @p-bounded |
+                        zdegreeAtMost(p, zdegree(p))
+                        [using specialize zDegreeBoundsTheCoefficients(p) p-nonzero]
+                      @q-bounded |
+                        zdegreeAtMost(q, zdegree(q))
+                        [using specialize zDegreeBoundsTheCoefficients(q) q-nonzero]
+                      @p-leads |
+                        not (zcoeff(p, zdegree(p)) = mod_n.ZERO)
+                        [using specialize zDegreeIsALeadingIndex(p) p-nonzero]
+                      @q-leads |
+                        not (zcoeff(q, zdegree(q)) = mod_n.ZERO)
+                        [using specialize zDegreeIsALeadingIndex(q) q-nonzero]
+                      // the product's coefficient at the degree sum
+                      @the-leading-product |
+                        zcoeff(zmulP(p, q), add(zdegree(p), zdegree(q))) =
+                          mod_n.mul(zcoeff(p, zdegree(p)), zcoeff(q, zdegree(q)))
+                        [using specialize theProductsLeadingCoefficientInZn(p, q, zdegree(p), zdegree(q)) p-bounded q-bounded]
+                      // ℤ_p has no zero divisors
+                      @the-coefficients-have-no-zero-divisors |
+                        mod_n.mul(zcoeff(p, zdegree(p)), zcoeff(q, zdegree(q))) =
+                          mod_n.ZERO ->
+                          (zcoeff(p, zdegree(p)) = mod_n.ZERO or
+                          zcoeff(q, zdegree(q)) = mod_n.ZERO)
+                        [using specialize mod_n_domain.aPrimeModulusHasNoZeroDivisors(zcoeff(p, zdegree(p)), zcoeff(q, zdegree(q))) the-modulus-is-prime]
+                      @the-leading-product-survives |
+                        not (mod_n.mul(zcoeff(p, zdegree(p)),
+                          zcoeff(q, zdegree(q))) = mod_n.ZERO)
+                        [using tautology the-coefficients-have-no-zero-divisors p-leads q-leads]
+                      @the-products-coefficient-survives |
+                        not (zcoeff(zmulP(p, q),
+                          add(zdegree(p), zdegree(q))) = mod_n.ZERO)
+                        [by rewrite the-leading-product the-leading-product-survives]
+                      @conclusion-the-product-is-nonzero |
+                        not (zmulP(p, q) = ZZEROP)
+                        [using specialize aSurvivingCoefficientMakesItNonzero(zmulP(p, q), add(zdegree(p), zdegree(q))) the-products-coefficient-survives]
+                    }
+                  @q-nonzero-implies |
+                    (not (q = ZZEROP)) -> (not (zmulP(p, q) = ZZEROP))
+                    [by discharge given-q-nonzero]
+                }
+              @p-nonzero-implies |
+                (not (p = ZZEROP)) -> (not (q = ZZEROP)) ->
+                  (not (zmulP(p, q) = ZZEROP))
+                [by discharge given-p-nonzero]
+            }
+          @prime-implies |
+            is_prime(N) -> (not (p = ZZEROP)) -> (not (q = ZZEROP)) ->
+              (not (zmulP(p, q) = ZZEROP))
+            [by discharge given-the-modulus-is-prime]
+        }
+      @discharge-q |
+        forall q9: ZnPoly;
+          is_prime(N) -> (not (p = ZZEROP)) -> (not (q9 = ZZEROP)) ->
+          (not (zmulP(p, q9) = ZZEROP))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: ZnPoly;
+      is_prime(N) -> (not (p = ZZEROP)) -> (not (q = ZZEROP)) ->
+      (not (zmulP(p, q) = ZZEROP))
+    [by generalize generalize-p]
+qed
