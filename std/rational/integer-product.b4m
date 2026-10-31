@@ -33,6 +33,15 @@ func qProductUpTo(s: QSeq, k: Nat) => Q
 axiom qProductUpToZero: forall s: QSeq; qProductUpTo(s, ZERO) = QONE
 axiom qProductUpToSucc: forall s: QSeq; forall k: Nat;
   qProductUpTo(s, succ(k)) = rational.mul(qProductUpTo(s, k), qat(s, k))
+// PREPEND, restated at ℚSeq. This is what makes a per-index choice realizable: a sequence
+// satisfying a spec on the first n indices is BUILT by induction on n, prepending one witness
+// at a time. `std/sequence.b4m` states it as an axiom, and an axiom does not transfer through
+// a model, so it is restated here and discharged into `RationalSeq`.
+axiom qSeqPrependExists: forall x: Q; forall s: QSeq;
+  exists u: QSeq;
+  qat(u, ZERO) = x and (forall i: Nat; qat(u, succ(i)) = qat(s, i))
+axiom qSeqSingletonExists: forall x: Q;
+  exists s: QSeq; qat(s, ZERO) = x and qProductUpTo(s, succ(ZERO)) = x
 
 // UNGUARDED: the value sort is all of ℚ, so this composes freely — no cut, no relativization.
 model RationalSeq {
@@ -47,6 +56,8 @@ model RationalSeq {
   sequence.foldUpTo: qProductUpTo
   sequence.foldZero <- qProductUpToZero
   sequence.foldSucc <- qProductUpToSucc
+  sequence.seqPrependExists <- qSeqPrependExists
+  sequence.seqSingletonExists <- qSeqSingletonExists
 }
 
 // The one-entry product, from the shared fold theory.
@@ -576,4 +587,327 @@ proof
       (forall i: Nat; less_than(i, n) ->
       dividesIntegrally(qat(s, i), qProductUpTo(s, n)))
     [by generalize generalize-s]
+qed
+
+// -- BOUNDED CHOICE: a per-index existential yields a SEQUENCE ----------------------------
+// Judson's Lemma 17.12 opens "suppose p(x) = b_0/c_0 + … + b_n/c_n x^n", which presumes a
+// SEQUENCE of denominators. ℚ gives one existential per coefficient
+// (`everyRationalIsAQuotientOfIntegers`), and those witnesses are NOT unique — 2/4 = 1/2 — so
+// `std/function.b4m`'s `functionFromGraph` cannot pick them: it is definite description, and
+// fires only on a proven-unique spec.
+//
+// What rescues the construction is that the choice is BOUNDED. Only indices below n matter, so
+// the sequence is built by induction on n, prepending one witness per step — `qSeqPrependExists`
+// is exactly that step. No choice principle is added: each witness comes from the hypothesis's
+// own existential, and the induction does finitely many extractions.
+//
+// Stated for the shape 17.12 needs: every integer-nonzero spec below the bound is realized.
+
+// Strategy: induction on n. Base: any sequence works below ZERO (nothing is below it). Step:
+// unpack the witness at index n, take the sequence realizing the spec below n, and prepend —
+// the prepended sequence's entry at succ(i) is the old entry at i, so indices SHIFT. The
+// shift is why the spec is carried as a predicate on the VALUE at each index rather than a
+// fixed per-index list.
+theorem aBoundedChoiceIsRealizedByASequence: forall n: Nat;
+  (forall i: Nat; exists v: Q; isInteger(v) and (not (v = rational.ZERO))) ->
+  (exists s: QSeq; forall i: Nat; less_than(i, n) ->
+  (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO))))
+proof
+  @given-the-per-index-witnesses |
+    assume forall i: Nat; exists v: Q;
+      isInteger(v) and (not (v = rational.ZERO)) {
+      @the-per-index-witnesses |
+        forall i: Nat; exists v: Q;
+          isInteger(v) and (not (v = rational.ZERO))
+        [by hypothesis given-the-per-index-witnesses]
+
+      // base: below ZERO there is nothing to realize, so ANY sequence serves — and one
+      // exists because the witnesses do.
+      @the-witness-at-zero |
+        exists v: Q; isInteger(v) and (not (v = rational.ZERO))
+        [using specialize the-per-index-witnesses(ZERO)]
+      @base-case |
+        unpack v0: Q from the-witness-at-zero {
+          // any sequence at all serves below ZERO; the singleton on v0 exists
+          @the-singleton-exists |
+            exists s: QSeq;
+              qat(s, ZERO) = v0 and qProductUpTo(s, succ(ZERO)) = v0
+            [using specialize qSeqSingletonExists(v0)]
+          @with-the-singleton |
+            unpack s0: QSeq from the-singleton-exists {
+              @nothing-below-zero |
+                fix i: Nat {
+                  @given-i-below-zero |
+                    assume less_than(i, ZERO) {
+                      @i-below-zero |
+                        less_than(i, ZERO)
+                        [by hypothesis given-i-below-zero]
+                      @nothing-is-below-zero |
+                        not less_than(i, ZERO)
+                        [using specialize peano_order.notLessThanZero(i)]
+                      @conclusion-vacuous |
+                        isInteger(qat(s0, i)) and
+                          (not (qat(s0, i) = rational.ZERO))
+                        [by ex_falso i-below-zero nothing-is-below-zero]
+                    }
+                  @below-zero-implies |
+                    less_than(i, ZERO) ->
+                      (isInteger(qat(s0, i)) and
+                      (not (qat(s0, i) = rational.ZERO)))
+                    [by discharge given-i-below-zero]
+                }
+              @all-below-zero |
+                forall i: Nat; less_than(i, ZERO) ->
+                  (isInteger(qat(s0, i)) and
+                  (not (qat(s0, i) = rational.ZERO)))
+                [by generalize nothing-below-zero]
+              @conclusion-the-base-sequence |
+                exists s: QSeq; forall i: Nat; less_than(i, ZERO) ->
+                  (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
+                [by witness(s0) all-below-zero]
+            }
+          @conclusion-base-inner |
+            exists s: QSeq; forall i: Nat; less_than(i, ZERO) ->
+              (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
+            [by unpacked with-the-singleton]
+        }
+      @base-case-exported |
+        exists s: QSeq; forall i: Nat; less_than(i, ZERO) ->
+          (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
+        [by unpacked base-case]
+
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume exists s: QSeq; forall i: Nat; less_than(i, k) ->
+              (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO))) {
+              @inductive-hypothesis |
+                exists s: QSeq; forall i: Nat; less_than(i, k) ->
+                  (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
+                [by hypothesis given-inductive-hypothesis]
+              // PREPEND IS THE WRONG END for this spec. Prepending shifts every old index
+              // up by one, so a sequence good below k becomes good at indices 1..k — it
+              // says nothing at index k itself. What the step needs is the SAME sequence
+              // extended at the top, which `qSeqPrependExists` does not provide.
+              //
+              // The spec here is index-INDEPENDENT (every entry must be a nonzero integer),
+              // so the shift costs nothing: prepend any witness onto a good-below-k sequence
+              // and the result is good below succ(k) — index 0 holds the new witness, and
+              // index succ(i) for i < k holds the old entry at i.
+              @the-witness-at-k |
+                exists v: Q; isInteger(v) and (not (v = rational.ZERO))
+                [using specialize the-per-index-witnesses(k)]
+              @conclusion-the-step |
+                unpack vk: Q from the-witness-at-k {
+                  @with-witness-vk |
+                    isInteger(vk) and (not (vk = rational.ZERO))
+                    [by hypothesis conclusion-the-step]
+                  @vk-is-an-integer |
+                    isInteger(vk)
+                    [by and_lhs with-witness-vk]
+                  @vk-is-nonzero |
+                    not (vk = rational.ZERO)
+                    [by and_rhs with-witness-vk]
+                  @with-the-previous |
+                    unpack sk: QSeq from inductive-hypothesis {
+                      @with-previous-sk |
+                        forall i: Nat; less_than(i, k) ->
+                          (isInteger(qat(sk, i)) and
+                          (not (qat(sk, i) = rational.ZERO)))
+                        [by hypothesis with-the-previous]
+                      @the-prepend-exists |
+                        exists u: QSeq;
+                          qat(u, ZERO) = vk and
+                          (forall i: Nat; qat(u, succ(i)) = qat(sk, i))
+                        [using specialize qSeqPrependExists(vk, sk)]
+                      @with-the-prepend |
+                        unpack u: QSeq from the-prepend-exists {
+                          @with-prepend-u |
+                            qat(u, ZERO) = vk and
+                              (forall i: Nat; qat(u, succ(i)) = qat(sk, i))
+                            [by hypothesis with-the-prepend]
+                          @the-head-is-vk |
+                            qat(u, ZERO) = vk
+                            [by and_lhs with-prepend-u]
+                          @the-tail-shifts |
+                            forall i: Nat; qat(u, succ(i)) = qat(sk, i)
+                            [by and_rhs with-prepend-u]
+                          @good-below-succ-k |
+                            fix i: Nat {
+                              @given-i-below-succ-k |
+                                assume less_than(i, succ(k)) {
+                                  @i-below-succ-k |
+                                    less_than(i, succ(k))
+                                    [by hypothesis given-i-below-succ-k]
+                                  @the-index-cases |
+                                    i = ZERO or (exists m: Nat; i = succ(m))
+                                    [using specialize peano.zeroOrSucc(i)]
+                                  @conclusion-this-entry |
+                                    isInteger(qat(u, i)) and
+                                      (not (qat(u, i) = rational.ZERO))
+                                    case the-index-cases {
+                                      // index 0 holds the fresh witness
+                                      @when-i-is-zero |
+                                        assume i = ZERO {
+                                          @i-is-zero |
+                                            i = ZERO
+                                            [by hypothesis when-i-is-zero]
+                                          @the-entry-is-vk |
+                                            qat(u, i) = vk
+                                            [by rewrite i-is-zero the-head-is-vk]
+                                          @vk-is-good |
+                                            isInteger(vk) and
+                                              (not (vk = rational.ZERO))
+                                            [by both vk-is-an-integer vk-is-nonzero]
+                                          @conclusion-at-zero |
+                                            isInteger(qat(u, i)) and
+                                              (not (qat(u, i) = rational.ZERO))
+                                            [by rewrite the-entry-is-vk vk-is-good]
+                                        }
+                                      // index succ(m) holds the old entry at m, and m < k
+                                      @when-i-is-a-successor |
+                                        assume exists m: Nat; i = succ(m) {
+                                          @i-is-a-successor |
+                                            exists m: Nat; i = succ(m)
+                                            [by hypothesis when-i-is-a-successor]
+                                          @with-the-predecessor |
+                                            unpack m: Nat from i-is-a-successor {
+                                              @i-is-succ-m |
+                                                i = succ(m)
+                                                [by hypothesis with-the-predecessor]
+                                              @succ-m-below-succ-k |
+                                                less_than(succ(m), succ(k))
+                                                [by rewrite i-is-succ-m i-below-succ-k]
+                                              @m-below-k |
+                                                less_than(m, k)
+                                                [using specialize peano_order.succReflectsOrder(m, k) succ-m-below-succ-k]
+                                              @the-old-entry-is-good |
+                                                isInteger(qat(sk, m)) and
+                                                  (not (qat(sk, m) = rational.ZERO))
+                                                [using specialize with-previous-sk(m) m-below-k]
+                                              @the-entry-shifts |
+                                                qat(u, succ(m)) = qat(sk, m)
+                                                [using specialize the-tail-shifts(m)]
+                                              @the-new-entry-is-good |
+                                                isInteger(qat(u, succ(m))) and
+                                                  (not (qat(u, succ(m)) = rational.ZERO))
+                                                [by rewrite the-entry-shifts the-old-entry-is-good]
+                                              @conclusion-at-successor |
+                                                isInteger(qat(u, i)) and
+                                                  (not (qat(u, i) = rational.ZERO))
+                                                [by rewrite i-is-succ-m the-new-entry-is-good]
+                                            }
+                                          @conclusion-successor-exported |
+                                            isInteger(qat(u, i)) and
+                                              (not (qat(u, i) = rational.ZERO))
+                                            [by unpacked with-the-predecessor]
+                                        }
+                                    }
+                                }
+                              @below-succ-k-implies-good |
+                                less_than(i, succ(k)) ->
+                                  (isInteger(qat(u, i)) and
+                                  (not (qat(u, i) = rational.ZERO)))
+                                [by discharge given-i-below-succ-k]
+                            }
+                          @all-good-below-succ-k |
+                            forall i: Nat; less_than(i, succ(k)) ->
+                              (isInteger(qat(u, i)) and
+                              (not (qat(u, i) = rational.ZERO)))
+                            [by generalize good-below-succ-k]
+                          @conclusion-the-extended-sequence |
+                            exists s: QSeq; forall i: Nat; less_than(i, succ(k)) ->
+                              (isInteger(qat(s, i)) and
+                              (not (qat(s, i) = rational.ZERO)))
+                            [by witness(u) all-good-below-succ-k]
+                        }
+                      @conclusion-prepend-exported |
+                        exists s: QSeq; forall i: Nat; less_than(i, succ(k)) ->
+                          (isInteger(qat(s, i)) and
+                          (not (qat(s, i) = rational.ZERO)))
+                        [by unpacked with-the-prepend]
+                    }
+                  @conclusion-previous-exported |
+                    exists s: QSeq; forall i: Nat; less_than(i, succ(k)) ->
+                      (isInteger(qat(s, i)) and
+                      (not (qat(s, i) = rational.ZERO)))
+                    [by unpacked with-the-previous]
+                }
+              @the-step-exported |
+                exists s: QSeq; forall i: Nat; less_than(i, succ(k)) ->
+                  (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
+                [by unpacked conclusion-the-step]
+            }
+          @induction-step-at-k |
+            (exists s: QSeq; forall i: Nat; less_than(i, k) ->
+              (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))) ->
+              (exists s: QSeq; forall i: Nat; less_than(i, succ(k)) ->
+              (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO))))
+            [by discharge given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat;
+          (exists s: QSeq; forall i: Nat; less_than(i, k) ->
+          (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))) ->
+          (exists s: QSeq; forall i: Nat; less_than(i, succ(k)) ->
+          (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO))))
+        [by generalize induction-step]
+      @all-bounds |
+        forall n: Nat;
+          exists s: QSeq; forall i: Nat; less_than(i, n) ->
+          (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
+        [using instantiation peano.induction((fun t: Nat => (exists s: QSeq; forall i: Nat; less_than(i, t) -> (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))))) base-case-exported induction-step-for-all-k]
+      // the hypothesis is discharged OUTSIDE the `forall n`, so re-fix n and push it in
+      @reorder |
+        fix n: Nat {
+          @at-this-bound |
+            exists s: QSeq; forall i: Nat; less_than(i, n) ->
+              (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
+            [using specialize all-bounds(n)]
+        }
+      @all-bounds-refixed |
+        forall n: Nat;
+          exists s: QSeq; forall i: Nat; less_than(i, n) ->
+          (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
+        [by generalize reorder]
+    }
+  @witnesses-imply-the-sequences |
+    (forall i: Nat; exists v: Q; isInteger(v) and (not (v = rational.ZERO))) ->
+      (forall n: Nat;
+      exists s: QSeq; forall i: Nat; less_than(i, n) ->
+      (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO))))
+    [by discharge given-the-per-index-witnesses]
+
+  @final-reorder |
+    fix n: Nat {
+      @given-the-witnesses-again |
+        assume forall i: Nat; exists v: Q;
+          isInteger(v) and (not (v = rational.ZERO)) {
+          @the-witnesses-again |
+            forall i: Nat; exists v: Q;
+              isInteger(v) and (not (v = rational.ZERO))
+            [by hypothesis given-the-witnesses-again]
+          @all-bounds-here |
+            forall n9: Nat;
+              exists s: QSeq; forall i: Nat; less_than(i, n9) ->
+              (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
+            [by modus_ponens witnesses-imply-the-sequences the-witnesses-again]
+          @conclusion-at-n |
+            exists s: QSeq; forall i: Nat; less_than(i, n) ->
+              (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
+            [using specialize all-bounds-here(n)]
+        }
+      @witnesses-imply-at-n |
+        (forall i: Nat; exists v: Q;
+          isInteger(v) and (not (v = rational.ZERO))) ->
+          (exists s: QSeq; forall i: Nat; less_than(i, n) ->
+          (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO))))
+        [by discharge given-the-witnesses-again]
+    }
+  @conclusion |
+    forall n: Nat;
+      (forall i: Nat; exists v: Q; isInteger(v) and (not (v = rational.ZERO))) ->
+      (exists s: QSeq; forall i: Nat; less_than(i, n) ->
+      (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO))))
+    [by generalize final-reorder]
 qed
