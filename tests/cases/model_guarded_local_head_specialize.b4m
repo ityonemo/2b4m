@@ -1,0 +1,24 @@
+// REGRESSION: a GUARDED model must transfer a theorem whose proof `specialize`s a LOCAL
+// universal step. Before the position-matching fix in `withGuardPremises`, no guarded model in
+// the corpus could transfer such a theorem — and nearly every inductive ℤ proof is one.
+//
+// The shape that broke: the instance's param guards are injected in PARAM order, and the args'
+// free variables are APPENDED after the schema's own params, so for a local-head `specialize`
+// the antecedent chain is `head -> guard(freevar) -> hyp -> goal` with the guard in position 1.
+// Discharging the first (total - prems.len) antecedents as guards then tried to discharge the
+// HEAD. See drafts/guard-relativization-bug/.
+import rational <<< "std/rational.b4m"
+import integer <<< "std/integer.b4m"
+
+sort Q = rational.Q
+pred isInteger = rational.isInteger
+
+// `integer.negPreimageIsNegation`'s own proof specializes its inductive hypothesis (a local
+// forall step) at `succ(x)` under the relativized binder — exactly the broken shape.
+theorem negationIsInvolutiveOnTheCut: forall a: Q; isInteger(a) ->
+  rational.neg(rational.neg(a)) = a
+proof
+  @conclusion |
+    forall a: Q; isInteger(a) -> rational.neg(rational.neg(a)) = a
+    [using model(rational.IntegersInRational) integer.negNeg]
+qed
