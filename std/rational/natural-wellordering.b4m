@@ -1,0 +1,412 @@
+// std/rational/natural-wellordering.b4m — STRONG INDUCTION AND WELL-ORDERING ON ℚ's NATURALS.
+//
+// ℚ carries its naturals as a cut (`isNatural`) with ORDINARY induction only
+// (`rational.naturalInduction`). Strong induction and well-ordering are derivable from it, and
+// both are needed the moment a construction has to pick a LEAST something — which Lemma
+// 17.12's "let d be the greatest common divisor" does.
+//
+// `std/integer/wellordering.b4m` proves both over ℤ, but they are THEOREM-SCHEMAS, and a
+// theorem-schema does not cross a model: mapping it is rejected ("model maps only axioms"),
+// citing it through a model is rejected as an undischarged schema obligation, and the `<-`
+// form wants a POSITED local schema. Even setting that aside, ℤ's proofs route through
+// `peano.zeroOrSucc`, itself a model transfer, so the chain ℕ → ℤ's NonNeg → ℚ's isInteger
+// hits the nested-composition limit. Hence: proved here, on ℚ's own induction.
+import rational <<< "std/rational.b4m"
+import rational_integer_order <<< "std/rational/integer-order.b4m"
+import field_order <<< "std/field/order.b4m"
+
+sort Q = rational.Q
+const ZERO = rational.ZERO
+func succ = rational.succ
+pred less_than = rational.less_than
+pred isNatural = rational.isNatural
+
+// -- strong induction -----------------------------------------------------------------------
+// If prop holds at n whenever it holds below n, it holds everywhere. Proved from ordinary
+// induction on the AUXILIARY predicate "prop holds at every natural below n" — the standard
+// move, and the reason strong induction needs no new axiom.
+
+// Strategy: ordinary induction on `below(n) := forall m; isNatural(m) -> m < n -> prop(m)`.
+// Base: nothing is below ZERO. Step: below(succ k) splits as below(k) plus prop(k), and the
+// strong step supplies prop(k) from below(k). Then prop(n) follows from below(succ n).
+theorem naturalStrongInduction(prop(Q)):
+  (forall n: Q; isNatural(n) ->
+  (forall m: Q; isNatural(m) -> less_than(m, n) -> prop(m)) -> prop(n))
+  -> forall n: Q; isNatural(n) -> prop(n)
+proof
+  @given-the-strong-step |
+    assume forall n: Q; isNatural(n) ->
+      (forall m: Q; isNatural(m) -> less_than(m, n) -> prop(m)) -> prop(n) {
+      @the-strong-step |
+        forall n: Q; isNatural(n) ->
+          (forall m: Q; isNatural(m) -> less_than(m, n) -> prop(m)) -> prop(n)
+        [by hypothesis given-the-strong-step]
+
+      // base: nothing is below ZERO, so the auxiliary holds vacuously
+      @base-case-proof |
+        fix m: Q {
+          @given-m-is-natural |
+            assume isNatural(m) {
+              @given-m-below-zero |
+                assume less_than(m, ZERO) {
+                  @m-below-zero |
+                    less_than(m, ZERO)
+                    [by hypothesis given-m-below-zero]
+                  @m-is-natural |
+                    isNatural(m)
+                    [by hypothesis given-m-is-natural]
+                  @m-is-zero-or-positive |
+                    m = ZERO or less_than(ZERO, m)
+                    [using specialize rational_integer_order.aNaturalIsZeroOrPositive(m) m-is-natural]
+                  @zero-is-not-below-itself |
+                    not less_than(ZERO, ZERO)
+                    [using specialize rational.lessThanIrreflexive(ZERO)]
+                  @order-is-asymmetric |
+                    forall y, z: Q; less_than(y, z) -> (not less_than(z, y))
+                    [using model(rational.RationalOrderedField) field_order.lessThanAsymmetric]
+                  @conclusion-vacuous |
+                    prop(m)
+                    case m-is-zero-or-positive {
+                      @when-m-is-zero |
+                        assume m = ZERO {
+                          @m-is-zero |
+                            m = ZERO
+                            [by hypothesis when-m-is-zero]
+                          @zero-below-zero |
+                            less_than(ZERO, ZERO)
+                            [by rewrite m-is-zero m-below-zero]
+                          @conclusion-at-zero |
+                            prop(m)
+                            [by ex_falso zero-below-zero zero-is-not-below-itself]
+                        }
+                      @when-m-is-positive |
+                        assume less_than(ZERO, m) {
+                          @m-is-positive |
+                            less_than(ZERO, m)
+                            [by hypothesis when-m-is-positive]
+                          @m-not-below-zero |
+                            not less_than(m, ZERO)
+                            [using specialize order-is-asymmetric(ZERO, m) m-is-positive]
+                          @conclusion-at-positive |
+                            prop(m)
+                            [by ex_falso m-below-zero m-not-below-zero]
+                        }
+                    }
+                }
+              @below-zero-implies |
+                less_than(m, ZERO) -> prop(m)
+                [by discharge given-m-below-zero]
+            }
+          @natural-implies |
+            isNatural(m) -> less_than(m, ZERO) -> prop(m)
+            [by discharge given-m-is-natural]
+        }
+      @base-case |
+        forall m: Q; isNatural(m) -> less_than(m, ZERO) -> prop(m)
+        [by generalize base-case-proof]
+
+      // step: below(succ k) from below(k)
+      @induction-step |
+        fix k: Q {
+          @given-k-is-natural |
+            assume isNatural(k) {
+              @k-is-natural |
+                isNatural(k)
+                [by hypothesis given-k-is-natural]
+              @given-below-k |
+                assume forall m: Q; isNatural(m) -> less_than(m, k) -> prop(m) {
+                  @below-k |
+                    forall m: Q; isNatural(m) -> less_than(m, k) -> prop(m)
+                    [by hypothesis given-below-k]
+                  @prop-at-k |
+                    prop(k)
+                    [using specialize the-strong-step(k) k-is-natural below-k]
+                  @below-succ-k |
+                    fix m: Q {
+                      @given-m-is-natural |
+                        assume isNatural(m) {
+                          @m-is-natural |
+                            isNatural(m)
+                            [by hypothesis given-m-is-natural]
+                          @given-m-below-succ-k |
+                            assume less_than(m, succ(k)) {
+                              @m-below-succ-k |
+                                less_than(m, succ(k))
+                                [by hypothesis given-m-below-succ-k]
+                              @the-split |
+                                less_than(m, k) or m = k
+                                [using specialize rational_integer_order.theNaturalSuccSplit(m, k) m-is-natural k-is-natural m-below-succ-k]
+                              @conclusion-prop-at-m |
+                                prop(m)
+                                case the-split {
+                                  @when-m-below-k |
+                                    assume less_than(m, k) {
+                                      @m-below-k |
+                                        less_than(m, k)
+                                        [by hypothesis when-m-below-k]
+                                      @conclusion-from-below |
+                                        prop(m)
+                                        [using specialize below-k(m) m-is-natural m-below-k]
+                                    }
+                                  @when-m-is-k |
+                                    assume m = k {
+                                      @m-is-k |
+                                        m = k
+                                        [by hypothesis when-m-is-k]
+                                      @conclusion-at-k |
+                                        prop(m)
+                                        [by rewrite m-is-k prop-at-k]
+                                    }
+                                }
+                            }
+                          @below-succ-k-implies |
+                            less_than(m, succ(k)) -> prop(m)
+                            [by discharge given-m-below-succ-k]
+                        }
+                      @natural-implies-at-m |
+                        isNatural(m) -> less_than(m, succ(k)) -> prop(m)
+                        [by discharge given-m-is-natural]
+                    }
+                  @conclusion-below-succ-k |
+                    forall m: Q; isNatural(m) -> less_than(m, succ(k)) -> prop(m)
+                    [by generalize below-succ-k]
+                }
+              @below-k-implies-below-succ-k |
+                (forall m: Q; isNatural(m) -> less_than(m, k) -> prop(m)) ->
+                  (forall m: Q; isNatural(m) -> less_than(m, succ(k)) -> prop(m))
+                [by discharge given-below-k]
+            }
+          @natural-implies-the-step |
+            isNatural(k) ->
+              (forall m: Q; isNatural(m) -> less_than(m, k) -> prop(m)) ->
+              (forall m: Q; isNatural(m) -> less_than(m, succ(k)) -> prop(m))
+            [by discharge given-k-is-natural]
+        }
+      @induction-step-for-all-k |
+        forall k: Q;
+          isNatural(k) ->
+          (forall m: Q; isNatural(m) -> less_than(m, k) -> prop(m)) ->
+          (forall m: Q; isNatural(m) -> less_than(m, succ(k)) -> prop(m))
+        [by generalize induction-step]
+      @all-below |
+        forall n: Q; isNatural(n) ->
+          (forall m: Q; isNatural(m) -> less_than(m, n) -> prop(m))
+        [using instantiation rational.naturalInduction((fun t: Q => (forall m: Q; isNatural(m) -> less_than(m, t) -> prop(m)))) base-case induction-step-for-all-k]
+
+      // prop(n) from below(succ n)
+      @every-natural |
+        fix n: Q {
+          @given-n-is-natural |
+            assume isNatural(n) {
+              @n-is-natural |
+                isNatural(n)
+                [by hypothesis given-n-is-natural]
+              @succ-n-is-natural |
+                isNatural(succ(n))
+                [using specialize rational.isNaturalSucc(n) n-is-natural]
+              @below-succ-n |
+                forall m: Q; isNatural(m) -> less_than(m, succ(n)) -> prop(m)
+                [using specialize all-below(succ(n)) succ-n-is-natural]
+              @n-below-its-successor |
+                less_than(n, succ(n))
+                [using specialize rational_integer_order.aNaturalIsBelowItsSuccessor(n)]
+              @conclusion-prop-at-n |
+                prop(n)
+                [using specialize below-succ-n(n) n-is-natural n-below-its-successor]
+            }
+          @natural-implies-prop |
+            isNatural(n) -> prop(n)
+            [by discharge given-n-is-natural]
+        }
+      @conclusion-all |
+        forall n: Q; isNatural(n) -> prop(n)
+        [by generalize every-natural]
+    }
+  @conclusion |
+    (forall n: Q; isNatural(n) ->
+      (forall m: Q; isNatural(m) -> less_than(m, n) -> prop(m)) -> prop(n))
+      -> forall n: Q; isNatural(n) -> prop(n)
+    [by discharge given-the-strong-step]
+qed
+
+// -- WELL-ORDERING --------------------------------------------------------------------------
+// An inhabited property of naturals has a LEAST witness — what a "greatest common divisor"
+// construction needs.
+//
+// By CONTRADICTION, following `std/integer/wellordering.b4m`'s shape: assume no least exists,
+// then strong-induct on `not prop`. If nothing below n satisfies prop and n did, n would be a
+// least — contradicting the assumption — so n does not satisfy prop either. Strong induction
+// then says NO natural satisfies prop, contradicting inhabitation.
+//
+// Taking the contradiction route avoids needing excluded middle on a quantified statement:
+// `tautology` treats a `forall` as one opaque atom, so the dichotomy "something below n
+// satisfies prop, or nothing does" is not available to it.
+theorem naturalWellOrdering(prop(Q)):
+  (exists n: Q; isNatural(n) and prop(n))
+  -> exists least: Q; isNatural(least) and prop(least) and
+  (forall m: Q; isNatural(m) -> prop(m) -> (not less_than(m, least)))
+proof
+  @given-inhabited |
+    assume exists n: Q; isNatural(n) and prop(n) {
+      @inhabited |
+        exists n: Q; isNatural(n) and prop(n)
+        [by hypothesis given-inhabited]
+      @given-no-least |
+        assume not (exists least: Q; isNatural(least) and prop(least) and
+          (forall m: Q; isNatural(m) -> prop(m) ->
+          (not less_than(m, least)))) {
+          @no-least |
+            not (exists least: Q; isNatural(least) and prop(least) and
+              (forall m: Q; isNatural(m) -> prop(m) ->
+              (not less_than(m, least))))
+            [by hypothesis given-no-least]
+
+          // strong step: nothing below n satisfies prop  ->  n does not either
+          @the-strong-step |
+            fix n: Q {
+              @given-n-is-natural |
+                assume isNatural(n) {
+                  @n-is-natural |
+                    isNatural(n)
+                    [by hypothesis given-n-is-natural]
+                  @given-none-below |
+                    assume forall m: Q; isNatural(m) -> less_than(m, n) ->
+                      (not prop(m)) {
+                      @none-below |
+                        forall m: Q; isNatural(m) -> less_than(m, n) ->
+                          (not prop(m))
+                        [by hypothesis given-none-below]
+                      @given-prop-at-n |
+                        assume prop(n) {
+                          @prop-at-n |
+                            prop(n)
+                            [by hypothesis given-prop-at-n]
+                          // n would be least: anything satisfying prop is not below n
+                          @n-is-a-lower-bound |
+                            fix m: Q {
+                              @given-m-is-natural |
+                                assume isNatural(m) {
+                                  @m-is-natural |
+                                    isNatural(m)
+                                    [by hypothesis given-m-is-natural]
+                                  @given-prop-at-m |
+                                    assume prop(m) {
+                                      @prop-at-m |
+                                        prop(m)
+                                        [by hypothesis given-prop-at-m]
+                                      @m-below-n-would-fail |
+                                        less_than(m, n) -> (not prop(m))
+                                        [using specialize none-below(m) m-is-natural]
+                                      @conclusion-m-not-below |
+                                        not less_than(m, n)
+                                        [using tautology m-below-n-would-fail prop-at-m]
+                                    }
+                                  @prop-implies-not-below |
+                                    prop(m) -> (not less_than(m, n))
+                                    [by discharge given-prop-at-m]
+                                }
+                              @natural-implies-not-below |
+                                isNatural(m) -> prop(m) -> (not less_than(m, n))
+                                [by discharge given-m-is-natural]
+                            }
+                          @n-is-a-lower-bound-for-all |
+                            forall m: Q; isNatural(m) -> prop(m) ->
+                              (not less_than(m, n))
+                            [by generalize n-is-a-lower-bound]
+                          @n-is-least |
+                            isNatural(n) and prop(n) and
+                              (forall m: Q; isNatural(m) -> prop(m) ->
+                              (not less_than(m, n)))
+                            [using tautology n-is-natural prop-at-n n-is-a-lower-bound-for-all]
+                          @a-least-exists |
+                            exists least: Q; isNatural(least) and prop(least) and
+                              (forall m: Q; isNatural(m) -> prop(m) ->
+                              (not less_than(m, least)))
+                            [by witness(n) n-is-least]
+                        }
+                      @conclusion-not-prop-at-n |
+                        not prop(n)
+                        [by contradiction given-prop-at-n a-least-exists no-least]
+                    }
+                  @none-below-implies-not-prop |
+                    (forall m: Q; isNatural(m) -> less_than(m, n) ->
+                      (not prop(m))) -> (not prop(n))
+                    [by discharge given-none-below]
+                }
+              @natural-implies-the-step |
+                isNatural(n) ->
+                  (forall m: Q; isNatural(m) -> less_than(m, n) ->
+                  (not prop(m))) -> (not prop(n))
+                [by discharge given-n-is-natural]
+            }
+          @the-strong-step-for-all |
+            forall n: Q; isNatural(n) ->
+              (forall m: Q; isNatural(m) -> less_than(m, n) ->
+              (not prop(m))) -> (not prop(n))
+            [by generalize the-strong-step]
+          @nothing-satisfies-prop |
+            forall n: Q; isNatural(n) -> (not prop(n))
+            [using instantiation naturalStrongInduction((fun t: Q => (not prop(t)))) the-strong-step-for-all]
+          // but something does
+          @with-the-witness |
+            unpack w: Q from inhabited {
+              @with-witness-w |
+                isNatural(w) and prop(w)
+                [by hypothesis with-the-witness]
+              @w-is-natural |
+                isNatural(w)
+                [by and_lhs with-witness-w]
+              @prop-at-w |
+                prop(w)
+                [by and_rhs with-witness-w]
+              @not-prop-at-w |
+                not prop(w)
+                [using specialize nothing-satisfies-prop(w) w-is-natural]
+              @conclusion-contradiction |
+                exists least: Q; isNatural(least) and prop(least) and
+                  (forall m: Q; isNatural(m) -> prop(m) ->
+                  (not less_than(m, least)))
+                [by ex_falso prop-at-w not-prop-at-w]
+            }
+          @the-least-from-contradiction |
+            exists least: Q; isNatural(least) and prop(least) and
+              (forall m: Q; isNatural(m) -> prop(m) ->
+              (not less_than(m, least)))
+            [by unpacked with-the-witness]
+        }
+      @not-no-least |
+        not not (exists least: Q; isNatural(least) and prop(least) and
+          (forall m: Q; isNatural(m) -> prop(m) ->
+          (not less_than(m, least))))
+        [by contradiction given-no-least the-least-from-contradiction no-least]
+      @the-least-exported |
+        exists least: Q; isNatural(least) and prop(least) and
+          (forall m: Q; isNatural(m) -> prop(m) -> (not less_than(m, least)))
+        [by double_negation not-no-least]
+    }
+  @conclusion |
+    (exists n: Q; isNatural(n) and prop(n))
+      -> exists least: Q; isNatural(least) and prop(least) and
+      (forall m: Q; isNatural(m) -> prop(m) -> (not less_than(m, least)))
+    [by discharge given-inhabited]
+qed
+
+// -- INSTANTIATING BOTH SCHEMAS -------------------------------------------------------------
+// A schema is checked at its instantiations, so an uninstantiated one proves nothing. This
+// exercises well-ordering (and through it strong induction) at a concrete property: every
+// inhabited set of naturals closed under nothing in particular still has a least member.
+pred aTestProperty(n: Q)
+
+theorem aTestPropertyHasALeastWitness:
+  (exists n: Q; isNatural(n) and aTestProperty(n)) ->
+  exists least: Q; isNatural(least) and aTestProperty(least) and
+  (forall m: Q; isNatural(m) -> aTestProperty(m) ->
+  (not less_than(m, least)))
+proof
+  @conclusion |
+    (exists n: Q; isNatural(n) and aTestProperty(n)) ->
+      exists least: Q; isNatural(least) and aTestProperty(least) and
+      (forall m: Q; isNatural(m) -> aTestProperty(m) ->
+      (not less_than(m, least)))
+    [using instantiation naturalWellOrdering(aTestProperty)]
+qed
