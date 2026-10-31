@@ -5,7 +5,8 @@
 //! Expression grammar (one unified Expr for terms and formulas):
 //!   expr    := quant | lambda | implies
 //!   quant   := ('forall'|'exists') binders ';' expr
-//!   lambda  := 'fun' binders '=>' expr
+//!   lambda  := 'fun' lbinders '=>' expr
+//!   lbinders := binders (',' binders)*   // each group its own sort
 //!   binders := ident (',' ident)* ':' ident
 //!   implies := or ('->' expr)?          // right-assoc, lowest precedence
 //!   or      := and ('or' and)*
@@ -1114,7 +1115,7 @@ pub const Parser = struct {
                     },
                     .keyword_fun => {
                         const tok = self.advance();
-                        const binders = try self.parseBinders();
+                        const binders = try self.parseLambdaBinders();
                         _ = try self.expect(.fat_arrow);
                         try conts.append(self.arena, .{ .lambda_done = .{ .tok = tok, .binders = binders } });
                         continue :descend; // body: a full expr
@@ -1275,6 +1276,43 @@ pub const Parser = struct {
     }
 
     /// `x, y: Nat`
+    /// Lambda binders: COMMA-separated groups, each carrying its own sort —
+    /// `fun i: Nat, v: Q => …`. A quantifier cannot share this parse because its
+    /// binder list is terminated by `;`, which it uses to chain mixed sorts
+    /// (`forall s: QSeq; forall k: Nat; …`); a lambda has one `=>` and no such
+    /// escape, so before this a spec over two different sorts had NO lambda form
+    /// at all (`schema(Nat, Q)` could only be instantiated at a bare predicate
+    /// name). Same-sort grouping still works: `fun y, z: Element => …`, which is
+    /// how every pre-existing caller writes it.
+    fn parseLambdaBinders(self: *Parser) ParseError![]const ast.Binder {
+        var all: std.ArrayList(ast.Binder) = .empty;
+        while (true) {
+            // one group: `a, b, c: Sort [where inH]`
+            var names: std.ArrayList(Token) = .empty;
+            try names.append(self.arena, try self.expect(.identifier));
+            while (self.tok.tag == .comma) {
+                // a comma continues THIS group only while a colon has not been
+                // seen yet; once the group's sort is read, a comma starts a new
+                // group instead (handled after the sort below).
+                _ = self.advance();
+                try names.append(self.arena, try self.expect(.identifier));
+            }
+            _ = try self.expect(.colon);
+            const sort = try self.expect(.identifier);
+            var guard: ?Token = null;
+            if (self.tok.tag == .keyword_where) {
+                _ = self.advance();
+                guard = try self.expect(.identifier);
+            }
+            for (names.items) |name| {
+                try all.append(self.arena, .{ .name = name, .sort = sort, .guard = guard });
+            }
+            if (self.tok.tag != .comma) break;
+            _ = self.advance(); // next group
+        }
+        return all.items;
+    }
+
     fn parseBinders(self: *Parser) ParseError![]const ast.Binder {
         var names: std.ArrayList(Token) = .empty;
         try names.append(self.arena, try self.expect(.identifier));
@@ -1412,6 +1450,12 @@ test "quantifiers bind the rest; multiple binders share a sort" {
 test "calls and lambdas" {
     try expectExprDump("add(succ(x), ZERO)", "(add (succ x) ZERO)");
     try expectExprDump("fun k: Nat => add(k, ZERO) = k", "(fun k:Nat (equal (add k ZERO) k))");
+    // LAMBDA BINDERS ARE COMMA-SEPARATED GROUPS, each with its own sort. A quantifier chains
+    // mixed sorts with `;` (`forall a: Nat; forall v: Q; …`); a lambda has only `=>`, so
+    // without per-group sorts a spec over two different sorts had NO lambda form.
+    try expectExprDump("fun y, z: Nat => p(y, z)", "(fun y:Nat z:Nat (p y z))");
+    try expectExprDump("fun i: Nat, v: Q => p(i, v)", "(fun i:Nat v:Q (p i v))");
+    try expectExprDump("fun a, b: Nat, v: Q => p(a, b, v)", "(fun a:Nat b:Nat v:Q (p a b v))");
 }
 
 test "declarations parse" {
