@@ -24,6 +24,7 @@
 import fieldpoly <<< "std/field/polynomial.b4m"
 import rational <<< "std/rational.b4m"
 import peano <<< "std/peano.b4m"
+import subtraction <<< "std/peano/subtraction.b4m"
 
 sort Q = rational.Q
 sort Nat = peano.Nat
@@ -43,6 +44,13 @@ func qmonomial(a: Q, k: Nat) => QPoly
 // bookkeeping, which reads off leading coefficients.
 pred qdegreeAtMost(p: QPoly, n: Nat)
 func qdegree(p: QPoly) => Nat
+// the convolution, so multiplication has a COEFFICIENT LAW here. `qmulP` was declared and
+// mapped into F[x] but its coefficient behaviour never was, so `qcoeff(qmulP(p, q), i)` was
+// opaque — nothing could be proved about a product's coefficients. This is the FIFTH
+// restatement of the same convolution recursion in std (R[x], F[x], ℤ_p[x], ℤ[x], here),
+// which is the duplication a generic polynomial theory removes; see
+// `drafts/algebra-layering/README.md`.
+func qconvolution(p: QPoly, q: QPoly, i: Nat, k: Nat) => Q
 
 // the coefficient equations: ℚ[x]'s own primitives
 axiom qPolyExtensionality: forall p, q: QPoly;
@@ -63,6 +71,16 @@ axiom qDegreeIsALeadingIndex: forall p: QPoly;
   (not (p = QZEROP)) -> (not (qcoeff(p, qdegree(p)) = ZERO))
 axiom qDegreeBoundsTheCoefficients: forall p: QPoly;
   (not (p = QZEROP)) -> qdegreeAtMost(p, qdegree(p))
+axiom qConvolutionZero: forall p, q: QPoly; forall i: Nat;
+  qconvolution(p, q, i, NAT_ZERO) =
+  rational.mul(qcoeff(p, NAT_ZERO), qcoeff(q, i))
+axiom qConvolutionSucc: forall p, q: QPoly; forall i, k: Nat;
+  qconvolution(p, q, i, peano.succ(k)) =
+  rational.add(qconvolution(p, q, i, k),
+  rational.mul(qcoeff(p, peano.succ(k)),
+  qcoeff(q, subtraction.sub(i, peano.succ(k)))))
+axiom qMulPolyCoeff: forall p, q: QPoly; forall i: Nat;
+  qcoeff(qmulP(p, q), i) = qconvolution(p, q, i, i)
 
 // F[x]'s corpus, transferred. The coefficient field AND the polynomial layer both travel.
 model RationalPolynomials {
@@ -82,6 +100,7 @@ model RationalPolynomials {
   fieldpoly.monomial: qmonomial
   fieldpoly.degreeAtMost: qdegreeAtMost
   fieldpoly.degree: qdegree
+  fieldpoly.convolution: qconvolution
   fieldpoly.polyExtensionality <- qPolyExtensionality
   fieldpoly.zeroPolyCoeff <- qZeroPolyCoeff
   fieldpoly.addPolyCoeff <- qAddPolyCoeff
@@ -91,6 +110,9 @@ model RationalPolynomials {
   fieldpoly.degreeAtMostMeaning <- qDegreeAtMostMeaning
   fieldpoly.degreeIsALeadingIndex <- qDegreeIsALeadingIndex
   fieldpoly.degreeBoundsTheCoefficients <- qDegreeBoundsTheCoefficients
+  fieldpoly.convolutionZero <- qConvolutionZero
+  fieldpoly.convolutionSucc <- qConvolutionSucc
+  fieldpoly.mulPolyCoeff <- qMulPolyCoeff
 }
 
 // -- integer coefficients -----------------------------------------------------------------
@@ -813,4 +835,183 @@ proof
       qcoeff(p, qdegree(p)) = rational.neg(rational.ONE) ->
       qIsMonic(qnegP(p))
     [by generalize generalize-p]
+qed
+
+// -- SCALING BY A CONSTANT ------------------------------------------------------------------
+// Multiplying by the constant monomial `c` scales every coefficient by `c`. Lemma 17.12's
+// conclusion is exactly such a scaling (`p = (r/s)·q`), so this is the law that makes the
+// statement checkable against coefficients.
+//
+// The convolution at a constant left factor collapses: `monomial(c, 0)` has coefficient `c`
+// at index ZERO and ZERO above, so every term of the convolution past the first vanishes.
+
+// The convolution of a constant monomial with q, at any bound, is c·q_i — induction on the
+// bound k, since each added term carries a vanishing coefficient of the monomial.
+theorem theConstantConvolutionCollapses: forall q: QPoly; forall c: Q; forall i: Nat;
+  forall k: Nat;
+  qconvolution(qmonomial(c, NAT_ZERO), q, i, k) =
+  rational.mul(c, qcoeff(q, i))
+proof
+  @generalize-q |
+    fix q: QPoly {
+      @generalize-c |
+        fix c: Q {
+          @generalize-i |
+            fix i: Nat {
+              // base: the convolution at ZERO is monomial_0 * q_i = c * q_i
+              @the-base-convolution |
+                qconvolution(qmonomial(c, NAT_ZERO), q, i, NAT_ZERO) =
+                  rational.mul(qcoeff(qmonomial(c, NAT_ZERO), NAT_ZERO),
+                  qcoeff(q, i))
+                [using specialize qConvolutionZero(qmonomial(c, NAT_ZERO), q, i)]
+              @the-monomial-at-zero |
+                qcoeff(qmonomial(c, NAT_ZERO), NAT_ZERO) = c
+                [using specialize qMonomialCoeffAtItsIndex(c, NAT_ZERO)]
+              @base-case |
+                qconvolution(qmonomial(c, NAT_ZERO), q, i, NAT_ZERO) =
+                  rational.mul(c, qcoeff(q, i))
+                [by rewrite the-monomial-at-zero the-base-convolution]
+
+              @induction-step |
+                fix k: Nat {
+                  @given-inductive-hypothesis |
+                    assume qconvolution(qmonomial(c, NAT_ZERO), q, i, k) =
+                      rational.mul(c, qcoeff(q, i)) {
+                      @inductive-hypothesis |
+                        qconvolution(qmonomial(c, NAT_ZERO), q, i, k) =
+                          rational.mul(c, qcoeff(q, i))
+                        [by hypothesis given-inductive-hypothesis]
+                      @the-next-convolution |
+                        qconvolution(qmonomial(c, NAT_ZERO), q, i,
+                          peano.succ(k)) =
+                          rational.add(
+                          qconvolution(qmonomial(c, NAT_ZERO), q, i, k),
+                          rational.mul(
+                          qcoeff(qmonomial(c, NAT_ZERO), peano.succ(k)),
+                          qcoeff(q, subtraction.sub(i, peano.succ(k)))))
+                        [using specialize qConvolutionSucc(qmonomial(c, NAT_ZERO), q, i, k)]
+                      // the monomial vanishes above its index, so the added term is ZERO
+                      @succ-k-is-not-zero |
+                        not (peano.succ(k) = NAT_ZERO)
+                        [using specialize peano.succNotZero(k)]
+                      @the-monomial-above |
+                        qcoeff(qmonomial(c, NAT_ZERO), peano.succ(k)) = ZERO
+                        [using specialize qMonomialCoeffElsewhere(c, NAT_ZERO, peano.succ(k)) succ-k-is-not-zero]
+                      @the-added-term |
+                        rational.mul(ZERO,
+                          qcoeff(q, subtraction.sub(i, peano.succ(k)))) = ZERO
+                        [using specialize rational.mulZeroLeft(qcoeff(q, subtraction.sub(i, peano.succ(k))))]
+                      @the-next-with-zero |
+                        qconvolution(qmonomial(c, NAT_ZERO), q, i,
+                          peano.succ(k)) =
+                          rational.add(
+                          qconvolution(qmonomial(c, NAT_ZERO), q, i, k),
+                          rational.mul(ZERO,
+                          qcoeff(q, subtraction.sub(i, peano.succ(k)))))
+                        [by rewrite the-monomial-above the-next-convolution]
+                      @the-next-collapsed |
+                        qconvolution(qmonomial(c, NAT_ZERO), q, i,
+                          peano.succ(k)) =
+                          rational.add(
+                          qconvolution(qmonomial(c, NAT_ZERO), q, i, k), ZERO)
+                        [by rewrite the-added-term the-next-with-zero]
+                      @adding-zero |
+                        rational.add(
+                          qconvolution(qmonomial(c, NAT_ZERO), q, i, k), ZERO) =
+                          qconvolution(qmonomial(c, NAT_ZERO), q, i, k)
+                        [using specialize rational.addZeroRight(qconvolution(qmonomial(c, NAT_ZERO), q, i, k))]
+                      @the-next-is-the-previous |
+                        qconvolution(qmonomial(c, NAT_ZERO), q, i,
+                          peano.succ(k)) =
+                          qconvolution(qmonomial(c, NAT_ZERO), q, i, k)
+                        [by rewrite adding-zero the-next-collapsed]
+                      @conclusion-the-step |
+                        qconvolution(qmonomial(c, NAT_ZERO), q, i,
+                          peano.succ(k)) =
+                          rational.mul(c, qcoeff(q, i))
+                        [by rewrite the-next-is-the-previous inductive-hypothesis]
+                    }
+                  @induction-step-at-k |
+                    (qconvolution(qmonomial(c, NAT_ZERO), q, i, k) =
+                      rational.mul(c, qcoeff(q, i))) ->
+                      (qconvolution(qmonomial(c, NAT_ZERO), q, i,
+                      peano.succ(k)) =
+                      rational.mul(c, qcoeff(q, i)))
+                    [by discharge given-inductive-hypothesis]
+                }
+              @induction-step-for-all-k |
+                forall k: Nat;
+                  (qconvolution(qmonomial(c, NAT_ZERO), q, i, k) =
+                  rational.mul(c, qcoeff(q, i))) ->
+                  (qconvolution(qmonomial(c, NAT_ZERO), q, i,
+                  peano.succ(k)) =
+                  rational.mul(c, qcoeff(q, i)))
+                [by generalize induction-step]
+              @all-bounds |
+                forall k: Nat;
+                  qconvolution(qmonomial(c, NAT_ZERO), q, i, k) =
+                  rational.mul(c, qcoeff(q, i))
+                [using instantiation peano.induction((fun z: Nat => (qconvolution(qmonomial(c, NAT_ZERO), q, i, z) = rational.mul(c, qcoeff(q, i))))) base-case induction-step-for-all-k]
+            }
+          @discharge-i |
+            forall i9: Nat; forall k: Nat;
+              qconvolution(qmonomial(c, NAT_ZERO), q, i9, k) =
+              rational.mul(c, qcoeff(q, i9))
+            [by generalize generalize-i]
+        }
+      @discharge-c |
+        forall c9: Q; forall i9: Nat; forall k: Nat;
+          qconvolution(qmonomial(c9, NAT_ZERO), q, i9, k) =
+          rational.mul(c9, qcoeff(q, i9))
+        [by generalize generalize-c]
+    }
+  @conclusion |
+    forall q: QPoly; forall c: Q; forall i: Nat; forall k: Nat;
+      qconvolution(qmonomial(c, NAT_ZERO), q, i, k) =
+      rational.mul(c, qcoeff(q, i))
+    [by generalize generalize-q]
+qed
+
+// Hence the scaling law: every coefficient of c·q is c times q's.
+theorem scalingByAConstantScalesTheCoefficients:
+  forall q: QPoly; forall c: Q; forall i: Nat;
+  qcoeff(qmulP(qmonomial(c, NAT_ZERO), q), i) =
+  rational.mul(c, qcoeff(q, i))
+proof
+  @generalize-q |
+    fix q: QPoly {
+      @generalize-c |
+        fix c: Q {
+          @generalize-i |
+            fix i: Nat {
+              @the-product-coefficient |
+                qcoeff(qmulP(qmonomial(c, NAT_ZERO), q), i) =
+                  qconvolution(qmonomial(c, NAT_ZERO), q, i, i)
+                [using specialize qMulPolyCoeff(qmonomial(c, NAT_ZERO), q, i)]
+              @the-convolution-collapses |
+                qconvolution(qmonomial(c, NAT_ZERO), q, i, i) =
+                  rational.mul(c, qcoeff(q, i))
+                [using specialize theConstantConvolutionCollapses(q, c, i, i)]
+              @conclusion-scaled |
+                qcoeff(qmulP(qmonomial(c, NAT_ZERO), q), i) =
+                  rational.mul(c, qcoeff(q, i))
+                [using simplify the-product-coefficient the-convolution-collapses]
+            }
+          @discharge-i |
+            forall i9: Nat;
+              qcoeff(qmulP(qmonomial(c, NAT_ZERO), q), i9) =
+              rational.mul(c, qcoeff(q, i9))
+            [by generalize generalize-i]
+        }
+      @discharge-c |
+        forall c9: Q; forall i9: Nat;
+          qcoeff(qmulP(qmonomial(c9, NAT_ZERO), q), i9) =
+          rational.mul(c9, qcoeff(q, i9))
+        [by generalize generalize-c]
+    }
+  @conclusion |
+    forall q: QPoly; forall c: Q; forall i: Nat;
+      qcoeff(qmulP(qmonomial(c, NAT_ZERO), q), i) =
+      rational.mul(c, qcoeff(q, i))
+    [by generalize generalize-q]
 qed
