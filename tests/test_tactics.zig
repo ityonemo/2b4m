@@ -422,6 +422,12 @@ pub fn addTests(
     // returned null for `.unpack`, breaking every ℤ-order theorem citing `lessThanElim`.
     ctx.okSilent(&.{ "check", "tests/cases/model_guarded_unpack_hypothesis.b4m" });
 
+    // A schema-arg lambda binding two DIFFERENT sorts (`fun i: Nat, v: Q => …`). The binder
+    // grammar forced one sort for the whole list, so a spec over two sorts had no lambda form
+    // — only instantiation at a bare predicate name, which forces pinning the varying
+    // arguments as file-scope nullary funcs. drafts/mixed-sort-schema-lambda/.
+    ctx.okSilent(&.{ "check", "tests/cases/schema_lambda_mixed_sorts.b4m" });
+
     // PREDICATED SORT `sort H = G where inH` — binder positions: ∀/∃
     // inject the guard (implies/and), `fix h: H` carries it on the block (surfaced
     // by `[by predicate <lbl>]`, made the generalize antecedent), `unpack h: H`

@@ -1,0 +1,45 @@
+// REGRESSION: a schema-arg lambda binds COMMA-SEPARATED GROUPS, each with its own sort.
+// Before this, `binders := ident (',' ident)* ':' ident` forced ONE sort for the whole list,
+// so a schema whose spec relates two different sorts had no lambda form at all — it could only
+// be instantiated at a bare predicate name, forcing callers to pin the varying arguments as
+// nullary funcs at file scope. That blocked AATA Lemma 17.12's minimality assembly, which needs
+// the choice at a divisor bound INSIDE the proof. drafts/mixed-sort-schema-lambda/.
+//
+// A quantifier chains mixed sorts with `;` (`forall i: Nat; forall v: Q; …`); a lambda has only
+// `=>` and no such escape, which is why the gap bit here and not there.
+import peano <<< "std/peano.b4m"
+sort Nat = peano.Nat
+sort Thing
+pred spec2(i: Nat, t: Thing)
+theorem usesIt(p(Nat, Thing)): forall i: Nat; forall t: Thing; p(i, t) -> p(i, t)
+proof
+  @generalize-i |
+    fix i: Nat {
+      @generalize-t |
+        fix t: Thing {
+          @given |
+            assume p(i, t) {
+              @restate |
+                p(i, t)
+                [by hypothesis given]
+            }
+          @imp |
+            p(i, t) -> p(i, t)
+            [by discharge given]
+        }
+      @dt |
+        forall t: Thing; p(i, t) -> p(i, t)
+        [by generalize generalize-t]
+    }
+  @conclusion |
+    forall i: Nat; forall t: Thing; p(i, t) -> p(i, t)
+    [by generalize generalize-i]
+qed
+
+// THE QUESTION: instantiate at a lambda binding Nat and Thing.
+theorem probeMixedLambda: forall i: Nat; forall t: Thing; spec2(i, t) -> spec2(i, t)
+proof
+  @conclusion |
+    forall i: Nat; forall t: Thing; spec2(i, t) -> spec2(i, t)
+    [using instantiation usesIt(fun i: Nat, t: Thing => spec2(i, t))]
+qed

@@ -577,6 +577,20 @@ A predicate parameter writes no result because it cannot have one — a predicat
 is always into `Prop`. Note `(prop: Nat)` is unambiguously a VALUE parameter (the
 `:`); the predicate one means is `prop(Nat)`.
 
+**A lambda's binders are COMMA-SEPARATED GROUPS, each with its own sort.** Same-sort binders
+group (`fun y, z: Element => …`) and groups of different sorts separate with a comma too:
+
+```
+fun i: Nat, v: Q => …            // spec(Nat, Q)
+fun a, b: Nat, v: Q => …         // spec(Nat, Nat, Q) — (a,b : Nat) then (v : Q)
+```
+
+Before this, one sort governed the whole binder list, so a schema whose spec relates two
+DIFFERENT sorts had no lambda form at all — it could only be instantiated at a bare predicate
+name, which forces a caller to pin any varying argument as a file-scope nullary func. (A
+quantifier never hit this because it chains mixed sorts with `;` —
+`forall i: Nat; forall v: Q; …` — while a lambda has only its single `=>`.)
+
 ```2b4m
 axiom induction(prop(Nat)):
   prop(ZERO) -> (forall k: Nat; prop(k) -> prop(succ(k))) -> forall n: Nat; prop(n)
