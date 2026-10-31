@@ -1,0 +1,330 @@
+// std/field/units.b4m is taken; this is std/field/poly-units.b4m — CONSTANTS ARE UNITS
+// IN F[x]: a nonzero constant divides every polynomial.
+//
+// This is the algebraic content of Theorem 17.17's "if f(x) is constant, then I = F[x]".
+import fieldpoly <<< "std/field/polynomial.b4m"
+import field <<< "std/field.b4m"
+import monic <<< "std/field/monic.b4m"
+import peano <<< "std/peano.b4m"
+import polyassoc <<< "std/field/polynomial-associativity.b4m"
+
+sort Poly = fieldpoly.Poly
+sort F = fieldpoly.F
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+const ZEROP = fieldpoly.ZEROP
+const oneF = fieldpoly.oneF
+const zeroF = fieldpoly.zeroF
+func coeff = fieldpoly.coeff
+func degree = fieldpoly.degree
+func mulP = fieldpoly.mulP
+func mulF = fieldpoly.mulF
+func recipF = fieldpoly.recipF
+func monomial = fieldpoly.monomial
+
+// Constant monomials multiply by multiplying their constants: the shift lemma gives every
+// coefficient of the product, and monomial(mulF(a,b), ZERO) has the same graph.
+theorem constantMonomialsMultiply: forall a, b: F;
+  mulP(monomial(a, ZERO), monomial(b, ZERO)) = monomial(mulF(a, b), ZERO)
+proof
+  @generalize-a |
+    fix a: F {
+      @generalize-b |
+        fix b: F {
+          @generalize-t |
+            fix t: Nat {
+              // the shift lemma at index ZERO
+              @the-shift |
+                coeff(mulP(monomial(a, ZERO), monomial(b, ZERO)),
+                  peano.add(ZERO, t)) =
+                  mulF(a, coeff(monomial(b, ZERO), t))
+                [using specialize fieldpoly.theMonomialShiftsEveryCoefficient(monomial(b, ZERO), a, ZERO, t)]
+              @adding-zero-on-the-left |
+                peano.add(ZERO, t) = t
+                [using specialize peano.addZeroLeft(t)]
+              @the-product-coefficient |
+                coeff(mulP(monomial(a, ZERO), monomial(b, ZERO)), t) =
+                  mulF(a, coeff(monomial(b, ZERO), t))
+                [by rewrite adding-zero-on-the-left the-shift]
+              // the two sides agree at t, by cases on whether t is ZERO
+              @t-is-zero-or-not |
+                t = ZERO or (not (t = ZERO))
+                [using tautology]
+              @when-t-is-zero |
+                assume t = ZERO {
+                  @t-is-zero |
+                    t = ZERO
+                    [by hypothesis when-t-is-zero]
+                  @b-at-zero |
+                    coeff(monomial(b, ZERO), ZERO) = b
+                    [using specialize fieldpoly.monomialCoeffAtItsIndex(b, ZERO)]
+                  @the-target-at-zero |
+                    coeff(monomial(mulF(a, b), ZERO), ZERO) = mulF(a, b)
+                    [using specialize fieldpoly.monomialCoeffAtItsIndex(mulF(a, b), ZERO)]
+                  @the-product-at-zero |
+                    coeff(mulP(monomial(a, ZERO), monomial(b, ZERO)), ZERO) =
+                      mulF(a, b)
+                    [using simplify the-product-coefficient-at-zero b-at-zero]
+                  @the-product-coefficient-at-zero |
+                    coeff(mulP(monomial(a, ZERO), monomial(b, ZERO)), ZERO) =
+                      mulF(a, coeff(monomial(b, ZERO), ZERO))
+                    [by rewrite t-is-zero the-product-coefficient]
+                  @the-target-at-zero-flipped |
+                    mulF(a, b) = coeff(monomial(mulF(a, b), ZERO), ZERO)
+                    [by symmetry the-target-at-zero]
+                  @they-agree-at-zero |
+                    coeff(mulP(monomial(a, ZERO), monomial(b, ZERO)), ZERO) =
+                      coeff(monomial(mulF(a, b), ZERO), ZERO)
+                    [using chain the-product-at-zero the-target-at-zero-flipped]
+                  @conclusion-agree-at-zero |
+                    coeff(mulP(monomial(a, ZERO), monomial(b, ZERO)), t) =
+                      coeff(monomial(mulF(a, b), ZERO), t)
+                    [by rewrite t-is-zero they-agree-at-zero]
+                }
+              @when-t-is-nonzero |
+                assume not (t = ZERO) {
+                  @t-is-nonzero |
+                    not (t = ZERO)
+                    [by hypothesis when-t-is-nonzero]
+                  // both sides vanish above index ZERO
+                  @b-vanishes-at-t |
+                    coeff(monomial(b, ZERO), t) = zeroF
+                    [using specialize fieldpoly.monomialCoeffElsewhere(b, ZERO, t) t-is-nonzero]
+                  @the-product-vanishes |
+                    coeff(mulP(monomial(a, ZERO), monomial(b, ZERO)), t) =
+                      mulF(a, zeroF)
+                    [using simplify the-product-coefficient b-vanishes-at-t]
+                  @scaling-zero |
+                    mulF(a, zeroF) = zeroF
+                    [using specialize field.mulZeroRight(a)]
+                  @the-product-is-zero |
+                    coeff(mulP(monomial(a, ZERO), monomial(b, ZERO)), t) = zeroF
+                    [using chain the-product-vanishes scaling-zero]
+                  @the-target-vanishes |
+                    coeff(monomial(mulF(a, b), ZERO), t) = zeroF
+                    [using specialize fieldpoly.monomialCoeffElsewhere(mulF(a, b), ZERO, t) t-is-nonzero]
+                  @the-target-vanishes-flipped |
+                    zeroF = coeff(monomial(mulF(a, b), ZERO), t)
+                    [by symmetry the-target-vanishes]
+                  @conclusion-agree-above-zero |
+                    coeff(mulP(monomial(a, ZERO), monomial(b, ZERO)), t) =
+                      coeff(monomial(mulF(a, b), ZERO), t)
+                    [using chain the-product-is-zero the-target-vanishes-flipped]
+                }
+              @conclusion-agree-at-t |
+                coeff(mulP(monomial(a, ZERO), monomial(b, ZERO)), t) =
+                  coeff(monomial(mulF(a, b), ZERO), t)
+                [by common_conclusion t-is-zero-or-not when-t-is-zero when-t-is-nonzero]
+            }
+          @they-agree-everywhere |
+            forall t: Nat;
+              coeff(mulP(monomial(a, ZERO), monomial(b, ZERO)), t) =
+              coeff(monomial(mulF(a, b), ZERO), t)
+            [by generalize generalize-t]
+          @conclusion-the-monomials-multiply |
+            mulP(monomial(a, ZERO), monomial(b, ZERO)) = monomial(mulF(a, b), ZERO)
+            [using specialize fieldpoly.polyExtensionality(mulP(monomial(a, ZERO), monomial(b, ZERO)), monomial(mulF(a, b), ZERO)) they-agree-everywhere]
+        }
+      @discharge-b |
+        forall b9: F;
+          mulP(monomial(a, ZERO), monomial(b9, ZERO)) = monomial(mulF(a, b9), ZERO)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: F;
+      mulP(monomial(a, ZERO), monomial(b, ZERO)) = monomial(mulF(a, b), ZERO)
+    [by generalize generalize-a]
+qed
+
+// A nonzero constant divides every polynomial: scaling by the reciprocal of its constant
+// term is the cofactor. This is "if f(x) is constant, then I = F[x]".
+theorem aNonzeroConstantDividesEverything: forall f, h: Poly;
+  (not (f = ZEROP)) -> degree(f) = ZERO ->
+  exists w: Poly; h = mulP(w, f)
+proof
+  @generalize-f |
+    fix f: Poly {
+      @generalize-h |
+        fix h: Poly {
+          @given-f-nonzero |
+            assume not (f = ZEROP) {
+              @f-nonzero |
+                not (f = ZEROP)
+                [by hypothesis given-f-nonzero]
+              @given-f-constant |
+                assume degree(f) = ZERO {
+                  @f-constant |
+                    degree(f) = ZERO
+                    [by hypothesis given-f-constant]
+                  // f IS its constant monomial, and its constant term is nonzero
+                  @f-is-its-monomial |
+                    f = monomial(coeff(f, ZERO), ZERO)
+                    [using specialize monic.aDegreeZeroPolynomialIsItsConstantMonomial(f) f-nonzero f-constant]
+                  @the-leading-coefficient-is-nonzero |
+                    not (coeff(f, degree(f)) = zeroF)
+                    [using specialize fieldpoly.degreeIsALeadingIndex(f) f-nonzero]
+                  @the-constant-is-nonzero |
+                    not (coeff(f, ZERO) = zeroF)
+                    [by rewrite f-constant the-leading-coefficient-is-nonzero]
+                  // the reciprocal scaling, times h, is the cofactor
+                  @the-reciprocal-cancels |
+                    mulF(recipF(coeff(f, ZERO)), coeff(f, ZERO)) = oneF
+                    [using specialize field.recipMulLeft(coeff(f, ZERO)) the-constant-is-nonzero]
+                  @the-scalings-multiply |
+                    mulP(monomial(recipF(coeff(f, ZERO)), ZERO),
+                      monomial(coeff(f, ZERO), ZERO)) =
+                      monomial(mulF(recipF(coeff(f, ZERO)), coeff(f, ZERO)), ZERO)
+                    [using specialize constantMonomialsMultiply(recipF(coeff(f, ZERO)), coeff(f, ZERO))]
+                  @the-scalings-give-one |
+                    mulP(monomial(recipF(coeff(f, ZERO)), ZERO),
+                      monomial(coeff(f, ZERO), ZERO)) = monomial(oneF, ZERO)
+                    [using simplify the-scalings-multiply the-reciprocal-cancels]
+                  // so (recip-monomial * h) * f = h, after regrouping
+                  @the-cofactor-works |
+                    h = mulP(mulP(monomial(recipF(coeff(f, ZERO)), ZERO), h), f)
+                    [using specialize theScaledCofactorRecovers(h, f, coeff(f, ZERO)) f-is-its-monomial the-scalings-give-one]
+                  @conclusion-a-cofactor-exists |
+                    exists w: Poly; h = mulP(w, f)
+                    [by witness(mulP(monomial(recipF(coeff(f, ZERO)), ZERO), h)) the-cofactor-works]
+                }
+              @constant-implies |
+                degree(f) = ZERO -> exists w: Poly; h = mulP(w, f)
+                [by discharge given-f-constant]
+            }
+          @nonzero-implies |
+            (not (f = ZEROP)) -> degree(f) = ZERO ->
+              exists w: Poly; h = mulP(w, f)
+            [by discharge given-f-nonzero]
+        }
+      @discharge-h |
+        forall h9: Poly;
+          (not (f = ZEROP)) -> degree(f) = ZERO ->
+          exists w: Poly; h9 = mulP(w, f)
+        [by generalize generalize-h]
+    }
+  @conclusion |
+    forall f, h: Poly;
+      (not (f = ZEROP)) -> degree(f) = ZERO ->
+      exists w: Poly; h = mulP(w, f)
+    [by generalize generalize-f]
+qed
+
+// (recip(c)·h)·f = h when f is the c-monomial and the two scalings cancel to one: regroup
+// by associativity and commutativity, collapse the scalings, and the one-monomial is the
+// identity. Associativity is std/field/polynomial-associativity.b4m's.
+theorem theScaledCofactorRecovers: forall h, f: Poly; forall c: F;
+  f = monomial(c, ZERO) ->
+  mulP(monomial(recipF(c), ZERO), monomial(c, ZERO)) = monomial(oneF, ZERO) ->
+  h = mulP(mulP(monomial(recipF(c), ZERO), h), f)
+proof
+  @generalize-h |
+    fix h: Poly {
+      @generalize-f |
+        fix f: Poly {
+          @generalize-c |
+            fix c: F {
+              @given-f-is-the-monomial |
+                assume f = monomial(c, ZERO) {
+                  @f-is-the-monomial |
+                    f = monomial(c, ZERO)
+                    [by hypothesis given-f-is-the-monomial]
+                  @given-the-scalings-cancel |
+                    assume mulP(monomial(recipF(c), ZERO), monomial(c, ZERO)) =
+                      monomial(oneF, ZERO) {
+                      @the-scalings-cancel |
+                        mulP(monomial(recipF(c), ZERO), monomial(c, ZERO)) =
+                          monomial(oneF, ZERO)
+                        [by hypothesis given-the-scalings-cancel]
+                      // regroup: (r·h)·m = r·(h·m) = r·(m·h) = (r·m)·h
+                      @associating-right |
+                        mulP(mulP(monomial(recipF(c), ZERO), h),
+                          monomial(c, ZERO)) =
+                          mulP(monomial(recipF(c), ZERO),
+                          mulP(h, monomial(c, ZERO)))
+                        [using specialize polyassoc.polyMulIsAssociative(monomial(recipF(c), ZERO), h, monomial(c, ZERO))]
+                      @commuting-the-inner-pair |
+                        mulP(h, monomial(c, ZERO)) =
+                          mulP(monomial(c, ZERO), h)
+                        [using specialize fieldpoly.polyMulIsCommutative(h, monomial(c, ZERO))]
+                      @the-inner-pair-commuted |
+                        mulP(monomial(recipF(c), ZERO),
+                          mulP(h, monomial(c, ZERO))) =
+                          mulP(monomial(recipF(c), ZERO),
+                          mulP(monomial(c, ZERO), h))
+                        [by rewrite commuting-the-inner-pair reflexivity-of-the-scaled-pair]
+                      @reflexivity-of-the-scaled-pair |
+                        mulP(monomial(recipF(c), ZERO),
+                          mulP(h, monomial(c, ZERO))) =
+                          mulP(monomial(recipF(c), ZERO),
+                          mulP(h, monomial(c, ZERO)))
+                        [by reflexivity]
+                      @associating-left |
+                        mulP(mulP(monomial(recipF(c), ZERO), monomial(c, ZERO)), h) =
+                          mulP(monomial(recipF(c), ZERO),
+                          mulP(monomial(c, ZERO), h))
+                        [using specialize polyassoc.polyMulIsAssociative(monomial(recipF(c), ZERO), monomial(c, ZERO), h)]
+                      @associating-left-flipped |
+                        mulP(monomial(recipF(c), ZERO),
+                          mulP(monomial(c, ZERO), h)) =
+                          mulP(mulP(monomial(recipF(c), ZERO), monomial(c, ZERO)), h)
+                        [by symmetry associating-left]
+                      // the scalings collapse to the one-monomial, which is the identity
+                      @the-collapsed-product |
+                        mulP(mulP(monomial(recipF(c), ZERO), monomial(c, ZERO)), h) =
+                          mulP(monomial(oneF, ZERO), h)
+                        [by rewrite the-scalings-cancel reflexivity-of-the-collapsed-product]
+                      @reflexivity-of-the-collapsed-product |
+                        mulP(mulP(monomial(recipF(c), ZERO), monomial(c, ZERO)), h) =
+                          mulP(mulP(monomial(recipF(c), ZERO), monomial(c, ZERO)), h)
+                        [by reflexivity]
+                      @the-one-monomial-is-the-identity |
+                        mulP(monomial(oneF, ZERO), h) = h
+                        [using specialize monic.theOneMonomialIsTheIdentity(h)]
+                      // chain the five, at the monomial, then rewrite back to f
+                      @the-cofactor-at-the-monomial |
+                        mulP(mulP(monomial(recipF(c), ZERO), h),
+                          monomial(c, ZERO)) = h
+                        [using chain associating-right the-inner-pair-commuted associating-left-flipped the-collapsed-product the-one-monomial-is-the-identity]
+                      @the-cofactor-at-f |
+                        mulP(mulP(monomial(recipF(c), ZERO), h), f) = h
+                        [by rewrite f-is-the-monomial the-cofactor-at-the-monomial]
+                      @conclusion-h-is-recovered |
+                        h = mulP(mulP(monomial(recipF(c), ZERO), h), f)
+                        [by symmetry the-cofactor-at-f]
+                    }
+                  @scalings-cancel-implies |
+                    mulP(monomial(recipF(c), ZERO), monomial(c, ZERO)) =
+                      monomial(oneF, ZERO) ->
+                      h = mulP(mulP(monomial(recipF(c), ZERO), h), f)
+                    [by discharge given-the-scalings-cancel]
+                }
+              @monomial-implies |
+                f = monomial(c, ZERO) ->
+                  mulP(monomial(recipF(c), ZERO), monomial(c, ZERO)) =
+                  monomial(oneF, ZERO) ->
+                  h = mulP(mulP(monomial(recipF(c), ZERO), h), f)
+                [by discharge given-f-is-the-monomial]
+            }
+          @discharge-c |
+            forall c9: F;
+              f = monomial(c9, ZERO) ->
+              mulP(monomial(recipF(c9), ZERO), monomial(c9, ZERO)) =
+              monomial(oneF, ZERO) ->
+              h = mulP(mulP(monomial(recipF(c9), ZERO), h), f)
+            [by generalize generalize-c]
+        }
+      @discharge-f |
+        forall f9: Poly; forall c9: F;
+          f9 = monomial(c9, ZERO) ->
+          mulP(monomial(recipF(c9), ZERO), monomial(c9, ZERO)) =
+          monomial(oneF, ZERO) ->
+          h = mulP(mulP(monomial(recipF(c9), ZERO), h), f9)
+        [by generalize generalize-f]
+    }
+  @conclusion |
+    forall h, f: Poly; forall c: F;
+      f = monomial(c, ZERO) ->
+      mulP(monomial(recipF(c), ZERO), monomial(c, ZERO)) = monomial(oneF, ZERO) ->
+      h = mulP(mulP(monomial(recipF(c), ZERO), h), f)
+    [by generalize generalize-h]
+qed
