@@ -1,0 +1,197 @@
+// std/ring/polynomial-leading.b4m — THE LEADING-PRODUCT STEP.
+//
+// Working toward coeff(p·q, m+n) = p_m · q_n for deg p = m, deg q = n.
+//
+// `std/field/polynomial.b4m` ASSUMES this (as `aProductOfNonzerosIsNonzero` and
+// `degreeOfAProduct`), justifying it by saying `std/ring/polynomial.b4m` "already carries
+// the leading-term step it turns on". It does not — that file has 19 theorems and the only
+// degree-related one is `degreeIsUnique`. So the step is built here.
+//
+// The convolution at index m+n sums p_j · q_{(m+n)-j} over j = 0 … m+n, and every term but
+// one vanishes:
+//
+//   * j > m   →  p_j = 0        (p's degree bound)
+//   * j < m   →  (m+n)-j > n  →  q_{(m+n)-j} = 0   (q's degree bound)
+//   * j = m   →  p_m · q_n, the survivor
+//
+// So the proof walks the convolution in two halves: everything strictly above m contributes
+// nothing, and everything strictly below m contributes nothing.
+import ring_poly <<< "std/ring/polynomial.b4m"
+import ring <<< "std/ring.b4m"
+import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
+import subtraction <<< "std/peano/subtraction.b4m"
+
+sort Poly = ring_poly.Poly
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+const zeroR = ring_poly.zeroR
+func succ = peano.succ
+func add = peano.add
+func sub = subtraction.sub
+func addR = ring_poly.addR
+func mulR = ring_poly.mulR
+func coeff = ring_poly.coeff
+func convolution = ring_poly.convolution
+pred less_than = peano.less_than
+pred degreeAtMost = ring_poly.degreeAtMost
+
+// THE UPPER HALF: the convolution does not change as its bound rises above m, because each
+// new term carries a coefficient of p past p's degree. Induction on the excess t.
+theorem theConvolutionStopsGrowingPastTheDegree: forall p, q: Poly; forall i, m: Nat;
+  degreeAtMost(p, m) ->
+  forall t: Nat;
+  convolution(p, q, i, add(m, t)) = convolution(p, q, i, m)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-i |
+            fix i: Nat {
+              @generalize-m |
+                fix m: Nat {
+                  @given-p-bounded |
+                    assume degreeAtMost(p, m) {
+                      @p-bounded |
+                        degreeAtMost(p, m)
+                        [by hypothesis given-p-bounded]
+                      @the-bound-unfolds |
+                        degreeAtMost(p, m) iff
+                          (forall j: Nat; less_than(m, j) -> coeff(p, j) = zeroR)
+                        [using specialize ring_poly.degreeAtMostMeaning(p, m)]
+                      @coefficients-above-m-vanish |
+                        forall j: Nat; less_than(m, j) -> coeff(p, j) = zeroR
+                        [using tautology the-bound-unfolds p-bounded]
+                      // base: no excess
+                      @adding-no-excess |
+                        add(m, ZERO) = m
+                        [using specialize peano.addZeroRight(m)]
+                      @base-case |
+                        convolution(p, q, i, add(m, ZERO)) = convolution(p, q, i, m)
+                        [by rewrite adding-no-excess reflexivity-at-m]
+                      @reflexivity-at-m |
+                        convolution(p, q, i, m) = convolution(p, q, i, m)
+                        [by reflexivity]
+                      // step: one more term, whose p-coefficient is past the degree
+                      @induction-step |
+                        fix k: Nat {
+                          @given-the-hypothesis |
+                            assume convolution(p, q, i, add(m, k)) =
+                              convolution(p, q, i, m) {
+                              @the-hypothesis |
+                                convolution(p, q, i, add(m, k)) =
+                                  convolution(p, q, i, m)
+                                [by hypothesis given-the-hypothesis]
+                              @the-next-bound |
+                                add(m, succ(k)) = succ(add(m, k))
+                                [using specialize peano.addSuccRight(m, k)]
+                              @the-convolution-grows |
+                                convolution(p, q, i, succ(add(m, k))) =
+                                  addR(convolution(p, q, i, add(m, k)),
+                                  mulR(coeff(p, succ(add(m, k))),
+                                  coeff(q, sub(i, succ(add(m, k))))))
+                                [using specialize ring_poly.convolutionSucc(p, q, i, add(m, k))]
+                              // the new p-coefficient is past m
+                              @m-is-below-the-new-index |
+                                less_than(m, succ(add(m, k)))
+                                [using specialize aSumIsBelowItsSuccessor(m, k)]
+                              @the-new-coefficient-vanishes |
+                                coeff(p, succ(add(m, k))) = zeroR
+                                [using specialize coefficients-above-m-vanish(succ(add(m, k))) m-is-below-the-new-index]
+                              @the-new-term-vanishes |
+                                mulR(coeff(p, succ(add(m, k))),
+                                  coeff(q, sub(i, succ(add(m, k))))) = zeroR
+                                [using simplify the-new-coefficient-vanishes theZeroProduct-at-the-q-coefficient]
+                              @theZeroProduct-at-the-q-coefficient |
+                                mulR(zeroR, coeff(q, sub(i, succ(add(m, k))))) = zeroR
+                                [using specialize ring.mulZeroLeft(coeff(q, sub(i, succ(add(m, k)))))]
+                              @adding-nothing |
+                                addR(convolution(p, q, i, m), zeroR) =
+                                  convolution(p, q, i, m)
+                                [using specialize ring.addZeroRight(convolution(p, q, i, m))]
+                              @conclusion-at-succ-k |
+                                convolution(p, q, i, add(m, succ(k))) =
+                                  convolution(p, q, i, m)
+                                [using simplify the-next-bound the-convolution-grows the-hypothesis the-new-term-vanishes adding-nothing]
+                            }
+                          @induction-step-at-k |
+                            (convolution(p, q, i, add(m, k)) =
+                              convolution(p, q, i, m)) ->
+                              (convolution(p, q, i, add(m, succ(k))) =
+                              convolution(p, q, i, m))
+                            [by discharge given-the-hypothesis]
+                        }
+                      @induction-step-for-all-k |
+                        forall k: Nat;
+                          (convolution(p, q, i, add(m, k)) =
+                          convolution(p, q, i, m)) ->
+                          (convolution(p, q, i, add(m, succ(k))) =
+                          convolution(p, q, i, m))
+                        [by generalize induction-step]
+                      @conclusion-for-all-t |
+                        forall t: Nat;
+                          convolution(p, q, i, add(m, t)) = convolution(p, q, i, m)
+                        [using instantiation peano.induction((fun t: Nat => convolution(p, q, i, add(m, t)) = convolution(p, q, i, m))) base-case induction-step-for-all-k]
+                    }
+                  @bounded-implies |
+                    degreeAtMost(p, m) ->
+                      forall t: Nat;
+                      convolution(p, q, i, add(m, t)) = convolution(p, q, i, m)
+                    [by discharge given-p-bounded]
+                }
+              @discharge-m |
+                forall m9: Nat;
+                  degreeAtMost(p, m9) ->
+                  forall t: Nat;
+                  convolution(p, q, i, add(m9, t)) = convolution(p, q, i, m9)
+                [by generalize generalize-m]
+            }
+          @discharge-i |
+            forall i9, m9: Nat;
+              degreeAtMost(p, m9) ->
+              forall t: Nat;
+              convolution(p, q, i9, add(m9, t)) = convolution(p, q, i9, m9)
+            [by generalize generalize-i]
+        }
+      @discharge-q |
+        forall q9: Poly; forall i9, m9: Nat;
+          degreeAtMost(p, m9) ->
+          forall t: Nat;
+          convolution(p, q9, i9, add(m9, t)) = convolution(p, q9, i9, m9)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; forall i, m: Nat;
+      degreeAtMost(p, m) ->
+      forall t: Nat;
+      convolution(p, q, i, add(m, t)) = convolution(p, q, i, m)
+    [by generalize generalize-p]
+qed
+
+// m < succ(m + k): the index fact the step above needs.
+theorem aSumIsBelowItsSuccessor: forall m, k: Nat;
+  less_than(m, succ(add(m, k)))
+proof
+  @generalize-m |
+    fix m: Nat {
+      @generalize-k |
+        fix k: Nat {
+          @the-gap-witnesses-the-order |
+            add(m, succ(k)) = succ(add(m, k)) -> less_than(m, succ(add(m, k)))
+            [using specialize peano_order.lessThanIntro(m, k, succ(add(m, k)))]
+          @the-gap |
+            add(m, succ(k)) = succ(add(m, k))
+            [using specialize peano.addSuccRight(m, k)]
+          @conclusion-m-is-below |
+            less_than(m, succ(add(m, k)))
+            [using tautology the-gap-witnesses-the-order the-gap]
+        }
+      @discharge-k |
+        forall k9: Nat; less_than(m, succ(add(m, k9)))
+        [by generalize generalize-k]
+    }
+  @conclusion |
+    forall m, k: Nat; less_than(m, succ(add(m, k)))
+    [by generalize generalize-m]
+qed
