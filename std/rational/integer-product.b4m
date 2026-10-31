@@ -4507,3 +4507,177 @@ proof
       (not less_than(m, least))))
     [by generalize generalize-s]
 qed
+
+// -- THE SEQUENCE-TO-POLYNOMIAL BRIDGE ----------------------------------------------------
+// Everything above is about a SEQUENCE's entries; `isTheIntegerDecomposition` is about a
+// POLYNOMIAL's coefficients. The two coprimality readings are the same statement —
+// `qpoly.dividesOnTheCut` is a `define` with exactly `dividesIntegrally`'s meaning axiom —
+// so given a polynomial whose coefficients are the entries, the result transfers.
+//
+// This is the last join: it is what lets the minimality assembly's coprime quotient sequence
+// discharge `coefficientsAreRelativelyPrimeUpTo`.
+theorem coprimeEntriesMakeCoprimeCoefficients:
+  forall p: qpoly.QPoly; forall t: QSeq; forall n: Nat;
+  (forall i: Nat; nat_less_than(i, n) -> qpoly.qcoeff(p, i) = qat(t, i)) ->
+  theQuotientsAreCoprime(t, n) ->
+  qpoly.coefficientsAreRelativelyPrimeUpTo(p, n)
+proof
+  @generalize-p |
+    fix p: qpoly.QPoly {
+      @generalize-t |
+        fix t: QSeq {
+          @generalize-n |
+            fix n: Nat {
+              @given-the-match |
+                assume forall i: Nat; nat_less_than(i, n) ->
+                  qpoly.qcoeff(p, i) = qat(t, i) {
+                  @the-match |
+                    forall i: Nat; nat_less_than(i, n) ->
+                      qpoly.qcoeff(p, i) = qat(t, i)
+                    [by hypothesis given-the-match]
+                  @given-coprime |
+                    assume theQuotientsAreCoprime(t, n) {
+                      @coprime |
+                        theQuotientsAreCoprime(t, n)
+                        [by hypothesis given-coprime]
+                      @the-coprime-meaning |
+                        theQuotientsAreCoprime(t, n) iff
+                          (forall e: Q; isInteger(e) ->
+                          isACommonDivisorUpTo(e, t, n) ->
+                          dividesIntegrally(e, ONE))
+                        [using specialize quotientsCoprimeMeaning(t, n)]
+                      @every-divisor-is-a-unit |
+                        forall e: Q; isInteger(e) ->
+                          isACommonDivisorUpTo(e, t, n) ->
+                          dividesIntegrally(e, ONE)
+                        [using tautology the-coprime-meaning coprime]
+                      @each-candidate |
+                        fix e: Q {
+                          @given-e-is-an-integer |
+                            assume isInteger(e) {
+                              @e-is-an-integer |
+                                isInteger(e)
+                                [by hypothesis given-e-is-an-integer]
+                              @given-e-divides-the-coefficients |
+                                assume forall i: Nat; nat_less_than(i, n) ->
+                                  (exists k: Q; isInteger(k) and
+                                  qpoly.qcoeff(p, i) = rational.mul(e, k)) {
+                                  @e-divides-the-coefficients |
+                                    forall i: Nat; nat_less_than(i, n) ->
+                                      (exists k: Q; isInteger(k) and
+                                      qpoly.qcoeff(p, i) = rational.mul(e, k))
+                                    [by hypothesis given-e-divides-the-coefficients]
+                                  // carry it across to the sequence's entries
+                                  @e-divides-the-entries |
+                                    fix i: Nat {
+                                      @given-i-below |
+                                        assume nat_less_than(i, n) {
+                                          @i-below |
+                                            nat_less_than(i, n)
+                                            [by hypothesis given-i-below]
+                                          @the-coefficient-is-the-entry |
+                                            qpoly.qcoeff(p, i) = qat(t, i)
+                                            [using specialize the-match(i) i-below]
+                                          @the-coefficient-quotient |
+                                            exists k: Q; isInteger(k) and
+                                              qpoly.qcoeff(p, i) = rational.mul(e, k)
+                                            [using specialize e-divides-the-coefficients(i) i-below]
+                                          @the-entry-quotient |
+                                            exists k: Q; isInteger(k) and
+                                              qat(t, i) = rational.mul(e, k)
+                                            [by rewrite the-coefficient-is-the-entry the-coefficient-quotient]
+                                          @the-divides-meaning |
+                                            dividesIntegrally(e, qat(t, i)) iff
+                                              (exists k: Q; isInteger(k) and
+                                              qat(t, i) = rational.mul(e, k))
+                                            [using specialize dividesIntegrallyMeaning(e, qat(t, i))]
+                                          @conclusion-divides-this-entry |
+                                            dividesIntegrally(e, qat(t, i))
+                                            [using tautology the-divides-meaning the-entry-quotient]
+                                        }
+                                      @below-implies |
+                                        nat_less_than(i, n) ->
+                                          dividesIntegrally(e, qat(t, i))
+                                        [by discharge given-i-below]
+                                    }
+                                  @all-entries-divided |
+                                    forall i: Nat; nat_less_than(i, n) ->
+                                      dividesIntegrally(e, qat(t, i))
+                                    [by generalize e-divides-the-entries]
+                                  @the-divisor-meaning |
+                                    isACommonDivisorUpTo(e, t, n) iff
+                                      (forall i: Nat; nat_less_than(i, n) ->
+                                      dividesIntegrally(e, qat(t, i)))
+                                    [using specialize commonDivisorMeaning(e, t, n)]
+                                  @e-is-a-common-divisor |
+                                    isACommonDivisorUpTo(e, t, n)
+                                    [using tautology the-divisor-meaning all-entries-divided]
+                                  @e-divides-one |
+                                    dividesIntegrally(e, ONE)
+                                    [using specialize every-divisor-is-a-unit(e) e-is-an-integer e-is-a-common-divisor]
+                                  @the-unit-meaning |
+                                    dividesIntegrally(e, ONE) iff
+                                      (exists k: Q; isInteger(k) and
+                                      ONE = rational.mul(e, k))
+                                    [using specialize dividesIntegrallyMeaning(e, ONE)]
+                                  @conclusion-e-is-a-unit |
+                                    exists k: Q; isInteger(k) and
+                                      ONE = rational.mul(e, k)
+                                    [using tautology the-unit-meaning e-divides-one]
+                                }
+                              @divides-implies-unit |
+                                (forall i: Nat; nat_less_than(i, n) ->
+                                  (exists k: Q; isInteger(k) and
+                                  qpoly.qcoeff(p, i) = rational.mul(e, k))) ->
+                                  (exists k: Q; isInteger(k) and
+                                  ONE = rational.mul(e, k))
+                                [by discharge given-e-divides-the-coefficients]
+                            }
+                          @integer-implies |
+                            isInteger(e) ->
+                              (forall i: Nat; nat_less_than(i, n) ->
+                              (exists k: Q; isInteger(k) and
+                              qpoly.qcoeff(p, i) = rational.mul(e, k))) ->
+                              (exists k: Q; isInteger(k) and
+                              ONE = rational.mul(e, k))
+                            [by discharge given-e-is-an-integer]
+                        }
+                      @conclusion-coprime-coefficients |
+                        qpoly.coefficientsAreRelativelyPrimeUpTo(p, n)
+                        [by generalize each-candidate]
+                    }
+                  @coprime-implies |
+                    theQuotientsAreCoprime(t, n) ->
+                      qpoly.coefficientsAreRelativelyPrimeUpTo(p, n)
+                    [by discharge given-coprime]
+                }
+              @the-implication |
+                (forall i: Nat; nat_less_than(i, n) ->
+                  qpoly.qcoeff(p, i) = qat(t, i)) ->
+                  theQuotientsAreCoprime(t, n) ->
+                  qpoly.coefficientsAreRelativelyPrimeUpTo(p, n)
+                [by discharge given-the-match]
+            }
+          @discharge-n |
+            forall n9: Nat;
+              (forall i: Nat; nat_less_than(i, n9) ->
+              qpoly.qcoeff(p, i) = qat(t, i)) ->
+              theQuotientsAreCoprime(t, n9) ->
+              qpoly.coefficientsAreRelativelyPrimeUpTo(p, n9)
+            [by generalize generalize-n]
+        }
+      @discharge-t |
+        forall t9: QSeq; forall n9: Nat;
+          (forall i: Nat; nat_less_than(i, n9) ->
+          qpoly.qcoeff(p, i) = qat(t9, i)) ->
+          theQuotientsAreCoprime(t9, n9) ->
+          qpoly.coefficientsAreRelativelyPrimeUpTo(p, n9)
+        [by generalize generalize-t]
+    }
+  @conclusion |
+    forall p: qpoly.QPoly; forall t: QSeq; forall n: Nat;
+      (forall i: Nat; nat_less_than(i, n) -> qpoly.qcoeff(p, i) = qat(t, i)) ->
+      theQuotientsAreCoprime(t, n) ->
+      qpoly.coefficientsAreRelativelyPrimeUpTo(p, n)
+    [by generalize generalize-p]
+qed
