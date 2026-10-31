@@ -837,3 +837,461 @@ proof
       mulR(coeff(p, m), coeff(q, n))
     [by generalize generalize-p]
 qed
+
+// THE PRODUCT'S DEGREE BOUND: above m+n every coefficient of the product vanishes, because
+// every term of the convolution does — index j past m kills the p factor, and j at or below
+// m leaves i-j above n, killing the q factor. Unlike the leading case there is no surviving
+// middle term, so a single induction on the bound suffices.
+theorem theProductVanishesAboveTheDegreeSum: forall p, q: Poly; forall m, n, i: Nat;
+  degreeAtMost(p, m) -> degreeAtMost(q, n) -> less_than(add(m, n), i) ->
+  forall k: Nat; convolution(p, q, i, k) = zeroR
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-m |
+            fix m: Nat {
+              @generalize-n |
+                fix n: Nat {
+                  @generalize-i |
+                    fix i: Nat {
+                      @given-p-bounded |
+                        assume degreeAtMost(p, m) {
+                          @p-bounded |
+                            degreeAtMost(p, m)
+                            [by hypothesis given-p-bounded]
+                          @given-q-bounded |
+                            assume degreeAtMost(q, n) {
+                              @q-bounded |
+                                degreeAtMost(q, n)
+                                [by hypothesis given-q-bounded]
+                              @given-i-is-high |
+                                assume less_than(add(m, n), i) {
+                                  @i-is-high |
+                                    less_than(add(m, n), i)
+                                    [by hypothesis given-i-is-high]
+                                  // every term vanishes: this is the per-index fact
+                                  @every-term-vanishes-everywhere |
+                                    forall p9, q9: Poly; forall m9, n9, i9: Nat;
+                                      degreeAtMost(p9, m9) -> degreeAtMost(q9, n9) ->
+                                      less_than(add(m9, n9), i9) ->
+                                      forall j: Nat;
+                                      mulR(coeff(p9, j), coeff(q9, sub(i9, j))) = zeroR
+                                    [by cite aTermAboveTheDegreeSumVanishes]
+                                  @every-term-vanishes |
+                                    forall j: Nat;
+                                      mulR(coeff(p, j), coeff(q, sub(i, j))) = zeroR
+                                    [using specialize every-term-vanishes-everywhere(p, q, m, n, i) p-bounded q-bounded i-is-high]
+                                  // base
+                                  @the-base-term |
+                                    convolution(p, q, i, ZERO) =
+                                      mulR(coeff(p, ZERO), coeff(q, i))
+                                    [using specialize ring_poly.convolutionZero(p, q, i)]
+                                  @the-base-index |
+                                    sub(i, ZERO) = i
+                                    [using specialize subtraction.subZeroRight(i)]
+                                  @the-base-term-vanishes |
+                                    mulR(coeff(p, ZERO), coeff(q, sub(i, ZERO))) = zeroR
+                                    [using specialize every-term-vanishes(ZERO)]
+                                  @the-base-term-at-the-index |
+                                    mulR(coeff(p, ZERO), coeff(q, i)) = zeroR
+                                    [by rewrite the-base-index the-base-term-vanishes]
+                                  @base-case |
+                                    convolution(p, q, i, ZERO) = zeroR
+                                    [using chain the-base-term the-base-term-at-the-index]
+                                  // step
+                                  @induction-step |
+                                    fix k: Nat {
+                                      @given-the-hypothesis |
+                                        assume convolution(p, q, i, k) = zeroR {
+                                          @the-hypothesis |
+                                            convolution(p, q, i, k) = zeroR
+                                            [by hypothesis given-the-hypothesis]
+                                          @the-convolution-grows |
+                                            convolution(p, q, i, succ(k)) =
+                                              addR(convolution(p, q, i, k),
+                                              mulR(coeff(p, succ(k)),
+                                              coeff(q, sub(i, succ(k)))))
+                                            [using specialize ring_poly.convolutionSucc(p, q, i, k)]
+                                          @the-new-term-vanishes |
+                                            mulR(coeff(p, succ(k)),
+                                              coeff(q, sub(i, succ(k)))) = zeroR
+                                            [using specialize every-term-vanishes(succ(k))]
+                                          @adding-two-zeros |
+                                            addR(zeroR, zeroR) = zeroR
+                                            [using specialize ring.addZeroRight(zeroR)]
+                                          @conclusion-at-succ-k |
+                                            convolution(p, q, i, succ(k)) = zeroR
+                                            [using simplify the-convolution-grows the-hypothesis the-new-term-vanishes adding-two-zeros]
+                                        }
+                                      @induction-step-at-k |
+                                        (convolution(p, q, i, k) = zeroR) ->
+                                          (convolution(p, q, i, succ(k)) = zeroR)
+                                        [by discharge given-the-hypothesis]
+                                    }
+                                  @induction-step-for-all-k |
+                                    forall k: Nat;
+                                      (convolution(p, q, i, k) = zeroR) ->
+                                      (convolution(p, q, i, succ(k)) = zeroR)
+                                    [by generalize induction-step]
+                                  @conclusion-for-all-k |
+                                    forall k: Nat; convolution(p, q, i, k) = zeroR
+                                    [using instantiation peano.induction((fun k: Nat => convolution(p, q, i, k) = zeroR)) base-case induction-step-for-all-k]
+                                }
+                              @high-implies |
+                                less_than(add(m, n), i) ->
+                                  forall k: Nat; convolution(p, q, i, k) = zeroR
+                                [by discharge given-i-is-high]
+                            }
+                          @q-bounded-implies |
+                            degreeAtMost(q, n) -> less_than(add(m, n), i) ->
+                              forall k: Nat; convolution(p, q, i, k) = zeroR
+                            [by discharge given-q-bounded]
+                        }
+                      @p-bounded-implies |
+                        degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+                          less_than(add(m, n), i) ->
+                          forall k: Nat; convolution(p, q, i, k) = zeroR
+                        [by discharge given-p-bounded]
+                    }
+                  @discharge-i |
+                    forall i9: Nat;
+                      degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+                      less_than(add(m, n), i9) ->
+                      forall k: Nat; convolution(p, q, i9, k) = zeroR
+                    [by generalize generalize-i]
+                }
+              @discharge-n |
+                forall n9, i9: Nat;
+                  degreeAtMost(p, m) -> degreeAtMost(q, n9) ->
+                  less_than(add(m, n9), i9) ->
+                  forall k: Nat; convolution(p, q, i9, k) = zeroR
+                [by generalize generalize-n]
+            }
+          @discharge-m |
+            forall m9, n9, i9: Nat;
+              degreeAtMost(p, m9) -> degreeAtMost(q, n9) ->
+              less_than(add(m9, n9), i9) ->
+              forall k: Nat; convolution(p, q, i9, k) = zeroR
+            [by generalize generalize-m]
+        }
+      @discharge-q |
+        forall q9: Poly; forall m9, n9, i9: Nat;
+          degreeAtMost(p, m9) -> degreeAtMost(q9, n9) ->
+          less_than(add(m9, n9), i9) ->
+          forall k: Nat; convolution(p, q9, i9, k) = zeroR
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; forall m, n, i: Nat;
+      degreeAtMost(p, m) -> degreeAtMost(q, n) -> less_than(add(m, n), i) ->
+      forall k: Nat; convolution(p, q, i, k) = zeroR
+    [by generalize generalize-p]
+qed
+
+// EVERY TERM of the convolution vanishes above m+n: index j past m kills the p factor;
+// otherwise j is at or below m, so i-j exceeds n and the q factor dies. The two cases are
+// exhaustive because i itself exceeds m+n.
+theorem aTermAboveTheDegreeSumVanishes: forall p, q: Poly; forall m, n, i: Nat;
+  degreeAtMost(p, m) -> degreeAtMost(q, n) -> less_than(add(m, n), i) ->
+  forall j: Nat; mulR(coeff(p, j), coeff(q, sub(i, j))) = zeroR
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-m |
+            fix m: Nat {
+              @generalize-n |
+                fix n: Nat {
+                  @generalize-i |
+                    fix i: Nat {
+                      @given-p-bounded |
+                        assume degreeAtMost(p, m) {
+                          @p-bounded |
+                            degreeAtMost(p, m)
+                            [by hypothesis given-p-bounded]
+                          @the-p-bound |
+                            degreeAtMost(p, m) iff
+                              (forall x: Nat; less_than(m, x) -> coeff(p, x) = zeroR)
+                            [using specialize ring_poly.degreeAtMostMeaning(p, m)]
+                          @p-dies-above-m |
+                            forall x: Nat; less_than(m, x) -> coeff(p, x) = zeroR
+                            [using tautology the-p-bound p-bounded]
+                          @given-q-bounded |
+                            assume degreeAtMost(q, n) {
+                              @q-bounded |
+                                degreeAtMost(q, n)
+                                [by hypothesis given-q-bounded]
+                              @the-q-bound |
+                                degreeAtMost(q, n) iff
+                                  (forall x: Nat; less_than(n, x) -> coeff(q, x) = zeroR)
+                                [using specialize ring_poly.degreeAtMostMeaning(q, n)]
+                              @q-dies-above-n |
+                                forall x: Nat; less_than(n, x) -> coeff(q, x) = zeroR
+                                [using tautology the-q-bound q-bounded]
+                              @given-i-is-high |
+                                assume less_than(add(m, n), i) {
+                                  @i-is-high |
+                                    less_than(add(m, n), i)
+                                    [by hypothesis given-i-is-high]
+                                  @generalize-j |
+                                    fix j: Nat {
+                                      @j-splits |
+                                        less_than(m, j) or less_than(j, succ(m))
+                                        [using specialize anIndexIsAboveOrWithin(m, j)]
+                                      @when-j-is-high |
+                                        assume less_than(m, j) {
+                                          @j-is-high |
+                                            less_than(m, j)
+                                            [by hypothesis when-j-is-high]
+                                          @the-p-factor-dies |
+                                            coeff(p, j) = zeroR
+                                            [using specialize p-dies-above-m(j) j-is-high]
+                                          @zero-times-anything |
+                                            mulR(zeroR, coeff(q, sub(i, j))) = zeroR
+                                            [using specialize ring.mulZeroLeft(coeff(q, sub(i, j)))]
+                                          @conclusion-the-p-side |
+                                            mulR(coeff(p, j), coeff(q, sub(i, j))) = zeroR
+                                            [by rewrite the-p-factor-dies zero-times-anything]
+                                        }
+                                      @when-j-is-low |
+                                        assume less_than(j, succ(m)) {
+                                          @j-is-low |
+                                            less_than(j, succ(m))
+                                            [by hypothesis when-j-is-low]
+                                          // j <= m and m+n < i give n < i-j
+                                          @n-is-below-the-index |
+                                            less_than(n, sub(i, j))
+                                            [using specialize theRemainingIndexExceedsTheSecondDegree(m, n, i, j) i-is-high j-is-low]
+                                          @the-q-factor-dies |
+                                            coeff(q, sub(i, j)) = zeroR
+                                            [using specialize q-dies-above-n(sub(i, j)) n-is-below-the-index]
+                                          @anything-times-zero |
+                                            mulR(coeff(p, j), zeroR) = zeroR
+                                            [using specialize ring.mulZeroRight(coeff(p, j))]
+                                          @conclusion-the-q-side |
+                                            mulR(coeff(p, j), coeff(q, sub(i, j))) = zeroR
+                                            [by rewrite the-q-factor-dies anything-times-zero]
+                                        }
+                                      @conclusion-the-term-dies |
+                                        mulR(coeff(p, j), coeff(q, sub(i, j))) = zeroR
+                                        [by common_conclusion j-splits when-j-is-high when-j-is-low]
+                                    }
+                                  @conclusion-every-term-dies |
+                                    forall j: Nat;
+                                      mulR(coeff(p, j), coeff(q, sub(i, j))) = zeroR
+                                    [by generalize generalize-j]
+                                }
+                              @high-implies |
+                                less_than(add(m, n), i) ->
+                                  forall j: Nat;
+                                  mulR(coeff(p, j), coeff(q, sub(i, j))) = zeroR
+                                [by discharge given-i-is-high]
+                            }
+                          @q-implies |
+                            degreeAtMost(q, n) -> less_than(add(m, n), i) ->
+                              forall j: Nat;
+                              mulR(coeff(p, j), coeff(q, sub(i, j))) = zeroR
+                            [by discharge given-q-bounded]
+                        }
+                      @p-implies |
+                        degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+                          less_than(add(m, n), i) ->
+                          forall j: Nat;
+                          mulR(coeff(p, j), coeff(q, sub(i, j))) = zeroR
+                        [by discharge given-p-bounded]
+                    }
+                  @discharge-i |
+                    forall i9: Nat;
+                      degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+                      less_than(add(m, n), i9) ->
+                      forall j: Nat;
+                      mulR(coeff(p, j), coeff(q, sub(i9, j))) = zeroR
+                    [by generalize generalize-i]
+                }
+              @discharge-n |
+                forall n9, i9: Nat;
+                  degreeAtMost(p, m) -> degreeAtMost(q, n9) ->
+                  less_than(add(m, n9), i9) ->
+                  forall j: Nat;
+                  mulR(coeff(p, j), coeff(q, sub(i9, j))) = zeroR
+                [by generalize generalize-n]
+            }
+          @discharge-m |
+            forall m9, n9, i9: Nat;
+              degreeAtMost(p, m9) -> degreeAtMost(q, n9) ->
+              less_than(add(m9, n9), i9) ->
+              forall j: Nat;
+              mulR(coeff(p, j), coeff(q, sub(i9, j))) = zeroR
+            [by generalize generalize-m]
+        }
+      @discharge-q |
+        forall q9: Poly; forall m9, n9, i9: Nat;
+          degreeAtMost(p, m9) -> degreeAtMost(q9, n9) ->
+          less_than(add(m9, n9), i9) ->
+          forall j: Nat;
+          mulR(coeff(p, j), coeff(q9, sub(i9, j))) = zeroR
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; forall m, n, i: Nat;
+      degreeAtMost(p, m) -> degreeAtMost(q, n) -> less_than(add(m, n), i) ->
+      forall j: Nat; mulR(coeff(p, j), coeff(q, sub(i, j))) = zeroR
+    [by generalize generalize-p]
+qed
+
+// An index is either past m or at most m: trichotomy, with the "at most" half folded into
+// less_than(j, succ(m)).
+theorem anIndexIsAboveOrWithin: forall m, j: Nat;
+  less_than(m, j) or less_than(j, succ(m))
+proof
+  @generalize-m |
+    fix m: Nat {
+      @generalize-j |
+        fix j: Nat {
+          @the-trichotomy |
+            less_than(j, m) or j = m or less_than(m, j)
+            [using specialize peano_order.trichotomy(j, m)]
+          @below-gives-within |
+            less_than(j, m) -> less_than(j, succ(m))
+            [using specialize peano_order.lessThanSuccRight(j, m)]
+          @the-equal-case-everywhere |
+            forall j9, m9: Nat; j9 = m9 -> less_than(j9, succ(m9))
+            [by cite theEqualCaseIsWithin]
+          @equal-gives-within |
+            j = m -> less_than(j, succ(m))
+            [using specialize the-equal-case-everywhere(j, m)]
+          @conclusion-above-or-within |
+            less_than(m, j) or less_than(j, succ(m))
+            [using tautology the-trichotomy below-gives-within equal-gives-within]
+        }
+      @discharge-j |
+        forall j9: Nat; less_than(m, j9) or less_than(j9, succ(m))
+        [by generalize generalize-j]
+    }
+  @conclusion |
+    forall m, j: Nat; less_than(m, j) or less_than(j, succ(m))
+    [by generalize generalize-m]
+qed
+
+// j = m puts j below succ(m), since nothing is below itself but everything is below its
+// own successor.
+theorem theEqualCaseIsWithin: forall j, m: Nat; j = m -> less_than(j, succ(m))
+proof
+  @generalize-j |
+    fix j: Nat {
+      @generalize-m |
+        fix m: Nat {
+          @given-equal |
+            assume j = m {
+              @they-are-equal |
+                j = m
+                [by hypothesis given-equal]
+              @j-is-below-its-successor |
+                less_than(j, succ(j))
+                [using specialize peano_order.lessThanSelf(j)]
+              @conclusion-within |
+                less_than(j, succ(m))
+                [by rewrite they-are-equal j-is-below-its-successor]
+            }
+          @equal-implies-within |
+            j = m -> less_than(j, succ(m))
+            [by discharge given-equal]
+        }
+      @discharge-m |
+        forall m9: Nat; j = m9 -> less_than(j, succ(m9))
+        [by generalize generalize-m]
+    }
+  @conclusion |
+    forall j, m: Nat; j = m -> less_than(j, succ(m))
+    [by generalize generalize-j]
+qed
+// m+n < i and j <= m give n < i-j: from j <= m, i-j is at least i-m, and i-m exceeds n
+// because i exceeds m+n. Routed through the gap existential rather than by cases.
+theorem theRemainingIndexExceedsTheSecondDegree: forall m, n, i, j: Nat;
+  less_than(add(m, n), i) -> less_than(j, succ(m)) -> less_than(n, sub(i, j))
+proof
+  @generalize-m |
+    fix m: Nat {
+      @generalize-n |
+        fix n: Nat {
+          @generalize-i |
+            fix i: Nat {
+              @generalize-j |
+                fix j: Nat {
+                  @given-i-is-high |
+                    assume less_than(add(m, n), i) {
+                      @i-is-high |
+                        less_than(add(m, n), i)
+                        [by hypothesis given-i-is-high]
+                      @given-j-is-low |
+                        assume less_than(j, succ(m)) {
+                          @j-is-low |
+                            less_than(j, succ(m))
+                            [by hypothesis given-j-is-low]
+                          // j <= m, so add(sub(m,j), j) = m
+                          @m-recovers |
+                            add(sub(m, j), j) = m
+                            [using specialize subtraction.addSubCancel(j, m) j-is-low]
+                          // i exceeds m+n = (sub(m,j)+j)+n, so sub(i,j) exceeds
+                          // sub(m,j)+n, which is at least n
+                          @the-regrouped-bound |
+                            add(add(sub(m, j), n), j) = add(m, n)
+                            [using simplify m-recovers the-regrouping]
+                          @the-regrouping |
+                            add(add(sub(m, j), n), j) = add(add(sub(m, j), j), n)
+                            [using assoc_commut]
+                          @the-sum-is-below-i |
+                            less_than(add(add(sub(m, j), n), j), i)
+                            [by rewrite the-regrouped-bound i-is-high]
+                          // cancelling j from both sides of the strict inequality
+                          @the-difference-exceeds |
+                            less_than(add(sub(m, j), n), sub(i, j))
+                            [using specialize aSumBelowGivesADifferenceAbove(add(sub(m, j), n), j, i) the-sum-is-below-i]
+                          // n is at most sub(m,j)+n, so the strict bound carries
+                          @n-is-at-most-the-sum |
+                            peano_order.less_or_equal(n, add(sub(m, j), n))
+                            [using specialize aSummandIsAtMostTheSum(sub(m, j), n)]
+                          @conclusion-n-is-below |
+                            less_than(n, sub(i, j))
+                            [using specialize atMostThenBelow(n, add(sub(m, j), n), sub(i, j)) n-is-at-most-the-sum the-difference-exceeds]
+                        }
+                      @low-implies |
+                        less_than(j, succ(m)) -> less_than(n, sub(i, j))
+                        [by discharge given-j-is-low]
+                    }
+                  @high-implies |
+                    less_than(add(m, n), i) -> less_than(j, succ(m)) ->
+                      less_than(n, sub(i, j))
+                    [by discharge given-i-is-high]
+                }
+              @discharge-j |
+                forall j9: Nat;
+                  less_than(add(m, n), i) -> less_than(j9, succ(m)) ->
+                  less_than(n, sub(i, j9))
+                [by generalize generalize-j]
+            }
+          @discharge-i |
+            forall i9, j9: Nat;
+              less_than(add(m, n), i9) -> less_than(j9, succ(m)) ->
+              less_than(n, sub(i9, j9))
+            [by generalize generalize-i]
+        }
+      @discharge-n |
+        forall n9, i9, j9: Nat;
+          less_than(add(m, n9), i9) -> less_than(j9, succ(m)) ->
+          less_than(n9, sub(i9, j9))
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall m, n, i, j: Nat;
+      less_than(add(m, n), i) -> less_than(j, succ(m)) -> less_than(n, sub(i, j))
+    [by generalize generalize-m]
+qed
+
+// the three index facts now in std, where they belong
+fact aSumBelowGivesADifferenceAbove = subtraction.aSumBelowGivesADifferenceAbove
+fact atMostThenBelow = peano_order.atMostThenBelowIsBelow
+fact aSummandIsAtMostTheSum = peano_order.aSummandIsAtMostTheSum
