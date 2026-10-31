@@ -23,6 +23,8 @@ sort Nat = peano.Nat
 const ZERO = peano.ZERO
 const QONE = rational.ONE
 func succ = peano.succ
+func add = peano.add
+func recip = rational.recip
 pred less_than = peano_order.less_than
 pred isInteger = rational.isInteger
 
@@ -42,6 +44,15 @@ axiom qSeqPrependExists: forall x: Q; forall s: QSeq;
   qat(u, ZERO) = x and (forall i: Nat; qat(u, succ(i)) = qat(s, i))
 axiom qSeqSingletonExists: forall x: Q;
   exists s: QSeq; qat(s, ZERO) = x and qProductUpTo(s, succ(ZERO)) = x
+// CONCATENATION, restated at ℚSeq. This is the one that extends at the TOP: the result keeps
+// s's entries below j and puts t's entries at j+i. An INDEX-PINNED spec (c_i must be THAT
+// coefficient's denominator) needs exactly this — prepend would shift every earlier witness.
+axiom qSeqConcatExists: forall s, t: QSeq; forall j, k: Nat;
+  exists u: QSeq;
+  (forall i: Nat; less_than(i, j) -> qat(u, i) = qat(s, i))
+  and (forall i: Nat; less_than(i, k) -> qat(u, add(j, i)) = qat(t, i))
+  and qProductUpTo(u, add(j, k)) =
+  rational.mul(qProductUpTo(s, j), qProductUpTo(t, k))
 
 // UNGUARDED: the value sort is all of ℚ, so this composes freely — no cut, no relativization.
 model RationalSeq {
@@ -58,7 +69,333 @@ model RationalSeq {
   sequence.foldSucc <- qProductUpToSucc
   sequence.seqPrependExists <- qSeqPrependExists
   sequence.seqSingletonExists <- qSeqSingletonExists
+  sequence.seqConcatExists <- qSeqConcatExists
 }
+
+// `indexed`'s singleton and concat are WEAKER than `sequence`'s — no fold clause — so they
+// follow by dropping a conjunct.
+theorem qSeqSingletonOnly: forall x: Q;
+  exists s: QSeq; qat(s, ZERO) = x
+proof
+  @generalize-x |
+    fix x: Q {
+      @the-singleton-exists |
+        exists s: QSeq;
+          qat(s, ZERO) = x and qProductUpTo(s, succ(ZERO)) = x
+        [using specialize qSeqSingletonExists(x)]
+      @the-weaker-form |
+        unpack s: QSeq from the-singleton-exists {
+          @with-singleton |
+            qat(s, ZERO) = x and qProductUpTo(s, succ(ZERO)) = x
+            [by hypothesis the-weaker-form]
+          @the-head |
+            qat(s, ZERO) = x
+            [by and_lhs with-singleton]
+          @conclusion-exists |
+            exists s2: QSeq; qat(s2, ZERO) = x
+            [by witness(s) the-head]
+        }
+      @the-singleton-without-the-fold |
+        exists s: QSeq; qat(s, ZERO) = x
+        [by unpacked the-weaker-form]
+    }
+  @conclusion |
+    forall x: Q; exists s: QSeq; qat(s, ZERO) = x
+    [by generalize generalize-x]
+qed
+
+theorem qSeqConcatOnly: forall s, t: QSeq; forall j, k: Nat;
+  exists u: QSeq;
+  (forall i: Nat; less_than(i, j) -> qat(u, i) = qat(s, i))
+  and (forall i: Nat; less_than(i, k) -> qat(u, add(j, i)) = qat(t, i))
+proof
+  @generalize-s |
+    fix s: QSeq {
+      @generalize-t |
+        fix t: QSeq {
+          @generalize-j |
+            fix j: Nat {
+              @generalize-k |
+                fix k: Nat {
+                  @the-concat-exists |
+                    exists u: QSeq;
+                      (forall i: Nat; less_than(i, j) -> qat(u, i) = qat(s, i))
+                      and (forall i: Nat; less_than(i, k) ->
+                      qat(u, add(j, i)) = qat(t, i))
+                      and qProductUpTo(u, add(j, k)) =
+                      rational.mul(qProductUpTo(s, j), qProductUpTo(t, k))
+                    [using specialize qSeqConcatExists(s, t, j, k)]
+                  @the-weaker-form |
+                    unpack u: QSeq from the-concat-exists {
+                      @with-concat |
+                        (forall i: Nat; less_than(i, j) -> qat(u, i) = qat(s, i))
+                          and (forall i: Nat; less_than(i, k) ->
+                          qat(u, add(j, i)) = qat(t, i))
+                          and qProductUpTo(u, add(j, k)) =
+                          rational.mul(qProductUpTo(s, j), qProductUpTo(t, k))
+                        [by hypothesis the-weaker-form]
+                      @the-entry-clauses |
+                        (forall i: Nat; less_than(i, j) -> qat(u, i) = qat(s, i))
+                          and (forall i: Nat; less_than(i, k) ->
+                          qat(u, add(j, i)) = qat(t, i))
+                        [by and_lhs with-concat]
+                      @conclusion-exists |
+                        exists u2: QSeq;
+                          (forall i: Nat; less_than(i, j) ->
+                          qat(u2, i) = qat(s, i))
+                          and (forall i: Nat; less_than(i, k) ->
+                          qat(u2, add(j, i)) = qat(t, i))
+                        [by witness(u) the-entry-clauses]
+                    }
+                  @the-concat-without-the-fold |
+                    exists u: QSeq;
+                      (forall i: Nat; less_than(i, j) -> qat(u, i) = qat(s, i))
+                      and (forall i: Nat; less_than(i, k) ->
+                      qat(u, add(j, i)) = qat(t, i))
+                    [by unpacked the-weaker-form]
+                }
+              @discharge-k |
+                forall k9: Nat;
+                  exists u: QSeq;
+                  (forall i: Nat; less_than(i, j) -> qat(u, i) = qat(s, i))
+                  and (forall i: Nat; less_than(i, k9) ->
+                  qat(u, add(j, i)) = qat(t, i))
+                [by generalize generalize-k]
+            }
+          @discharge-j |
+            forall j9: Nat; forall k: Nat;
+              exists u: QSeq;
+              (forall i: Nat; less_than(i, j9) -> qat(u, i) = qat(s, i))
+              and (forall i: Nat; less_than(i, k) ->
+              qat(u, add(j9, i)) = qat(t, i))
+            [by generalize generalize-j]
+        }
+      @discharge-t |
+        forall t9: QSeq; forall j, k: Nat;
+          exists u: QSeq;
+          (forall i: Nat; less_than(i, j) -> qat(u, i) = qat(s, i))
+          and (forall i: Nat; less_than(i, k) ->
+          qat(u, add(j, i)) = qat(t9, i))
+        [by generalize generalize-t]
+    }
+  @conclusion |
+    forall s, t: QSeq; forall j, k: Nat;
+      exists u: QSeq;
+      (forall i: Nat; less_than(i, j) -> qat(u, i) = qat(s, i))
+      and (forall i: Nat; less_than(i, k) -> qat(u, add(j, i)) = qat(t, i))
+    [by generalize generalize-s]
+qed
+
+// `std/indexed.b4m`'s mapped-list construction at ℚ: for any map f and sequence s there is a
+// sequence whose first m entries are f(s_0), …, f(s_{m-1}). Its proof there is the index-pinned
+// induction (grow by concatenating a singleton at the TOP) — exactly what Lemma 17.12 needs and
+// what prepend cannot do.
+// The instance Lemma 17.12 wants: the sequence of RECIPROCALS of a given sequence's entries.
+// Proved by the index-pinned induction DIRECTLY rather than by transferring
+// `indexed.mappedListExists`. A theorem-schema will not come across a model: mapping it is
+// rejected ("model maps only axioms … it materializes through the mapped axioms"), while
+// citing it through the model is rejected as an undischarged schema obligation, and the `<-`
+// form the diagnostic suggests needs a POSITED local schema — an axiom, which the
+// axiomatization rule forbids for something provable. So the induction is redone here, on the
+// ℚ construction axioms the model already discharges.
+//
+// Strategy: induction on m. Base: nothing below ZERO, the singleton serves. Step: take the
+// sequence good below k, append a one-entry sequence carrying recip(qat(s,k)) at position k
+// via concat — clause 1 keeps the entries below k, clause 2 puts the new one at k + 0 = k.
+theorem theReciprocalSequenceExists: forall s: QSeq; forall m: Nat;
+  exists t: QSeq; forall i: Nat; less_than(i, m) -> qat(t, i) = recip(qat(s, i))
+proof
+  @generalize-s |
+    fix s: QSeq {
+      // base: any sequence serves below ZERO
+      @some-sequence-exists |
+        exists t: QSeq; qat(t, ZERO) = recip(qat(s, ZERO))
+        [using specialize qSeqSingletonOnly(recip(qat(s, ZERO)))]
+      @base-case |
+        unpack t0: QSeq from some-sequence-exists {
+          @nothing-below-zero |
+            fix i: Nat {
+              @given-i-below-zero |
+                assume less_than(i, ZERO) {
+                  @i-below-zero |
+                    less_than(i, ZERO)
+                    [by hypothesis given-i-below-zero]
+                  @nothing-is-below-zero |
+                    not less_than(i, ZERO)
+                    [using specialize peano_order.notLessThanZero(i)]
+                  @conclusion-vacuous |
+                    qat(t0, i) = recip(qat(s, i))
+                    [by ex_falso i-below-zero nothing-is-below-zero]
+                }
+              @below-zero-implies |
+                less_than(i, ZERO) -> qat(t0, i) = recip(qat(s, i))
+                [by discharge given-i-below-zero]
+            }
+          @all-below-zero |
+            forall i: Nat; less_than(i, ZERO) -> qat(t0, i) = recip(qat(s, i))
+            [by generalize nothing-below-zero]
+          @conclusion-base-inner |
+            exists t: QSeq; forall i: Nat;
+              less_than(i, ZERO) -> qat(t, i) = recip(qat(s, i))
+            [by witness(t0) all-below-zero]
+        }
+      @base-case-exported |
+        exists t: QSeq; forall i: Nat;
+          less_than(i, ZERO) -> qat(t, i) = recip(qat(s, i))
+        [by unpacked base-case]
+
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume exists t: QSeq; forall i: Nat;
+              less_than(i, k) -> qat(t, i) = recip(qat(s, i)) {
+              @inductive-hypothesis |
+                exists t: QSeq; forall i: Nat;
+                  less_than(i, k) -> qat(t, i) = recip(qat(s, i))
+                [by hypothesis given-inductive-hypothesis]
+              @conclusion-the-step |
+                unpack tk: QSeq from inductive-hypothesis {
+                  @with-previous-tk |
+                    forall i: Nat; less_than(i, k) -> qat(tk, i) = recip(qat(s, i))
+                    [by hypothesis conclusion-the-step]
+                  // a one-entry sequence carrying the k-th image
+                  @the-new-entry-exists |
+                    exists w: QSeq; qat(w, ZERO) = recip(qat(s, k))
+                    [using specialize qSeqSingletonOnly(recip(qat(s, k)))]
+                  @with-the-new-entry |
+                    unpack w: QSeq from the-new-entry-exists {
+                      @the-new-entry |
+                        qat(w, ZERO) = recip(qat(s, k))
+                        [by hypothesis with-the-new-entry]
+                      @the-concat-exists |
+                        exists u: QSeq;
+                          (forall i: Nat; less_than(i, k) -> qat(u, i) = qat(tk, i))
+                          and (forall i: Nat; less_than(i, succ(ZERO)) ->
+                          qat(u, add(k, i)) = qat(w, i))
+                        [using specialize qSeqConcatOnly(tk, w, k, succ(ZERO))]
+                      @with-the-concat |
+                        unpack u: QSeq from the-concat-exists {
+                          @with-concat-u |
+                            (forall i: Nat; less_than(i, k) -> qat(u, i) = qat(tk, i))
+                              and (forall i: Nat; less_than(i, succ(ZERO)) ->
+                              qat(u, add(k, i)) = qat(w, i))
+                            [by hypothesis with-the-concat]
+                          @below-k-unchanged |
+                            forall i: Nat; less_than(i, k) -> qat(u, i) = qat(tk, i)
+                            [by and_lhs with-concat-u]
+                          @at-k-is-the-new-entry |
+                            forall i: Nat; less_than(i, succ(ZERO)) ->
+                              qat(u, add(k, i)) = qat(w, i)
+                            [by and_rhs with-concat-u]
+                          // index k + 0 = k carries the new entry
+                          @zero-below-one |
+                            less_than(ZERO, succ(ZERO))
+                            [using specialize peano_order.lessThanSelf(ZERO)]
+                          @at-k-plus-zero |
+                            qat(u, add(k, ZERO)) = qat(w, ZERO)
+                            [using specialize at-k-is-the-new-entry(ZERO) zero-below-one]
+                          @k-plus-zero |
+                            add(k, ZERO) = k
+                            [using specialize peano.addZeroRight(k)]
+                          @at-k |
+                            qat(u, k) = qat(w, ZERO)
+                            [by rewrite k-plus-zero at-k-plus-zero]
+                          @at-k-is-the-image |
+                            qat(u, k) = recip(qat(s, k))
+                            [by rewrite the-new-entry at-k]
+                          @good-below-succ-k |
+                            fix i: Nat {
+                              @given-i-below-succ-k |
+                                assume less_than(i, succ(k)) {
+                                  @i-below-succ-k |
+                                    less_than(i, succ(k))
+                                    [by hypothesis given-i-below-succ-k]
+                                  @the-split |
+                                    less_than(i, k) or i = k
+                                    [using specialize peano_order.lessThanSuccSplit(i, k) i-below-succ-k]
+                                  @conclusion-this-entry |
+                                    qat(u, i) = recip(qat(s, i))
+                                    case the-split {
+                                      @when-i-below-k |
+                                        assume less_than(i, k) {
+                                          @i-below-k |
+                                            less_than(i, k)
+                                            [by hypothesis when-i-below-k]
+                                          @unchanged-at-i |
+                                            qat(u, i) = qat(tk, i)
+                                            [using specialize below-k-unchanged(i) i-below-k]
+                                          @the-old-image |
+                                            qat(tk, i) = recip(qat(s, i))
+                                            [using specialize with-previous-tk(i) i-below-k]
+                                          @conclusion-below-k |
+                                            qat(u, i) = recip(qat(s, i))
+                                            [using simplify unchanged-at-i the-old-image]
+                                        }
+                                      @when-i-is-k |
+                                        assume i = k {
+                                          @i-is-k |
+                                            i = k
+                                            [by hypothesis when-i-is-k]
+                                          @conclusion-at-k |
+                                            qat(u, i) = recip(qat(s, i))
+                                            [by rewrite i-is-k at-k-is-the-image]
+                                        }
+                                    }
+                                }
+                              @below-succ-k-implies |
+                                less_than(i, succ(k)) -> qat(u, i) = recip(qat(s, i))
+                                [by discharge given-i-below-succ-k]
+                            }
+                          @all-good-below-succ-k |
+                            forall i: Nat;
+                              less_than(i, succ(k)) -> qat(u, i) = recip(qat(s, i))
+                            [by generalize good-below-succ-k]
+                          @conclusion-the-extended |
+                            exists t: QSeq; forall i: Nat;
+                              less_than(i, succ(k)) -> qat(t, i) = recip(qat(s, i))
+                            [by witness(u) all-good-below-succ-k]
+                        }
+                      @conclusion-concat-exported |
+                        exists t: QSeq; forall i: Nat;
+                          less_than(i, succ(k)) -> qat(t, i) = recip(qat(s, i))
+                        [by unpacked with-the-concat]
+                    }
+                  @conclusion-entry-exported |
+                    exists t: QSeq; forall i: Nat;
+                      less_than(i, succ(k)) -> qat(t, i) = recip(qat(s, i))
+                    [by unpacked with-the-new-entry]
+                }
+              @the-step-exported |
+                exists t: QSeq; forall i: Nat;
+                  less_than(i, succ(k)) -> qat(t, i) = recip(qat(s, i))
+                [by unpacked conclusion-the-step]
+            }
+          @induction-step-at-k |
+            (exists t: QSeq; forall i: Nat;
+              less_than(i, k) -> qat(t, i) = recip(qat(s, i))) ->
+              (exists t: QSeq; forall i: Nat;
+              less_than(i, succ(k)) -> qat(t, i) = recip(qat(s, i)))
+            [by discharge given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat;
+          (exists t: QSeq; forall i: Nat;
+          less_than(i, k) -> qat(t, i) = recip(qat(s, i))) ->
+          (exists t: QSeq; forall i: Nat;
+          less_than(i, succ(k)) -> qat(t, i) = recip(qat(s, i)))
+        [by generalize induction-step]
+      @all-bounds |
+        forall m: Nat;
+          exists t: QSeq; forall i: Nat;
+          less_than(i, m) -> qat(t, i) = recip(qat(s, i))
+        [using instantiation peano.induction((fun z: Nat => (exists t: QSeq; forall i: Nat; less_than(i, z) -> qat(t, i) = recip(qat(s, i))))) base-case-exported induction-step-for-all-k]
+    }
+  @conclusion |
+    forall s: QSeq; forall m: Nat;
+      exists t: QSeq; forall i: Nat;
+      less_than(i, m) -> qat(t, i) = recip(qat(s, i))
+    [by generalize generalize-s]
+qed
 
 // The one-entry product, from the shared fold theory.
 theorem theOneEntryProduct: forall s: QSeq;
