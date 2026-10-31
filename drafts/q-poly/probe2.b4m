@@ -1,0 +1,59 @@
+// PROBE 2: Q[x] as its OWN polynomial sort, with F[x]'s corpus transferred onto it.
+// The lesson from probe 1: a transfer must map the POLYNOMIAL layer too (Poly, coeff,
+// ZEROP, addP, ...), not just the coefficient field — exactly as
+// FieldPolyModelsRingPoly maps ring_poly.Poly and ring_poly.coeff.
+import fieldpoly <<< "std/field/polynomial.b4m"
+import rational <<< "std/rational.b4m"
+import peano <<< "std/peano.b4m"
+
+sort Q = rational.Q
+sort Nat = peano.Nat
+
+// Q[x]: its own sort, its own coefficient reader into Q.
+sort QPoly
+func qcoeff(p: QPoly, i: Nat) => Q
+const QZEROP: QPoly
+func qaddP(p: QPoly, q: QPoly) => QPoly
+func qnegP(p: QPoly) => QPoly
+func qmulP(p: QPoly, q: QPoly) => QPoly
+
+// the two structural axioms F[x] rests on, restated here
+axiom qPolyExtensionality: forall p, q: QPoly;
+  (forall i: Nat; qcoeff(p, i) = qcoeff(q, i)) -> p = q
+axiom qAddPolyCoeff: forall p, q: QPoly; forall i: Nat;
+  qcoeff(qaddP(p, q), i) = rational.add(qcoeff(p, i), qcoeff(q, i))
+axiom qNegPolyCoeff: forall p: QPoly; forall i: Nat;
+  qcoeff(qnegP(p), i) = rational.neg(qcoeff(p, i))
+
+model RationalPolynomials {
+  fieldpoly.F: Q
+  fieldpoly.zeroF: rational.ZERO
+  fieldpoly.oneF: rational.ONE
+  fieldpoly.addF: rational.add
+  fieldpoly.mulF: rational.mul
+  fieldpoly.negF: rational.neg
+  fieldpoly.recipF: rational.recip
+
+  fieldpoly.Poly: QPoly
+  fieldpoly.coeff: qcoeff
+  fieldpoly.ZEROP: QZEROP
+  fieldpoly.addP: qaddP
+  fieldpoly.negP: qnegP
+  fieldpoly.mulP: qmulP
+
+  fieldpoly.polyExtensionality <- qPolyExtensionality
+  fieldpoly.addPolyCoeff <- qAddPolyCoeff
+  fieldpoly.negPolyCoeff <- qNegPolyCoeff
+}
+
+// probe a theorem proved DIRECTLY in field/polynomial.b4m, not itself a transfer
+theorem qSubPolyCoeff: forall p, q: QPoly; forall i: Nat;
+  qcoeff(qaddP(p, qnegP(q)), i) =
+    rational.add(qcoeff(p, i), rational.neg(qcoeff(q, i)))
+proof
+  @conclusion |
+    forall p, q: QPoly; forall i: Nat;
+      qcoeff(qaddP(p, qnegP(q)), i) =
+        rational.add(qcoeff(p, i), rational.neg(qcoeff(q, i)))
+    [using model(RationalPolynomials) fieldpoly.subPolyCoeff]
+qed
