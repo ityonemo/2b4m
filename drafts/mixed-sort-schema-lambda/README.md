@@ -67,3 +67,25 @@ minimality assembly that ties them together, and it is blocked here — not on m
 One design note worth keeping from the attempt: a first draft had **two nested wrappers**
 threading the same nine hypotheses to reach a single mathematical step. That is the
 throwaway-abstraction smell; the content belongs in one theorem.
+
+---
+
+## RESOLVED 2026-10-31
+
+Fixed in `2f9c535`: a lambda's binders are now COMMA-SEPARATED GROUPS, each with its own sort
+(`fun i: Nat, v: Q => …`). `parseBinders` could not simply be extended — a quantifier uses `;`
+as its binder-list *terminator*, which is how it chains mixed sorts — so the lambda got its own
+`parseLambdaBinders`. Same-sort grouping is unchanged (`fun y, z: Element => …`).
+
+The blocking case is confirmed resolved, not merely assumed: `theQuotientSequenceByADivisorExists`
+(`0d49aca`) instantiates the choice schema at a divisor bound by an enclosing `fix`, which is
+exactly what this note said was impossible. Strict-green.
+
+`tests/cases/schema_lambda_mixed_sorts.b4m` pins it and fails without the parser change with
+the original `expected '=>', got ','`.
+
+**PROCESS NOTE, user correction (2026-10-31):** this fix was written implementation-first, with
+tests added afterward that passed immediately — and I then deliberately broke an assertion to
+check it was executing at all. That contortion is the tell: needing to sabotage a test to prove
+it runs means it was never RED. Engine work goes test-first; see [[bpa-process-directives]].
+(Red/green does NOT apply to aata/std content — a proof's `check` is already the loop.)
