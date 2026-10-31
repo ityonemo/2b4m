@@ -159,6 +159,30 @@ Worth a sweep.
 
 ---
 
+## 7b. Sequence and polynomial were two worlds with NO bridge between them
+
+All of 17.12's machinery is over `QSeq` entries (`qat`); `isTheIntegerDecomposition` is over
+`QPoly` coefficients (`qcoeff`). **Zero theorems in the corpus mentioned both**, and there was
+no construction of a polynomial from a sequence at all — `grep -c 'exists p: QPoly'` returned 0
+across both files.
+
+Three theorems closed it: `coprimeEntriesMakeCoprimeCoefficients` and
+`integerEntriesMakeIntegerCoefficients` transfer properties across a coefficient-matches-entry
+hypothesis, and `aPolynomialMatchesASequence` (`f5053f1`) finally *supplies* that hypothesis by
+building the polynomial monomial-by-monomial.
+
+**What made the bridges possible at all:** `qpoly.dividesOnTheCut` is a `define` whose body is
+character-for-character `dividesIntegrallyMeaning`'s right-hand side. Two predicates, two
+files, same meaning, no stated relationship. Checked that before writing rather than trusting
+the similar names.
+
+**The lesson is about ORDER of discovery:** this was found by auditing whether the seven
+conjuncts' theorems actually *compose* — matching each one's demanded hypotheses against what
+the construction supplies — not by writing more theorems. Six conjuncts "had their machinery"
+while the machinery could not be joined up.
+
+---
+
 ## 8. Smaller things that each cost a round or more
 
 - **`simplify` loops or stalls** where an explicit `rewrite` works. Three separate sites:
@@ -183,6 +207,9 @@ Worth a sweep.
 - **Nested `proof` blocks for a base case are not a thing** — use `@base-case-proof` + export.
 - **A nullary `func` needs no parens; `theSubject` not `theSubject()`** — but a nullary `pred`
   does. Cost one round.
+- **`import(X) law` yields the whole UNIVERSAL**, so every use at concrete arguments needs a
+  `specialize` on top. Four sites in one theorem. Easy to forget because the citation reads like
+  it is already the instance.
 
 ---
 
