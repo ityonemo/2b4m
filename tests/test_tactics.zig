@@ -416,6 +416,12 @@ pub fn addTests(
     // ref when it matches, else synthesize a discharge. drafts/guard-relativization-bug/.
     ctx.okSilent(&.{ "check", "tests/cases/model_guarded_local_head_specialize.b4m" });
 
+    // And a guarded model transferring a proof that restates an UNPACK block's opened body with
+    // `[by hypothesis]`. A relativized `∃x: H` opens as `inH(w) and <body>`, so the restatement
+    // must and_elim past the guard conjunct — `projectBlockGuard` handled `.fix`/`.assume` but
+    // returned null for `.unpack`, breaking every ℤ-order theorem citing `lessThanElim`.
+    ctx.okSilent(&.{ "check", "tests/cases/model_guarded_unpack_hypothesis.b4m" });
+
     // PREDICATED SORT `sort H = G where inH` — binder positions: ∀/∃
     // inject the guard (implies/and), `fix h: H` carries it on the block (surfaced
     // by `[by predicate <lbl>]`, made the generalize antecedent), `unpack h: H`
