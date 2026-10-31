@@ -1,0 +1,692 @@
+// std/field/ideal.b4m — IDEALS OF F[x], AND MAXIMALITY OF AN IRREDUCIBLE'S IDEAL.
+//
+// Judson's §17.3 Theorems 17.16 and 17.17. An ideal is a MEMBERSHIP PREDICATE (the §16.3
+// idiom) rather than a value: there is no sort of subsets of F[x], so "I = <f>" reads as
+// "every member of I is a multiple of f", and "I = F[x]" as "every polynomial is in I".
+//
+// 17.16 says every ideal is principal. His proof picks an element of minimal degree, which
+// needs a least element of a SET of polynomials — the comprehension limit §16.4 also meets —
+// so minimality travels as a HYPOTHESIS here, not a construction. What is proved is
+// everything downstream of it: the division remainder lies in the ideal, minimality forces
+// it to vanish, hence every member is a multiple.
+//
+// 17.17's CONVERSE then follows: if p is irreducible and I contains <p>, then I is <f> for
+// some f, p = f*g, and irreducibility makes one factor constant — so either f is a unit and
+// I is all of F[x], or g is, and I is <p> again. The FORWARD direction opens on prime
+// ideals, which std does not carry, and is not attempted here.
+import fieldpoly <<< "std/field/polynomial.b4m"
+import irreducible <<< "std/field/irreducible.b4m"
+import polyunits <<< "std/field/poly-units.b4m"
+import peano <<< "std/peano.b4m"
+import monic <<< "std/field/monic.b4m"
+import polyassoc <<< "std/field/polynomial-associativity.b4m"
+
+sort Poly = fieldpoly.Poly
+const ZERO = peano.ZERO
+const ZEROP = fieldpoly.ZEROP
+func addP = fieldpoly.addP
+func negP = fieldpoly.negP
+func mulP = fieldpoly.mulP
+func degree = fieldpoly.degree
+pred less_than = peano.less_than
+pred isIrreducible = irreducible.isIrreducible
+
+// -- the ideal ----------------------------------------------------------------------------
+// Judson's ideal of F[x]: closed under difference, absorbing on both sides.
+pred inIdeal(f: Poly)
+axiom idealClosedUnderSub: forall a, b: Poly;
+  inIdeal(a) -> inIdeal(b) -> inIdeal(addP(a, negP(b)))
+axiom idealAbsorbsOnTheRight: forall a, f: Poly;
+  inIdeal(a) -> inIdeal(mulP(a, f))
+
+// -- Theorem 17.16's two steps ------------------------------------------------------------
+
+// "Since f(x), p(x) are in I and I is an ideal, r(x) = f(x) - p(x)q(x) is also in I."
+theorem theRemainderLiesInTheIdeal: forall f, p, q: Poly;
+  inIdeal(f) -> inIdeal(p) -> inIdeal(addP(f, negP(mulP(p, q))))
+proof
+  @generalize-f |
+    fix f: Poly {
+      @generalize-p |
+        fix p: Poly {
+          @generalize-q |
+            fix q: Poly {
+              @given-f-in-the-ideal |
+                assume inIdeal(f) {
+                  @given-p-in-the-ideal |
+                    assume inIdeal(p) {
+                      @f-in-the-ideal |
+                        inIdeal(f)
+                        [by hypothesis given-f-in-the-ideal]
+                      @p-in-the-ideal |
+                        inIdeal(p)
+                        [by hypothesis given-p-in-the-ideal]
+                      @the-multiple-is-in-the-ideal |
+                        inIdeal(mulP(p, q))
+                        [using specialize idealAbsorbsOnTheRight(p, q) p-in-the-ideal]
+                      @conclusion-the-remainder-is-in-the-ideal |
+                        inIdeal(addP(f, negP(mulP(p, q))))
+                        [using specialize idealClosedUnderSub(f, mulP(p, q)) f-in-the-ideal the-multiple-is-in-the-ideal]
+                    }
+                  @p-in-implies-the-remainder-in |
+                    inIdeal(p) -> inIdeal(addP(f, negP(mulP(p, q))))
+                    [by discharge given-p-in-the-ideal]
+                }
+              @both-in-imply-the-remainder-in |
+                inIdeal(f) -> inIdeal(p) -> inIdeal(addP(f, negP(mulP(p, q))))
+                [by discharge given-f-in-the-ideal]
+            }
+          @discharge-q |
+            forall q9: Poly;
+              inIdeal(f) -> inIdeal(p) -> inIdeal(addP(f, negP(mulP(p, q9))))
+            [by generalize generalize-q]
+        }
+      @discharge-p |
+        forall p9, q9: Poly;
+          inIdeal(f) -> inIdeal(p9) -> inIdeal(addP(f, negP(mulP(p9, q9))))
+        [by generalize generalize-p]
+    }
+  @conclusion |
+    forall f, p, q: Poly;
+      inIdeal(f) -> inIdeal(p) -> inIdeal(addP(f, negP(mulP(p, q))))
+    [by generalize generalize-f]
+qed
+
+// "Since we chose p(x) to be of minimal degree, r(x) must be the zero polynomial."
+theorem minimalityForcesTheRemainderToVanish: forall p, r: Poly;
+  (forall x: Poly; inIdeal(x) -> (not (x = ZEROP)) ->
+  (not less_than(degree(x), degree(p)))) ->
+  inIdeal(r) -> less_than(degree(r), degree(p)) -> r = ZEROP
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-r |
+        fix r: Poly {
+          @given-minimality |
+            assume forall x: Poly; inIdeal(x) -> (not (x = ZEROP)) ->
+              (not less_than(degree(x), degree(p))) {
+              @given-r-in-the-ideal |
+                assume inIdeal(r) {
+                  @given-r-is-lower |
+                    assume less_than(degree(r), degree(p)) {
+                      @minimality |
+                        forall x: Poly; inIdeal(x) -> (not (x = ZEROP)) ->
+                          (not less_than(degree(x), degree(p)))
+                        [by hypothesis given-minimality]
+                      @r-in-the-ideal |
+                        inIdeal(r)
+                        [by hypothesis given-r-in-the-ideal]
+                      @r-is-lower |
+                        less_than(degree(r), degree(p))
+                        [by hypothesis given-r-is-lower]
+                      @minimality-at-r |
+                        inIdeal(r) -> (not (r = ZEROP)) ->
+                          (not less_than(degree(r), degree(p)))
+                        [using specialize minimality(r)]
+                      @given-r-nonzero |
+                        assume not (r = ZEROP) {
+                          @r-nonzero |
+                            not (r = ZEROP)
+                            [by hypothesis given-r-nonzero]
+                          @r-is-not-lower |
+                            not less_than(degree(r), degree(p))
+                            [using tautology minimality-at-r r-in-the-ideal r-nonzero]
+                          @contradiction |
+                            r = ZEROP
+                            [by ex_falso r-is-lower r-is-not-lower]
+                        }
+                      @nonzero-is-absurd |
+                        (not (r = ZEROP)) -> r = ZEROP
+                        [by discharge given-r-nonzero]
+                      @conclusion-the-remainder-vanishes |
+                        r = ZEROP
+                        [using tautology nonzero-is-absurd]
+                    }
+                  @lower-implies-zero |
+                    less_than(degree(r), degree(p)) -> r = ZEROP
+                    [by discharge given-r-is-lower]
+                }
+              @in-the-ideal-implies |
+                inIdeal(r) -> less_than(degree(r), degree(p)) -> r = ZEROP
+                [by discharge given-r-in-the-ideal]
+            }
+          @minimality-implies |
+            (forall x: Poly; inIdeal(x) -> (not (x = ZEROP)) ->
+              (not less_than(degree(x), degree(p)))) ->
+              inIdeal(r) -> less_than(degree(r), degree(p)) -> r = ZEROP
+            [by discharge given-minimality]
+        }
+      @discharge-r |
+        forall r9: Poly;
+          (forall x: Poly; inIdeal(x) -> (not (x = ZEROP)) ->
+          (not less_than(degree(x), degree(p)))) ->
+          inIdeal(r9) -> less_than(degree(r9), degree(p)) -> r9 = ZEROP
+        [by generalize generalize-r]
+    }
+  @conclusion |
+    forall p, r: Poly;
+      (forall x: Poly; inIdeal(x) -> (not (x = ZEROP)) ->
+      (not less_than(degree(x), degree(p)))) ->
+      inIdeal(r) -> less_than(degree(r), degree(p)) -> r = ZEROP
+    [by generalize generalize-p]
+qed
+
+// "Since we can write any element f(x) in I as p(x)q(x), it must be the case that
+// I = <p(x)>." THEOREM 17.16, given the division and the minimality hypothesis.
+theorem everyIdealMemberIsAMultiple: forall f, p, q, r: Poly;
+  (forall x: Poly; inIdeal(x) -> (not (x = ZEROP)) ->
+  (not less_than(degree(x), degree(p)))) ->
+  inIdeal(f) -> inIdeal(p) ->
+  f = addP(mulP(p, q), r) ->
+  less_than(degree(r), degree(p)) ->
+  f = mulP(p, q)
+proof
+  @generalize-f |
+    fix f: Poly {
+      @generalize-p |
+        fix p: Poly {
+          @generalize-q |
+            fix q: Poly {
+              @generalize-r |
+                fix r: Poly {
+                  @given-minimality |
+                    assume forall x: Poly; inIdeal(x) -> (not (x = ZEROP)) ->
+                      (not less_than(degree(x), degree(p))) {
+                      @given-f-in |
+                        assume inIdeal(f) {
+                          @given-p-in |
+                            assume inIdeal(p) {
+                              @given-the-division |
+                                assume f = addP(mulP(p, q), r) {
+                                  @given-r-is-lower |
+                                    assume less_than(degree(r), degree(p)) {
+                                      @minimality |
+                                        forall x: Poly; inIdeal(x) ->
+                                          (not (x = ZEROP)) ->
+                                          (not less_than(degree(x), degree(p)))
+                                        [by hypothesis given-minimality]
+                                      @f-in |
+                                        inIdeal(f)
+                                        [by hypothesis given-f-in]
+                                      @p-in |
+                                        inIdeal(p)
+                                        [by hypothesis given-p-in]
+                                      @the-division |
+                                        f = addP(mulP(p, q), r)
+                                        [by hypothesis given-the-division]
+                                      @r-is-lower |
+                                        less_than(degree(r), degree(p))
+                                        [by hypothesis given-r-is-lower]
+                                      // r = f - pq lies in the ideal
+                                      @the-difference-is-in-the-ideal |
+                                        inIdeal(addP(f, negP(mulP(p, q))))
+                                        [using specialize theRemainderLiesInTheIdeal(f, p, q) f-in p-in]
+                                      // and that difference IS r
+                                      @the-difference-expanded |
+                                        addP(f, negP(mulP(p, q))) =
+                                          addP(addP(mulP(p, q), r), negP(mulP(p, q)))
+                                        [by rewrite the-division reflexivity-of-the-difference]
+                                      @reflexivity-of-the-difference |
+                                        addP(f, negP(mulP(p, q))) =
+                                          addP(f, negP(mulP(p, q)))
+                                        [by reflexivity]
+                                      @the-cancellation |
+                                        addP(addP(mulP(p, q), r), negP(mulP(p, q))) = r
+                                        [using specialize theAddedTermCancels(mulP(p, q), r)]
+                                      @the-difference-is-r |
+                                        addP(f, negP(mulP(p, q))) = r
+                                        [using chain the-difference-expanded the-cancellation]
+                                      @r-is-in-the-ideal |
+                                        inIdeal(r)
+                                        [by rewrite the-difference-is-r the-difference-is-in-the-ideal]
+                                      // so minimality forces it to vanish
+                                      @r-vanishes |
+                                        r = ZEROP
+                                        [using specialize minimalityForcesTheRemainderToVanish(p, r) minimality r-is-in-the-ideal r-is-lower]
+                                      @f-is-the-multiple-plus-zero |
+                                        f = addP(mulP(p, q), ZEROP)
+                                        [by rewrite r-vanishes the-division]
+                                      @adding-zero |
+                                        addP(mulP(p, q), ZEROP) = mulP(p, q)
+                                        [using specialize fieldpoly.polyAddZeroRight(mulP(p, q))]
+                                      @conclusion-f-is-a-multiple |
+                                        f = mulP(p, q)
+                                        [using chain f-is-the-multiple-plus-zero adding-zero]
+                                    }
+                                  @lower-degree-implies-the-multiple |
+                                    less_than(degree(r), degree(p)) -> f = mulP(p, q)
+                                    [by discharge given-r-is-lower]
+                                }
+                              @the-division-implies-the-multiple |
+                                f = addP(mulP(p, q), r) ->
+                                  less_than(degree(r), degree(p)) -> f = mulP(p, q)
+                                [by discharge given-the-division]
+                            }
+                          @p-in-the-ideal-implies-the-multiple |
+                            inIdeal(p) -> f = addP(mulP(p, q), r) ->
+                              less_than(degree(r), degree(p)) -> f = mulP(p, q)
+                            [by discharge given-p-in]
+                        }
+                      @both-in-the-ideal-imply-the-multiple |
+                        inIdeal(f) -> inIdeal(p) -> f = addP(mulP(p, q), r) ->
+                          less_than(degree(r), degree(p)) -> f = mulP(p, q)
+                        [by discharge given-f-in]
+                    }
+                  @minimality-implies-every-member-is-a-multiple |
+                    (forall x: Poly; inIdeal(x) -> (not (x = ZEROP)) ->
+                      (not less_than(degree(x), degree(p)))) ->
+                      inIdeal(f) -> inIdeal(p) -> f = addP(mulP(p, q), r) ->
+                      less_than(degree(r), degree(p)) -> f = mulP(p, q)
+                    [by discharge given-minimality]
+                }
+              @discharge-r |
+                forall r9: Poly;
+                  (forall x: Poly; inIdeal(x) -> (not (x = ZEROP)) ->
+                  (not less_than(degree(x), degree(p)))) ->
+                  inIdeal(f) -> inIdeal(p) -> f = addP(mulP(p, q), r9) ->
+                  less_than(degree(r9), degree(p)) -> f = mulP(p, q)
+                [by generalize generalize-r]
+            }
+          @discharge-q |
+            forall q9, r9: Poly;
+              (forall x: Poly; inIdeal(x) -> (not (x = ZEROP)) ->
+              (not less_than(degree(x), degree(p)))) ->
+              inIdeal(f) -> inIdeal(p) -> f = addP(mulP(p, q9), r9) ->
+              less_than(degree(r9), degree(p)) -> f = mulP(p, q9)
+            [by generalize generalize-q]
+        }
+      @discharge-p |
+        forall p9, q9, r9: Poly;
+          (forall x: Poly; inIdeal(x) -> (not (x = ZEROP)) ->
+          (not less_than(degree(x), degree(p9)))) ->
+          inIdeal(f) -> inIdeal(p9) -> f = addP(mulP(p9, q9), r9) ->
+          less_than(degree(r9), degree(p9)) -> f = mulP(p9, q9)
+        [by generalize generalize-p]
+    }
+  @conclusion |
+    forall f, p, q, r: Poly;
+      (forall x: Poly; inIdeal(x) -> (not (x = ZEROP)) ->
+      (not less_than(degree(x), degree(p)))) ->
+      inIdeal(f) -> inIdeal(p) -> f = addP(mulP(p, q), r) ->
+      less_than(degree(r), degree(p)) -> f = mulP(p, q)
+    [by generalize generalize-f]
+qed
+
+// adding a term and then subtracting it returns what was there
+theorem theAddedTermCancels: forall a, r: Poly;
+  addP(addP(a, r), negP(a)) = r
+proof
+  @generalize-a |
+    fix a: Poly {
+      @generalize-r |
+        fix r: Poly {
+          @commute-the-negation-in |
+            addP(addP(a, r), negP(a)) = addP(negP(a), addP(a, r))
+            [using specialize fieldpoly.polyAddIsCommutative(addP(a, r), negP(a))]
+          @the-summand-is-recovered |
+            r = addP(negP(a), addP(a, r))
+            [using specialize fieldpoly.aSumRecoversItsSummand(a, r)]
+          @the-recovery-flipped |
+            addP(negP(a), addP(a, r)) = r
+            [by symmetry the-summand-is-recovered]
+          @conclusion-the-term-cancels |
+            addP(addP(a, r), negP(a)) = r
+            [using chain commute-the-negation-in the-recovery-flipped]
+        }
+      @discharge-r |
+        forall r9: Poly; addP(addP(a, r9), negP(a)) = r9
+        [by generalize generalize-r]
+    }
+  @conclusion |
+    forall a, r: Poly; addP(addP(a, r), negP(a)) = r
+    [by generalize generalize-a]
+qed
+
+// -- Theorem 17.17, converse ---------------------------------------------------------------
+
+// "Let I be an ideal in F[x] containing <p(x)>. By Theorem 17.16, I is a principal ideal;
+// hence, I = <f(x)> for some f(x). Since p(x) is in I, p(x) = f(x)g(x). However, p(x) is
+// irreducible; hence, either f(x) or g(x) is a constant polynomial. If f(x) is constant,
+// then I = F[x] and we are done. If g(x) is constant, then f(x) is a constant multiple of
+// I and I = <p(x)>."
+//
+// As a membership statement: a generator f of an ideal containing an irreducible p either
+// divides every polynomial (so I is all of F[x]) or is itself a multiple of p (so I is no
+// bigger than <p>). That is the dichotomy "no PROPER ideal properly contains <p>".
+theorem anIrreducibleGeneratorAdmitsNoProperExtension: forall p, f, g: Poly;
+  (not (f = ZEROP)) -> (not (g = ZEROP)) ->
+  isIrreducible(p) ->
+  p = mulP(f, g) ->
+  ((forall h: Poly; exists w: Poly; h = mulP(w, f)) or
+  (exists v: Poly; f = mulP(v, p)))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-f |
+        fix f: Poly {
+          @generalize-g |
+            fix g: Poly {
+              @given-f-nonzero |
+                assume not (f = ZEROP) {
+                  @f-nonzero |
+                    not (f = ZEROP)
+                    [by hypothesis given-f-nonzero]
+                  @given-g-nonzero |
+                    assume not (g = ZEROP) {
+                      @g-nonzero |
+                        not (g = ZEROP)
+                        [by hypothesis given-g-nonzero]
+                      @given-p-irreducible |
+                        assume isIrreducible(p) {
+                          @p-irreducible |
+                            isIrreducible(p)
+                            [by hypothesis given-p-irreducible]
+                          @given-the-factorisation |
+                            assume p = mulP(f, g) {
+                              @the-factorisation |
+                                p = mulP(f, g)
+                                [by hypothesis given-the-factorisation]
+                              // irreducibility makes one factor constant
+                              @a-factor-is-constant |
+                                degree(f) = ZERO or degree(g) = ZERO
+                                [using specialize irreducible.anIrreducibleFactorisationHasAConstantFactor(p, f, g) f-nonzero g-nonzero p-irreducible the-factorisation]
+                              @when-f-is-constant |
+                                assume degree(f) = ZERO {
+                                  @f-is-constant |
+                                    degree(f) = ZERO
+                                    [by hypothesis when-f-is-constant]
+                                  // a nonzero constant divides everything: I = F[x]
+                                  @generalize-h |
+                                    fix h: Poly {
+                                      @conclusion-f-divides-h |
+                                        exists w: Poly; h = mulP(w, f)
+                                        [using specialize polyunits.aNonzeroConstantDividesEverything(f, h) f-nonzero f-is-constant]
+                                    }
+                                  @f-divides-everything |
+                                    forall h: Poly; exists w: Poly; h = mulP(w, f)
+                                    [by generalize generalize-h]
+                                  @conclusion-the-ideal-is-everything |
+                                    (forall h: Poly; exists w: Poly; h = mulP(w, f)) or
+                                      (exists v: Poly; f = mulP(v, p))
+                                    [by either_left f-divides-everything]
+                                }
+                              @when-g-is-constant |
+                                assume degree(g) = ZERO {
+                                  @g-is-constant |
+                                    degree(g) = ZERO
+                                    [by hypothesis when-g-is-constant]
+                                  // g is a unit, so f is a constant multiple of p: from
+                                  // p = f*g, scaling by g's reciprocal gives f = (1/g)*p
+                                  @f-is-a-multiple-of-p |
+                                    exists v: Poly; f = mulP(v, p)
+                                    [using specialize aUnitCofactorMakesTheGeneratorAMultiple(p, f, g) g-nonzero g-is-constant the-factorisation]
+                                  @conclusion-the-ideal-is-no-bigger |
+                                    (forall h: Poly; exists w: Poly; h = mulP(w, f)) or
+                                      (exists v: Poly; f = mulP(v, p))
+                                    [by either_right f-is-a-multiple-of-p]
+                                }
+                              @conclusion-the-dichotomy |
+                                (forall h: Poly; exists w: Poly; h = mulP(w, f)) or
+                                  (exists v: Poly; f = mulP(v, p))
+                                [by common_conclusion a-factor-is-constant when-f-is-constant when-g-is-constant]
+                            }
+                          @factorisation-implies |
+                            p = mulP(f, g) ->
+                              ((forall h: Poly; exists w: Poly; h = mulP(w, f)) or
+                              (exists v: Poly; f = mulP(v, p)))
+                            [by discharge given-the-factorisation]
+                        }
+                      @irreducible-implies |
+                        isIrreducible(p) -> p = mulP(f, g) ->
+                          ((forall h: Poly; exists w: Poly; h = mulP(w, f)) or
+                          (exists v: Poly; f = mulP(v, p)))
+                        [by discharge given-p-irreducible]
+                    }
+                  @g-nonzero-implies |
+                    (not (g = ZEROP)) -> isIrreducible(p) -> p = mulP(f, g) ->
+                      ((forall h: Poly; exists w: Poly; h = mulP(w, f)) or
+                      (exists v: Poly; f = mulP(v, p)))
+                    [by discharge given-g-nonzero]
+                }
+              @f-nonzero-implies |
+                (not (f = ZEROP)) -> (not (g = ZEROP)) -> isIrreducible(p) ->
+                  p = mulP(f, g) ->
+                  ((forall h: Poly; exists w: Poly; h = mulP(w, f)) or
+                  (exists v: Poly; f = mulP(v, p)))
+                [by discharge given-f-nonzero]
+            }
+          @discharge-g |
+            forall g9: Poly;
+              (not (f = ZEROP)) -> (not (g9 = ZEROP)) -> isIrreducible(p) ->
+              p = mulP(f, g9) ->
+              ((forall h: Poly; exists w: Poly; h = mulP(w, f)) or
+              (exists v: Poly; f = mulP(v, p)))
+            [by generalize generalize-g]
+        }
+      @discharge-f |
+        forall f9, g9: Poly;
+          (not (f9 = ZEROP)) -> (not (g9 = ZEROP)) -> isIrreducible(p) ->
+          p = mulP(f9, g9) ->
+          ((forall h: Poly; exists w: Poly; h = mulP(w, f9)) or
+          (exists v: Poly; f9 = mulP(v, p)))
+        [by generalize generalize-f]
+    }
+  @conclusion |
+    forall p, f, g: Poly;
+      (not (f = ZEROP)) -> (not (g = ZEROP)) -> isIrreducible(p) ->
+      p = mulP(f, g) ->
+      ((forall h: Poly; exists w: Poly; h = mulP(w, f)) or
+      (exists v: Poly; f = mulP(v, p)))
+    [by generalize generalize-p]
+qed
+
+// A unit cofactor makes the generator a multiple of p: g divides ONEP, say ONEP = u*g, and
+// then u*p regroups to f*(u*g) = f*ONEP = f, so v = u witnesses f = v*p.
+theorem aUnitCofactorMakesTheGeneratorAMultiple: forall p, f, g: Poly;
+  (not (g = ZEROP)) -> degree(g) = ZERO -> p = mulP(f, g) ->
+  exists v: Poly; f = mulP(v, p)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-f |
+        fix f: Poly {
+          @generalize-g |
+            fix g: Poly {
+              @given-g-nonzero |
+                assume not (g = ZEROP) {
+                  @g-nonzero |
+                    not (g = ZEROP)
+                    [by hypothesis given-g-nonzero]
+                  @given-g-constant |
+                    assume degree(g) = ZERO {
+                      @g-constant |
+                        degree(g) = ZERO
+                        [by hypothesis given-g-constant]
+                      @given-the-factorisation |
+                        assume p = mulP(f, g) {
+                          @the-factorisation |
+                            p = mulP(f, g)
+                            [by hypothesis given-the-factorisation]
+                          // g divides the one-monomial
+                          @g-divides-one |
+                            exists w: Poly;
+                              fieldpoly.monomial(fieldpoly.oneF, ZERO) = mulP(w, g)
+                            [using specialize polyunits.aNonzeroConstantDividesEverything(g, fieldpoly.monomial(fieldpoly.oneF, ZERO)) g-nonzero g-constant]
+                          @with-the-inverse-u |
+                            unpack u: Poly from g-divides-one {
+                              @one-is-u-times-g |
+                                fieldpoly.monomial(fieldpoly.oneF, ZERO) = mulP(u, g)
+                                [by hypothesis with-the-inverse-u]
+                              @the-regrouping |
+                                mulP(u, p) = f
+                                [using specialize theUnitRegroups(f, g, u, p) the-factorisation one-is-u-times-g]
+                              @f-is-the-multiple |
+                                f = mulP(u, p)
+                                [by symmetry the-regrouping]
+                              @conclusion-a-witness-exists |
+                                exists v: Poly; f = mulP(v, p)
+                                [by witness(u) f-is-the-multiple]
+                            }
+                          @conclusion-from-the-inverse |
+                            exists v: Poly; f = mulP(v, p)
+                            [by unpacked with-the-inverse-u]
+                        }
+                      @factorisation-implies |
+                        p = mulP(f, g) -> exists v: Poly; f = mulP(v, p)
+                        [by discharge given-the-factorisation]
+                    }
+                  @constant-implies |
+                    degree(g) = ZERO -> p = mulP(f, g) ->
+                      exists v: Poly; f = mulP(v, p)
+                    [by discharge given-g-constant]
+                }
+              @nonzero-implies |
+                (not (g = ZEROP)) -> degree(g) = ZERO -> p = mulP(f, g) ->
+                  exists v: Poly; f = mulP(v, p)
+                [by discharge given-g-nonzero]
+            }
+          @discharge-g |
+            forall g9: Poly;
+              (not (g9 = ZEROP)) -> degree(g9) = ZERO -> p = mulP(f, g9) ->
+              exists v: Poly; f = mulP(v, p)
+            [by generalize generalize-g]
+        }
+      @discharge-f |
+        forall f9, g9: Poly;
+          (not (g9 = ZEROP)) -> degree(g9) = ZERO -> p = mulP(f9, g9) ->
+          exists v: Poly; f9 = mulP(v, p)
+        [by generalize generalize-f]
+    }
+  @conclusion |
+    forall p, f, g: Poly;
+      (not (g = ZEROP)) -> degree(g) = ZERO -> p = mulP(f, g) ->
+      exists v: Poly; f = mulP(v, p)
+    [by generalize generalize-p]
+qed
+
+// u*p = f when p = f*g and ONEP = u*g: regroup by associativity and commutativity, then
+// the one-monomial is the identity.
+theorem theUnitRegroups: forall f, g, u, p: Poly;
+  p = mulP(f, g) -> fieldpoly.monomial(fieldpoly.oneF, ZERO) = mulP(u, g) -> mulP(u, p) = f
+proof
+  @generalize-f |
+    fix f: Poly {
+      @generalize-g |
+        fix g: Poly {
+          @generalize-u |
+            fix u: Poly {
+              @generalize-p |
+                fix p: Poly {
+                  @given-the-factorisation |
+                    assume p = mulP(f, g) {
+                      @the-factorisation |
+                        p = mulP(f, g)
+                        [by hypothesis given-the-factorisation]
+                      @given-the-inverse |
+                        assume fieldpoly.monomial(fieldpoly.oneF, ZERO) = mulP(u, g) {
+                          @the-inverse |
+                            fieldpoly.monomial(fieldpoly.oneF, ZERO) = mulP(u, g)
+                            [by hypothesis given-the-inverse]
+                          // u*p = u*(f*g)
+                          @the-product-at-the-factorisation |
+                            mulP(u, p) = mulP(u, mulP(f, g))
+                            [by rewrite the-factorisation reflexivity-of-the-product]
+                          @reflexivity-of-the-product |
+                            mulP(u, p) = mulP(u, p)
+                            [by reflexivity]
+                          // regroup to f*(u*g)
+                          @regrouping |
+                            mulP(u, mulP(f, g)) = mulP(f, mulP(u, g))
+                            [using specialize polyMulLeftSwap(u, f, g)]
+                          // which is f*ONEP = f
+                          @the-inverse-collapses |
+                            mulP(f, mulP(u, g)) = mulP(f, fieldpoly.monomial(fieldpoly.oneF, ZERO))
+                            [by rewrite the-inverse reflexivity-of-the-scaled-f]
+                          @reflexivity-of-the-scaled-f |
+                            mulP(f, mulP(u, g)) = mulP(f, mulP(u, g))
+                            [by reflexivity]
+                          @commuting-the-identity |
+                            mulP(f, fieldpoly.monomial(fieldpoly.oneF, ZERO)) =
+                              mulP(fieldpoly.monomial(fieldpoly.oneF, ZERO), f)
+                            [using specialize fieldpoly.polyMulIsCommutative(f, fieldpoly.monomial(fieldpoly.oneF, ZERO))]
+                          @the-identity-acts |
+                            mulP(fieldpoly.monomial(fieldpoly.oneF, ZERO), f) = f
+                            [using specialize monic.theOneMonomialIsTheIdentity(f)]
+                          @conclusion-the-regrouping |
+                            mulP(u, p) = f
+                            [using chain the-product-at-the-factorisation regrouping the-inverse-collapses commuting-the-identity the-identity-acts]
+                        }
+                      @inverse-implies |
+                        fieldpoly.monomial(fieldpoly.oneF, ZERO) = mulP(u, g) -> mulP(u, p) = f
+                        [by discharge given-the-inverse]
+                    }
+                  @factorisation-implies |
+                    p = mulP(f, g) -> fieldpoly.monomial(fieldpoly.oneF, ZERO) = mulP(u, g) ->
+                      mulP(u, p) = f
+                    [by discharge given-the-factorisation]
+                }
+              @discharge-p |
+                forall p9: Poly;
+                  p9 = mulP(f, g) -> fieldpoly.monomial(fieldpoly.oneF, ZERO) = mulP(u, g) ->
+                  mulP(u, p9) = f
+                [by generalize generalize-p]
+            }
+          @discharge-u |
+            forall u9, p9: Poly;
+              p9 = mulP(f, g) -> fieldpoly.monomial(fieldpoly.oneF, ZERO) = mulP(u9, g) ->
+              mulP(u9, p9) = f
+            [by generalize generalize-u]
+        }
+      @discharge-g |
+        forall g9, u9, p9: Poly;
+          p9 = mulP(f, g9) -> fieldpoly.monomial(fieldpoly.oneF, ZERO) = mulP(u9, g9) ->
+          mulP(u9, p9) = f
+        [by generalize generalize-g]
+    }
+  @conclusion |
+    forall f, g, u, p: Poly;
+      p = mulP(f, g) -> fieldpoly.monomial(fieldpoly.oneF, ZERO) = mulP(u, g) -> mulP(u, p) = f
+    [by generalize generalize-f]
+qed
+
+// a(bc) = b(ac) for mulP, the left-swap the regrouping needs
+theorem polyMulLeftSwap: forall a, b, c: Poly;
+  mulP(a, mulP(b, c)) = mulP(b, mulP(a, c))
+proof
+  @generalize-a |
+    fix a: Poly {
+      @generalize-b |
+        fix b: Poly {
+          @generalize-c |
+            fix c: Poly {
+              @associate-left |
+                mulP(mulP(a, b), c) = mulP(a, mulP(b, c))
+                [using specialize polyassoc.polyMulIsAssociative(a, b, c)]
+              @commute-the-inner-pair |
+                mulP(a, b) = mulP(b, a)
+                [using specialize fieldpoly.polyMulIsCommutative(a, b)]
+              @associate-the-swapped |
+                mulP(mulP(b, a), c) = mulP(b, mulP(a, c))
+                [using specialize polyassoc.polyMulIsAssociative(b, a, c)]
+              @the-swapped-grouping |
+                mulP(mulP(a, b), c) = mulP(b, mulP(a, c))
+                [by rewrite commute-the-inner-pair associate-the-swapped]
+              @associate-left-flipped |
+                mulP(a, mulP(b, c)) = mulP(mulP(a, b), c)
+                [by symmetry associate-left]
+              @conclusion-the-swap |
+                mulP(a, mulP(b, c)) = mulP(b, mulP(a, c))
+                [using chain associate-left-flipped the-swapped-grouping]
+            }
+          @discharge-c |
+            forall c9: Poly; mulP(a, mulP(b, c9)) = mulP(b, mulP(a, c9))
+            [by generalize generalize-c]
+        }
+      @discharge-b |
+        forall b9, c9: Poly; mulP(a, mulP(b9, c9)) = mulP(b9, mulP(a, c9))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: Poly; mulP(a, mulP(b, c)) = mulP(b, mulP(a, c))
+    [by generalize generalize-a]
+qed
