@@ -1,0 +1,758 @@
+// std/field/monic.b4m — MONIC POLYNOMIALS, and the uniqueness half of Proposition 17.10.
+//
+// Judson finishes his gcd uniqueness argument with "since d(x) and d'(x) are both monic
+// polynomials of the same degree, it must be the case that d(x) = d'(x)". That needs a
+// `monic` predicate, which is nothing more than coeff(p, degree(p)) = oneF — every piece
+// already exists in std/field/polynomial.b4m.
+//
+// THE ARGUMENT. Given d = u*e with deg d = deg e and both monic:
+//   * degreeOfAProduct gives deg u + deg e = deg e, so deg u = ZERO;
+//   * a nonzero degree-ZERO polynomial IS the constant monomial carrying its own constant
+//     term (the two agree at every index, so polyExtensionality identifies them);
+//   * the monomial shift lemma makes the product's leading coefficient
+//     coeff(u, ZERO) * coeff(e, deg e), and monicity of both sides pins coeff(u, ZERO)
+//     to oneF;
+//   * the one-monomial is F[x]'s multiplicative identity (F[x] carries no ONEP of its own,
+//     so that is proved here from the shift lemma rather than inherited from R[x]).
+
+import fieldpoly <<< "std/field/polynomial.b4m"
+import field <<< "std/field.b4m"
+import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
+
+sort Poly = fieldpoly.Poly
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+const ZEROP = fieldpoly.ZEROP
+const oneF = fieldpoly.oneF
+const zeroF = fieldpoly.zeroF
+func add = peano.add
+func coeff = fieldpoly.coeff
+func degree = fieldpoly.degree
+func mulP = fieldpoly.mulP
+func mulF = fieldpoly.mulF
+func monomial = fieldpoly.monomial
+
+// MONIC POLYNOMIALS, and the uniqueness half-step of Proposition 17.10.
+//
+// Judson finishes uniqueness with "since d(x) and d'(x) are both monic polynomials of the
+// same degree, it must be the case that d(x) = d'(x)". That needs a `monic` predicate,
+// which is just coeff(p, degree(p)) = oneF -- every piece already exists.
+
+// A polynomial is monic when its leading coefficient is one.
+pred isMonic(p: Poly)
+axiom monicMeansTheLeadingCoefficientIsOne: forall p: Poly;
+  isMonic(p) iff coeff(p, degree(p)) = oneF
+
+// A nonzero polynomial of degree ZERO IS the constant monomial carrying its own constant
+// term: the two agree at index ZERO by the monomial's own coefficient equation, and above
+// ZERO both vanish -- the polynomial because that is what degreeAtMost(p, ZERO) says.
+theorem aDegreeZeroPolynomialIsItsConstantMonomial: forall u: Poly;
+  (not (u = ZEROP)) -> degree(u) = ZERO ->
+  u = monomial(coeff(u, ZERO), ZERO)
+proof
+  @generalize-u |
+    fix u: Poly {
+      @given-u-nonzero |
+        assume not (u = ZEROP) {
+          @u-nonzero |
+            not (u = ZEROP)
+            [by hypothesis given-u-nonzero]
+          @given-degree-zero |
+            assume degree(u) = ZERO {
+              @degree-zero |
+                degree(u) = ZERO
+                [by hypothesis given-degree-zero]
+              // u is bounded by its own degree, which is ZERO
+              @u-bounded-by-its-degree |
+                fieldpoly.degreeAtMost(u, degree(u))
+                [using specialize fieldpoly.degreeBoundsTheCoefficients(u) u-nonzero]
+              @u-bounded-by-zero |
+                fieldpoly.degreeAtMost(u, ZERO)
+                [by rewrite degree-zero u-bounded-by-its-degree]
+              @the-bound-unfolds |
+                fieldpoly.degreeAtMost(u, ZERO) iff
+                  (forall i: Nat; peano.less_than(ZERO, i) -> coeff(u, i) = zeroF)
+                [using specialize fieldpoly.degreeAtMostMeaning(u, ZERO)]
+              @u-vanishes-above-zero |
+                forall i: Nat; peano.less_than(ZERO, i) -> coeff(u, i) = zeroF
+                [using tautology the-bound-unfolds u-bounded-by-zero]
+              // the two polynomials agree at every index
+              @generalize-i |
+                fix i: Nat {
+                  @i-is-zero-or-not |
+                    i = ZERO or (not (i = ZERO))
+                    [using tautology]
+                  @when-i-is-zero |
+                    assume i = ZERO {
+                      @i-is-zero |
+                        i = ZERO
+                        [by hypothesis when-i-is-zero]
+                      @the-monomial-at-its-index |
+                        coeff(monomial(coeff(u, ZERO), ZERO), ZERO) = coeff(u, ZERO)
+                        [using specialize fieldpoly.monomialCoeffAtItsIndex(coeff(u, ZERO), ZERO)]
+                      @the-monomial-flipped |
+                        coeff(u, ZERO) = coeff(monomial(coeff(u, ZERO), ZERO), ZERO)
+                        [by symmetry the-monomial-at-its-index]
+                      @conclusion-agree-at-zero |
+                        coeff(u, i) = coeff(monomial(coeff(u, ZERO), ZERO), i)
+                        [by rewrite i-is-zero the-monomial-flipped]
+                    }
+                  @when-i-is-nonzero |
+                    assume not (i = ZERO) {
+                      @i-is-nonzero |
+                        not (i = ZERO)
+                        [by hypothesis when-i-is-nonzero]
+                      // above ZERO the monomial vanishes
+                      @the-monomial-vanishes |
+                        coeff(monomial(coeff(u, ZERO), ZERO), i) = zeroF
+                        [using specialize fieldpoly.monomialCoeffElsewhere(coeff(u, ZERO), ZERO, i) i-is-nonzero]
+                      // and so does u, since a nonzero index exceeds ZERO
+                      @zero-is-below-i |
+                        peano.less_than(ZERO, i)
+                        [using specialize aNonzeroIndexIsAboveZero(i) i-is-nonzero]
+                      @u-vanishes-at-i |
+                        coeff(u, i) = zeroF
+                        [using specialize u-vanishes-above-zero(i) zero-is-below-i]
+                      @the-monomial-vanishes-flipped |
+                        zeroF = coeff(monomial(coeff(u, ZERO), ZERO), i)
+                        [by symmetry the-monomial-vanishes]
+                      @conclusion-agree-above-zero |
+                        coeff(u, i) = coeff(monomial(coeff(u, ZERO), ZERO), i)
+                        [using chain u-vanishes-at-i the-monomial-vanishes-flipped]
+                    }
+                  @conclusion-agree-at-i |
+                    coeff(u, i) = coeff(monomial(coeff(u, ZERO), ZERO), i)
+                    [by common_conclusion i-is-zero-or-not when-i-is-zero when-i-is-nonzero]
+                }
+              @they-agree-everywhere |
+                forall i: Nat; coeff(u, i) = coeff(monomial(coeff(u, ZERO), ZERO), i)
+                [by generalize generalize-i]
+              @conclusion-u-is-the-monomial |
+                u = monomial(coeff(u, ZERO), ZERO)
+                [using specialize fieldpoly.polyExtensionality(u, monomial(coeff(u, ZERO), ZERO)) they-agree-everywhere]
+            }
+          @degree-zero-implies |
+            degree(u) = ZERO -> u = monomial(coeff(u, ZERO), ZERO)
+            [by discharge given-degree-zero]
+        }
+      @nonzero-implies |
+        (not (u = ZEROP)) -> degree(u) = ZERO ->
+          u = monomial(coeff(u, ZERO), ZERO)
+        [by discharge given-u-nonzero]
+    }
+  @conclusion |
+    forall u: Poly;
+      (not (u = ZEROP)) -> degree(u) = ZERO ->
+      u = monomial(coeff(u, ZERO), ZERO)
+    [by generalize generalize-u]
+qed
+
+// A nonzero index exceeds ZERO: it is a successor, and every successor is above ZERO.
+theorem aNonzeroIndexIsAboveZero: forall i: Nat;
+  (not (i = ZERO)) -> peano.less_than(ZERO, i)
+proof
+  @generalize-i |
+    fix i: Nat {
+      @given-i-nonzero |
+        assume not (i = ZERO) {
+          @i-nonzero |
+            not (i = ZERO)
+            [by hypothesis given-i-nonzero]
+          @i-splits |
+            i = ZERO or (exists m: Nat; i = peano.succ(m))
+            [using specialize peano.zeroOrSucc(i)]
+          @i-is-a-successor |
+            exists m: Nat; i = peano.succ(m)
+            [using tautology i-splits i-nonzero]
+          @with-the-predecessor-m |
+            unpack m: Nat from i-is-a-successor {
+              @i-is-succ-m |
+                i = peano.succ(m)
+                [by hypothesis with-the-predecessor-m]
+              @zero-is-below-a-successor |
+                peano.less_than(ZERO, peano.succ(m))
+                [using specialize peano_order.zeroBelowSucc(m)]
+              @conclusion-zero-is-below-i |
+                peano.less_than(ZERO, i)
+                [by rewrite i-is-succ-m zero-is-below-a-successor]
+            }
+          @conclusion-from-the-successor |
+            peano.less_than(ZERO, i)
+            [by unpacked with-the-predecessor-m]
+        }
+      @nonzero-implies-above-zero |
+        (not (i = ZERO)) -> peano.less_than(ZERO, i)
+        [by discharge given-i-nonzero]
+    }
+  @conclusion |
+    forall i: Nat; (not (i = ZERO)) -> peano.less_than(ZERO, i)
+    [by generalize generalize-i]
+qed
+
+// The degree arithmetic of Judson's uniqueness argument.
+
+// A sum of naturals vanishes only if both summands do.
+//
+// NOT by `arithmetic`: that accelerant is sort-agnostic and reasons over pure ℤ, where the
+// claim is false (a = 1, b = -1), and it says so. The Peano route is structural: were `a` a
+// successor, `addSuccLeft` would make the sum a successor, and ZERO is not one.
+theorem aVanishingSumHasVanishingParts: forall a, b: Nat;
+  add(a, b) = ZERO -> a = ZERO
+proof
+  @generalize-a |
+    fix a: Nat {
+      @generalize-b |
+        fix b: Nat {
+          @given-the-sum-vanishes |
+            assume add(a, b) = ZERO {
+              @the-sum-vanishes |
+                add(a, b) = ZERO
+                [by hypothesis given-the-sum-vanishes]
+              @a-splits |
+                a = ZERO or (exists k: Nat; a = peano.succ(k))
+                [using specialize peano.zeroOrSucc(a)]
+              @when-a-is-zero |
+                assume a = ZERO {
+                  @conclusion-already-zero |
+                    a = ZERO
+                    [by hypothesis when-a-is-zero]
+                }
+              @when-a-is-a-successor |
+                assume exists k: Nat; a = peano.succ(k) {
+                  @a-is-a-successor |
+                    exists k: Nat; a = peano.succ(k)
+                    [by hypothesis when-a-is-a-successor]
+                  @with-the-predecessor-k |
+                    unpack k: Nat from a-is-a-successor {
+                      @a-is-succ-k |
+                        a = peano.succ(k)
+                        [by hypothesis with-the-predecessor-k]
+                      // the sum would then be a successor
+                      @the-sum-peels |
+                        add(peano.succ(k), b) = peano.succ(add(k, b))
+                        [using specialize peano.addSuccLeft(k, b)]
+                      @the-sum-is-a-successor |
+                        add(a, b) = peano.succ(add(k, b))
+                        [by rewrite a-is-succ-k the-sum-peels]
+                      @zero-is-a-successor |
+                        ZERO = peano.succ(add(k, b))
+                        [using chain the-sum-vanishes-flipped the-sum-is-a-successor]
+                      @the-sum-vanishes-flipped |
+                        ZERO = add(a, b)
+                        [by symmetry the-sum-vanishes]
+                      // but ZERO is not a successor
+                      @zero-is-not-a-successor |
+                        not (ZERO = peano.succ(add(k, b)))
+                        [using specialize peano_order.zeroIsNotSucc(add(k, b))]
+                      @conclusion-absurd |
+                        a = ZERO
+                        [by ex_falso zero-is-a-successor zero-is-not-a-successor]
+                    }
+                  @conclusion-from-the-successor |
+                    a = ZERO
+                    [by unpacked with-the-predecessor-k]
+                }
+              @conclusion-a-vanishes |
+                a = ZERO
+                [by common_conclusion a-splits when-a-is-zero when-a-is-a-successor]
+            }
+          @vanishing-implies |
+            add(a, b) = ZERO -> a = ZERO
+            [by discharge given-the-sum-vanishes]
+        }
+      @discharge-b |
+        forall b9: Nat; add(a, b9) = ZERO -> a = ZERO
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Nat; add(a, b) = ZERO -> a = ZERO
+    [by generalize generalize-a]
+qed
+
+// The constant-one monomial is F[x]'s multiplicative 
+//
+// std/ring/polynomial.b4m has polyMulOneLeft over R[x], but F[x] carries no ONEP. The
+// monomial shift lemma gives the coefficients directly: every coefficient of
+// monomial(oneF, ZERO) * p is oneF * coeff(p, t), which is coeff(p, t).
+
+theorem theOneMonomialIsTheIdentity: forall p: Poly;
+  mulP(monomial(oneF, ZERO), p) = p
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-t |
+        fix t: Nat {
+          // the shift lemma at index ZERO leaves the index alone
+          @the-shift-at-zero |
+            coeff(mulP(monomial(oneF, ZERO), p), peano.add(ZERO, t)) =
+              fieldpoly.mulF(oneF, coeff(p, t))
+            [using specialize fieldpoly.theMonomialShiftsEveryCoefficient(p, oneF, ZERO, t)]
+          @adding-zero-on-the-left |
+            peano.add(ZERO, t) = t
+            [using specialize peano.addZeroLeft(t)]
+          @the-coefficient-is-scaled |
+            coeff(mulP(monomial(oneF, ZERO), p), t) =
+              fieldpoly.mulF(oneF, coeff(p, t))
+            [by rewrite adding-zero-on-the-left the-shift-at-zero]
+          // and one scales nothing
+          @one-scales-nothing |
+            fieldpoly.mulF(oneF, coeff(p, t)) = coeff(p, t)
+            [using specialize field.mulOneLeft(coeff(p, t))]
+          @conclusion-the-coefficients-agree |
+            coeff(mulP(monomial(oneF, ZERO), p), t) = coeff(p, t)
+            [using chain the-coefficient-is-scaled one-scales-nothing]
+        }
+      @they-agree-everywhere |
+        forall t: Nat;
+          coeff(mulP(monomial(oneF, ZERO), p), t) = coeff(p, t)
+        [by generalize generalize-t]
+      @conclusion-the-product-is-p |
+        mulP(monomial(oneF, ZERO), p) = p
+        [using specialize fieldpoly.polyExtensionality(mulP(monomial(oneF, ZERO), p), p) they-agree-everywhere]
+    }
+  @conclusion |
+    forall p: Poly; mulP(monomial(oneF, ZERO), p) = p
+    [by generalize generalize-p]
+qed
+
+// Judson's uniqueness finish: two monic polynomials of the same degree that divide each
+// other are equal.
+//
+// From d = u*d' with deg d = deg d', degreeOfAProduct gives deg u = ZERO, so u is the
+// constant monomial carrying coeff(u, ZERO). Monicity of both pins that constant to oneF,
+// and the one-monomial is the multiplicative 
+
+// The cofactor of an equal-degree division has degree ZERO: deg d = deg u + deg d' and
+// deg d = deg d' leave deg u + deg d' = deg d', so deg u vanishes.
+theorem anEqualDegreeCofactorIsConstant: forall d, e, u: Poly;
+  (not (e = ZEROP)) -> (not (u = ZEROP)) ->
+  d = mulP(u, e) ->
+  degree(d) = degree(e) ->
+  degree(u) = ZERO
+proof
+  @generalize-d |
+    fix d: Poly {
+      @generalize-e |
+        fix e: Poly {
+          @generalize-u |
+            fix u: Poly {
+              @given-e-nonzero |
+                assume not (e = ZEROP) {
+                  @e-nonzero |
+                    not (e = ZEROP)
+                    [by hypothesis given-e-nonzero]
+                  @given-u-nonzero |
+                    assume not (u = ZEROP) {
+                      @u-nonzero |
+                        not (u = ZEROP)
+                        [by hypothesis given-u-nonzero]
+                      @given-the-division |
+                        assume d = mulP(u, e) {
+                          @the-division |
+                            d = mulP(u, e)
+                            [by hypothesis given-the-division]
+                          @given-the-degrees-agree |
+                            assume degree(d) = degree(e) {
+                              @the-degrees-agree |
+                                degree(d) = degree(e)
+                                [by hypothesis given-the-degrees-agree]
+                              // the product's degree is the sum
+                              @the-product-degree |
+                                degree(mulP(u, e)) =
+                                  peano.add(degree(u), degree(e))
+                                [using specialize fieldpoly.degreeOfAProduct(u, e) u-nonzero e-nonzero]
+                              @d-degree-is-the-sum |
+                                degree(d) = peano.add(degree(u), degree(e))
+                                [by rewrite the-division the-product-degree]
+                              @the-sum-is-e-degree |
+                                peano.add(degree(u), degree(e)) = degree(e)
+                                [using chain d-degree-is-the-sum-flipped the-degrees-agree]
+                              @d-degree-is-the-sum-flipped |
+                                peano.add(degree(u), degree(e)) = degree(d)
+                                [by symmetry d-degree-is-the-sum]
+                              // cancelling deg e leaves deg u = ZERO
+                              @the-cofactor-degree-vanishes |
+                                peano.add(degree(u), ZERO) = ZERO
+                                [using specialize theAddendCancels(degree(u), degree(e)) the-sum-is-e-degree]
+                              @adding-zero |
+                                peano.add(degree(u), ZERO) = degree(u)
+                                [using specialize peano.addZeroRight(degree(u))]
+                              @adding-zero-flipped |
+                                degree(u) = peano.add(degree(u), ZERO)
+                                [by symmetry adding-zero]
+                              @conclusion-the-degree-is-zero |
+                                degree(u) = ZERO
+                                [using chain adding-zero-flipped the-cofactor-degree-vanishes]
+                            }
+                          @degrees-agree-implies |
+                            degree(d) = degree(e) -> degree(u) = ZERO
+                            [by discharge given-the-degrees-agree]
+                        }
+                      @division-implies |
+                        d = mulP(u, e) -> degree(d) = degree(e) -> degree(u) = ZERO
+                        [by discharge given-the-division]
+                    }
+                  @u-nonzero-implies |
+                    (not (u = ZEROP)) -> d = mulP(u, e) ->
+                      degree(d) = degree(e) -> degree(u) = ZERO
+                    [by discharge given-u-nonzero]
+                }
+              @e-nonzero-implies |
+                (not (e = ZEROP)) -> (not (u = ZEROP)) -> d = mulP(u, e) ->
+                  degree(d) = degree(e) -> degree(u) = ZERO
+                [by discharge given-e-nonzero]
+            }
+          @discharge-u |
+            forall u9: Poly;
+              (not (e = ZEROP)) -> (not (u9 = ZEROP)) -> d = mulP(u9, e) ->
+              degree(d) = degree(e) -> degree(u9) = ZERO
+            [by generalize generalize-u]
+        }
+      @discharge-e |
+        forall e9, u9: Poly;
+          (not (e9 = ZEROP)) -> (not (u9 = ZEROP)) -> d = mulP(u9, e9) ->
+          degree(d) = degree(e9) -> degree(u9) = ZERO
+        [by generalize generalize-e]
+    }
+  @conclusion |
+    forall d, e, u: Poly;
+      (not (e = ZEROP)) -> (not (u = ZEROP)) -> d = mulP(u, e) ->
+      degree(d) = degree(e) -> degree(u) = ZERO
+    [by generalize generalize-d]
+qed
+
+// a + c = c forces a = ZERO. Writing the right side as c + ZERO and commuting the left,
+// `addCancelLeft` strips the common c.
+theorem theAddendCancels: forall a, c: Nat;
+  peano.add(a, c) = c -> peano.add(a, ZERO) = ZERO
+proof
+  @generalize-a |
+    fix a: Nat {
+      @generalize-c |
+        fix c: Nat {
+          @given-the-sum-returns-c |
+            assume peano.add(a, c) = c {
+              @the-sum-returns-c |
+                peano.add(a, c) = c
+                [by hypothesis given-the-sum-returns-c]
+              // put both sides in the form c + _
+              @commuting-the-sum |
+                peano.add(a, c) = peano.add(c, a)
+                [using specialize peano.addIsCommutative(a, c)]
+              @c-plus-a-returns-c |
+                peano.add(c, a) = c
+                [using chain commuting-the-sum-flipped the-sum-returns-c]
+              @commuting-the-sum-flipped |
+                peano.add(c, a) = peano.add(a, c)
+                [by symmetry commuting-the-sum]
+              @c-is-c-plus-zero |
+                peano.add(c, ZERO) = c
+                [using specialize peano.addZeroRight(c)]
+              @c-plus-zero-flipped |
+                c = peano.add(c, ZERO)
+                [by symmetry c-is-c-plus-zero]
+              @the-two-sums-agree |
+                peano.add(c, a) = peano.add(c, ZERO)
+                [using chain c-plus-a-returns-c c-plus-zero-flipped]
+              @a-is-zero |
+                a = ZERO
+                [using specialize peano.addCancelLeft(c, a, ZERO) the-two-sums-agree]
+              @adding-zero |
+                peano.add(a, ZERO) = a
+                [using specialize peano.addZeroRight(a)]
+              @conclusion-the-addend-vanishes |
+                peano.add(a, ZERO) = ZERO
+                [using chain adding-zero a-is-zero]
+            }
+          @the-sum-implies |
+            peano.add(a, c) = c -> peano.add(a, ZERO) = ZERO
+            [by discharge given-the-sum-returns-c]
+        }
+      @discharge-c |
+        forall c9: Nat;
+          peano.add(a, c9) = c9 -> peano.add(a, ZERO) = ZERO
+        [by generalize generalize-c]
+    }
+  @conclusion |
+    forall a, c: Nat; peano.add(a, c) = c -> peano.add(a, ZERO) = ZERO
+    [by generalize generalize-a]
+qed
+
+// JUDSON'S UNIQUENESS FINISH: two monic polynomials of the same degree that divide each
+// other are equal.
+//
+// Given d = u*e with deg d = deg e, the cofactor u has degree ZERO, so it IS the constant
+// monomial coeff(u, ZERO). Monicity of d and e pins that constant: the leading coefficient
+// of u*e is coeff(u, ZERO) * coeff(e, deg e) = coeff(u, ZERO), and it equals oneF. So u is
+// the one-monomial, which is the 
+
+theorem twoMonicPolynomialsOfEqualDegreeThatDivideAreEqual: forall d, e, u: Poly;
+  (not (e = ZEROP)) -> (not (u = ZEROP)) ->
+  isMonic(d) -> isMonic(e) ->
+  d = mulP(u, e) ->
+  degree(d) = degree(e) ->
+  d = e
+proof
+  @generalize-d |
+    fix d: Poly {
+      @generalize-e |
+        fix e: Poly {
+          @generalize-u |
+            fix u: Poly {
+              @given-e-nonzero |
+                assume not (e = ZEROP) {
+                  @e-nonzero |
+                    not (e = ZEROP)
+                    [by hypothesis given-e-nonzero]
+                  @given-u-nonzero |
+                    assume not (u = ZEROP) {
+                      @u-nonzero |
+                        not (u = ZEROP)
+                        [by hypothesis given-u-nonzero]
+                      @given-d-monic |
+                        assume isMonic(d) {
+                          @d-monic |
+                            isMonic(d)
+                            [by hypothesis given-d-monic]
+                          @given-e-monic |
+                            assume isMonic(e) {
+                              @e-monic |
+                                isMonic(e)
+                                [by hypothesis given-e-monic]
+                              @given-the-division |
+                                assume d = mulP(u, e) {
+                                  @the-division |
+                                    d = mulP(u, e)
+                                    [by hypothesis given-the-division]
+                                  @given-the-degrees-agree |
+                                    assume degree(d) = degree(e) {
+                                      @the-degrees-agree |
+                                        degree(d) = degree(e)
+                                        [by hypothesis given-the-degrees-agree]
+                                      // the cofactor is a degree-ZERO constant
+                                      @the-cofactor-is-constant |
+                                        degree(u) = ZERO
+                                        [using specialize anEqualDegreeCofactorIsConstant(d, e, u) e-nonzero u-nonzero the-division the-degrees-agree]
+                                      @the-cofactor-is-its-monomial |
+                                        u = monomial(coeff(u, ZERO), ZERO)
+                                        [using specialize aDegreeZeroPolynomialIsItsConstantMonomial(u) u-nonzero the-cofactor-is-constant]
+                                      // monicity pins the constant to oneF
+                                      @the-constant-is-one |
+                                        coeff(u, ZERO) = oneF
+                                        [using specialize aMonicDivisionForcesAUnitCofactor(d, e, u) d-monic e-monic the-division the-degrees-agree the-cofactor-is-its-monomial]
+                                      @the-cofactor-is-the-one-monomial |
+                                        u = monomial(oneF, ZERO)
+                                        [by rewrite the-constant-is-one the-cofactor-is-its-monomial]
+                                      // and the one-monomial is the identity
+                                      @the-product-is-e |
+                                        mulP(monomial(oneF, ZERO), e) = e
+                                        [using specialize theOneMonomialIsTheIdentity(e)]
+                                      @d-is-the-one-product |
+                                        d = mulP(monomial(oneF, ZERO), e)
+                                        [by rewrite the-cofactor-is-the-one-monomial the-division]
+                                      @conclusion-they-are-equal |
+                                        d = e
+                                        [using chain d-is-the-one-product the-product-is-e]
+                                    }
+                                  @degrees-agree-implies |
+                                    degree(d) = degree(e) -> d = e
+                                    [by discharge given-the-degrees-agree]
+                                }
+                              @division-implies |
+                                d = mulP(u, e) -> degree(d) = degree(e) -> d = e
+                                [by discharge given-the-division]
+                            }
+                          @e-monic-implies |
+                            isMonic(e) -> d = mulP(u, e) ->
+                              degree(d) = degree(e) -> d = e
+                            [by discharge given-e-monic]
+                        }
+                      @d-monic-implies |
+                        isMonic(d) -> isMonic(e) -> d = mulP(u, e) ->
+                          degree(d) = degree(e) -> d = e
+                        [by discharge given-d-monic]
+                    }
+                  @u-nonzero-implies |
+                    (not (u = ZEROP)) -> isMonic(d) -> isMonic(e) ->
+                      d = mulP(u, e) -> degree(d) = degree(e) -> d = e
+                    [by discharge given-u-nonzero]
+                }
+              @e-nonzero-implies |
+                (not (e = ZEROP)) -> (not (u = ZEROP)) -> isMonic(d) -> isMonic(e) ->
+                  d = mulP(u, e) -> degree(d) = degree(e) -> d = e
+                [by discharge given-e-nonzero]
+            }
+          @discharge-u |
+            forall u9: Poly;
+              (not (e = ZEROP)) -> (not (u9 = ZEROP)) -> isMonic(d) -> isMonic(e) ->
+              d = mulP(u9, e) -> degree(d) = degree(e) -> d = e
+            [by generalize generalize-u]
+        }
+      @discharge-e |
+        forall e9, u9: Poly;
+          (not (e9 = ZEROP)) -> (not (u9 = ZEROP)) -> isMonic(d) -> isMonic(e9) ->
+          d = mulP(u9, e9) -> degree(d) = degree(e9) -> d = e9
+        [by generalize generalize-e]
+    }
+  @conclusion |
+    forall d, e, u: Poly;
+      (not (e = ZEROP)) -> (not (u = ZEROP)) -> isMonic(d) -> isMonic(e) ->
+      d = mulP(u, e) -> degree(d) = degree(e) -> d = e
+    [by generalize generalize-d]
+qed
+
+// Monicity pins the cofactor's constant to oneF. With u the constant monomial, the shift
+// lemma makes the product's coefficient at deg e equal coeff(u,ZERO) * coeff(e, deg e);
+// that index is also deg d, where d is monic, and e is monic too — so
+// oneF = coeff(u,ZERO) * oneF, and one is a right 
+theorem aMonicDivisionForcesAUnitCofactor: forall d, e, u: Poly;
+  isMonic(d) -> isMonic(e) ->
+  d = mulP(u, e) ->
+  degree(d) = degree(e) ->
+  u = monomial(coeff(u, ZERO), ZERO) ->
+  coeff(u, ZERO) = oneF
+proof
+  @generalize-d |
+    fix d: Poly {
+      @generalize-e |
+        fix e: Poly {
+          @generalize-u |
+            fix u: Poly {
+              @given-d-monic |
+                assume isMonic(d) {
+                  @d-monic |
+                    isMonic(d)
+                    [by hypothesis given-d-monic]
+                  @given-e-monic |
+                    assume isMonic(e) {
+                      @e-monic |
+                        isMonic(e)
+                        [by hypothesis given-e-monic]
+                      @given-the-division |
+                        assume d = mulP(u, e) {
+                          @the-division |
+                            d = mulP(u, e)
+                            [by hypothesis given-the-division]
+                          @given-the-degrees-agree |
+                            assume degree(d) = degree(e) {
+                              @the-degrees-agree |
+                                degree(d) = degree(e)
+                                [by hypothesis given-the-degrees-agree]
+                              @given-u-is-its-monomial |
+                                assume u = monomial(coeff(u, ZERO), ZERO) {
+                                  @u-is-its-monomial |
+                                    u = monomial(coeff(u, ZERO), ZERO)
+                                    [by hypothesis given-u-is-its-monomial]
+                                  // unfold both monicity hypotheses
+                                  @d-monic-unfolds |
+                                    isMonic(d) iff coeff(d, degree(d)) = oneF
+                                    [using specialize monicMeansTheLeadingCoefficientIsOne(d)]
+                                  @d-leads-with-one |
+                                    coeff(d, degree(d)) = oneF
+                                    [using tautology d-monic-unfolds d-monic]
+                                  @e-monic-unfolds |
+                                    isMonic(e) iff coeff(e, degree(e)) = oneF
+                                    [using specialize monicMeansTheLeadingCoefficientIsOne(e)]
+                                  @e-leads-with-one |
+                                    coeff(e, degree(e)) = oneF
+                                    [using tautology e-monic-unfolds e-monic]
+                                  // the product's coefficient at degree(e), via the shift
+                                  @the-shift-at-the-top |
+                                    coeff(mulP(monomial(coeff(u, ZERO), ZERO), e),
+                                      peano.add(ZERO, degree(e))) =
+                                      mulF(coeff(u, ZERO), coeff(e, degree(e)))
+                                    [using specialize fieldpoly.theMonomialShiftsEveryCoefficient(e, coeff(u, ZERO), ZERO, degree(e))]
+                                  @adding-zero-on-the-left |
+                                    peano.add(ZERO, degree(e)) = degree(e)
+                                    [using specialize peano.addZeroLeft(degree(e))]
+                                  @the-monomial-product-at-the-top |
+                                    coeff(mulP(monomial(coeff(u, ZERO), ZERO), e),
+                                      degree(e)) =
+                                      mulF(coeff(u, ZERO), coeff(e, degree(e)))
+                                    [by rewrite adding-zero-on-the-left the-shift-at-the-top]
+                                  // that product IS d, at an index that IS degree(d)
+                                  @the-product-is-d |
+                                    coeff(mulP(u, e), degree(e)) =
+                                      mulF(coeff(u, ZERO), coeff(e, degree(e)))
+                                    [by rewrite u-is-its-monomial the-monomial-product-at-the-top]
+                                  @d-at-the-top |
+                                    coeff(d, degree(e)) =
+                                      mulF(coeff(u, ZERO), coeff(e, degree(e)))
+                                    [by rewrite the-division the-product-is-d]
+                                  @d-leads-with-one-at-e-degree |
+                                    coeff(d, degree(e)) = oneF
+                                    [by rewrite the-degrees-agree d-leads-with-one]
+                                  // so one = coeff(u,ZERO) * one
+                                  @one-is-the-scaled-one |
+                                    oneF = mulF(coeff(u, ZERO), coeff(e, degree(e)))
+                                    [using chain d-leads-with-one-at-e-degree-flipped d-at-the-top]
+                                  @d-leads-with-one-at-e-degree-flipped |
+                                    oneF = coeff(d, degree(e))
+                                    [by symmetry d-leads-with-one-at-e-degree]
+                                  @the-scaling-collapses |
+                                    mulF(coeff(u, ZERO), coeff(e, degree(e))) =
+                                      mulF(coeff(u, ZERO), oneF)
+                                    [by rewrite e-leads-with-one reflexivity-of-the-scaling]
+                                  @reflexivity-of-the-scaling |
+                                    mulF(coeff(u, ZERO), coeff(e, degree(e))) =
+                                      mulF(coeff(u, ZERO), coeff(e, degree(e)))
+                                    [by reflexivity]
+                                  @one-is-a-right-identity |
+                                    mulF(coeff(u, ZERO), oneF) = coeff(u, ZERO)
+                                    [using specialize field.mulOneRight(coeff(u, ZERO))]
+                                  @one-is-the-constant |
+                                    oneF = coeff(u, ZERO)
+                                    [using chain one-is-the-scaled-one the-scaling-collapses one-is-a-right-identity]
+                                  @conclusion-the-constant-is-one |
+                                    coeff(u, ZERO) = oneF
+                                    [by symmetry one-is-the-constant]
+                                }
+                              @monomial-implies |
+                                u = monomial(coeff(u, ZERO), ZERO) ->
+                                  coeff(u, ZERO) = oneF
+                                [by discharge given-u-is-its-monomial]
+                            }
+                          @degrees-agree-implies |
+                            degree(d) = degree(e) ->
+                              u = monomial(coeff(u, ZERO), ZERO) ->
+                              coeff(u, ZERO) = oneF
+                            [by discharge given-the-degrees-agree]
+                        }
+                      @division-implies |
+                        d = mulP(u, e) -> degree(d) = degree(e) ->
+                          u = monomial(coeff(u, ZERO), ZERO) ->
+                          coeff(u, ZERO) = oneF
+                        [by discharge given-the-division]
+                    }
+                  @e-monic-implies |
+                    isMonic(e) -> d = mulP(u, e) -> degree(d) = degree(e) ->
+                      u = monomial(coeff(u, ZERO), ZERO) -> coeff(u, ZERO) = oneF
+                    [by discharge given-e-monic]
+                }
+              @d-monic-implies |
+                isMonic(d) -> isMonic(e) -> d = mulP(u, e) ->
+                  degree(d) = degree(e) ->
+                  u = monomial(coeff(u, ZERO), ZERO) -> coeff(u, ZERO) = oneF
+                [by discharge given-d-monic]
+            }
+          @discharge-u |
+            forall u9: Poly;
+              isMonic(d) -> isMonic(e) -> d = mulP(u9, e) ->
+              degree(d) = degree(e) ->
+              u9 = monomial(coeff(u9, ZERO), ZERO) -> coeff(u9, ZERO) = oneF
+            [by generalize generalize-u]
+        }
+      @discharge-e |
+        forall e9, u9: Poly;
+          isMonic(d) -> isMonic(e9) -> d = mulP(u9, e9) ->
+          degree(d) = degree(e9) ->
+          u9 = monomial(coeff(u9, ZERO), ZERO) -> coeff(u9, ZERO) = oneF
+        [by generalize generalize-e]
+    }
+  @conclusion |
+    forall d, e, u: Poly;
+      isMonic(d) -> isMonic(e) -> d = mulP(u, e) -> degree(d) = degree(e) ->
+      u = monomial(coeff(u, ZERO), ZERO) -> coeff(u, ZERO) = oneF
+    [by generalize generalize-d]
+qed
