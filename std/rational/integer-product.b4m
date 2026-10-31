@@ -18,15 +18,21 @@ import rational <<< "std/rational.b4m"
 import peano <<< "std/peano.b4m"
 import peano_order <<< "std/peano/order.b4m"
 import qpoly <<< "std/rational/polynomial.b4m"
+import field_order <<< "std/field/order.b4m"
+import rational_integer_order <<< "std/rational/integer-order.b4m"
 
 sort Q = rational.Q
 sort Nat = peano.Nat
 const ZERO = peano.ZERO
 const QONE = rational.ONE
+const QZERO = rational.ZERO
 func succ = peano.succ
 func add = peano.add
 func recip = rational.recip
 pred less_than = peano_order.less_than
+// ℚ's order, distinct from the ℕ order the indices use. This file's own subject is the
+// INDEX range, so `less_than` stays ℕ's and the visitor takes the prefix.
+pred rational_less_than = rational.less_than
 pred isInteger = rational.isInteger
 
 // -- a ℚ-valued product fold --------------------------------------------------------------
@@ -2832,4 +2838,588 @@ proof
       isInteger(e) -> dividesIntegrally(e, r) -> dividesIntegrally(e, s) ->
       dividesIntegrally(e, QONE)
     [by generalize generalize-g]
+qed
+
+// -- THE EXISTENCE OBLIGATION: A DIVISOR WHOSE QUOTIENTS ARE COPRIME ----------------------
+// Steps 3 and 4 take their divisor as a HYPOTHESIS. This is its existence, and it is what
+// closes Lemma 17.12's construction.
+//
+// Judson says "let d be the GREATEST common divisor". Maximality is sufficient but not
+// necessary: what the statement needs is only that the QUOTIENTS be relatively prime, so the
+// target here is the weaker
+//
+//     exists d, q;  d | every entry,  entry_i = d · q_i,  the q_i coprime
+//
+// obtained by DESCENT rather than by constructing a gcd. Well-order on the first quotient:
+// among all common divisors, pick one making q_0 least. If some non-unit e divided every
+// quotient, dividing through by e would make q_0 strictly smaller
+// (`aProperFactorShrinksTheQuotient`), contradicting leastness. So the quotients are coprime.
+//
+// The first entry is required POSITIVE — that is where the descent gets its floor, and it
+// matches Judson's setting (a nonzero polynomial has a nonzero coefficient to anchor on).
+
+// `aQuotientSequenceFor(d, s, q, n)` — q is the entrywise quotient of s by d, below n.
+pred aQuotientSequenceFor(d: Q, s: QSeq, q: QSeq, n: Nat)
+axiom quotientSequenceMeaning: forall d: Q; forall s, q: QSeq; forall n: Nat;
+  aQuotientSequenceFor(d, s, q, n) iff
+  (forall i: Nat; less_than(i, n) ->
+  qat(s, i) = rational.mul(d, qat(q, i)))
+
+// The coprimality 17.12 asks of the quotients, named so the existence statement can carry it.
+pred theQuotientsAreCoprime(q: QSeq, n: Nat)
+axiom quotientsCoprimeMeaning: forall q: QSeq; forall n: Nat;
+  theQuotientsAreCoprime(q, n) iff
+  (forall e: Q; isInteger(e) -> isACommonDivisorUpTo(e, q, n) ->
+  dividesIntegrally(e, QONE))
+
+// ONE is always such a divisor, with the sequence itself as quotient — the inhabitation the
+// descent starts from.
+theorem theTrivialDivisorWorks: forall s: QSeq; forall n: Nat;
+  (forall i: Nat; less_than(i, n) -> isInteger(qat(s, i))) ->
+  (isACommonDivisorUpTo(QONE, s, n) and aQuotientSequenceFor(QONE, s, s, n))
+proof
+  @generalize-s |
+    fix s: QSeq {
+      @generalize-n |
+        fix n: Nat {
+          @given-the-entries |
+            assume forall i: Nat; less_than(i, n) -> isInteger(qat(s, i)) {
+              @the-entries |
+                forall i: Nat; less_than(i, n) -> isInteger(qat(s, i))
+                [by hypothesis given-the-entries]
+              @one-divides |
+                isACommonDivisorUpTo(QONE, s, n)
+                [using specialize oneIsACommonDivisor(s, n) the-entries]
+              @each-entry-is-one-times-itself |
+                fix i: Nat {
+                  @given-i-below-n |
+                    assume less_than(i, n) {
+                      @one-times-the-entry |
+                        rational.mul(QONE, qat(s, i)) = qat(s, i)
+                        [using specialize rational.mulOneLeft(qat(s, i))]
+                      @conclusion-the-identity |
+                        qat(s, i) = rational.mul(QONE, qat(s, i))
+                        [by symmetry one-times-the-entry]
+                    }
+                  @below-n-implies |
+                    less_than(i, n) ->
+                      qat(s, i) = rational.mul(QONE, qat(s, i))
+                    [by discharge given-i-below-n]
+                }
+              @all-identities |
+                forall i: Nat; less_than(i, n) ->
+                  qat(s, i) = rational.mul(QONE, qat(s, i))
+                [by generalize each-entry-is-one-times-itself]
+              @the-quotient-meaning |
+                aQuotientSequenceFor(QONE, s, s, n) iff
+                  (forall i: Nat; less_than(i, n) ->
+                  qat(s, i) = rational.mul(QONE, qat(s, i)))
+                [using specialize quotientSequenceMeaning(QONE, s, s, n)]
+              @s-is-its-own-quotient |
+                aQuotientSequenceFor(QONE, s, s, n)
+                [using tautology the-quotient-meaning all-identities]
+              @conclusion-the-trivial-divisor |
+                isACommonDivisorUpTo(QONE, s, n) and
+                  aQuotientSequenceFor(QONE, s, s, n)
+                [by both one-divides s-is-its-own-quotient]
+            }
+          @entries-imply |
+            (forall i: Nat; less_than(i, n) -> isInteger(qat(s, i))) ->
+              (isACommonDivisorUpTo(QONE, s, n) and
+              aQuotientSequenceFor(QONE, s, s, n))
+            [by discharge given-the-entries]
+        }
+      @discharge-n |
+        forall n9: Nat;
+          (forall i: Nat; less_than(i, n9) -> isInteger(qat(s, i))) ->
+          (isACommonDivisorUpTo(QONE, s, n9) and
+          aQuotientSequenceFor(QONE, s, s, n9))
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall s: QSeq; forall n: Nat;
+      (forall i: Nat; less_than(i, n) -> isInteger(qat(s, i))) ->
+      (isACommonDivisorUpTo(QONE, s, n) and
+      aQuotientSequenceFor(QONE, s, s, n))
+    [by generalize generalize-s]
+qed
+
+// ONE divides ONE: the witness quotient is ONE.
+theorem oneDividesItself: dividesIntegrally(QONE, QONE)
+proof
+  @one-is-an-integer |
+    isInteger(QONE)
+    [by cite rational.oneIsAnInteger]
+  @one-times-one |
+    rational.mul(QONE, QONE) = QONE
+    [using specialize rational.mulOneLeft(QONE)]
+  @one-is-the-product |
+    QONE = rational.mul(QONE, QONE)
+    [by symmetry one-times-one]
+  @the-witness-works |
+    isInteger(QONE) and QONE = rational.mul(QONE, QONE)
+    [by both one-is-an-integer one-is-the-product]
+  @a-quotient-exists |
+    exists k: Q; isInteger(k) and QONE = rational.mul(QONE, k)
+    [by witness(QONE) the-witness-works]
+  @the-divides-meaning |
+    dividesIntegrally(QONE, QONE) iff
+      (exists k: Q; isInteger(k) and QONE = rational.mul(QONE, k))
+    [using specialize dividesIntegrallyMeaning(QONE, QONE)]
+  @conclusion |
+    dividesIntegrally(QONE, QONE)
+    [using tautology the-divides-meaning a-quotient-exists]
+qed
+
+// If e > 0 and e·k > 0 then k > 0: the general form of `theCofactorIsPositive`, which is
+// stated only for the product ONE.
+theorem theCofactorOfAPositiveIsPositive: forall e, k, whole: Q;
+  rational_less_than(QZERO, e) -> rational_less_than(QZERO, whole) ->
+  whole = rational.mul(e, k) -> rational_less_than(QZERO, k)
+proof
+  @generalize-e |
+    fix e: Q {
+      @generalize-k |
+        fix k: Q {
+          @generalize-whole |
+            fix whole: Q {
+              @given-e-positive |
+                assume rational_less_than(QZERO, e) {
+                  @e-positive |
+                    rational_less_than(QZERO, e)
+                    [by hypothesis given-e-positive]
+                  @given-whole-positive |
+                    assume rational_less_than(QZERO, whole) {
+                      @whole-positive |
+                        rational_less_than(QZERO, whole)
+                        [by hypothesis given-whole-positive]
+                      @given-the-factorization |
+                        assume whole = rational.mul(e, k) {
+                          @the-factorization |
+                            whole = rational.mul(e, k)
+                            [by hypothesis given-the-factorization]
+                          @the-product-positive |
+                            rational_less_than(QZERO, rational.mul(e, k))
+                            [by rewrite the-factorization whole-positive]
+                          @the-sign-cases |
+                            rational_less_than(k, QZERO) or k = QZERO or
+                              rational_less_than(QZERO, k)
+                            [using specialize rational.lessThanTrichotomy(k, QZERO)]
+                          @zero-not-below-itself |
+                            not rational_less_than(QZERO, QZERO)
+                            [using specialize rational.lessThanIrreflexive(QZERO)]
+                          @order-is-asymmetric |
+                            forall y, z: Q;
+                              rational_less_than(y, z) -> (not rational_less_than(z, y))
+                            [using model(rational.RationalOrderedField) field_order.lessThanAsymmetric]
+                          @scaling |
+                            forall x, y, z: Q;
+                              rational_less_than(x, y) -> rational_less_than(QZERO, z) ->
+                              rational_less_than(rational.mul(x, z), rational.mul(y, z))
+                            [using model(rational.RationalOrderedField) field_order.lessThanMulPositiveRight]
+                          @conclusion-k-positive |
+                            rational_less_than(QZERO, k)
+                            case the-sign-cases {
+                              // `or` is LEFT-associative: this arm is (k<0 or k=0)
+                              @when-k-not-positive |
+                                assume rational_less_than(k, QZERO) or k = QZERO {
+                                  @k-not-positive |
+                                    rational_less_than(k, QZERO) or k = QZERO
+                                    [by hypothesis when-k-not-positive]
+                                  @conclusion-nonpositive |
+                                    rational_less_than(QZERO, k)
+                                    case k-not-positive {
+                                      @when-k-negative |
+                                        assume rational_less_than(k, QZERO) {
+                                          @k-negative |
+                                            rational_less_than(k, QZERO)
+                                            [by hypothesis when-k-negative]
+                                          // k·e < 0·e = 0, and e·k = k·e
+                                          @k-times-e-below |
+                                            rational_less_than(rational.mul(k, e),
+                                              rational.mul(QZERO, e))
+                                            [using specialize scaling(k, QZERO, e) k-negative e-positive]
+                                          @zero-times-e |
+                                            rational.mul(QZERO, e) = QZERO
+                                            [using specialize rational.mulZeroLeft(e)]
+                                          @k-times-e-negative |
+                                            rational_less_than(rational.mul(k, e), QZERO)
+                                            [by rewrite zero-times-e k-times-e-below]
+                                          @the-product-commutes |
+                                            rational.mul(k, e) =
+                                              rational.mul(e, k)
+                                            [using specialize rational.mulIsCommutative(k, e)]
+                                          @the-product-negative |
+                                            rational_less_than(rational.mul(e, k), QZERO)
+                                            [by rewrite the-product-commutes k-times-e-negative]
+                                          @not-both |
+                                            not rational_less_than(QZERO,
+                                              rational.mul(e, k))
+                                            [using specialize order-is-asymmetric(rational.mul(e, k), QZERO) the-product-negative]
+                                          @conclusion-vacuous-negative |
+                                            rational_less_than(QZERO, k)
+                                            [by ex_falso the-product-positive not-both]
+                                        }
+                                      @when-k-zero |
+                                        assume k = QZERO {
+                                          @k-zero |
+                                            k = QZERO
+                                            [by hypothesis when-k-zero]
+                                          @e-times-zero |
+                                            rational.mul(e, QZERO) = QZERO
+                                            [using specialize rational.mulZeroRight(e)]
+                                          @the-product-at-zero |
+                                            rational_less_than(QZERO,
+                                              rational.mul(e, QZERO))
+                                            [by rewrite k-zero the-product-positive]
+                                          @zero-below-zero |
+                                            rational_less_than(QZERO, QZERO)
+                                            [by rewrite e-times-zero the-product-at-zero]
+                                          @conclusion-vacuous-zero |
+                                            rational_less_than(QZERO, k)
+                                            [by ex_falso zero-below-zero zero-not-below-itself]
+                                        }
+                                    }
+                                }
+                              @when-k-positive |
+                                assume rational_less_than(QZERO, k) {
+                                  @k-positive |
+                                    rational_less_than(QZERO, k)
+                                    [by hypothesis when-k-positive]
+                                }
+                            }
+                        }
+                      @factorization-implies |
+                        whole = rational.mul(e, k) -> rational_less_than(QZERO, k)
+                        [by discharge given-the-factorization]
+                    }
+                  @whole-positive-implies |
+                    rational_less_than(QZERO, whole) ->
+                      whole = rational.mul(e, k) -> rational_less_than(QZERO, k)
+                    [by discharge given-whole-positive]
+                }
+              @e-positive-implies |
+                rational_less_than(QZERO, e) -> rational_less_than(QZERO, whole) ->
+                  whole = rational.mul(e, k) -> rational_less_than(QZERO, k)
+                [by discharge given-e-positive]
+            }
+          @discharge-whole |
+            forall w9: Q;
+              rational_less_than(QZERO, e) -> rational_less_than(QZERO, w9) ->
+              w9 = rational.mul(e, k) -> rational_less_than(QZERO, k)
+            [by generalize generalize-whole]
+        }
+      @discharge-k |
+        forall k9: Q; forall w9: Q;
+          rational_less_than(QZERO, e) -> rational_less_than(QZERO, w9) ->
+          w9 = rational.mul(e, k9) -> rational_less_than(QZERO, k9)
+        [by generalize generalize-k]
+    }
+  @conclusion |
+    forall e, k, whole: Q;
+      rational_less_than(QZERO, e) -> rational_less_than(QZERO, whole) ->
+      whole = rational.mul(e, k) -> rational_less_than(QZERO, k)
+    [by generalize generalize-e]
+qed
+
+// The descent step. If `e` is a non-unit integer dividing every quotient, then `d·e` is also a
+// common divisor of the entries, and ITS quotients have a strictly smaller first entry — so a
+// divisor minimizing the first quotient leaves no such `e`, i.e. the quotients are coprime.
+//
+// Strategy: e | q_0 gives q_0 = e·q0', and e exceeds ONE (positive non-unit), so
+// `aProperFactorShrinksTheQuotient` puts q0' < q_0 provided q_0 is positive.
+theorem aNonUnitDivisorShrinksTheFirstQuotient:
+  forall e, firstQuotient, smaller: Q;
+  isInteger(e) -> rational_less_than(QZERO, e) -> (not dividesIntegrally(e, QONE)) ->
+  rational_less_than(QZERO, firstQuotient) ->
+  firstQuotient = rational.mul(e, smaller) ->
+  rational_less_than(smaller, firstQuotient)
+proof
+  @generalize-e |
+    fix e: Q {
+      @generalize-first |
+        fix firstQuotient: Q {
+          @generalize-smaller |
+            fix smaller: Q {
+              @given-e-is-an-integer |
+                assume isInteger(e) {
+                  @e-is-an-integer |
+                    isInteger(e)
+                    [by hypothesis given-e-is-an-integer]
+                  @given-e-positive |
+                    assume rational_less_than(QZERO, e) {
+                      @e-positive |
+                        rational_less_than(QZERO, e)
+                        [by hypothesis given-e-positive]
+                      @given-e-not-a-unit |
+                        assume not dividesIntegrally(e, QONE) {
+                          @e-not-a-unit |
+                            not dividesIntegrally(e, QONE)
+                            [by hypothesis given-e-not-a-unit]
+                          // e != ONE, since ONE divides ONE
+                          @one-divides-one |
+                            dividesIntegrally(QONE, QONE)
+                            [by cite oneDividesItself]
+                          // e = ONE would make e divide ONE; rewrite rather than
+                          // `tautology`, which sees an equation and a predicate as
+                          // unrelated atoms.
+                          @given-e-is-one |
+                            assume e = QONE {
+                              @e-is-one |
+                                e = QONE
+                                [by hypothesis given-e-is-one]
+                              @e-divides-one |
+                                dividesIntegrally(e, QONE)
+                                [by rewrite e-is-one one-divides-one]
+                            }
+                          @e-is-not-one |
+                            not (e = QONE)
+                            [by contradiction given-e-is-one e-divides-one e-not-a-unit]
+                          @e-above-one |
+                            rational_less_than(QONE, e)
+                            [using specialize rational_integer_order.aPositiveNonUnitExceedsOne(e) e-is-an-integer e-positive e-is-not-one]
+                          @given-first-positive |
+                            assume rational_less_than(QZERO, firstQuotient) {
+                              @first-positive |
+                                rational_less_than(QZERO, firstQuotient)
+                                [by hypothesis given-first-positive]
+                              @given-the-factorization |
+                                assume firstQuotient = rational.mul(e, smaller) {
+                                  @the-factorization |
+                                    firstQuotient = rational.mul(e, smaller)
+                                    [by hypothesis given-the-factorization]
+                                  @smaller-is-positive |
+                                    rational_less_than(QZERO, smaller)
+                                    [using specialize theCofactorOfAPositiveIsPositive(e, smaller, firstQuotient) e-positive first-positive the-factorization]
+                                  @conclusion-strictly-smaller |
+                                    rational_less_than(smaller, firstQuotient)
+                                    [using specialize rational_integer_order.aProperFactorShrinksTheQuotient(firstQuotient, e, smaller) e-above-one smaller-is-positive the-factorization]
+                                }
+                              @factorization-implies |
+                                firstQuotient = rational.mul(e, smaller) ->
+                                  rational_less_than(smaller, firstQuotient)
+                                [by discharge given-the-factorization]
+                            }
+                          @first-positive-implies |
+                            rational_less_than(QZERO, firstQuotient) ->
+                              firstQuotient = rational.mul(e, smaller) ->
+                              rational_less_than(smaller, firstQuotient)
+                            [by discharge given-first-positive]
+                        }
+                      @not-a-unit-implies |
+                        (not dividesIntegrally(e, QONE)) ->
+                          rational_less_than(QZERO, firstQuotient) ->
+                          firstQuotient = rational.mul(e, smaller) ->
+                          rational_less_than(smaller, firstQuotient)
+                        [by discharge given-e-not-a-unit]
+                    }
+                  @positive-implies |
+                    rational_less_than(QZERO, e) ->
+                      (not dividesIntegrally(e, QONE)) ->
+                      rational_less_than(QZERO, firstQuotient) ->
+                      firstQuotient = rational.mul(e, smaller) ->
+                      rational_less_than(smaller, firstQuotient)
+                    [by discharge given-e-positive]
+                }
+              @integer-implies |
+                isInteger(e) -> rational_less_than(QZERO, e) ->
+                  (not dividesIntegrally(e, QONE)) ->
+                  rational_less_than(QZERO, firstQuotient) ->
+                  firstQuotient = rational.mul(e, smaller) ->
+                  rational_less_than(smaller, firstQuotient)
+                [by discharge given-e-is-an-integer]
+            }
+          @discharge-smaller |
+            forall sm9: Q;
+              isInteger(e) -> rational_less_than(QZERO, e) ->
+              (not dividesIntegrally(e, QONE)) ->
+              rational_less_than(QZERO, firstQuotient) ->
+              firstQuotient = rational.mul(e, sm9) ->
+              rational_less_than(sm9, firstQuotient)
+            [by generalize generalize-smaller]
+        }
+      @discharge-first |
+        forall f9: Q; forall sm9: Q;
+          isInteger(e) -> rational_less_than(QZERO, e) ->
+          (not dividesIntegrally(e, QONE)) ->
+          rational_less_than(QZERO, f9) ->
+          f9 = rational.mul(e, sm9) ->
+          rational_less_than(sm9, f9)
+        [by generalize generalize-first]
+    }
+  @conclusion |
+    forall e, firstQuotient, smaller: Q;
+      isInteger(e) -> rational_less_than(QZERO, e) ->
+      (not dividesIntegrally(e, QONE)) ->
+      rational_less_than(QZERO, firstQuotient) ->
+      firstQuotient = rational.mul(e, smaller) ->
+      rational_less_than(smaller, firstQuotient)
+    [by generalize generalize-e]
+qed
+
+// Coprimality from the DESCENT: if no non-unit integer divides every quotient, the quotients
+// are coprime. This is the bridge between the descent step above and the predicate steps 3
+// and 4 consume — and it is what a minimality argument discharges, since a non-unit common
+// divisor would shrink the first quotient.
+theorem noNonUnitDivisorMeansCoprime: forall q: QSeq; forall n: Nat;
+  (forall e: Q; isInteger(e) -> isACommonDivisorUpTo(e, q, n) ->
+  dividesIntegrally(e, QONE)) ->
+  theQuotientsAreCoprime(q, n)
+proof
+  @generalize-q |
+    fix q: QSeq {
+      @generalize-n |
+        fix n: Nat {
+          @given-no-non-unit |
+            assume forall e: Q; isInteger(e) ->
+              isACommonDivisorUpTo(e, q, n) ->
+              dividesIntegrally(e, QONE) {
+              @no-non-unit |
+                forall e: Q; isInteger(e) ->
+                  isACommonDivisorUpTo(e, q, n) ->
+                  dividesIntegrally(e, QONE)
+                [by hypothesis given-no-non-unit]
+              @the-coprime-meaning |
+                theQuotientsAreCoprime(q, n) iff
+                  (forall e: Q; isInteger(e) ->
+                  isACommonDivisorUpTo(e, q, n) ->
+                  dividesIntegrally(e, QONE))
+                [using specialize quotientsCoprimeMeaning(q, n)]
+              @conclusion-coprime |
+                theQuotientsAreCoprime(q, n)
+                [using tautology the-coprime-meaning no-non-unit]
+            }
+          @no-non-unit-implies-coprime |
+            (forall e: Q; isInteger(e) ->
+              isACommonDivisorUpTo(e, q, n) ->
+              dividesIntegrally(e, QONE)) ->
+              theQuotientsAreCoprime(q, n)
+            [by discharge given-no-non-unit]
+        }
+      @discharge-n |
+        forall n9: Nat;
+          (forall e: Q; isInteger(e) ->
+          isACommonDivisorUpTo(e, q, n9) ->
+          dividesIntegrally(e, QONE)) ->
+          theQuotientsAreCoprime(q, n9)
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall q: QSeq; forall n: Nat;
+      (forall e: Q; isInteger(e) ->
+      isACommonDivisorUpTo(e, q, n) ->
+      dividesIntegrally(e, QONE)) ->
+      theQuotientsAreCoprime(q, n)
+    [by generalize generalize-q]
+qed
+
+// And the composition steps 3 and 4 actually want: a MAXIMAL common divisor's quotients are
+// coprime in the named sense.
+theorem aMaximalDivisorGivesCoprimeQuotients:
+  forall d: Q; forall s, q: QSeq; forall n: Nat;
+  isAMaximalCommonDivisorUpTo(d, s, n) ->
+  aQuotientSequenceFor(d, s, q, n) ->
+  theQuotientsAreCoprime(q, n)
+proof
+  @generalize-d |
+    fix d: Q {
+      @generalize-s |
+        fix s: QSeq {
+          @generalize-q |
+            fix q: QSeq {
+              @generalize-n |
+                fix n: Nat {
+                  @given-d-is-maximal |
+                    assume isAMaximalCommonDivisorUpTo(d, s, n) {
+                      @d-is-maximal |
+                        isAMaximalCommonDivisorUpTo(d, s, n)
+                        [by hypothesis given-d-is-maximal]
+                      @given-the-quotients |
+                        assume aQuotientSequenceFor(d, s, q, n) {
+                          @the-quotients |
+                            aQuotientSequenceFor(d, s, q, n)
+                            [by hypothesis given-the-quotients]
+                          @the-quotient-meaning |
+                            aQuotientSequenceFor(d, s, q, n) iff
+                              (forall i: Nat; less_than(i, n) ->
+                              qat(s, i) = rational.mul(d, qat(q, i)))
+                            [using specialize quotientSequenceMeaning(d, s, q, n)]
+                          @the-factorization |
+                            forall i: Nat; less_than(i, n) ->
+                              qat(s, i) = rational.mul(d, qat(q, i))
+                            [using tautology the-quotient-meaning the-quotients]
+                          @each-divisor-is-a-unit |
+                            fix e: Q {
+                              @given-e-is-an-integer |
+                                assume isInteger(e) {
+                                  @e-is-an-integer |
+                                    isInteger(e)
+                                    [by hypothesis given-e-is-an-integer]
+                                  @given-e-divides |
+                                    assume isACommonDivisorUpTo(e, q, n) {
+                                      @e-divides |
+                                        isACommonDivisorUpTo(e, q, n)
+                                        [by hypothesis given-e-divides]
+                                      @conclusion-e-is-a-unit |
+                                        dividesIntegrally(e, QONE)
+                                        [using specialize theQuotientsByAMaximalDivisorAreRelativelyPrime(d, s, q, n, e) d-is-maximal the-factorization e-is-an-integer e-divides]
+                                    }
+                                  @divides-implies-unit |
+                                    isACommonDivisorUpTo(e, q, n) ->
+                                      dividesIntegrally(e, QONE)
+                                    [by discharge given-e-divides]
+                                }
+                              @integer-implies-unit |
+                                isInteger(e) ->
+                                  isACommonDivisorUpTo(e, q, n) ->
+                                  dividesIntegrally(e, QONE)
+                                [by discharge given-e-is-an-integer]
+                            }
+                          @all-divisors-are-units |
+                            forall e: Q; isInteger(e) ->
+                              isACommonDivisorUpTo(e, q, n) ->
+                              dividesIntegrally(e, QONE)
+                            [by generalize each-divisor-is-a-unit]
+                          @conclusion-coprime |
+                            theQuotientsAreCoprime(q, n)
+                            [using specialize noNonUnitDivisorMeansCoprime(q, n) all-divisors-are-units]
+                        }
+                      @quotients-imply-coprime |
+                        aQuotientSequenceFor(d, s, q, n) ->
+                          theQuotientsAreCoprime(q, n)
+                        [by discharge given-the-quotients]
+                    }
+                  @maximal-implies |
+                    isAMaximalCommonDivisorUpTo(d, s, n) ->
+                      aQuotientSequenceFor(d, s, q, n) ->
+                      theQuotientsAreCoprime(q, n)
+                    [by discharge given-d-is-maximal]
+                }
+              @discharge-n |
+                forall n9: Nat;
+                  isAMaximalCommonDivisorUpTo(d, s, n9) ->
+                  aQuotientSequenceFor(d, s, q, n9) ->
+                  theQuotientsAreCoprime(q, n9)
+                [by generalize generalize-n]
+            }
+          @discharge-q |
+            forall q9: QSeq; forall n9: Nat;
+              isAMaximalCommonDivisorUpTo(d, s, n9) ->
+              aQuotientSequenceFor(d, s, q9, n9) ->
+              theQuotientsAreCoprime(q9, n9)
+            [by generalize generalize-q]
+        }
+      @discharge-s |
+        forall s9: QSeq; forall q9: QSeq; forall n9: Nat;
+          isAMaximalCommonDivisorUpTo(d, s9, n9) ->
+          aQuotientSequenceFor(d, s9, q9, n9) ->
+          theQuotientsAreCoprime(q9, n9)
+        [by generalize generalize-s]
+    }
+  @conclusion |
+    forall d: Q; forall s, q: QSeq; forall n: Nat;
+      isAMaximalCommonDivisorUpTo(d, s, n) ->
+      aQuotientSequenceFor(d, s, q, n) ->
+      theQuotientsAreCoprime(q, n)
+    [by generalize generalize-d]
 qed
