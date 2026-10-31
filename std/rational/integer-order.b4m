@@ -958,3 +958,126 @@ model IntegerOrderOnTheCut {
 // composition is not expressible today. That is a real structural limit, not a missing
 // mapping, and it is what now blocks AATA 17.13's d = 1 branch, 17.14 and 17.15. See
 // `drafts/guard-relativization-bug/`.
+
+// -- A POSITIVE INTEGER IS AT LEAST ONE ---------------------------------------------------
+// The sharpest consequence of discreteness, and the one Gauss's d = 1 branch turns on. Proved
+// DIRECTLY on the cut from ℚ's own order plus `aNonzeroNaturalIsASuccessor`, deliberately NOT
+// by transferring ℤ's corresponding fact: that route runs through `integer.nonnegCases`, which
+// is itself a model transfer, and 2b4m re-checks an inner transfer rather than composing the
+// two models (see the note at `IntegerOrderOnTheCut`).
+
+// Strategy: a positive integer is natural and nonzero, so it is succ(d) for a natural d; and
+// succ(d) = d + 1 with d ≥ 0 gives 1 ≤ succ(d), i.e. ONE = e or ONE < e.
+theorem aPositiveIntegerIsAtLeastOne: forall e: Q;
+  isInteger(e) -> less_than(ZERO, e) -> (e = ONE or less_than(ONE, e))
+proof
+  @generalize-e |
+    fix e: Q {
+      @given-e-is-an-integer |
+        assume isInteger(e) {
+          @e-is-an-integer |
+            isInteger(e)
+            [by hypothesis given-e-is-an-integer]
+          @given-e-is-positive |
+            assume less_than(ZERO, e) {
+              @e-is-positive |
+                less_than(ZERO, e)
+                [by hypothesis given-e-is-positive]
+              @e-is-natural |
+                isNatural(e)
+                [using specialize aPositiveIntegerIsNatural(e) e-is-an-integer e-is-positive]
+              @e-is-nonzero |
+                not (e = ZERO)
+                [using specialize aPositiveIsNonzero(e) e-is-positive]
+              @e-is-a-successor |
+                exists d: Q; isNatural(d) and e = succ(d)
+                [using specialize aNonzeroNaturalIsASuccessor(e) e-is-natural e-is-nonzero]
+              @the-predecessor |
+                unpack d: Q from e-is-a-successor {
+                  @with-predecessor-d |
+                    isNatural(d) and e = succ(d)
+                    [by hypothesis the-predecessor]
+                  @d-is-natural |
+                    isNatural(d)
+                    [by and_lhs with-predecessor-d]
+                  @e-is-succ-d |
+                    e = succ(d)
+                    [by and_rhs with-predecessor-d]
+                  @succ-is-plus-one |
+                    succ(d) = add(d, ONE)
+                    [using specialize rational.succDefinition(d)]
+                  @d-is-zero-or-positive |
+                    d = ZERO or less_than(ZERO, d)
+                    [using specialize aNaturalIsZeroOrPositive(d) d-is-natural]
+                  @conclusion-at-least-one |
+                    e = ONE or less_than(ONE, e)
+                    case d-is-zero-or-positive {
+                      // d = 0: e = succ(0) = 1
+                      @when-d-is-zero |
+                        assume d = ZERO {
+                          @d-is-zero |
+                            d = ZERO
+                            [by hypothesis when-d-is-zero]
+                          @one-is-succ-zero |
+                            ONE = succ(ZERO)
+                            [by cite rational.oneIsSuccZero]
+                          @succ-d-is-succ-d |
+                            succ(d) = succ(d)
+                            [by reflexivity]
+                          @succ-d-is-succ-zero |
+                            succ(d) = succ(ZERO)
+                            [by rewrite d-is-zero succ-d-is-succ-d]
+                          @succ-d-is-one |
+                            succ(d) = ONE
+                            [by rewrite one-is-succ-zero succ-d-is-succ-zero]
+                          @e-is-one |
+                            e = ONE
+                            [using simplify e-is-succ-d succ-d-is-one]
+                          @conclusion-equals-one |
+                            e = ONE or less_than(ONE, e)
+                            [by either_left e-is-one]
+                        }
+                      // d > 0: 1 = 0 + 1 < d + 1 = succ(d) = e
+                      @when-d-is-positive |
+                        assume less_than(ZERO, d) {
+                          @d-is-positive |
+                            less_than(ZERO, d)
+                            [by hypothesis when-d-is-positive]
+                          @shifting-d-up |
+                            less_than(add(ZERO, ONE), add(d, ONE))
+                            [using specialize rational.lessThanAddRight(ZERO, d, ONE) d-is-positive]
+                          @zero-plus-one |
+                            add(ZERO, ONE) = ONE
+                            [using specialize rational.addZeroLeft(ONE)]
+                          @one-below-the-sum |
+                            less_than(ONE, add(d, ONE))
+                            [by rewrite zero-plus-one shifting-d-up]
+                          @one-below-succ-d |
+                            less_than(ONE, succ(d))
+                            [by rewrite succ-is-plus-one one-below-the-sum]
+                          @one-below-e |
+                            less_than(ONE, e)
+                            [by rewrite e-is-succ-d one-below-succ-d]
+                          @conclusion-above-one |
+                            e = ONE or less_than(ONE, e)
+                            [by either_right one-below-e]
+                        }
+                    }
+                }
+              @conclusion-the-bound |
+                e = ONE or less_than(ONE, e)
+                [by unpacked the-predecessor]
+            }
+          @positive-implies-at-least-one |
+            less_than(ZERO, e) -> (e = ONE or less_than(ONE, e))
+            [by discharge given-e-is-positive]
+        }
+      @integer-implies-the-bound |
+        isInteger(e) -> less_than(ZERO, e) -> (e = ONE or less_than(ONE, e))
+        [by discharge given-e-is-an-integer]
+    }
+  @conclusion |
+    forall e: Q;
+      isInteger(e) -> less_than(ZERO, e) -> (e = ONE or less_than(ONE, e))
+    [by generalize generalize-e]
+qed
