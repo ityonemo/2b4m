@@ -18,6 +18,7 @@ import fieldpoly <<< "std/field/polynomial.b4m"
 import irreducible <<< "std/field/irreducible.b4m"
 import polyunits <<< "std/field/poly-units.b4m"
 import peano <<< "std/peano.b4m"
+import field <<< "std/field.b4m"
 import monic <<< "std/field/monic.b4m"
 import polyassoc <<< "std/field/polynomial-associativity.b4m"
 
@@ -32,12 +33,181 @@ pred less_than = peano.less_than
 pred isIrreducible = irreducible.isIrreducible
 
 // -- the ideal ----------------------------------------------------------------------------
-// Judson's ideal of F[x]: closed under difference, absorbing on both sides.
+// Judson's ideal of F[x]: it contains zero, is closed under difference, and absorbs
+// multiplication. The zero clause is what makes it NONEMPTY — an ideal is a subring, so an
+// empty predicate is not one, and difference-closure alone cannot supply a first member.
 pred inIdeal(f: Poly)
+axiom idealHasZero: inIdeal(ZEROP)
 axiom idealClosedUnderSub: forall a, b: Poly;
   inIdeal(a) -> inIdeal(b) -> inIdeal(addP(a, negP(b)))
 axiom idealAbsorbsOnTheRight: forall a, f: Poly;
   inIdeal(a) -> inIdeal(mulP(a, f))
+
+// Double negation on polynomials: coefficientwise, from the field's own negNeg.
+theorem polyNegNeg: forall p: Poly; negP(negP(p)) = p
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-i |
+        fix i: peano.Nat {
+          @the-outer-coefficient |
+            fieldpoly.coeff(negP(negP(p)), i) =
+              fieldpoly.negF(fieldpoly.coeff(negP(p), i))
+            [using specialize fieldpoly.negPolyCoeff(negP(p), i)]
+          @the-inner-coefficient |
+            fieldpoly.coeff(negP(p), i) = fieldpoly.negF(fieldpoly.coeff(p, i))
+            [using specialize fieldpoly.negPolyCoeff(p, i)]
+          @the-doubled-coefficient |
+            fieldpoly.coeff(negP(negP(p)), i) =
+              fieldpoly.negF(fieldpoly.negF(fieldpoly.coeff(p, i)))
+            [using simplify the-outer-coefficient the-inner-coefficient]
+          @the-field-double-negation |
+            fieldpoly.negF(fieldpoly.negF(fieldpoly.coeff(p, i))) =
+              fieldpoly.coeff(p, i)
+            [using specialize field.negNeg(fieldpoly.coeff(p, i))]
+          @conclusion-the-coefficients-agree |
+            fieldpoly.coeff(negP(negP(p)), i) = fieldpoly.coeff(p, i)
+            [using chain the-doubled-coefficient the-field-double-negation]
+        }
+      @they-agree-everywhere |
+        forall i: peano.Nat;
+          fieldpoly.coeff(negP(negP(p)), i) = fieldpoly.coeff(p, i)
+        [by generalize generalize-i]
+      @conclusion-the-negations-cancel |
+        negP(negP(p)) = p
+        [using specialize fieldpoly.polyExtensionality(negP(negP(p)), p) they-agree-everywhere]
+    }
+  @conclusion |
+    forall p: Poly; negP(negP(p)) = p
+    [by generalize generalize-p]
+qed
+
+// The three remaining closure facts a ring-level consumer expects, derived rather than
+// assumed: negation (zero minus the member), addition (difference with a negation), and
+// left absorption (right absorption plus commutativity of mulP).
+theorem idealClosedUnderNeg: forall a: Poly;
+  inIdeal(a) -> inIdeal(negP(a))
+proof
+  @generalize-a |
+    fix a: Poly {
+      @given-a-in |
+        assume inIdeal(a) {
+          @a-in |
+            inIdeal(a)
+            [by hypothesis given-a-in]
+          @zero-in |
+            inIdeal(ZEROP)
+            [by cite idealHasZero]
+          @the-difference-is-in |
+            inIdeal(addP(ZEROP, negP(a)))
+            [using specialize idealClosedUnderSub(ZEROP, a) zero-in a-in]
+          @zero-minus-a |
+            addP(ZEROP, negP(a)) = negP(a)
+            [using specialize fieldpoly.polyAddZeroLeft(negP(a))]
+          @conclusion-the-negation-is-in |
+            inIdeal(negP(a))
+            [by rewrite zero-minus-a the-difference-is-in]
+        }
+      @a-in-implies |
+        inIdeal(a) -> inIdeal(negP(a))
+        [by discharge given-a-in]
+    }
+  @conclusion |
+    forall a: Poly; inIdeal(a) -> inIdeal(negP(a))
+    [by generalize generalize-a]
+qed
+
+theorem idealAbsorbsOnTheLeft: forall a, f: Poly;
+  inIdeal(a) -> inIdeal(mulP(f, a))
+proof
+  @generalize-a |
+    fix a: Poly {
+      @generalize-f |
+        fix f: Poly {
+          @given-a-in |
+            assume inIdeal(a) {
+              @a-in |
+                inIdeal(a)
+                [by hypothesis given-a-in]
+              @the-right-multiple-is-in |
+                inIdeal(mulP(a, f))
+                [using specialize idealAbsorbsOnTheRight(a, f) a-in]
+              @the-product-commutes |
+                mulP(a, f) = mulP(f, a)
+                [using specialize fieldpoly.polyMulIsCommutative(a, f)]
+              @conclusion-the-left-multiple-is-in |
+                inIdeal(mulP(f, a))
+                [by rewrite the-product-commutes the-right-multiple-is-in]
+            }
+          @a-in-implies |
+            inIdeal(a) -> inIdeal(mulP(f, a))
+            [by discharge given-a-in]
+        }
+      @discharge-f |
+        forall f9: Poly; inIdeal(a) -> inIdeal(mulP(f9, a))
+        [by generalize generalize-f]
+    }
+  @conclusion |
+    forall a, f: Poly; inIdeal(a) -> inIdeal(mulP(f, a))
+    [by generalize generalize-a]
+qed
+
+theorem idealClosedUnderAdd: forall a, b: Poly;
+  inIdeal(a) -> inIdeal(b) -> inIdeal(addP(a, b))
+proof
+  @generalize-a |
+    fix a: Poly {
+      @generalize-b |
+        fix b: Poly {
+          @given-a-in |
+            assume inIdeal(a) {
+              @a-in |
+                inIdeal(a)
+                [by hypothesis given-a-in]
+              @given-b-in |
+                assume inIdeal(b) {
+                  @b-in |
+                    inIdeal(b)
+                    [by hypothesis given-b-in]
+                  // -b is in the ideal, and so is a - (-b); that difference IS a + b,
+                  // since adding the negation of a negation adds back
+                  @the-negation-is-in |
+                    inIdeal(negP(b))
+                    [using specialize idealClosedUnderNeg(b) b-in]
+                  @the-difference-is-in |
+                    inIdeal(addP(a, negP(negP(b))))
+                    [using specialize idealClosedUnderSub(a, negP(b)) a-in the-negation-is-in]
+                  @the-double-negation |
+                    negP(negP(b)) = b
+                    [using specialize polyNegNeg(b)]
+                  @the-difference-is-the-sum |
+                    addP(a, negP(negP(b))) = addP(a, b)
+                    [by rewrite the-double-negation reflexivity-of-the-sum]
+                  @reflexivity-of-the-sum |
+                    addP(a, negP(negP(b))) = addP(a, negP(negP(b)))
+                    [by reflexivity]
+                  @conclusion-the-sum-is-in |
+                    inIdeal(addP(a, b))
+                    [by rewrite the-difference-is-the-sum the-difference-is-in]
+                }
+              @b-in-implies |
+                inIdeal(b) -> inIdeal(addP(a, b))
+                [by discharge given-b-in]
+            }
+          @a-in-implies |
+            inIdeal(a) -> inIdeal(b) -> inIdeal(addP(a, b))
+            [by discharge given-a-in]
+        }
+      @discharge-b |
+        forall b9: Poly;
+          inIdeal(a) -> inIdeal(b9) -> inIdeal(addP(a, b9))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Poly;
+      inIdeal(a) -> inIdeal(b) -> inIdeal(addP(a, b))
+    [by generalize generalize-a]
+qed
 
 // -- Theorem 17.16's two steps ------------------------------------------------------------
 
