@@ -2496,3 +2496,340 @@ proof
       dividesIntegrally(e, QONE)
     [by generalize generalize-d]
 qed
+
+// The single-value core of `theScaledDivisorDividesTheScaledEntries`: if e | v and w = g·v,
+// then g·e | w. Used by both the sequence version (step 3) and the pair version (step 4).
+theorem theScaledDivisorDividesAScaledValue: forall g, e, v, w: Q;
+  dividesIntegrally(e, v) -> w = rational.mul(g, v) ->
+  dividesIntegrally(rational.mul(g, e), w)
+proof
+  @generalize-g |
+    fix g: Q {
+      @generalize-e |
+        fix e: Q {
+          @generalize-v |
+            fix v: Q {
+              @generalize-w |
+                fix w: Q {
+                  @given-e-divides-v |
+                    assume dividesIntegrally(e, v) {
+                      @e-divides-v |
+                        dividesIntegrally(e, v)
+                        [by hypothesis given-e-divides-v]
+                      @the-divides-meaning |
+                        dividesIntegrally(e, v) iff
+                          (exists k: Q; isInteger(k) and
+                          v = rational.mul(e, k))
+                        [using specialize dividesIntegrallyMeaning(e, v)]
+                      @a-quotient-exists |
+                        exists k: Q; isInteger(k) and v = rational.mul(e, k)
+                        [using tautology the-divides-meaning e-divides-v]
+                      @given-w-is-scaled |
+                        assume w = rational.mul(g, v) {
+                          @w-is-scaled |
+                            w = rational.mul(g, v)
+                            [by hypothesis given-w-is-scaled]
+                          @with-the-quotient |
+                            unpack m: Q from a-quotient-exists {
+                              @with-quotient-m |
+                                isInteger(m) and v = rational.mul(e, m)
+                                [by hypothesis with-the-quotient]
+                              @m-is-an-integer |
+                                isInteger(m)
+                                [by and_lhs with-quotient-m]
+                              @v-is-e-times-m |
+                                v = rational.mul(e, m)
+                                [by and_rhs with-quotient-m]
+                              // w = g·(e·m) = (g·e)·m
+                              @w-expanded |
+                                w = rational.mul(g, rational.mul(e, m))
+                                [by rewrite v-is-e-times-m w-is-scaled]
+                              @reassociate |
+                                rational.mul(rational.mul(g, e), m) =
+                                  rational.mul(g, rational.mul(e, m))
+                                [using specialize rational.mulIsAssociative(g, e, m)]
+                              @w-regrouped |
+                                w = rational.mul(rational.mul(g, e), m)
+                                [by rewrite reassociate w-expanded]
+                              @the-witness-works |
+                                isInteger(m) and
+                                  w = rational.mul(rational.mul(g, e), m)
+                                [by both m-is-an-integer w-regrouped]
+                              @the-scaled-quotient-exists |
+                                exists k: Q; isInteger(k) and
+                                  w = rational.mul(rational.mul(g, e), k)
+                                [by witness(m) the-witness-works]
+                              @the-scaled-meaning |
+                                dividesIntegrally(rational.mul(g, e), w) iff
+                                  (exists k: Q; isInteger(k) and
+                                  w = rational.mul(rational.mul(g, e), k))
+                                [using specialize dividesIntegrallyMeaning(rational.mul(g, e), w)]
+                              @conclusion-scaled-divides |
+                                dividesIntegrally(rational.mul(g, e), w)
+                                [using tautology the-scaled-meaning the-scaled-quotient-exists]
+                            }
+                          @conclusion-divides |
+                            dividesIntegrally(rational.mul(g, e), w)
+                            [by unpacked with-the-quotient]
+                        }
+                      @scaled-implies |
+                        w = rational.mul(g, v) ->
+                          dividesIntegrally(rational.mul(g, e), w)
+                        [by discharge given-w-is-scaled]
+                    }
+                  @divides-implies |
+                    dividesIntegrally(e, v) -> w = rational.mul(g, v) ->
+                      dividesIntegrally(rational.mul(g, e), w)
+                    [by discharge given-e-divides-v]
+                }
+              @discharge-w |
+                forall w9: Q;
+                  dividesIntegrally(e, v) -> w9 = rational.mul(g, v) ->
+                  dividesIntegrally(rational.mul(g, e), w9)
+                [by generalize generalize-w]
+            }
+          @discharge-v |
+            forall v9: Q; forall w9: Q;
+              dividesIntegrally(e, v9) -> w9 = rational.mul(g, v9) ->
+              dividesIntegrally(rational.mul(g, e), w9)
+            [by generalize generalize-v]
+        }
+      @discharge-e |
+        forall e9: Q; forall v9: Q; forall w9: Q;
+          dividesIntegrally(e9, v9) -> w9 = rational.mul(g, v9) ->
+          dividesIntegrally(rational.mul(g, e9), w9)
+        [by generalize generalize-e]
+    }
+  @conclusion |
+    forall g, e, v, w: Q;
+      dividesIntegrally(e, v) -> w = rational.mul(g, v) ->
+      dividesIntegrally(rational.mul(g, e), w)
+    [by generalize generalize-g]
+qed
+
+// -- LEMMA 17.12, STEP 4: REDUCING A FRACTION TO LOWEST TERMS -----------------------------
+// "Reducing d/(c_0 ⋯ c_n) to its lowest terms, we can write p(x) = r/s(a_0 + … + a_n x^n),
+// where gcd(r, s) = 1."
+//
+// Same shape as step 3, on a PAIR rather than a sequence: divide numerator and denominator by
+// a maximal common divisor and the quotients share no factor beyond a unit. The argument is
+// identical — a common divisor of the quotients, scaled by the divisor, divides the original
+// pair, hence divides the maximal one, hence is a unit.
+
+// `isAMaximalCommonDivisorOfThePair(g, a, b)` — g is a nonzero integer dividing both, and
+// every integer common divisor divides g.
+pred isAMaximalCommonDivisorOfThePair(g: Q, a: Q, b: Q)
+axiom pairDivisorMeaning: forall g, a, b: Q;
+  isAMaximalCommonDivisorOfThePair(g, a, b) iff
+  (isInteger(g) and (not (g = rational.ZERO)) and
+  dividesIntegrally(g, a) and dividesIntegrally(g, b) and
+  (forall e: Q; isInteger(e) -> dividesIntegrally(e, a) ->
+  dividesIntegrally(e, b) -> dividesIntegrally(e, g)))
+
+// The quotients of a pair by their maximal common divisor are COPRIME.
+// Strategy: e divides both quotients, so g·e divides both originals (original = g·quotient),
+// so g·e | g by maximality, so e | ONE by `cancellingTheDivisorLeavesAUnit`.
+theorem theReducedFractionIsInLowestTerms: forall g, a, b, r, s, e: Q;
+  isAMaximalCommonDivisorOfThePair(g, a, b) ->
+  a = rational.mul(g, r) -> b = rational.mul(g, s) ->
+  isInteger(e) -> dividesIntegrally(e, r) -> dividesIntegrally(e, s) ->
+  dividesIntegrally(e, QONE)
+proof
+  @generalize-g |
+    fix g: Q {
+      @generalize-a |
+        fix a: Q {
+          @generalize-b |
+            fix b: Q {
+              @generalize-r |
+                fix r: Q {
+                  @generalize-s |
+                    fix s: Q {
+                      @generalize-e |
+                        fix e: Q {
+                          @given-g-is-maximal |
+                            assume isAMaximalCommonDivisorOfThePair(g, a, b) {
+                              @g-is-maximal |
+                                isAMaximalCommonDivisorOfThePair(g, a, b)
+                                [by hypothesis given-g-is-maximal]
+                              @the-pair-meaning |
+                                isAMaximalCommonDivisorOfThePair(g, a, b) iff
+                                  (isInteger(g) and (not (g = rational.ZERO)) and
+                                  dividesIntegrally(g, a) and
+                                  dividesIntegrally(g, b) and
+                                  (forall e2: Q; isInteger(e2) ->
+                                  dividesIntegrally(e2, a) ->
+                                  dividesIntegrally(e2, b) ->
+                                  dividesIntegrally(e2, g)))
+                                [using specialize pairDivisorMeaning(g, a, b)]
+                              @the-pair-parts |
+                                isInteger(g) and (not (g = rational.ZERO)) and
+                                  dividesIntegrally(g, a) and
+                                  dividesIntegrally(g, b) and
+                                  (forall e2: Q; isInteger(e2) ->
+                                  dividesIntegrally(e2, a) ->
+                                  dividesIntegrally(e2, b) ->
+                                  dividesIntegrally(e2, g))
+                                [using tautology the-pair-meaning g-is-maximal]
+                              @g-is-an-integer |
+                                isInteger(g)
+                                [using tautology the-pair-parts]
+                              @g-is-nonzero |
+                                not (g = rational.ZERO)
+                                [using tautology the-pair-parts]
+                              @pair-maximality |
+                                forall e2: Q; isInteger(e2) ->
+                                  dividesIntegrally(e2, a) ->
+                                  dividesIntegrally(e2, b) ->
+                                  dividesIntegrally(e2, g)
+                                [using tautology the-pair-parts]
+                              @given-a-factors |
+                                assume a = rational.mul(g, r) {
+                                  @a-factors |
+                                    a = rational.mul(g, r)
+                                    [by hypothesis given-a-factors]
+                                  @given-b-factors |
+                                    assume b = rational.mul(g, s) {
+                                      @b-factors |
+                                        b = rational.mul(g, s)
+                                        [by hypothesis given-b-factors]
+                                      @given-e-is-an-integer |
+                                        assume isInteger(e) {
+                                          @e-is-an-integer |
+                                            isInteger(e)
+                                            [by hypothesis given-e-is-an-integer]
+                                          @given-e-divides-r |
+                                            assume dividesIntegrally(e, r) {
+                                              @e-divides-r |
+                                                dividesIntegrally(e, r)
+                                                [by hypothesis given-e-divides-r]
+                                              @given-e-divides-s |
+                                                assume dividesIntegrally(e, s) {
+                                                  @e-divides-s |
+                                                    dividesIntegrally(e, s)
+                                                    [by hypothesis given-e-divides-s]
+                                                  @g-times-e-is-an-integer |
+                                                    isInteger(rational.mul(g, e))
+                                                    [using specialize rational.isIntegerMul(g, e) g-is-an-integer e-is-an-integer]
+                                                  // g·e divides a and b
+                                                  @g-times-e-divides-a |
+                                                    dividesIntegrally(rational.mul(g, e), a)
+                                                    [using specialize theScaledDivisorDividesAScaledValue(g, e, r, a) e-divides-r a-factors]
+                                                  @g-times-e-divides-b |
+                                                    dividesIntegrally(rational.mul(g, e), b)
+                                                    [using specialize theScaledDivisorDividesAScaledValue(g, e, s, b) e-divides-s b-factors]
+                                                  @g-times-e-divides-g |
+                                                    dividesIntegrally(rational.mul(g, e), g)
+                                                    [using specialize pair-maximality(rational.mul(g, e)) g-times-e-is-an-integer g-times-e-divides-a g-times-e-divides-b]
+                                                  @conclusion-e-is-a-unit |
+                                                    dividesIntegrally(e, QONE)
+                                                    [using specialize cancellingTheDivisorLeavesAUnit(g, e) g-is-nonzero g-times-e-divides-g]
+                                                }
+                                              @divides-s-implies |
+                                                dividesIntegrally(e, s) ->
+                                                  dividesIntegrally(e, QONE)
+                                                [by discharge given-e-divides-s]
+                                            }
+                                          @divides-r-implies |
+                                            dividesIntegrally(e, r) ->
+                                              dividesIntegrally(e, s) ->
+                                              dividesIntegrally(e, QONE)
+                                            [by discharge given-e-divides-r]
+                                        }
+                                      @integer-implies |
+                                        isInteger(e) ->
+                                          dividesIntegrally(e, r) ->
+                                          dividesIntegrally(e, s) ->
+                                          dividesIntegrally(e, QONE)
+                                        [by discharge given-e-is-an-integer]
+                                    }
+                                  @b-factors-implies |
+                                    b = rational.mul(g, s) ->
+                                      isInteger(e) ->
+                                      dividesIntegrally(e, r) ->
+                                      dividesIntegrally(e, s) ->
+                                      dividesIntegrally(e, QONE)
+                                    [by discharge given-b-factors]
+                                }
+                              @a-factors-implies |
+                                a = rational.mul(g, r) ->
+                                  b = rational.mul(g, s) ->
+                                  isInteger(e) ->
+                                  dividesIntegrally(e, r) ->
+                                  dividesIntegrally(e, s) ->
+                                  dividesIntegrally(e, QONE)
+                                [by discharge given-a-factors]
+                            }
+                          @maximal-implies |
+                            isAMaximalCommonDivisorOfThePair(g, a, b) ->
+                              a = rational.mul(g, r) ->
+                              b = rational.mul(g, s) ->
+                              isInteger(e) ->
+                              dividesIntegrally(e, r) ->
+                              dividesIntegrally(e, s) ->
+                              dividesIntegrally(e, QONE)
+                            [by discharge given-g-is-maximal]
+                        }
+                      @discharge-e |
+                        forall e9: Q;
+                          isAMaximalCommonDivisorOfThePair(g, a, b) ->
+                          a = rational.mul(g, r) ->
+                          b = rational.mul(g, s) ->
+                          isInteger(e9) ->
+                          dividesIntegrally(e9, r) ->
+                          dividesIntegrally(e9, s) ->
+                          dividesIntegrally(e9, QONE)
+                        [by generalize generalize-e]
+                    }
+                  @discharge-s |
+                    forall s9: Q; forall e9: Q;
+                      isAMaximalCommonDivisorOfThePair(g, a, b) ->
+                      a = rational.mul(g, r) ->
+                      b = rational.mul(g, s9) ->
+                      isInteger(e9) ->
+                      dividesIntegrally(e9, r) ->
+                      dividesIntegrally(e9, s9) ->
+                      dividesIntegrally(e9, QONE)
+                    [by generalize generalize-s]
+                }
+              @discharge-r |
+                forall r9: Q; forall s9: Q; forall e9: Q;
+                  isAMaximalCommonDivisorOfThePair(g, a, b) ->
+                  a = rational.mul(g, r9) ->
+                  b = rational.mul(g, s9) ->
+                  isInteger(e9) ->
+                  dividesIntegrally(e9, r9) ->
+                  dividesIntegrally(e9, s9) ->
+                  dividesIntegrally(e9, QONE)
+                [by generalize generalize-r]
+            }
+          @discharge-b |
+            forall b9: Q; forall r9: Q; forall s9: Q; forall e9: Q;
+              isAMaximalCommonDivisorOfThePair(g, a, b9) ->
+              a = rational.mul(g, r9) ->
+              b9 = rational.mul(g, s9) ->
+              isInteger(e9) ->
+              dividesIntegrally(e9, r9) ->
+              dividesIntegrally(e9, s9) ->
+              dividesIntegrally(e9, QONE)
+            [by generalize generalize-b]
+        }
+      @discharge-a |
+        forall a9: Q; forall b9: Q; forall r9: Q; forall s9: Q; forall e9: Q;
+          isAMaximalCommonDivisorOfThePair(g, a9, b9) ->
+          a9 = rational.mul(g, r9) ->
+          b9 = rational.mul(g, s9) ->
+          isInteger(e9) ->
+          dividesIntegrally(e9, r9) ->
+          dividesIntegrally(e9, s9) ->
+          dividesIntegrally(e9, QONE)
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall g, a, b, r, s, e: Q;
+      isAMaximalCommonDivisorOfThePair(g, a, b) ->
+      a = rational.mul(g, r) -> b = rational.mul(g, s) ->
+      isInteger(e) -> dividesIntegrally(e, r) -> dividesIntegrally(e, s) ->
+      dividesIntegrally(e, QONE)
+    [by generalize generalize-g]
+qed
