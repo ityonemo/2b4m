@@ -1,0 +1,171 @@
+// std/primes/divisibility-parity.b4m — WHEN A PRIME FAILS TO DIVIDE.
+//
+// Two facts about non-divisibility that the usual divisibility corpus states only
+// positively, and that Eisenstein's Criterion (AATA §17.3) runs on:
+//
+//   * a prime dividing neither factor does not divide the product — Euclid's lemma in
+//     contrapositive form;
+//   * a multiple plus a non-multiple is a non-multiple — which is what carries "every term
+//     of this sum except one is divisible by p" to the sum itself.
+//
+// Eisenstein needs both together: his a_m = b_0 c_m + b_1 c_{m-1} + ⋯ + b_m c_0 has every
+// summand past the first divisible by p (their c factors are below the least index p misses),
+// while b_0 c_m is not, so the sum is not.
+import integer <<< "std/integer.b4m"
+import int_divides <<< "std/integer/divides.b4m"
+import primes <<< "std/primes.b4m"
+
+sort Int = integer.Int
+func add = integer.add
+func mul = integer.mul
+pred divides = int_divides.divides
+pred is_prime = primes.is_prime
+
+// p prime, dividing neither factor, does not divide the product — Euclid's lemma in
+// contrapositive form, which is how Eisenstein uses it.
+theorem aPrimeDividesNeitherFactorNorTheProduct: forall b, c, p: Int;
+  is_prime(p) -> (not divides(p, b)) -> (not divides(p, c)) ->
+  (not divides(p, mul(b, c)))
+proof
+  @generalize-b |
+    fix b: Int {
+      @generalize-c |
+        fix c: Int {
+          @generalize-p |
+            fix p: Int {
+              @given-p-prime |
+                assume is_prime(p) {
+                  @p-prime |
+                    is_prime(p)
+                    [by hypothesis given-p-prime]
+                  @given-p-misses-b |
+                    assume not divides(p, b) {
+                      @p-misses-b |
+                        not divides(p, b)
+                        [by hypothesis given-p-misses-b]
+                      @given-p-misses-c |
+                        assume not divides(p, c) {
+                          @p-misses-c |
+                            not divides(p, c)
+                            [by hypothesis given-p-misses-c]
+                          // Euclid: p | bc implies p | b or p | c
+                          @euclid-at-b-c |
+                            divides(p, mul(b, c)) ->
+                              (divides(p, b) or divides(p, c))
+                            [using specialize primes.euclidsLemma(b, c, p) p-prime]
+                          @conclusion-p-misses-the-product |
+                            not divides(p, mul(b, c))
+                            [using tautology euclid-at-b-c p-misses-b p-misses-c]
+                        }
+                      @misses-c-implies |
+                        (not divides(p, c)) -> (not divides(p, mul(b, c)))
+                        [by discharge given-p-misses-c]
+                    }
+                  @misses-b-implies |
+                    (not divides(p, b)) -> (not divides(p, c)) ->
+                      (not divides(p, mul(b, c)))
+                    [by discharge given-p-misses-b]
+                }
+              @prime-implies |
+                is_prime(p) -> (not divides(p, b)) -> (not divides(p, c)) ->
+                  (not divides(p, mul(b, c)))
+                [by discharge given-p-prime]
+            }
+          @discharge-p |
+            forall p9: Int;
+              is_prime(p9) -> (not divides(p9, b)) -> (not divides(p9, c)) ->
+              (not divides(p9, mul(b, c)))
+            [by generalize generalize-p]
+        }
+      @discharge-c |
+        forall c9: Int; forall p9: Int;
+          is_prime(p9) -> (not divides(p9, b)) -> (not divides(p9, c9)) ->
+          (not divides(p9, mul(b, c9)))
+        [by generalize generalize-c]
+    }
+  @conclusion |
+    forall b, c, p: Int;
+      is_prime(p) -> (not divides(p, b)) -> (not divides(p, c)) ->
+      (not divides(p, mul(b, c)))
+    [by generalize generalize-b]
+qed
+
+// A multiple plus a non-multiple is a non-multiple: the shape that carries the
+// "every term except b_0 c_m is divisible by p" reasoning to the sum.
+theorem aMultiplePlusANonMultipleIsNotAMultiple: forall x, y, p: Int;
+  divides(p, x) -> (not divides(p, y)) -> (not divides(p, add(x, y)))
+proof
+  @generalize-x |
+    fix x: Int {
+      @generalize-y |
+        fix y: Int {
+          @generalize-p |
+            fix p: Int {
+              @given-p-divides-x |
+                assume divides(p, x) {
+                  @p-divides-x |
+                    divides(p, x)
+                    [by hypothesis given-p-divides-x]
+                  @given-p-misses-y |
+                    assume not divides(p, y) {
+                      @p-misses-y |
+                        not divides(p, y)
+                        [by hypothesis given-p-misses-y]
+                      @given-p-divides-the-sum |
+                        assume divides(p, add(x, y)) {
+                          @p-divides-the-sum |
+                            divides(p, add(x, y))
+                            [by hypothesis given-p-divides-the-sum]
+                          // then p divides (x+y) - x = y
+                          @dividing-a-negation |
+                            divides(p, x) iff divides(p, integer.neg(x))
+                            [using specialize int_divides.dividesNeg(p, x)]
+                          @p-divides-the-negation |
+                            divides(p, integer.neg(x))
+                            [using tautology dividing-a-negation p-divides-x]
+                          @p-divides-the-difference |
+                            divides(p, add(add(x, y), integer.neg(x)))
+                            [using specialize int_divides.dividesAdd(p, add(x, y), integer.neg(x)) p-divides-the-sum p-divides-the-negation]
+                          @the-difference-is-y |
+                            add(add(x, y), integer.neg(x)) = y
+                            [using polynomial(integer)]
+                          @p-divides-y |
+                            divides(p, y)
+                            [by rewrite the-difference-is-y p-divides-the-difference]
+                          @conclusion-absurd |
+                            not divides(p, add(x, y))
+                            [by ex_falso p-divides-y p-misses-y]
+                        }
+                      @the-sum-is-absurd |
+                        divides(p, add(x, y)) -> (not divides(p, add(x, y)))
+                        [by discharge given-p-divides-the-sum]
+                      @conclusion-p-misses-the-sum |
+                        not divides(p, add(x, y))
+                        [using tautology the-sum-is-absurd]
+                    }
+                  @misses-y-implies |
+                    (not divides(p, y)) -> (not divides(p, add(x, y)))
+                    [by discharge given-p-misses-y]
+                }
+              @divides-x-implies |
+                divides(p, x) -> (not divides(p, y)) ->
+                  (not divides(p, add(x, y)))
+                [by discharge given-p-divides-x]
+            }
+          @discharge-p |
+            forall p9: Int;
+              divides(p9, x) -> (not divides(p9, y)) ->
+              (not divides(p9, add(x, y)))
+            [by generalize generalize-p]
+        }
+      @discharge-y |
+        forall y9: Int; forall p9: Int;
+          divides(p9, x) -> (not divides(p9, y9)) ->
+          (not divides(p9, add(x, y9)))
+        [by generalize generalize-y]
+    }
+  @conclusion |
+    forall x, y, p: Int;
+      divides(p, x) -> (not divides(p, y)) -> (not divides(p, add(x, y)))
+    [by generalize generalize-x]
+qed
