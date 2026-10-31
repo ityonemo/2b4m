@@ -1,0 +1,236 @@
+// std/integer/polynomial.b4m — ℤ[x], AND REDUCTION OF COEFFICIENTS MODULO N.
+//
+// Gauss's Lemma (AATA §17.3) factors a monic ℤ[x] polynomial through ℚ[x], then — when the
+// denominator does not come out to 1 — reduces the coefficients modulo a prime and derives a
+// contradiction in ℤ_p[x]. This file is that ℤ[x], and the reduction map into
+// `std/integer/mod-n-polynomial.b4m`'s ℤ_p[x].
+//
+// ℤ[x] is its own sort with `std/ring/polynomial.b4m`'s corpus transferred onto it — the
+// fourth such layer in std, after R[x], F[x], ℚ[x] and ℤ_p[x]. Each restates the same
+// coefficient equations over a different coefficient ring, which is the duplication a
+// generic polynomial theory would remove; see `drafts/algebra-layering/README.md`.
+//
+// NOTE the transfer must map `std/ring.b4m`'s OWN layer as well, because
+// `std/ring/polynomial.b4m` aliases `ring.Ring` rather than treating it as a parameter. The
+// error for omitting it surfaces inside `std/ring.b4m`, not here.
+import ring <<< "std/ring.b4m"
+import ring_poly <<< "std/ring/polynomial.b4m"
+import ring_leading <<< "std/ring/polynomial-leading.b4m"
+import integer <<< "std/integer.b4m"
+import int_divides <<< "std/integer/divides.b4m"
+import mod_n <<< "std/integer/mod-n.b4m"
+import mod_n_domain <<< "std/integer/mod-n-domain.b4m"
+import mod_n_poly <<< "std/integer/mod-n-polynomial.b4m"
+import peano <<< "std/peano.b4m"
+import subtraction <<< "std/peano/subtraction.b4m"
+
+sort Int = integer.Int
+sort ZnPoly = mod_n_poly.ZnPoly
+sort Nat = peano.Nat
+const N = mod_n.N
+const ZERO = peano.ZERO
+const IZERO = integer.ZERO
+func add = peano.add
+pred divides = int_divides.divides
+
+// -- ℤ[x] ----------------------------------------------------------------------------------
+sort IntPoly
+func icoeff(p: IntPoly, i: Nat) => Int
+const IZEROP: IntPoly
+const IONEP: IntPoly
+func iaddP(p: IntPoly, q: IntPoly) => IntPoly
+func inegP(p: IntPoly) => IntPoly
+func imulP(p: IntPoly, q: IntPoly) => IntPoly
+func iconvolution(p: IntPoly, q: IntPoly, i: Nat, k: Nat) => Int
+func idegree(p: IntPoly) => Nat
+pred idegreeAtMost(p: IntPoly, n: Nat)
+
+axiom iPolyExtensionality: forall p, q: IntPoly;
+  (forall i: Nat; icoeff(p, i) = icoeff(q, i)) -> p = q
+axiom iDegreeAtMostMeaning: forall p: IntPoly; forall n: Nat;
+  idegreeAtMost(p, n) iff
+  (forall i: Nat; peano.less_than(n, i) -> icoeff(p, i) = IZERO)
+axiom iZeroPolyCoeff: forall i: Nat; icoeff(IZEROP, i) = IZERO
+axiom iOnePolyCoeffZero: icoeff(IONEP, ZERO) = integer.ONE
+axiom iOnePolyCoeffHigher: forall i: Nat;
+  icoeff(IONEP, peano.succ(i)) = IZERO
+axiom iAddPolyCoeff: forall p, q: IntPoly; forall i: Nat;
+  icoeff(iaddP(p, q), i) = integer.add(icoeff(p, i), icoeff(q, i))
+axiom iNegPolyCoeff: forall p: IntPoly; forall i: Nat;
+  icoeff(inegP(p), i) = integer.neg(icoeff(p, i))
+axiom iConvolutionZero: forall p, q: IntPoly; forall i: Nat;
+  iconvolution(p, q, i, ZERO) =
+  integer.mul(icoeff(p, ZERO), icoeff(q, i))
+axiom iConvolutionSucc: forall p, q: IntPoly; forall i, k: Nat;
+  iconvolution(p, q, i, peano.succ(k)) =
+  integer.add(iconvolution(p, q, i, k),
+  integer.mul(icoeff(p, peano.succ(k)),
+  icoeff(q, subtraction.sub(i, peano.succ(k)))))
+axiom iMulPolyCoeff: forall p, q: IntPoly; forall i: Nat;
+  icoeff(imulP(p, q), i) = iconvolution(p, q, i, i)
+axiom iDegreeIsALeadingIndex: forall p: IntPoly;
+  (not (p = IZEROP)) -> (not (icoeff(p, idegree(p)) = IZERO))
+axiom iDegreeBoundsTheCoefficients: forall p: IntPoly;
+  (not (p = IZEROP)) -> idegreeAtMost(p, idegree(p))
+
+model IntegerPolynomials {
+  ring.Ring: Int
+  ring.ZERO: IZERO
+  ring.ONE: integer.ONE
+  ring.add: integer.add
+  ring.mul: integer.mul
+  ring.neg: integer.neg
+  ring.addIsAssociative <- integer.addIsAssociative
+  ring.addZeroLeft <- integer.addZeroLeft
+  ring.addNegLeft <- integer.addNegLeft
+  ring.addIsCommutative <- integer.addIsCommutative
+  ring.mulIsAssociative <- integer.mulIsAssociative
+  ring.mulAddDistribLeft <- integer.mulAddDistribLeft
+  ring.mulAddDistribRight <- integer.mulAddDistribRight
+  ring_poly.R: Int
+  ring_poly.zeroR: IZERO
+  ring_poly.oneR: integer.ONE
+  ring_poly.addR: integer.add
+  ring_poly.mulR: integer.mul
+  ring_poly.negR: integer.neg
+  ring_poly.mulOneLeftR <- integer.mulOneLeft
+  ring_poly.mulIsCommutativeR <- integer.mulIsCommutative
+  ring_poly.Nat: Nat
+  ring_poly.ZERO: ZERO
+  ring_poly.succ: peano.succ
+  ring_poly.addN: add
+  ring_poly.Poly: IntPoly
+  ring_poly.coeff: icoeff
+  ring_poly.ZEROP: IZEROP
+  ring_poly.ONEP: IONEP
+  ring_poly.addP: iaddP
+  ring_poly.negP: inegP
+  ring_poly.mulP: imulP
+  ring_poly.convolution: iconvolution
+  ring_poly.degree: idegree
+  ring_poly.degreeAtMost: idegreeAtMost
+  ring_poly.polyExtensionality <- iPolyExtensionality
+  ring_poly.degreeAtMostMeaning <- iDegreeAtMostMeaning
+  ring_poly.zeroPolyCoeff <- iZeroPolyCoeff
+  ring_poly.onePolyCoeffZero <- iOnePolyCoeffZero
+  ring_poly.onePolyCoeffHigher <- iOnePolyCoeffHigher
+  ring_poly.addPolyCoeff <- iAddPolyCoeff
+  ring_poly.negPolyCoeff <- iNegPolyCoeff
+  ring_poly.convolutionZero <- iConvolutionZero
+  ring_poly.convolutionSucc <- iConvolutionSucc
+  ring_poly.mulPolyCoeff <- iMulPolyCoeff
+  ring_poly.degreeIsALeadingIndex <- iDegreeIsALeadingIndex
+  ring_poly.degreeBoundsTheCoefficients <- iDegreeBoundsTheCoefficients
+}
+
+// -- reduction of coefficients modulo N ----------------------------------------------------
+// `reduce(f)` applies `cls` to every coefficient. Judson's "let α₁'(x) be the polynomial in
+// ℤ_p[x] obtained by reducing the coefficients of α₁(x) modulo p".
+func reduce(p: IntPoly) => ZnPoly
+axiom reduceCoefficientwise: forall p: IntPoly; forall i: Nat;
+  mod_n_poly.zcoeff(reduce(p), i) = mod_n.cls(icoeff(p, i))
+
+// A polynomial with a coefficient the modulus misses reduces to something nonzero — which is
+// how Judson's "there exists a coefficient a_i such that p ∤ a_i" gives α₁'(x) ≠ 0.
+theorem aSurvivingCoefficientSurvivesReduction: forall p: IntPoly; forall i: Nat;
+  (not divides(N, icoeff(p, i))) -> (not (reduce(p) = mod_n_poly.ZZEROP))
+proof
+  @generalize-p |
+    fix p: IntPoly {
+      @generalize-i |
+        fix i: Nat {
+          @given-the-modulus-misses |
+            assume not divides(N, icoeff(p, i)) {
+              @the-modulus-misses |
+                not divides(N, icoeff(p, i))
+                [by hypothesis given-the-modulus-misses]
+              // the class of that coefficient survives
+              @vanishing-means-divisible |
+                mod_n.cls(icoeff(p, i)) = mod_n.ZERO iff
+                  divides(N, icoeff(p, i))
+                [using specialize mod_n_domain.aClassIsZeroWhenTheModulusDivides(icoeff(p, i))]
+              @the-class-survives |
+                not (mod_n.cls(icoeff(p, i)) = mod_n.ZERO)
+                [using tautology vanishing-means-divisible the-modulus-misses]
+              @the-reduced-coefficient |
+                mod_n_poly.zcoeff(reduce(p), i) = mod_n.cls(icoeff(p, i))
+                [using specialize reduceCoefficientwise(p, i)]
+              @the-reduced-coefficient-survives |
+                not (mod_n_poly.zcoeff(reduce(p), i) = mod_n.ZERO)
+                [by rewrite the-reduced-coefficient the-class-survives]
+              @conclusion-the-reduction-is-nonzero |
+                not (reduce(p) = mod_n_poly.ZZEROP)
+                [using specialize mod_n_poly.aSurvivingCoefficientMakesItNonzero(reduce(p), i) the-reduced-coefficient-survives]
+            }
+          @misses-implies-nonzero |
+            (not divides(N, icoeff(p, i))) ->
+              (not (reduce(p) = mod_n_poly.ZZEROP))
+            [by discharge given-the-modulus-misses]
+        }
+      @discharge-i |
+        forall i9: Nat;
+          (not divides(N, icoeff(p, i9))) ->
+          (not (reduce(p) = mod_n_poly.ZZEROP))
+        [by generalize generalize-i]
+    }
+  @conclusion |
+    forall p: IntPoly; forall i: Nat;
+      (not divides(N, icoeff(p, i))) ->
+      (not (reduce(p) = mod_n_poly.ZZEROP))
+    [by generalize generalize-p]
+qed
+
+// -- the transferred corpus ------------------------------------------------------------------
+// R[x]'s results at ℤ, which is what the model buys and what exercises the coefficient
+// equations above. The first three are the ring laws Gauss's algebra runs on; the last two
+// are the degree facts its contradiction needs.
+
+theorem integerPolyAddIsCommutative: forall p, q: IntPoly;
+  iaddP(p, q) = iaddP(q, p)
+proof
+  @conclusion |
+    forall p, q: IntPoly; iaddP(p, q) = iaddP(q, p)
+    [using model(IntegerPolynomials) ring_poly.polyAddIsCommutative]
+qed
+
+// NOT transferred: `polyMulIsCommutative`. R[x] proves it through `tailConvolution` and
+// `segment` — two further layers of its own — so carrying it here would mean restating both.
+// Gauss does not need it, and a generic polynomial theory would make it free; see
+// `drafts/algebra-layering/README.md`.
+
+theorem integerPolyMulOneLeft: forall p: IntPoly;
+  imulP(IONEP, p) = p
+proof
+  @conclusion |
+    forall p: IntPoly; imulP(IONEP, p) = p
+    [using model(IntegerPolynomials) ring_poly.polyMulOneLeft]
+qed
+
+// the leading-product step at ℤ — what Gauss's leading-coefficient reasoning uses
+theorem theIntegerProductsLeadingCoefficient: forall p, q: IntPoly; forall m, n: Nat;
+  idegreeAtMost(p, m) -> idegreeAtMost(q, n) ->
+  icoeff(imulP(p, q), add(m, n)) =
+  integer.mul(icoeff(p, m), icoeff(q, n))
+proof
+  @conclusion |
+    forall p, q: IntPoly; forall m, n: Nat;
+      idegreeAtMost(p, m) -> idegreeAtMost(q, n) ->
+      icoeff(imulP(p, q), add(m, n)) =
+      integer.mul(icoeff(p, m), icoeff(q, n))
+    [using model(IntegerPolynomials) ring_leading.theProductsLeadingCoefficient]
+qed
+
+// and the degree bound
+theorem theIntegerProductVanishesAboveTheDegreeSum: forall p, q: IntPoly;
+  forall m, n, i: Nat;
+  idegreeAtMost(p, m) -> idegreeAtMost(q, n) ->
+  peano.less_than(add(m, n), i) ->
+  forall k: Nat; iconvolution(p, q, i, k) = IZERO
+proof
+  @conclusion |
+    forall p, q: IntPoly; forall m, n, i: Nat;
+      idegreeAtMost(p, m) -> idegreeAtMost(q, n) ->
+      peano.less_than(add(m, n), i) ->
+      forall k: Nat; iconvolution(p, q, i, k) = IZERO
+    [using model(IntegerPolynomials) ring_leading.theProductVanishesAboveTheDegreeSum]
+qed
