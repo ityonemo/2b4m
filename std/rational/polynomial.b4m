@@ -341,13 +341,28 @@ qed
 // So the lemma is STATED here, honestly, with its existence left open. What is proved is
 // everything the statement rests on: the decomposition's parts are all expressible, and
 // `aScaledIntegerPolynomialIsRational` below confirms the shape composes.
+// `r` and `s` are relatively prime — Judson's "and $r$ and $s$ are relatively prime", read
+// the same way `coefficientsAreRelativelyPrimeUpTo` reads a family: every integer dividing
+// BOTH divides ONE.
+//
+// CORRECTION (2026-10-31): this conjunct previously read
+// `coefficientsAreRelativelyPrimeUpTo(qaddP(qmonomial(r, 0), qmonomial(s, 0)), n)`, which is
+// WRONG. Both monomials sit at index ZERO, so that polynomial's only nonzero coefficient is
+// `r + s` — the condition was about the single number `r + s`, not about `r` and `s` being
+// coprime. It type-checked, and would have gone on doing so indefinitely.
+define arePairwiseRelativelyPrime(a, b) =
+  forall e: Q;
+  isInteger(e) ->
+  dividesOnTheCut(e, a) -> dividesOnTheCut(e, b) ->
+  dividesOnTheCut(e, rational.ONE)
+
 pred isTheIntegerDecomposition(p: QPoly, q: QPoly, r: Q, s: Q, n: Nat)
 axiom integerDecompositionMeaning: forall p, q: QPoly; forall r, s: Q; forall n: Nat;
   isTheIntegerDecomposition(p, q, r, s, n) iff
   (isInteger(r) and isInteger(s) and s != ZERO and
   hasIntegerCoefficientsUpTo(q, n) and
   coefficientsAreRelativelyPrimeUpTo(q, n) and
-  coefficientsAreRelativelyPrimeUpTo(qaddP(qmonomial(r, NAT_ZERO), qmonomial(s, NAT_ZERO)), n) and
+  arePairwiseRelativelyPrime(r, s) and
   p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), NAT_ZERO), q))
 
 // The decomposition's shape composes: given one, p really is the scaled polynomial, and that
@@ -377,7 +392,7 @@ proof
                               (isInteger(r) and isInteger(s) and s != ZERO and
                               hasIntegerCoefficientsUpTo(q, n) and
                               coefficientsAreRelativelyPrimeUpTo(q, n) and
-                              coefficientsAreRelativelyPrimeUpTo(qaddP(qmonomial(r, NAT_ZERO), qmonomial(s, NAT_ZERO)), n) and
+                              arePairwiseRelativelyPrime(r, s) and
                               p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), NAT_ZERO), q))
                             [using specialize integerDecompositionMeaning(p, q, r, s, n)]
                           @conclusion-p-is-the-scaling |
