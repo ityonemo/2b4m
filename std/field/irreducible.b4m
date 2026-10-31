@@ -1,0 +1,476 @@
+// std/field/irreducible.b4m — IRREDUCIBLE POLYNOMIALS OVER A FIELD.
+//
+// Judson's §17.3 definition: a nonconstant p(x) is irreducible when it is not a product of
+// two polynomials of strictly smaller degree. The theorems here are the degree bookkeeping
+// his Theorem 17.17 runs on — chiefly that an irreducible polynomial's factorisation always
+// has a CONSTANT factor, since two factors of positive degree would each sit strictly below
+// their sum, which is exactly deg p.
+import fieldpoly <<< "std/field/polynomial.b4m"
+import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
+
+sort Poly = fieldpoly.Poly
+const ZEROP = fieldpoly.ZEROP
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+func add = peano.add
+func degree = fieldpoly.degree
+func mulP = fieldpoly.mulP
+pred less_than = peano.less_than
+
+// Judson's definition: nonconstant, and not a product of two strictly lower-degree factors.
+pred isIrreducible(p: Poly)
+axiom irreducibilityIsNoLowerDegreeFactorisation: forall p: Poly;
+  isIrreducible(p) iff
+  (less_than(ZERO, degree(p)) and
+  (forall g, h: Poly;
+  p = mulP(g, h) ->
+  (not (less_than(degree(g), degree(p)) and
+  less_than(degree(h), degree(p))))))
+
+// Exhibiting a lower-degree factorisation refutes irreducibility.
+theorem aFactorisationRefutesIrreducibility: forall p, g, h: Poly;
+  isIrreducible(p) -> p = mulP(g, h) ->
+  (not (less_than(degree(g), degree(p)) and less_than(degree(h), degree(p))))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-g |
+        fix g: Poly {
+          @generalize-h |
+            fix h: Poly {
+              @given-irreducible |
+                assume isIrreducible(p) {
+                  @irreducible |
+                    isIrreducible(p)
+                    [by hypothesis given-irreducible]
+                  @the-definition |
+                    isIrreducible(p) iff
+                      (less_than(ZERO, degree(p)) and
+                      (forall g2, h2: Poly;
+                      p = mulP(g2, h2) ->
+                      (not (less_than(degree(g2), degree(p)) and
+                      less_than(degree(h2), degree(p))))))
+                    [using specialize irreducibilityIsNoLowerDegreeFactorisation(p)]
+                  @the-two-conjuncts |
+                    less_than(ZERO, degree(p)) and
+                      (forall g2, h2: Poly;
+                      p = mulP(g2, h2) ->
+                      (not (less_than(degree(g2), degree(p)) and
+                      less_than(degree(h2), degree(p)))))
+                    [using tautology the-definition irreducible]
+                  @the-no-factorisation-clause |
+                    forall g2, h2: Poly;
+                      p = mulP(g2, h2) ->
+                      (not (less_than(degree(g2), degree(p)) and
+                      less_than(degree(h2), degree(p))))
+                    [by and_rhs the-two-conjuncts]
+                  @conclusion-at-these-factors |
+                    p = mulP(g, h) ->
+                      (not (less_than(degree(g), degree(p)) and
+                      less_than(degree(h), degree(p))))
+                    [using specialize the-no-factorisation-clause(g, h)]
+                }
+              @irreducible-implies-no-factorisation |
+                isIrreducible(p) -> p = mulP(g, h) ->
+                  (not (less_than(degree(g), degree(p)) and
+                  less_than(degree(h), degree(p))))
+                [by discharge given-irreducible]
+            }
+          @discharge-h |
+            forall h9: Poly;
+              isIrreducible(p) -> p = mulP(g, h9) ->
+              (not (less_than(degree(g), degree(p)) and
+              less_than(degree(h9), degree(p))))
+            [by generalize generalize-h]
+        }
+      @discharge-g |
+        forall g9, h9: Poly;
+          isIrreducible(p) -> p = mulP(g9, h9) ->
+          (not (less_than(degree(g9), degree(p)) and
+          less_than(degree(h9), degree(p))))
+        [by generalize generalize-g]
+    }
+  @conclusion |
+    forall p, g, h: Poly;
+      isIrreducible(p) -> p = mulP(g, h) ->
+      (not (less_than(degree(g), degree(p)) and less_than(degree(h), degree(p))))
+    [by generalize generalize-p]
+qed
+
+// An irreducible polynomial is nonconstant: the definition's first conjunct.
+theorem anIrreduciblePolynomialIsNonconstant: forall p: Poly;
+  isIrreducible(p) -> less_than(ZERO, degree(p))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @given-irreducible |
+        assume isIrreducible(p) {
+          @irreducible |
+            isIrreducible(p)
+            [by hypothesis given-irreducible]
+          @the-definition |
+            isIrreducible(p) iff
+              (less_than(ZERO, degree(p)) and
+              (forall g2, h2: Poly;
+              p = mulP(g2, h2) ->
+              (not (less_than(degree(g2), degree(p)) and
+              less_than(degree(h2), degree(p))))))
+            [using specialize irreducibilityIsNoLowerDegreeFactorisation(p)]
+          @conclusion-nonconstant |
+            less_than(ZERO, degree(p))
+            [using tautology the-definition irreducible]
+        }
+      @irreducible-implies-nonconstant |
+        isIrreducible(p) -> less_than(ZERO, degree(p))
+        [by discharge given-irreducible]
+    }
+  @conclusion |
+    forall p: Poly; isIrreducible(p) -> less_than(ZERO, degree(p))
+    [by generalize generalize-p]
+qed
+
+// A positive natural is not ZERO: nothing is strictly below itself.
+theorem aPositiveNatIsNotZero: forall b: Nat;
+  less_than(ZERO, b) -> (not (b = ZERO))
+proof
+  @generalize-b |
+    fix b: Nat {
+      @given-b-positive |
+        assume less_than(ZERO, b) {
+          @b-positive |
+            less_than(ZERO, b)
+            [by hypothesis given-b-positive]
+          @nothing-is-below-itself |
+            not less_than(ZERO, ZERO)
+            [using specialize peano_order.lessThanIrreflexive(ZERO)]
+          @given-b-is-zero |
+            assume b = ZERO {
+              @b-is-zero |
+                b = ZERO
+                [by hypothesis given-b-is-zero]
+              @zero-is-below-zero |
+                less_than(ZERO, ZERO)
+                [by rewrite b-is-zero b-positive]
+              @conclusion-absurd |
+                not (b = ZERO)
+                [by ex_falso zero-is-below-zero nothing-is-below-itself]
+            }
+          @zero-is-absurd |
+            (b = ZERO) -> (not (b = ZERO))
+            [by discharge given-b-is-zero]
+          @conclusion-b-is-not-zero |
+            not (b = ZERO)
+            [using tautology zero-is-absurd]
+        }
+      @positive-implies-nonzero |
+        less_than(ZERO, b) -> (not (b = ZERO))
+        [by discharge given-b-positive]
+    }
+  @conclusion |
+    forall b: Nat; less_than(ZERO, b) -> (not (b = ZERO))
+    [by generalize generalize-b]
+qed
+
+// Adding a positive amount strictly grows: b positive is succ(d) for some d, and
+// lessThanIntro reads a + succ(d) = a + b as a < a + b.
+theorem aPositiveAddendGrows: forall a, b: Nat;
+  less_than(ZERO, b) -> less_than(a, add(a, b))
+proof
+  @generalize-a |
+    fix a: Nat {
+      @generalize-b |
+        fix b: Nat {
+          @given-b-positive |
+            assume less_than(ZERO, b) {
+              @b-positive |
+                less_than(ZERO, b)
+                [by hypothesis given-b-positive]
+              // b is a successor
+              @b-splits |
+                b = ZERO or (exists m: Nat; b = peano.succ(m))
+                [using specialize peano.zeroOrSucc(b)]
+              @b-is-not-zero |
+                not (b = ZERO)
+                [using specialize aPositiveNatIsNotZero(b) b-positive]
+              @b-is-a-successor |
+                exists m: Nat; b = peano.succ(m)
+                [using tautology b-splits b-is-not-zero]
+              @with-the-predecessor-m |
+                unpack m: Nat from b-is-a-successor {
+                  @b-is-succ-m |
+                    b = peano.succ(m)
+                    [by hypothesis with-the-predecessor-m]
+                  @the-sum-reflexively |
+                    add(a, peano.succ(m)) = add(a, peano.succ(m))
+                    [by reflexivity]
+                  @the-sum-at-b |
+                    add(a, b) = add(a, peano.succ(m))
+                    [by rewrite b-is-succ-m the-sum-reflexively]
+                  @the-gap-witnesses-the-order |
+                    add(a, peano.succ(m)) = add(a, b) -> less_than(a, add(a, b))
+                    [using specialize peano_order.lessThanIntro(a, m, add(a, b))]
+                  @the-sum-at-b-flipped |
+                    add(a, peano.succ(m)) = add(a, b)
+                    [by symmetry the-sum-at-b]
+                  @conclusion-a-grows |
+                    less_than(a, add(a, b))
+                    [using tautology the-gap-witnesses-the-order the-sum-at-b-flipped]
+                }
+              @conclusion-from-the-successor |
+                less_than(a, add(a, b))
+                [by unpacked with-the-predecessor-m]
+            }
+          @b-positive-implies |
+            less_than(ZERO, b) -> less_than(a, add(a, b))
+            [by discharge given-b-positive]
+        }
+      @discharge-b |
+        forall b9: Nat; less_than(ZERO, b9) -> less_than(a, add(a, b9))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Nat; less_than(ZERO, b) -> less_than(a, add(a, b))
+    [by generalize generalize-a]
+qed
+
+// Both summands positive puts each strictly below the sum.
+theorem apositiveSummandSitsBelowTheSum: forall a, b: Nat;
+  less_than(ZERO, a) -> less_than(ZERO, b) ->
+  (less_than(a, add(a, b)) and less_than(b, add(a, b)))
+proof
+  @generalize-a |
+    fix a: Nat {
+      @generalize-b |
+        fix b: Nat {
+          @given-a-positive |
+            assume less_than(ZERO, a) {
+              @a-positive |
+                less_than(ZERO, a)
+                [by hypothesis given-a-positive]
+              @given-b-positive |
+                assume less_than(ZERO, b) {
+                  @b-positive |
+                    less_than(ZERO, b)
+                    [by hypothesis given-b-positive]
+                  // a < a + b because b is positive
+                  @a-below-the-sum |
+                    less_than(a, add(a, b))
+                    [using specialize aPositiveAddendGrows(a, b) b-positive]
+                  // and b < a + b, by commuting
+                  @b-below-the-commuted-sum |
+                    less_than(b, add(b, a))
+                    [using specialize aPositiveAddendGrows(b, a) a-positive]
+                  @commuting-the-sum |
+                    add(b, a) = add(a, b)
+                    [using specialize peano.addIsCommutative(b, a)]
+                  @b-below-the-sum |
+                    less_than(b, add(a, b))
+                    [by rewrite commuting-the-sum b-below-the-commuted-sum]
+                  @conclusion-both-sit-below |
+                    less_than(a, add(a, b)) and less_than(b, add(a, b))
+                    [by both a-below-the-sum b-below-the-sum]
+                }
+              @b-positive-implies |
+                less_than(ZERO, b) ->
+                  (less_than(a, add(a, b)) and less_than(b, add(a, b)))
+                [by discharge given-b-positive]
+            }
+          @a-positive-implies |
+            less_than(ZERO, a) -> less_than(ZERO, b) ->
+              (less_than(a, add(a, b)) and less_than(b, add(a, b)))
+            [by discharge given-a-positive]
+        }
+      @discharge-b |
+        forall b9: Nat;
+          less_than(ZERO, a) -> less_than(ZERO, b9) ->
+          (less_than(a, add(a, b9)) and less_than(b9, add(a, b9)))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Nat;
+      less_than(ZERO, a) -> less_than(ZERO, b) ->
+      (less_than(a, add(a, b)) and less_than(b, add(a, b)))
+    [by generalize generalize-a]
+qed
+
+// A natural is ZERO or positive — the split the constant-factor argument needs.
+theorem aNatIsZeroOrPositive: forall b: Nat;
+  b = ZERO or less_than(ZERO, b)
+proof
+  @generalize-b |
+    fix b: Nat {
+      @b-splits |
+        b = ZERO or (exists m: Nat; b = peano.succ(m))
+        [using specialize peano.zeroOrSucc(b)]
+      @when-b-is-zero |
+        assume b = ZERO {
+          @b-is-zero |
+            b = ZERO
+            [by hypothesis when-b-is-zero]
+          @conclusion-zero-case |
+            b = ZERO or less_than(ZERO, b)
+            [by either_left b-is-zero]
+        }
+      @when-b-is-a-successor |
+        assume exists m: Nat; b = peano.succ(m) {
+          @b-is-a-successor |
+            exists m: Nat; b = peano.succ(m)
+            [by hypothesis when-b-is-a-successor]
+          @with-the-predecessor-m |
+            unpack m: Nat from b-is-a-successor {
+              @b-is-succ-m |
+                b = peano.succ(m)
+                [by hypothesis with-the-predecessor-m]
+              @zero-is-below-a-successor |
+                less_than(ZERO, peano.succ(m))
+                [using specialize peano_order.zeroBelowSucc(m)]
+              @b-is-positive |
+                less_than(ZERO, b)
+                [by rewrite b-is-succ-m zero-is-below-a-successor]
+              @conclusion-positive-case |
+                b = ZERO or less_than(ZERO, b)
+                [by either_right b-is-positive]
+            }
+          @conclusion-from-the-successor |
+            b = ZERO or less_than(ZERO, b)
+            [by unpacked with-the-predecessor-m]
+        }
+      @conclusion-either-way |
+        b = ZERO or less_than(ZERO, b)
+        [by common_conclusion b-splits when-b-is-zero when-b-is-a-successor]
+    }
+  @conclusion |
+    forall b: Nat; b = ZERO or less_than(ZERO, b)
+    [by generalize generalize-b]
+qed
+// An irreducible polynomial's factorisation has a constant factor: were both factors of
+// positive degree, each would sit strictly below deg p = deg f + deg g, which
+// irreducibility forbids.
+theorem anIrreducibleFactorisationHasAConstantFactor: forall p, f, g: Poly;
+  (not (f = ZEROP)) -> (not (g = ZEROP)) ->
+  isIrreducible(p) ->
+  p = mulP(f, g) ->
+  (degree(f) = ZERO or degree(g) = ZERO)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-f |
+        fix f: Poly {
+          @generalize-g |
+            fix g: Poly {
+              @given-f-nonzero |
+                assume not (f = ZEROP) {
+                  @f-nonzero |
+                    not (f = ZEROP)
+                    [by hypothesis given-f-nonzero]
+                  @given-g-nonzero |
+                    assume not (g = ZEROP) {
+                      @g-nonzero |
+                        not (g = ZEROP)
+                        [by hypothesis given-g-nonzero]
+                      @given-p-irreducible |
+                        assume isIrreducible(p) {
+                          @p-irreducible |
+                            isIrreducible(p)
+                            [by hypothesis given-p-irreducible]
+                          @given-the-factorisation |
+                            assume p = mulP(f, g) {
+                              @the-factorisation |
+                                p = mulP(f, g)
+                                [by hypothesis given-the-factorisation]
+                              // irreducibility forbids both factors sitting below deg p
+                              @no-lower-degree-factorisation |
+                                not (less_than(degree(f), degree(p)) and
+                                  less_than(degree(g), degree(p)))
+                                [using specialize aFactorisationRefutesIrreducibility(p, f, g) p-irreducible the-factorisation]
+                              // the degrees add
+                              @the-product-degree |
+                                degree(mulP(f, g)) =
+                                  peano.add(degree(f), degree(g))
+                                [using specialize fieldpoly.degreeOfAProduct(f, g) f-nonzero g-nonzero]
+                              @p-degree-is-the-sum |
+                                degree(p) = peano.add(degree(f), degree(g))
+                                [by rewrite the-factorisation the-product-degree]
+                              // so if both were positive, both would sit below the sum
+                              @given-both-positive |
+                                assume less_than(ZERO, degree(f)) and
+                                  less_than(ZERO, degree(g)) {
+                                  @both-positive |
+                                    less_than(ZERO, degree(f)) and
+                                      less_than(ZERO, degree(g))
+                                    [by hypothesis given-both-positive]
+                                  @f-positive |
+                                    less_than(ZERO, degree(f))
+                                    [by and_lhs both-positive]
+                                  @g-positive |
+                                    less_than(ZERO, degree(g))
+                                    [by and_rhs both-positive]
+                                  @both-sit-below-the-sum |
+                                    less_than(degree(f),
+                                      peano.add(degree(f), degree(g))) and
+                                      less_than(degree(g),
+                                      peano.add(degree(f), degree(g)))
+                                    [using specialize apositiveSummandSitsBelowTheSum(degree(f), degree(g)) f-positive g-positive]
+                                  @both-sit-below-p |
+                                    less_than(degree(f), degree(p)) and
+                                      less_than(degree(g), degree(p))
+                                    [by rewrite p-degree-is-the-sum both-sit-below-the-sum]
+                                  @conclusion-absurd |
+                                    degree(f) = ZERO or degree(g) = ZERO
+                                    [by ex_falso both-sit-below-p no-lower-degree-factorisation]
+                                }
+                              @both-positive-is-absurd |
+                                (less_than(ZERO, degree(f)) and
+                                  less_than(ZERO, degree(g))) ->
+                                  (degree(f) = ZERO or degree(g) = ZERO)
+                                [by discharge given-both-positive]
+                              // and a nonpositive degree IS zero
+                              @f-is-zero-or-positive |
+                                degree(f) = ZERO or less_than(ZERO, degree(f))
+                                [using specialize aNatIsZeroOrPositive(degree(f))]
+                              @g-is-zero-or-positive |
+                                degree(g) = ZERO or less_than(ZERO, degree(g))
+                                [using specialize aNatIsZeroOrPositive(degree(g))]
+                              @conclusion-a-factor-is-constant |
+                                degree(f) = ZERO or degree(g) = ZERO
+                                [using tautology both-positive-is-absurd f-is-zero-or-positive g-is-zero-or-positive]
+                            }
+                          @factorisation-implies |
+                            p = mulP(f, g) ->
+                              (degree(f) = ZERO or degree(g) = ZERO)
+                            [by discharge given-the-factorisation]
+                        }
+                      @irreducible-implies |
+                        isIrreducible(p) -> p = mulP(f, g) ->
+                          (degree(f) = ZERO or degree(g) = ZERO)
+                        [by discharge given-p-irreducible]
+                    }
+                  @g-nonzero-implies |
+                    (not (g = ZEROP)) -> isIrreducible(p) -> p = mulP(f, g) ->
+                      (degree(f) = ZERO or degree(g) = ZERO)
+                    [by discharge given-g-nonzero]
+                }
+              @f-nonzero-implies |
+                (not (f = ZEROP)) -> (not (g = ZEROP)) -> isIrreducible(p) ->
+                  p = mulP(f, g) -> (degree(f) = ZERO or degree(g) = ZERO)
+                [by discharge given-f-nonzero]
+            }
+          @discharge-g |
+            forall g9: Poly;
+              (not (f = ZEROP)) -> (not (g9 = ZEROP)) -> isIrreducible(p) ->
+              p = mulP(f, g9) -> (degree(f) = ZERO or degree(g9) = ZERO)
+            [by generalize generalize-g]
+        }
+      @discharge-f |
+        forall f9, g9: Poly;
+          (not (f9 = ZEROP)) -> (not (g9 = ZEROP)) -> isIrreducible(p) ->
+          p = mulP(f9, g9) -> (degree(f9) = ZERO or degree(g9) = ZERO)
+        [by generalize generalize-f]
+    }
+  @conclusion |
+    forall p, f, g: Poly;
+      (not (f = ZEROP)) -> (not (g = ZEROP)) -> isIrreducible(p) ->
+      p = mulP(f, g) -> (degree(f) = ZERO or degree(g) = ZERO)
+    [by generalize generalize-p]
+qed
