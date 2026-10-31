@@ -160,3 +160,65 @@ Make the two branches agree on space. Either:
 The first looks smaller and matches the stated architecture ("accelerants build in source
 space"). The invariant to hold either way: **the schema instance's antecedent #0 and the step
 supplied for it must be in the same space.**
+
+---
+
+## Update 2: half two FIXED (`2302392`); a THIRD, deeper bug found behind it
+
+### Half two — fixed
+
+`withGuardPremises` assumed the injected param guards form a LEADING run of antecedents
+(`k = total - prems.len`, discharge the first `k`). They do not: guards are injected in PARAM
+order and `freeFvarParams` APPENDS the args' free variables after the schema's own params, so a
+local-head `specialize` under a guarded model yields
+
+    head -> guard(freevar) -> hyp -> goal
+
+with the guard at index 1. It now walks the whole chain, taking the next cited ref where it
+matches and synthesizing a discharge otherwise.
+
+**`IntegersInRational` now transfers.** `tests/cases/model_guarded_local_head_specialize.b4m`
+pins it (`integer.negNeg` onto the cut) and fails without the change. `std --library` 1824 and
+`aata` 495 both green; `zig build test` has 12 failures before AND after, all pre-existing
+(missing arithmetic countermodel lines).
+
+### Half three — ARGUMENT BINDING is wrong under a guarded model (open)
+
+Trying to wire `IntegerOrderOnTheCut` (mapping `std/integer/order.b4m` so `dividesOneImpliesUnit`
+reaches the cut) hits a failure that is **not** about premise order. Traced at
+`withGuardPremises`:
+
+    inst = isNatural(ONE) -> add(ZERO, succ(ONE)) = ZERO -> less_than(ZERO, ZERO)
+    goal = less_than(ZERO, ONE)
+
+The source step is `std/integer/order.b4m:1722`:
+
+    [using specialize lessThanIntro(ZERO, ZERO, ONE) zero-nonneg zero-plus-succ-zero-is-one]
+
+with `lessThanIntro: ∀a, d, b; nonneg(d) -> add(a, succ(d)) = b -> less_than(a, b)`. At
+`(ZERO, ZERO, ONE)` the instance must be
+
+    nonneg(ZERO) -> add(ZERO, succ(ZERO)) = ONE -> less_than(ZERO, ONE)
+
+Instead `ONE` landed in `d`'s position and `ZERO` in `b`'s: `isNatural(ONE)`,
+`add(ZERO, succ(ONE)) = ZERO`, `less_than(ZERO, ZERO)`. The arguments are **mis-bound**, and
+`total == prems.len` so no guard logic is even involved. The conclusion does not match the goal.
+
+This is a soundness-relevant mis-substitution (an instance whose conclusion is not the claim is
+caught here only because the premise check fires first), and it is a DIFFERENT defect from the
+two above — those were about which antecedent is a guard; this is about which argument fills
+which binder. It is reached only on a model with THREE same-sort guarded args, which is why the
+first two fixes did not surface it.
+
+**Next step:** build the smallest repro — a guarded model plus a three-binder axiom
+`∀a, d, b; P(d) -> f(a,d) = b -> R(a,b)` specialized at three distinct consts — and trace
+argument binding (`freeFvarParams` / `Schema.instanceHash` / the `args`-to-`params` zip in
+`produceSpecialize`, where free-fvar params are CONCATENATED before the user's ∀-args:
+`args = fargs ++ c.args`). A concatenation whose two halves get out of step with `params`
+would produce exactly this symptom.
+
+### State of chapter 17
+
+Gauss's `d != 1` case is proved and transcribed. The `d = 1` branch, 17.14 and 17.15 remain
+blocked — now on half three rather than half two. The mathematics they need
+(`std/rational/integer-order.b4m`'s four discreteness facts) is done and committed.
