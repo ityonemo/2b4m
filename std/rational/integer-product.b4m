@@ -23,53 +23,54 @@ import rational_integer_order <<< "std/rational/integer-order.b4m"
 
 sort Q = rational.Q
 sort Nat = peano.Nat
-const ZERO = peano.ZERO
-const QONE = rational.ONE
-const QZERO = rational.ZERO
-func succ = peano.succ
-func add = peano.add
+const ZERO = rational.ZERO
+const ONE = rational.ONE
+const NAT_ZERO = peano.ZERO
+func nat_succ = peano.succ
+func nat_add = peano.add
 func recip = rational.recip
-pred less_than = peano_order.less_than
-// ℚ's order, distinct from the ℕ order the indices use. This file's own subject is the
-// INDEX range, so `less_than` stays ℕ's and the visitor takes the prefix.
-pred rational_less_than = rational.less_than
+pred less_than = rational.less_than
+// ℕ's order and zero, for the coefficient INDEX range. This file lives under std/rational/,
+// so ℚ owns the bare names and the ℕ visitor takes the `nat_`/`NAT_` prefix (user ruling
+// 2026-10-31; the prefix spelling is the style guide's, not `NZERO`).
+pred nat_less_than = peano_order.less_than
 pred isInteger = rational.isInteger
 
 // -- a ℚ-valued product fold --------------------------------------------------------------
 sort QSeq
 func qat(s: QSeq, i: Nat) => Q
 func qProductUpTo(s: QSeq, k: Nat) => Q
-axiom qProductUpToZero: forall s: QSeq; qProductUpTo(s, ZERO) = QONE
+axiom qProductUpToZero: forall s: QSeq; qProductUpTo(s, NAT_ZERO) = ONE
 axiom qProductUpToSucc: forall s: QSeq; forall k: Nat;
-  qProductUpTo(s, succ(k)) = rational.mul(qProductUpTo(s, k), qat(s, k))
+  qProductUpTo(s, nat_succ(k)) = rational.mul(qProductUpTo(s, k), qat(s, k))
 // PREPEND, restated at ℚSeq. This is what makes a per-index choice realizable: a sequence
 // satisfying a spec on the first n indices is BUILT by induction on n, prepending one witness
 // at a time. `std/sequence.b4m` states it as an axiom, and an axiom does not transfer through
 // a model, so it is restated here and discharged into `RationalSeq`.
 axiom qSeqPrependExists: forall x: Q; forall s: QSeq;
   exists u: QSeq;
-  qat(u, ZERO) = x and (forall i: Nat; qat(u, succ(i)) = qat(s, i))
+  qat(u, NAT_ZERO) = x and (forall i: Nat; qat(u, nat_succ(i)) = qat(s, i))
 axiom qSeqSingletonExists: forall x: Q;
-  exists s: QSeq; qat(s, ZERO) = x and qProductUpTo(s, succ(ZERO)) = x
+  exists s: QSeq; qat(s, NAT_ZERO) = x and qProductUpTo(s, nat_succ(NAT_ZERO)) = x
 // CONCATENATION, restated at ℚSeq. This is the one that extends at the TOP: the result keeps
 // s's entries below j and puts t's entries at j+i. An INDEX-PINNED spec (c_i must be THAT
 // coefficient's denominator) needs exactly this — prepend would shift every earlier witness.
 axiom qSeqConcatExists: forall s, t: QSeq; forall j, k: Nat;
   exists u: QSeq;
-  (forall i: Nat; less_than(i, j) -> qat(u, i) = qat(s, i))
-  and (forall i: Nat; less_than(i, k) -> qat(u, add(j, i)) = qat(t, i))
-  and qProductUpTo(u, add(j, k)) =
+  (forall i: Nat; nat_less_than(i, j) -> qat(u, i) = qat(s, i))
+  and (forall i: Nat; nat_less_than(i, k) -> qat(u, nat_add(j, i)) = qat(t, i))
+  and qProductUpTo(u, nat_add(j, k)) =
   rational.mul(qProductUpTo(s, j), qProductUpTo(t, k))
 
 // UNGUARDED: the value sort is all of ℚ, so this composes freely — no cut, no relativization.
 model RationalSeq {
   sequence.Nat: Nat
-  sequence.ZERO: ZERO
-  sequence.succ: succ
+  sequence.ZERO: NAT_ZERO
+  sequence.succ: nat_succ
   sequence.Value: Q
   sequence.Seq: QSeq
   sequence.at: qat
-  sequence.IDENTITY: QONE
+  sequence.IDENTITY: ONE
   sequence.combine: rational.mul
   sequence.foldUpTo: qProductUpTo
   sequence.foldZero <- qProductUpToZero
@@ -82,39 +83,39 @@ model RationalSeq {
 // `indexed`'s singleton and concat are WEAKER than `sequence`'s — no fold clause — so they
 // follow by dropping a conjunct.
 theorem qSeqSingletonOnly: forall x: Q;
-  exists s: QSeq; qat(s, ZERO) = x
+  exists s: QSeq; qat(s, NAT_ZERO) = x
 proof
   @generalize-x |
     fix x: Q {
       @the-singleton-exists |
         exists s: QSeq;
-          qat(s, ZERO) = x and qProductUpTo(s, succ(ZERO)) = x
+          qat(s, NAT_ZERO) = x and qProductUpTo(s, nat_succ(NAT_ZERO)) = x
         [using specialize qSeqSingletonExists(x)]
       @the-weaker-form |
         unpack s: QSeq from the-singleton-exists {
           @with-singleton |
-            qat(s, ZERO) = x and qProductUpTo(s, succ(ZERO)) = x
+            qat(s, NAT_ZERO) = x and qProductUpTo(s, nat_succ(NAT_ZERO)) = x
             [by hypothesis the-weaker-form]
           @the-head |
-            qat(s, ZERO) = x
+            qat(s, NAT_ZERO) = x
             [by and_lhs with-singleton]
           @conclusion-exists |
-            exists s2: QSeq; qat(s2, ZERO) = x
+            exists s2: QSeq; qat(s2, NAT_ZERO) = x
             [by witness(s) the-head]
         }
       @the-singleton-without-the-fold |
-        exists s: QSeq; qat(s, ZERO) = x
+        exists s: QSeq; qat(s, NAT_ZERO) = x
         [by unpacked the-weaker-form]
     }
   @conclusion |
-    forall x: Q; exists s: QSeq; qat(s, ZERO) = x
+    forall x: Q; exists s: QSeq; qat(s, NAT_ZERO) = x
     [by generalize generalize-x]
 qed
 
 theorem qSeqConcatOnly: forall s, t: QSeq; forall j, k: Nat;
   exists u: QSeq;
-  (forall i: Nat; less_than(i, j) -> qat(u, i) = qat(s, i))
-  and (forall i: Nat; less_than(i, k) -> qat(u, add(j, i)) = qat(t, i))
+  (forall i: Nat; nat_less_than(i, j) -> qat(u, i) = qat(s, i))
+  and (forall i: Nat; nat_less_than(i, k) -> qat(u, nat_add(j, i)) = qat(t, i))
 proof
   @generalize-s |
     fix s: QSeq {
@@ -126,70 +127,70 @@ proof
                 fix k: Nat {
                   @the-concat-exists |
                     exists u: QSeq;
-                      (forall i: Nat; less_than(i, j) -> qat(u, i) = qat(s, i))
-                      and (forall i: Nat; less_than(i, k) ->
-                      qat(u, add(j, i)) = qat(t, i))
-                      and qProductUpTo(u, add(j, k)) =
+                      (forall i: Nat; nat_less_than(i, j) -> qat(u, i) = qat(s, i))
+                      and (forall i: Nat; nat_less_than(i, k) ->
+                      qat(u, nat_add(j, i)) = qat(t, i))
+                      and qProductUpTo(u, nat_add(j, k)) =
                       rational.mul(qProductUpTo(s, j), qProductUpTo(t, k))
                     [using specialize qSeqConcatExists(s, t, j, k)]
                   @the-weaker-form |
                     unpack u: QSeq from the-concat-exists {
                       @with-concat |
-                        (forall i: Nat; less_than(i, j) -> qat(u, i) = qat(s, i))
-                          and (forall i: Nat; less_than(i, k) ->
-                          qat(u, add(j, i)) = qat(t, i))
-                          and qProductUpTo(u, add(j, k)) =
+                        (forall i: Nat; nat_less_than(i, j) -> qat(u, i) = qat(s, i))
+                          and (forall i: Nat; nat_less_than(i, k) ->
+                          qat(u, nat_add(j, i)) = qat(t, i))
+                          and qProductUpTo(u, nat_add(j, k)) =
                           rational.mul(qProductUpTo(s, j), qProductUpTo(t, k))
                         [by hypothesis the-weaker-form]
                       @the-entry-clauses |
-                        (forall i: Nat; less_than(i, j) -> qat(u, i) = qat(s, i))
-                          and (forall i: Nat; less_than(i, k) ->
-                          qat(u, add(j, i)) = qat(t, i))
+                        (forall i: Nat; nat_less_than(i, j) -> qat(u, i) = qat(s, i))
+                          and (forall i: Nat; nat_less_than(i, k) ->
+                          qat(u, nat_add(j, i)) = qat(t, i))
                         [by and_lhs with-concat]
                       @conclusion-exists |
                         exists u2: QSeq;
-                          (forall i: Nat; less_than(i, j) ->
+                          (forall i: Nat; nat_less_than(i, j) ->
                           qat(u2, i) = qat(s, i))
-                          and (forall i: Nat; less_than(i, k) ->
-                          qat(u2, add(j, i)) = qat(t, i))
+                          and (forall i: Nat; nat_less_than(i, k) ->
+                          qat(u2, nat_add(j, i)) = qat(t, i))
                         [by witness(u) the-entry-clauses]
                     }
                   @the-concat-without-the-fold |
                     exists u: QSeq;
-                      (forall i: Nat; less_than(i, j) -> qat(u, i) = qat(s, i))
-                      and (forall i: Nat; less_than(i, k) ->
-                      qat(u, add(j, i)) = qat(t, i))
+                      (forall i: Nat; nat_less_than(i, j) -> qat(u, i) = qat(s, i))
+                      and (forall i: Nat; nat_less_than(i, k) ->
+                      qat(u, nat_add(j, i)) = qat(t, i))
                     [by unpacked the-weaker-form]
                 }
               @discharge-k |
                 forall k9: Nat;
                   exists u: QSeq;
-                  (forall i: Nat; less_than(i, j) -> qat(u, i) = qat(s, i))
-                  and (forall i: Nat; less_than(i, k9) ->
-                  qat(u, add(j, i)) = qat(t, i))
+                  (forall i: Nat; nat_less_than(i, j) -> qat(u, i) = qat(s, i))
+                  and (forall i: Nat; nat_less_than(i, k9) ->
+                  qat(u, nat_add(j, i)) = qat(t, i))
                 [by generalize generalize-k]
             }
           @discharge-j |
             forall j9: Nat; forall k: Nat;
               exists u: QSeq;
-              (forall i: Nat; less_than(i, j9) -> qat(u, i) = qat(s, i))
-              and (forall i: Nat; less_than(i, k) ->
-              qat(u, add(j9, i)) = qat(t, i))
+              (forall i: Nat; nat_less_than(i, j9) -> qat(u, i) = qat(s, i))
+              and (forall i: Nat; nat_less_than(i, k) ->
+              qat(u, nat_add(j9, i)) = qat(t, i))
             [by generalize generalize-j]
         }
       @discharge-t |
         forall t9: QSeq; forall j, k: Nat;
           exists u: QSeq;
-          (forall i: Nat; less_than(i, j) -> qat(u, i) = qat(s, i))
-          and (forall i: Nat; less_than(i, k) ->
-          qat(u, add(j, i)) = qat(t9, i))
+          (forall i: Nat; nat_less_than(i, j) -> qat(u, i) = qat(s, i))
+          and (forall i: Nat; nat_less_than(i, k) ->
+          qat(u, nat_add(j, i)) = qat(t9, i))
         [by generalize generalize-t]
     }
   @conclusion |
     forall s, t: QSeq; forall j, k: Nat;
       exists u: QSeq;
-      (forall i: Nat; less_than(i, j) -> qat(u, i) = qat(s, i))
-      and (forall i: Nat; less_than(i, k) -> qat(u, add(j, i)) = qat(t, i))
+      (forall i: Nat; nat_less_than(i, j) -> qat(u, i) = qat(s, i))
+      and (forall i: Nat; nat_less_than(i, k) -> qat(u, nat_add(j, i)) = qat(t, i))
     [by generalize generalize-s]
 qed
 
@@ -206,106 +207,106 @@ qed
 // axiomatization rule forbids for something provable. So the induction is redone here, on the
 // ℚ construction axioms the model already discharges.
 //
-// Strategy: induction on m. Base: nothing below ZERO, the singleton serves. Step: take the
+// Strategy: induction on m. Base: nothing below NAT_ZERO, the singleton serves. Step: take the
 // sequence good below k, append a one-entry sequence carrying recip(qat(s,k)) at position k
 // via concat — clause 1 keeps the entries below k, clause 2 puts the new one at k + 0 = k.
 theorem theReciprocalSequenceExists: forall s: QSeq; forall m: Nat;
-  exists t: QSeq; forall i: Nat; less_than(i, m) -> qat(t, i) = recip(qat(s, i))
+  exists t: QSeq; forall i: Nat; nat_less_than(i, m) -> qat(t, i) = recip(qat(s, i))
 proof
   @generalize-s |
     fix s: QSeq {
-      // base: any sequence serves below ZERO
+      // base: any sequence serves below NAT_ZERO
       @some-sequence-exists |
-        exists t: QSeq; qat(t, ZERO) = recip(qat(s, ZERO))
-        [using specialize qSeqSingletonOnly(recip(qat(s, ZERO)))]
+        exists t: QSeq; qat(t, NAT_ZERO) = recip(qat(s, NAT_ZERO))
+        [using specialize qSeqSingletonOnly(recip(qat(s, NAT_ZERO)))]
       @base-case |
         unpack t0: QSeq from some-sequence-exists {
           @nothing-below-zero |
             fix i: Nat {
               @given-i-below-zero |
-                assume less_than(i, ZERO) {
+                assume nat_less_than(i, NAT_ZERO) {
                   @i-below-zero |
-                    less_than(i, ZERO)
+                    nat_less_than(i, NAT_ZERO)
                     [by hypothesis given-i-below-zero]
                   @nothing-is-below-zero |
-                    not less_than(i, ZERO)
+                    not nat_less_than(i, NAT_ZERO)
                     [using specialize peano_order.notLessThanZero(i)]
                   @conclusion-vacuous |
                     qat(t0, i) = recip(qat(s, i))
                     [by ex_falso i-below-zero nothing-is-below-zero]
                 }
               @below-zero-implies |
-                less_than(i, ZERO) -> qat(t0, i) = recip(qat(s, i))
+                nat_less_than(i, NAT_ZERO) -> qat(t0, i) = recip(qat(s, i))
                 [by discharge given-i-below-zero]
             }
           @all-below-zero |
-            forall i: Nat; less_than(i, ZERO) -> qat(t0, i) = recip(qat(s, i))
+            forall i: Nat; nat_less_than(i, NAT_ZERO) -> qat(t0, i) = recip(qat(s, i))
             [by generalize nothing-below-zero]
           @conclusion-base-inner |
             exists t: QSeq; forall i: Nat;
-              less_than(i, ZERO) -> qat(t, i) = recip(qat(s, i))
+              nat_less_than(i, NAT_ZERO) -> qat(t, i) = recip(qat(s, i))
             [by witness(t0) all-below-zero]
         }
       @base-case-exported |
         exists t: QSeq; forall i: Nat;
-          less_than(i, ZERO) -> qat(t, i) = recip(qat(s, i))
+          nat_less_than(i, NAT_ZERO) -> qat(t, i) = recip(qat(s, i))
         [by unpacked base-case]
 
       @induction-step |
         fix k: Nat {
           @given-inductive-hypothesis |
             assume exists t: QSeq; forall i: Nat;
-              less_than(i, k) -> qat(t, i) = recip(qat(s, i)) {
+              nat_less_than(i, k) -> qat(t, i) = recip(qat(s, i)) {
               @inductive-hypothesis |
                 exists t: QSeq; forall i: Nat;
-                  less_than(i, k) -> qat(t, i) = recip(qat(s, i))
+                  nat_less_than(i, k) -> qat(t, i) = recip(qat(s, i))
                 [by hypothesis given-inductive-hypothesis]
               @conclusion-the-step |
                 unpack tk: QSeq from inductive-hypothesis {
                   @with-previous-tk |
-                    forall i: Nat; less_than(i, k) -> qat(tk, i) = recip(qat(s, i))
+                    forall i: Nat; nat_less_than(i, k) -> qat(tk, i) = recip(qat(s, i))
                     [by hypothesis conclusion-the-step]
                   // a one-entry sequence carrying the k-th image
                   @the-new-entry-exists |
-                    exists w: QSeq; qat(w, ZERO) = recip(qat(s, k))
+                    exists w: QSeq; qat(w, NAT_ZERO) = recip(qat(s, k))
                     [using specialize qSeqSingletonOnly(recip(qat(s, k)))]
                   @with-the-new-entry |
                     unpack w: QSeq from the-new-entry-exists {
                       @the-new-entry |
-                        qat(w, ZERO) = recip(qat(s, k))
+                        qat(w, NAT_ZERO) = recip(qat(s, k))
                         [by hypothesis with-the-new-entry]
                       @the-concat-exists |
                         exists u: QSeq;
-                          (forall i: Nat; less_than(i, k) -> qat(u, i) = qat(tk, i))
-                          and (forall i: Nat; less_than(i, succ(ZERO)) ->
-                          qat(u, add(k, i)) = qat(w, i))
-                        [using specialize qSeqConcatOnly(tk, w, k, succ(ZERO))]
+                          (forall i: Nat; nat_less_than(i, k) -> qat(u, i) = qat(tk, i))
+                          and (forall i: Nat; nat_less_than(i, nat_succ(NAT_ZERO)) ->
+                          qat(u, nat_add(k, i)) = qat(w, i))
+                        [using specialize qSeqConcatOnly(tk, w, k, nat_succ(NAT_ZERO))]
                       @with-the-concat |
                         unpack u: QSeq from the-concat-exists {
                           @with-concat-u |
-                            (forall i: Nat; less_than(i, k) -> qat(u, i) = qat(tk, i))
-                              and (forall i: Nat; less_than(i, succ(ZERO)) ->
-                              qat(u, add(k, i)) = qat(w, i))
+                            (forall i: Nat; nat_less_than(i, k) -> qat(u, i) = qat(tk, i))
+                              and (forall i: Nat; nat_less_than(i, nat_succ(NAT_ZERO)) ->
+                              qat(u, nat_add(k, i)) = qat(w, i))
                             [by hypothesis with-the-concat]
                           @below-k-unchanged |
-                            forall i: Nat; less_than(i, k) -> qat(u, i) = qat(tk, i)
+                            forall i: Nat; nat_less_than(i, k) -> qat(u, i) = qat(tk, i)
                             [by and_lhs with-concat-u]
                           @at-k-is-the-new-entry |
-                            forall i: Nat; less_than(i, succ(ZERO)) ->
-                              qat(u, add(k, i)) = qat(w, i)
+                            forall i: Nat; nat_less_than(i, nat_succ(NAT_ZERO)) ->
+                              qat(u, nat_add(k, i)) = qat(w, i)
                             [by and_rhs with-concat-u]
                           // index k + 0 = k carries the new entry
                           @zero-below-one |
-                            less_than(ZERO, succ(ZERO))
-                            [using specialize peano_order.lessThanSelf(ZERO)]
+                            nat_less_than(NAT_ZERO, nat_succ(NAT_ZERO))
+                            [using specialize peano_order.lessThanSelf(NAT_ZERO)]
                           @at-k-plus-zero |
-                            qat(u, add(k, ZERO)) = qat(w, ZERO)
-                            [using specialize at-k-is-the-new-entry(ZERO) zero-below-one]
+                            qat(u, nat_add(k, NAT_ZERO)) = qat(w, NAT_ZERO)
+                            [using specialize at-k-is-the-new-entry(NAT_ZERO) zero-below-one]
                           @k-plus-zero |
-                            add(k, ZERO) = k
+                            nat_add(k, NAT_ZERO) = k
                             [using specialize peano.addZeroRight(k)]
                           @at-k |
-                            qat(u, k) = qat(w, ZERO)
+                            qat(u, k) = qat(w, NAT_ZERO)
                             [by rewrite k-plus-zero at-k-plus-zero]
                           @at-k-is-the-image |
                             qat(u, k) = recip(qat(s, k))
@@ -313,20 +314,20 @@ proof
                           @good-below-succ-k |
                             fix i: Nat {
                               @given-i-below-succ-k |
-                                assume less_than(i, succ(k)) {
+                                assume nat_less_than(i, nat_succ(k)) {
                                   @i-below-succ-k |
-                                    less_than(i, succ(k))
+                                    nat_less_than(i, nat_succ(k))
                                     [by hypothesis given-i-below-succ-k]
                                   @the-split |
-                                    less_than(i, k) or i = k
+                                    nat_less_than(i, k) or i = k
                                     [using specialize peano_order.lessThanSuccSplit(i, k) i-below-succ-k]
                                   @conclusion-this-entry |
                                     qat(u, i) = recip(qat(s, i))
                                     case the-split {
                                       @when-i-below-k |
-                                        assume less_than(i, k) {
+                                        assume nat_less_than(i, k) {
                                           @i-below-k |
-                                            less_than(i, k)
+                                            nat_less_than(i, k)
                                             [by hypothesis when-i-below-k]
                                           @unchanged-at-i |
                                             qat(u, i) = qat(tk, i)
@@ -350,67 +351,67 @@ proof
                                     }
                                 }
                               @below-succ-k-implies |
-                                less_than(i, succ(k)) -> qat(u, i) = recip(qat(s, i))
+                                nat_less_than(i, nat_succ(k)) -> qat(u, i) = recip(qat(s, i))
                                 [by discharge given-i-below-succ-k]
                             }
                           @all-good-below-succ-k |
                             forall i: Nat;
-                              less_than(i, succ(k)) -> qat(u, i) = recip(qat(s, i))
+                              nat_less_than(i, nat_succ(k)) -> qat(u, i) = recip(qat(s, i))
                             [by generalize good-below-succ-k]
                           @conclusion-the-extended |
                             exists t: QSeq; forall i: Nat;
-                              less_than(i, succ(k)) -> qat(t, i) = recip(qat(s, i))
+                              nat_less_than(i, nat_succ(k)) -> qat(t, i) = recip(qat(s, i))
                             [by witness(u) all-good-below-succ-k]
                         }
                       @conclusion-concat-exported |
                         exists t: QSeq; forall i: Nat;
-                          less_than(i, succ(k)) -> qat(t, i) = recip(qat(s, i))
+                          nat_less_than(i, nat_succ(k)) -> qat(t, i) = recip(qat(s, i))
                         [by unpacked with-the-concat]
                     }
                   @conclusion-entry-exported |
                     exists t: QSeq; forall i: Nat;
-                      less_than(i, succ(k)) -> qat(t, i) = recip(qat(s, i))
+                      nat_less_than(i, nat_succ(k)) -> qat(t, i) = recip(qat(s, i))
                     [by unpacked with-the-new-entry]
                 }
               @the-step-exported |
                 exists t: QSeq; forall i: Nat;
-                  less_than(i, succ(k)) -> qat(t, i) = recip(qat(s, i))
+                  nat_less_than(i, nat_succ(k)) -> qat(t, i) = recip(qat(s, i))
                 [by unpacked conclusion-the-step]
             }
           @induction-step-at-k |
             (exists t: QSeq; forall i: Nat;
-              less_than(i, k) -> qat(t, i) = recip(qat(s, i))) ->
+              nat_less_than(i, k) -> qat(t, i) = recip(qat(s, i))) ->
               (exists t: QSeq; forall i: Nat;
-              less_than(i, succ(k)) -> qat(t, i) = recip(qat(s, i)))
+              nat_less_than(i, nat_succ(k)) -> qat(t, i) = recip(qat(s, i)))
             [by discharge given-inductive-hypothesis]
         }
       @induction-step-for-all-k |
         forall k: Nat;
           (exists t: QSeq; forall i: Nat;
-          less_than(i, k) -> qat(t, i) = recip(qat(s, i))) ->
+          nat_less_than(i, k) -> qat(t, i) = recip(qat(s, i))) ->
           (exists t: QSeq; forall i: Nat;
-          less_than(i, succ(k)) -> qat(t, i) = recip(qat(s, i)))
+          nat_less_than(i, nat_succ(k)) -> qat(t, i) = recip(qat(s, i)))
         [by generalize induction-step]
       @all-bounds |
         forall m: Nat;
           exists t: QSeq; forall i: Nat;
-          less_than(i, m) -> qat(t, i) = recip(qat(s, i))
-        [using instantiation peano.induction((fun z: Nat => (exists t: QSeq; forall i: Nat; less_than(i, z) -> qat(t, i) = recip(qat(s, i))))) base-case-exported induction-step-for-all-k]
+          nat_less_than(i, m) -> qat(t, i) = recip(qat(s, i))
+        [using instantiation peano.induction((fun z: Nat => (exists t: QSeq; forall i: Nat; nat_less_than(i, z) -> qat(t, i) = recip(qat(s, i))))) base-case-exported induction-step-for-all-k]
     }
   @conclusion |
     forall s: QSeq; forall m: Nat;
       exists t: QSeq; forall i: Nat;
-      less_than(i, m) -> qat(t, i) = recip(qat(s, i))
+      nat_less_than(i, m) -> qat(t, i) = recip(qat(s, i))
     [by generalize generalize-s]
 qed
 
 // The one-entry product, from the shared fold theory.
 theorem theOneEntryProduct: forall s: QSeq;
-  qProductUpTo(s, succ(ZERO)) = rational.mul(QONE, qat(s, ZERO))
+  qProductUpTo(s, nat_succ(NAT_ZERO)) = rational.mul(ONE, qat(s, NAT_ZERO))
 proof
   @conclusion |
     forall s: QSeq;
-      qProductUpTo(s, succ(ZERO)) = rational.mul(QONE, qat(s, ZERO))
+      qProductUpTo(s, nat_succ(NAT_ZERO)) = rational.mul(ONE, qat(s, NAT_ZERO))
     [using model(RationalSeq) sequence.foldOneCombinesIdentity]
 qed
 
@@ -425,116 +426,116 @@ axiom dividesIntegrallyMeaning: forall d, n: Q;
 
 // A product of integers is an integer: induction on the bound, using ℚ's `isIntegerMul`.
 theorem theProductOfIntegersIsAnInteger: forall s: QSeq; forall n: Nat;
-  (forall i: Nat; less_than(i, n) -> isInteger(qat(s, i))) ->
+  (forall i: Nat; nat_less_than(i, n) -> isInteger(qat(s, i))) ->
   isInteger(qProductUpTo(s, n))
 proof
   @generalize-s |
     fix s: QSeq {
       // base: the empty product is ONE, hence an integer
       @base-case-proof |
-        assume forall i: Nat; less_than(i, ZERO) -> isInteger(qat(s, i)) {
+        assume forall i: Nat; nat_less_than(i, NAT_ZERO) -> isInteger(qat(s, i)) {
           @the-empty-product-inner |
-            qProductUpTo(s, ZERO) = QONE
+            qProductUpTo(s, NAT_ZERO) = ONE
             [using specialize qProductUpToZero(s)]
           @one-is-an-integer-inner |
-            isInteger(QONE)
+            isInteger(ONE)
             [by cite rational.oneIsAnInteger]
           @the-empty-product-again |
-            isInteger(qProductUpTo(s, ZERO))
+            isInteger(qProductUpTo(s, NAT_ZERO))
             [by rewrite the-empty-product-inner one-is-an-integer-inner]
         }
       @base-case |
-        (forall i: Nat; less_than(i, ZERO) -> isInteger(qat(s, i))) ->
-          isInteger(qProductUpTo(s, ZERO))
+        (forall i: Nat; nat_less_than(i, NAT_ZERO) -> isInteger(qat(s, i))) ->
+          isInteger(qProductUpTo(s, NAT_ZERO))
         [by discharge base-case-proof]
       @induction-step |
         fix k: Nat {
           @given-inductive-hypothesis |
-            assume (forall i: Nat; less_than(i, k) -> isInteger(qat(s, i))) ->
+            assume (forall i: Nat; nat_less_than(i, k) -> isInteger(qat(s, i))) ->
               isInteger(qProductUpTo(s, k)) {
               @inductive-hypothesis |
-                (forall i: Nat; less_than(i, k) -> isInteger(qat(s, i))) ->
+                (forall i: Nat; nat_less_than(i, k) -> isInteger(qat(s, i))) ->
                   isInteger(qProductUpTo(s, k))
                 [by hypothesis given-inductive-hypothesis]
               @given-all-below-succ-k |
-                assume forall i: Nat; less_than(i, succ(k)) -> isInteger(qat(s, i)) {
+                assume forall i: Nat; nat_less_than(i, nat_succ(k)) -> isInteger(qat(s, i)) {
                   @all-below-succ-k |
-                    forall i: Nat; less_than(i, succ(k)) -> isInteger(qat(s, i))
+                    forall i: Nat; nat_less_than(i, nat_succ(k)) -> isInteger(qat(s, i))
                     [by hypothesis given-all-below-succ-k]
-                  // everything below k is below succ(k)
+                  // everything below k is below nat_succ(k)
                   @all-below-k |
                     fix i: Nat {
                       @given-i-below-k |
-                        assume less_than(i, k) {
+                        assume nat_less_than(i, k) {
                           @i-below-k |
-                            less_than(i, k)
+                            nat_less_than(i, k)
                             [by hypothesis given-i-below-k]
                           @k-below-its-successor |
-                            less_than(k, succ(k))
+                            nat_less_than(k, nat_succ(k))
                             [using specialize peano_order.lessThanSelf(k)]
                           @i-below-succ-k |
-                            less_than(i, succ(k))
-                            [using specialize peano_order.lessThanTransitive(i, k, succ(k)) i-below-k k-below-its-successor]
+                            nat_less_than(i, nat_succ(k))
+                            [using specialize peano_order.lessThanTransitive(i, k, nat_succ(k)) i-below-k k-below-its-successor]
                           @conclusion-this-entry-is-an-integer |
                             isInteger(qat(s, i))
                             [using specialize all-below-succ-k(i) i-below-succ-k]
                         }
                       @below-k-implies-integer |
-                        less_than(i, k) -> isInteger(qat(s, i))
+                        nat_less_than(i, k) -> isInteger(qat(s, i))
                         [by discharge given-i-below-k]
                     }
                   @all-below-k-generalized |
-                    forall i: Nat; less_than(i, k) -> isInteger(qat(s, i))
+                    forall i: Nat; nat_less_than(i, k) -> isInteger(qat(s, i))
                     [by generalize all-below-k]
                   @the-partial-product-is-an-integer |
                     isInteger(qProductUpTo(s, k))
                     [by modus_ponens inductive-hypothesis all-below-k-generalized]
                   // and the k-th entry itself is an integer
                   @k-below-succ-k |
-                    less_than(k, succ(k))
+                    nat_less_than(k, nat_succ(k))
                     [using specialize peano_order.lessThanSelf(k)]
                   @the-k-th-entry-is-an-integer |
                     isInteger(qat(s, k))
                     [using specialize all-below-succ-k(k) k-below-succ-k]
                   @the-next-product |
-                    qProductUpTo(s, succ(k)) =
+                    qProductUpTo(s, nat_succ(k)) =
                       rational.mul(qProductUpTo(s, k), qat(s, k))
                     [using specialize qProductUpToSucc(s, k)]
                   @the-product-is-an-integer |
                     isInteger(rational.mul(qProductUpTo(s, k), qat(s, k)))
                     [using specialize rational.isIntegerMul(qProductUpTo(s, k), qat(s, k)) the-partial-product-is-an-integer the-k-th-entry-is-an-integer]
                   @conclusion-the-next-product-is-an-integer |
-                    isInteger(qProductUpTo(s, succ(k)))
+                    isInteger(qProductUpTo(s, nat_succ(k)))
                     [by rewrite the-next-product the-product-is-an-integer]
                 }
               @conclusion-the-step |
-                (forall i: Nat; less_than(i, succ(k)) -> isInteger(qat(s, i))) ->
-                  isInteger(qProductUpTo(s, succ(k)))
+                (forall i: Nat; nat_less_than(i, nat_succ(k)) -> isInteger(qat(s, i))) ->
+                  isInteger(qProductUpTo(s, nat_succ(k)))
                 [by discharge given-all-below-succ-k]
             }
           @induction-step-at-k |
-            ((forall i: Nat; less_than(i, k) -> isInteger(qat(s, i))) ->
+            ((forall i: Nat; nat_less_than(i, k) -> isInteger(qat(s, i))) ->
               isInteger(qProductUpTo(s, k))) ->
-              ((forall i: Nat; less_than(i, succ(k)) -> isInteger(qat(s, i))) ->
-              isInteger(qProductUpTo(s, succ(k))))
+              ((forall i: Nat; nat_less_than(i, nat_succ(k)) -> isInteger(qat(s, i))) ->
+              isInteger(qProductUpTo(s, nat_succ(k))))
             [by discharge given-inductive-hypothesis]
         }
       @induction-step-for-all-k |
         forall k: Nat;
-          ((forall i: Nat; less_than(i, k) -> isInteger(qat(s, i))) ->
+          ((forall i: Nat; nat_less_than(i, k) -> isInteger(qat(s, i))) ->
           isInteger(qProductUpTo(s, k))) ->
-          ((forall i: Nat; less_than(i, succ(k)) -> isInteger(qat(s, i))) ->
-          isInteger(qProductUpTo(s, succ(k))))
+          ((forall i: Nat; nat_less_than(i, nat_succ(k)) -> isInteger(qat(s, i))) ->
+          isInteger(qProductUpTo(s, nat_succ(k))))
         [by generalize induction-step]
       @all-bounds |
         forall n: Nat;
-          (forall i: Nat; less_than(i, n) -> isInteger(qat(s, i))) ->
+          (forall i: Nat; nat_less_than(i, n) -> isInteger(qat(s, i))) ->
           isInteger(qProductUpTo(s, n))
-        [using instantiation peano.induction((fun t: Nat => ((forall i: Nat; less_than(i, t) -> isInteger(qat(s, i))) -> isInteger(qProductUpTo(s, t))))) base-case induction-step-for-all-k]
+        [using instantiation peano.induction((fun t: Nat => ((forall i: Nat; nat_less_than(i, t) -> isInteger(qat(s, i))) -> isInteger(qProductUpTo(s, t))))) base-case induction-step-for-all-k]
     }
   @conclusion |
     forall s: QSeq; forall n: Nat;
-      (forall i: Nat; less_than(i, n) -> isInteger(qat(s, i))) ->
+      (forall i: Nat; nat_less_than(i, n) -> isInteger(qat(s, i))) ->
       isInteger(qProductUpTo(s, n))
     [by generalize generalize-s]
 qed
@@ -739,95 +740,95 @@ qed
 // -- EVERY ENTRY DIVIDES THE PRODUCT ------------------------------------------------------
 // The fact Lemma 17.12's denominator-clearing turns on: multiplying through by c_0 ⋯ c_n
 // clears EVERY denominator because each c_i divides the whole product. Induction on the bound:
-// at succ(k) the product is (previous)·c_k, so c_k divides it directly, and anything dividing
+// at nat_succ(k) the product is (previous)·c_k, so c_k divides it directly, and anything dividing
 // the previous product still divides this one.
 theorem everyEntryDividesTheProduct: forall s: QSeq; forall n: Nat;
-  (forall i: Nat; less_than(i, n) -> isInteger(qat(s, i))) ->
-  (forall i: Nat; less_than(i, n) -> dividesIntegrally(qat(s, i), qProductUpTo(s, n)))
+  (forall i: Nat; nat_less_than(i, n) -> isInteger(qat(s, i))) ->
+  (forall i: Nat; nat_less_than(i, n) -> dividesIntegrally(qat(s, i), qProductUpTo(s, n)))
 proof
   @generalize-s |
     fix s: QSeq {
-      // base: nothing is below ZERO, so the claim is vacuous
+      // base: nothing is below NAT_ZERO, so the claim is vacuous
       @base-case-proof |
-        assume forall i: Nat; less_than(i, ZERO) -> isInteger(qat(s, i)) {
+        assume forall i: Nat; nat_less_than(i, NAT_ZERO) -> isInteger(qat(s, i)) {
           @nothing-below-zero |
             fix i: Nat {
               @given-i-below-zero |
-                assume less_than(i, ZERO) {
+                assume nat_less_than(i, NAT_ZERO) {
                   @i-below-zero |
-                    less_than(i, ZERO)
+                    nat_less_than(i, NAT_ZERO)
                     [by hypothesis given-i-below-zero]
                   @nothing-is-below-zero |
-                    not less_than(i, ZERO)
+                    not nat_less_than(i, NAT_ZERO)
                     [using specialize peano_order.notLessThanZero(i)]
                   @conclusion-vacuous |
-                    dividesIntegrally(qat(s, i), qProductUpTo(s, ZERO))
+                    dividesIntegrally(qat(s, i), qProductUpTo(s, NAT_ZERO))
                     [by ex_falso i-below-zero nothing-is-below-zero]
                 }
               @below-zero-implies |
-                less_than(i, ZERO) ->
-                  dividesIntegrally(qat(s, i), qProductUpTo(s, ZERO))
+                nat_less_than(i, NAT_ZERO) ->
+                  dividesIntegrally(qat(s, i), qProductUpTo(s, NAT_ZERO))
                 [by discharge given-i-below-zero]
             }
           @conclusion-base |
-            forall i: Nat; less_than(i, ZERO) ->
-              dividesIntegrally(qat(s, i), qProductUpTo(s, ZERO))
+            forall i: Nat; nat_less_than(i, NAT_ZERO) ->
+              dividesIntegrally(qat(s, i), qProductUpTo(s, NAT_ZERO))
             [by generalize nothing-below-zero]
         }
       @base-case |
-        (forall i: Nat; less_than(i, ZERO) -> isInteger(qat(s, i))) ->
-          (forall i: Nat; less_than(i, ZERO) ->
-          dividesIntegrally(qat(s, i), qProductUpTo(s, ZERO)))
+        (forall i: Nat; nat_less_than(i, NAT_ZERO) -> isInteger(qat(s, i))) ->
+          (forall i: Nat; nat_less_than(i, NAT_ZERO) ->
+          dividesIntegrally(qat(s, i), qProductUpTo(s, NAT_ZERO)))
         [by discharge base-case-proof]
 
       @induction-step |
         fix k: Nat {
           @given-inductive-hypothesis |
-            assume (forall i: Nat; less_than(i, k) -> isInteger(qat(s, i))) ->
-              (forall i: Nat; less_than(i, k) ->
+            assume (forall i: Nat; nat_less_than(i, k) -> isInteger(qat(s, i))) ->
+              (forall i: Nat; nat_less_than(i, k) ->
               dividesIntegrally(qat(s, i), qProductUpTo(s, k))) {
               @inductive-hypothesis |
-                (forall i: Nat; less_than(i, k) -> isInteger(qat(s, i))) ->
-                  (forall i: Nat; less_than(i, k) ->
+                (forall i: Nat; nat_less_than(i, k) -> isInteger(qat(s, i))) ->
+                  (forall i: Nat; nat_less_than(i, k) ->
                   dividesIntegrally(qat(s, i), qProductUpTo(s, k)))
                 [by hypothesis given-inductive-hypothesis]
               @given-all-integers-below-succ-k |
-                assume forall i: Nat; less_than(i, succ(k)) -> isInteger(qat(s, i)) {
+                assume forall i: Nat; nat_less_than(i, nat_succ(k)) -> isInteger(qat(s, i)) {
                   @all-integers-below-succ-k |
-                    forall i: Nat; less_than(i, succ(k)) -> isInteger(qat(s, i))
+                    forall i: Nat; nat_less_than(i, nat_succ(k)) -> isInteger(qat(s, i))
                     [by hypothesis given-all-integers-below-succ-k]
                   @k-below-its-successor |
-                    less_than(k, succ(k))
+                    nat_less_than(k, nat_succ(k))
                     [using specialize peano_order.lessThanSelf(k)]
                   // weaken the integer hypothesis to below k
                   @all-integers-below-k |
                     fix i: Nat {
                       @given-i-below-k |
-                        assume less_than(i, k) {
+                        assume nat_less_than(i, k) {
                           @i-below-k |
-                            less_than(i, k)
+                            nat_less_than(i, k)
                             [by hypothesis given-i-below-k]
                           @i-below-succ-k |
-                            less_than(i, succ(k))
-                            [using specialize peano_order.lessThanTransitive(i, k, succ(k)) i-below-k k-below-its-successor]
+                            nat_less_than(i, nat_succ(k))
+                            [using specialize peano_order.lessThanTransitive(i, k, nat_succ(k)) i-below-k k-below-its-successor]
                           @conclusion-this-is-an-integer |
                             isInteger(qat(s, i))
                             [using specialize all-integers-below-succ-k(i) i-below-succ-k]
                         }
                       @below-k-implies-integer |
-                        less_than(i, k) -> isInteger(qat(s, i))
+                        nat_less_than(i, k) -> isInteger(qat(s, i))
                         [by discharge given-i-below-k]
                     }
                   @all-integers-below-k-generalized |
-                    forall i: Nat; less_than(i, k) -> isInteger(qat(s, i))
+                    forall i: Nat; nat_less_than(i, k) -> isInteger(qat(s, i))
                     [by generalize all-integers-below-k]
                   @the-divisors-below-k |
-                    forall i: Nat; less_than(i, k) ->
+                    forall i: Nat; nat_less_than(i, k) ->
                       dividesIntegrally(qat(s, i), qProductUpTo(s, k))
                     [by modus_ponens inductive-hypothesis all-integers-below-k-generalized]
-                  // the product at succ(k) is (product at k) · entry k
+                  // the product at nat_succ(k) is (product at k) · entry k
                   @the-next-product |
-                    qProductUpTo(s, succ(k)) =
+                    qProductUpTo(s, nat_succ(k)) =
                       rational.mul(qProductUpTo(s, k), qat(s, k))
                     [using specialize qProductUpToSucc(s, k)]
                   @the-k-th-entry-is-an-integer |
@@ -839,22 +840,22 @@ proof
                   @each-entry-divides |
                     fix i: Nat {
                       @given-i-below-succ-k |
-                        assume less_than(i, succ(k)) {
+                        assume nat_less_than(i, nat_succ(k)) {
                           @i-below-succ-k |
-                            less_than(i, succ(k))
+                            nat_less_than(i, nat_succ(k))
                             [by hypothesis given-i-below-succ-k]
                           @the-split |
-                            less_than(i, k) or i = k
+                            nat_less_than(i, k) or i = k
                             [using specialize peano_order.lessThanSuccSplit(i, k) i-below-succ-k]
                           @conclusion-this-entry-divides |
-                            dividesIntegrally(qat(s, i), qProductUpTo(s, succ(k)))
+                            dividesIntegrally(qat(s, i), qProductUpTo(s, nat_succ(k)))
                             case the-split {
                               // i < k: entry i divides the PARTIAL product, which divides the
                               // next one (multiply the quotient by entry k)
                               @when-i-below-k |
-                                assume less_than(i, k) {
+                                assume nat_less_than(i, k) {
                                   @i-below-k |
-                                    less_than(i, k)
+                                    nat_less_than(i, k)
                                     [by hypothesis when-i-below-k]
                                   @divides-the-partial-product |
                                     dividesIntegrally(qat(s, i), qProductUpTo(s, k))
@@ -865,8 +866,8 @@ proof
                                       dividesIntegrally(qat(s, i), whole)
                                     [using specialize aDivisorOfTheFactorDividesTheProduct(qat(s, i), qProductUpTo(s, k), qat(s, k)) divides-the-partial-product the-k-th-entry-is-an-integer]
                                   @conclusion-divides-via-the-partial |
-                                    dividesIntegrally(qat(s, i), qProductUpTo(s, succ(k)))
-                                    [using specialize for-every-whole(qProductUpTo(s, succ(k))) the-next-product]
+                                    dividesIntegrally(qat(s, i), qProductUpTo(s, nat_succ(k)))
+                                    [using specialize for-every-whole(qProductUpTo(s, nat_succ(k))) the-next-product]
                                 }
                               // i = k: entry k divides (partial)·(entry k) with quotient the
                               // partial product, which is an integer
@@ -876,59 +877,59 @@ proof
                                     i = k
                                     [by hypothesis when-i-is-k]
                                   @the-k-th-entry-divides |
-                                    dividesIntegrally(qat(s, k), qProductUpTo(s, succ(k)))
-                                    [using specialize aFactorDividesTheProduct(qat(s, k), qProductUpTo(s, k), qProductUpTo(s, succ(k))) the-partial-product-is-an-integer the-next-product]
+                                    dividesIntegrally(qat(s, k), qProductUpTo(s, nat_succ(k)))
+                                    [using specialize aFactorDividesTheProduct(qat(s, k), qProductUpTo(s, k), qProductUpTo(s, nat_succ(k))) the-partial-product-is-an-integer the-next-product]
                                   @conclusion-divides-at-k |
-                                    dividesIntegrally(qat(s, i), qProductUpTo(s, succ(k)))
+                                    dividesIntegrally(qat(s, i), qProductUpTo(s, nat_succ(k)))
                                     [by rewrite i-is-k the-k-th-entry-divides]
                                 }
                             }
                         }
                       @below-succ-k-implies-divides |
-                        less_than(i, succ(k)) ->
-                          dividesIntegrally(qat(s, i), qProductUpTo(s, succ(k)))
+                        nat_less_than(i, nat_succ(k)) ->
+                          dividesIntegrally(qat(s, i), qProductUpTo(s, nat_succ(k)))
                         [by discharge given-i-below-succ-k]
                     }
                   @conclusion-all-divide |
-                    forall i: Nat; less_than(i, succ(k)) ->
-                      dividesIntegrally(qat(s, i), qProductUpTo(s, succ(k)))
+                    forall i: Nat; nat_less_than(i, nat_succ(k)) ->
+                      dividesIntegrally(qat(s, i), qProductUpTo(s, nat_succ(k)))
                     [by generalize each-entry-divides]
                 }
               @conclusion-the-step |
-                (forall i: Nat; less_than(i, succ(k)) -> isInteger(qat(s, i))) ->
-                  (forall i: Nat; less_than(i, succ(k)) ->
-                  dividesIntegrally(qat(s, i), qProductUpTo(s, succ(k))))
+                (forall i: Nat; nat_less_than(i, nat_succ(k)) -> isInteger(qat(s, i))) ->
+                  (forall i: Nat; nat_less_than(i, nat_succ(k)) ->
+                  dividesIntegrally(qat(s, i), qProductUpTo(s, nat_succ(k))))
                 [by discharge given-all-integers-below-succ-k]
             }
           @induction-step-at-k |
-            ((forall i: Nat; less_than(i, k) -> isInteger(qat(s, i))) ->
-              (forall i: Nat; less_than(i, k) ->
+            ((forall i: Nat; nat_less_than(i, k) -> isInteger(qat(s, i))) ->
+              (forall i: Nat; nat_less_than(i, k) ->
               dividesIntegrally(qat(s, i), qProductUpTo(s, k)))) ->
-              ((forall i: Nat; less_than(i, succ(k)) -> isInteger(qat(s, i))) ->
-              (forall i: Nat; less_than(i, succ(k)) ->
-              dividesIntegrally(qat(s, i), qProductUpTo(s, succ(k)))))
+              ((forall i: Nat; nat_less_than(i, nat_succ(k)) -> isInteger(qat(s, i))) ->
+              (forall i: Nat; nat_less_than(i, nat_succ(k)) ->
+              dividesIntegrally(qat(s, i), qProductUpTo(s, nat_succ(k)))))
             [by discharge given-inductive-hypothesis]
         }
       @induction-step-for-all-k |
         forall k: Nat;
-          ((forall i: Nat; less_than(i, k) -> isInteger(qat(s, i))) ->
-          (forall i: Nat; less_than(i, k) ->
+          ((forall i: Nat; nat_less_than(i, k) -> isInteger(qat(s, i))) ->
+          (forall i: Nat; nat_less_than(i, k) ->
           dividesIntegrally(qat(s, i), qProductUpTo(s, k)))) ->
-          ((forall i: Nat; less_than(i, succ(k)) -> isInteger(qat(s, i))) ->
-          (forall i: Nat; less_than(i, succ(k)) ->
-          dividesIntegrally(qat(s, i), qProductUpTo(s, succ(k)))))
+          ((forall i: Nat; nat_less_than(i, nat_succ(k)) -> isInteger(qat(s, i))) ->
+          (forall i: Nat; nat_less_than(i, nat_succ(k)) ->
+          dividesIntegrally(qat(s, i), qProductUpTo(s, nat_succ(k)))))
         [by generalize induction-step]
       @all-bounds |
         forall n: Nat;
-          (forall i: Nat; less_than(i, n) -> isInteger(qat(s, i))) ->
-          (forall i: Nat; less_than(i, n) ->
+          (forall i: Nat; nat_less_than(i, n) -> isInteger(qat(s, i))) ->
+          (forall i: Nat; nat_less_than(i, n) ->
           dividesIntegrally(qat(s, i), qProductUpTo(s, n)))
-        [using instantiation peano.induction((fun t: Nat => ((forall i: Nat; less_than(i, t) -> isInteger(qat(s, i))) -> (forall i: Nat; less_than(i, t) -> dividesIntegrally(qat(s, i), qProductUpTo(s, t)))))) base-case induction-step-for-all-k]
+        [using instantiation peano.induction((fun t: Nat => ((forall i: Nat; nat_less_than(i, t) -> isInteger(qat(s, i))) -> (forall i: Nat; nat_less_than(i, t) -> dividesIntegrally(qat(s, i), qProductUpTo(s, t)))))) base-case induction-step-for-all-k]
     }
   @conclusion |
     forall s: QSeq; forall n: Nat;
-      (forall i: Nat; less_than(i, n) -> isInteger(qat(s, i))) ->
-      (forall i: Nat; less_than(i, n) ->
+      (forall i: Nat; nat_less_than(i, n) -> isInteger(qat(s, i))) ->
+      (forall i: Nat; nat_less_than(i, n) ->
       dividesIntegrally(qat(s, i), qProductUpTo(s, n)))
     [by generalize generalize-s]
 qed
@@ -947,14 +948,14 @@ qed
 //
 // Stated for the shape 17.12 needs: every integer-nonzero spec below the bound is realized.
 
-// Strategy: induction on n. Base: any sequence works below ZERO (nothing is below it). Step:
+// Strategy: induction on n. Base: any sequence works below NAT_ZERO (nothing is below it). Step:
 // unpack the witness at index n, take the sequence realizing the spec below n, and prepend —
-// the prepended sequence's entry at succ(i) is the old entry at i, so indices SHIFT. The
+// the prepended sequence's entry at nat_succ(i) is the old entry at i, so indices SHIFT. The
 // shift is why the spec is carried as a predicate on the VALUE at each index rather than a
 // fixed per-index list.
 theorem aBoundedChoiceIsRealizedByASequence: forall n: Nat;
   (forall i: Nat; exists v: Q; isInteger(v) and (not (v = rational.ZERO))) ->
-  (exists s: QSeq; forall i: Nat; less_than(i, n) ->
+  (exists s: QSeq; forall i: Nat; nat_less_than(i, n) ->
   (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO))))
 proof
   @given-the-per-index-witnesses |
@@ -965,29 +966,29 @@ proof
           isInteger(v) and (not (v = rational.ZERO))
         [by hypothesis given-the-per-index-witnesses]
 
-      // base: below ZERO there is nothing to realize, so ANY sequence serves — and one
+      // base: below NAT_ZERO there is nothing to realize, so ANY sequence serves — and one
       // exists because the witnesses do.
       @the-witness-at-zero |
         exists v: Q; isInteger(v) and (not (v = rational.ZERO))
-        [using specialize the-per-index-witnesses(ZERO)]
+        [using specialize the-per-index-witnesses(NAT_ZERO)]
       @base-case |
         unpack v0: Q from the-witness-at-zero {
-          // any sequence at all serves below ZERO; the singleton on v0 exists
+          // any sequence at all serves below NAT_ZERO; the singleton on v0 exists
           @the-singleton-exists |
             exists s: QSeq;
-              qat(s, ZERO) = v0 and qProductUpTo(s, succ(ZERO)) = v0
+              qat(s, NAT_ZERO) = v0 and qProductUpTo(s, nat_succ(NAT_ZERO)) = v0
             [using specialize qSeqSingletonExists(v0)]
           @with-the-singleton |
             unpack s0: QSeq from the-singleton-exists {
               @nothing-below-zero |
                 fix i: Nat {
                   @given-i-below-zero |
-                    assume less_than(i, ZERO) {
+                    assume nat_less_than(i, NAT_ZERO) {
                       @i-below-zero |
-                        less_than(i, ZERO)
+                        nat_less_than(i, NAT_ZERO)
                         [by hypothesis given-i-below-zero]
                       @nothing-is-below-zero |
-                        not less_than(i, ZERO)
+                        not nat_less_than(i, NAT_ZERO)
                         [using specialize peano_order.notLessThanZero(i)]
                       @conclusion-vacuous |
                         isInteger(qat(s0, i)) and
@@ -995,38 +996,38 @@ proof
                         [by ex_falso i-below-zero nothing-is-below-zero]
                     }
                   @below-zero-implies |
-                    less_than(i, ZERO) ->
+                    nat_less_than(i, NAT_ZERO) ->
                       (isInteger(qat(s0, i)) and
                       (not (qat(s0, i) = rational.ZERO)))
                     [by discharge given-i-below-zero]
                 }
               @all-below-zero |
-                forall i: Nat; less_than(i, ZERO) ->
+                forall i: Nat; nat_less_than(i, NAT_ZERO) ->
                   (isInteger(qat(s0, i)) and
                   (not (qat(s0, i) = rational.ZERO)))
                 [by generalize nothing-below-zero]
               @conclusion-the-base-sequence |
-                exists s: QSeq; forall i: Nat; less_than(i, ZERO) ->
+                exists s: QSeq; forall i: Nat; nat_less_than(i, NAT_ZERO) ->
                   (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
                 [by witness(s0) all-below-zero]
             }
           @conclusion-base-inner |
-            exists s: QSeq; forall i: Nat; less_than(i, ZERO) ->
+            exists s: QSeq; forall i: Nat; nat_less_than(i, NAT_ZERO) ->
               (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
             [by unpacked with-the-singleton]
         }
       @base-case-exported |
-        exists s: QSeq; forall i: Nat; less_than(i, ZERO) ->
+        exists s: QSeq; forall i: Nat; nat_less_than(i, NAT_ZERO) ->
           (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
         [by unpacked base-case]
 
       @induction-step |
         fix k: Nat {
           @given-inductive-hypothesis |
-            assume exists s: QSeq; forall i: Nat; less_than(i, k) ->
+            assume exists s: QSeq; forall i: Nat; nat_less_than(i, k) ->
               (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO))) {
               @inductive-hypothesis |
-                exists s: QSeq; forall i: Nat; less_than(i, k) ->
+                exists s: QSeq; forall i: Nat; nat_less_than(i, k) ->
                   (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
                 [by hypothesis given-inductive-hypothesis]
               // PREPEND IS THE WRONG END for this spec. Prepending shifts every old index
@@ -1036,8 +1037,8 @@ proof
               //
               // The spec here is index-INDEPENDENT (every entry must be a nonzero integer),
               // so the shift costs nothing: prepend any witness onto a good-below-k sequence
-              // and the result is good below succ(k) — index 0 holds the new witness, and
-              // index succ(i) for i < k holds the old entry at i.
+              // and the result is good below nat_succ(k) — index 0 holds the new witness, and
+              // index nat_succ(i) for i < k holds the old entry at i.
               @the-witness-at-k |
                 exists v: Q; isInteger(v) and (not (v = rational.ZERO))
                 [using specialize the-per-index-witnesses(k)]
@@ -1055,36 +1056,36 @@ proof
                   @with-the-previous |
                     unpack sk: QSeq from inductive-hypothesis {
                       @with-previous-sk |
-                        forall i: Nat; less_than(i, k) ->
+                        forall i: Nat; nat_less_than(i, k) ->
                           (isInteger(qat(sk, i)) and
                           (not (qat(sk, i) = rational.ZERO)))
                         [by hypothesis with-the-previous]
                       @the-prepend-exists |
                         exists u: QSeq;
-                          qat(u, ZERO) = vk and
-                          (forall i: Nat; qat(u, succ(i)) = qat(sk, i))
+                          qat(u, NAT_ZERO) = vk and
+                          (forall i: Nat; qat(u, nat_succ(i)) = qat(sk, i))
                         [using specialize qSeqPrependExists(vk, sk)]
                       @with-the-prepend |
                         unpack u: QSeq from the-prepend-exists {
                           @with-prepend-u |
-                            qat(u, ZERO) = vk and
-                              (forall i: Nat; qat(u, succ(i)) = qat(sk, i))
+                            qat(u, NAT_ZERO) = vk and
+                              (forall i: Nat; qat(u, nat_succ(i)) = qat(sk, i))
                             [by hypothesis with-the-prepend]
                           @the-head-is-vk |
-                            qat(u, ZERO) = vk
+                            qat(u, NAT_ZERO) = vk
                             [by and_lhs with-prepend-u]
                           @the-tail-shifts |
-                            forall i: Nat; qat(u, succ(i)) = qat(sk, i)
+                            forall i: Nat; qat(u, nat_succ(i)) = qat(sk, i)
                             [by and_rhs with-prepend-u]
                           @good-below-succ-k |
                             fix i: Nat {
                               @given-i-below-succ-k |
-                                assume less_than(i, succ(k)) {
+                                assume nat_less_than(i, nat_succ(k)) {
                                   @i-below-succ-k |
-                                    less_than(i, succ(k))
+                                    nat_less_than(i, nat_succ(k))
                                     [by hypothesis given-i-below-succ-k]
                                   @the-index-cases |
-                                    i = ZERO or (exists m: Nat; i = succ(m))
+                                    i = NAT_ZERO or (exists m: Nat; i = nat_succ(m))
                                     [using specialize peano.zeroOrSucc(i)]
                                   @conclusion-this-entry |
                                     isInteger(qat(u, i)) and
@@ -1092,9 +1093,9 @@ proof
                                     case the-index-cases {
                                       // index 0 holds the fresh witness
                                       @when-i-is-zero |
-                                        assume i = ZERO {
+                                        assume i = NAT_ZERO {
                                           @i-is-zero |
-                                            i = ZERO
+                                            i = NAT_ZERO
                                             [by hypothesis when-i-is-zero]
                                           @the-entry-is-vk |
                                             qat(u, i) = vk
@@ -1108,33 +1109,33 @@ proof
                                               (not (qat(u, i) = rational.ZERO))
                                             [by rewrite the-entry-is-vk vk-is-good]
                                         }
-                                      // index succ(m) holds the old entry at m, and m < k
+                                      // index nat_succ(m) holds the old entry at m, and m < k
                                       @when-i-is-a-successor |
-                                        assume exists m: Nat; i = succ(m) {
+                                        assume exists m: Nat; i = nat_succ(m) {
                                           @i-is-a-successor |
-                                            exists m: Nat; i = succ(m)
+                                            exists m: Nat; i = nat_succ(m)
                                             [by hypothesis when-i-is-a-successor]
                                           @with-the-predecessor |
                                             unpack m: Nat from i-is-a-successor {
                                               @i-is-succ-m |
-                                                i = succ(m)
+                                                i = nat_succ(m)
                                                 [by hypothesis with-the-predecessor]
                                               @succ-m-below-succ-k |
-                                                less_than(succ(m), succ(k))
+                                                nat_less_than(nat_succ(m), nat_succ(k))
                                                 [by rewrite i-is-succ-m i-below-succ-k]
                                               @m-below-k |
-                                                less_than(m, k)
+                                                nat_less_than(m, k)
                                                 [using specialize peano_order.succReflectsOrder(m, k) succ-m-below-succ-k]
                                               @the-old-entry-is-good |
                                                 isInteger(qat(sk, m)) and
                                                   (not (qat(sk, m) = rational.ZERO))
                                                 [using specialize with-previous-sk(m) m-below-k]
                                               @the-entry-shifts |
-                                                qat(u, succ(m)) = qat(sk, m)
+                                                qat(u, nat_succ(m)) = qat(sk, m)
                                                 [using specialize the-tail-shifts(m)]
                                               @the-new-entry-is-good |
-                                                isInteger(qat(u, succ(m))) and
-                                                  (not (qat(u, succ(m)) = rational.ZERO))
+                                                isInteger(qat(u, nat_succ(m))) and
+                                                  (not (qat(u, nat_succ(m)) = rational.ZERO))
                                                 [by rewrite the-entry-shifts the-old-entry-is-good]
                                               @conclusion-at-successor |
                                                 isInteger(qat(u, i)) and
@@ -1149,76 +1150,76 @@ proof
                                     }
                                 }
                               @below-succ-k-implies-good |
-                                less_than(i, succ(k)) ->
+                                nat_less_than(i, nat_succ(k)) ->
                                   (isInteger(qat(u, i)) and
                                   (not (qat(u, i) = rational.ZERO)))
                                 [by discharge given-i-below-succ-k]
                             }
                           @all-good-below-succ-k |
-                            forall i: Nat; less_than(i, succ(k)) ->
+                            forall i: Nat; nat_less_than(i, nat_succ(k)) ->
                               (isInteger(qat(u, i)) and
                               (not (qat(u, i) = rational.ZERO)))
                             [by generalize good-below-succ-k]
                           @conclusion-the-extended-sequence |
-                            exists s: QSeq; forall i: Nat; less_than(i, succ(k)) ->
+                            exists s: QSeq; forall i: Nat; nat_less_than(i, nat_succ(k)) ->
                               (isInteger(qat(s, i)) and
                               (not (qat(s, i) = rational.ZERO)))
                             [by witness(u) all-good-below-succ-k]
                         }
                       @conclusion-prepend-exported |
-                        exists s: QSeq; forall i: Nat; less_than(i, succ(k)) ->
+                        exists s: QSeq; forall i: Nat; nat_less_than(i, nat_succ(k)) ->
                           (isInteger(qat(s, i)) and
                           (not (qat(s, i) = rational.ZERO)))
                         [by unpacked with-the-prepend]
                     }
                   @conclusion-previous-exported |
-                    exists s: QSeq; forall i: Nat; less_than(i, succ(k)) ->
+                    exists s: QSeq; forall i: Nat; nat_less_than(i, nat_succ(k)) ->
                       (isInteger(qat(s, i)) and
                       (not (qat(s, i) = rational.ZERO)))
                     [by unpacked with-the-previous]
                 }
               @the-step-exported |
-                exists s: QSeq; forall i: Nat; less_than(i, succ(k)) ->
+                exists s: QSeq; forall i: Nat; nat_less_than(i, nat_succ(k)) ->
                   (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
                 [by unpacked conclusion-the-step]
             }
           @induction-step-at-k |
-            (exists s: QSeq; forall i: Nat; less_than(i, k) ->
+            (exists s: QSeq; forall i: Nat; nat_less_than(i, k) ->
               (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))) ->
-              (exists s: QSeq; forall i: Nat; less_than(i, succ(k)) ->
+              (exists s: QSeq; forall i: Nat; nat_less_than(i, nat_succ(k)) ->
               (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO))))
             [by discharge given-inductive-hypothesis]
         }
       @induction-step-for-all-k |
         forall k: Nat;
-          (exists s: QSeq; forall i: Nat; less_than(i, k) ->
+          (exists s: QSeq; forall i: Nat; nat_less_than(i, k) ->
           (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))) ->
-          (exists s: QSeq; forall i: Nat; less_than(i, succ(k)) ->
+          (exists s: QSeq; forall i: Nat; nat_less_than(i, nat_succ(k)) ->
           (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO))))
         [by generalize induction-step]
       @all-bounds |
         forall n: Nat;
-          exists s: QSeq; forall i: Nat; less_than(i, n) ->
+          exists s: QSeq; forall i: Nat; nat_less_than(i, n) ->
           (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
-        [using instantiation peano.induction((fun t: Nat => (exists s: QSeq; forall i: Nat; less_than(i, t) -> (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))))) base-case-exported induction-step-for-all-k]
+        [using instantiation peano.induction((fun t: Nat => (exists s: QSeq; forall i: Nat; nat_less_than(i, t) -> (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))))) base-case-exported induction-step-for-all-k]
       // the hypothesis is discharged OUTSIDE the `forall n`, so re-fix n and push it in
       @reorder |
         fix n: Nat {
           @at-this-bound |
-            exists s: QSeq; forall i: Nat; less_than(i, n) ->
+            exists s: QSeq; forall i: Nat; nat_less_than(i, n) ->
               (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
             [using specialize all-bounds(n)]
         }
       @all-bounds-refixed |
         forall n: Nat;
-          exists s: QSeq; forall i: Nat; less_than(i, n) ->
+          exists s: QSeq; forall i: Nat; nat_less_than(i, n) ->
           (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
         [by generalize reorder]
     }
   @witnesses-imply-the-sequences |
     (forall i: Nat; exists v: Q; isInteger(v) and (not (v = rational.ZERO))) ->
       (forall n: Nat;
-      exists s: QSeq; forall i: Nat; less_than(i, n) ->
+      exists s: QSeq; forall i: Nat; nat_less_than(i, n) ->
       (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO))))
     [by discharge given-the-per-index-witnesses]
 
@@ -1233,25 +1234,25 @@ proof
             [by hypothesis given-the-witnesses-again]
           @all-bounds-here |
             forall n9: Nat;
-              exists s: QSeq; forall i: Nat; less_than(i, n9) ->
+              exists s: QSeq; forall i: Nat; nat_less_than(i, n9) ->
               (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
             [by modus_ponens witnesses-imply-the-sequences the-witnesses-again]
           @conclusion-at-n |
-            exists s: QSeq; forall i: Nat; less_than(i, n) ->
+            exists s: QSeq; forall i: Nat; nat_less_than(i, n) ->
               (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
             [using specialize all-bounds-here(n)]
         }
       @witnesses-imply-at-n |
         (forall i: Nat; exists v: Q;
           isInteger(v) and (not (v = rational.ZERO))) ->
-          (exists s: QSeq; forall i: Nat; less_than(i, n) ->
+          (exists s: QSeq; forall i: Nat; nat_less_than(i, n) ->
           (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO))))
         [by discharge given-the-witnesses-again]
     }
   @conclusion |
     forall n: Nat;
       (forall i: Nat; exists v: Q; isInteger(v) and (not (v = rational.ZERO))) ->
-      (exists s: QSeq; forall i: Nat; less_than(i, n) ->
+      (exists s: QSeq; forall i: Nat; nat_less_than(i, n) ->
       (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO))))
     [by generalize final-reorder]
 qed
@@ -1269,7 +1270,7 @@ qed
 // unpacked from a hypothesis the caller already proved.
 theorem anIndexPinnedChoiceIsRealized(spec(Nat, Q)):
   (forall i: Nat; exists v: Q; spec(i, v)) ->
-  forall n: Nat; exists t: QSeq; forall i: Nat; less_than(i, n) -> spec(i, qat(t, i))
+  forall n: Nat; exists t: QSeq; forall i: Nat; nat_less_than(i, n) -> spec(i, qat(t, i))
 
 proof
   @given-the-witnesses |
@@ -1278,61 +1279,61 @@ proof
         forall i: Nat; exists v: Q; spec(i, v)
         [by hypothesis given-the-witnesses]
 
-      // base: nothing below ZERO, so any sequence serves
+      // base: nothing below NAT_ZERO, so any sequence serves
       @the-witness-at-zero |
-        exists v: Q; spec(ZERO, v)
-        [using specialize the-witnesses(ZERO)]
+        exists v: Q; spec(NAT_ZERO, v)
+        [using specialize the-witnesses(NAT_ZERO)]
       @base-case |
         unpack v0: Q from the-witness-at-zero {
           @some-sequence-exists |
-            exists t: QSeq; qat(t, ZERO) = v0
+            exists t: QSeq; qat(t, NAT_ZERO) = v0
             [using specialize qSeqSingletonOnly(v0)]
           @with-some-sequence |
             unpack t0: QSeq from some-sequence-exists {
               @nothing-below-zero |
                 fix i: Nat {
                   @given-i-below-zero |
-                    assume less_than(i, ZERO) {
+                    assume nat_less_than(i, NAT_ZERO) {
                       @i-below-zero |
-                        less_than(i, ZERO)
+                        nat_less_than(i, NAT_ZERO)
                         [by hypothesis given-i-below-zero]
                       @nothing-is-below-zero |
-                        not less_than(i, ZERO)
+                        not nat_less_than(i, NAT_ZERO)
                         [using specialize peano_order.notLessThanZero(i)]
                       @conclusion-vacuous |
                         spec(i, qat(t0, i))
                         [by ex_falso i-below-zero nothing-is-below-zero]
                     }
                   @below-zero-implies |
-                    less_than(i, ZERO) -> spec(i, qat(t0, i))
+                    nat_less_than(i, NAT_ZERO) -> spec(i, qat(t0, i))
                     [by discharge given-i-below-zero]
                 }
               @all-below-zero |
-                forall i: Nat; less_than(i, ZERO) -> spec(i, qat(t0, i))
+                forall i: Nat; nat_less_than(i, NAT_ZERO) -> spec(i, qat(t0, i))
                 [by generalize nothing-below-zero]
               @conclusion-base-inner |
                 exists t: QSeq; forall i: Nat;
-                  less_than(i, ZERO) -> spec(i, qat(t, i))
+                  nat_less_than(i, NAT_ZERO) -> spec(i, qat(t, i))
                 [by witness(t0) all-below-zero]
             }
           @conclusion-base-middle |
             exists t: QSeq; forall i: Nat;
-              less_than(i, ZERO) -> spec(i, qat(t, i))
+              nat_less_than(i, NAT_ZERO) -> spec(i, qat(t, i))
             [by unpacked with-some-sequence]
         }
       @base-case-exported |
         exists t: QSeq; forall i: Nat;
-          less_than(i, ZERO) -> spec(i, qat(t, i))
+          nat_less_than(i, NAT_ZERO) -> spec(i, qat(t, i))
         [by unpacked base-case]
 
       @induction-step |
         fix k: Nat {
           @given-inductive-hypothesis |
             assume exists t: QSeq; forall i: Nat;
-              less_than(i, k) -> spec(i, qat(t, i)) {
+              nat_less_than(i, k) -> spec(i, qat(t, i)) {
               @inductive-hypothesis |
                 exists t: QSeq; forall i: Nat;
-                  less_than(i, k) -> spec(i, qat(t, i))
+                  nat_less_than(i, k) -> spec(i, qat(t, i))
                 [by hypothesis given-inductive-hypothesis]
               @the-witness-at-k |
                 exists v: Q; spec(k, v)
@@ -1345,50 +1346,50 @@ proof
                   @with-previous |
                     unpack tk: QSeq from inductive-hypothesis {
                       @with-previous-tk |
-                        forall i: Nat; less_than(i, k) -> spec(i, qat(tk, i))
+                        forall i: Nat; nat_less_than(i, k) -> spec(i, qat(tk, i))
                         [by hypothesis with-previous]
                       @the-new-entry-exists |
-                        exists w: QSeq; qat(w, ZERO) = vk
+                        exists w: QSeq; qat(w, NAT_ZERO) = vk
                         [using specialize qSeqSingletonOnly(vk)]
                       @with-the-new-entry |
                         unpack w: QSeq from the-new-entry-exists {
                           @the-new-entry |
-                            qat(w, ZERO) = vk
+                            qat(w, NAT_ZERO) = vk
                             [by hypothesis with-the-new-entry]
                           @the-concat-exists |
                             exists u: QSeq;
-                              (forall i: Nat; less_than(i, k) ->
+                              (forall i: Nat; nat_less_than(i, k) ->
                               qat(u, i) = qat(tk, i))
-                              and (forall i: Nat; less_than(i, succ(ZERO)) ->
-                              qat(u, add(k, i)) = qat(w, i))
-                            [using specialize qSeqConcatOnly(tk, w, k, succ(ZERO))]
+                              and (forall i: Nat; nat_less_than(i, nat_succ(NAT_ZERO)) ->
+                              qat(u, nat_add(k, i)) = qat(w, i))
+                            [using specialize qSeqConcatOnly(tk, w, k, nat_succ(NAT_ZERO))]
                           @with-the-concat |
                             unpack u: QSeq from the-concat-exists {
                               @with-concat-u |
-                                (forall i: Nat; less_than(i, k) ->
+                                (forall i: Nat; nat_less_than(i, k) ->
                                   qat(u, i) = qat(tk, i))
-                                  and (forall i: Nat; less_than(i, succ(ZERO)) ->
-                                  qat(u, add(k, i)) = qat(w, i))
+                                  and (forall i: Nat; nat_less_than(i, nat_succ(NAT_ZERO)) ->
+                                  qat(u, nat_add(k, i)) = qat(w, i))
                                 [by hypothesis with-the-concat]
                               @below-k-unchanged |
-                                forall i: Nat; less_than(i, k) ->
+                                forall i: Nat; nat_less_than(i, k) ->
                                   qat(u, i) = qat(tk, i)
                                 [by and_lhs with-concat-u]
                               @at-k-is-the-new-entry |
-                                forall i: Nat; less_than(i, succ(ZERO)) ->
-                                  qat(u, add(k, i)) = qat(w, i)
+                                forall i: Nat; nat_less_than(i, nat_succ(NAT_ZERO)) ->
+                                  qat(u, nat_add(k, i)) = qat(w, i)
                                 [by and_rhs with-concat-u]
                               @zero-below-one |
-                                less_than(ZERO, succ(ZERO))
-                                [using specialize peano_order.lessThanSelf(ZERO)]
+                                nat_less_than(NAT_ZERO, nat_succ(NAT_ZERO))
+                                [using specialize peano_order.lessThanSelf(NAT_ZERO)]
                               @at-k-plus-zero |
-                                qat(u, add(k, ZERO)) = qat(w, ZERO)
-                                [using specialize at-k-is-the-new-entry(ZERO) zero-below-one]
+                                qat(u, nat_add(k, NAT_ZERO)) = qat(w, NAT_ZERO)
+                                [using specialize at-k-is-the-new-entry(NAT_ZERO) zero-below-one]
                               @k-plus-zero |
-                                add(k, ZERO) = k
+                                nat_add(k, NAT_ZERO) = k
                                 [using specialize peano.addZeroRight(k)]
                               @at-k |
-                                qat(u, k) = qat(w, ZERO)
+                                qat(u, k) = qat(w, NAT_ZERO)
                                 [by rewrite k-plus-zero at-k-plus-zero]
                               @at-k-is-vk |
                                 qat(u, k) = vk
@@ -1396,20 +1397,20 @@ proof
                               @good-below-succ-k |
                                 fix i: Nat {
                                   @given-i-below-succ-k |
-                                    assume less_than(i, succ(k)) {
+                                    assume nat_less_than(i, nat_succ(k)) {
                                       @i-below-succ-k |
-                                        less_than(i, succ(k))
+                                        nat_less_than(i, nat_succ(k))
                                         [by hypothesis given-i-below-succ-k]
                                       @the-split |
-                                        less_than(i, k) or i = k
+                                        nat_less_than(i, k) or i = k
                                         [using specialize peano_order.lessThanSuccSplit(i, k) i-below-succ-k]
                                       @conclusion-this-entry |
                                         spec(i, qat(u, i))
                                         case the-split {
                                           @when-i-below-k |
-                                            assume less_than(i, k) {
+                                            assume nat_less_than(i, k) {
                                               @i-below-k |
-                                                less_than(i, k)
+                                                nat_less_than(i, k)
                                                 [by hypothesis when-i-below-k]
                                               @unchanged-at-i |
                                                 qat(u, i) = qat(tk, i)
@@ -1436,61 +1437,61 @@ proof
                                         }
                                     }
                                   @below-succ-k-implies |
-                                    less_than(i, succ(k)) -> spec(i, qat(u, i))
+                                    nat_less_than(i, nat_succ(k)) -> spec(i, qat(u, i))
                                     [by discharge given-i-below-succ-k]
                                 }
                               @all-good-below-succ-k |
                                 forall i: Nat;
-                                  less_than(i, succ(k)) -> spec(i, qat(u, i))
+                                  nat_less_than(i, nat_succ(k)) -> spec(i, qat(u, i))
                                 [by generalize good-below-succ-k]
                               @conclusion-the-extended |
                                 exists t: QSeq; forall i: Nat;
-                                  less_than(i, succ(k)) -> spec(i, qat(t, i))
+                                  nat_less_than(i, nat_succ(k)) -> spec(i, qat(t, i))
                                 [by witness(u) all-good-below-succ-k]
                             }
                           @conclusion-concat-exported |
                             exists t: QSeq; forall i: Nat;
-                              less_than(i, succ(k)) -> spec(i, qat(t, i))
+                              nat_less_than(i, nat_succ(k)) -> spec(i, qat(t, i))
                             [by unpacked with-the-concat]
                         }
                       @conclusion-entry-exported |
                         exists t: QSeq; forall i: Nat;
-                          less_than(i, succ(k)) -> spec(i, qat(t, i))
+                          nat_less_than(i, nat_succ(k)) -> spec(i, qat(t, i))
                         [by unpacked with-the-new-entry]
                     }
                   @conclusion-previous-exported |
                     exists t: QSeq; forall i: Nat;
-                      less_than(i, succ(k)) -> spec(i, qat(t, i))
+                      nat_less_than(i, nat_succ(k)) -> spec(i, qat(t, i))
                     [by unpacked with-previous]
                 }
               @the-step-exported |
                 exists t: QSeq; forall i: Nat;
-                  less_than(i, succ(k)) -> spec(i, qat(t, i))
+                  nat_less_than(i, nat_succ(k)) -> spec(i, qat(t, i))
                 [by unpacked conclusion-the-step]
             }
           @induction-step-at-k |
             (exists t: QSeq; forall i: Nat;
-              less_than(i, k) -> spec(i, qat(t, i))) ->
+              nat_less_than(i, k) -> spec(i, qat(t, i))) ->
               (exists t: QSeq; forall i: Nat;
-              less_than(i, succ(k)) -> spec(i, qat(t, i)))
+              nat_less_than(i, nat_succ(k)) -> spec(i, qat(t, i)))
             [by discharge given-inductive-hypothesis]
         }
       @induction-step-for-all-k |
         forall k: Nat;
           (exists t: QSeq; forall i: Nat;
-          less_than(i, k) -> spec(i, qat(t, i))) ->
+          nat_less_than(i, k) -> spec(i, qat(t, i))) ->
           (exists t: QSeq; forall i: Nat;
-          less_than(i, succ(k)) -> spec(i, qat(t, i)))
+          nat_less_than(i, nat_succ(k)) -> spec(i, qat(t, i)))
         [by generalize induction-step]
       @all-bounds |
         forall n: Nat;
-          exists t: QSeq; forall i: Nat; less_than(i, n) -> spec(i, qat(t, i))
-        [using instantiation peano.induction((fun z: Nat => (exists t: QSeq; forall i: Nat; less_than(i, z) -> spec(i, qat(t, i))))) base-case-exported induction-step-for-all-k]
+          exists t: QSeq; forall i: Nat; nat_less_than(i, n) -> spec(i, qat(t, i))
+        [using instantiation peano.induction((fun z: Nat => (exists t: QSeq; forall i: Nat; nat_less_than(i, z) -> spec(i, qat(t, i))))) base-case-exported induction-step-for-all-k]
     }
   @conclusion |
     (forall i: Nat; exists v: Q; spec(i, v)) ->
       forall n: Nat; exists t: QSeq; forall i: Nat;
-      less_than(i, n) -> spec(i, qat(t, i))
+      nat_less_than(i, n) -> spec(i, qat(t, i))
     [by discharge given-the-witnesses]
 qed
 
@@ -1603,7 +1604,7 @@ qed
 
 theorem aDenominatorSequenceExists: forall n: Nat;
   exists t: QSeq; forall i: Nat;
-  less_than(i, n) -> isADenominatorFor(i, qat(t, i))
+  nat_less_than(i, n) -> isADenominatorFor(i, qat(t, i))
 proof
   @the-witnesses |
     forall i: Nat; exists v: Q; isADenominatorFor(i, v)
@@ -1611,12 +1612,12 @@ proof
   @the-choice |
     (forall i: Nat; exists v: Q; isADenominatorFor(i, v)) ->
       forall n: Nat; exists t: QSeq; forall i: Nat;
-      less_than(i, n) -> isADenominatorFor(i, qat(t, i))
+      nat_less_than(i, n) -> isADenominatorFor(i, qat(t, i))
     [using instantiation anIndexPinnedChoiceIsRealized(isADenominatorFor)]
   @conclusion |
     forall n: Nat;
       exists t: QSeq; forall i: Nat;
-      less_than(i, n) -> isADenominatorFor(i, qat(t, i))
+      nat_less_than(i, n) -> isADenominatorFor(i, qat(t, i))
     [by modus_ponens the-choice the-witnesses]
 qed
 
@@ -1850,88 +1851,88 @@ qed
 pred isACommonDivisorUpTo(d: Q, s: QSeq, n: Nat)
 axiom commonDivisorMeaning: forall d: Q; forall s: QSeq; forall n: Nat;
   isACommonDivisorUpTo(d, s, n) iff
-  (forall i: Nat; less_than(i, n) -> dividesIntegrally(d, qat(s, i)))
+  (forall i: Nat; nat_less_than(i, n) -> dividesIntegrally(d, qat(s, i)))
 
 // ONE is a common divisor of anything: every integer is ONE times itself.
 theorem oneIsACommonDivisor: forall s: QSeq; forall n: Nat;
-  (forall i: Nat; less_than(i, n) -> isInteger(qat(s, i))) ->
-  isACommonDivisorUpTo(QONE, s, n)
+  (forall i: Nat; nat_less_than(i, n) -> isInteger(qat(s, i))) ->
+  isACommonDivisorUpTo(ONE, s, n)
 proof
   @generalize-s |
     fix s: QSeq {
       @generalize-n |
         fix n: Nat {
           @given-the-entries-are-integers |
-            assume forall i: Nat; less_than(i, n) -> isInteger(qat(s, i)) {
+            assume forall i: Nat; nat_less_than(i, n) -> isInteger(qat(s, i)) {
               @the-entries-are-integers |
-                forall i: Nat; less_than(i, n) -> isInteger(qat(s, i))
+                forall i: Nat; nat_less_than(i, n) -> isInteger(qat(s, i))
                 [by hypothesis given-the-entries-are-integers]
               @one-divides-each |
                 fix i: Nat {
                   @given-i-below-n |
-                    assume less_than(i, n) {
+                    assume nat_less_than(i, n) {
                       @i-below-n |
-                        less_than(i, n)
+                        nat_less_than(i, n)
                         [by hypothesis given-i-below-n]
                       @the-entry-is-an-integer |
                         isInteger(qat(s, i))
                         [using specialize the-entries-are-integers(i) i-below-n]
                       // the witness quotient is the entry itself: entry = 1 · entry
                       @one-times-the-entry |
-                        rational.mul(QONE, qat(s, i)) = qat(s, i)
+                        rational.mul(ONE, qat(s, i)) = qat(s, i)
                         [using specialize rational.mulOneLeft(qat(s, i))]
                       @the-entry-is-one-times-itself |
-                        qat(s, i) = rational.mul(QONE, qat(s, i))
+                        qat(s, i) = rational.mul(ONE, qat(s, i))
                         [by symmetry one-times-the-entry]
                       @the-witness-works |
                         isInteger(qat(s, i)) and
-                          qat(s, i) = rational.mul(QONE, qat(s, i))
+                          qat(s, i) = rational.mul(ONE, qat(s, i))
                         [by both the-entry-is-an-integer the-entry-is-one-times-itself]
                       @a-quotient-exists |
                         exists k: Q; isInteger(k) and
-                          qat(s, i) = rational.mul(QONE, k)
+                          qat(s, i) = rational.mul(ONE, k)
                         [by witness(qat(s, i)) the-witness-works]
                       @the-divides-meaning |
-                        dividesIntegrally(QONE, qat(s, i)) iff
+                        dividesIntegrally(ONE, qat(s, i)) iff
                           (exists k: Q; isInteger(k) and
-                          qat(s, i) = rational.mul(QONE, k))
-                        [using specialize dividesIntegrallyMeaning(QONE, qat(s, i))]
+                          qat(s, i) = rational.mul(ONE, k))
+                        [using specialize dividesIntegrallyMeaning(ONE, qat(s, i))]
                       @conclusion-one-divides |
-                        dividesIntegrally(QONE, qat(s, i))
+                        dividesIntegrally(ONE, qat(s, i))
                         [using tautology the-divides-meaning a-quotient-exists]
                     }
                   @below-n-implies |
-                    less_than(i, n) -> dividesIntegrally(QONE, qat(s, i))
+                    nat_less_than(i, n) -> dividesIntegrally(ONE, qat(s, i))
                     [by discharge given-i-below-n]
                 }
               @all-divided |
                 forall i: Nat;
-                  less_than(i, n) -> dividesIntegrally(QONE, qat(s, i))
+                  nat_less_than(i, n) -> dividesIntegrally(ONE, qat(s, i))
                 [by generalize one-divides-each]
               @the-common-divisor-meaning |
-                isACommonDivisorUpTo(QONE, s, n) iff
+                isACommonDivisorUpTo(ONE, s, n) iff
                   (forall i: Nat;
-                  less_than(i, n) -> dividesIntegrally(QONE, qat(s, i)))
-                [using specialize commonDivisorMeaning(QONE, s, n)]
+                  nat_less_than(i, n) -> dividesIntegrally(ONE, qat(s, i)))
+                [using specialize commonDivisorMeaning(ONE, s, n)]
               @conclusion-one-is-common |
-                isACommonDivisorUpTo(QONE, s, n)
+                isACommonDivisorUpTo(ONE, s, n)
                 [using tautology the-common-divisor-meaning all-divided]
             }
           @integers-imply-one-is-common |
-            (forall i: Nat; less_than(i, n) -> isInteger(qat(s, i))) ->
-              isACommonDivisorUpTo(QONE, s, n)
+            (forall i: Nat; nat_less_than(i, n) -> isInteger(qat(s, i))) ->
+              isACommonDivisorUpTo(ONE, s, n)
             [by discharge given-the-entries-are-integers]
         }
       @discharge-n |
         forall n9: Nat;
-          (forall i: Nat; less_than(i, n9) -> isInteger(qat(s, i))) ->
-          isACommonDivisorUpTo(QONE, s, n9)
+          (forall i: Nat; nat_less_than(i, n9) -> isInteger(qat(s, i))) ->
+          isACommonDivisorUpTo(ONE, s, n9)
         [by generalize generalize-n]
     }
   @conclusion |
     forall s: QSeq; forall n: Nat;
-      (forall i: Nat; less_than(i, n) -> isInteger(qat(s, i))) ->
-      isACommonDivisorUpTo(QONE, s, n)
+      (forall i: Nat; nat_less_than(i, n) -> isInteger(qat(s, i))) ->
+      isACommonDivisorUpTo(ONE, s, n)
     [by generalize generalize-s]
 qed
 
@@ -1970,13 +1971,13 @@ proof
                         rational.mul(a, b) = rational.mul(a, c)
                         [by hypothesis given-the-products-agree]
                       @the-inverse |
-                        rational.mul(a, recip(a)) = QONE
+                        rational.mul(a, recip(a)) = ONE
                         [using specialize rational.fieldInverse(a) a-nonzero]
                       @the-inverse-commutes |
                         rational.mul(recip(a), a) = rational.mul(a, recip(a))
                         [using specialize rational.mulIsCommutative(recip(a), a)]
                       @the-reciprocal |
-                        rational.mul(recip(a), a) = QONE
+                        rational.mul(recip(a), a) = ONE
                         [using simplify the-inverse-commutes the-inverse]
                       // b = 1·b = (a⁻¹a)b = a⁻¹(ab) = a⁻¹(ac) = (a⁻¹a)c = 1·c = c
                       @scaling-b-flipped |
@@ -2005,16 +2006,16 @@ proof
                           rational.mul(rational.mul(recip(a), a), c)
                         [by rewrite scaling-c-flipped through-the-middle]
                       @one-times-agree |
-                        rational.mul(QONE, b) = rational.mul(QONE, c)
+                        rational.mul(ONE, b) = rational.mul(ONE, c)
                         [by rewrite the-reciprocal regrouped-agree]
                       @one-times-b |
-                        rational.mul(QONE, b) = b
+                        rational.mul(ONE, b) = b
                         [using specialize rational.mulOneLeft(b)]
                       @one-times-c |
-                        rational.mul(QONE, c) = c
+                        rational.mul(ONE, c) = c
                         [using specialize rational.mulOneLeft(c)]
                       @b-is-one-times-c |
-                        b = rational.mul(QONE, c)
+                        b = rational.mul(ONE, c)
                         [by rewrite one-times-b one-times-agree]
                       @conclusion-they-agree |
                         b = c
@@ -2053,7 +2054,7 @@ qed
 theorem theScaledDivisorDividesTheScaledEntries:
   forall d, e: Q; forall s, q: QSeq; forall n: Nat;
   isACommonDivisorUpTo(e, q, n) ->
-  (forall i: Nat; less_than(i, n) -> qat(s, i) = rational.mul(d, qat(q, i))) ->
+  (forall i: Nat; nat_less_than(i, n) -> qat(s, i) = rational.mul(d, qat(q, i))) ->
   isACommonDivisorUpTo(rational.mul(d, e), s, n)
 proof
   @generalize-d |
@@ -2073,26 +2074,26 @@ proof
                             [by hypothesis given-e-divides-the-quotients]
                           @the-quotient-divisor-meaning |
                             isACommonDivisorUpTo(e, q, n) iff
-                              (forall i: Nat; less_than(i, n) ->
+                              (forall i: Nat; nat_less_than(i, n) ->
                               dividesIntegrally(e, qat(q, i)))
                             [using specialize commonDivisorMeaning(e, q, n)]
                           @e-divides-each-quotient |
-                            forall i: Nat; less_than(i, n) ->
+                            forall i: Nat; nat_less_than(i, n) ->
                               dividesIntegrally(e, qat(q, i))
                             [using tautology the-quotient-divisor-meaning e-divides-the-quotients]
                           @given-the-factorization |
-                            assume forall i: Nat; less_than(i, n) ->
+                            assume forall i: Nat; nat_less_than(i, n) ->
                               qat(s, i) = rational.mul(d, qat(q, i)) {
                               @the-factorization |
-                                forall i: Nat; less_than(i, n) ->
+                                forall i: Nat; nat_less_than(i, n) ->
                                   qat(s, i) = rational.mul(d, qat(q, i))
                                 [by hypothesis given-the-factorization]
                               @each-entry-divided |
                                 fix i: Nat {
                                   @given-i-below-n |
-                                    assume less_than(i, n) {
+                                    assume nat_less_than(i, n) {
                                       @i-below-n |
-                                        less_than(i, n)
+                                        nat_less_than(i, n)
                                         [by hypothesis given-i-below-n]
                                       @e-divides-this-quotient |
                                         dividesIntegrally(e, qat(q, i))
@@ -2162,17 +2163,17 @@ proof
                                         [by unpacked with-the-quotient]
                                     }
                                   @below-n-implies |
-                                    less_than(i, n) ->
+                                    nat_less_than(i, n) ->
                                       dividesIntegrally(rational.mul(d, e), qat(s, i))
                                     [by discharge given-i-below-n]
                                 }
                               @all-entries-divided |
-                                forall i: Nat; less_than(i, n) ->
+                                forall i: Nat; nat_less_than(i, n) ->
                                   dividesIntegrally(rational.mul(d, e), qat(s, i))
                                 [by generalize each-entry-divided]
                               @the-entry-divisor-meaning |
                                 isACommonDivisorUpTo(rational.mul(d, e), s, n) iff
-                                  (forall i: Nat; less_than(i, n) ->
+                                  (forall i: Nat; nat_less_than(i, n) ->
                                   dividesIntegrally(rational.mul(d, e),
                                   qat(s, i)))
                                 [using specialize commonDivisorMeaning(rational.mul(d, e), s, n)]
@@ -2181,14 +2182,14 @@ proof
                                 [using tautology the-entry-divisor-meaning all-entries-divided]
                             }
                           @factorization-implies |
-                            (forall i: Nat; less_than(i, n) ->
+                            (forall i: Nat; nat_less_than(i, n) ->
                               qat(s, i) = rational.mul(d, qat(q, i))) ->
                               isACommonDivisorUpTo(rational.mul(d, e), s, n)
                             [by discharge given-the-factorization]
                         }
                       @quotient-divisor-implies |
                         isACommonDivisorUpTo(e, q, n) ->
-                          (forall i: Nat; less_than(i, n) ->
+                          (forall i: Nat; nat_less_than(i, n) ->
                           qat(s, i) = rational.mul(d, qat(q, i))) ->
                           isACommonDivisorUpTo(rational.mul(d, e), s, n)
                         [by discharge given-e-divides-the-quotients]
@@ -2196,7 +2197,7 @@ proof
                   @discharge-n |
                     forall n9: Nat;
                       isACommonDivisorUpTo(e, q, n9) ->
-                      (forall i: Nat; less_than(i, n9) ->
+                      (forall i: Nat; nat_less_than(i, n9) ->
                       qat(s, i) = rational.mul(d, qat(q, i))) ->
                       isACommonDivisorUpTo(rational.mul(d, e), s, n9)
                     [by generalize generalize-n]
@@ -2204,7 +2205,7 @@ proof
               @discharge-q |
                 forall q9: QSeq; forall n9: Nat;
                   isACommonDivisorUpTo(e, q9, n9) ->
-                  (forall i: Nat; less_than(i, n9) ->
+                  (forall i: Nat; nat_less_than(i, n9) ->
                   qat(s, i) = rational.mul(d, qat(q9, i))) ->
                   isACommonDivisorUpTo(rational.mul(d, e), s, n9)
                 [by generalize generalize-q]
@@ -2212,7 +2213,7 @@ proof
           @discharge-s |
             forall s9: QSeq; forall q9: QSeq; forall n9: Nat;
               isACommonDivisorUpTo(e, q9, n9) ->
-              (forall i: Nat; less_than(i, n9) ->
+              (forall i: Nat; nat_less_than(i, n9) ->
               qat(s9, i) = rational.mul(d, qat(q9, i))) ->
               isACommonDivisorUpTo(rational.mul(d, e), s9, n9)
             [by generalize generalize-s]
@@ -2220,7 +2221,7 @@ proof
       @discharge-e |
         forall e9: Q; forall s9: QSeq; forall q9: QSeq; forall n9: Nat;
           isACommonDivisorUpTo(e9, q9, n9) ->
-          (forall i: Nat; less_than(i, n9) ->
+          (forall i: Nat; nat_less_than(i, n9) ->
           qat(s9, i) = rational.mul(d, qat(q9, i))) ->
           isACommonDivisorUpTo(rational.mul(d, e9), s9, n9)
         [by generalize generalize-e]
@@ -2228,7 +2229,7 @@ proof
   @conclusion |
     forall d, e: Q; forall s, q: QSeq; forall n: Nat;
       isACommonDivisorUpTo(e, q, n) ->
-      (forall i: Nat; less_than(i, n) ->
+      (forall i: Nat; nat_less_than(i, n) ->
       qat(s, i) = rational.mul(d, qat(q, i))) ->
       isACommonDivisorUpTo(rational.mul(d, e), s, n)
     [by generalize generalize-d]
@@ -2238,7 +2239,7 @@ qed
 theorem cancellingTheDivisorLeavesAUnit: forall d, e: Q;
   (not (d = rational.ZERO)) ->
   dividesIntegrally(rational.mul(d, e), d) ->
-  dividesIntegrally(e, QONE)
+  dividesIntegrally(e, ONE)
 proof
   @generalize-d |
     fix d: Q {
@@ -2284,57 +2285,57 @@ proof
                         d = rational.mul(d, rational.mul(e, m))
                         [by rewrite reassociate d-is-the-product]
                       @d-times-one |
-                        rational.mul(d, QONE) = d
+                        rational.mul(d, ONE) = d
                         [using specialize rational.mulOneRight(d)]
                       @the-products-agree |
-                        rational.mul(d, QONE) =
+                        rational.mul(d, ONE) =
                           rational.mul(d, rational.mul(e, m))
                         [by rewrite d-times-one d-is-d-times-em]
                       @one-is-e-times-m |
-                        QONE = rational.mul(e, m)
-                        [using specialize aNonzeroFactorCancels(d, QONE, rational.mul(e, m)) d-nonzero the-products-agree]
+                        ONE = rational.mul(e, m)
+                        [using specialize aNonzeroFactorCancels(d, ONE, rational.mul(e, m)) d-nonzero the-products-agree]
                       @the-witness-works |
-                        isInteger(m) and QONE = rational.mul(e, m)
+                        isInteger(m) and ONE = rational.mul(e, m)
                         [by both m-is-an-integer one-is-e-times-m]
                       @a-unit-quotient-exists |
-                        exists k: Q; isInteger(k) and QONE = rational.mul(e, k)
+                        exists k: Q; isInteger(k) and ONE = rational.mul(e, k)
                         [by witness(m) the-witness-works]
                       @the-unit-meaning |
-                        dividesIntegrally(e, QONE) iff
+                        dividesIntegrally(e, ONE) iff
                           (exists k: Q; isInteger(k) and
-                          QONE = rational.mul(e, k))
-                        [using specialize dividesIntegrallyMeaning(e, QONE)]
+                          ONE = rational.mul(e, k))
+                        [using specialize dividesIntegrallyMeaning(e, ONE)]
                       @conclusion-e-divides-one |
-                        dividesIntegrally(e, QONE)
+                        dividesIntegrally(e, ONE)
                         [using tautology the-unit-meaning a-unit-quotient-exists]
                     }
                   @conclusion-the-unit |
-                    dividesIntegrally(e, QONE)
+                    dividesIntegrally(e, ONE)
                     [by unpacked with-the-quotient]
                 }
               @division-implies |
                 dividesIntegrally(rational.mul(d, e), d) ->
-                  dividesIntegrally(e, QONE)
+                  dividesIntegrally(e, ONE)
                 [by discharge given-the-division]
             }
           @nonzero-implies |
             (not (d = rational.ZERO)) ->
               dividesIntegrally(rational.mul(d, e), d) ->
-              dividesIntegrally(e, QONE)
+              dividesIntegrally(e, ONE)
             [by discharge given-d-nonzero]
         }
       @discharge-e |
         forall e9: Q;
           (not (d = rational.ZERO)) ->
           dividesIntegrally(rational.mul(d, e9), d) ->
-          dividesIntegrally(e9, QONE)
+          dividesIntegrally(e9, ONE)
         [by generalize generalize-e]
     }
   @conclusion |
     forall d, e: Q;
       (not (d = rational.ZERO)) ->
       dividesIntegrally(rational.mul(d, e), d) ->
-      dividesIntegrally(e, QONE)
+      dividesIntegrally(e, ONE)
     [by generalize generalize-d]
 qed
 
@@ -2347,9 +2348,9 @@ qed
 theorem theQuotientsByAMaximalDivisorAreRelativelyPrime:
   forall d: Q; forall s, q: QSeq; forall n: Nat; forall e: Q;
   isAMaximalCommonDivisorUpTo(d, s, n) ->
-  (forall i: Nat; less_than(i, n) -> qat(s, i) = rational.mul(d, qat(q, i))) ->
+  (forall i: Nat; nat_less_than(i, n) -> qat(s, i) = rational.mul(d, qat(q, i))) ->
   isInteger(e) -> isACommonDivisorUpTo(e, q, n) ->
-  dividesIntegrally(e, QONE)
+  dividesIntegrally(e, ONE)
 proof
   @generalize-d |
     fix d: Q {
@@ -2393,10 +2394,10 @@ proof
                               dividesIntegrally(e2, d)
                             [using tautology the-maximal-parts]
                           @given-the-factorization |
-                            assume forall i: Nat; less_than(i, n) ->
+                            assume forall i: Nat; nat_less_than(i, n) ->
                               qat(s, i) = rational.mul(d, qat(q, i)) {
                               @the-factorization |
-                                forall i: Nat; less_than(i, n) ->
+                                forall i: Nat; nat_less_than(i, n) ->
                                   qat(s, i) = rational.mul(d, qat(q, i))
                                 [by hypothesis given-the-factorization]
                               @given-e-is-an-integer |
@@ -2422,84 +2423,84 @@ proof
                                         [using specialize maximality(rational.mul(d, e)) d-times-e-is-an-integer d-times-e-divides-the-entries]
                                       // cancel d: ONE = e·m
                                       @conclusion-e-is-a-unit |
-                                        dividesIntegrally(e, QONE)
+                                        dividesIntegrally(e, ONE)
                                         [using specialize cancellingTheDivisorLeavesAUnit(d, e) d-is-nonzero d-times-e-divides-d]
                                     }
                                   @quotient-divisor-implies |
                                     isACommonDivisorUpTo(e, q, n) ->
-                                      dividesIntegrally(e, QONE)
+                                      dividesIntegrally(e, ONE)
                                     [by discharge given-e-divides-the-quotients]
                                 }
                               @integer-implies |
                                 isInteger(e) ->
                                   isACommonDivisorUpTo(e, q, n) ->
-                                  dividesIntegrally(e, QONE)
+                                  dividesIntegrally(e, ONE)
                                 [by discharge given-e-is-an-integer]
                             }
                           @factorization-implies |
-                            (forall i: Nat; less_than(i, n) ->
+                            (forall i: Nat; nat_less_than(i, n) ->
                               qat(s, i) = rational.mul(d, qat(q, i))) ->
                               isInteger(e) ->
                               isACommonDivisorUpTo(e, q, n) ->
-                              dividesIntegrally(e, QONE)
+                              dividesIntegrally(e, ONE)
                             [by discharge given-the-factorization]
                         }
                       @maximal-implies |
                         isAMaximalCommonDivisorUpTo(d, s, n) ->
-                          (forall i: Nat; less_than(i, n) ->
+                          (forall i: Nat; nat_less_than(i, n) ->
                           qat(s, i) = rational.mul(d, qat(q, i))) ->
                           isInteger(e) ->
                           isACommonDivisorUpTo(e, q, n) ->
-                          dividesIntegrally(e, QONE)
+                          dividesIntegrally(e, ONE)
                         [by discharge given-d-is-maximal]
                     }
                   @discharge-e |
                     forall e9: Q;
                       isAMaximalCommonDivisorUpTo(d, s, n) ->
-                      (forall i: Nat; less_than(i, n) ->
+                      (forall i: Nat; nat_less_than(i, n) ->
                       qat(s, i) = rational.mul(d, qat(q, i))) ->
                       isInteger(e9) ->
                       isACommonDivisorUpTo(e9, q, n) ->
-                      dividesIntegrally(e9, QONE)
+                      dividesIntegrally(e9, ONE)
                     [by generalize generalize-e]
                 }
               @discharge-n |
                 forall n9: Nat; forall e9: Q;
                   isAMaximalCommonDivisorUpTo(d, s, n9) ->
-                  (forall i: Nat; less_than(i, n9) ->
+                  (forall i: Nat; nat_less_than(i, n9) ->
                   qat(s, i) = rational.mul(d, qat(q, i))) ->
                   isInteger(e9) ->
                   isACommonDivisorUpTo(e9, q, n9) ->
-                  dividesIntegrally(e9, QONE)
+                  dividesIntegrally(e9, ONE)
                 [by generalize generalize-n]
             }
           @discharge-q |
             forall q9: QSeq; forall n9: Nat; forall e9: Q;
               isAMaximalCommonDivisorUpTo(d, s, n9) ->
-              (forall i: Nat; less_than(i, n9) ->
+              (forall i: Nat; nat_less_than(i, n9) ->
               qat(s, i) = rational.mul(d, qat(q9, i))) ->
               isInteger(e9) ->
               isACommonDivisorUpTo(e9, q9, n9) ->
-              dividesIntegrally(e9, QONE)
+              dividesIntegrally(e9, ONE)
             [by generalize generalize-q]
         }
       @discharge-s |
         forall s9: QSeq; forall q9: QSeq; forall n9: Nat; forall e9: Q;
           isAMaximalCommonDivisorUpTo(d, s9, n9) ->
-          (forall i: Nat; less_than(i, n9) ->
+          (forall i: Nat; nat_less_than(i, n9) ->
           qat(s9, i) = rational.mul(d, qat(q9, i))) ->
           isInteger(e9) ->
           isACommonDivisorUpTo(e9, q9, n9) ->
-          dividesIntegrally(e9, QONE)
+          dividesIntegrally(e9, ONE)
         [by generalize generalize-s]
     }
   @conclusion |
     forall d: Q; forall s, q: QSeq; forall n: Nat; forall e: Q;
       isAMaximalCommonDivisorUpTo(d, s, n) ->
-      (forall i: Nat; less_than(i, n) ->
+      (forall i: Nat; nat_less_than(i, n) ->
       qat(s, i) = rational.mul(d, qat(q, i))) ->
       isInteger(e) -> isACommonDivisorUpTo(e, q, n) ->
-      dividesIntegrally(e, QONE)
+      dividesIntegrally(e, ONE)
     [by generalize generalize-d]
 qed
 
@@ -2639,7 +2640,7 @@ theorem theReducedFractionIsInLowestTerms: forall g, a, b, r, s, e: Q;
   isAMaximalCommonDivisorOfThePair(g, a, b) ->
   a = rational.mul(g, r) -> b = rational.mul(g, s) ->
   isInteger(e) -> dividesIntegrally(e, r) -> dividesIntegrally(e, s) ->
-  dividesIntegrally(e, QONE)
+  dividesIntegrally(e, ONE)
 proof
   @generalize-g |
     fix g: Q {
@@ -2728,25 +2729,25 @@ proof
                                                     dividesIntegrally(rational.mul(g, e), g)
                                                     [using specialize pair-maximality(rational.mul(g, e)) g-times-e-is-an-integer g-times-e-divides-a g-times-e-divides-b]
                                                   @conclusion-e-is-a-unit |
-                                                    dividesIntegrally(e, QONE)
+                                                    dividesIntegrally(e, ONE)
                                                     [using specialize cancellingTheDivisorLeavesAUnit(g, e) g-is-nonzero g-times-e-divides-g]
                                                 }
                                               @divides-s-implies |
                                                 dividesIntegrally(e, s) ->
-                                                  dividesIntegrally(e, QONE)
+                                                  dividesIntegrally(e, ONE)
                                                 [by discharge given-e-divides-s]
                                             }
                                           @divides-r-implies |
                                             dividesIntegrally(e, r) ->
                                               dividesIntegrally(e, s) ->
-                                              dividesIntegrally(e, QONE)
+                                              dividesIntegrally(e, ONE)
                                             [by discharge given-e-divides-r]
                                         }
                                       @integer-implies |
                                         isInteger(e) ->
                                           dividesIntegrally(e, r) ->
                                           dividesIntegrally(e, s) ->
-                                          dividesIntegrally(e, QONE)
+                                          dividesIntegrally(e, ONE)
                                         [by discharge given-e-is-an-integer]
                                     }
                                   @b-factors-implies |
@@ -2754,7 +2755,7 @@ proof
                                       isInteger(e) ->
                                       dividesIntegrally(e, r) ->
                                       dividesIntegrally(e, s) ->
-                                      dividesIntegrally(e, QONE)
+                                      dividesIntegrally(e, ONE)
                                     [by discharge given-b-factors]
                                 }
                               @a-factors-implies |
@@ -2763,7 +2764,7 @@ proof
                                   isInteger(e) ->
                                   dividesIntegrally(e, r) ->
                                   dividesIntegrally(e, s) ->
-                                  dividesIntegrally(e, QONE)
+                                  dividesIntegrally(e, ONE)
                                 [by discharge given-a-factors]
                             }
                           @maximal-implies |
@@ -2773,7 +2774,7 @@ proof
                               isInteger(e) ->
                               dividesIntegrally(e, r) ->
                               dividesIntegrally(e, s) ->
-                              dividesIntegrally(e, QONE)
+                              dividesIntegrally(e, ONE)
                             [by discharge given-g-is-maximal]
                         }
                       @discharge-e |
@@ -2784,7 +2785,7 @@ proof
                           isInteger(e9) ->
                           dividesIntegrally(e9, r) ->
                           dividesIntegrally(e9, s) ->
-                          dividesIntegrally(e9, QONE)
+                          dividesIntegrally(e9, ONE)
                         [by generalize generalize-e]
                     }
                   @discharge-s |
@@ -2795,7 +2796,7 @@ proof
                       isInteger(e9) ->
                       dividesIntegrally(e9, r) ->
                       dividesIntegrally(e9, s9) ->
-                      dividesIntegrally(e9, QONE)
+                      dividesIntegrally(e9, ONE)
                     [by generalize generalize-s]
                 }
               @discharge-r |
@@ -2806,7 +2807,7 @@ proof
                   isInteger(e9) ->
                   dividesIntegrally(e9, r9) ->
                   dividesIntegrally(e9, s9) ->
-                  dividesIntegrally(e9, QONE)
+                  dividesIntegrally(e9, ONE)
                 [by generalize generalize-r]
             }
           @discharge-b |
@@ -2817,7 +2818,7 @@ proof
               isInteger(e9) ->
               dividesIntegrally(e9, r9) ->
               dividesIntegrally(e9, s9) ->
-              dividesIntegrally(e9, QONE)
+              dividesIntegrally(e9, ONE)
             [by generalize generalize-b]
         }
       @discharge-a |
@@ -2828,7 +2829,7 @@ proof
           isInteger(e9) ->
           dividesIntegrally(e9, r9) ->
           dividesIntegrally(e9, s9) ->
-          dividesIntegrally(e9, QONE)
+          dividesIntegrally(e9, ONE)
         [by generalize generalize-a]
     }
   @conclusion |
@@ -2836,7 +2837,7 @@ proof
       isAMaximalCommonDivisorOfThePair(g, a, b) ->
       a = rational.mul(g, r) -> b = rational.mul(g, s) ->
       isInteger(e) -> dividesIntegrally(e, r) -> dividesIntegrally(e, s) ->
-      dividesIntegrally(e, QONE)
+      dividesIntegrally(e, ONE)
     [by generalize generalize-g]
 qed
 
@@ -2862,7 +2863,7 @@ qed
 pred aQuotientSequenceFor(d: Q, s: QSeq, q: QSeq, n: Nat)
 axiom quotientSequenceMeaning: forall d: Q; forall s, q: QSeq; forall n: Nat;
   aQuotientSequenceFor(d, s, q, n) iff
-  (forall i: Nat; less_than(i, n) ->
+  (forall i: Nat; nat_less_than(i, n) ->
   qat(s, i) = rational.mul(d, qat(q, i)))
 
 // The coprimality 17.12 asks of the quotients, named so the existence statement can carry it.
@@ -2870,112 +2871,112 @@ pred theQuotientsAreCoprime(q: QSeq, n: Nat)
 axiom quotientsCoprimeMeaning: forall q: QSeq; forall n: Nat;
   theQuotientsAreCoprime(q, n) iff
   (forall e: Q; isInteger(e) -> isACommonDivisorUpTo(e, q, n) ->
-  dividesIntegrally(e, QONE))
+  dividesIntegrally(e, ONE))
 
 // ONE is always such a divisor, with the sequence itself as quotient — the inhabitation the
 // descent starts from.
 theorem theTrivialDivisorWorks: forall s: QSeq; forall n: Nat;
-  (forall i: Nat; less_than(i, n) -> isInteger(qat(s, i))) ->
-  (isACommonDivisorUpTo(QONE, s, n) and aQuotientSequenceFor(QONE, s, s, n))
+  (forall i: Nat; nat_less_than(i, n) -> isInteger(qat(s, i))) ->
+  (isACommonDivisorUpTo(ONE, s, n) and aQuotientSequenceFor(ONE, s, s, n))
 proof
   @generalize-s |
     fix s: QSeq {
       @generalize-n |
         fix n: Nat {
           @given-the-entries |
-            assume forall i: Nat; less_than(i, n) -> isInteger(qat(s, i)) {
+            assume forall i: Nat; nat_less_than(i, n) -> isInteger(qat(s, i)) {
               @the-entries |
-                forall i: Nat; less_than(i, n) -> isInteger(qat(s, i))
+                forall i: Nat; nat_less_than(i, n) -> isInteger(qat(s, i))
                 [by hypothesis given-the-entries]
               @one-divides |
-                isACommonDivisorUpTo(QONE, s, n)
+                isACommonDivisorUpTo(ONE, s, n)
                 [using specialize oneIsACommonDivisor(s, n) the-entries]
               @each-entry-is-one-times-itself |
                 fix i: Nat {
                   @given-i-below-n |
-                    assume less_than(i, n) {
+                    assume nat_less_than(i, n) {
                       @one-times-the-entry |
-                        rational.mul(QONE, qat(s, i)) = qat(s, i)
+                        rational.mul(ONE, qat(s, i)) = qat(s, i)
                         [using specialize rational.mulOneLeft(qat(s, i))]
                       @conclusion-the-identity |
-                        qat(s, i) = rational.mul(QONE, qat(s, i))
+                        qat(s, i) = rational.mul(ONE, qat(s, i))
                         [by symmetry one-times-the-entry]
                     }
                   @below-n-implies |
-                    less_than(i, n) ->
-                      qat(s, i) = rational.mul(QONE, qat(s, i))
+                    nat_less_than(i, n) ->
+                      qat(s, i) = rational.mul(ONE, qat(s, i))
                     [by discharge given-i-below-n]
                 }
               @all-identities |
-                forall i: Nat; less_than(i, n) ->
-                  qat(s, i) = rational.mul(QONE, qat(s, i))
+                forall i: Nat; nat_less_than(i, n) ->
+                  qat(s, i) = rational.mul(ONE, qat(s, i))
                 [by generalize each-entry-is-one-times-itself]
               @the-quotient-meaning |
-                aQuotientSequenceFor(QONE, s, s, n) iff
-                  (forall i: Nat; less_than(i, n) ->
-                  qat(s, i) = rational.mul(QONE, qat(s, i)))
-                [using specialize quotientSequenceMeaning(QONE, s, s, n)]
+                aQuotientSequenceFor(ONE, s, s, n) iff
+                  (forall i: Nat; nat_less_than(i, n) ->
+                  qat(s, i) = rational.mul(ONE, qat(s, i)))
+                [using specialize quotientSequenceMeaning(ONE, s, s, n)]
               @s-is-its-own-quotient |
-                aQuotientSequenceFor(QONE, s, s, n)
+                aQuotientSequenceFor(ONE, s, s, n)
                 [using tautology the-quotient-meaning all-identities]
               @conclusion-the-trivial-divisor |
-                isACommonDivisorUpTo(QONE, s, n) and
-                  aQuotientSequenceFor(QONE, s, s, n)
+                isACommonDivisorUpTo(ONE, s, n) and
+                  aQuotientSequenceFor(ONE, s, s, n)
                 [by both one-divides s-is-its-own-quotient]
             }
           @entries-imply |
-            (forall i: Nat; less_than(i, n) -> isInteger(qat(s, i))) ->
-              (isACommonDivisorUpTo(QONE, s, n) and
-              aQuotientSequenceFor(QONE, s, s, n))
+            (forall i: Nat; nat_less_than(i, n) -> isInteger(qat(s, i))) ->
+              (isACommonDivisorUpTo(ONE, s, n) and
+              aQuotientSequenceFor(ONE, s, s, n))
             [by discharge given-the-entries]
         }
       @discharge-n |
         forall n9: Nat;
-          (forall i: Nat; less_than(i, n9) -> isInteger(qat(s, i))) ->
-          (isACommonDivisorUpTo(QONE, s, n9) and
-          aQuotientSequenceFor(QONE, s, s, n9))
+          (forall i: Nat; nat_less_than(i, n9) -> isInteger(qat(s, i))) ->
+          (isACommonDivisorUpTo(ONE, s, n9) and
+          aQuotientSequenceFor(ONE, s, s, n9))
         [by generalize generalize-n]
     }
   @conclusion |
     forall s: QSeq; forall n: Nat;
-      (forall i: Nat; less_than(i, n) -> isInteger(qat(s, i))) ->
-      (isACommonDivisorUpTo(QONE, s, n) and
-      aQuotientSequenceFor(QONE, s, s, n))
+      (forall i: Nat; nat_less_than(i, n) -> isInteger(qat(s, i))) ->
+      (isACommonDivisorUpTo(ONE, s, n) and
+      aQuotientSequenceFor(ONE, s, s, n))
     [by generalize generalize-s]
 qed
 
 // ONE divides ONE: the witness quotient is ONE.
-theorem oneDividesItself: dividesIntegrally(QONE, QONE)
+theorem oneDividesItself: dividesIntegrally(ONE, ONE)
 proof
   @one-is-an-integer |
-    isInteger(QONE)
+    isInteger(ONE)
     [by cite rational.oneIsAnInteger]
   @one-times-one |
-    rational.mul(QONE, QONE) = QONE
-    [using specialize rational.mulOneLeft(QONE)]
+    rational.mul(ONE, ONE) = ONE
+    [using specialize rational.mulOneLeft(ONE)]
   @one-is-the-product |
-    QONE = rational.mul(QONE, QONE)
+    ONE = rational.mul(ONE, ONE)
     [by symmetry one-times-one]
   @the-witness-works |
-    isInteger(QONE) and QONE = rational.mul(QONE, QONE)
+    isInteger(ONE) and ONE = rational.mul(ONE, ONE)
     [by both one-is-an-integer one-is-the-product]
   @a-quotient-exists |
-    exists k: Q; isInteger(k) and QONE = rational.mul(QONE, k)
-    [by witness(QONE) the-witness-works]
+    exists k: Q; isInteger(k) and ONE = rational.mul(ONE, k)
+    [by witness(ONE) the-witness-works]
   @the-divides-meaning |
-    dividesIntegrally(QONE, QONE) iff
-      (exists k: Q; isInteger(k) and QONE = rational.mul(QONE, k))
-    [using specialize dividesIntegrallyMeaning(QONE, QONE)]
+    dividesIntegrally(ONE, ONE) iff
+      (exists k: Q; isInteger(k) and ONE = rational.mul(ONE, k))
+    [using specialize dividesIntegrallyMeaning(ONE, ONE)]
   @conclusion |
-    dividesIntegrally(QONE, QONE)
+    dividesIntegrally(ONE, ONE)
     [using tautology the-divides-meaning a-quotient-exists]
 qed
 
 // If e > 0 and e·k > 0 then k > 0: the general form of `theCofactorIsPositive`, which is
 // stated only for the product ONE.
 theorem theCofactorOfAPositiveIsPositive: forall e, k, whole: Q;
-  rational_less_than(QZERO, e) -> rational_less_than(QZERO, whole) ->
-  whole = rational.mul(e, k) -> rational_less_than(QZERO, k)
+  less_than(ZERO, e) -> less_than(ZERO, whole) ->
+  whole = rational.mul(e, k) -> less_than(ZERO, k)
 proof
   @generalize-e |
     fix e: Q {
@@ -2984,14 +2985,14 @@ proof
           @generalize-whole |
             fix whole: Q {
               @given-e-positive |
-                assume rational_less_than(QZERO, e) {
+                assume less_than(ZERO, e) {
                   @e-positive |
-                    rational_less_than(QZERO, e)
+                    less_than(ZERO, e)
                     [by hypothesis given-e-positive]
                   @given-whole-positive |
-                    assume rational_less_than(QZERO, whole) {
+                    assume less_than(ZERO, whole) {
                       @whole-positive |
-                        rational_less_than(QZERO, whole)
+                        less_than(ZERO, whole)
                         [by hypothesis given-whole-positive]
                       @given-the-factorization |
                         assume whole = rational.mul(e, k) {
@@ -2999,126 +3000,126 @@ proof
                             whole = rational.mul(e, k)
                             [by hypothesis given-the-factorization]
                           @the-product-positive |
-                            rational_less_than(QZERO, rational.mul(e, k))
+                            less_than(ZERO, rational.mul(e, k))
                             [by rewrite the-factorization whole-positive]
                           @the-sign-cases |
-                            rational_less_than(k, QZERO) or k = QZERO or
-                              rational_less_than(QZERO, k)
-                            [using specialize rational.lessThanTrichotomy(k, QZERO)]
+                            less_than(k, ZERO) or k = ZERO or
+                              less_than(ZERO, k)
+                            [using specialize rational.lessThanTrichotomy(k, ZERO)]
                           @zero-not-below-itself |
-                            not rational_less_than(QZERO, QZERO)
-                            [using specialize rational.lessThanIrreflexive(QZERO)]
+                            not less_than(ZERO, ZERO)
+                            [using specialize rational.lessThanIrreflexive(ZERO)]
                           @order-is-asymmetric |
                             forall y, z: Q;
-                              rational_less_than(y, z) -> (not rational_less_than(z, y))
+                              less_than(y, z) -> (not less_than(z, y))
                             [using model(rational.RationalOrderedField) field_order.lessThanAsymmetric]
                           @scaling |
                             forall x, y, z: Q;
-                              rational_less_than(x, y) -> rational_less_than(QZERO, z) ->
-                              rational_less_than(rational.mul(x, z), rational.mul(y, z))
+                              less_than(x, y) -> less_than(ZERO, z) ->
+                              less_than(rational.mul(x, z), rational.mul(y, z))
                             [using model(rational.RationalOrderedField) field_order.lessThanMulPositiveRight]
                           @conclusion-k-positive |
-                            rational_less_than(QZERO, k)
+                            less_than(ZERO, k)
                             case the-sign-cases {
                               // `or` is LEFT-associative: this arm is (k<0 or k=0)
                               @when-k-not-positive |
-                                assume rational_less_than(k, QZERO) or k = QZERO {
+                                assume less_than(k, ZERO) or k = ZERO {
                                   @k-not-positive |
-                                    rational_less_than(k, QZERO) or k = QZERO
+                                    less_than(k, ZERO) or k = ZERO
                                     [by hypothesis when-k-not-positive]
                                   @conclusion-nonpositive |
-                                    rational_less_than(QZERO, k)
+                                    less_than(ZERO, k)
                                     case k-not-positive {
                                       @when-k-negative |
-                                        assume rational_less_than(k, QZERO) {
+                                        assume less_than(k, ZERO) {
                                           @k-negative |
-                                            rational_less_than(k, QZERO)
+                                            less_than(k, ZERO)
                                             [by hypothesis when-k-negative]
                                           // k·e < 0·e = 0, and e·k = k·e
                                           @k-times-e-below |
-                                            rational_less_than(rational.mul(k, e),
-                                              rational.mul(QZERO, e))
-                                            [using specialize scaling(k, QZERO, e) k-negative e-positive]
+                                            less_than(rational.mul(k, e),
+                                              rational.mul(ZERO, e))
+                                            [using specialize scaling(k, ZERO, e) k-negative e-positive]
                                           @zero-times-e |
-                                            rational.mul(QZERO, e) = QZERO
+                                            rational.mul(ZERO, e) = ZERO
                                             [using specialize rational.mulZeroLeft(e)]
                                           @k-times-e-negative |
-                                            rational_less_than(rational.mul(k, e), QZERO)
+                                            less_than(rational.mul(k, e), ZERO)
                                             [by rewrite zero-times-e k-times-e-below]
                                           @the-product-commutes |
                                             rational.mul(k, e) =
                                               rational.mul(e, k)
                                             [using specialize rational.mulIsCommutative(k, e)]
                                           @the-product-negative |
-                                            rational_less_than(rational.mul(e, k), QZERO)
+                                            less_than(rational.mul(e, k), ZERO)
                                             [by rewrite the-product-commutes k-times-e-negative]
                                           @not-both |
-                                            not rational_less_than(QZERO,
+                                            not less_than(ZERO,
                                               rational.mul(e, k))
-                                            [using specialize order-is-asymmetric(rational.mul(e, k), QZERO) the-product-negative]
+                                            [using specialize order-is-asymmetric(rational.mul(e, k), ZERO) the-product-negative]
                                           @conclusion-vacuous-negative |
-                                            rational_less_than(QZERO, k)
+                                            less_than(ZERO, k)
                                             [by ex_falso the-product-positive not-both]
                                         }
                                       @when-k-zero |
-                                        assume k = QZERO {
+                                        assume k = ZERO {
                                           @k-zero |
-                                            k = QZERO
+                                            k = ZERO
                                             [by hypothesis when-k-zero]
                                           @e-times-zero |
-                                            rational.mul(e, QZERO) = QZERO
+                                            rational.mul(e, ZERO) = ZERO
                                             [using specialize rational.mulZeroRight(e)]
                                           @the-product-at-zero |
-                                            rational_less_than(QZERO,
-                                              rational.mul(e, QZERO))
+                                            less_than(ZERO,
+                                              rational.mul(e, ZERO))
                                             [by rewrite k-zero the-product-positive]
                                           @zero-below-zero |
-                                            rational_less_than(QZERO, QZERO)
+                                            less_than(ZERO, ZERO)
                                             [by rewrite e-times-zero the-product-at-zero]
                                           @conclusion-vacuous-zero |
-                                            rational_less_than(QZERO, k)
+                                            less_than(ZERO, k)
                                             [by ex_falso zero-below-zero zero-not-below-itself]
                                         }
                                     }
                                 }
                               @when-k-positive |
-                                assume rational_less_than(QZERO, k) {
+                                assume less_than(ZERO, k) {
                                   @k-positive |
-                                    rational_less_than(QZERO, k)
+                                    less_than(ZERO, k)
                                     [by hypothesis when-k-positive]
                                 }
                             }
                         }
                       @factorization-implies |
-                        whole = rational.mul(e, k) -> rational_less_than(QZERO, k)
+                        whole = rational.mul(e, k) -> less_than(ZERO, k)
                         [by discharge given-the-factorization]
                     }
                   @whole-positive-implies |
-                    rational_less_than(QZERO, whole) ->
-                      whole = rational.mul(e, k) -> rational_less_than(QZERO, k)
+                    less_than(ZERO, whole) ->
+                      whole = rational.mul(e, k) -> less_than(ZERO, k)
                     [by discharge given-whole-positive]
                 }
               @e-positive-implies |
-                rational_less_than(QZERO, e) -> rational_less_than(QZERO, whole) ->
-                  whole = rational.mul(e, k) -> rational_less_than(QZERO, k)
+                less_than(ZERO, e) -> less_than(ZERO, whole) ->
+                  whole = rational.mul(e, k) -> less_than(ZERO, k)
                 [by discharge given-e-positive]
             }
           @discharge-whole |
             forall w9: Q;
-              rational_less_than(QZERO, e) -> rational_less_than(QZERO, w9) ->
-              w9 = rational.mul(e, k) -> rational_less_than(QZERO, k)
+              less_than(ZERO, e) -> less_than(ZERO, w9) ->
+              w9 = rational.mul(e, k) -> less_than(ZERO, k)
             [by generalize generalize-whole]
         }
       @discharge-k |
         forall k9: Q; forall w9: Q;
-          rational_less_than(QZERO, e) -> rational_less_than(QZERO, w9) ->
-          w9 = rational.mul(e, k9) -> rational_less_than(QZERO, k9)
+          less_than(ZERO, e) -> less_than(ZERO, w9) ->
+          w9 = rational.mul(e, k9) -> less_than(ZERO, k9)
         [by generalize generalize-k]
     }
   @conclusion |
     forall e, k, whole: Q;
-      rational_less_than(QZERO, e) -> rational_less_than(QZERO, whole) ->
-      whole = rational.mul(e, k) -> rational_less_than(QZERO, k)
+      less_than(ZERO, e) -> less_than(ZERO, whole) ->
+      whole = rational.mul(e, k) -> less_than(ZERO, k)
     [by generalize generalize-e]
 qed
 
@@ -3130,10 +3131,10 @@ qed
 // `aProperFactorShrinksTheQuotient` puts q0' < q_0 provided q_0 is positive.
 theorem aNonUnitDivisorShrinksTheFirstQuotient:
   forall e, firstQuotient, smaller: Q;
-  isInteger(e) -> rational_less_than(QZERO, e) -> (not dividesIntegrally(e, QONE)) ->
-  rational_less_than(QZERO, firstQuotient) ->
+  isInteger(e) -> less_than(ZERO, e) -> (not dividesIntegrally(e, ONE)) ->
+  less_than(ZERO, firstQuotient) ->
   firstQuotient = rational.mul(e, smaller) ->
-  rational_less_than(smaller, firstQuotient)
+  less_than(smaller, firstQuotient)
 proof
   @generalize-e |
     fix e: Q {
@@ -3147,41 +3148,41 @@ proof
                     isInteger(e)
                     [by hypothesis given-e-is-an-integer]
                   @given-e-positive |
-                    assume rational_less_than(QZERO, e) {
+                    assume less_than(ZERO, e) {
                       @e-positive |
-                        rational_less_than(QZERO, e)
+                        less_than(ZERO, e)
                         [by hypothesis given-e-positive]
                       @given-e-not-a-unit |
-                        assume not dividesIntegrally(e, QONE) {
+                        assume not dividesIntegrally(e, ONE) {
                           @e-not-a-unit |
-                            not dividesIntegrally(e, QONE)
+                            not dividesIntegrally(e, ONE)
                             [by hypothesis given-e-not-a-unit]
                           // e != ONE, since ONE divides ONE
                           @one-divides-one |
-                            dividesIntegrally(QONE, QONE)
+                            dividesIntegrally(ONE, ONE)
                             [by cite oneDividesItself]
                           // e = ONE would make e divide ONE; rewrite rather than
                           // `tautology`, which sees an equation and a predicate as
                           // unrelated atoms.
                           @given-e-is-one |
-                            assume e = QONE {
+                            assume e = ONE {
                               @e-is-one |
-                                e = QONE
+                                e = ONE
                                 [by hypothesis given-e-is-one]
                               @e-divides-one |
-                                dividesIntegrally(e, QONE)
+                                dividesIntegrally(e, ONE)
                                 [by rewrite e-is-one one-divides-one]
                             }
                           @e-is-not-one |
-                            not (e = QONE)
+                            not (e = ONE)
                             [by contradiction given-e-is-one e-divides-one e-not-a-unit]
                           @e-above-one |
-                            rational_less_than(QONE, e)
+                            less_than(ONE, e)
                             [using specialize rational_integer_order.aPositiveNonUnitExceedsOne(e) e-is-an-integer e-positive e-is-not-one]
                           @given-first-positive |
-                            assume rational_less_than(QZERO, firstQuotient) {
+                            assume less_than(ZERO, firstQuotient) {
                               @first-positive |
-                                rational_less_than(QZERO, firstQuotient)
+                                less_than(ZERO, firstQuotient)
                                 [by hypothesis given-first-positive]
                               @given-the-factorization |
                                 assume firstQuotient = rational.mul(e, smaller) {
@@ -3189,71 +3190,71 @@ proof
                                     firstQuotient = rational.mul(e, smaller)
                                     [by hypothesis given-the-factorization]
                                   @smaller-is-positive |
-                                    rational_less_than(QZERO, smaller)
+                                    less_than(ZERO, smaller)
                                     [using specialize theCofactorOfAPositiveIsPositive(e, smaller, firstQuotient) e-positive first-positive the-factorization]
                                   @conclusion-strictly-smaller |
-                                    rational_less_than(smaller, firstQuotient)
+                                    less_than(smaller, firstQuotient)
                                     [using specialize rational_integer_order.aProperFactorShrinksTheQuotient(firstQuotient, e, smaller) e-above-one smaller-is-positive the-factorization]
                                 }
                               @factorization-implies |
                                 firstQuotient = rational.mul(e, smaller) ->
-                                  rational_less_than(smaller, firstQuotient)
+                                  less_than(smaller, firstQuotient)
                                 [by discharge given-the-factorization]
                             }
                           @first-positive-implies |
-                            rational_less_than(QZERO, firstQuotient) ->
+                            less_than(ZERO, firstQuotient) ->
                               firstQuotient = rational.mul(e, smaller) ->
-                              rational_less_than(smaller, firstQuotient)
+                              less_than(smaller, firstQuotient)
                             [by discharge given-first-positive]
                         }
                       @not-a-unit-implies |
-                        (not dividesIntegrally(e, QONE)) ->
-                          rational_less_than(QZERO, firstQuotient) ->
+                        (not dividesIntegrally(e, ONE)) ->
+                          less_than(ZERO, firstQuotient) ->
                           firstQuotient = rational.mul(e, smaller) ->
-                          rational_less_than(smaller, firstQuotient)
+                          less_than(smaller, firstQuotient)
                         [by discharge given-e-not-a-unit]
                     }
                   @positive-implies |
-                    rational_less_than(QZERO, e) ->
-                      (not dividesIntegrally(e, QONE)) ->
-                      rational_less_than(QZERO, firstQuotient) ->
+                    less_than(ZERO, e) ->
+                      (not dividesIntegrally(e, ONE)) ->
+                      less_than(ZERO, firstQuotient) ->
                       firstQuotient = rational.mul(e, smaller) ->
-                      rational_less_than(smaller, firstQuotient)
+                      less_than(smaller, firstQuotient)
                     [by discharge given-e-positive]
                 }
               @integer-implies |
-                isInteger(e) -> rational_less_than(QZERO, e) ->
-                  (not dividesIntegrally(e, QONE)) ->
-                  rational_less_than(QZERO, firstQuotient) ->
+                isInteger(e) -> less_than(ZERO, e) ->
+                  (not dividesIntegrally(e, ONE)) ->
+                  less_than(ZERO, firstQuotient) ->
                   firstQuotient = rational.mul(e, smaller) ->
-                  rational_less_than(smaller, firstQuotient)
+                  less_than(smaller, firstQuotient)
                 [by discharge given-e-is-an-integer]
             }
           @discharge-smaller |
             forall sm9: Q;
-              isInteger(e) -> rational_less_than(QZERO, e) ->
-              (not dividesIntegrally(e, QONE)) ->
-              rational_less_than(QZERO, firstQuotient) ->
+              isInteger(e) -> less_than(ZERO, e) ->
+              (not dividesIntegrally(e, ONE)) ->
+              less_than(ZERO, firstQuotient) ->
               firstQuotient = rational.mul(e, sm9) ->
-              rational_less_than(sm9, firstQuotient)
+              less_than(sm9, firstQuotient)
             [by generalize generalize-smaller]
         }
       @discharge-first |
         forall f9: Q; forall sm9: Q;
-          isInteger(e) -> rational_less_than(QZERO, e) ->
-          (not dividesIntegrally(e, QONE)) ->
-          rational_less_than(QZERO, f9) ->
+          isInteger(e) -> less_than(ZERO, e) ->
+          (not dividesIntegrally(e, ONE)) ->
+          less_than(ZERO, f9) ->
           f9 = rational.mul(e, sm9) ->
-          rational_less_than(sm9, f9)
+          less_than(sm9, f9)
         [by generalize generalize-first]
     }
   @conclusion |
     forall e, firstQuotient, smaller: Q;
-      isInteger(e) -> rational_less_than(QZERO, e) ->
-      (not dividesIntegrally(e, QONE)) ->
-      rational_less_than(QZERO, firstQuotient) ->
+      isInteger(e) -> less_than(ZERO, e) ->
+      (not dividesIntegrally(e, ONE)) ->
+      less_than(ZERO, firstQuotient) ->
       firstQuotient = rational.mul(e, smaller) ->
-      rational_less_than(smaller, firstQuotient)
+      less_than(smaller, firstQuotient)
     [by generalize generalize-e]
 qed
 
@@ -3263,7 +3264,7 @@ qed
 // divisor would shrink the first quotient.
 theorem noNonUnitDivisorMeansCoprime: forall q: QSeq; forall n: Nat;
   (forall e: Q; isInteger(e) -> isACommonDivisorUpTo(e, q, n) ->
-  dividesIntegrally(e, QONE)) ->
+  dividesIntegrally(e, ONE)) ->
   theQuotientsAreCoprime(q, n)
 proof
   @generalize-q |
@@ -3273,17 +3274,17 @@ proof
           @given-no-non-unit |
             assume forall e: Q; isInteger(e) ->
               isACommonDivisorUpTo(e, q, n) ->
-              dividesIntegrally(e, QONE) {
+              dividesIntegrally(e, ONE) {
               @no-non-unit |
                 forall e: Q; isInteger(e) ->
                   isACommonDivisorUpTo(e, q, n) ->
-                  dividesIntegrally(e, QONE)
+                  dividesIntegrally(e, ONE)
                 [by hypothesis given-no-non-unit]
               @the-coprime-meaning |
                 theQuotientsAreCoprime(q, n) iff
                   (forall e: Q; isInteger(e) ->
                   isACommonDivisorUpTo(e, q, n) ->
-                  dividesIntegrally(e, QONE))
+                  dividesIntegrally(e, ONE))
                 [using specialize quotientsCoprimeMeaning(q, n)]
               @conclusion-coprime |
                 theQuotientsAreCoprime(q, n)
@@ -3292,7 +3293,7 @@ proof
           @no-non-unit-implies-coprime |
             (forall e: Q; isInteger(e) ->
               isACommonDivisorUpTo(e, q, n) ->
-              dividesIntegrally(e, QONE)) ->
+              dividesIntegrally(e, ONE)) ->
               theQuotientsAreCoprime(q, n)
             [by discharge given-no-non-unit]
         }
@@ -3300,7 +3301,7 @@ proof
         forall n9: Nat;
           (forall e: Q; isInteger(e) ->
           isACommonDivisorUpTo(e, q, n9) ->
-          dividesIntegrally(e, QONE)) ->
+          dividesIntegrally(e, ONE)) ->
           theQuotientsAreCoprime(q, n9)
         [by generalize generalize-n]
     }
@@ -3308,7 +3309,7 @@ proof
     forall q: QSeq; forall n: Nat;
       (forall e: Q; isInteger(e) ->
       isACommonDivisorUpTo(e, q, n) ->
-      dividesIntegrally(e, QONE)) ->
+      dividesIntegrally(e, ONE)) ->
       theQuotientsAreCoprime(q, n)
     [by generalize generalize-q]
 qed
@@ -3341,11 +3342,11 @@ proof
                             [by hypothesis given-the-quotients]
                           @the-quotient-meaning |
                             aQuotientSequenceFor(d, s, q, n) iff
-                              (forall i: Nat; less_than(i, n) ->
+                              (forall i: Nat; nat_less_than(i, n) ->
                               qat(s, i) = rational.mul(d, qat(q, i)))
                             [using specialize quotientSequenceMeaning(d, s, q, n)]
                           @the-factorization |
-                            forall i: Nat; less_than(i, n) ->
+                            forall i: Nat; nat_less_than(i, n) ->
                               qat(s, i) = rational.mul(d, qat(q, i))
                             [using tautology the-quotient-meaning the-quotients]
                           @each-divisor-is-a-unit |
@@ -3361,24 +3362,24 @@ proof
                                         isACommonDivisorUpTo(e, q, n)
                                         [by hypothesis given-e-divides]
                                       @conclusion-e-is-a-unit |
-                                        dividesIntegrally(e, QONE)
+                                        dividesIntegrally(e, ONE)
                                         [using specialize theQuotientsByAMaximalDivisorAreRelativelyPrime(d, s, q, n, e) d-is-maximal the-factorization e-is-an-integer e-divides]
                                     }
                                   @divides-implies-unit |
                                     isACommonDivisorUpTo(e, q, n) ->
-                                      dividesIntegrally(e, QONE)
+                                      dividesIntegrally(e, ONE)
                                     [by discharge given-e-divides]
                                 }
                               @integer-implies-unit |
                                 isInteger(e) ->
                                   isACommonDivisorUpTo(e, q, n) ->
-                                  dividesIntegrally(e, QONE)
+                                  dividesIntegrally(e, ONE)
                                 [by discharge given-e-is-an-integer]
                             }
                           @all-divisors-are-units |
                             forall e: Q; isInteger(e) ->
                               isACommonDivisorUpTo(e, q, n) ->
-                              dividesIntegrally(e, QONE)
+                              dividesIntegrally(e, ONE)
                             [by generalize each-divisor-is-a-unit]
                           @conclusion-coprime |
                             theQuotientsAreCoprime(q, n)

@@ -27,7 +27,8 @@ import peano <<< "std/peano.b4m"
 
 sort Q = rational.Q
 sort Nat = peano.Nat
-const ZERO = peano.ZERO
+const NAT_ZERO = peano.ZERO
+const ZERO = rational.ZERO
 pred isInteger = rational.isInteger
 
 // -- ℚ[x] ---------------------------------------------------------------------------------
@@ -46,7 +47,7 @@ func qdegree(p: QPoly) => Nat
 // the coefficient equations: ℚ[x]'s own primitives
 axiom qPolyExtensionality: forall p, q: QPoly;
   (forall i: Nat; qcoeff(p, i) = qcoeff(q, i)) -> p = q
-axiom qZeroPolyCoeff: forall i: Nat; qcoeff(QZEROP, i) = rational.ZERO
+axiom qZeroPolyCoeff: forall i: Nat; qcoeff(QZEROP, i) = ZERO
 axiom qAddPolyCoeff: forall p, q: QPoly; forall i: Nat;
   qcoeff(qaddP(p, q), i) = rational.add(qcoeff(p, i), qcoeff(q, i))
 axiom qNegPolyCoeff: forall p: QPoly; forall i: Nat;
@@ -54,19 +55,19 @@ axiom qNegPolyCoeff: forall p: QPoly; forall i: Nat;
 axiom qMonomialCoeffAtItsIndex: forall a: Q; forall k: Nat;
   qcoeff(qmonomial(a, k), k) = a
 axiom qMonomialCoeffElsewhere: forall a: Q; forall k, i: Nat;
-  (not (i = k)) -> qcoeff(qmonomial(a, k), i) = rational.ZERO
+  (not (i = k)) -> qcoeff(qmonomial(a, k), i) = ZERO
 axiom qDegreeAtMostMeaning: forall p: QPoly; forall n: Nat;
   qdegreeAtMost(p, n) iff
-  (forall i: Nat; peano.less_than(n, i) -> qcoeff(p, i) = rational.ZERO)
+  (forall i: Nat; peano.less_than(n, i) -> qcoeff(p, i) = ZERO)
 axiom qDegreeIsALeadingIndex: forall p: QPoly;
-  (not (p = QZEROP)) -> (not (qcoeff(p, qdegree(p)) = rational.ZERO))
+  (not (p = QZEROP)) -> (not (qcoeff(p, qdegree(p)) = ZERO))
 axiom qDegreeBoundsTheCoefficients: forall p: QPoly;
   (not (p = QZEROP)) -> qdegreeAtMost(p, qdegree(p))
 
 // F[x]'s corpus, transferred. The coefficient field AND the polynomial layer both travel.
 model RationalPolynomials {
   fieldpoly.F: Q
-  fieldpoly.zeroF: rational.ZERO
+  fieldpoly.zeroF: ZERO
   fieldpoly.oneF: rational.ONE
   fieldpoly.addF: rational.add
   fieldpoly.mulF: rational.mul
@@ -102,7 +103,7 @@ axiom integerCoefficientsMeaning: forall p: QPoly; forall n: Nat;
   hasIntegerCoefficientsUpTo(p, n) iff
   (forall i: Nat; peano.less_than(i, n) -> isInteger(qcoeff(p, i)))
 
-// The zero polynomial has integer coefficients: every one of them is ℚ's ZERO, which is an
+// The zero polynomial has integer coefficients: every one of them is ℚ's NAT_ZERO, which is an
 // integer. The first fact a consumer needs, and a check that the layer is wired up.
 theorem theZeroPolynomialHasIntegerCoefficients: forall n: Nat;
   hasIntegerCoefficientsUpTo(QZEROP, n)
@@ -112,10 +113,10 @@ proof
       @generalize-i |
         fix i: Nat {
           @the-coefficient-is-zero |
-            qcoeff(QZEROP, i) = rational.ZERO
+            qcoeff(QZEROP, i) = ZERO
             [using specialize qZeroPolyCoeff(i)]
           @zero-is-an-integer |
-            isInteger(rational.ZERO)
+            isInteger(ZERO)
             [by cite rational.zeroIsAnInteger]
           @the-coefficient-is-an-integer |
             isInteger(qcoeff(QZEROP, i))
@@ -171,7 +172,7 @@ qed
 // integers". It is ℚ's fraction axiom read at a coefficient.
 theorem everyCoefficientIsARatioOfIntegers: forall p: QPoly; forall i: Nat;
   exists b, c: Q;
-  isInteger(b) and isInteger(c) and c != rational.ZERO and
+  isInteger(b) and isInteger(c) and c != ZERO and
   qcoeff(p, i) = rational.mul(b, rational.recip(c))
 proof
   @generalize-p |
@@ -180,21 +181,21 @@ proof
         fix i: Nat {
           @conclusion-the-coefficient-is-a-ratio |
             exists b, c: Q;
-              isInteger(b) and isInteger(c) and c != rational.ZERO and
+              isInteger(b) and isInteger(c) and c != ZERO and
               qcoeff(p, i) = rational.mul(b, rational.recip(c))
             [using specialize rational.everyRationalIsAQuotientOfIntegers(qcoeff(p, i))]
         }
       @discharge-i |
         forall i9: Nat;
           exists b, c: Q;
-          isInteger(b) and isInteger(c) and c != rational.ZERO and
+          isInteger(b) and isInteger(c) and c != ZERO and
           qcoeff(p, i9) = rational.mul(b, rational.recip(c))
         [by generalize generalize-i]
     }
   @conclusion |
     forall p: QPoly; forall i: Nat;
       exists b, c: Q;
-      isInteger(b) and isInteger(c) and c != rational.ZERO and
+      isInteger(b) and isInteger(c) and c != ZERO and
       qcoeff(p, i) = rational.mul(b, rational.recip(c))
     [by generalize generalize-p]
 qed
@@ -321,18 +322,18 @@ qed
 pred isTheIntegerDecomposition(p: QPoly, q: QPoly, r: Q, s: Q, n: Nat)
 axiom integerDecompositionMeaning: forall p, q: QPoly; forall r, s: Q; forall n: Nat;
   isTheIntegerDecomposition(p, q, r, s, n) iff
-  (isInteger(r) and isInteger(s) and s != rational.ZERO and
+  (isInteger(r) and isInteger(s) and s != ZERO and
   hasIntegerCoefficientsUpTo(q, n) and
   coefficientsAreRelativelyPrimeUpTo(q, n) and
-  coefficientsAreRelativelyPrimeUpTo(qaddP(qmonomial(r, ZERO), qmonomial(s, ZERO)), n) and
-  p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), ZERO), q))
+  coefficientsAreRelativelyPrimeUpTo(qaddP(qmonomial(r, NAT_ZERO), qmonomial(s, NAT_ZERO)), n) and
+  p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), NAT_ZERO), q))
 
 // The decomposition's shape composes: given one, p really is the scaled polynomial, and that
 // scaling is a ℚ[x] element like any other. A sanity theorem — it is what makes the
 // predicate above a statement about p rather than a bag of unrelated conjuncts.
 theorem aScaledIntegerPolynomialIsRational: forall p, q: QPoly; forall r, s: Q; forall n: Nat;
   isTheIntegerDecomposition(p, q, r, s, n) ->
-  p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), ZERO), q)
+  p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), NAT_ZERO), q)
 proof
   @generalize-p |
     fix p: QPoly {
@@ -351,49 +352,49 @@ proof
                             [by hypothesis given-the-decomposition]
                           @the-definition |
                             isTheIntegerDecomposition(p, q, r, s, n) iff
-                              (isInteger(r) and isInteger(s) and s != rational.ZERO and
+                              (isInteger(r) and isInteger(s) and s != ZERO and
                               hasIntegerCoefficientsUpTo(q, n) and
                               coefficientsAreRelativelyPrimeUpTo(q, n) and
-                              coefficientsAreRelativelyPrimeUpTo(qaddP(qmonomial(r, ZERO), qmonomial(s, ZERO)), n) and
-                              p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), ZERO), q))
+                              coefficientsAreRelativelyPrimeUpTo(qaddP(qmonomial(r, NAT_ZERO), qmonomial(s, NAT_ZERO)), n) and
+                              p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), NAT_ZERO), q))
                             [using specialize integerDecompositionMeaning(p, q, r, s, n)]
                           @conclusion-p-is-the-scaling |
-                            p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), ZERO), q)
+                            p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), NAT_ZERO), q)
                             [using tautology the-definition the-decomposition]
                         }
                       @the-decomposition-implies |
                         isTheIntegerDecomposition(p, q, r, s, n) ->
-                          p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), ZERO), q)
+                          p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), NAT_ZERO), q)
                         [by discharge given-the-decomposition]
                     }
                   @discharge-n |
                     forall n9: Nat;
                       isTheIntegerDecomposition(p, q, r, s, n9) ->
-                      p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), ZERO), q)
+                      p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), NAT_ZERO), q)
                     [by generalize generalize-n]
                 }
               @discharge-s |
                 forall s9: Q; forall n9: Nat;
                   isTheIntegerDecomposition(p, q, r, s9, n9) ->
-                  p = qmulP(qmonomial(rational.mul(r, rational.recip(s9)), ZERO), q)
+                  p = qmulP(qmonomial(rational.mul(r, rational.recip(s9)), NAT_ZERO), q)
                 [by generalize generalize-s]
             }
           @discharge-r |
             forall r9, s9: Q; forall n9: Nat;
               isTheIntegerDecomposition(p, q, r9, s9, n9) ->
-              p = qmulP(qmonomial(rational.mul(r9, rational.recip(s9)), ZERO), q)
+              p = qmulP(qmonomial(rational.mul(r9, rational.recip(s9)), NAT_ZERO), q)
             [by generalize generalize-r]
         }
       @discharge-q |
         forall q9: QPoly; forall r9, s9: Q; forall n9: Nat;
           isTheIntegerDecomposition(p, q9, r9, s9, n9) ->
-          p = qmulP(qmonomial(rational.mul(r9, rational.recip(s9)), ZERO), q9)
+          p = qmulP(qmonomial(rational.mul(r9, rational.recip(s9)), NAT_ZERO), q9)
         [by generalize generalize-q]
     }
   @conclusion |
     forall p, q: QPoly; forall r, s: Q; forall n: Nat;
       isTheIntegerDecomposition(p, q, r, s, n) ->
-      p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), ZERO), q)
+      p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), NAT_ZERO), q)
     [by generalize generalize-p]
 qed
 
@@ -405,8 +406,8 @@ pred qIsMonic(p: QPoly)
 axiom qMonicMeansTheLeadingCoefficientIsOne: forall p: QPoly;
   qIsMonic(p) iff qcoeff(p, qdegree(p)) = rational.ONE
 
-// A monic polynomial is nonzero: the zero polynomial's coefficients are all ZERO, and ONE is
-// not ZERO. The first thing any consumer needs, and it exercises the degree layer.
+// A monic polynomial is nonzero: the zero polynomial's coefficients are all NAT_ZERO, and ONE is
+// not NAT_ZERO. The first thing any consumer needs, and it exercises the degree layer.
 theorem aMonicPolynomialIsNonzero: forall p: QPoly;
   qIsMonic(p) -> (not (p = QZEROP))
 proof
@@ -429,16 +430,16 @@ proof
                 p = QZEROP
                 [by hypothesis given-p-is-zero]
               @the-zero-coefficient |
-                qcoeff(QZEROP, qdegree(p)) = rational.ZERO
+                qcoeff(QZEROP, qdegree(p)) = ZERO
                 [using specialize qZeroPolyCoeff(qdegree(p))]
               @the-leading-coefficient-at-zero |
                 qcoeff(QZEROP, qdegree(p)) = rational.ONE
                 [by rewrite p-is-zero the-leading-coefficient-is-one]
               @one-is-zero |
-                rational.ONE = rational.ZERO
+                rational.ONE = ZERO
                 [by rewrite the-leading-coefficient-at-zero the-zero-coefficient]
               @one-is-not-zero |
-                not (rational.ONE = rational.ZERO)
+                not (rational.ONE = ZERO)
                 [by cite rational.oneNotZero]
             }
           @conclusion-monic-is-nonzero |
@@ -457,7 +458,7 @@ qed
 // -- NEGATION PRESERVES THE DEGREE --------------------------------------------------------
 // Judson's monic normalization takes a(x) = -α₁(x) when the leading coefficient is -1. For
 // that to be the right degree-preserving move, negation must not change the degree — true
-// because negation is coefficientwise and only ZERO negates to ZERO.
+// because negation is coefficientwise and only NAT_ZERO negates to NAT_ZERO.
 
 // A nonzero polynomial has a nonzero negation: at the leading index the coefficient is
 // nonzero, and negating a nonzero rational keeps it nonzero.
@@ -472,41 +473,41 @@ proof
             not (p = QZEROP)
             [by hypothesis given-p-nonzero]
           @the-leading-coefficient-survives |
-            not (qcoeff(p, qdegree(p)) = rational.ZERO)
+            not (qcoeff(p, qdegree(p)) = ZERO)
             [using specialize qDegreeIsALeadingIndex(p) p-nonzero]
           @the-negated-coefficient |
             qcoeff(qnegP(p), qdegree(p)) = rational.neg(qcoeff(p, qdegree(p)))
             [using specialize qNegPolyCoeff(p, qdegree(p))]
-          // neg is injective on ZERO: neg(x) = 0 forces x = 0
+          // neg is injective on NAT_ZERO: neg(x) = 0 forces x = 0
           @given-the-negation-is-zero |
             assume qnegP(p) = QZEROP {
               @the-negation-is-zero |
                 qnegP(p) = QZEROP
                 [by hypothesis given-the-negation-is-zero]
               @the-zero-coefficient |
-                qcoeff(QZEROP, qdegree(p)) = rational.ZERO
+                qcoeff(QZEROP, qdegree(p)) = ZERO
                 [using specialize qZeroPolyCoeff(qdegree(p))]
               @the-negated-coefficient-at-zero |
                 qcoeff(QZEROP, qdegree(p)) =
                   rational.neg(qcoeff(p, qdegree(p)))
                 [by rewrite the-negation-is-zero the-negated-coefficient]
               @the-negation-of-the-leading-coefficient-is-zero |
-                rational.ZERO = rational.neg(qcoeff(p, qdegree(p)))
+                ZERO = rational.neg(qcoeff(p, qdegree(p)))
                 [by rewrite the-zero-coefficient the-negated-coefficient-at-zero]
               // negate both sides: neg(0) = 0 and neg(neg(x)) = x
               @double-negation |
                 rational.neg(rational.neg(qcoeff(p, qdegree(p)))) =
                   qcoeff(p, qdegree(p))
                 [using specialize rational.negNeg(qcoeff(p, qdegree(p)))]
-              // rewrite ZERO = neg(c) into the double-negation identity's inner term
+              // rewrite NAT_ZERO = neg(c) into the double-negation identity's inner term
               @the-leading-coefficient-is-neg-zero |
-                rational.neg(rational.ZERO) = qcoeff(p, qdegree(p))
+                rational.neg(ZERO) = qcoeff(p, qdegree(p))
                 [by rewrite the-negation-of-the-leading-coefficient-is-zero double-negation]
               @neg-zero |
-                rational.neg(rational.ZERO) = rational.ZERO
+                rational.neg(ZERO) = ZERO
                 [by cite rational.negZero]
               @the-leading-coefficient-is-zero-flipped |
-                qcoeff(p, qdegree(p)) = rational.ZERO
+                qcoeff(p, qdegree(p)) = ZERO
                 [by rewrite the-leading-coefficient-is-neg-zero neg-zero]
             }
           @conclusion-the-negation-is-nonzero |
@@ -577,49 +578,49 @@ qed
 
 // A nonzero rational has a nonzero negation: neg(x) = 0 would give x = neg(neg(x)) = neg(0) = 0.
 theorem aNonzeroHasNonzeroNegation: forall x: Q;
-  (not (x = rational.ZERO)) -> (not (rational.neg(x) = rational.ZERO))
+  (not (x = ZERO)) -> (not (rational.neg(x) = ZERO))
 proof
   @generalize-x |
     fix x: Q {
       @given-x-nonzero |
-        assume not (x = rational.ZERO) {
+        assume not (x = ZERO) {
           @x-nonzero |
-            not (x = rational.ZERO)
+            not (x = ZERO)
             [by hypothesis given-x-nonzero]
           @given-the-negation-is-zero |
-            assume rational.neg(x) = rational.ZERO {
+            assume rational.neg(x) = ZERO {
               @the-negation-is-zero |
-                rational.neg(x) = rational.ZERO
+                rational.neg(x) = ZERO
                 [by hypothesis given-the-negation-is-zero]
               @double-negation |
                 rational.neg(rational.neg(x)) = x
                 [using specialize rational.negNeg(x)]
               @neg-of-zero |
-                rational.neg(rational.ZERO) = rational.ZERO
+                rational.neg(ZERO) = ZERO
                 [by cite rational.negZero]
               @x-is-neg-zero |
-                rational.neg(rational.ZERO) = x
+                rational.neg(ZERO) = x
                 [by rewrite the-negation-is-zero double-negation]
               @x-is-zero |
-                x = rational.ZERO
+                x = ZERO
                 [by rewrite x-is-neg-zero neg-of-zero]
             }
           @conclusion-the-negation-is-nonzero |
-            not (rational.neg(x) = rational.ZERO)
+            not (rational.neg(x) = ZERO)
             [by contradiction given-the-negation-is-zero x-is-zero x-nonzero]
         }
       @nonzero-implies |
-        (not (x = rational.ZERO)) -> (not (rational.neg(x) = rational.ZERO))
+        (not (x = ZERO)) -> (not (rational.neg(x) = ZERO))
         [by discharge given-x-nonzero]
     }
   @conclusion |
     forall x: Q;
-      (not (x = rational.ZERO)) -> (not (rational.neg(x) = rational.ZERO))
+      (not (x = ZERO)) -> (not (rational.neg(x) = ZERO))
     [by generalize generalize-x]
 qed
 
 // Whatever bounds a polynomial bounds its negation: above the bound both vanish, the negation
-// because neg(ZERO) = ZERO.
+// because neg(NAT_ZERO) = NAT_ZERO.
 theorem theNegationIsBoundedWhereverTheOriginalIs: forall p: QPoly; forall n: peano.Nat;
   qdegreeAtMost(p, n) -> qdegreeAtMost(qnegP(p), n)
 proof
@@ -635,11 +636,11 @@ proof
               @the-bounds-meaning |
                 qdegreeAtMost(p, n) iff
                   (forall i: peano.Nat;
-                  peano.less_than(n, i) -> qcoeff(p, i) = rational.ZERO)
+                  peano.less_than(n, i) -> qcoeff(p, i) = ZERO)
                 [using specialize qDegreeAtMostMeaning(p, n)]
               @the-original-vanishes-above |
                 forall i: peano.Nat;
-                  peano.less_than(n, i) -> qcoeff(p, i) = rational.ZERO
+                  peano.less_than(n, i) -> qcoeff(p, i) = ZERO
                 [using tautology the-bounds-meaning the-bound]
               @the-negation-vanishes-above |
                 fix i: peano.Nat {
@@ -649,33 +650,33 @@ proof
                         peano.less_than(n, i)
                         [by hypothesis given-i-above]
                       @the-original-at-i |
-                        qcoeff(p, i) = rational.ZERO
+                        qcoeff(p, i) = ZERO
                         [using specialize the-original-vanishes-above(i) i-above]
                       @the-negated-coefficient |
                         qcoeff(qnegP(p), i) = rational.neg(qcoeff(p, i))
                         [using specialize qNegPolyCoeff(p, i)]
                       @the-negated-coefficient-at-zero |
-                        qcoeff(qnegP(p), i) = rational.neg(rational.ZERO)
+                        qcoeff(qnegP(p), i) = rational.neg(ZERO)
                         [by rewrite the-original-at-i the-negated-coefficient]
                       @neg-of-zero |
-                        rational.neg(rational.ZERO) = rational.ZERO
+                        rational.neg(ZERO) = ZERO
                         [by cite rational.negZero]
                       @conclusion-the-negation-at-i |
-                        qcoeff(qnegP(p), i) = rational.ZERO
+                        qcoeff(qnegP(p), i) = ZERO
                         [by rewrite neg-of-zero the-negated-coefficient-at-zero]
                     }
                   @above-implies-vanishes |
-                    peano.less_than(n, i) -> qcoeff(qnegP(p), i) = rational.ZERO
+                    peano.less_than(n, i) -> qcoeff(qnegP(p), i) = ZERO
                     [by discharge given-i-above]
                 }
               @all-above-vanish |
                 forall i: peano.Nat;
-                  peano.less_than(n, i) -> qcoeff(qnegP(p), i) = rational.ZERO
+                  peano.less_than(n, i) -> qcoeff(qnegP(p), i) = ZERO
                 [by generalize the-negation-vanishes-above]
               @the-negations-bound-meaning |
                 qdegreeAtMost(qnegP(p), n) iff
                   (forall i: peano.Nat;
-                  peano.less_than(n, i) -> qcoeff(qnegP(p), i) = rational.ZERO)
+                  peano.less_than(n, i) -> qcoeff(qnegP(p), i) = ZERO)
                 [using specialize qDegreeAtMostMeaning(qnegP(p), n)]
               @conclusion-the-negation-is-bounded |
                 qdegreeAtMost(qnegP(p), n)
@@ -714,16 +715,16 @@ proof
             [using specialize theNegationOfANonzeroPolynomialIsNonzero(p) p-nonzero]
           // the negation's coefficient at p's degree is nonzero
           @the-leading-coefficient-survives |
-            not (qcoeff(p, qdegree(p)) = rational.ZERO)
+            not (qcoeff(p, qdegree(p)) = ZERO)
             [using specialize qDegreeIsALeadingIndex(p) p-nonzero]
           @the-negated-coefficient |
             qcoeff(qnegP(p), qdegree(p)) = rational.neg(qcoeff(p, qdegree(p)))
             [using specialize qNegPolyCoeff(p, qdegree(p))]
           @the-negated-leading-coefficient-survives |
-            not (rational.neg(qcoeff(p, qdegree(p))) = rational.ZERO)
+            not (rational.neg(qcoeff(p, qdegree(p))) = ZERO)
             [using specialize aNonzeroHasNonzeroNegation(qcoeff(p, qdegree(p))) the-leading-coefficient-survives]
           @the-negations-coefficient-survives |
-            not (qcoeff(qnegP(p), qdegree(p)) = rational.ZERO)
+            not (qcoeff(qnegP(p), qdegree(p)) = ZERO)
             [by rewrite the-negated-coefficient the-negated-leading-coefficient-survives]
           // and it is bounded there: p's bound carries over coefficientwise
           @the-original-is-bounded |
@@ -734,7 +735,7 @@ proof
             [using specialize theNegationIsBoundedWhereverTheOriginalIs(p, qdegree(p)) the-original-is-bounded]
           @degree-is-unique |
             forall q: QPoly; forall n: peano.Nat;
-              (not (q = QZEROP)) -> (not (qcoeff(q, n) = rational.ZERO)) ->
+              (not (q = QZEROP)) -> (not (qcoeff(q, n) = ZERO)) ->
               qdegreeAtMost(q, n) -> n = qdegree(q)
             [using model(RationalPolynomials) fieldpoly.degreeIsUnique]
           @the-degrees-agree-flipped |
