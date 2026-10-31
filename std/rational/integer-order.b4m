@@ -23,6 +23,7 @@ import rational <<< "std/rational.b4m"
 import field_order <<< "std/field/order.b4m"
 import integer <<< "std/integer.b4m"
 import int_order <<< "std/integer/order.b4m"
+import divisibility <<< "std/divisibility.b4m"
 
 sort Q = rational.Q
 const ZERO = rational.ZERO
@@ -499,6 +500,243 @@ proof
     [by generalize generalize-a]
 qed
 
+// -- closure of the NATURAL cut ------------------------------------------------------------
+// `isNatural` is axiomatized by ZERO + succ only, so closure under add and mul needs proving.
+// Both are the textbook inductions, and the guarded ℕ model's `-|` nominations need them.
+
+// `nonneg` is ℕ's own universally-true predicate (`peano.nonnegAll`), so on the cut it is
+// discharged by `isNatural` itself — the model relativizes ℕ's binders to the cut, and every
+// element of the cut is a natural by definition of the cut.
+theorem everyNaturalIsNonneg: forall n: Q; isNatural(n) -> isNatural(n)
+proof
+  @generalize-n |
+    fix n: Q {
+      @given-n-is-natural |
+        assume isNatural(n) {
+          @n-is-natural |
+            isNatural(n)
+            [by hypothesis given-n-is-natural]
+        }
+      @natural-implies-natural |
+        isNatural(n) -> isNatural(n)
+        [by discharge given-n-is-natural]
+    }
+  @conclusion |
+    forall n: Q; isNatural(n) -> isNatural(n)
+    [by generalize generalize-n]
+qed
+
+// Strategy: naturalInduction on a. Base: ZERO + b = b. Step: succ(a) + b = succ(a + b), a
+// successor of a natural by the IH.
+theorem isNaturalAdd: forall a, b: Q;
+  isNatural(a) -> isNatural(b) -> isNatural(add(a, b))
+proof
+  @generalize-b |
+    fix b: Q {
+      @given-b-is-natural |
+        assume isNatural(b) {
+          @b-is-natural |
+            isNatural(b)
+            [by hypothesis given-b-is-natural]
+
+          @zero-plus-b |
+            add(ZERO, b) = b
+            [using specialize rational.addZeroLeft(b)]
+          @base-case |
+            isNatural(add(ZERO, b))
+            [by rewrite zero-plus-b b-is-natural]
+
+          @induction-step |
+            fix k: Q {
+              @given-k-is-natural |
+                assume isNatural(k) {
+                  @given-inductive-hypothesis |
+                    assume isNatural(add(k, b)) {
+                      @inductive-hypothesis |
+                        isNatural(add(k, b))
+                        [by hypothesis given-inductive-hypothesis]
+                      @the-sum-is-natural |
+                        isNatural(succ(add(k, b)))
+                        [using specialize rational.isNaturalSucc(add(k, b)) inductive-hypothesis]
+                      @successor-sum |
+                        add(succ(k), b) = succ(add(k, b))
+                        [using specialize rational.addSuccLeft(k, b)]
+                      @conclusion-step |
+                        isNatural(add(succ(k), b))
+                        [by rewrite successor-sum the-sum-is-natural]
+                    }
+                  @ih-implies |
+                    isNatural(add(k, b)) -> isNatural(add(succ(k), b))
+                    [by discharge given-inductive-hypothesis]
+                }
+              @natural-implies-step |
+                isNatural(k) ->
+                  isNatural(add(k, b)) -> isNatural(add(succ(k), b))
+                [by discharge given-k-is-natural]
+            }
+          @induction-step-for-all-k |
+            forall k: Q;
+              isNatural(k) ->
+              isNatural(add(k, b)) -> isNatural(add(succ(k), b))
+            [by generalize induction-step]
+          @all-naturals |
+            forall a: Q; isNatural(a) -> isNatural(add(a, b))
+            [using instantiation rational.naturalInduction((fun t: Q => isNatural(add(t, b)))) base-case induction-step-for-all-k]
+        }
+      @b-natural-implies |
+        isNatural(b) -> forall a: Q; isNatural(a) -> isNatural(add(a, b))
+        [by discharge given-b-is-natural]
+    }
+  @discharge-b |
+    forall b: Q;
+      isNatural(b) -> forall a: Q; isNatural(a) -> isNatural(add(a, b))
+    [by generalize generalize-b]
+
+  // reorder the binders to the statement's `a, b`: fix both, specialize the b-outer form.
+  @reorder |
+    fix a: Q {
+      @reorder-b |
+        fix b: Q {
+          @given-a |
+            assume isNatural(a) {
+              @a-natural |
+                isNatural(a)
+                [by hypothesis given-a]
+              @given-b |
+                assume isNatural(b) {
+                  @b-natural |
+                    isNatural(b)
+                    [by hypothesis given-b]
+                  @at-b |
+                    forall a2: Q; isNatural(a2) -> isNatural(add(a2, b))
+                    [using specialize discharge-b(b) b-natural]
+                  @conclusion-sum |
+                    isNatural(add(a, b))
+                    [using specialize at-b(a) a-natural]
+                }
+              @b-implies |
+                isNatural(b) -> isNatural(add(a, b))
+                [by discharge given-b]
+            }
+          @a-implies |
+            isNatural(a) -> isNatural(b) -> isNatural(add(a, b))
+            [by discharge given-a]
+        }
+      @discharge-reorder-b |
+        forall b9: Q; isNatural(a) -> isNatural(b9) -> isNatural(add(a, b9))
+        [by generalize reorder-b]
+    }
+  @conclusion |
+    forall a, b: Q; isNatural(a) -> isNatural(b) -> isNatural(add(a, b))
+    [by generalize reorder]
+qed
+
+// Strategy: naturalInduction on a. Base: 0·b = 0, natural. Step: succ(a)·b = a·b + b, a sum
+// of naturals by the IH and isNaturalAdd.
+theorem isNaturalMul: forall a, b: Q;
+  isNatural(a) -> isNatural(b) -> isNatural(rational.mul(a, b))
+proof
+  @generalize-b |
+    fix b: Q {
+      @given-b-is-natural |
+        assume isNatural(b) {
+          @b-is-natural |
+            isNatural(b)
+            [by hypothesis given-b-is-natural]
+          @zero-times-b |
+            rational.mul(ZERO, b) = ZERO
+            [using specialize rational.mulZeroLeft(b)]
+          @zero-is-natural |
+            isNatural(ZERO)
+            [by cite rational.isNaturalZero]
+          @base-case |
+            isNatural(rational.mul(ZERO, b))
+            [by rewrite zero-times-b zero-is-natural]
+
+          @induction-step |
+            fix k: Q {
+              @given-k-is-natural |
+                assume isNatural(k) {
+                  @given-inductive-hypothesis |
+                    assume isNatural(rational.mul(k, b)) {
+                      @inductive-hypothesis |
+                        isNatural(rational.mul(k, b))
+                        [by hypothesis given-inductive-hypothesis]
+                      @the-sum-is-natural |
+                        isNatural(add(rational.mul(k, b), b))
+                        [using specialize isNaturalAdd(rational.mul(k, b), b) inductive-hypothesis b-is-natural]
+                      @successor-product |
+                        rational.mul(succ(k), b) = add(rational.mul(k, b), b)
+                        [using specialize rational.mulSuccLeft(k, b)]
+                      @conclusion-step |
+                        isNatural(rational.mul(succ(k), b))
+                        [by rewrite successor-product the-sum-is-natural]
+                    }
+                  @ih-implies |
+                    isNatural(rational.mul(k, b)) -> isNatural(rational.mul(succ(k), b))
+                    [by discharge given-inductive-hypothesis]
+                }
+              @natural-implies-step |
+                isNatural(k) ->
+                  isNatural(rational.mul(k, b)) -> isNatural(rational.mul(succ(k), b))
+                [by discharge given-k-is-natural]
+            }
+          @induction-step-for-all-k |
+            forall k: Q;
+              isNatural(k) ->
+              isNatural(rational.mul(k, b)) -> isNatural(rational.mul(succ(k), b))
+            [by generalize induction-step]
+          @all-naturals |
+            forall a: Q; isNatural(a) -> isNatural(rational.mul(a, b))
+            [using instantiation rational.naturalInduction((fun t: Q => isNatural(rational.mul(t, b)))) base-case induction-step-for-all-k]
+        }
+      @b-natural-implies |
+        isNatural(b) -> forall a: Q; isNatural(a) -> isNatural(rational.mul(a, b))
+        [by discharge given-b-is-natural]
+    }
+  @discharge-b |
+    forall b: Q;
+      isNatural(b) -> forall a: Q; isNatural(a) -> isNatural(rational.mul(a, b))
+    [by generalize generalize-b]
+
+  @reorder |
+    fix a: Q {
+      @reorder-b |
+        fix b: Q {
+          @given-a |
+            assume isNatural(a) {
+              @a-natural |
+                isNatural(a)
+                [by hypothesis given-a]
+              @given-b |
+                assume isNatural(b) {
+                  @b-natural |
+                    isNatural(b)
+                    [by hypothesis given-b]
+                  @at-b |
+                    forall a2: Q; isNatural(a2) -> isNatural(rational.mul(a2, b))
+                    [using specialize discharge-b(b) b-natural]
+                  @conclusion-product |
+                    isNatural(rational.mul(a, b))
+                    [using specialize at-b(a) a-natural]
+                }
+              @b-implies |
+                isNatural(b) -> isNatural(rational.mul(a, b))
+                [by discharge given-b]
+            }
+          @a-implies |
+            isNatural(a) -> isNatural(b) -> isNatural(rational.mul(a, b))
+            [by discharge given-a]
+        }
+      @discharge-reorder-b |
+        forall b9: Q; isNatural(a) -> isNatural(b9) -> isNatural(rational.mul(a, b9))
+        [by generalize reorder-b]
+    }
+  @conclusion |
+    forall a, b: Q; isNatural(a) -> isNatural(b) -> isNatural(rational.mul(a, b))
+    [by generalize reorder]
+qed
+
 // -- ℤ's ORDER, TRANSFERRED ONTO THE CUT --------------------------------------------------
 // With discreteness proved, ℤ's two order axioms are dischargeable on the `isInteger` cut, so
 // `std/integer/order.b4m`'s whole corpus travels. `lessThanElim` IS the discreteness theorem;
@@ -693,11 +931,30 @@ model IntegerOrderOnTheCut {
   int_order.less_than: less_than
   int_order.lessThanIntro <- aNonnegGapMakesItLess
   int_order.lessThanElim <- theIntegersInRationalAreDiscrete
+
+  // std/divisibility.b4m's abstract `Dividable` — std/integer/divides.b4m rests on it, and a
+  // proof reaching `divides` pulls it in. Three axioms, all of which ℚ has.
+  divisibility.Dividable: Integer
+  divisibility.ONE: ONE(rational.oneIsAnInteger)
+  divisibility.mul: rational.mul -| rational.isIntegerMul
+  divisibility.add: add -| rational.isIntegerAdd
+  divisibility.mulOneRight <- rational.mulOneRight
+  divisibility.mulIsAssociative <- rational.mulIsAssociative
+  divisibility.mulAddDistribLeft <- rational.mulAddDistribLeft
+
 }
 
-// NOT YET: `dividesOneImpliesUnit` on the cut, which is what Gauss's d = 1 branch needs
-// (c·a_m·b_n = 1 forces c = ±1). Its proof reaches through `std/integer/divides.b4m` into
-// `std/integer/wellordering.b4m`, `std/divisibility.b4m` AND `std/peano.b4m`, so the transfer
-// wants all four layers mapped, not just the order one. Each is mechanical — the same shape as
-// this block — but it is a wider job than this file, and `anIntegerDividingOneIsAUnit` should
-// land with those mappings rather than half of them. The order layer below is what unblocks it.
+// NOT REACHABLE FROM HERE: `dividesOneImpliesUnit` on the cut, which Gauss's d = 1 branch
+// needs. Not for want of mappings — the four layers above are all mapped — but because
+// TRANSFERS CHAIN THROUGH A NESTED MODEL. `std/integer/divides.b4m` reaches
+// `std/integer.b4m`'s `nonnegCases`, which is itself proved by transferring
+// `peano.zeroOrSucc` through `NonNegInt` (ℕ → ℤ's `NonNeg` cut). Re-transferring anything
+// citing it re-checks that INNER transfer, which maps `peano.Nat` onto a subsort of `Int` —
+// so the composed chain ℕ → ℤ's NonNeg → ℚ's isInteger wants `Nat` to be both `Int` and `Q`
+// at once, and the error surfaces as `std/peano.b4m:857: expected sort 'Int', got 'Q'` at
+// `zeroOrSucc`'s existential binder.
+//
+// 2b4m re-checks an inner transfer rather than COMPOSING the two models, so a doubly guarded
+// composition is not expressible today. That is a real structural limit, not a missing
+// mapping, and it is what now blocks AATA 17.13's d = 1 branch, 17.14 and 17.15. See
+// `drafts/guard-relativization-bug/`.
