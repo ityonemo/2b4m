@@ -4681,3 +4681,279 @@ proof
       qpoly.coefficientsAreRelativelyPrimeUpTo(p, n)
     [by generalize generalize-p]
 qed
+
+// -- TWO MORE CONJUNCTS OF THE DECOMPOSITION ----------------------------------------------
+
+// A product of NONZERO entries is nonzero — `s != ZERO` in the decomposition, since s is the
+// product of the coefficients' denominators and each denominator is nonzero. Induction on the
+// bound, using ℚ's `noZeroDivisors`.
+theorem theProductOfNonzerosIsNonzero: forall s: QSeq; forall n: Nat;
+  (forall i: Nat; nat_less_than(i, n) -> (not (qat(s, i) = ZERO))) ->
+  (not (qProductUpTo(s, n) = ZERO))
+proof
+  @generalize-s |
+    fix s: QSeq {
+      // base: the empty product is ONE, and ONE is not ZERO
+      @base-case-proof |
+        assume forall i: Nat; nat_less_than(i, NAT_ZERO) ->
+          (not (qat(s, i) = ZERO)) {
+          @the-empty-product |
+            qProductUpTo(s, NAT_ZERO) = ONE
+            [using specialize qProductUpToZero(s)]
+          @one-is-not-zero |
+            not (ONE = ZERO)
+            [by cite rational.oneNotZero]
+          @conclusion-base |
+            not (qProductUpTo(s, NAT_ZERO) = ZERO)
+            [by rewrite the-empty-product one-is-not-zero]
+        }
+      @base-case |
+        (forall i: Nat; nat_less_than(i, NAT_ZERO) ->
+          (not (qat(s, i) = ZERO))) ->
+          (not (qProductUpTo(s, NAT_ZERO) = ZERO))
+        [by discharge base-case-proof]
+
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume (forall i: Nat; nat_less_than(i, k) ->
+              (not (qat(s, i) = ZERO))) ->
+              (not (qProductUpTo(s, k) = ZERO)) {
+              @inductive-hypothesis |
+                (forall i: Nat; nat_less_than(i, k) ->
+                  (not (qat(s, i) = ZERO))) ->
+                  (not (qProductUpTo(s, k) = ZERO))
+                [by hypothesis given-inductive-hypothesis]
+              @given-all-nonzero |
+                assume forall i: Nat; nat_less_than(i, nat_succ(k)) ->
+                  (not (qat(s, i) = ZERO)) {
+                  @all-nonzero |
+                    forall i: Nat; nat_less_than(i, nat_succ(k)) ->
+                      (not (qat(s, i) = ZERO))
+                    [by hypothesis given-all-nonzero]
+                  @k-below-its-successor |
+                    nat_less_than(k, nat_succ(k))
+                    [using specialize peano_order.lessThanSelf(k)]
+                  // weaken to below k
+                  @below-k-nonzero |
+                    fix i: Nat {
+                      @given-i-below-k |
+                        assume nat_less_than(i, k) {
+                          @i-below-k |
+                            nat_less_than(i, k)
+                            [by hypothesis given-i-below-k]
+                          @i-below-succ-k |
+                            nat_less_than(i, nat_succ(k))
+                            [using specialize peano_order.lessThanTransitive(i, k, nat_succ(k)) i-below-k k-below-its-successor]
+                          @conclusion-this-nonzero |
+                            not (qat(s, i) = ZERO)
+                            [using specialize all-nonzero(i) i-below-succ-k]
+                        }
+                      @below-k-implies |
+                        nat_less_than(i, k) -> (not (qat(s, i) = ZERO))
+                        [by discharge given-i-below-k]
+                    }
+                  @all-below-k-nonzero |
+                    forall i: Nat; nat_less_than(i, k) ->
+                      (not (qat(s, i) = ZERO))
+                    [by generalize below-k-nonzero]
+                  @the-partial-is-nonzero |
+                    not (qProductUpTo(s, k) = ZERO)
+                    [by modus_ponens inductive-hypothesis all-below-k-nonzero]
+                  @the-k-th-is-nonzero |
+                    not (qat(s, k) = ZERO)
+                    [using specialize all-nonzero(k) k-below-its-successor]
+                  @the-next-product |
+                    qProductUpTo(s, nat_succ(k)) =
+                      rational.mul(qProductUpTo(s, k), qat(s, k))
+                    [using specialize qProductUpToSucc(s, k)]
+                  // a product of nonzeros is nonzero, by noZeroDivisors
+                  @given-the-product-is-zero |
+                    assume qProductUpTo(s, nat_succ(k)) = ZERO {
+                      @the-product-is-zero |
+                        qProductUpTo(s, nat_succ(k)) = ZERO
+                        [by hypothesis given-the-product-is-zero]
+                      @the-factors-product-is-zero |
+                        rational.mul(qProductUpTo(s, k), qat(s, k)) = ZERO
+                        [by rewrite the-next-product the-product-is-zero]
+                      @a-factor-vanishes |
+                        qProductUpTo(s, k) = ZERO or qat(s, k) = ZERO
+                        [using specialize rational.noZeroDivisors(qProductUpTo(s, k), qat(s, k)) the-factors-product-is-zero]
+                      // both arms contradict a fact already in scope, so either way ONE = ZERO
+                      @one-is-zero-either-way |
+                        ONE = ZERO
+                        case a-factor-vanishes {
+                          @when-the-partial-vanishes |
+                            assume qProductUpTo(s, k) = ZERO {
+                              @the-partial-vanishes |
+                                qProductUpTo(s, k) = ZERO
+                                [by hypothesis when-the-partial-vanishes]
+                              @conclusion-impossible-partial |
+                                ONE = ZERO
+                                [by ex_falso the-partial-vanishes the-partial-is-nonzero]
+                            }
+                          @when-the-entry-vanishes |
+                            assume qat(s, k) = ZERO {
+                              @the-entry-vanishes |
+                                qat(s, k) = ZERO
+                                [by hypothesis when-the-entry-vanishes]
+                              @conclusion-impossible-entry |
+                                ONE = ZERO
+                                [by ex_falso the-entry-vanishes the-k-th-is-nonzero]
+                            }
+                        }
+                    }
+                  @one-is-not-zero-here |
+                    not (ONE = ZERO)
+                    [by cite rational.oneNotZero]
+                  @conclusion-the-step |
+                    not (qProductUpTo(s, nat_succ(k)) = ZERO)
+                    [by contradiction given-the-product-is-zero one-is-zero-either-way one-is-not-zero-here]
+                }
+              @conclusion-step-implication |
+                (forall i: Nat; nat_less_than(i, nat_succ(k)) ->
+                  (not (qat(s, i) = ZERO))) ->
+                  (not (qProductUpTo(s, nat_succ(k)) = ZERO))
+                [by discharge given-all-nonzero]
+            }
+          @induction-step-at-k |
+            ((forall i: Nat; nat_less_than(i, k) ->
+              (not (qat(s, i) = ZERO))) ->
+              (not (qProductUpTo(s, k) = ZERO))) ->
+              ((forall i: Nat; nat_less_than(i, nat_succ(k)) ->
+              (not (qat(s, i) = ZERO))) ->
+              (not (qProductUpTo(s, nat_succ(k)) = ZERO)))
+            [by discharge given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat;
+          ((forall i: Nat; nat_less_than(i, k) ->
+          (not (qat(s, i) = ZERO))) ->
+          (not (qProductUpTo(s, k) = ZERO))) ->
+          ((forall i: Nat; nat_less_than(i, nat_succ(k)) ->
+          (not (qat(s, i) = ZERO))) ->
+          (not (qProductUpTo(s, nat_succ(k)) = ZERO)))
+        [by generalize induction-step]
+      @all-bounds |
+        forall n: Nat;
+          (forall i: Nat; nat_less_than(i, n) ->
+          (not (qat(s, i) = ZERO))) ->
+          (not (qProductUpTo(s, n) = ZERO))
+        [using instantiation peano.induction((fun z: Nat => ((forall i: Nat; nat_less_than(i, z) -> (not (qat(s, i) = ZERO))) -> (not (qProductUpTo(s, z) = ZERO))))) base-case induction-step-for-all-k]
+    }
+  @conclusion |
+    forall s: QSeq; forall n: Nat;
+      (forall i: Nat; nat_less_than(i, n) -> (not (qat(s, i) = ZERO))) ->
+      (not (qProductUpTo(s, n) = ZERO))
+    [by generalize generalize-s]
+qed
+
+// Integrality transfers across the same match — the companion to
+// `coprimeEntriesMakeCoprimeCoefficients`, for the decomposition's
+// `hasIntegerCoefficientsUpTo` conjunct.
+theorem integerEntriesMakeIntegerCoefficients:
+  forall p: qpoly.QPoly; forall t: QSeq; forall n: Nat;
+  (forall i: Nat; nat_less_than(i, n) -> qpoly.qcoeff(p, i) = qat(t, i)) ->
+  (forall i: Nat; nat_less_than(i, n) -> isInteger(qat(t, i))) ->
+  qpoly.hasIntegerCoefficientsUpTo(p, n)
+proof
+  @generalize-p |
+    fix p: qpoly.QPoly {
+      @generalize-t |
+        fix t: QSeq {
+          @generalize-n |
+            fix n: Nat {
+              @given-the-match |
+                assume forall i: Nat; nat_less_than(i, n) ->
+                  qpoly.qcoeff(p, i) = qat(t, i) {
+                  @the-match |
+                    forall i: Nat; nat_less_than(i, n) ->
+                      qpoly.qcoeff(p, i) = qat(t, i)
+                    [by hypothesis given-the-match]
+                  @given-the-integrality |
+                    assume forall i: Nat; nat_less_than(i, n) ->
+                      isInteger(qat(t, i)) {
+                      @the-integrality |
+                        forall i: Nat; nat_less_than(i, n) ->
+                          isInteger(qat(t, i))
+                        [by hypothesis given-the-integrality]
+                      @each-coefficient |
+                        fix i: Nat {
+                          @given-i-below |
+                            assume nat_less_than(i, n) {
+                              @i-below |
+                                nat_less_than(i, n)
+                                [by hypothesis given-i-below]
+                              @the-coefficient-is-the-entry |
+                                qpoly.qcoeff(p, i) = qat(t, i)
+                                [using specialize the-match(i) i-below]
+                              @the-entry-is-an-integer |
+                                isInteger(qat(t, i))
+                                [using specialize the-integrality(i) i-below]
+                              @conclusion-coefficient-integer |
+                                isInteger(qpoly.qcoeff(p, i))
+                                [by rewrite the-coefficient-is-the-entry the-entry-is-an-integer]
+                            }
+                          @below-implies |
+                            nat_less_than(i, n) ->
+                              isInteger(qpoly.qcoeff(p, i))
+                            [by discharge given-i-below]
+                        }
+                      @all-coefficients-integer |
+                        forall i: Nat; nat_less_than(i, n) ->
+                          isInteger(qpoly.qcoeff(p, i))
+                        [by generalize each-coefficient]
+                      @the-general-meaning |
+                        forall p2: qpoly.QPoly; forall n2: Nat;
+                          qpoly.hasIntegerCoefficientsUpTo(p2, n2) iff
+                          (forall i: Nat; nat_less_than(i, n2) ->
+                          isInteger(qpoly.qcoeff(p2, i)))
+                        [using import(qpoly) integerCoefficientsMeaning]
+                      @the-meaning |
+                        qpoly.hasIntegerCoefficientsUpTo(p, n) iff
+                          (forall i: Nat; nat_less_than(i, n) ->
+                          isInteger(qpoly.qcoeff(p, i)))
+                        [using specialize the-general-meaning(p, n)]
+                      @conclusion-integer-coefficients |
+                        qpoly.hasIntegerCoefficientsUpTo(p, n)
+                        [using tautology the-meaning all-coefficients-integer]
+                    }
+                  @integrality-implies |
+                    (forall i: Nat; nat_less_than(i, n) ->
+                      isInteger(qat(t, i))) ->
+                      qpoly.hasIntegerCoefficientsUpTo(p, n)
+                    [by discharge given-the-integrality]
+                }
+              @the-implication |
+                (forall i: Nat; nat_less_than(i, n) ->
+                  qpoly.qcoeff(p, i) = qat(t, i)) ->
+                  (forall i: Nat; nat_less_than(i, n) ->
+                  isInteger(qat(t, i))) ->
+                  qpoly.hasIntegerCoefficientsUpTo(p, n)
+                [by discharge given-the-match]
+            }
+          @discharge-n |
+            forall n9: Nat;
+              (forall i: Nat; nat_less_than(i, n9) ->
+              qpoly.qcoeff(p, i) = qat(t, i)) ->
+              (forall i: Nat; nat_less_than(i, n9) ->
+              isInteger(qat(t, i))) ->
+              qpoly.hasIntegerCoefficientsUpTo(p, n9)
+            [by generalize generalize-n]
+        }
+      @discharge-t |
+        forall t9: QSeq; forall n9: Nat;
+          (forall i: Nat; nat_less_than(i, n9) ->
+          qpoly.qcoeff(p, i) = qat(t9, i)) ->
+          (forall i: Nat; nat_less_than(i, n9) ->
+          isInteger(qat(t9, i))) ->
+          qpoly.hasIntegerCoefficientsUpTo(p, n9)
+        [by generalize generalize-t]
+    }
+  @conclusion |
+    forall p: qpoly.QPoly; forall t: QSeq; forall n: Nat;
+      (forall i: Nat; nat_less_than(i, n) -> qpoly.qcoeff(p, i) = qat(t, i)) ->
+      (forall i: Nat; nat_less_than(i, n) -> isInteger(qat(t, i))) ->
+      qpoly.hasIntegerCoefficientsUpTo(p, n)
+    [by generalize generalize-p]
+qed
