@@ -3424,3 +3424,75 @@ proof
       theQuotientsAreCoprime(q, n)
     [by generalize generalize-d]
 qed
+
+// -- THE QUOTIENT SEQUENCE AT A LOCALLY BOUND DIVISOR -------------------------------------
+// The piece that closes the minimality assembly, and the one that was impossible before the
+// mixed-sort lambda landed (`2f9c535`). `anIndexPinnedChoiceIsRealized`'s spec relates an
+// INDEX to a VALUE — `Nat` and `Q` — so instantiating it needs a two-sort lambda; without one
+// the only route was a bare predicate name, which forces the subject to be pinned as a
+// file-scope nullary func and so works at exactly ONE divisor. The descent needs it at a
+// divisor bound inside the proof, which is now just the lambda closing over `e`.
+theorem theQuotientSequenceByADivisorExists: forall q: QSeq; forall e: Q;
+  (forall i: Nat; dividesIntegrally(e, qat(q, i))) ->
+  forall n: Nat; exists t: QSeq; forall i: Nat; nat_less_than(i, n) ->
+  (isInteger(qat(t, i)) and qat(q, i) = rational.mul(e, qat(t, i)))
+proof
+  @generalize-q |
+    fix q: QSeq {
+      @generalize-e |
+        fix e: Q {
+          @given-divides |
+            assume forall i: Nat; dividesIntegrally(e, qat(q, i)) {
+              @divides |
+                forall i: Nat; dividesIntegrally(e, qat(q, i))
+                [by hypothesis given-divides]
+              @each-index |
+                fix i: Nat {
+                  @divides-here |
+                    dividesIntegrally(e, qat(q, i))
+                    [using specialize divides(i)]
+                  @the-meaning |
+                    dividesIntegrally(e, qat(q, i)) iff
+                      (exists k: Q; isInteger(k) and
+                      qat(q, i) = rational.mul(e, k))
+                    [using specialize dividesIntegrallyMeaning(e, qat(q, i))]
+                  @conclusion-at-i |
+                    exists v: Q;
+                      (isInteger(v) and qat(q, i) = rational.mul(e, v))
+                    [using tautology the-meaning divides-here]
+                }
+              @the-witnesses |
+                forall i: Nat; exists v: Q;
+                  (isInteger(v) and qat(q, i) = rational.mul(e, v))
+                [by generalize each-index]
+              @conclusion-the-sequences |
+                forall n: Nat; exists t: QSeq; forall i: Nat;
+                  nat_less_than(i, n) ->
+                  (isInteger(qat(t, i)) and
+                  qat(q, i) = rational.mul(e, qat(t, i)))
+                [using instantiation anIndexPinnedChoiceIsRealized(fun i: Nat, v: Q => (isInteger(v) and qat(q, i) = rational.mul(e, v))) the-witnesses]
+            }
+          @divides-implies |
+            (forall i: Nat; dividesIntegrally(e, qat(q, i))) ->
+              forall n: Nat; exists t: QSeq; forall i: Nat;
+              nat_less_than(i, n) ->
+              (isInteger(qat(t, i)) and
+              qat(q, i) = rational.mul(e, qat(t, i)))
+            [by discharge given-divides]
+        }
+      @discharge-e |
+        forall e9: Q;
+          (forall i: Nat; dividesIntegrally(e9, qat(q, i))) ->
+          forall n: Nat; exists t: QSeq; forall i: Nat;
+          nat_less_than(i, n) ->
+          (isInteger(qat(t, i)) and
+          qat(q, i) = rational.mul(e9, qat(t, i)))
+        [by generalize generalize-e]
+    }
+  @conclusion |
+    forall q: QSeq; forall e: Q;
+      (forall i: Nat; dividesIntegrally(e, qat(q, i))) ->
+      forall n: Nat; exists t: QSeq; forall i: Nat; nat_less_than(i, n) ->
+      (isInteger(qat(t, i)) and qat(q, i) = rational.mul(e, qat(t, i)))
+    [by generalize generalize-q]
+qed
