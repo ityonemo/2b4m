@@ -426,3 +426,414 @@ qed
 
 fact aNatIsZeroOrPositive = irreducible.aNatIsZeroOrPositive
 fact aPositiveNatIsNonzero = irreducible.aPositiveNatIsNotZero
+
+// THE LOWER HALF: below m the convolution has accumulated nothing, because every term it
+// has taken carries a coefficient of q past q's degree — index j < m makes (m+n)-j exceed
+// n. Induction on the bound k, with the guard k < m travelling inside the property.
+theorem theConvolutionIsEmptyBelowTheDegree: forall p, q: Poly; forall m, n: Nat;
+  degreeAtMost(q, n) ->
+  forall k: Nat;
+  less_than(k, m) -> convolution(p, q, add(m, n), k) = zeroR
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-m |
+            fix m: Nat {
+              @generalize-n |
+                fix n: Nat {
+                  @given-q-bounded |
+                    assume degreeAtMost(q, n) {
+                      @q-bounded |
+                        degreeAtMost(q, n)
+                        [by hypothesis given-q-bounded]
+                      @the-bound-unfolds |
+                        degreeAtMost(q, n) iff
+                          (forall i: Nat; less_than(n, i) -> coeff(q, i) = zeroR)
+                        [using specialize ring_poly.degreeAtMostMeaning(q, n)]
+                      @coefficients-above-n-vanish |
+                        forall i: Nat; less_than(n, i) -> coeff(q, i) = zeroR
+                        [using tautology the-bound-unfolds q-bounded]
+                      // base: the single term at index ZERO
+                      @given-zero-below-m |
+                        assume less_than(ZERO, m) {
+                          @zero-below-m |
+                            less_than(ZERO, m)
+                            [by hypothesis given-zero-below-m]
+                          @the-base-term |
+                            convolution(p, q, add(m, n), ZERO) =
+                              mulR(coeff(p, ZERO), coeff(q, add(m, n)))
+                            [using specialize ring_poly.convolutionZero(p, q, add(m, n))]
+                          @n-is-below-the-sum |
+                            less_than(n, sub(add(m, n), ZERO))
+                            [using specialize subtractingBelowTheFirstSummandLeavesMoreThanTheSecond(m, n, ZERO) zero-below-m]
+                          @subtracting-zero |
+                            sub(add(m, n), ZERO) = add(m, n)
+                            [using specialize subtraction.subZeroRight(add(m, n))]
+                          @n-is-below-the-index |
+                            less_than(n, add(m, n))
+                            [by rewrite subtracting-zero n-is-below-the-sum]
+                          @the-base-coefficient-vanishes |
+                            coeff(q, add(m, n)) = zeroR
+                            [using specialize coefficients-above-n-vanish(add(m, n)) n-is-below-the-index]
+                          @scaling-zero |
+                            mulR(coeff(p, ZERO), zeroR) = zeroR
+                            [using specialize ring.mulZeroRight(coeff(p, ZERO))]
+                          @conclusion-the-base-vanishes |
+                            convolution(p, q, add(m, n), ZERO) = zeroR
+                            [using simplify the-base-term the-base-coefficient-vanishes scaling-zero]
+                        }
+                      @base-case |
+                        less_than(ZERO, m) ->
+                          convolution(p, q, add(m, n), ZERO) = zeroR
+                        [by discharge given-zero-below-m]
+                      // step
+                      @induction-step |
+                        fix k: Nat {
+                          @given-the-hypothesis |
+                            assume less_than(k, m) ->
+                              convolution(p, q, add(m, n), k) = zeroR {
+                              @the-hypothesis |
+                                less_than(k, m) ->
+                                  convolution(p, q, add(m, n), k) = zeroR
+                                [by hypothesis given-the-hypothesis]
+                              @given-succ-k-below-m |
+                                assume less_than(succ(k), m) {
+                                  @succ-k-below-m |
+                                    less_than(succ(k), m)
+                                    [by hypothesis given-succ-k-below-m]
+                                  // k < succ k < m, so the hypothesis applies
+                                  @k-below-succ-k |
+                                    less_than(k, succ(k))
+                                    [using specialize peano_order.lessThanSelf(k)]
+                                  @k-below-m |
+                                    less_than(k, m)
+                                    [using specialize peano_order.lessThanTransitive(k, succ(k), m) k-below-succ-k succ-k-below-m]
+                                  @the-running-sum-vanishes |
+                                    convolution(p, q, add(m, n), k) = zeroR
+                                    [using tautology the-hypothesis k-below-m]
+                                  // the new term's q-coefficient is past n
+                                  @the-convolution-grows |
+                                    convolution(p, q, add(m, n), succ(k)) =
+                                      addR(convolution(p, q, add(m, n), k),
+                                      mulR(coeff(p, succ(k)),
+                                      coeff(q, sub(add(m, n), succ(k)))))
+                                    [using specialize ring_poly.convolutionSucc(p, q, add(m, n), k)]
+                                  @n-is-below-the-new-index |
+                                    less_than(n, sub(add(m, n), succ(k)))
+                                    [using specialize subtractingBelowTheFirstSummandLeavesMoreThanTheSecond(m, n, succ(k)) succ-k-below-m]
+                                  @the-new-coefficient-vanishes |
+                                    coeff(q, sub(add(m, n), succ(k))) = zeroR
+                                    [using specialize coefficients-above-n-vanish(sub(add(m, n), succ(k))) n-is-below-the-new-index]
+                                  @the-new-term-vanishes |
+                                    mulR(coeff(p, succ(k)), zeroR) = zeroR
+                                    [using specialize ring.mulZeroRight(coeff(p, succ(k)))]
+                                  @adding-two-zeros |
+                                    addR(zeroR, zeroR) = zeroR
+                                    [using specialize ring.addZeroRight(zeroR)]
+                                  @conclusion-at-succ-k |
+                                    convolution(p, q, add(m, n), succ(k)) = zeroR
+                                    [using simplify the-convolution-grows the-running-sum-vanishes the-new-coefficient-vanishes the-new-term-vanishes adding-two-zeros]
+                                }
+                              @conclusion-guarded |
+                                less_than(succ(k), m) ->
+                                  convolution(p, q, add(m, n), succ(k)) = zeroR
+                                [by discharge given-succ-k-below-m]
+                            }
+                          @induction-step-at-k |
+                            (less_than(k, m) ->
+                              convolution(p, q, add(m, n), k) = zeroR) ->
+                              (less_than(succ(k), m) ->
+                              convolution(p, q, add(m, n), succ(k)) = zeroR)
+                            [by discharge given-the-hypothesis]
+                        }
+                      @induction-step-for-all-k |
+                        forall k: Nat;
+                          (less_than(k, m) ->
+                          convolution(p, q, add(m, n), k) = zeroR) ->
+                          (less_than(succ(k), m) ->
+                          convolution(p, q, add(m, n), succ(k)) = zeroR)
+                        [by generalize induction-step]
+                      @conclusion-for-all-k |
+                        forall k: Nat;
+                          less_than(k, m) ->
+                          convolution(p, q, add(m, n), k) = zeroR
+                        [using instantiation peano.induction((fun k: Nat => less_than(k, m) -> convolution(p, q, add(m, n), k) = zeroR)) base-case induction-step-for-all-k]
+                    }
+                  @bounded-implies |
+                    degreeAtMost(q, n) ->
+                      forall k: Nat;
+                      less_than(k, m) ->
+                      convolution(p, q, add(m, n), k) = zeroR
+                    [by discharge given-q-bounded]
+                }
+              @discharge-n |
+                forall n9: Nat;
+                  degreeAtMost(q, n9) ->
+                  forall k: Nat;
+                  less_than(k, m) ->
+                  convolution(p, q, add(m, n9), k) = zeroR
+                [by generalize generalize-n]
+            }
+          @discharge-m |
+            forall m9, n9: Nat;
+              degreeAtMost(q, n9) ->
+              forall k: Nat;
+              less_than(k, m9) ->
+              convolution(p, q, add(m9, n9), k) = zeroR
+            [by generalize generalize-m]
+        }
+      @discharge-q |
+        forall q9: Poly; forall m9, n9: Nat;
+          degreeAtMost(q9, n9) ->
+          forall k: Nat;
+          less_than(k, m9) ->
+          convolution(p, q9, add(m9, n9), k) = zeroR
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; forall m, n: Nat;
+      degreeAtMost(q, n) ->
+      forall k: Nat;
+      less_than(k, m) -> convolution(p, q, add(m, n), k) = zeroR
+    [by generalize generalize-p]
+qed
+
+// sub(add(m,n), m) = n: subAddCancel after commuting the sum.
+theorem subtractingTheFirstSummandLeavesTheSecond: forall m, n: Nat;
+  sub(add(m, n), m) = n
+proof
+  @generalize-m |
+    fix m: Nat {
+      @generalize-n |
+        fix n: Nat {
+          @commuting-the-sum |
+            add(m, n) = add(n, m)
+            [using specialize peano.addIsCommutative(m, n)]
+          @the-cancellation |
+            sub(add(n, m), m) = n
+            [using specialize subtraction.subAddCancel(n, m)]
+          @conclusion-the-difference |
+            sub(add(m, n), m) = n
+            [by rewrite commuting-the-sum the-cancellation]
+        }
+      @discharge-n |
+        forall n9: Nat; sub(add(m, n9), m) = n9
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall m, n: Nat; sub(add(m, n), m) = n
+    [by generalize generalize-m]
+qed
+
+// THE LEADING-PRODUCT STEP. For p of degree m and q of degree n, the product's coefficient
+// at m+n is exactly the product of the leading coefficients: the convolution stops growing
+// past m (upper half) and has accumulated nothing below it (lower half), so the single term
+// at j = m survives.
+//
+// This is what std/field/polynomial.b4m's `aProductOfNonzerosIsNonzero` and
+// `degreeOfAProduct` rest on, and it is stated there as resting on a lemma of
+// std/ring/polynomial.b4m that did not exist. Now it does.
+theorem theProductsLeadingCoefficient: forall p, q: Poly; forall m, n: Nat;
+  degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+  coeff(ring_poly.mulP(p, q), add(m, n)) =
+  mulR(coeff(p, m), coeff(q, n))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-m |
+            fix m: Nat {
+              @generalize-n |
+                fix n: Nat {
+                  @given-p-bounded |
+                    assume degreeAtMost(p, m) {
+                      @p-bounded |
+                        degreeAtMost(p, m)
+                        [by hypothesis given-p-bounded]
+                      @given-q-bounded |
+                        assume degreeAtMost(q, n) {
+                          @q-bounded |
+                            degreeAtMost(q, n)
+                            [by hypothesis given-q-bounded]
+                          // the coefficient IS the convolution at its own index
+                          @the-coefficient-is-the-convolution |
+                            coeff(ring_poly.mulP(p, q), add(m, n)) =
+                              convolution(p, q, add(m, n), add(m, n))
+                            [using specialize ring_poly.mulPolyCoeff(p, q, add(m, n))]
+                          // UPPER half at t = n: the bound drops from m+n to m
+                          @the-bound-drops-to-m |
+                            forall t: Nat;
+                              convolution(p, q, add(m, n), add(m, t)) =
+                              convolution(p, q, add(m, n), m)
+                            [using specialize theConvolutionStopsGrowingPastTheDegree(p, q, add(m, n), m) p-bounded]
+                          @the-convolution-at-m |
+                            convolution(p, q, add(m, n), add(m, n)) =
+                              convolution(p, q, add(m, n), m)
+                            [using specialize the-bound-drops-to-m(n)]
+                          // the index the surviving term reads q at
+                          @the-surviving-index |
+                            sub(add(m, n), m) = n
+                            [using specialize subtractingTheFirstSummandLeavesTheSecond(m, n)]
+                          // split on m: ZERO has no lower half to discard
+                          @m-splits |
+                            m = ZERO or (exists j: Nat; m = succ(j))
+                            [using specialize peano.zeroOrSucc(m)]
+                          @when-m-is-zero |
+                            assume m = ZERO {
+                              @m-is-zero |
+                                m = ZERO
+                                [by hypothesis when-m-is-zero]
+                              @the-single-term |
+                                convolution(p, q, add(m, n), ZERO) =
+                                  mulR(coeff(p, ZERO), coeff(q, add(m, n)))
+                                [using specialize ring_poly.convolutionZero(p, q, add(m, n))]
+                              // at m = ZERO the index m+n IS n
+                              @the-index-at-zero |
+                                sub(add(m, n), m) = add(m, n)
+                                [by rewrite m-is-zero the-difference-at-zero]
+                              @the-difference-at-zero |
+                                sub(add(ZERO, n), ZERO) = add(ZERO, n)
+                                [using specialize subtraction.subZeroRight(add(ZERO, n))]
+                              @the-index-is-n |
+                                add(m, n) = n
+                                [using chain the-index-at-zero-flipped the-surviving-index]
+                              @the-index-at-zero-flipped |
+                                add(m, n) = sub(add(m, n), m)
+                                [by symmetry the-index-at-zero]
+                              // at m = ZERO the convolution bound is ZERO, so the single
+                              // term is the whole thing
+                              @the-convolution-at-zero |
+                                convolution(p, q, add(m, n), add(m, n)) =
+                                  convolution(p, q, add(m, n), ZERO)
+                                [by rewrite m-is-zero the-convolution-at-m]
+                              @the-term-at-the-index |
+                                convolution(p, q, add(m, n), ZERO) =
+                                  mulR(coeff(p, ZERO), coeff(q, n))
+                                [by rewrite the-index-is-n the-single-term]
+                              @the-coefficient-at-zero |
+                                coeff(ring_poly.mulP(p, q), add(m, n)) =
+                                  mulR(coeff(p, ZERO), coeff(q, n))
+                                [using chain the-coefficient-is-the-convolution the-convolution-at-zero the-term-at-the-index]
+                              @conclusion-at-zero |
+                                coeff(ring_poly.mulP(p, q), add(m, n)) =
+                                  mulR(coeff(p, m), coeff(q, n))
+                                [by rewrite m-is-zero the-coefficient-at-zero]
+                            }
+                          @when-m-is-a-successor |
+                            assume exists j: Nat; m = succ(j) {
+                              @m-is-a-successor |
+                                exists j: Nat; m = succ(j)
+                                [by hypothesis when-m-is-a-successor]
+                              @with-the-predecessor-j |
+                                unpack j: Nat from m-is-a-successor {
+                                  @m-is-succ-j |
+                                    m = succ(j)
+                                    [by hypothesis with-the-predecessor-j]
+                                  // the convolution at m peels its last term
+                                  @the-peel |
+                                    convolution(p, q, add(m, n), succ(j)) =
+                                      addR(convolution(p, q, add(m, n), j),
+                                      mulR(coeff(p, succ(j)),
+                                      coeff(q, sub(add(m, n), succ(j)))))
+                                    [using specialize ring_poly.convolutionSucc(p, q, add(m, n), j)]
+                                  // LOWER half: everything below m is zeroR
+                                  @the-lower-half |
+                                    forall k: Nat;
+                                      less_than(k, m) ->
+                                      convolution(p, q, add(m, n), k) = zeroR
+                                    [using specialize theConvolutionIsEmptyBelowTheDegree(p, q, m, n) q-bounded]
+                                  @j-is-below-m |
+                                    less_than(j, m)
+                                    [by rewrite m-is-succ-j j-is-below-its-successor]
+                                  @j-is-below-its-successor |
+                                    less_than(j, succ(j))
+                                    [using specialize peano_order.lessThanSelf(j)]
+                                  @the-running-sum-vanishes |
+                                    convolution(p, q, add(m, n), j) = zeroR
+                                    [using specialize the-lower-half(j) j-is-below-m]
+                                  @dropping-the-zero |
+                                    addR(zeroR,
+                                      mulR(coeff(p, succ(j)),
+                                      coeff(q, sub(add(m, n), succ(j))))) =
+                                      mulR(coeff(p, succ(j)),
+                                      coeff(q, sub(add(m, n), succ(j))))
+                                    [using specialize ring.addZeroLeft(mulR(coeff(p, succ(j)), coeff(q, sub(add(m, n), succ(j)))))]
+                                  @the-peeled-term |
+                                    convolution(p, q, add(m, n), succ(j)) =
+                                      mulR(coeff(p, succ(j)),
+                                      coeff(q, sub(add(m, n), succ(j))))
+                                    [using simplify the-peel the-running-sum-vanishes dropping-the-zero]
+                                  // the peeled term reads q at sub(m+n, m) = n
+                                  @the-peeled-term-at-n |
+                                    convolution(p, q, add(m, n), succ(j)) =
+                                      mulR(coeff(p, succ(j)), coeff(q, n))
+                                    [by rewrite the-index-at-succ-j the-peeled-term]
+                                  @the-index-at-succ-j |
+                                    sub(add(m, n), succ(j)) = n
+                                    [by rewrite m-is-succ-j the-surviving-index]
+                                  @the-convolution-at-succ-j |
+                                    convolution(p, q, add(m, n), add(m, n)) =
+                                      convolution(p, q, add(m, n), succ(j))
+                                    [by rewrite m-is-succ-j the-convolution-at-m]
+                                  @the-coefficient-at-succ-j |
+                                    coeff(ring_poly.mulP(p, q), add(m, n)) =
+                                      mulR(coeff(p, succ(j)), coeff(q, n))
+                                    [using chain the-coefficient-is-the-convolution the-convolution-at-succ-j the-peeled-term-at-n]
+                                  @conclusion-at-a-successor |
+                                    coeff(ring_poly.mulP(p, q), add(m, n)) =
+                                      mulR(coeff(p, m), coeff(q, n))
+                                    [by rewrite m-is-succ-j the-coefficient-at-succ-j]
+                                }
+                              @conclusion-from-the-successor |
+                                coeff(ring_poly.mulP(p, q), add(m, n)) =
+                                  mulR(coeff(p, m), coeff(q, n))
+                                [by unpacked with-the-predecessor-j]
+                            }
+                          @conclusion-either-way |
+                            coeff(ring_poly.mulP(p, q), add(m, n)) =
+                              mulR(coeff(p, m), coeff(q, n))
+                            [by common_conclusion m-splits when-m-is-zero when-m-is-a-successor]
+                        }
+                      @q-bounded-implies |
+                        degreeAtMost(q, n) ->
+                          coeff(ring_poly.mulP(p, q), add(m, n)) =
+                          mulR(coeff(p, m), coeff(q, n))
+                        [by discharge given-q-bounded]
+                    }
+                  @p-bounded-implies |
+                    degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+                      coeff(ring_poly.mulP(p, q), add(m, n)) =
+                      mulR(coeff(p, m), coeff(q, n))
+                    [by discharge given-p-bounded]
+                }
+              @discharge-n |
+                forall n9: Nat;
+                  degreeAtMost(p, m) -> degreeAtMost(q, n9) ->
+                  coeff(ring_poly.mulP(p, q), add(m, n9)) =
+                  mulR(coeff(p, m), coeff(q, n9))
+                [by generalize generalize-n]
+            }
+          @discharge-m |
+            forall m9, n9: Nat;
+              degreeAtMost(p, m9) -> degreeAtMost(q, n9) ->
+              coeff(ring_poly.mulP(p, q), add(m9, n9)) =
+              mulR(coeff(p, m9), coeff(q, n9))
+            [by generalize generalize-m]
+        }
+      @discharge-q |
+        forall q9: Poly; forall m9, n9: Nat;
+          degreeAtMost(p, m9) -> degreeAtMost(q9, n9) ->
+          coeff(ring_poly.mulP(p, q9), add(m9, n9)) =
+          mulR(coeff(p, m9), coeff(q9, n9))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; forall m, n: Nat;
+      degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+      coeff(ring_poly.mulP(p, q), add(m, n)) =
+      mulR(coeff(p, m), coeff(q, n))
+    [by generalize generalize-p]
+qed
