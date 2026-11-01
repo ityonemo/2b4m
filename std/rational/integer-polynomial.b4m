@@ -28,6 +28,7 @@ import qpoly <<< "std/rational/polynomial.b4m"
 import rational <<< "std/rational.b4m"
 import mod_n <<< "std/integer/mod-n.b4m"
 import mod_n_poly <<< "std/integer/mod-n-polynomial.b4m"
+import mod_n_domain <<< "std/integer/mod-n-domain.b4m"
 import peano <<< "std/peano.b4m"
 import subtraction <<< "std/peano/subtraction.b4m"
 
@@ -1432,4 +1433,142 @@ proof
       (not (forall t: Nat;
       reducesToZero(qpoly.qcoeff(qpoly.qmulP(f, g), t))))
     [by generalize generalize-f]
+qed
+
+// -- EISENSTEIN'S SIGN ARGUMENT, AT THE MODULUS --------------------------------------------
+// Judson's `p | a_0` with `p² ∤ a_0` is what produces "p misses a coefficient of one factor".
+// `std/rational/integer-product.b4m` proves that for a parameterised prime via Bézout; here it
+// is restated for the MODULUS, which is the form the reduction argument above consumes.
+//
+// Restating rather than citing is what lets the two halves compose: the parameterised version
+// speaks in `dividesIntegrally(p, ·)`, the reduction argument in `reducesToZero`, and there is
+// no sound bridge between them (an earlier attempt at one is what introduced the two-modulus
+// defect). Nothing is lost by restating at the modulus, because the modulus is an arbitrary
+// positive constant — see the note on the reduction theorem.
+//
+// At the modulus the argument is also SHORTER: `reducesToZero` is `qcls(·) = ZERO`, so
+// "N divides a product" is a vanishing class product, and ℤ_N having no zero divisors
+// (`aPrimeModulusHasNoZeroDivisors`, a fact about ℤ_N with no ℚ in it) is immediate. The
+// parameterised version needs Bézout for the same step.
+theorem theModulusMissesOneFactor: forall b, c: Q;
+  isInteger(b) -> isInteger(c) ->
+  mod_n_domain.is_prime(mod_n.N) ->
+  reducesToZero(rational.mul(b, c)) ->
+  (reducesToZero(b) or reducesToZero(c))
+proof
+  @generalize-b |
+    fix b: Q {
+      @generalize-c |
+        fix c: Q {
+          @given-the-setup |
+            assume isInteger(b) and isInteger(c) and
+              mod_n_domain.is_prime(mod_n.N) and
+              reducesToZero(rational.mul(b, c)) {
+              @the-setup |
+                isInteger(b) and isInteger(c) and
+                  mod_n_domain.is_prime(mod_n.N) and
+                  reducesToZero(rational.mul(b, c))
+                [by hypothesis given-the-setup]
+              @b-is-an-integer |
+                isInteger(b)
+                [using tautology the-setup]
+              @c-is-an-integer |
+                isInteger(c)
+                [using tautology the-setup]
+              @the-modulus-is-prime |
+                mod_n_domain.is_prime(mod_n.N)
+                [using tautology the-setup]
+              @the-product-vanishes |
+                reducesToZero(rational.mul(b, c))
+                [using tautology the-setup]
+              // the class of the product is the product of the classes
+              @the-classes-multiply |
+                mod_n.mul(qcls(b), qcls(c)) =
+                  qcls(rational.mul(b, c))
+                [using specialize qclsMul(b, c) b-is-an-integer c-is-an-integer]
+              @the-class-product-vanishes |
+                mod_n.mul(qcls(b), qcls(c)) = mod_n.ZERO
+                [using simplify the-classes-multiply the-product-vanishes]
+              // ℤ_N is a domain, so one of the classes vanishes
+              @the-domain-property |
+                forall x, y: Zn;
+                  mod_n_domain.is_prime(mod_n.N) ->
+                  mod_n.mul(x, y) = mod_n.ZERO ->
+                  (x = mod_n.ZERO or y = mod_n.ZERO)
+                [using import(mod_n_domain) aPrimeModulusHasNoZeroDivisors]
+              @conclusion-one-vanishes |
+                reducesToZero(b) or reducesToZero(c)
+                [using specialize the-domain-property(qcls(b), qcls(c)) the-modulus-is-prime the-class-product-vanishes]
+            }
+          @the-implication |
+            (isInteger(b) and isInteger(c) and
+              mod_n_domain.is_prime(mod_n.N) and
+              reducesToZero(rational.mul(b, c))) ->
+              (reducesToZero(b) or reducesToZero(c))
+            [by discharge given-the-setup]
+          @curried |
+            isInteger(b) -> isInteger(c) ->
+              mod_n_domain.is_prime(mod_n.N) ->
+              reducesToZero(rational.mul(b, c)) ->
+              (reducesToZero(b) or reducesToZero(c))
+            [using tautology the-implication]
+        }
+      @discharge-c |
+        forall c9: Q;
+          isInteger(b) -> isInteger(c9) ->
+          mod_n_domain.is_prime(mod_n.N) ->
+          reducesToZero(rational.mul(b, c9)) ->
+          (reducesToZero(b) or reducesToZero(c9))
+        [by generalize generalize-c]
+    }
+  @conclusion |
+    forall b, c: Q;
+      isInteger(b) -> isInteger(c) ->
+      mod_n_domain.is_prime(mod_n.N) ->
+      reducesToZero(rational.mul(b, c)) ->
+      (reducesToZero(b) or reducesToZero(c))
+    [by generalize generalize-b]
+qed
+
+// The sharp form of Eisenstein's third hypothesis, as the argument actually uses it: if the
+// modulus does not divide BOTH constant factors, at least one survives.
+//
+// This is pure propositional restructuring — no integrality and no `N²` term is needed, which
+// is why there is still only one modulus. Judson phrases the hypothesis as `p² ∤ a_0`; what
+// the proof consumes is "not both", and deriving one from the other would need `N²` as a cut
+// element, reintroducing exactly the second-modulus problem. So the hypothesis is stated in
+// the form that is used, and the `p²` phrasing stays in the prose where it belongs.
+theorem theModulusMissesAFactorWhenItMissesTheSquare: forall b, c: Q;
+  (not (reducesToZero(b) and reducesToZero(c))) ->
+  ((not reducesToZero(b)) or (not reducesToZero(c)))
+proof
+  @generalize-b |
+    fix b: Q {
+      @generalize-c |
+        fix c: Q {
+          @given-not-both |
+            assume not (reducesToZero(b) and reducesToZero(c)) {
+              @not-both |
+                not (reducesToZero(b) and reducesToZero(c))
+                [by hypothesis given-not-both]
+              @conclusion-one-survives |
+                (not reducesToZero(b)) or (not reducesToZero(c))
+                [using tautology not-both]
+            }
+          @the-implication |
+            (not (reducesToZero(b) and reducesToZero(c))) ->
+              ((not reducesToZero(b)) or (not reducesToZero(c)))
+            [by discharge given-not-both]
+        }
+      @discharge-c |
+        forall c9: Q;
+          (not (reducesToZero(b) and reducesToZero(c9))) ->
+          ((not reducesToZero(b)) or (not reducesToZero(c9)))
+        [by generalize generalize-c]
+    }
+  @conclusion |
+    forall b, c: Q;
+      (not (reducesToZero(b) and reducesToZero(c))) ->
+      ((not reducesToZero(b)) or (not reducesToZero(c)))
+    [by generalize generalize-b]
 qed
