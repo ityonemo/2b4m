@@ -12025,3 +12025,407 @@ proof
       qpoly.isTheIntegerDecomposition(theSubject, q, r, s, nat_succ(n)))
     [by generalize generalize-n]
 qed
+
+// -- A SUM OF MULTIPLES IS A MULTIPLE ------------------------------------------------------
+// `dividesAdd` on the cut: d | a and d | b give d | a + b, by distributing over the two
+// quotients. Needed by Euclid's Lemma below, which splits w into two u-multiples.
+theorem theSumOfMultiplesIsAMultiple: forall d, a, b: Q;
+  dividesIntegrally(d, a) -> dividesIntegrally(d, b) ->
+  dividesIntegrally(d, rational.add(a, b))
+proof
+  @generalize-d |
+    fix d: Q {
+      @generalize-a |
+        fix a: Q {
+          @generalize-b |
+            fix b: Q {
+              @given-both |
+                assume dividesIntegrally(d, a) and
+                  dividesIntegrally(d, b) {
+                  @both |
+                    dividesIntegrally(d, a) and
+                      dividesIntegrally(d, b)
+                    [by hypothesis given-both]
+                  @d-divides-a |
+                    dividesIntegrally(d, a)
+                    [by and_lhs both]
+                  @d-divides-b |
+                    dividesIntegrally(d, b)
+                    [by and_rhs both]
+                  @the-a-meaning |
+                    dividesIntegrally(d, a) iff
+                      (exists k: Q; isInteger(k) and
+                      a = rational.mul(d, k))
+                    [using specialize dividesIntegrallyMeaning(d, a)]
+                  @an-a-quotient-exists |
+                    exists k: Q; isInteger(k) and
+                      a = rational.mul(d, k)
+                    [using tautology the-a-meaning d-divides-a]
+                  @the-b-meaning |
+                    dividesIntegrally(d, b) iff
+                      (exists k: Q; isInteger(k) and
+                      b = rational.mul(d, k))
+                    [using specialize dividesIntegrallyMeaning(d, b)]
+                  @a-b-quotient-exists |
+                    exists k: Q; isInteger(k) and
+                      b = rational.mul(d, k)
+                    [using tautology the-b-meaning d-divides-b]
+                  @the-sum-divides |
+                    unpack ka: Q from an-a-quotient-exists {
+                      @the-a-quotient |
+                        isInteger(ka) and a = rational.mul(d, ka)
+                        [by hypothesis the-sum-divides]
+                      @ka-is-an-integer |
+                        isInteger(ka)
+                        [by and_lhs the-a-quotient]
+                      @a-factors |
+                        a = rational.mul(d, ka)
+                        [by and_rhs the-a-quotient]
+                      @the-sum-divides-inner |
+                        unpack kb: Q from a-b-quotient-exists {
+                          @the-b-quotient |
+                            isInteger(kb) and b = rational.mul(d, kb)
+                            [by hypothesis the-sum-divides-inner]
+                          @kb-is-an-integer |
+                            isInteger(kb)
+                            [by and_lhs the-b-quotient]
+                          @b-factors |
+                            b = rational.mul(d, kb)
+                            [by and_rhs the-b-quotient]
+                          @the-quotient-sum-is-an-integer |
+                            isInteger(rational.add(ka, kb))
+                            [using specialize rational.isIntegerAdd(ka, kb) ka-is-an-integer kb-is-an-integer]
+                          @reflexivity-of-the-sum |
+                            rational.add(a, b) = rational.add(a, b)
+                            [by reflexivity]
+                          @the-sum-at-a |
+                            rational.add(a, b) =
+                              rational.add(rational.mul(d, ka), b)
+                            [by rewrite a-factors reflexivity-of-the-sum]
+                          @the-sum-factored |
+                            rational.add(a, b) =
+                              rational.add(rational.mul(d, ka),
+                              rational.mul(d, kb))
+                            [by rewrite b-factors the-sum-at-a]
+                          @the-distribution |
+                            rational.add(rational.mul(d, ka),
+                              rational.mul(d, kb)) =
+                              rational.mul(d,
+                              rational.add(ka, kb))
+                            [using polynomial(rational)]
+                          @the-sum-is-a-multiple |
+                            rational.add(a, b) =
+                              rational.mul(d, rational.add(ka, kb))
+                            [by rewrite the-distribution the-sum-factored]
+                          @the-sum-quotient-works |
+                            isInteger(rational.add(ka, kb)) and
+                              rational.add(a, b) =
+                              rational.mul(d, rational.add(ka, kb))
+                            [by both the-quotient-sum-is-an-integer the-sum-is-a-multiple]
+                          @a-sum-quotient-exists |
+                            exists k: Q; isInteger(k) and
+                              rational.add(a, b) = rational.mul(d, k)
+                            [by witness(rational.add(ka, kb)) the-sum-quotient-works]
+                          @the-sum-meaning |
+                            dividesIntegrally(d, rational.add(a, b)) iff
+                              (exists k: Q; isInteger(k) and
+                              rational.add(a, b) = rational.mul(d, k))
+                            [using specialize dividesIntegrallyMeaning(d, rational.add(a, b))]
+                          @conclusion-the-sum-divides |
+                            dividesIntegrally(d, rational.add(a, b))
+                            [using tautology the-sum-meaning a-sum-quotient-exists]
+                        }
+                      @the-inner-exported |
+                        dividesIntegrally(d, rational.add(a, b))
+                        [by unpacked the-sum-divides-inner]
+                    }
+                  @conclusion-sum |
+                    dividesIntegrally(d, rational.add(a, b))
+                    [by unpacked the-sum-divides]
+                }
+              @the-implication |
+                (dividesIntegrally(d, a) and
+                  dividesIntegrally(d, b)) ->
+                  dividesIntegrally(d, rational.add(a, b))
+                [by discharge given-both]
+              @curried |
+                dividesIntegrally(d, a) ->
+                  dividesIntegrally(d, b) ->
+                  dividesIntegrally(d, rational.add(a, b))
+                [using tautology the-implication]
+            }
+          @discharge-b |
+            forall b9: Q;
+              dividesIntegrally(d, a) -> dividesIntegrally(d, b9) ->
+              dividesIntegrally(d, rational.add(a, b9))
+            [by generalize generalize-b]
+        }
+      @discharge-a |
+        forall a9, b9: Q;
+          dividesIntegrally(d, a9) -> dividesIntegrally(d, b9) ->
+          dividesIntegrally(d, rational.add(a9, b9))
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall d, a, b: Q;
+      dividesIntegrally(d, a) -> dividesIntegrally(d, b) ->
+      dividesIntegrally(d, rational.add(a, b))
+    [by generalize generalize-d]
+qed
+
+// -- EUCLID'S LEMMA ON THE CUT -------------------------------------------------------------
+// Corollary 17.14 and Theorem 17.15 each need exactly this: from `u | v·w` and a Bézout
+// certificate for (u, v), conclude `u | w`.
+//
+// PROVED NATIVELY rather than transferred. ℤ has `euclidFromBezout` on 15 axioms that
+// `IntegersInRational` all maps — but its proof uses bare `[using polynomial]`, whose
+// hardcoded rule set cites ring lemmas by well-known name with SOURCE-SPACE formulas, so
+// under a transfer the cite's claim is guard-free while the resolved theorem is relativized:
+//   step claims 'forall b1,b2,b3; mul(b1, add(b2, b3)) = …'
+//   but the theorem derives 'forall a; isInteger(a) -> … '
+// ℚ has all this ring algebra natively, so `polynomial(rational)` resolves locally and the
+// three rearrangements cost nothing. The proof is Judson's standard one either way.
+//
+// The Bézout CERTIFICATE is a hypothesis, not a construction — which is the whole point: it
+// keeps this off `gcd`/`div`/`mod`, none of which the cut has.
+theorem euclidFromBezoutOnTheCut: forall u, v, w, r, s: Q;
+  isInteger(u) -> isInteger(v) -> isInteger(w) ->
+  isInteger(r) -> isInteger(s) ->
+  rational.add(rational.mul(u, r), rational.mul(v, s)) = ONE ->
+  dividesIntegrally(u, rational.mul(v, w)) ->
+  dividesIntegrally(u, w)
+proof
+  @generalize-u |
+    fix u: Q {
+      @generalize-v |
+        fix v: Q {
+          @generalize-w |
+            fix w: Q {
+              @generalize-r |
+                fix r: Q {
+                  @generalize-s |
+                    fix s: Q {
+                      @given-the-setup |
+                        assume isInteger(u) and isInteger(v) and
+                          isInteger(w) and isInteger(r) and
+                          isInteger(s) and
+                          rational.add(rational.mul(u, r),
+                          rational.mul(v, s)) = ONE and
+                          dividesIntegrally(u, rational.mul(v, w)) {
+                          @the-setup |
+                            isInteger(u) and isInteger(v) and
+                              isInteger(w) and isInteger(r) and
+                              isInteger(s) and
+                              rational.add(rational.mul(u, r),
+                              rational.mul(v, s)) = ONE and
+                              dividesIntegrally(u, rational.mul(v, w))
+                            [by hypothesis given-the-setup]
+                          @w-is-an-integer |
+                            isInteger(w)
+                            [using tautology the-setup]
+                          @r-is-an-integer |
+                            isInteger(r)
+                            [using tautology the-setup]
+                          @s-is-an-integer |
+                            isInteger(s)
+                            [using tautology the-setup]
+                          @bezout |
+                            rational.add(rational.mul(u, r),
+                              rational.mul(v, s)) = ONE
+                            [using tautology the-setup]
+                          @u-divides-vw |
+                            dividesIntegrally(u, rational.mul(v, w))
+                            [using tautology the-setup]
+                          // w = w·1 = w·(ur + vs) = w·u·r + w·v·s
+                          @one-is-bezout |
+                            ONE = rational.add(rational.mul(u, r),
+                              rational.mul(v, s))
+                            [by symmetry bezout]
+                          @w-is-mul-one |
+                            w = rational.mul(w, ONE)
+                            [using polynomial(rational)]
+                          @w-times-bezout |
+                            w = rational.mul(w,
+                              rational.add(rational.mul(u, r),
+                              rational.mul(v, s)))
+                            [by rewrite one-is-bezout w-is-mul-one]
+                          @w-distributes |
+                            rational.mul(w,
+                              rational.add(rational.mul(u, r),
+                              rational.mul(v, s))) =
+                              rational.add(rational.mul(u,
+                              rational.mul(w, r)),
+                              rational.mul(rational.mul(v, w), s))
+                            [using polynomial(rational)]
+                          @w-expands |
+                            w = rational.add(rational.mul(u,
+                              rational.mul(w, r)),
+                              rational.mul(rational.mul(v, w), s))
+                            [by rewrite w-distributes w-times-bezout]
+                          // u divides the first summand: it IS u · (w·r)
+                          @wr-is-an-integer |
+                            isInteger(rational.mul(w, r))
+                            [using specialize rational.isIntegerMul(w, r) w-is-an-integer r-is-an-integer]
+                          @the-first-divides-meaning |
+                            dividesIntegrally(u, rational.mul(u,
+                              rational.mul(w, r))) iff
+                              (exists k: Q; isInteger(k) and
+                              rational.mul(u, rational.mul(w, r)) =
+                              rational.mul(u, k))
+                            [using specialize dividesIntegrallyMeaning(u, rational.mul(u, rational.mul(w, r)))]
+                          @the-first-is-itself |
+                            rational.mul(u, rational.mul(w, r)) =
+                              rational.mul(u, rational.mul(w, r))
+                            [by reflexivity]
+                          @the-first-quotient-works |
+                            isInteger(rational.mul(w, r)) and
+                              rational.mul(u, rational.mul(w, r)) =
+                              rational.mul(u, rational.mul(w, r))
+                            [by both wr-is-an-integer the-first-is-itself]
+                          @a-first-quotient-exists |
+                            exists k: Q; isInteger(k) and
+                              rational.mul(u, rational.mul(w, r)) =
+                              rational.mul(u, k)
+                            [by witness(rational.mul(w, r)) the-first-quotient-works]
+                          @u-divides-first |
+                            dividesIntegrally(u, rational.mul(u,
+                              rational.mul(w, r)))
+                            [using tautology the-first-divides-meaning a-first-quotient-exists]
+                          // u divides the second summand: u | v·w, so u | (v·w)·s
+                          @the-vw-divides-meaning |
+                            dividesIntegrally(u, rational.mul(v, w)) iff
+                              (exists k: Q; isInteger(k) and
+                              rational.mul(v, w) = rational.mul(u, k))
+                            [using specialize dividesIntegrallyMeaning(u, rational.mul(v, w))]
+                          @a-vw-quotient-exists |
+                            exists k: Q; isInteger(k) and
+                              rational.mul(v, w) = rational.mul(u, k)
+                            [using tautology the-vw-divides-meaning u-divides-vw]
+                          @u-divides-second-unpacked |
+                            unpack k: Q from a-vw-quotient-exists {
+                              @the-vw-quotient |
+                                isInteger(k) and
+                                  rational.mul(v, w) =
+                                  rational.mul(u, k)
+                                [by hypothesis u-divides-second-unpacked]
+                              @k-is-an-integer |
+                                isInteger(k)
+                                [by and_lhs the-vw-quotient]
+                              @vw-factors |
+                                rational.mul(v, w) = rational.mul(u, k)
+                                [by and_rhs the-vw-quotient]
+                              @ks-is-an-integer |
+                                isInteger(rational.mul(k, s))
+                                [using specialize rational.isIntegerMul(k, s) k-is-an-integer s-is-an-integer]
+                              @the-second-regrouped |
+                                rational.mul(rational.mul(u, k), s) =
+                                  rational.mul(u, rational.mul(k, s))
+                                [using polynomial(rational)]
+                              @the-second-factors |
+                                rational.mul(rational.mul(v, w), s) =
+                                  rational.mul(u, rational.mul(k, s))
+                                [by rewrite vw-factors the-second-regrouped]
+                              @the-second-quotient-works |
+                                isInteger(rational.mul(k, s)) and
+                                  rational.mul(rational.mul(v, w), s) =
+                                  rational.mul(u, rational.mul(k, s))
+                                [by both ks-is-an-integer the-second-factors]
+                              @a-second-quotient-exists |
+                                exists k2: Q; isInteger(k2) and
+                                  rational.mul(rational.mul(v, w), s) =
+                                  rational.mul(u, k2)
+                                [by witness(rational.mul(k, s)) the-second-quotient-works]
+                              @the-second-divides-meaning |
+                                dividesIntegrally(u,
+                                  rational.mul(rational.mul(v, w), s)) iff
+                                  (exists k2: Q; isInteger(k2) and
+                                  rational.mul(rational.mul(v, w), s) =
+                                  rational.mul(u, k2))
+                                [using specialize dividesIntegrallyMeaning(u, rational.mul(rational.mul(v, w), s))]
+                              @conclusion-u-divides-second |
+                                dividesIntegrally(u,
+                                  rational.mul(rational.mul(v, w), s))
+                                [using tautology the-second-divides-meaning a-second-quotient-exists]
+                            }
+                          @u-divides-second |
+                            dividesIntegrally(u,
+                              rational.mul(rational.mul(v, w), s))
+                            [by unpacked u-divides-second-unpacked]
+                          // u divides the sum, which IS w
+                          @u-divides-sum |
+                            dividesIntegrally(u,
+                              rational.add(rational.mul(u,
+                              rational.mul(w, r)),
+                              rational.mul(rational.mul(v, w), s)))
+                            [using specialize theSumOfMultiplesIsAMultiple(u, rational.mul(u, rational.mul(w, r)), rational.mul(rational.mul(v, w), s)) u-divides-first u-divides-second]
+                          @conclusion-u-divides-w |
+                            dividesIntegrally(u, w)
+                            [by rewrite w-expands u-divides-sum]
+                        }
+                      @the-implication |
+                        (isInteger(u) and isInteger(v) and
+                          isInteger(w) and isInteger(r) and
+                          isInteger(s) and
+                          rational.add(rational.mul(u, r),
+                          rational.mul(v, s)) = ONE and
+                          dividesIntegrally(u, rational.mul(v, w))) ->
+                          dividesIntegrally(u, w)
+                        [by discharge given-the-setup]
+                      @curried |
+                        isInteger(u) -> isInteger(v) -> isInteger(w) ->
+                          isInteger(r) -> isInteger(s) ->
+                          rational.add(rational.mul(u, r),
+                          rational.mul(v, s)) = ONE ->
+                          dividesIntegrally(u, rational.mul(v, w)) ->
+                          dividesIntegrally(u, w)
+                        [using tautology the-implication]
+                    }
+                  @discharge-s |
+                    forall s9: Q;
+                      isInteger(u) -> isInteger(v) -> isInteger(w) ->
+                      isInteger(r) -> isInteger(s9) ->
+                      rational.add(rational.mul(u, r),
+                      rational.mul(v, s9)) = ONE ->
+                      dividesIntegrally(u, rational.mul(v, w)) ->
+                      dividesIntegrally(u, w)
+                    [by generalize generalize-s]
+                }
+              @discharge-r |
+                forall r9, s9: Q;
+                  isInteger(u) -> isInteger(v) -> isInteger(w) ->
+                  isInteger(r9) -> isInteger(s9) ->
+                  rational.add(rational.mul(u, r9),
+                  rational.mul(v, s9)) = ONE ->
+                  dividesIntegrally(u, rational.mul(v, w)) ->
+                  dividesIntegrally(u, w)
+                [by generalize generalize-r]
+            }
+          @discharge-w |
+            forall w9: Q; forall r9, s9: Q;
+              isInteger(u) -> isInteger(v) -> isInteger(w9) ->
+              isInteger(r9) -> isInteger(s9) ->
+              rational.add(rational.mul(u, r9),
+              rational.mul(v, s9)) = ONE ->
+              dividesIntegrally(u, rational.mul(v, w9)) ->
+              dividesIntegrally(u, w9)
+            [by generalize generalize-w]
+        }
+      @discharge-v |
+        forall v9, w9: Q; forall r9, s9: Q;
+          isInteger(u) -> isInteger(v9) -> isInteger(w9) ->
+          isInteger(r9) -> isInteger(s9) ->
+          rational.add(rational.mul(u, r9),
+          rational.mul(v9, s9)) = ONE ->
+          dividesIntegrally(u, rational.mul(v9, w9)) ->
+          dividesIntegrally(u, w9)
+        [by generalize generalize-v]
+    }
+  @conclusion |
+    forall u, v, w, r, s: Q;
+      isInteger(u) -> isInteger(v) -> isInteger(w) ->
+      isInteger(r) -> isInteger(s) ->
+      rational.add(rational.mul(u, r), rational.mul(v, s)) = ONE ->
+      dividesIntegrally(u, rational.mul(v, w)) ->
+      dividesIntegrally(u, w)
+    [by generalize generalize-u]
+qed
