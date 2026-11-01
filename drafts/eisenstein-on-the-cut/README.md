@@ -44,3 +44,40 @@ embedding between sorts that does not exist; the cut needs none.
   coefficient of each factor"; my `eisensteinForcesTheFullDegree` takes that conclusion as two
   hypotheses instead of deriving it.
 - **A fixed example polynomial**, then irreducibility of it.
+
+## The reproof plan, after measuring (2026-11-01)
+
+**The reproof is about half what I first estimated**, because two of the four pieces do not
+need reproving at all:
+
+| piece | verdict |
+|---|---|
+| `modNPolynomialsHaveNoZeroDivisors` | **cite directly.** It is a fact about ℤ_N[x] ALONE — no ℚ anywhere in it — so no transfer is involved. Probed: `reduce-probe.b4m` cites it green. |
+| `is_prime(N)` on the cut | **not needed.** `N` is a fixed `Int` constant of `mod_n`, so Eisenstein's prime never has to live on ℚ's cut. Only the DIVISIBILITY of a ℚ-cut coefficient by N must cross. |
+| `reduce` + its 3 theorems | **must be rebuilt** against the cut (~230 lines: `reduceCommutesWithTheConvolution` is the bulk at 132). |
+| `theDenominatorCannotExceedOne` | **must be rebuilt** (~115 lines), but its shape is unchanged. |
+
+### The design decision, stated because it is load-bearing
+
+The cut needs its own class map `qcls: Q → Zn requires isInteger(a)`, axiomatised DIRECTLY on
+ℚ's integers rather than by composing with a `Q → Int` conversion. That is deliberate:
+
+- the number-tower refactor **dropped the `from*` functions on purpose**
+  ([[number-tower-fromis-refactor]]), keeping `is*` as primitive-closure predicates. Adding a
+  `Q → Int` embedding to make this work would cut against a standing design decision.
+- `cls: Int → Zn` cannot be re-pointed at the cut, because `mod_n` keys it to
+  `std/integer.b4m`'s `Int` and transferring `mod_n` hits the nested-transfer wall
+  (`std/peano.b4m` is in its axiom base).
+
+**The cost of that choice, named honestly:** `qcls` is a NEW primitive with three new axioms
+(`qclsZero`, `qclsAdd`, `qclsMul`). They are the same homomorphism laws `cls` has, so they are
+not a new mathematical assumption — but they ARE new axioms, and `--axioms` will show them.
+The alternative (an embedding) trades three axioms for a function the refactor removed.
+Recording the trade rather than making it silently.
+
+### Still to settle
+
+`qclsCongruent` — "qcls(a) = qcls(b) iff N divides a − b" — is what links the cut's class map
+to divisibility, and it is what `aSurvivingCoefficientSurvivesReduction` needs. Its right-hand
+side mixes an `Int` modulus with ℚ-cut operands, so the divisibility notion has to be stated
+carefully. This is the one place the design could still fail.
