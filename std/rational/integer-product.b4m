@@ -9708,3 +9708,660 @@ proof
       (forall i: Nat; qpoly.qcoeff(p, i) = rational.mul(c, qpoly.qcoeff(q, i)))
     [by generalize generalize-p]
 qed
+
+// -- FROM THE CLEARED EQUATION TO THE REDUCED FRACTION ------------------------------------
+// The construction leaves `whole · coeff = d · q` at each index, with `d = g·r` and
+// `whole = g·s` from the reduction to lowest terms. Judson writes the conclusion as
+// `coeff = (r/s)·q`, so the common factor g must cancel and s must move to the other side.
+//
+// Both moves need a nonzero divisor: g because it is the cancelled factor, s because
+// `recip(s)` is only inverse to it when s != ZERO. s != ZERO comes from whole != ZERO —
+// `whole = g·s`, and a product with a zero factor is zero.
+theorem theReducedFractionScalesTheCoefficient: forall coefficient, entry: Q;
+  forall whole, d, g, r, s: Q;
+  (not (g = ZERO)) -> (not (s = ZERO)) ->
+  d = rational.mul(g, r) -> whole = rational.mul(g, s) ->
+  rational.mul(whole, coefficient) = rational.mul(d, entry) ->
+  coefficient = rational.mul(rational.mul(r, rational.recip(s)), entry)
+proof
+  @generalize-coefficient |
+    fix coefficient: Q {
+      @generalize-entry |
+        fix entry: Q {
+          @generalize-whole |
+            fix whole: Q {
+              @generalize-d |
+                fix d: Q {
+                  @generalize-g |
+                    fix g: Q {
+                      @generalize-r |
+                        fix r: Q {
+                          @generalize-s |
+                            fix s: Q {
+                              @given-g-nonzero |
+                                assume not (g = ZERO) {
+                                  @given-s-nonzero |
+                                    assume not (s = ZERO) {
+                                      @given-d-factors |
+                                        assume d = rational.mul(g, r) {
+                                          @given-whole-factors |
+                                            assume whole =
+                                              rational.mul(g, s) {
+                                              @given-the-cleared |
+                                                assume rational.mul(whole,
+                                                  coefficient) =
+                                                  rational.mul(d, entry) {
+                                                  @g-nonzero |
+                                                    not (g = ZERO)
+                                                    [by hypothesis given-g-nonzero]
+                                                  @s-nonzero |
+                                                    not (s = ZERO)
+                                                    [by hypothesis given-s-nonzero]
+                                                  @d-factors |
+                                                    d = rational.mul(g, r)
+                                                    [by hypothesis given-d-factors]
+                                                  @whole-factors |
+                                                    whole =
+                                                      rational.mul(g, s)
+                                                    [by hypothesis given-whole-factors]
+                                                  @the-cleared |
+                                                    rational.mul(whole,
+                                                      coefficient) =
+                                                      rational.mul(d, entry)
+                                                    [by hypothesis given-the-cleared]
+                                                  // substitute the factorizations
+                                                  @the-cleared-left |
+                                                    rational.mul(
+                                                      rational.mul(g, s),
+                                                      coefficient) =
+                                                      rational.mul(d, entry)
+                                                    [by rewrite whole-factors the-cleared]
+                                                  @the-cleared-factored |
+                                                    rational.mul(
+                                                      rational.mul(g, s),
+                                                      coefficient) =
+                                                      rational.mul(
+                                                      rational.mul(g, r),
+                                                      entry)
+                                                    [by rewrite d-factors the-cleared-left]
+                                                  // regroup so g is the outer factor on both sides
+                                                  @the-left-regrouped |
+                                                    rational.mul(
+                                                      rational.mul(g, s),
+                                                      coefficient) =
+                                                      rational.mul(g,
+                                                      rational.mul(s,
+                                                      coefficient))
+                                                    [using polynomial(rational)]
+                                                  @the-right-regrouped |
+                                                    rational.mul(
+                                                      rational.mul(g, r),
+                                                      entry) =
+                                                      rational.mul(g,
+                                                      rational.mul(r, entry))
+                                                    [using polynomial(rational)]
+                                                  @the-left-rewritten |
+                                                    rational.mul(g,
+                                                      rational.mul(s,
+                                                      coefficient)) =
+                                                      rational.mul(
+                                                      rational.mul(g, r),
+                                                      entry)
+                                                    [by rewrite the-left-regrouped the-cleared-factored]
+                                                  @the-common-factor |
+                                                    rational.mul(g,
+                                                      rational.mul(s,
+                                                      coefficient)) =
+                                                      rational.mul(g,
+                                                      rational.mul(r, entry))
+                                                    [by rewrite the-right-regrouped the-left-rewritten]
+                                                  @the-cancellation |
+                                                    forall a, b, c: Q;
+                                                      (not (a =
+                                                      rational.ZERO)) ->
+                                                      rational.mul(a, b) =
+                                                      rational.mul(a, c) ->
+                                                      b = c
+                                                    [by cite aNonzeroFactorCancels]
+                                                  @g-cancels |
+                                                    rational.mul(s,
+                                                      coefficient) =
+                                                      rational.mul(r, entry)
+                                                    [using specialize the-cancellation(g, rational.mul(s, coefficient), rational.mul(r, entry)) g-nonzero the-common-factor]
+                                                  // multiply through by recip(s)
+                                                  @s-inverts |
+                                                    rational.mul(s,
+                                                      rational.recip(s)) =
+                                                      rational.ONE
+                                                    [using specialize rational.fieldInverse(s) s-nonzero]
+                                                  @scaled-by-the-inverse |
+                                                    rational.mul(
+                                                      rational.recip(s),
+                                                      rational.mul(s,
+                                                      coefficient)) =
+                                                      rational.mul(
+                                                      rational.recip(s),
+                                                      rational.mul(r, entry))
+                                                    [using simplify g-cancels]
+                                                  @the-left-collapses |
+                                                    rational.mul(
+                                                      rational.recip(s),
+                                                      rational.mul(s,
+                                                      coefficient)) =
+                                                      rational.mul(
+                                                      rational.mul(s,
+                                                      rational.recip(s)),
+                                                      coefficient)
+                                                    [using polynomial(rational)]
+                                                  @the-left-is-one-times |
+                                                    rational.mul(
+                                                      rational.recip(s),
+                                                      rational.mul(s,
+                                                      coefficient)) =
+                                                      rational.mul(
+                                                      rational.ONE,
+                                                      coefficient)
+                                                    [by rewrite s-inverts the-left-collapses]
+                                                  @one-times-is-itself |
+                                                    rational.mul(
+                                                      rational.ONE,
+                                                      coefficient) =
+                                                      coefficient
+                                                    [using specialize rational.mulOneLeft(coefficient)]
+                                                  @the-left-is-the-coefficient |
+                                                    rational.mul(
+                                                      rational.recip(s),
+                                                      rational.mul(s,
+                                                      coefficient)) =
+                                                      coefficient
+                                                    [using simplify the-left-is-one-times one-times-is-itself]
+                                                  @the-right-regathered |
+                                                    rational.mul(
+                                                      rational.recip(s),
+                                                      rational.mul(r,
+                                                      entry)) =
+                                                      rational.mul(
+                                                      rational.mul(r,
+                                                      rational.recip(s)),
+                                                      entry)
+                                                    [using polynomial(rational)]
+                                                  @the-coefficient-equals-the-right |
+                                                    coefficient =
+                                                      rational.mul(
+                                                      rational.recip(s),
+                                                      rational.mul(r, entry))
+                                                    [by rewrite the-left-is-the-coefficient scaled-by-the-inverse]
+                                                  @conclusion-scaled |
+                                                    coefficient =
+                                                      rational.mul(
+                                                      rational.mul(r,
+                                                      rational.recip(s)),
+                                                      entry)
+                                                    [by rewrite the-right-regathered the-coefficient-equals-the-right]
+                                                }
+                                              @cleared-implies |
+                                                (rational.mul(whole,
+                                                  coefficient) =
+                                                  rational.mul(d, entry)) ->
+                                                  coefficient =
+                                                  rational.mul(
+                                                  rational.mul(r,
+                                                  rational.recip(s)), entry)
+                                                [by discharge given-the-cleared]
+                                            }
+                                          @whole-implies |
+                                            (whole = rational.mul(g, s)) ->
+                                              ((rational.mul(whole,
+                                              coefficient) =
+                                              rational.mul(d, entry)) ->
+                                              coefficient =
+                                              rational.mul(
+                                              rational.mul(r,
+                                              rational.recip(s)), entry))
+                                            [by discharge given-whole-factors]
+                                        }
+                                      @d-implies |
+                                        (d = rational.mul(g, r)) ->
+                                          ((whole = rational.mul(g, s)) ->
+                                          ((rational.mul(whole,
+                                          coefficient) =
+                                          rational.mul(d, entry)) ->
+                                          coefficient =
+                                          rational.mul(
+                                          rational.mul(r,
+                                          rational.recip(s)), entry)))
+                                        [by discharge given-d-factors]
+                                    }
+                                  @s-implies |
+                                    (not (s = ZERO)) ->
+                                      ((d = rational.mul(g, r)) ->
+                                      ((whole = rational.mul(g, s)) ->
+                                      ((rational.mul(whole, coefficient) =
+                                      rational.mul(d, entry)) ->
+                                      coefficient =
+                                      rational.mul(rational.mul(r,
+                                      rational.recip(s)), entry))))
+                                    [by discharge given-s-nonzero]
+                                }
+                              @the-implication |
+                                (not (g = ZERO)) ->
+                                  ((not (s = ZERO)) ->
+                                  ((d = rational.mul(g, r)) ->
+                                  ((whole = rational.mul(g, s)) ->
+                                  ((rational.mul(whole, coefficient) =
+                                  rational.mul(d, entry)) ->
+                                  coefficient =
+                                  rational.mul(rational.mul(r,
+                                  rational.recip(s)), entry)))))
+                                [by discharge given-g-nonzero]
+                            }
+                          @discharge-s |
+                            forall s9: Q;
+                              (not (g = ZERO)) ->
+                              ((not (s9 = ZERO)) ->
+                              ((d = rational.mul(g, r)) ->
+                              ((whole = rational.mul(g, s9)) ->
+                              ((rational.mul(whole, coefficient) =
+                              rational.mul(d, entry)) ->
+                              coefficient =
+                              rational.mul(rational.mul(r,
+                              rational.recip(s9)), entry)))))
+                            [by generalize generalize-s]
+                        }
+                      @discharge-r |
+                        forall r9, s9: Q;
+                          (not (g = ZERO)) ->
+                          ((not (s9 = ZERO)) ->
+                          ((d = rational.mul(g, r9)) ->
+                          ((whole = rational.mul(g, s9)) ->
+                          ((rational.mul(whole, coefficient) =
+                          rational.mul(d, entry)) ->
+                          coefficient =
+                          rational.mul(rational.mul(r9,
+                          rational.recip(s9)), entry)))))
+                        [by generalize generalize-r]
+                    }
+                  @discharge-g |
+                    forall g9, r9, s9: Q;
+                      (not (g9 = ZERO)) ->
+                      ((not (s9 = ZERO)) ->
+                      ((d = rational.mul(g9, r9)) ->
+                      ((whole = rational.mul(g9, s9)) ->
+                      ((rational.mul(whole, coefficient) =
+                      rational.mul(d, entry)) ->
+                      coefficient =
+                      rational.mul(rational.mul(r9,
+                      rational.recip(s9)), entry)))))
+                    [by generalize generalize-g]
+                }
+              @discharge-d |
+                forall d9, g9, r9, s9: Q;
+                  (not (g9 = ZERO)) ->
+                  ((not (s9 = ZERO)) ->
+                  ((d9 = rational.mul(g9, r9)) ->
+                  ((whole = rational.mul(g9, s9)) ->
+                  ((rational.mul(whole, coefficient) =
+                  rational.mul(d9, entry)) ->
+                  coefficient =
+                  rational.mul(rational.mul(r9,
+                  rational.recip(s9)), entry)))))
+                [by generalize generalize-d]
+            }
+          @discharge-whole |
+            forall whole9, d9, g9, r9, s9: Q;
+              (not (g9 = ZERO)) ->
+              ((not (s9 = ZERO)) ->
+              ((d9 = rational.mul(g9, r9)) ->
+              ((whole9 = rational.mul(g9, s9)) ->
+              ((rational.mul(whole9, coefficient) =
+              rational.mul(d9, entry)) ->
+              coefficient =
+              rational.mul(rational.mul(r9,
+              rational.recip(s9)), entry)))))
+            [by generalize generalize-whole]
+        }
+      @discharge-entry |
+        forall entry9: Q; forall whole9, d9, g9, r9, s9: Q;
+          (not (g9 = ZERO)) ->
+          ((not (s9 = ZERO)) ->
+          ((d9 = rational.mul(g9, r9)) ->
+          ((whole9 = rational.mul(g9, s9)) ->
+          ((rational.mul(whole9, coefficient) =
+          rational.mul(d9, entry9)) ->
+          coefficient =
+          rational.mul(rational.mul(r9,
+          rational.recip(s9)), entry9)))))
+        [by generalize generalize-entry]
+    }
+  @conclusion |
+    forall coefficient, entry: Q; forall whole, d, g, r, s: Q;
+      (not (g = ZERO)) -> (not (s = ZERO)) ->
+      d = rational.mul(g, r) -> whole = rational.mul(g, s) ->
+      rational.mul(whole, coefficient) = rational.mul(d, entry) ->
+      coefficient = rational.mul(rational.mul(r, rational.recip(s)), entry)
+    [by generalize generalize-coefficient]
+qed
+
+// -- THE PER-INDEX SCALING, BELOW THE BOUND -----------------------------------------------
+// Assembling the two sequences: the numerators satisfy `u_i = whole · coeff_i` and the
+// quotients `u_i = d · q_i`, so `whole · coeff_i = d · q_i` at every index in range — which
+// is exactly `theReducedFractionScalesTheCoefficient`'s last hypothesis. Lifting that lemma
+// across the index range is all this does.
+theorem theScalingHoldsBelowTheBound: forall u, qseq: QSeq; forall n: Nat;
+  forall whole, d, g, r, s: Q;
+  (not (g = ZERO)) -> (not (s = ZERO)) ->
+  d = rational.mul(g, r) -> whole = rational.mul(g, s) ->
+  (forall i: Nat; nat_less_than(i, n) ->
+  qat(u, i) = rational.mul(whole, qpoly.qcoeff(theSubject, i))) ->
+  (forall i: Nat; nat_less_than(i, n) ->
+  qat(u, i) = rational.mul(d, qat(qseq, i))) ->
+  (forall i: Nat; nat_less_than(i, n) ->
+  qpoly.qcoeff(theSubject, i) =
+  rational.mul(rational.mul(r, rational.recip(s)), qat(qseq, i)))
+proof
+  @generalize-u |
+    fix u: QSeq {
+      @generalize-qseq |
+        fix qseq: QSeq {
+          @generalize-n |
+            fix n: Nat {
+              @generalize-whole |
+                fix whole: Q {
+                  @generalize-d |
+                    fix d: Q {
+                      @generalize-g |
+                        fix g: Q {
+                          @generalize-r |
+                            fix r: Q {
+                              @generalize-s |
+                                fix s: Q {
+                                  @given-the-setup |
+                                    assume (not (g = ZERO)) and
+                                      (not (s = ZERO)) and
+                                      d = rational.mul(g, r) and
+                                      whole = rational.mul(g, s) and
+                                      (forall i: Nat;
+                                      nat_less_than(i, n) ->
+                                      qat(u, i) = rational.mul(whole,
+                                      qpoly.qcoeff(theSubject, i))) and
+                                      (forall i: Nat;
+                                      nat_less_than(i, n) ->
+                                      qat(u, i) = rational.mul(d,
+                                      qat(qseq, i))) {
+                                      @the-setup |
+                                        (not (g = ZERO)) and
+                                          (not (s = ZERO)) and
+                                          d = rational.mul(g, r) and
+                                          whole = rational.mul(g, s) and
+                                          (forall i: Nat;
+                                          nat_less_than(i, n) ->
+                                          qat(u, i) = rational.mul(whole,
+                                          qpoly.qcoeff(theSubject, i))) and
+                                          (forall i: Nat;
+                                          nat_less_than(i, n) ->
+                                          qat(u, i) = rational.mul(d,
+                                          qat(qseq, i)))
+                                        [by hypothesis given-the-setup]
+                                      @g-nonzero |
+                                        not (g = ZERO)
+                                        [using tautology the-setup]
+                                      @s-nonzero |
+                                        not (s = ZERO)
+                                        [using tautology the-setup]
+                                      @d-factors |
+                                        d = rational.mul(g, r)
+                                        [using tautology the-setup]
+                                      @whole-factors |
+                                        whole = rational.mul(g, s)
+                                        [using tautology the-setup]
+                                      @the-numerators |
+                                        forall i: Nat;
+                                          nat_less_than(i, n) ->
+                                          qat(u, i) = rational.mul(whole,
+                                          qpoly.qcoeff(theSubject, i))
+                                        [using tautology the-setup]
+                                      @the-quotients |
+                                        forall i: Nat;
+                                          nat_less_than(i, n) ->
+                                          qat(u, i) = rational.mul(d,
+                                          qat(qseq, i))
+                                        [using tautology the-setup]
+                                      @the-scaling-lemma |
+                                        forall coefficient, entry: Q;
+                                          forall whole2, d2, g2, r2, s2: Q;
+                                          (not (g2 = ZERO)) ->
+                                          (not (s2 = ZERO)) ->
+                                          d2 = rational.mul(g2, r2) ->
+                                          whole2 = rational.mul(g2, s2) ->
+                                          rational.mul(whole2,
+                                          coefficient) =
+                                          rational.mul(d2, entry) ->
+                                          coefficient =
+                                          rational.mul(rational.mul(r2,
+                                          rational.recip(s2)), entry)
+                                        [by cite theReducedFractionScalesTheCoefficient]
+                                      @each-index |
+                                        fix i: Nat {
+                                          @given-i-in-range |
+                                            assume nat_less_than(i, n) {
+                                              @i-in-range |
+                                                nat_less_than(i, n)
+                                                [by hypothesis given-i-in-range]
+                                              @the-numerator-at-i |
+                                                qat(u, i) =
+                                                  rational.mul(whole,
+                                                  qpoly.qcoeff(
+                                                  theSubject, i))
+                                                [using specialize the-numerators(i) i-in-range]
+                                              @the-quotient-at-i |
+                                                qat(u, i) =
+                                                  rational.mul(d,
+                                                  qat(qseq, i))
+                                                [using specialize the-quotients(i) i-in-range]
+                                              @the-cleared-at-i |
+                                                rational.mul(whole,
+                                                  qpoly.qcoeff(
+                                                  theSubject, i)) =
+                                                  rational.mul(d,
+                                                  qat(qseq, i))
+                                                [by rewrite the-numerator-at-i the-quotient-at-i]
+                                              @conclusion-scaled-at-i |
+                                                qpoly.qcoeff(
+                                                  theSubject, i) =
+                                                  rational.mul(
+                                                  rational.mul(r,
+                                                  rational.recip(s)),
+                                                  qat(qseq, i))
+                                                [using specialize the-scaling-lemma(qpoly.qcoeff(theSubject, i), qat(qseq, i), whole, d, g, r, s) g-nonzero s-nonzero d-factors whole-factors the-cleared-at-i]
+                                            }
+                                          @in-range-implies |
+                                            nat_less_than(i, n) ->
+                                              qpoly.qcoeff(theSubject, i) =
+                                              rational.mul(
+                                              rational.mul(r,
+                                              rational.recip(s)),
+                                              qat(qseq, i))
+                                            [by discharge given-i-in-range]
+                                        }
+                                      @conclusion-all-indices |
+                                        forall i: Nat;
+                                          nat_less_than(i, n) ->
+                                          qpoly.qcoeff(theSubject, i) =
+                                          rational.mul(
+                                          rational.mul(r,
+                                          rational.recip(s)),
+                                          qat(qseq, i))
+                                        [by generalize each-index]
+                                    }
+                                  @the-implication |
+                                    ((not (g = ZERO)) and
+                                      (not (s = ZERO)) and
+                                      d = rational.mul(g, r) and
+                                      whole = rational.mul(g, s) and
+                                      (forall i: Nat;
+                                      nat_less_than(i, n) ->
+                                      qat(u, i) = rational.mul(whole,
+                                      qpoly.qcoeff(theSubject, i))) and
+                                      (forall i: Nat;
+                                      nat_less_than(i, n) ->
+                                      qat(u, i) = rational.mul(d,
+                                      qat(qseq, i)))) ->
+                                      (forall i: Nat;
+                                      nat_less_than(i, n) ->
+                                      qpoly.qcoeff(theSubject, i) =
+                                      rational.mul(rational.mul(r,
+                                      rational.recip(s)), qat(qseq, i)))
+                                    [by discharge given-the-setup]
+                                  @curried |
+                                    (not (g = ZERO)) ->
+                                      (not (s = ZERO)) ->
+                                      d = rational.mul(g, r) ->
+                                      whole = rational.mul(g, s) ->
+                                      (forall i: Nat;
+                                      nat_less_than(i, n) ->
+                                      qat(u, i) = rational.mul(whole,
+                                      qpoly.qcoeff(theSubject, i))) ->
+                                      (forall i: Nat;
+                                      nat_less_than(i, n) ->
+                                      qat(u, i) = rational.mul(d,
+                                      qat(qseq, i))) ->
+                                      (forall i: Nat;
+                                      nat_less_than(i, n) ->
+                                      qpoly.qcoeff(theSubject, i) =
+                                      rational.mul(rational.mul(r,
+                                      rational.recip(s)), qat(qseq, i)))
+                                    [using tautology the-implication]
+                                }
+                              @discharge-s |
+                                forall s9: Q;
+                                  (not (g = ZERO)) ->
+                                  (not (s9 = ZERO)) ->
+                                  d = rational.mul(g, r) ->
+                                  whole = rational.mul(g, s9) ->
+                                  (forall i: Nat; nat_less_than(i, n) ->
+                                  qat(u, i) = rational.mul(whole,
+                                  qpoly.qcoeff(theSubject, i))) ->
+                                  (forall i: Nat; nat_less_than(i, n) ->
+                                  qat(u, i) = rational.mul(d,
+                                  qat(qseq, i))) ->
+                                  (forall i: Nat; nat_less_than(i, n) ->
+                                  qpoly.qcoeff(theSubject, i) =
+                                  rational.mul(rational.mul(r,
+                                  rational.recip(s9)), qat(qseq, i)))
+                                [by generalize generalize-s]
+                            }
+                          @discharge-r |
+                            forall r9, s9: Q;
+                              (not (g = ZERO)) ->
+                              (not (s9 = ZERO)) ->
+                              d = rational.mul(g, r9) ->
+                              whole = rational.mul(g, s9) ->
+                              (forall i: Nat; nat_less_than(i, n) ->
+                              qat(u, i) = rational.mul(whole,
+                              qpoly.qcoeff(theSubject, i))) ->
+                              (forall i: Nat; nat_less_than(i, n) ->
+                              qat(u, i) = rational.mul(d, qat(qseq, i))) ->
+                              (forall i: Nat; nat_less_than(i, n) ->
+                              qpoly.qcoeff(theSubject, i) =
+                              rational.mul(rational.mul(r9,
+                              rational.recip(s9)), qat(qseq, i)))
+                            [by generalize generalize-r]
+                        }
+                      @discharge-g |
+                        forall g9, r9, s9: Q;
+                          (not (g9 = ZERO)) ->
+                          (not (s9 = ZERO)) ->
+                          d = rational.mul(g9, r9) ->
+                          whole = rational.mul(g9, s9) ->
+                          (forall i: Nat; nat_less_than(i, n) ->
+                          qat(u, i) = rational.mul(whole,
+                          qpoly.qcoeff(theSubject, i))) ->
+                          (forall i: Nat; nat_less_than(i, n) ->
+                          qat(u, i) = rational.mul(d, qat(qseq, i))) ->
+                          (forall i: Nat; nat_less_than(i, n) ->
+                          qpoly.qcoeff(theSubject, i) =
+                          rational.mul(rational.mul(r9,
+                          rational.recip(s9)), qat(qseq, i)))
+                        [by generalize generalize-g]
+                    }
+                  @discharge-d |
+                    forall d9, g9, r9, s9: Q;
+                      (not (g9 = ZERO)) ->
+                      (not (s9 = ZERO)) ->
+                      d9 = rational.mul(g9, r9) ->
+                      whole = rational.mul(g9, s9) ->
+                      (forall i: Nat; nat_less_than(i, n) ->
+                      qat(u, i) = rational.mul(whole,
+                      qpoly.qcoeff(theSubject, i))) ->
+                      (forall i: Nat; nat_less_than(i, n) ->
+                      qat(u, i) = rational.mul(d9, qat(qseq, i))) ->
+                      (forall i: Nat; nat_less_than(i, n) ->
+                      qpoly.qcoeff(theSubject, i) =
+                      rational.mul(rational.mul(r9,
+                      rational.recip(s9)), qat(qseq, i)))
+                    [by generalize generalize-d]
+                }
+              @discharge-whole |
+                forall whole9, d9, g9, r9, s9: Q;
+                  (not (g9 = ZERO)) ->
+                  (not (s9 = ZERO)) ->
+                  d9 = rational.mul(g9, r9) ->
+                  whole9 = rational.mul(g9, s9) ->
+                  (forall i: Nat; nat_less_than(i, n) ->
+                  qat(u, i) = rational.mul(whole9,
+                  qpoly.qcoeff(theSubject, i))) ->
+                  (forall i: Nat; nat_less_than(i, n) ->
+                  qat(u, i) = rational.mul(d9, qat(qseq, i))) ->
+                  (forall i: Nat; nat_less_than(i, n) ->
+                  qpoly.qcoeff(theSubject, i) =
+                  rational.mul(rational.mul(r9,
+                  rational.recip(s9)), qat(qseq, i)))
+                [by generalize generalize-whole]
+            }
+          @discharge-n |
+            forall n9: Nat; forall whole9, d9, g9, r9, s9: Q;
+              (not (g9 = ZERO)) ->
+              (not (s9 = ZERO)) ->
+              d9 = rational.mul(g9, r9) ->
+              whole9 = rational.mul(g9, s9) ->
+              (forall i: Nat; nat_less_than(i, n9) ->
+              qat(u, i) = rational.mul(whole9,
+              qpoly.qcoeff(theSubject, i))) ->
+              (forall i: Nat; nat_less_than(i, n9) ->
+              qat(u, i) = rational.mul(d9, qat(qseq, i))) ->
+              (forall i: Nat; nat_less_than(i, n9) ->
+              qpoly.qcoeff(theSubject, i) =
+              rational.mul(rational.mul(r9,
+              rational.recip(s9)), qat(qseq, i)))
+            [by generalize generalize-n]
+        }
+      @discharge-qseq |
+        forall qseq9: QSeq; forall n9: Nat; forall whole9, d9, g9, r9, s9: Q;
+          (not (g9 = ZERO)) ->
+          (not (s9 = ZERO)) ->
+          d9 = rational.mul(g9, r9) ->
+          whole9 = rational.mul(g9, s9) ->
+          (forall i: Nat; nat_less_than(i, n9) ->
+          qat(u, i) = rational.mul(whole9,
+          qpoly.qcoeff(theSubject, i))) ->
+          (forall i: Nat; nat_less_than(i, n9) ->
+          qat(u, i) = rational.mul(d9, qat(qseq9, i))) ->
+          (forall i: Nat; nat_less_than(i, n9) ->
+          qpoly.qcoeff(theSubject, i) =
+          rational.mul(rational.mul(r9,
+          rational.recip(s9)), qat(qseq9, i)))
+        [by generalize generalize-qseq]
+    }
+  @conclusion |
+    forall u, qseq: QSeq; forall n: Nat; forall whole, d, g, r, s: Q;
+      (not (g = ZERO)) -> (not (s = ZERO)) ->
+      d = rational.mul(g, r) -> whole = rational.mul(g, s) ->
+      (forall i: Nat; nat_less_than(i, n) ->
+      qat(u, i) = rational.mul(whole, qpoly.qcoeff(theSubject, i))) ->
+      (forall i: Nat; nat_less_than(i, n) ->
+      qat(u, i) = rational.mul(d, qat(qseq, i))) ->
+      (forall i: Nat; nat_less_than(i, n) ->
+      qpoly.qcoeff(theSubject, i) =
+      rational.mul(rational.mul(r, rational.recip(s)), qat(qseq, i)))
+    [by generalize generalize-u]
+qed
