@@ -6271,6 +6271,102 @@ proof
     [by generalize generalize-u]
 qed
 
+// The other half of the same conjunction: the numerators' VALUES.
+theorem theClearedNumeratorValues: forall u: QSeq; forall whole: Q; forall n: Nat;
+  (forall i: Nat; nat_less_than(i, n) ->
+  (isInteger(qat(u, i)) and
+  qat(u, i) = rational.mul(whole, qpoly.qcoeff(theSubject, i)))) ->
+  (forall i: Nat; nat_less_than(i, n) ->
+  qat(u, i) = rational.mul(whole, qpoly.qcoeff(theSubject, i)))
+proof
+  @generalize-u |
+    fix u: QSeq {
+      @generalize-whole |
+        fix whole: Q {
+          @generalize-n |
+            fix n: Nat {
+              @given-the-pairs |
+                assume forall i: Nat; nat_less_than(i, n) ->
+                  (isInteger(qat(u, i)) and
+                  qat(u, i) = rational.mul(whole,
+                  qpoly.qcoeff(theSubject, i))) {
+                  @the-pairs |
+                    forall i: Nat; nat_less_than(i, n) ->
+                      (isInteger(qat(u, i)) and
+                      qat(u, i) = rational.mul(whole,
+                      qpoly.qcoeff(theSubject, i)))
+                    [by hypothesis given-the-pairs]
+                  @each-index |
+                    fix i: Nat {
+                      @given-i-below |
+                        assume nat_less_than(i, n) {
+                          @i-below |
+                            nat_less_than(i, n)
+                            [by hypothesis given-i-below]
+                          @the-pair-at-i |
+                            isInteger(qat(u, i)) and
+                              qat(u, i) = rational.mul(whole,
+                              qpoly.qcoeff(theSubject, i))
+                            [using specialize the-pairs(i) i-below]
+                          @conclusion-value-at-i |
+                            qat(u, i) = rational.mul(whole,
+                              qpoly.qcoeff(theSubject, i))
+                            [by and_rhs the-pair-at-i]
+                        }
+                      @below-implies |
+                        nat_less_than(i, n) ->
+                          qat(u, i) = rational.mul(whole,
+                          qpoly.qcoeff(theSubject, i))
+                        [by discharge given-i-below]
+                    }
+                  @conclusion-all |
+                    forall i: Nat; nat_less_than(i, n) ->
+                      qat(u, i) = rational.mul(whole,
+                      qpoly.qcoeff(theSubject, i))
+                    [by generalize each-index]
+                }
+              @the-implication |
+                (forall i: Nat; nat_less_than(i, n) ->
+                  (isInteger(qat(u, i)) and
+                  qat(u, i) = rational.mul(whole,
+                  qpoly.qcoeff(theSubject, i)))) ->
+                  (forall i: Nat; nat_less_than(i, n) ->
+                  qat(u, i) = rational.mul(whole,
+                  qpoly.qcoeff(theSubject, i)))
+                [by discharge given-the-pairs]
+            }
+          @discharge-n |
+            forall n9: Nat;
+              (forall i: Nat; nat_less_than(i, n9) ->
+              (isInteger(qat(u, i)) and
+              qat(u, i) = rational.mul(whole,
+              qpoly.qcoeff(theSubject, i)))) ->
+              (forall i: Nat; nat_less_than(i, n9) ->
+              qat(u, i) = rational.mul(whole,
+              qpoly.qcoeff(theSubject, i)))
+            [by generalize generalize-n]
+        }
+      @discharge-whole |
+        forall w9: Q; forall n9: Nat;
+          (forall i: Nat; nat_less_than(i, n9) ->
+          (isInteger(qat(u, i)) and
+          qat(u, i) = rational.mul(w9,
+          qpoly.qcoeff(theSubject, i)))) ->
+          (forall i: Nat; nat_less_than(i, n9) ->
+          qat(u, i) = rational.mul(w9,
+          qpoly.qcoeff(theSubject, i)))
+        [by generalize generalize-whole]
+    }
+  @conclusion |
+    forall u: QSeq; forall whole: Q; forall n: Nat;
+      (forall i: Nat; nat_less_than(i, n) ->
+      (isInteger(qat(u, i)) and
+      qat(u, i) = rational.mul(whole, qpoly.qcoeff(theSubject, i)))) ->
+      (forall i: Nat; nat_less_than(i, n) ->
+      qat(u, i) = rational.mul(whole, qpoly.qcoeff(theSubject, i)))
+    [by generalize generalize-u]
+qed
+
 // -- LEMMA 17.12: STAGES D-F ---------------------------------------------------------------
 // From a common denominator C that clears every coefficient, produce the divisor and the
 // quotient polynomial:
@@ -10364,4 +10460,972 @@ proof
       qpoly.qcoeff(theSubject, i) =
       rational.mul(rational.mul(r, rational.recip(s)), qat(qseq, i)))
     [by generalize generalize-u]
+qed
+
+// The two ways of saying "outside the range 0 … n" line up: an index NOT below succ(n) is
+// strictly above n. `qdegreeAtMost` is phrased the second way and the construction the first,
+// so the vanishing facts have to be converted before they can meet.
+theorem theOutsideIsAbove: forall p: qpoly.QPoly; forall n: Nat;
+  (forall i: Nat; nat_less_than(n, i) -> qpoly.qcoeff(p, i) = ZERO) ->
+  (forall i: Nat; (not nat_less_than(i, nat_succ(n))) ->
+  qpoly.qcoeff(p, i) = ZERO)
+proof
+  @generalize-p |
+    fix p: qpoly.QPoly {
+      @generalize-n |
+        fix n: Nat {
+          @given-the-vanishing |
+            assume forall i: Nat; nat_less_than(n, i) ->
+              qpoly.qcoeff(p, i) = ZERO {
+              @the-vanishing |
+                forall i: Nat; nat_less_than(n, i) ->
+                  qpoly.qcoeff(p, i) = ZERO
+                [by hypothesis given-the-vanishing]
+              @each-index |
+                fix i: Nat {
+                  @given-i-outside |
+                    assume not nat_less_than(i, nat_succ(n)) {
+                      @i-outside |
+                        not nat_less_than(i, nat_succ(n))
+                        [by hypothesis given-i-outside]
+                      @the-trichotomy |
+                        nat_less_than(n, i) or n = i or
+                          nat_less_than(i, n)
+                        [using specialize peano_order.trichotomy(n, i)]
+                      @n-is-below-i |
+                        nat_less_than(n, i)
+                        case the-trichotomy {
+                          // n < i or n = i: the first arm is the goal
+                          @when-not-above |
+                            assume nat_less_than(n, i) or n = i {
+                              @the-left-cases |
+                                nat_less_than(n, i) or n = i
+                                [by hypothesis when-not-above]
+                              @conclusion-left |
+                                nat_less_than(n, i)
+                                case the-left-cases {
+                                  @when-above |
+                                    assume nat_less_than(n, i) {
+                                      @conclusion-already |
+                                        nat_less_than(n, i)
+                                        [by hypothesis when-above]
+                                    }
+                                  // n = i makes i <= n, so i < succ(n)
+                                  @when-equal |
+                                    assume n = i {
+                                      @n-is-i |
+                                        n = i
+                                        [by hypothesis when-equal]
+                                      @n-below-succ-n |
+                                        nat_less_than(n, nat_succ(n))
+                                        [using specialize peano_order.lessThanSelf(n)]
+                                      @i-below-succ-n |
+                                        nat_less_than(i, nat_succ(n))
+                                        [by rewrite n-is-i n-below-succ-n]
+                                      @conclusion-equal |
+                                        nat_less_than(n, i)
+                                        [by ex_falso i-below-succ-n i-outside]
+                                    }
+                                }
+                            }
+                          // i < n makes i <= n, so i < succ(n)
+                          @when-below |
+                            assume nat_less_than(i, n) {
+                              @i-below-n |
+                                nat_less_than(i, n)
+                                [by hypothesis when-below]
+                              @i-at-most-n-strict |
+                                peano_order.less_or_equal(i, n)
+                                [using specialize peano_order.lessThanToLessOrEqual(i, n) i-below-n]
+                              @i-below-succ-n-strict |
+                                nat_less_than(i, nat_succ(n))
+                                [using specialize peano_order.lessOrEqualToLessThanSucc(i, n) i-at-most-n-strict]
+                              @conclusion-below |
+                                nat_less_than(n, i)
+                                [by ex_falso i-below-succ-n-strict i-outside]
+                            }
+                        }
+                      @conclusion-vanishes-at-i |
+                        qpoly.qcoeff(p, i) = ZERO
+                        [using specialize the-vanishing(i) n-is-below-i]
+                    }
+                  @outside-implies |
+                    (not nat_less_than(i, nat_succ(n))) ->
+                      qpoly.qcoeff(p, i) = ZERO
+                    [by discharge given-i-outside]
+                }
+              @conclusion-all |
+                forall i: Nat; (not nat_less_than(i, nat_succ(n))) ->
+                  qpoly.qcoeff(p, i) = ZERO
+                [by generalize each-index]
+            }
+          @the-implication |
+            (forall i: Nat; nat_less_than(n, i) ->
+              qpoly.qcoeff(p, i) = ZERO) ->
+              (forall i: Nat; (not nat_less_than(i, nat_succ(n))) ->
+              qpoly.qcoeff(p, i) = ZERO)
+            [by discharge given-the-vanishing]
+        }
+      @discharge-n |
+        forall n9: Nat;
+          (forall i: Nat; nat_less_than(n9, i) ->
+          qpoly.qcoeff(p, i) = ZERO) ->
+          (forall i: Nat; (not nat_less_than(i, nat_succ(n9))) ->
+          qpoly.qcoeff(p, i) = ZERO)
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall p: qpoly.QPoly; forall n: Nat;
+      (forall i: Nat; nat_less_than(n, i) -> qpoly.qcoeff(p, i) = ZERO) ->
+      (forall i: Nat; (not nat_less_than(i, nat_succ(n))) ->
+      qpoly.qcoeff(p, i) = ZERO)
+    [by generalize generalize-p]
+qed
+
+// -- STAGES D AND E: FROM THE DIVISOR TO THE DECOMPOSITION --------------------------------
+// Everything above produces two sequences over the same index range: the cleared numerators
+// `u` (with `u_i = whole · coeff_i`) and their quotients `qseq` (with `u_i = d · q_i`), the
+// latter having integral and pairwise-coprime entries. This turns that into the decomposition
+// predicate's seven conjuncts.
+//
+//   the quotient sequence becomes a polynomial    `aBoundedPolynomialMatchesASequence`
+//   conjunct 4, integer coefficients              `integerEntriesMakeIntegerCoefficients`
+//   conjunct 5, coprime coefficients              `coprimeEntriesMakeCoprimeCoefficients`
+//   conjuncts 1, 2, 3 and 6, the reduced pair     `aReducedFractionExists` at (d, whole)
+//   conjunct 7, the polynomial equation           `theScalingHoldsBelowTheBound`
+//                                                 + `theBoundedScalingIsTotal`
+//                                                 + `theScaledCoefficientsAgree`
+//
+// `aReducedFractionExists` is applied at (d, whole) — d FIRST, because it is the argument
+// required to be positive, and `whole` need not be.
+theorem theDecompositionFromTheDivisor: forall u, qseq: QSeq; forall n: Nat;
+  forall whole, d: Q;
+  qpoly.qdegreeAtMost(theSubject, n) ->
+  isInteger(whole) -> (not (whole = ZERO)) ->
+  isInteger(d) -> less_than(ZERO, d) ->
+  (forall i: Nat; nat_less_than(i, nat_succ(n)) -> isInteger(qat(qseq, i))) ->
+  theQuotientsAreCoprime(qseq, nat_succ(n)) ->
+  (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+  qat(u, i) = rational.mul(whole, qpoly.qcoeff(theSubject, i))) ->
+  (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+  qat(u, i) = rational.mul(d, qat(qseq, i))) ->
+  (exists q: qpoly.QPoly; exists r, s: Q;
+  qpoly.isTheIntegerDecomposition(theSubject, q, r, s, nat_succ(n)))
+proof
+  @generalize-u |
+    fix u: QSeq {
+      @generalize-qseq |
+        fix qseq: QSeq {
+          @generalize-n |
+            fix n: Nat {
+              @generalize-whole |
+                fix whole: Q {
+                  @generalize-d |
+                    fix d: Q {
+                      @given-the-setup |
+                        assume qpoly.qdegreeAtMost(theSubject, n) and
+                          isInteger(whole) and
+                          (not (whole = ZERO)) and isInteger(d) and
+                          less_than(ZERO, d) and
+                          (forall i: Nat;
+                          nat_less_than(i, nat_succ(n)) ->
+                          isInteger(qat(qseq, i))) and
+                          theQuotientsAreCoprime(qseq, nat_succ(n)) and
+                          (forall i: Nat;
+                          nat_less_than(i, nat_succ(n)) ->
+                          qat(u, i) = rational.mul(whole,
+                          qpoly.qcoeff(theSubject, i))) and
+                          (forall i: Nat;
+                          nat_less_than(i, nat_succ(n)) ->
+                          qat(u, i) = rational.mul(d, qat(qseq, i))) {
+                          @the-setup |
+                            qpoly.qdegreeAtMost(theSubject, n) and
+                              isInteger(whole) and
+                              (not (whole = ZERO)) and isInteger(d) and
+                              less_than(ZERO, d) and
+                              (forall i: Nat;
+                              nat_less_than(i, nat_succ(n)) ->
+                              isInteger(qat(qseq, i))) and
+                              theQuotientsAreCoprime(qseq,
+                              nat_succ(n)) and
+                              (forall i: Nat;
+                              nat_less_than(i, nat_succ(n)) ->
+                              qat(u, i) = rational.mul(whole,
+                              qpoly.qcoeff(theSubject, i))) and
+                              (forall i: Nat;
+                              nat_less_than(i, nat_succ(n)) ->
+                              qat(u, i) = rational.mul(d, qat(qseq, i)))
+                            [by hypothesis given-the-setup]
+                          @the-degree-bound |
+                            qpoly.qdegreeAtMost(theSubject, n)
+                            [using tautology the-setup]
+                          @whole-is-an-integer |
+                            isInteger(whole)
+                            [using tautology the-setup]
+                          @whole-is-nonzero |
+                            not (whole = ZERO)
+                            [using tautology the-setup]
+                          @d-is-an-integer |
+                            isInteger(d)
+                            [using tautology the-setup]
+                          @d-is-positive |
+                            less_than(ZERO, d)
+                            [using tautology the-setup]
+                          @the-entries-are-integers |
+                            forall i: Nat;
+                              nat_less_than(i, nat_succ(n)) ->
+                              isInteger(qat(qseq, i))
+                            [using tautology the-setup]
+                          @the-entries-are-coprime |
+                            theQuotientsAreCoprime(qseq, nat_succ(n))
+                            [using tautology the-setup]
+                          @the-numerator-values |
+                            forall i: Nat;
+                              nat_less_than(i, nat_succ(n)) ->
+                              qat(u, i) = rational.mul(whole,
+                              qpoly.qcoeff(theSubject, i))
+                            [using tautology the-setup]
+                          @the-quotient-values |
+                            forall i: Nat;
+                              nat_less_than(i, nat_succ(n)) ->
+                              qat(u, i) = rational.mul(d, qat(qseq, i))
+                            [using tautology the-setup]
+
+                          // whole is nonzero: the first numerator is d · q_0,
+                          // and a positive d forces whole != ZERO only once we
+                          // know the reduced pair, so take it from the
+                          // reduction itself below.
+                          // STAGE E: reduce d/whole to lowest terms
+                          @the-reduction-exists |
+                            exists g, r, s: Q;
+                              isInteger(g) and less_than(ZERO, g) and
+                              isInteger(r) and isInteger(s) and
+                              d = rational.mul(g, r) and
+                              whole = rational.mul(g, s) and
+                              qpoly.arePairwiseRelativelyPrime(r, s)
+                            [using specialize aReducedFractionExists(d, whole) d-is-an-integer whole-is-an-integer d-is-positive]
+                          @with-the-common-factor |
+                            unpack g: Q from the-reduction-exists {
+                              @the-numerator-exists |
+                                exists r, s: Q;
+                                  isInteger(g) and less_than(ZERO, g) and
+                                  isInteger(r) and isInteger(s) and
+                                  d = rational.mul(g, r) and
+                                  whole = rational.mul(g, s) and
+                                  qpoly.arePairwiseRelativelyPrime(r, s)
+                                [by hypothesis with-the-common-factor]
+                              @with-the-numerator |
+                                unpack r: Q from the-numerator-exists {
+                                  @the-denominator-exists |
+                                    exists s: Q;
+                                      isInteger(g) and
+                                      less_than(ZERO, g) and
+                                      isInteger(r) and isInteger(s) and
+                                      d = rational.mul(g, r) and
+                                      whole = rational.mul(g, s) and
+                                      qpoly.arePairwiseRelativelyPrime(r, s)
+                                    [by hypothesis with-the-numerator]
+                                  @with-the-denominator |
+                                    unpack s: Q from the-denominator-exists {
+                                      @the-reduction |
+                                        isInteger(g) and
+                                          less_than(ZERO, g) and
+                                          isInteger(r) and isInteger(s) and
+                                          d = rational.mul(g, r) and
+                                          whole = rational.mul(g, s) and
+                                          qpoly.arePairwiseRelativelyPrime(
+                                          r, s)
+                                        [by hypothesis with-the-denominator]
+                                      @g-is-positive |
+                                        less_than(ZERO, g)
+                                        [using tautology the-reduction]
+                                      @r-is-an-integer |
+                                        isInteger(r)
+                                        [using tautology the-reduction]
+                                      @s-is-an-integer |
+                                        isInteger(s)
+                                        [using tautology the-reduction]
+                                      @d-factors |
+                                        d = rational.mul(g, r)
+                                        [using tautology the-reduction]
+                                      @whole-factors |
+                                        whole = rational.mul(g, s)
+                                        [using tautology the-reduction]
+                                      @the-pair-is-coprime |
+                                        qpoly.arePairwiseRelativelyPrime(
+                                          r, s)
+                                        [using tautology the-reduction]
+                                      @g-is-nonzero |
+                                        not (g = ZERO)
+                                        [using specialize rational_integer_order.aPositiveIsNonzero(g) g-is-positive]
+                                      // s != ZERO: whole = g·s, so s = ZERO would
+                                      // make whole = ZERO
+                                      @given-s-is-zero |
+                                        assume s = ZERO {
+                                          @s-is-zero |
+                                            s = ZERO
+                                            [by hypothesis given-s-is-zero]
+                                          @whole-is-g-times-zero |
+                                            whole = rational.mul(g, ZERO)
+                                            [by rewrite s-is-zero whole-factors]
+                                          @g-times-zero |
+                                            rational.mul(g, ZERO) = ZERO
+                                            [using specialize rational.mulZeroRight(g)]
+                                          @whole-is-zero |
+                                            whole = ZERO
+                                            [using simplify whole-is-g-times-zero g-times-zero]
+                                        }
+                                      @s-is-nonzero |
+                                        not (s = ZERO)
+                                        [by contradiction given-s-is-zero whole-is-zero whole-is-nonzero]
+
+                                      // STAGE D: the quotient sequence as a
+                                      // degree-bounded polynomial
+                                      @the-polynomial-exists |
+                                        exists qp: qpoly.QPoly;
+                                          (forall i: Nat;
+                                          nat_less_than(i, nat_succ(n)) ->
+                                          qpoly.qcoeff(qp, i) =
+                                          qat(qseq, i)) and
+                                          (forall i: Nat;
+                                          (not nat_less_than(i,
+                                          nat_succ(n))) ->
+                                          qpoly.qcoeff(qp, i) = ZERO)
+                                        [using specialize aBoundedPolynomialMatchesASequence(qseq, nat_succ(n))]
+                                      @with-the-polynomial |
+                                        unpack qp: qpoly.QPoly from the-polynomial-exists {
+                                          @the-polynomial-invariant |
+                                            (forall i: Nat;
+                                              nat_less_than(i,
+                                              nat_succ(n)) ->
+                                              qpoly.qcoeff(qp, i) =
+                                              qat(qseq, i)) and
+                                              (forall i: Nat;
+                                              (not nat_less_than(i,
+                                              nat_succ(n))) ->
+                                              qpoly.qcoeff(qp, i) = ZERO)
+                                            [by hypothesis with-the-polynomial]
+                                          @the-match |
+                                            forall i: Nat;
+                                              nat_less_than(i,
+                                              nat_succ(n)) ->
+                                              qpoly.qcoeff(qp, i) =
+                                              qat(qseq, i)
+                                            [by and_lhs the-polynomial-invariant]
+                                          @the-polynomial-vanishes |
+                                            forall i: Nat;
+                                              (not nat_less_than(i,
+                                              nat_succ(n))) ->
+                                              qpoly.qcoeff(qp, i) = ZERO
+                                            [by and_rhs the-polynomial-invariant]
+                                          // conjunct 4
+                                          @the-coefficients-are-integers |
+                                            qpoly.hasIntegerCoefficientsUpTo(
+                                              qp, nat_succ(n))
+                                            [using specialize integerEntriesMakeIntegerCoefficients(qp, qseq, nat_succ(n)) the-match the-entries-are-integers]
+                                          // conjunct 5
+                                          @the-coefficients-are-coprime |
+                                            qpoly.coefficientsAreRelativelyPrimeUpTo(
+                                              qp, nat_succ(n))
+                                            [using specialize coprimeEntriesMakeCoprimeCoefficients(qp, qseq, nat_succ(n)) the-match the-entries-are-coprime]
+
+                                          // conjunct 7: the polynomial equation
+                                          @the-scaling-below |
+                                            forall i: Nat;
+                                              nat_less_than(i,
+                                              nat_succ(n)) ->
+                                              qpoly.qcoeff(theSubject, i) =
+                                              rational.mul(
+                                              rational.mul(r,
+                                              rational.recip(s)),
+                                              qat(qseq, i))
+                                            [using specialize theScalingHoldsBelowTheBound(u, qseq, nat_succ(n), whole, d, g, r, s) g-is-nonzero s-is-nonzero d-factors whole-factors the-numerator-values the-quotient-values]
+                                          @the-scaling-through-the-polynomial |
+                                            fix i: Nat {
+                                              @given-i-below |
+                                                assume nat_less_than(i,
+                                                  nat_succ(n)) {
+                                                  @i-below |
+                                                    nat_less_than(i,
+                                                      nat_succ(n))
+                                                    [by hypothesis given-i-below]
+                                                  @the-entry-at-i |
+                                                    qpoly.qcoeff(qp, i) =
+                                                      qat(qseq, i)
+                                                    [using specialize the-match(i) i-below]
+                                                  @the-scaling-at-i |
+                                                    qpoly.qcoeff(
+                                                      theSubject, i) =
+                                                      rational.mul(
+                                                      rational.mul(r,
+                                                      rational.recip(s)),
+                                                      qat(qseq, i))
+                                                    [using specialize the-scaling-below(i) i-below]
+                                                  @conclusion-through-qp |
+                                                    qpoly.qcoeff(
+                                                      theSubject, i) =
+                                                      rational.mul(
+                                                      rational.mul(r,
+                                                      rational.recip(s)),
+                                                      qpoly.qcoeff(qp, i))
+                                                    [by rewrite the-entry-at-i the-scaling-at-i]
+                                                }
+                                              @below-implies |
+                                                nat_less_than(i,
+                                                  nat_succ(n)) ->
+                                                  qpoly.qcoeff(
+                                                  theSubject, i) =
+                                                  rational.mul(
+                                                  rational.mul(r,
+                                                  rational.recip(s)),
+                                                  qpoly.qcoeff(qp, i))
+                                                [by discharge given-i-below]
+                                            }
+                                          @the-scaling-on-coefficients |
+                                            forall i: Nat;
+                                              nat_less_than(i,
+                                              nat_succ(n)) ->
+                                              qpoly.qcoeff(theSubject, i) =
+                                              rational.mul(
+                                              rational.mul(r,
+                                              rational.recip(s)),
+                                              qpoly.qcoeff(qp, i))
+                                            [by generalize the-scaling-through-the-polynomial]
+                                          // the subject vanishes above n, hence
+                                          // above the bound succ(n) too
+                                          @the-degree-meaning |
+                                            qpoly.qdegreeAtMost(
+                                              theSubject, n) iff
+                                              (forall i: Nat;
+                                              nat_less_than(n, i) ->
+                                              qpoly.qcoeff(
+                                              theSubject, i) = ZERO)
+                                            [using specialize qpoly.qDegreeAtMostMeaning(theSubject, n)]
+                                          @the-subject-vanishes-above-n |
+                                            forall i: Nat;
+                                              nat_less_than(n, i) ->
+                                              qpoly.qcoeff(
+                                              theSubject, i) = ZERO
+                                            [using tautology the-degree-meaning the-degree-bound]
+                                          @the-subject-vanishes |
+                                            forall i: Nat;
+                                              (not nat_less_than(i,
+                                              nat_succ(n))) ->
+                                              qpoly.qcoeff(
+                                              theSubject, i) = ZERO
+                                            [using specialize theOutsideIsAbove(theSubject, n) the-subject-vanishes-above-n]
+                                          @the-scaling-everywhere |
+                                            forall i: Nat;
+                                              qpoly.qcoeff(theSubject, i) =
+                                              rational.mul(
+                                              rational.mul(r,
+                                              rational.recip(s)),
+                                              qpoly.qcoeff(qp, i))
+                                            [using specialize theBoundedScalingIsTotal(theSubject, qp, rational.mul(r, rational.recip(s)), nat_succ(n)) the-scaling-on-coefficients the-subject-vanishes the-polynomial-vanishes]
+                                          @the-polynomial-equation |
+                                            theSubject =
+                                              qpoly.qmulP(
+                                              qpoly.qmonomial(
+                                              rational.mul(r,
+                                              rational.recip(s)),
+                                              NAT_ZERO), qp)
+                                            [using specialize theScaledCoefficientsAgree(theSubject, qp, rational.mul(r, rational.recip(s))) the-scaling-everywhere]
+
+                                          // all seven conjuncts
+                                          @the-decomposition-meaning |
+                                            qpoly.isTheIntegerDecomposition(
+                                              theSubject, qp, r, s,
+                                              nat_succ(n)) iff
+                                              (isInteger(r) and
+                                              isInteger(s) and
+                                              s != ZERO and
+                                              qpoly.hasIntegerCoefficientsUpTo(
+                                              qp, nat_succ(n)) and
+                                              qpoly.coefficientsAreRelativelyPrimeUpTo(
+                                              qp, nat_succ(n)) and
+                                              qpoly.arePairwiseRelativelyPrime(
+                                              r, s) and
+                                              theSubject =
+                                              qpoly.qmulP(
+                                              qpoly.qmonomial(
+                                              rational.mul(r,
+                                              rational.recip(s)),
+                                              NAT_ZERO), qp))
+                                            [using specialize qpoly.integerDecompositionMeaning(theSubject, qp, r, s, nat_succ(n))]
+                                          @the-decomposition |
+                                            qpoly.isTheIntegerDecomposition(
+                                              theSubject, qp, r, s,
+                                              nat_succ(n))
+                                            [using tautology the-decomposition-meaning r-is-an-integer s-is-an-integer s-is-nonzero the-coefficients-are-integers the-coefficients-are-coprime the-pair-is-coprime the-polynomial-equation]
+                                          @the-denominator-witness |
+                                            exists s2: Q;
+                                              qpoly.isTheIntegerDecomposition(
+                                              theSubject, qp, r, s2,
+                                              nat_succ(n))
+                                            [by witness(s) the-decomposition]
+                                          @the-numerator-witness |
+                                            exists r2, s2: Q;
+                                              qpoly.isTheIntegerDecomposition(
+                                              theSubject, qp, r2, s2,
+                                              nat_succ(n))
+                                            [by witness(r) the-denominator-witness]
+                                          @conclusion-all-three |
+                                            exists q: qpoly.QPoly;
+                                              exists r2, s2: Q;
+                                              qpoly.isTheIntegerDecomposition(
+                                              theSubject, q, r2, s2,
+                                              nat_succ(n))
+                                            [by witness(qp) the-numerator-witness]
+                                        }
+                                      @polynomial-exported |
+                                        exists q: qpoly.QPoly;
+                                          exists r2, s2: Q;
+                                          qpoly.isTheIntegerDecomposition(
+                                          theSubject, q, r2, s2,
+                                          nat_succ(n))
+                                        [by unpacked with-the-polynomial]
+                                    }
+                                  @denominator-exported |
+                                    exists q: qpoly.QPoly; exists r2, s2: Q;
+                                      qpoly.isTheIntegerDecomposition(
+                                      theSubject, q, r2, s2, nat_succ(n))
+                                    [by unpacked with-the-denominator]
+                                }
+                              @numerator-exported |
+                                exists q: qpoly.QPoly; exists r2, s2: Q;
+                                  qpoly.isTheIntegerDecomposition(
+                                  theSubject, q, r2, s2, nat_succ(n))
+                                [by unpacked with-the-numerator]
+                            }
+                          @conclusion-in-the-block |
+                            exists q: qpoly.QPoly; exists r2, s2: Q;
+                              qpoly.isTheIntegerDecomposition(theSubject,
+                              q, r2, s2, nat_succ(n))
+                            [by unpacked with-the-common-factor]
+                        }
+                      @the-implication |
+                        (qpoly.qdegreeAtMost(theSubject, n) and
+                          isInteger(whole) and
+                          (not (whole = ZERO)) and isInteger(d) and
+                          less_than(ZERO, d) and
+                          (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+                          isInteger(qat(qseq, i))) and
+                          theQuotientsAreCoprime(qseq, nat_succ(n)) and
+                          (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+                          qat(u, i) = rational.mul(whole,
+                          qpoly.qcoeff(theSubject, i))) and
+                          (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+                          qat(u, i) = rational.mul(d, qat(qseq, i)))) ->
+                          (exists q: qpoly.QPoly; exists r2, s2: Q;
+                          qpoly.isTheIntegerDecomposition(theSubject, q,
+                          r2, s2, nat_succ(n)))
+                        [by discharge given-the-setup]
+                      @curried |
+                        qpoly.qdegreeAtMost(theSubject, n) ->
+                          isInteger(whole) -> (not (whole = ZERO)) ->
+                          isInteger(d) -> less_than(ZERO, d) ->
+                          (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+                          isInteger(qat(qseq, i))) ->
+                          theQuotientsAreCoprime(qseq, nat_succ(n)) ->
+                          (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+                          qat(u, i) = rational.mul(whole,
+                          qpoly.qcoeff(theSubject, i))) ->
+                          (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+                          qat(u, i) = rational.mul(d, qat(qseq, i))) ->
+                          (exists q: qpoly.QPoly; exists r2, s2: Q;
+                          qpoly.isTheIntegerDecomposition(theSubject, q,
+                          r2, s2, nat_succ(n)))
+                        [using tautology the-implication]
+                    }
+                  @discharge-d |
+                    forall d9: Q;
+                      qpoly.qdegreeAtMost(theSubject, n) ->
+                      isInteger(whole) -> (not (whole = ZERO)) ->
+                      isInteger(d9) -> less_than(ZERO, d9) ->
+                      (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+                      isInteger(qat(qseq, i))) ->
+                      theQuotientsAreCoprime(qseq, nat_succ(n)) ->
+                      (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+                      qat(u, i) = rational.mul(whole,
+                      qpoly.qcoeff(theSubject, i))) ->
+                      (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+                      qat(u, i) = rational.mul(d9, qat(qseq, i))) ->
+                      (exists q: qpoly.QPoly; exists r2, s2: Q;
+                      qpoly.isTheIntegerDecomposition(theSubject, q, r2,
+                      s2, nat_succ(n)))
+                    [by generalize generalize-d]
+                }
+              @discharge-whole |
+                forall whole9, d9: Q;
+                  qpoly.qdegreeAtMost(theSubject, n) ->
+                  isInteger(whole9) -> (not (whole9 = ZERO)) ->
+                  isInteger(d9) -> less_than(ZERO, d9) ->
+                  (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+                  isInteger(qat(qseq, i))) ->
+                  theQuotientsAreCoprime(qseq, nat_succ(n)) ->
+                  (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+                  qat(u, i) = rational.mul(whole9,
+                  qpoly.qcoeff(theSubject, i))) ->
+                  (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+                  qat(u, i) = rational.mul(d9, qat(qseq, i))) ->
+                  (exists q: qpoly.QPoly; exists r2, s2: Q;
+                  qpoly.isTheIntegerDecomposition(theSubject, q, r2, s2,
+                  nat_succ(n)))
+                [by generalize generalize-whole]
+            }
+          @discharge-n |
+            forall n9: Nat; forall whole9, d9: Q;
+              qpoly.qdegreeAtMost(theSubject, n9) ->
+              isInteger(whole9) -> (not (whole9 = ZERO)) ->
+              isInteger(d9) -> less_than(ZERO, d9) ->
+              (forall i: Nat; nat_less_than(i, nat_succ(n9)) ->
+              isInteger(qat(qseq, i))) ->
+              theQuotientsAreCoprime(qseq, nat_succ(n9)) ->
+              (forall i: Nat; nat_less_than(i, nat_succ(n9)) ->
+              qat(u, i) = rational.mul(whole9,
+              qpoly.qcoeff(theSubject, i))) ->
+              (forall i: Nat; nat_less_than(i, nat_succ(n9)) ->
+              qat(u, i) = rational.mul(d9, qat(qseq, i))) ->
+              (exists q: qpoly.QPoly; exists r2, s2: Q;
+              qpoly.isTheIntegerDecomposition(theSubject, q, r2, s2,
+              nat_succ(n9)))
+            [by generalize generalize-n]
+        }
+      @discharge-qseq |
+        forall qseq9: QSeq; forall n9: Nat; forall whole9, d9: Q;
+          qpoly.qdegreeAtMost(theSubject, n9) ->
+          isInteger(whole9) -> (not (whole9 = ZERO)) ->
+          isInteger(d9) -> less_than(ZERO, d9) ->
+          (forall i: Nat; nat_less_than(i, nat_succ(n9)) ->
+          isInteger(qat(qseq9, i))) ->
+          theQuotientsAreCoprime(qseq9, nat_succ(n9)) ->
+          (forall i: Nat; nat_less_than(i, nat_succ(n9)) ->
+          qat(u, i) = rational.mul(whole9,
+          qpoly.qcoeff(theSubject, i))) ->
+          (forall i: Nat; nat_less_than(i, nat_succ(n9)) ->
+          qat(u, i) = rational.mul(d9, qat(qseq9, i))) ->
+          (exists q: qpoly.QPoly; exists r2, s2: Q;
+          qpoly.isTheIntegerDecomposition(theSubject, q, r2, s2,
+          nat_succ(n9)))
+        [by generalize generalize-qseq]
+    }
+  @conclusion |
+    forall u, qseq: QSeq; forall n: Nat; forall whole, d: Q;
+      qpoly.qdegreeAtMost(theSubject, n) ->
+      isInteger(whole) -> (not (whole = ZERO)) ->
+      isInteger(d) -> less_than(ZERO, d) ->
+      (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+      isInteger(qat(qseq, i))) ->
+      theQuotientsAreCoprime(qseq, nat_succ(n)) ->
+      (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+      qat(u, i) = rational.mul(whole, qpoly.qcoeff(theSubject, i))) ->
+      (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+      qat(u, i) = rational.mul(d, qat(qseq, i))) ->
+      (exists q: qpoly.QPoly; exists r, s: Q;
+      qpoly.isTheIntegerDecomposition(theSubject, q, r, s, nat_succ(n)))
+    [by generalize generalize-u]
+qed
+
+// -- LEMMA 17.12, THE ASSEMBLY -----------------------------------------------------------
+// "Let p(x) ∈ ℚ[x]. Then p(x) = (r/s)(a_0 + a_1 x + … + a_n x^n), where r, s, a_0, …, a_n are
+// integers, the a_i's are relatively prime, and r and s are relatively prime."
+//
+// The subject is `theSubject`, the func this file's specs read coefficients through — a fixed
+// but arbitrary p, which is what 17.12 is about. The bound is `nat_succ(n)`: Judson's p has
+// DEGREE n and so n+1 coefficients a_0 … a_n, while every `…UpTo(_, m)` predicate here means
+// "below m".
+//
+// THREE HYPOTHESES BEYOND JUDSON'S STATEMENT, each a real demand of the construction:
+//
+//   `qdegreeAtMost(theSubject, n)` — his p(x) IS of degree n, so it has no coefficients above
+//   n to disagree about. The conclusion `p = (r/s)·q` is an UNBOUNDED polynomial equation
+//   while the construction only pins coefficients below the bound, and without the degree
+//   bound it is not derivable at all (`theBoundedScalingIsTotal` is where it is spent).
+//
+//   `whole` and its two properties — the common denominator is PASSED IN rather than
+//   constructed here. `theCommonDenominatorAndItsNumeratorsExist` (stage A) produces one, so
+//   this is not a gap in the mathematics; what it does not produce is a POSITIVE one, and the
+//   descent that yields the common divisor well-orders the first quotient, which needs a
+//   natural number to descend on. Judson takes the gcd of the cleared numerators instead, and
+//   a gcd needs no sign. Having no gcd, the construction pays for it with a sign condition,
+//   and the condition is about the CONSTRUCTED `whole` — not about p — so it cannot be
+//   discharged from a hypothesis on `theSubject` alone. Closing it means strengthening the
+//   denominator spec to pick positive denominators (ℚ's fraction axiom allows it: flip the
+//   signs of numerator and denominator together), which re-opens stages A through C.
+theorem theIntegerDecompositionExistsForAClearingDenominator: forall n: Nat; forall whole: Q;
+  qpoly.qdegreeAtMost(theSubject, n) ->
+  isInteger(whole) ->
+  (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+  isInteger(rational.mul(whole, qpoly.qcoeff(theSubject, i)))) ->
+  less_than(ZERO, rational.mul(whole, qpoly.qcoeff(theSubject, NAT_ZERO))) ->
+  (exists q: qpoly.QPoly; exists r, s: Q;
+  qpoly.isTheIntegerDecomposition(theSubject, q, r, s, nat_succ(n)))
+proof
+  @generalize-n |
+    fix n: Nat {
+      @generalize-whole |
+        fix whole: Q {
+          @given-the-setup |
+            assume qpoly.qdegreeAtMost(theSubject, n) and
+              isInteger(whole) and
+              (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+              isInteger(rational.mul(whole,
+              qpoly.qcoeff(theSubject, i)))) and
+              less_than(ZERO, rational.mul(whole,
+              qpoly.qcoeff(theSubject, NAT_ZERO))) {
+              @the-setup |
+                qpoly.qdegreeAtMost(theSubject, n) and
+                  isInteger(whole) and
+                  (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+                  isInteger(rational.mul(whole,
+                  qpoly.qcoeff(theSubject, i)))) and
+                  less_than(ZERO, rational.mul(whole,
+                  qpoly.qcoeff(theSubject, NAT_ZERO)))
+                [by hypothesis given-the-setup]
+              @the-degree-bound |
+                qpoly.qdegreeAtMost(theSubject, n)
+                [using tautology the-setup]
+              @whole-is-an-integer |
+                isInteger(whole)
+                [using tautology the-setup]
+              @whole-clears-everything |
+                forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+                  isInteger(rational.mul(whole,
+                  qpoly.qcoeff(theSubject, i)))
+                [using tautology the-setup]
+              @the-cleared-constant-is-positive |
+                less_than(ZERO, rational.mul(whole,
+                  qpoly.qcoeff(theSubject, NAT_ZERO)))
+                [using tautology the-setup]
+              // whole != ZERO: otherwise the cleared constant coefficient is
+              // ZERO, and ZERO < ZERO is false
+              @given-whole-is-zero |
+                assume whole = ZERO {
+                  @whole-is-zero |
+                    whole = ZERO
+                    [by hypothesis given-whole-is-zero]
+                  @the-cleared-constant-is-zero-times |
+                    less_than(ZERO, rational.mul(ZERO,
+                      qpoly.qcoeff(theSubject, NAT_ZERO)))
+                    [by rewrite whole-is-zero the-cleared-constant-is-positive]
+                  @zero-times |
+                    rational.mul(ZERO,
+                      qpoly.qcoeff(theSubject, NAT_ZERO)) = ZERO
+                    [using specialize rational.mulZeroLeft(qpoly.qcoeff(theSubject, NAT_ZERO))]
+                  @zero-below-zero |
+                    less_than(ZERO, ZERO)
+                    [by rewrite zero-times the-cleared-constant-is-zero-times]
+                  @zero-is-not-below-zero |
+                    not less_than(ZERO, ZERO)
+                    [using specialize rational.lessThanIrreflexive(ZERO)]
+                }
+              @whole-is-nonzero |
+                not (whole = ZERO)
+                [by contradiction given-whole-is-zero zero-below-zero zero-is-not-below-zero]
+
+              // the bound is a successor, so it is positive — stage B needs that
+              @zero-below-the-bound |
+                nat_less_than(NAT_ZERO, nat_succ(n))
+                [using specialize peano_order.zeroIsBelowAnySuccessor(n)]
+
+              // STAGE B: the cleared numerators, with a minimal first quotient
+              @the-numerators-exist |
+                exists numerators: QSeq; exists least: Q;
+                  (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+                  (isInteger(qat(numerators, i)) and
+                  qat(numerators, i) = rational.mul(whole,
+                  qpoly.qcoeff(theSubject, i)))) and
+                  aFirstQuotientOf(numerators, nat_succ(n), least) and
+                  (forall m: Q; isNatural(m) ->
+                  aFirstQuotientOf(numerators, nat_succ(n), m) ->
+                  (not less_than(m, least)))
+                [using specialize theDivisorAndQuotientPolynomialExist(whole, nat_succ(n)) zero-below-the-bound whole-clears-everything the-cleared-constant-is-positive]
+              @with-the-numerators |
+                unpack u: QSeq from the-numerators-exist {
+                  @the-least-exists |
+                    exists least: Q;
+                      (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+                      (isInteger(qat(u, i)) and
+                      qat(u, i) = rational.mul(whole,
+                      qpoly.qcoeff(theSubject, i)))) and
+                      aFirstQuotientOf(u, nat_succ(n), least) and
+                      (forall m: Q; isNatural(m) ->
+                      aFirstQuotientOf(u, nat_succ(n), m) ->
+                      (not less_than(m, least)))
+                    [by hypothesis with-the-numerators]
+                  @with-the-least |
+                    unpack least: Q from the-least-exists {
+                      @the-numerator-parts |
+                        (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+                          (isInteger(qat(u, i)) and
+                          qat(u, i) = rational.mul(whole,
+                          qpoly.qcoeff(theSubject, i)))) and
+                          aFirstQuotientOf(u, nat_succ(n), least) and
+                          (forall m: Q; isNatural(m) ->
+                          aFirstQuotientOf(u, nat_succ(n), m) ->
+                          (not less_than(m, least)))
+                        [by hypothesis with-the-least]
+                      @the-numerator-meaning |
+                        forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+                          (isInteger(qat(u, i)) and
+                          qat(u, i) = rational.mul(whole,
+                          qpoly.qcoeff(theSubject, i)))
+                        [using tautology the-numerator-parts]
+                      @the-numerators-are-integers |
+                        forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+                          isInteger(qat(u, i))
+                        [using specialize theIntegralityOfTheNumerators(u, whole, nat_succ(n)) the-numerator-meaning]
+                      @the-numerator-values |
+                        forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+                          qat(u, i) = rational.mul(whole,
+                          qpoly.qcoeff(theSubject, i))
+                        [using specialize theClearedNumeratorValues(u, whole, nat_succ(n)) the-numerator-meaning]
+                      @the-first-numerator |
+                        qat(u, NAT_ZERO) = rational.mul(whole,
+                          qpoly.qcoeff(theSubject, NAT_ZERO))
+                        [using specialize the-numerator-values(NAT_ZERO) zero-below-the-bound]
+                      @the-first-numerator-is-positive |
+                        less_than(ZERO, qat(u, NAT_ZERO))
+                        [by rewrite the-first-numerator the-cleared-constant-is-positive]
+
+                      // STAGE C: a common divisor leaving coprime quotients
+                      @the-divisor-exists |
+                        exists d: Q; exists qseq: QSeq;
+                          isInteger(d) and less_than(ZERO, d) and
+                          isACommonDivisorUpTo(d, u, nat_succ(n)) and
+                          aQuotientSequenceFor(d, u, qseq, nat_succ(n)) and
+                          theQuotientsAreCoprime(qseq, nat_succ(n))
+                        [using specialize aCoprimeDivisorOfASequenceExists(u, nat_succ(n)) zero-below-the-bound the-numerators-are-integers the-first-numerator-is-positive]
+                      @with-the-divisor |
+                        unpack d: Q from the-divisor-exists {
+                          @the-quotient-sequence-exists |
+                            exists qseq: QSeq;
+                              isInteger(d) and less_than(ZERO, d) and
+                              isACommonDivisorUpTo(d, u, nat_succ(n)) and
+                              aQuotientSequenceFor(d, u, qseq,
+                              nat_succ(n)) and
+                              theQuotientsAreCoprime(qseq, nat_succ(n))
+                            [by hypothesis with-the-divisor]
+                          @with-the-quotients |
+                            unpack qseq: QSeq from the-quotient-sequence-exists {
+                              @the-divisor-parts |
+                                isInteger(d) and less_than(ZERO, d) and
+                                  isACommonDivisorUpTo(d, u,
+                                  nat_succ(n)) and
+                                  aQuotientSequenceFor(d, u, qseq,
+                                  nat_succ(n)) and
+                                  theQuotientsAreCoprime(qseq, nat_succ(n))
+                                [by hypothesis with-the-quotients]
+                              @d-is-an-integer |
+                                isInteger(d)
+                                [using tautology the-divisor-parts]
+                              @d-is-positive |
+                                less_than(ZERO, d)
+                                [using tautology the-divisor-parts]
+                              @d-divides-the-numerators |
+                                isACommonDivisorUpTo(d, u, nat_succ(n))
+                                [using tautology the-divisor-parts]
+                              @the-quotient-relation |
+                                aQuotientSequenceFor(d, u, qseq,
+                                  nat_succ(n))
+                                [using tautology the-divisor-parts]
+                              @the-quotients-are-coprime |
+                                theQuotientsAreCoprime(qseq, nat_succ(n))
+                                [using tautology the-divisor-parts]
+                              @the-quotient-entries-are-integers |
+                                forall i: Nat;
+                                  nat_less_than(i, nat_succ(n)) ->
+                                  isInteger(qat(qseq, i))
+                                [using specialize everyQuotientEntryIsAnInteger(u, qseq, nat_succ(n), d) d-is-positive d-divides-the-numerators the-quotient-relation]
+                              @the-quotient-meaning |
+                                aQuotientSequenceFor(d, u, qseq,
+                                  nat_succ(n)) iff
+                                  (forall i: Nat;
+                                  nat_less_than(i, nat_succ(n)) ->
+                                  qat(u, i) = rational.mul(d,
+                                  qat(qseq, i)))
+                                [using specialize quotientSequenceMeaning(d, u, qseq, nat_succ(n))]
+                              @the-quotient-values |
+                                forall i: Nat;
+                                  nat_less_than(i, nat_succ(n)) ->
+                                  qat(u, i) = rational.mul(d, qat(qseq, i))
+                                [using tautology the-quotient-meaning the-quotient-relation]
+                              @conclusion-with-the-divisor |
+                                exists q: qpoly.QPoly; exists r, s: Q;
+                                  qpoly.isTheIntegerDecomposition(
+                                  theSubject, q, r, s, nat_succ(n))
+                                [using specialize theDecompositionFromTheDivisor(u, qseq, n, whole, d) the-degree-bound whole-is-an-integer whole-is-nonzero d-is-an-integer d-is-positive the-quotient-entries-are-integers the-quotients-are-coprime the-numerator-values the-quotient-values]
+                            }
+                          @divisor-exported |
+                            exists q: qpoly.QPoly; exists r, s: Q;
+                              qpoly.isTheIntegerDecomposition(theSubject,
+                              q, r, s, nat_succ(n))
+                            [by unpacked with-the-quotients]
+                        }
+                      @least-exported |
+                        exists q: qpoly.QPoly; exists r, s: Q;
+                          qpoly.isTheIntegerDecomposition(theSubject, q, r,
+                          s, nat_succ(n))
+                        [by unpacked with-the-divisor]
+                    }
+                  @numerators-exported |
+                    exists q: qpoly.QPoly; exists r, s: Q;
+                      qpoly.isTheIntegerDecomposition(theSubject, q, r, s,
+                      nat_succ(n))
+                    [by unpacked with-the-least]
+                }
+              @conclusion-in-the-block |
+                exists q: qpoly.QPoly; exists r, s: Q;
+                  qpoly.isTheIntegerDecomposition(theSubject, q, r, s,
+                  nat_succ(n))
+                [by unpacked with-the-numerators]
+            }
+          @the-implication |
+            (qpoly.qdegreeAtMost(theSubject, n) and
+              isInteger(whole) and
+              (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+              isInteger(rational.mul(whole,
+              qpoly.qcoeff(theSubject, i)))) and
+              less_than(ZERO, rational.mul(whole,
+              qpoly.qcoeff(theSubject, NAT_ZERO)))) ->
+              (exists q: qpoly.QPoly; exists r, s: Q;
+              qpoly.isTheIntegerDecomposition(theSubject, q, r, s,
+              nat_succ(n)))
+            [by discharge given-the-setup]
+          @curried |
+            qpoly.qdegreeAtMost(theSubject, n) ->
+              isInteger(whole) ->
+              (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+              isInteger(rational.mul(whole,
+              qpoly.qcoeff(theSubject, i)))) ->
+              less_than(ZERO, rational.mul(whole,
+              qpoly.qcoeff(theSubject, NAT_ZERO))) ->
+              (exists q: qpoly.QPoly; exists r, s: Q;
+              qpoly.isTheIntegerDecomposition(theSubject, q, r, s,
+              nat_succ(n)))
+            [using tautology the-implication]
+        }
+      @discharge-whole |
+        forall whole9: Q;
+          qpoly.qdegreeAtMost(theSubject, n) ->
+          isInteger(whole9) ->
+          (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+          isInteger(rational.mul(whole9, qpoly.qcoeff(theSubject, i)))) ->
+          less_than(ZERO, rational.mul(whole9,
+          qpoly.qcoeff(theSubject, NAT_ZERO))) ->
+          (exists q: qpoly.QPoly; exists r, s: Q;
+          qpoly.isTheIntegerDecomposition(theSubject, q, r, s, nat_succ(n)))
+        [by generalize generalize-whole]
+    }
+  @conclusion |
+    forall n: Nat; forall whole: Q;
+      qpoly.qdegreeAtMost(theSubject, n) ->
+      isInteger(whole) ->
+      (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+      isInteger(rational.mul(whole, qpoly.qcoeff(theSubject, i)))) ->
+      less_than(ZERO, rational.mul(whole,
+      qpoly.qcoeff(theSubject, NAT_ZERO))) ->
+      (exists q: qpoly.QPoly; exists r, s: Q;
+      qpoly.isTheIntegerDecomposition(theSubject, q, r, s, nat_succ(n)))
+    [by generalize generalize-n]
 qed
