@@ -1572,3 +1572,68 @@ proof
       ((not reducesToZero(b)) or (not reducesToZero(c)))
     [by generalize generalize-b]
 qed
+
+// The constant term of a product is the product of the constant terms — the convolution at
+// index ZERO has a single summand.
+theorem theConstantTermOfAProduct: forall f, g: QPoly;
+  qpoly.qcoeff(qpoly.qmulP(f, g), NAT_ZERO) =
+  rational.mul(qpoly.qcoeff(f, NAT_ZERO), qpoly.qcoeff(g, NAT_ZERO))
+proof
+  @generalize-f |
+    fix f: QPoly {
+      @generalize-g |
+        fix g: QPoly {
+          @the-coefficient-is-the-convolution |
+            qpoly.qcoeff(qpoly.qmulP(f, g), NAT_ZERO) =
+              qpoly.qconvolution(f, g, NAT_ZERO, NAT_ZERO)
+            [using specialize qpoly.qMulPolyCoeff(f, g, NAT_ZERO)]
+          @the-convolution-at-zero |
+            qpoly.qconvolution(f, g, NAT_ZERO, NAT_ZERO) =
+              rational.mul(qpoly.qcoeff(f, NAT_ZERO),
+              qpoly.qcoeff(g, NAT_ZERO))
+            [using specialize qpoly.qConvolutionZero(f, g, NAT_ZERO)]
+          @conclusion-the-constant-term |
+            qpoly.qcoeff(qpoly.qmulP(f, g), NAT_ZERO) =
+              rational.mul(qpoly.qcoeff(f, NAT_ZERO),
+              qpoly.qcoeff(g, NAT_ZERO))
+            [using simplify the-coefficient-is-the-convolution the-convolution-at-zero]
+        }
+      @discharge-g |
+        forall g9: QPoly;
+          qpoly.qcoeff(qpoly.qmulP(f, g9), NAT_ZERO) =
+          rational.mul(qpoly.qcoeff(f, NAT_ZERO),
+          qpoly.qcoeff(g9, NAT_ZERO))
+        [by generalize generalize-g]
+    }
+  @conclusion |
+    forall f, g: QPoly;
+      qpoly.qcoeff(qpoly.qmulP(f, g), NAT_ZERO) =
+      rational.mul(qpoly.qcoeff(f, NAT_ZERO),
+      qpoly.qcoeff(g, NAT_ZERO))
+    [by generalize generalize-f]
+qed
+
+// -- WHAT REMAINS FOR EISENSTEIN -----------------------------------------------------------
+// Everything above is in place EXCEPT the final assembly, and the gap deserves naming
+// precisely, because I twice mis-scoped it as bookkeeping and once wrote a "proof" of it that
+// the dead-step lint exposed as vacuous — my conclusion followed from the top-coefficient
+// hypothesis alone, using neither the factorization nor the sign argument.
+//
+// `theModulusCannotDivideEveryProductCoefficient` wants, OF EACH FACTOR, a coefficient the
+// modulus misses. The sign argument supplies one for the factor whose constant term survives
+// (`theModulusMissesOneFactor` applied to `a_0 = g_0·h_0`). It does NOT supply one for the
+// other factor, and that is the missing step:
+//
+//   if the modulus divided EVERY coefficient of g, it would divide every coefficient of
+//   g·h = f — contradicting `N ∤ a_n`. So some coefficient of g survives.
+//
+// That inference is a convolution-divisibility closure: `N | every g_i` gives
+// `N | qconvolution(g, h, t, t)` for every t. Same shape as `theConvolutionIsIntegral` above
+// — induction on the convolution index, the modulus dividing each summand because it divides
+// the g-factor — and `qclsMul`/`qclsAdd` are exactly the laws it needs. A real proof of
+// perhaps eighty lines, not an assembly step.
+//
+// Judson reaches the same place by his MINIMAL-INDEX argument: take r least with `N ∤ g_r`,
+// then every term of `a_r` except `g_r h_0` carries an `N`. That route additionally needs
+// well-ordering and a convolution split at r, so the closure above is the cheaper one and the
+// one to build.
