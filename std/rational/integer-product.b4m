@@ -13778,3 +13778,191 @@ proof
       dividesIntegrally(s, qpoly.qcoeff(p, n))
     [by generalize generalize-p]
 qed
+
+// -- EUCLID'S LEMMA FOR A PRIME ------------------------------------------------------------
+// "p prime and p | a·b implies p | a or p | b." The standard route: if p misses a, then p and
+// a are coprime (`coprimalityFromPrimalityOnTheCut`), Bézout gives a certificate, and
+// `euclidFromBezoutOnTheCut` strips a to leave p | b.
+//
+// This is what Eisenstein's sign argument turns on, and it is why primality on the cut was
+// worth defining the irreducibility way: the product property is a THEOREM here, not an axiom.
+theorem aPrimeDividingAProductDividesAFactor: forall p, a, b: Q;
+  isInteger(p) -> isInteger(a) -> isInteger(b) ->
+  less_than(ZERO, p) ->
+  rational_integer_division.isPrimeOnTheCut(p) ->
+  dividesIntegrally(p, rational.mul(a, b)) ->
+  (dividesIntegrally(p, a) or dividesIntegrally(p, b))
+proof
+  @generalize-p |
+    fix p: Q {
+      @generalize-a |
+        fix a: Q {
+          @generalize-b |
+            fix b: Q {
+              @given-the-setup |
+                assume isInteger(p) and isInteger(a) and
+                  isInteger(b) and less_than(ZERO, p) and
+                  rational_integer_division.isPrimeOnTheCut(p) and
+                  dividesIntegrally(p, rational.mul(a, b)) {
+                  @the-setup |
+                    isInteger(p) and isInteger(a) and
+                      isInteger(b) and less_than(ZERO, p) and
+                      rational_integer_division.isPrimeOnTheCut(p) and
+                      dividesIntegrally(p, rational.mul(a, b))
+                    [by hypothesis given-the-setup]
+                  @p-is-an-integer |
+                    isInteger(p)
+                    [using tautology the-setup]
+                  @a-is-an-integer |
+                    isInteger(a)
+                    [using tautology the-setup]
+                  @b-is-an-integer |
+                    isInteger(b)
+                    [using tautology the-setup]
+                  @p-is-positive |
+                    less_than(ZERO, p)
+                    [using tautology the-setup]
+                  @p-is-prime |
+                    rational_integer_division.isPrimeOnTheCut(p)
+                    [using tautology the-setup]
+                  @p-divides-the-product |
+                    dividesIntegrally(p, rational.mul(a, b))
+                    [using tautology the-setup]
+                  // either p divides a, or it misses a and then divides b
+                  @the-division-split |
+                    dividesIntegrally(p, a) or
+                      (not dividesIntegrally(p, a))
+                    [using tautology]
+                  @conclusion-one-or-the-other |
+                    dividesIntegrally(p, a) or dividesIntegrally(p, b)
+                    case the-division-split {
+                      @when-p-divides-a |
+                        assume dividesIntegrally(p, a) {
+                          @p-divides-a |
+                            dividesIntegrally(p, a)
+                            [by hypothesis when-p-divides-a]
+                          @conclusion-left |
+                            dividesIntegrally(p, a) or
+                              dividesIntegrally(p, b)
+                            [using tautology p-divides-a]
+                        }
+                      // p misses a: coprime, so Bézout, so Euclid strips a
+                      @when-p-misses-a |
+                        assume not dividesIntegrally(p, a) {
+                          @p-misses-a |
+                            not dividesIntegrally(p, a)
+                            [by hypothesis when-p-misses-a]
+                          // unfold to the raw existential the primality
+                          // layer speaks in
+                          @the-a-divides-meaning |
+                            dividesIntegrally(p, a) iff
+                              (exists k: Q; isInteger(k) and
+                              a = rational.mul(p, k))
+                            [using specialize dividesIntegrallyMeaning(p, a)]
+                          @p-misses-a-raw |
+                            not (exists k: Q; isInteger(k) and
+                              a = rational.mul(p, k))
+                            [using tautology the-a-divides-meaning p-misses-a]
+                          @the-coprimality |
+                            forall e: Q; isInteger(e) ->
+                              (exists k: Q; isInteger(k) and
+                              p = rational.mul(e, k)) ->
+                              (exists k: Q; isInteger(k) and
+                              a = rational.mul(e, k)) ->
+                              (exists k: Q; isInteger(k) and
+                              ONE = rational.mul(e, k))
+                            [using specialize rational_integer_division.coprimalityFromPrimalityOnTheCut(p, a) p-is-an-integer a-is-an-integer p-is-prime p-misses-a-raw]
+                          @the-certificate-exists |
+                            exists r, s: Q; isInteger(r) and
+                              isInteger(s) and
+                              rational.add(rational.mul(p, r),
+                              rational.mul(a, s)) = ONE
+                            [using specialize rational_integer_division.bezoutOnTheCut(p, a) p-is-an-integer a-is-an-integer p-is-positive the-coprimality]
+                          @with-the-certificate |
+                            unpack r: Q from the-certificate-exists {
+                              @the-s-exists |
+                                exists s: Q; isInteger(r) and
+                                  isInteger(s) and
+                                  rational.add(rational.mul(p, r),
+                                  rational.mul(a, s)) = ONE
+                                [by hypothesis with-the-certificate]
+                              @with-both |
+                                unpack s: Q from the-s-exists {
+                                  @the-certificate-parts |
+                                    isInteger(r) and isInteger(s) and
+                                      rational.add(
+                                      rational.mul(p, r),
+                                      rational.mul(a, s)) = ONE
+                                    [by hypothesis with-both]
+                                  @r-is-an-integer |
+                                    isInteger(r)
+                                    [using tautology the-certificate-parts]
+                                  @s-is-an-integer |
+                                    isInteger(s)
+                                    [using tautology the-certificate-parts]
+                                  @the-certificate |
+                                    rational.add(rational.mul(p, r),
+                                      rational.mul(a, s)) = ONE
+                                    [using tautology the-certificate-parts]
+                                  @conclusion-p-divides-b |
+                                    dividesIntegrally(p, b)
+                                    [using specialize euclidFromBezoutOnTheCut(p, a, b, r, s) p-is-an-integer a-is-an-integer b-is-an-integer r-is-an-integer s-is-an-integer the-certificate p-divides-the-product]
+                                }
+                              @the-inner-exported |
+                                dividesIntegrally(p, b)
+                                [by unpacked with-both]
+                            }
+                          @p-divides-b |
+                            dividesIntegrally(p, b)
+                            [by unpacked with-the-certificate]
+                          @conclusion-right |
+                            dividesIntegrally(p, a) or
+                              dividesIntegrally(p, b)
+                            [using tautology p-divides-b]
+                        }
+                    }
+                }
+              @the-implication |
+                (isInteger(p) and isInteger(a) and
+                  isInteger(b) and less_than(ZERO, p) and
+                  rational_integer_division.isPrimeOnTheCut(p) and
+                  dividesIntegrally(p, rational.mul(a, b))) ->
+                  (dividesIntegrally(p, a) or
+                  dividesIntegrally(p, b))
+                [by discharge given-the-setup]
+              @curried |
+                isInteger(p) -> isInteger(a) -> isInteger(b) ->
+                  less_than(ZERO, p) ->
+                  rational_integer_division.isPrimeOnTheCut(p) ->
+                  dividesIntegrally(p, rational.mul(a, b)) ->
+                  (dividesIntegrally(p, a) or
+                  dividesIntegrally(p, b))
+                [using tautology the-implication]
+            }
+          @discharge-b |
+            forall b9: Q;
+              isInteger(p) -> isInteger(a) -> isInteger(b9) ->
+              less_than(ZERO, p) ->
+              rational_integer_division.isPrimeOnTheCut(p) ->
+              dividesIntegrally(p, rational.mul(a, b9)) ->
+              (dividesIntegrally(p, a) or dividesIntegrally(p, b9))
+            [by generalize generalize-b]
+        }
+      @discharge-a |
+        forall a9, b9: Q;
+          isInteger(p) -> isInteger(a9) -> isInteger(b9) ->
+          less_than(ZERO, p) ->
+          rational_integer_division.isPrimeOnTheCut(p) ->
+          dividesIntegrally(p, rational.mul(a9, b9)) ->
+          (dividesIntegrally(p, a9) or dividesIntegrally(p, b9))
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall p, a, b: Q;
+      isInteger(p) -> isInteger(a) -> isInteger(b) ->
+      less_than(ZERO, p) ->
+      rational_integer_division.isPrimeOnTheCut(p) ->
+      dividesIntegrally(p, rational.mul(a, b)) ->
+      (dividesIntegrally(p, a) or dividesIntegrally(p, b))
+    [by generalize generalize-p]
+qed
