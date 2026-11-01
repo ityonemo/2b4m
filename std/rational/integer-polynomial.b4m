@@ -1,0 +1,1510 @@
+// ℤ[x] as a SUB-RING of ℚ[x], and Eisenstein's reduction on it.
+//
+// `std/integer/polynomial.b4m` builds ℤ[x] as its own sort `IntPoly`. That makes "f is
+// irreducible over ℚ" inexpressible about an `IntPoly`: the two polynomial sorts have no
+// embedding between them, and AATA Theorem 17.15's conclusion is exactly such a statement.
+//
+// Here ℤ[x] is instead CUT OUT of ℚ[x] by `hasIntegerCoefficients`. Then a ℤ[x] polynomial IS
+// a ℚ[x] polynomial, "no factorization in ℤ[x]" and "irreducible over ℚ" are statements about
+// the same objects, and no embedding is needed anywhere.
+//
+// WHAT IS REUSED RATHER THAN REBUILT. `modNPolynomialsHaveNoZeroDivisors` is a fact about
+// ℤ_N[x] alone — no ℚ in it — so it is cited directly, not transferred. And Eisenstein's prime
+// stays a ℚ-cut element here, so the reduction's target ℤ_N[x] is untouched: what crosses
+// between them is only `qcls`'s homomorphism laws.
+//
+// WHAT IS NEW, AND THE TRADE. The cut needs its own class map `qcls`, axiomatised directly on
+// ℚ's integers. The alternative — composing with a `Q -> Int` conversion — is unavailable by
+// design: the number-tower refactor dropped the `from*` functions deliberately, keeping `is*`
+// as primitive-closure predicates. And `cls: Int -> Zn` cannot be re-pointed at the cut,
+// because `mod_n` keys it to `std/integer.b4m`'s `Int` and transferring `mod_n` hits the
+// nested-transfer wall (`std/peano.b4m` sits in its axiom base).
+//
+// So `qcls` costs four new axioms. They are the same homomorphism and congruence laws `cls`
+// already has, so this is not a new mathematical assumption — but they ARE axioms, and
+// `--axioms` lists them. Recording the trade rather than making it silently.
+
+import qpoly <<< "std/rational/polynomial.b4m"
+import rational <<< "std/rational.b4m"
+import qproduct <<< "std/rational/integer-product.b4m"
+import mod_n <<< "std/integer/mod-n.b4m"
+import mod_n_poly <<< "std/integer/mod-n-polynomial.b4m"
+import peano <<< "std/peano.b4m"
+import subtraction <<< "std/peano/subtraction.b4m"
+
+sort Q = rational.Q
+sort QPoly = qpoly.QPoly
+sort Nat = peano.Nat
+sort Zn = mod_n.Zn
+sort ZnPoly = mod_n_poly.ZnPoly
+const ZERO = rational.ZERO
+const ONE = rational.ONE
+const NAT_ZERO = peano.ZERO
+pred isInteger = rational.isInteger
+pred dividesIntegrally = qproduct.dividesIntegrally
+
+// -- THE CUT -------------------------------------------------------------------------------
+// ℤ[x] inside ℚ[x]: every coefficient is an integer. Unbounded, unlike
+// `qpoly.hasIntegerCoefficientsUpTo`, because a factorization argument quantifies over all
+// indices rather than up to a stated degree.
+pred hasIntegerCoefficients(p: QPoly)
+axiom integerCoefficientsEverywhere: forall p: QPoly;
+  hasIntegerCoefficients(p) iff
+  (forall i: Nat; isInteger(qpoly.qcoeff(p, i)))
+
+// -- THE CUT IS A SUB-RING -----------------------------------------------------------------
+// The closure facts. Only the product is nontrivial: a product's coefficient is a
+// CONVOLUTION, so integrality has to ride the convolution's own recursion.
+
+theorem theZeroPolynomialIsIntegral: hasIntegerCoefficients(qpoly.QZEROP)
+proof
+  @each-index |
+    fix i: Nat {
+      @the-zero-coefficient |
+        qpoly.qcoeff(qpoly.QZEROP, i) = ZERO
+        [using specialize qpoly.qZeroPolyCoeff(i)]
+      @zero-is-an-integer |
+        isInteger(ZERO)
+        [using import(rational) zeroIsAnInteger]
+      @conclusion-integral-at-i |
+        isInteger(qpoly.qcoeff(qpoly.QZEROP, i))
+        [by rewrite the-zero-coefficient zero-is-an-integer]
+    }
+  @all-coefficients |
+    forall i: Nat; isInteger(qpoly.qcoeff(qpoly.QZEROP, i))
+    [by generalize each-index]
+  @the-meaning |
+    hasIntegerCoefficients(qpoly.QZEROP) iff
+      (forall i: Nat; isInteger(qpoly.qcoeff(qpoly.QZEROP, i)))
+    [using specialize integerCoefficientsEverywhere(qpoly.QZEROP)]
+  @conclusion |
+    hasIntegerCoefficients(qpoly.QZEROP)
+    [using tautology the-meaning all-coefficients]
+qed
+
+theorem theUnitPolynomialIsIntegral: hasIntegerCoefficients(qpoly.QONEP)
+proof
+  @the-split |
+    forall i: Nat; i = NAT_ZERO or (exists k: Nat; i = peano.succ(k))
+    [using import(peano) zeroOrSucc]
+  @each-index |
+    fix i: Nat {
+      @the-split-at-i |
+        i = NAT_ZERO or (exists k: Nat; i = peano.succ(k))
+        [using specialize the-split(i)]
+      @conclusion-integral-at-i |
+        isInteger(qpoly.qcoeff(qpoly.QONEP, i))
+        case the-split-at-i {
+          @when-zero |
+            assume i = NAT_ZERO {
+              @i-is-zero |
+                i = NAT_ZERO
+                [by hypothesis when-zero]
+              @the-constant-coefficient |
+                qpoly.qcoeff(qpoly.QONEP, NAT_ZERO) = ONE
+                [using import(qpoly) qOnePolyCoeffZero]
+              @one-is-an-integer |
+                isInteger(ONE)
+                [using import(rational) oneIsAnInteger]
+              @integral-at-zero |
+                isInteger(qpoly.qcoeff(qpoly.QONEP, NAT_ZERO))
+                [by rewrite the-constant-coefficient one-is-an-integer]
+              @conclusion-zero-case |
+                isInteger(qpoly.qcoeff(qpoly.QONEP, i))
+                [by rewrite i-is-zero integral-at-zero]
+            }
+          @when-successor |
+            assume exists k: Nat; i = peano.succ(k) {
+              @a-predecessor-exists |
+                exists k: Nat; i = peano.succ(k)
+                [by hypothesis when-successor]
+              @with-the-predecessor |
+                unpack k: Nat from a-predecessor-exists {
+                  @i-is-a-successor |
+                    i = peano.succ(k)
+                    [by hypothesis with-the-predecessor]
+                  @the-higher-coefficient |
+                    qpoly.qcoeff(qpoly.QONEP, peano.succ(k)) = ZERO
+                    [using specialize qpoly.qOnePolyCoeffHigher(k)]
+                  @zero-is-an-integer-here |
+                    isInteger(ZERO)
+                    [using import(rational) zeroIsAnInteger]
+                  @integral-above |
+                    isInteger(qpoly.qcoeff(qpoly.QONEP,
+                      peano.succ(k)))
+                    [by rewrite the-higher-coefficient zero-is-an-integer-here]
+                  @conclusion-at-the-successor |
+                    isInteger(qpoly.qcoeff(qpoly.QONEP, i))
+                    [by rewrite i-is-a-successor integral-above]
+                }
+              @conclusion-successor-case |
+                isInteger(qpoly.qcoeff(qpoly.QONEP, i))
+                [by unpacked with-the-predecessor]
+            }
+        }
+    }
+  @all-coefficients |
+    forall i: Nat; isInteger(qpoly.qcoeff(qpoly.QONEP, i))
+    [by generalize each-index]
+  @the-meaning |
+    hasIntegerCoefficients(qpoly.QONEP) iff
+      (forall i: Nat; isInteger(qpoly.qcoeff(qpoly.QONEP, i)))
+    [using specialize integerCoefficientsEverywhere(qpoly.QONEP)]
+  @conclusion |
+    hasIntegerCoefficients(qpoly.QONEP)
+    [using tautology the-meaning all-coefficients]
+qed
+
+// -- the additive closures -----------------------------------------------------------------
+
+theorem theSumIsIntegral: forall p, q: QPoly;
+  hasIntegerCoefficients(p) -> hasIntegerCoefficients(q) ->
+  hasIntegerCoefficients(qpoly.qaddP(p, q))
+proof
+  @generalize-p |
+    fix p: QPoly {
+      @generalize-q |
+        fix q: QPoly {
+          @given-both |
+            assume hasIntegerCoefficients(p) and
+              hasIntegerCoefficients(q) {
+              @both |
+                hasIntegerCoefficients(p) and
+                  hasIntegerCoefficients(q)
+                [by hypothesis given-both]
+              @p-is-integral |
+                hasIntegerCoefficients(p)
+                [by and_lhs both]
+              @q-is-integral |
+                hasIntegerCoefficients(q)
+                [by and_rhs both]
+              @the-p-meaning |
+                hasIntegerCoefficients(p) iff
+                  (forall i: Nat; isInteger(qpoly.qcoeff(p, i)))
+                [using specialize integerCoefficientsEverywhere(p)]
+              @p-coefficients |
+                forall i: Nat; isInteger(qpoly.qcoeff(p, i))
+                [using tautology the-p-meaning p-is-integral]
+              @the-q-meaning |
+                hasIntegerCoefficients(q) iff
+                  (forall i: Nat; isInteger(qpoly.qcoeff(q, i)))
+                [using specialize integerCoefficientsEverywhere(q)]
+              @q-coefficients |
+                forall i: Nat; isInteger(qpoly.qcoeff(q, i))
+                [using tautology the-q-meaning q-is-integral]
+              @each-index |
+                fix i: Nat {
+                  @the-sum-coefficient |
+                    qpoly.qcoeff(qpoly.qaddP(p, q), i) =
+                      rational.add(qpoly.qcoeff(p, i),
+                      qpoly.qcoeff(q, i))
+                    [using specialize qpoly.qAddPolyCoeff(p, q, i)]
+                  @p-at-i |
+                    isInteger(qpoly.qcoeff(p, i))
+                    [using specialize p-coefficients(i)]
+                  @q-at-i |
+                    isInteger(qpoly.qcoeff(q, i))
+                    [using specialize q-coefficients(i)]
+                  @the-sum-is-an-integer |
+                    isInteger(rational.add(qpoly.qcoeff(p, i),
+                      qpoly.qcoeff(q, i)))
+                    [using specialize rational.isIntegerAdd(qpoly.qcoeff(p, i), qpoly.qcoeff(q, i)) p-at-i q-at-i]
+                  @conclusion-integral-at-i |
+                    isInteger(qpoly.qcoeff(qpoly.qaddP(p, q), i))
+                    [by rewrite the-sum-coefficient the-sum-is-an-integer]
+                }
+              @all-coefficients |
+                forall i: Nat;
+                  isInteger(qpoly.qcoeff(qpoly.qaddP(p, q), i))
+                [by generalize each-index]
+              @the-sum-meaning |
+                hasIntegerCoefficients(qpoly.qaddP(p, q)) iff
+                  (forall i: Nat;
+                  isInteger(qpoly.qcoeff(qpoly.qaddP(p, q), i)))
+                [using specialize integerCoefficientsEverywhere(qpoly.qaddP(p, q))]
+              @conclusion-the-sum |
+                hasIntegerCoefficients(qpoly.qaddP(p, q))
+                [using tautology the-sum-meaning all-coefficients]
+            }
+          @the-implication |
+            (hasIntegerCoefficients(p) and
+              hasIntegerCoefficients(q)) ->
+              hasIntegerCoefficients(qpoly.qaddP(p, q))
+            [by discharge given-both]
+          @curried |
+            hasIntegerCoefficients(p) ->
+              hasIntegerCoefficients(q) ->
+              hasIntegerCoefficients(qpoly.qaddP(p, q))
+            [using tautology the-implication]
+        }
+      @discharge-q |
+        forall q9: QPoly;
+          hasIntegerCoefficients(p) -> hasIntegerCoefficients(q9) ->
+          hasIntegerCoefficients(qpoly.qaddP(p, q9))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: QPoly;
+      hasIntegerCoefficients(p) -> hasIntegerCoefficients(q) ->
+      hasIntegerCoefficients(qpoly.qaddP(p, q))
+    [by generalize generalize-p]
+qed
+
+theorem theNegationIsIntegral: forall p: QPoly;
+  hasIntegerCoefficients(p) ->
+  hasIntegerCoefficients(qpoly.qnegP(p))
+proof
+  @generalize-p |
+    fix p: QPoly {
+      @given-integral |
+        assume hasIntegerCoefficients(p) {
+          @p-is-integral |
+            hasIntegerCoefficients(p)
+            [by hypothesis given-integral]
+          @the-p-meaning |
+            hasIntegerCoefficients(p) iff
+              (forall i: Nat; isInteger(qpoly.qcoeff(p, i)))
+            [using specialize integerCoefficientsEverywhere(p)]
+          @p-coefficients |
+            forall i: Nat; isInteger(qpoly.qcoeff(p, i))
+            [using tautology the-p-meaning p-is-integral]
+          @each-index |
+            fix i: Nat {
+              @the-negated-coefficient |
+                qpoly.qcoeff(qpoly.qnegP(p), i) =
+                  rational.neg(qpoly.qcoeff(p, i))
+                [using specialize qpoly.qNegPolyCoeff(p, i)]
+              @p-at-i |
+                isInteger(qpoly.qcoeff(p, i))
+                [using specialize p-coefficients(i)]
+              @the-negation-is-an-integer |
+                isInteger(rational.neg(qpoly.qcoeff(p, i)))
+                [using specialize rational.isIntegerNeg(qpoly.qcoeff(p, i)) p-at-i]
+              @conclusion-integral-at-i |
+                isInteger(qpoly.qcoeff(qpoly.qnegP(p), i))
+                [by rewrite the-negated-coefficient the-negation-is-an-integer]
+            }
+          @all-coefficients |
+            forall i: Nat;
+              isInteger(qpoly.qcoeff(qpoly.qnegP(p), i))
+            [by generalize each-index]
+          @the-negation-meaning |
+            hasIntegerCoefficients(qpoly.qnegP(p)) iff
+              (forall i: Nat;
+              isInteger(qpoly.qcoeff(qpoly.qnegP(p), i)))
+            [using specialize integerCoefficientsEverywhere(qpoly.qnegP(p))]
+          @conclusion-the-negation |
+            hasIntegerCoefficients(qpoly.qnegP(p))
+            [using tautology the-negation-meaning all-coefficients]
+        }
+      @the-implication |
+        hasIntegerCoefficients(p) ->
+          hasIntegerCoefficients(qpoly.qnegP(p))
+        [by discharge given-integral]
+    }
+  @conclusion |
+    forall p: QPoly;
+      hasIntegerCoefficients(p) ->
+      hasIntegerCoefficients(qpoly.qnegP(p))
+    [by generalize generalize-p]
+qed
+
+// -- the multiplicative closure ------------------------------------------------------------
+// The only nontrivial one: a product's coefficient is a CONVOLUTION, so integrality has to be
+// carried through the convolution's own recursion. Induction on the convolution index with
+// the output index fixed — the shape §17.1's reindexing lemma uses.
+theorem theConvolutionIsIntegral: forall p, q: QPoly; forall i, k: Nat;
+  hasIntegerCoefficients(p) -> hasIntegerCoefficients(q) ->
+  isInteger(qpoly.qconvolution(p, q, i, k))
+proof
+  @generalize-p |
+    fix p: QPoly {
+      @generalize-q |
+        fix q: QPoly {
+          @given-both |
+            assume hasIntegerCoefficients(p) and
+              hasIntegerCoefficients(q) {
+              @both |
+                hasIntegerCoefficients(p) and
+                  hasIntegerCoefficients(q)
+                [by hypothesis given-both]
+              @p-is-integral |
+                hasIntegerCoefficients(p)
+                [by and_lhs both]
+              @q-is-integral |
+                hasIntegerCoefficients(q)
+                [by and_rhs both]
+              @the-p-meaning |
+                hasIntegerCoefficients(p) iff
+                  (forall j: Nat; isInteger(qpoly.qcoeff(p, j)))
+                [using specialize integerCoefficientsEverywhere(p)]
+              @p-coefficients |
+                forall j: Nat; isInteger(qpoly.qcoeff(p, j))
+                [using tautology the-p-meaning p-is-integral]
+              @the-q-meaning |
+                hasIntegerCoefficients(q) iff
+                  (forall j: Nat; isInteger(qpoly.qcoeff(q, j)))
+                [using specialize integerCoefficientsEverywhere(q)]
+              @q-coefficients |
+                forall j: Nat; isInteger(qpoly.qcoeff(q, j))
+                [using tautology the-q-meaning q-is-integral]
+              @generalize-i |
+                fix i: Nat {
+                  // base: one product of two integer coefficients
+                  @the-base-convolution |
+                    qpoly.qconvolution(p, q, i, NAT_ZERO) =
+                      rational.mul(qpoly.qcoeff(p, NAT_ZERO),
+                      qpoly.qcoeff(q, i))
+                    [using specialize qpoly.qConvolutionZero(p, q, i)]
+                  @p-at-zero |
+                    isInteger(qpoly.qcoeff(p, NAT_ZERO))
+                    [using specialize p-coefficients(NAT_ZERO)]
+                  @q-at-i |
+                    isInteger(qpoly.qcoeff(q, i))
+                    [using specialize q-coefficients(i)]
+                  @the-base-product-is-an-integer |
+                    isInteger(rational.mul(
+                      qpoly.qcoeff(p, NAT_ZERO),
+                      qpoly.qcoeff(q, i)))
+                    [using specialize rational.isIntegerMul(qpoly.qcoeff(p, NAT_ZERO), qpoly.qcoeff(q, i)) p-at-zero q-at-i]
+                  @base-case |
+                    isInteger(qpoly.qconvolution(p, q, i,
+                      NAT_ZERO))
+                    [by rewrite the-base-convolution the-base-product-is-an-integer]
+
+                  // step: one more summand, itself a product of integers
+                  @induction-step |
+                    fix k: Nat {
+                      @given-inductive-hypothesis |
+                        assume isInteger(
+                          qpoly.qconvolution(p, q, i, k)) {
+                          @inductive-hypothesis |
+                            isInteger(
+                              qpoly.qconvolution(p, q, i, k))
+                            [by hypothesis given-inductive-hypothesis]
+                          @the-step-convolution |
+                            qpoly.qconvolution(p, q, i,
+                              peano.succ(k)) =
+                              rational.add(
+                              qpoly.qconvolution(p, q, i, k),
+                              rational.mul(
+                              qpoly.qcoeff(p, peano.succ(k)),
+                              qpoly.qcoeff(q,
+                              subtraction.sub(i,
+                              peano.succ(k)))))
+                            [using specialize qpoly.qConvolutionSucc(p, q, i, k)]
+                          @p-at-the-successor |
+                            isInteger(qpoly.qcoeff(p,
+                              peano.succ(k)))
+                            [using specialize p-coefficients(peano.succ(k))]
+                          @q-at-the-difference |
+                            isInteger(qpoly.qcoeff(q,
+                              subtraction.sub(i,
+                              peano.succ(k))))
+                            [using specialize q-coefficients(subtraction.sub(i, peano.succ(k)))]
+                          @the-new-term-is-an-integer |
+                            isInteger(rational.mul(
+                              qpoly.qcoeff(p, peano.succ(k)),
+                              qpoly.qcoeff(q,
+                              subtraction.sub(i,
+                              peano.succ(k)))))
+                            [using specialize rational.isIntegerMul(qpoly.qcoeff(p, peano.succ(k)), qpoly.qcoeff(q, subtraction.sub(i, peano.succ(k)))) p-at-the-successor q-at-the-difference]
+                          @the-step-sum-is-an-integer |
+                            isInteger(rational.add(
+                              qpoly.qconvolution(p, q, i, k),
+                              rational.mul(
+                              qpoly.qcoeff(p, peano.succ(k)),
+                              qpoly.qcoeff(q,
+                              subtraction.sub(i,
+                              peano.succ(k))))))
+                            [using specialize rational.isIntegerAdd(qpoly.qconvolution(p, q, i, k), rational.mul(qpoly.qcoeff(p, peano.succ(k)), qpoly.qcoeff(q, subtraction.sub(i, peano.succ(k))))) inductive-hypothesis the-new-term-is-an-integer]
+                          @conclusion-the-step |
+                            isInteger(qpoly.qconvolution(p, q, i,
+                              peano.succ(k)))
+                            [by rewrite the-step-convolution the-step-sum-is-an-integer]
+                        }
+                      @induction-step-at-k |
+                        isInteger(qpoly.qconvolution(p, q, i, k)) ->
+                          isInteger(qpoly.qconvolution(p, q, i,
+                          peano.succ(k)))
+                        [by discharge given-inductive-hypothesis]
+                    }
+                  @induction-step-for-all-k |
+                    forall k: Nat;
+                      isInteger(qpoly.qconvolution(p, q, i, k)) ->
+                      isInteger(qpoly.qconvolution(p, q, i,
+                      peano.succ(k)))
+                    [by generalize induction-step]
+                  @all-convolution-indices |
+                    forall k: Nat;
+                      isInteger(qpoly.qconvolution(p, q, i, k))
+                    [using instantiation peano.induction((fun z: Nat => (isInteger(qpoly.qconvolution(p, q, i, z))))) base-case induction-step-for-all-k]
+                }
+              @conclusion-all-indices |
+                forall i2: Nat; forall k: Nat;
+                  isInteger(qpoly.qconvolution(p, q, i2, k))
+                [by generalize generalize-i]
+            }
+          @the-implication |
+            (hasIntegerCoefficients(p) and
+              hasIntegerCoefficients(q)) ->
+              (forall i2: Nat; forall k: Nat;
+              isInteger(qpoly.qconvolution(p, q, i2, k)))
+            [by discharge given-both]
+          @each-pair |
+            fix i: Nat {
+              @generalize-k-outer |
+                fix k: Nat {
+                  @given-both-again |
+                    assume hasIntegerCoefficients(p) and
+                      hasIntegerCoefficients(q) {
+                      @both-again |
+                        hasIntegerCoefficients(p) and
+                          hasIntegerCoefficients(q)
+                        [by hypothesis given-both-again]
+                      @all-pairs |
+                        forall i2: Nat; forall k2: Nat;
+                          isInteger(
+                          qpoly.qconvolution(p, q, i2, k2))
+                        [by modus_ponens the-implication both-again]
+                      @at-i |
+                        forall k2: Nat;
+                          isInteger(
+                          qpoly.qconvolution(p, q, i, k2))
+                        [using specialize all-pairs(i)]
+                      @conclusion-at-the-pair |
+                        isInteger(qpoly.qconvolution(p, q, i, k))
+                        [using specialize at-i(k)]
+                    }
+                  @the-pair-implication |
+                    (hasIntegerCoefficients(p) and
+                      hasIntegerCoefficients(q)) ->
+                      isInteger(qpoly.qconvolution(p, q, i, k))
+                    [by discharge given-both-again]
+                  @curried-at-the-pair |
+                    hasIntegerCoefficients(p) ->
+                      hasIntegerCoefficients(q) ->
+                      isInteger(qpoly.qconvolution(p, q, i, k))
+                    [using tautology the-pair-implication]
+                }
+              @all-k-at-i |
+                forall k: Nat;
+                  hasIntegerCoefficients(p) ->
+                  hasIntegerCoefficients(q) ->
+                  isInteger(qpoly.qconvolution(p, q, i, k))
+                [by generalize generalize-k-outer]
+            }
+          @conclusion-curried |
+            forall i, k: Nat;
+              hasIntegerCoefficients(p) ->
+              hasIntegerCoefficients(q) ->
+              isInteger(qpoly.qconvolution(p, q, i, k))
+            [by generalize each-pair]
+        }
+      @discharge-q |
+        forall q9: QPoly; forall i, k: Nat;
+          hasIntegerCoefficients(p) -> hasIntegerCoefficients(q9) ->
+          isInteger(qpoly.qconvolution(p, q9, i, k))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: QPoly; forall i, k: Nat;
+      hasIntegerCoefficients(p) -> hasIntegerCoefficients(q) ->
+      isInteger(qpoly.qconvolution(p, q, i, k))
+    [by generalize generalize-p]
+qed
+
+theorem theProductIsIntegral: forall p, q: QPoly;
+  hasIntegerCoefficients(p) -> hasIntegerCoefficients(q) ->
+  hasIntegerCoefficients(qpoly.qmulP(p, q))
+proof
+  @generalize-p |
+    fix p: QPoly {
+      @generalize-q |
+        fix q: QPoly {
+          @given-both |
+            assume hasIntegerCoefficients(p) and
+              hasIntegerCoefficients(q) {
+              @both |
+                hasIntegerCoefficients(p) and
+                  hasIntegerCoefficients(q)
+                [by hypothesis given-both]
+              @p-is-integral |
+                hasIntegerCoefficients(p)
+                [by and_lhs both]
+              @q-is-integral |
+                hasIntegerCoefficients(q)
+                [by and_rhs both]
+              @each-index |
+                fix i: Nat {
+                  @the-product-coefficient |
+                    qpoly.qcoeff(qpoly.qmulP(p, q), i) =
+                      qpoly.qconvolution(p, q, i, i)
+                    [using specialize qpoly.qMulPolyCoeff(p, q, i)]
+                  @the-convolution-is-an-integer |
+                    isInteger(qpoly.qconvolution(p, q, i, i))
+                    [using specialize theConvolutionIsIntegral(p, q, i, i) p-is-integral q-is-integral]
+                  @conclusion-integral-at-i |
+                    isInteger(qpoly.qcoeff(qpoly.qmulP(p, q), i))
+                    [by rewrite the-product-coefficient the-convolution-is-an-integer]
+                }
+              @all-coefficients |
+                forall i: Nat;
+                  isInteger(qpoly.qcoeff(qpoly.qmulP(p, q), i))
+                [by generalize each-index]
+              @the-product-meaning |
+                hasIntegerCoefficients(qpoly.qmulP(p, q)) iff
+                  (forall i: Nat;
+                  isInteger(qpoly.qcoeff(qpoly.qmulP(p, q), i)))
+                [using specialize integerCoefficientsEverywhere(qpoly.qmulP(p, q))]
+              @conclusion-the-product |
+                hasIntegerCoefficients(qpoly.qmulP(p, q))
+                [using tautology the-product-meaning all-coefficients]
+            }
+          @the-implication |
+            (hasIntegerCoefficients(p) and
+              hasIntegerCoefficients(q)) ->
+              hasIntegerCoefficients(qpoly.qmulP(p, q))
+            [by discharge given-both]
+          @curried |
+            hasIntegerCoefficients(p) ->
+              hasIntegerCoefficients(q) ->
+              hasIntegerCoefficients(qpoly.qmulP(p, q))
+            [using tautology the-implication]
+        }
+      @discharge-q |
+        forall q9: QPoly;
+          hasIntegerCoefficients(p) -> hasIntegerCoefficients(q9) ->
+          hasIntegerCoefficients(qpoly.qmulP(p, q9))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: QPoly;
+      hasIntegerCoefficients(p) -> hasIntegerCoefficients(q) ->
+      hasIntegerCoefficients(qpoly.qmulP(p, q))
+    [by generalize generalize-p]
+qed
+
+// -- THE CLASS MAP ON THE CUT --------------------------------------------------------------
+// Eisenstein's modulus, as a ℚ-cut element. Keeping it on the cut rather than reusing
+// `mod_n.N` is what avoids mixing an `Int` modulus with ℚ-cut operands in one divisibility
+// statement — the link to ℤ_N[x] then runs through `qcls`'s laws alone.
+// No `isInteger(QN)` axiom: `dividesIntegrally` constrains only the QUOTIENT, never the
+// divisor, so nothing below needs the modulus to be on the cut. I had posited that axiom
+// speculatively and the `--library` gate caught it as unused — which is what that gate is for.
+const QN: Q
+
+// `qcls` is the cut's reduction modulo QN, landing in the EXISTING ℤ_N[x]'s coefficient ring.
+// Its four axioms mirror `mod_n`'s `cls`: zero, the two homomorphism laws, and congruence.
+// NO `requires` guard. A guarded func cannot appear under a quantifier whose binder is what
+// the guard is about: `forall k; … qcls(conv(p, q, i, k)) …` owes `isInteger` at a `k` that is
+// not yet fixed, and no step can discharge it there. The integrality hypotheses live on the
+// AXIOMS instead, which is how the rest of `std/` handles a partial operation — `qcls` is
+// total on ℚ and simply uninteresting off the cut.
+func qcls(a: Q) => Zn
+axiom qclsZero: qcls(ZERO) = mod_n.ZERO
+axiom qclsAdd: forall a, b: Q; isInteger(a) -> isInteger(b) ->
+  mod_n.add(qcls(a), qcls(b)) = qcls(rational.add(a, b))
+axiom qclsMul: forall a, b: Q; isInteger(a) -> isInteger(b) ->
+  mod_n.mul(qcls(a), qcls(b)) = qcls(rational.mul(a, b))
+axiom qclsCongruent: forall a, b: Q; isInteger(a) -> isInteger(b) ->
+  (qcls(a) = qcls(b) iff
+  dividesIntegrally(QN, rational.add(a, rational.neg(b))))
+
+// A class vanishes exactly when the modulus divides its representative — the form the
+// surviving-coefficient argument consumes.
+theorem aClassIsZeroWhenTheModulusDivides: forall a: Q;
+  isInteger(a) ->
+  (qcls(a) = mod_n.ZERO iff dividesIntegrally(QN, a))
+proof
+  @generalize-a |
+    fix a: Q {
+      @given-a-is-an-integer |
+        assume isInteger(a) {
+          @a-is-an-integer |
+            isInteger(a)
+            [by hypothesis given-a-is-an-integer]
+          @zero-is-an-integer |
+            isInteger(ZERO)
+            [using import(rational) zeroIsAnInteger]
+          @the-congruence-at-zero |
+            qcls(a) = qcls(ZERO) iff
+              dividesIntegrally(QN,
+              rational.add(a, rational.neg(ZERO)))
+            [using specialize qclsCongruent(a, ZERO) a-is-an-integer zero-is-an-integer]
+          @the-class-of-zero |
+            qcls(ZERO) = mod_n.ZERO
+            [by cite qclsZero]
+          @the-difference-collapses |
+            rational.add(a, rational.neg(ZERO)) = a
+            [using polynomial(rational)]
+          @the-congruence-with-zero-folded |
+            qcls(a) = mod_n.ZERO iff
+              dividesIntegrally(QN,
+              rational.add(a, rational.neg(ZERO)))
+            [by rewrite the-class-of-zero the-congruence-at-zero]
+          @conclusion-the-vanishing |
+            qcls(a) = mod_n.ZERO iff dividesIntegrally(QN, a)
+            [by rewrite the-difference-collapses the-congruence-with-zero-folded]
+        }
+      @the-implication |
+        isInteger(a) ->
+          (qcls(a) = mod_n.ZERO iff dividesIntegrally(QN, a))
+        [by discharge given-a-is-an-integer]
+    }
+  @conclusion |
+    forall a: Q;
+      isInteger(a) ->
+      (qcls(a) = mod_n.ZERO iff dividesIntegrally(QN, a))
+    [by generalize generalize-a]
+qed
+
+// -- REDUCTION OF A CUT POLYNOMIAL ---------------------------------------------------------
+// Judson's "let α₁'(x) be the polynomial in ℤ_p[x] obtained by reducing the coefficients of
+// α₁(x) modulo p" — from the cut this time, into the same ℤ_N[x].
+func qreduce(p: QPoly) => ZnPoly
+axiom qreduceCoefficientwise: forall p: QPoly; forall i: Nat;
+  hasIntegerCoefficients(p) ->
+  mod_n_poly.zcoeff(qreduce(p), i) = qcls(qpoly.qcoeff(p, i))
+
+// A polynomial with a coefficient the modulus misses reduces to something nonzero — Judson's
+// "there exists a coefficient a_i such that p ∤ a_i" giving α₁'(x) ≠ 0.
+theorem aSurvivingCoefficientSurvivesReduction: forall p: QPoly; forall i: Nat;
+  hasIntegerCoefficients(p) ->
+  (not dividesIntegrally(QN, qpoly.qcoeff(p, i))) ->
+  (not (qreduce(p) = mod_n_poly.ZZEROP))
+proof
+  @generalize-p |
+    fix p: QPoly {
+      @generalize-i |
+        fix i: Nat {
+          @given-the-setup |
+            assume hasIntegerCoefficients(p) and
+              (not dividesIntegrally(QN, qpoly.qcoeff(p, i))) {
+              @the-setup |
+                hasIntegerCoefficients(p) and
+                  (not dividesIntegrally(QN,
+                  qpoly.qcoeff(p, i)))
+                [by hypothesis given-the-setup]
+              @p-is-integral |
+                hasIntegerCoefficients(p)
+                [by and_lhs the-setup]
+              @the-modulus-misses |
+                not dividesIntegrally(QN, qpoly.qcoeff(p, i))
+                [by and_rhs the-setup]
+              @the-p-meaning |
+                hasIntegerCoefficients(p) iff
+                  (forall j: Nat; isInteger(qpoly.qcoeff(p, j)))
+                [using specialize integerCoefficientsEverywhere(p)]
+              @p-coefficients |
+                forall j: Nat; isInteger(qpoly.qcoeff(p, j))
+                [using tautology the-p-meaning p-is-integral]
+              @the-coefficient-is-an-integer |
+                isInteger(qpoly.qcoeff(p, i))
+                [using specialize p-coefficients(i)]
+              // the class of that coefficient does NOT vanish
+              @the-vanishing-law |
+                qcls(qpoly.qcoeff(p, i)) = mod_n.ZERO iff
+                  dividesIntegrally(QN, qpoly.qcoeff(p, i))
+                [using specialize aClassIsZeroWhenTheModulusDivides(qpoly.qcoeff(p, i)) the-coefficient-is-an-integer]
+              @the-class-survives |
+                not (qcls(qpoly.qcoeff(p, i)) = mod_n.ZERO)
+                [using tautology the-vanishing-law the-modulus-misses]
+              // so the reduction has a nonzero coefficient, hence is not ZZEROP
+              @the-reduced-coefficient |
+                mod_n_poly.zcoeff(qreduce(p), i) =
+                  qcls(qpoly.qcoeff(p, i))
+                [using specialize qreduceCoefficientwise(p, i) p-is-integral]
+              @the-reduced-coefficient-survives |
+                not (mod_n_poly.zcoeff(qreduce(p), i) = mod_n.ZERO)
+                [by rewrite the-reduced-coefficient the-class-survives]
+              @given-the-reduction-vanishes |
+                assume qreduce(p) = mod_n_poly.ZZEROP {
+                  @the-reduction-vanishes |
+                    qreduce(p) = mod_n_poly.ZZEROP
+                    [by hypothesis given-the-reduction-vanishes]
+                  @the-zero-coefficient |
+                    mod_n_poly.zcoeff(mod_n_poly.ZZEROP, i) =
+                      mod_n.ZERO
+                    [using specialize mod_n_poly.zZeroPolyCoeff(i)]
+                  @the-reduced-coefficient-vanishes |
+                    mod_n_poly.zcoeff(qreduce(p), i) = mod_n.ZERO
+                    [by rewrite the-reduction-vanishes the-zero-coefficient]
+                }
+              @conclusion-the-reduction-survives |
+                not (qreduce(p) = mod_n_poly.ZZEROP)
+                [by contradiction given-the-reduction-vanishes the-reduced-coefficient-vanishes the-reduced-coefficient-survives]
+            }
+          @the-implication |
+            (hasIntegerCoefficients(p) and
+              (not dividesIntegrally(QN, qpoly.qcoeff(p, i)))) ->
+              (not (qreduce(p) = mod_n_poly.ZZEROP))
+            [by discharge given-the-setup]
+          @curried |
+            hasIntegerCoefficients(p) ->
+              (not dividesIntegrally(QN, qpoly.qcoeff(p, i))) ->
+              (not (qreduce(p) = mod_n_poly.ZZEROP))
+            [using tautology the-implication]
+        }
+      @discharge-i |
+        forall i9: Nat;
+          hasIntegerCoefficients(p) ->
+          (not dividesIntegrally(QN, qpoly.qcoeff(p, i9))) ->
+          (not (qreduce(p) = mod_n_poly.ZZEROP))
+        [by generalize generalize-i]
+    }
+  @conclusion |
+    forall p: QPoly; forall i: Nat;
+      hasIntegerCoefficients(p) ->
+      (not dividesIntegrally(QN, qpoly.qcoeff(p, i))) ->
+      (not (qreduce(p) = mod_n_poly.ZZEROP))
+    [by generalize generalize-p]
+qed
+
+// -- REDUCTION COMMUTES WITH MULTIPLICATION ------------------------------------------------
+// Judson writes $\alpha_1'(x)\beta_1'(x)$ where he means $(\alpha_1\beta_1)'(x)$, which is
+// only legitimate because reduction commutes with multiplication. He leaves that to the
+// reader; it is proved here by induction on the convolution index, since the two convolution
+// recursions are the same recursion and `qcls` is an additive and multiplicative homomorphism
+// termwise.
+theorem qreduceCommutesWithTheConvolution: forall p, q: QPoly;
+  forall i, k: Nat;
+  hasIntegerCoefficients(p) -> hasIntegerCoefficients(q) ->
+  mod_n_poly.zconvolution(qreduce(p), qreduce(q), i, k) =
+  qcls(qpoly.qconvolution(p, q, i, k))
+proof
+  @generalize-p |
+    fix p: QPoly {
+      @generalize-q |
+        fix q: QPoly {
+          @given-both |
+            assume hasIntegerCoefficients(p) and
+              hasIntegerCoefficients(q) {
+              @both |
+                hasIntegerCoefficients(p) and
+                  hasIntegerCoefficients(q)
+                [by hypothesis given-both]
+              @p-is-integral |
+                hasIntegerCoefficients(p)
+                [by and_lhs both]
+              @q-is-integral |
+                hasIntegerCoefficients(q)
+                [by and_rhs both]
+              @the-p-meaning |
+                hasIntegerCoefficients(p) iff
+                  (forall j: Nat; isInteger(qpoly.qcoeff(p, j)))
+                [using specialize integerCoefficientsEverywhere(p)]
+              @p-coefficients |
+                forall j: Nat; isInteger(qpoly.qcoeff(p, j))
+                [using tautology the-p-meaning p-is-integral]
+              @the-q-meaning |
+                hasIntegerCoefficients(q) iff
+                  (forall j: Nat; isInteger(qpoly.qcoeff(q, j)))
+                [using specialize integerCoefficientsEverywhere(q)]
+              @q-coefficients |
+                forall j: Nat; isInteger(qpoly.qcoeff(q, j))
+                [using tautology the-q-meaning q-is-integral]
+              @generalize-i |
+                fix i: Nat {
+                  // base: both convolutions are a single coefficient product,
+                  // and qcls is multiplicative
+                  @the-reduced-base |
+                    mod_n_poly.zconvolution(qreduce(p), qreduce(q),
+                      i, NAT_ZERO) =
+                      mod_n.mul(
+                      mod_n_poly.zcoeff(qreduce(p), NAT_ZERO),
+                      mod_n_poly.zcoeff(qreduce(q), i))
+                    [using specialize mod_n_poly.zConvolutionZero(qreduce(p), qreduce(q), i)]
+                  @the-base |
+                    qpoly.qconvolution(p, q, i, NAT_ZERO) =
+                      rational.mul(qpoly.qcoeff(p, NAT_ZERO),
+                      qpoly.qcoeff(q, i))
+                    [using specialize qpoly.qConvolutionZero(p, q, i)]
+                  @p-at-zero |
+                    isInteger(qpoly.qcoeff(p, NAT_ZERO))
+                    [using specialize p-coefficients(NAT_ZERO)]
+                  @q-at-i |
+                    isInteger(qpoly.qcoeff(q, i))
+                    [using specialize q-coefficients(i)]
+                  @the-p-class-at-zero |
+                    mod_n_poly.zcoeff(qreduce(p), NAT_ZERO) =
+                      qcls(qpoly.qcoeff(p, NAT_ZERO))
+                    [using specialize qreduceCoefficientwise(p, NAT_ZERO) p-is-integral]
+                  @the-q-class-at-i |
+                    mod_n_poly.zcoeff(qreduce(q), i) =
+                      qcls(qpoly.qcoeff(q, i))
+                    [using specialize qreduceCoefficientwise(q, i) q-is-integral]
+                  @the-reduced-base-in-classes |
+                    mod_n_poly.zconvolution(qreduce(p), qreduce(q),
+                      i, NAT_ZERO) =
+                      mod_n.mul(qcls(qpoly.qcoeff(p, NAT_ZERO)),
+                      qcls(qpoly.qcoeff(q, i)))
+                    [using simplify the-reduced-base the-p-class-at-zero the-q-class-at-i]
+                  @the-classes-multiply |
+                    mod_n.mul(qcls(qpoly.qcoeff(p, NAT_ZERO)),
+                      qcls(qpoly.qcoeff(q, i))) =
+                      qcls(rational.mul(
+                      qpoly.qcoeff(p, NAT_ZERO),
+                      qpoly.qcoeff(q, i)))
+                    [using specialize qclsMul(qpoly.qcoeff(p, NAT_ZERO), qpoly.qcoeff(q, i)) p-at-zero q-at-i]
+                  @the-reduced-base-folded |
+                    mod_n_poly.zconvolution(qreduce(p), qreduce(q),
+                      i, NAT_ZERO) =
+                      qcls(rational.mul(
+                      qpoly.qcoeff(p, NAT_ZERO),
+                      qpoly.qcoeff(q, i)))
+                    [using simplify the-reduced-base-in-classes the-classes-multiply]
+                  @base-case |
+                    mod_n_poly.zconvolution(qreduce(p), qreduce(q),
+                      i, NAT_ZERO) =
+                      qcls(qpoly.qconvolution(p, q, i, NAT_ZERO))
+                    [by rewrite the-base the-reduced-base-folded]
+
+                  // step: one more summand on each side; qcls is additive.
+                  //
+                  // The integrality fact comes FIRST inside the `fix`, because the induction
+                  // hypothesis's own formula applies `qcls` to the running convolution — and a
+                  // `requires` guard inside an `assume`'s formula cannot be discharged after
+                  // the fact the way a proof step's can.
+                  @induction-step |
+                    fix k: Nat {
+                      @the-running-convolution-is-an-integer |
+                        isInteger(qpoly.qconvolution(p, q, i, k))
+                        [using specialize theConvolutionIsIntegral(p, q, i, k) p-is-integral q-is-integral]
+                      @given-inductive-hypothesis |
+                        assume mod_n_poly.zconvolution(qreduce(p),
+                          qreduce(q), i, k) =
+                          qcls(qpoly.qconvolution(p, q, i, k)) {
+                          @inductive-hypothesis |
+                            mod_n_poly.zconvolution(qreduce(p),
+                              qreduce(q), i, k) =
+                              qcls(qpoly.qconvolution(p, q, i, k))
+                            [by hypothesis given-inductive-hypothesis]
+                          @the-reduced-step |
+                            mod_n_poly.zconvolution(qreduce(p),
+                              qreduce(q), i, peano.succ(k)) =
+                              mod_n.add(
+                              mod_n_poly.zconvolution(qreduce(p),
+                              qreduce(q), i, k),
+                              mod_n.mul(
+                              mod_n_poly.zcoeff(qreduce(p),
+                              peano.succ(k)),
+                              mod_n_poly.zcoeff(qreduce(q),
+                              subtraction.sub(i,
+                              peano.succ(k)))))
+                            [using specialize mod_n_poly.zConvolutionSucc(qreduce(p), qreduce(q), i, k)]
+                          @the-step |
+                            qpoly.qconvolution(p, q, i,
+                              peano.succ(k)) =
+                              rational.add(
+                              qpoly.qconvolution(p, q, i, k),
+                              rational.mul(
+                              qpoly.qcoeff(p, peano.succ(k)),
+                              qpoly.qcoeff(q,
+                              subtraction.sub(i,
+                              peano.succ(k)))))
+                            [using specialize qpoly.qConvolutionSucc(p, q, i, k)]
+                          // the new summand's class
+                          @p-at-the-successor |
+                            isInteger(qpoly.qcoeff(p,
+                              peano.succ(k)))
+                            [using specialize p-coefficients(peano.succ(k))]
+                          @q-at-the-difference |
+                            isInteger(qpoly.qcoeff(q,
+                              subtraction.sub(i,
+                              peano.succ(k))))
+                            [using specialize q-coefficients(subtraction.sub(i, peano.succ(k)))]
+                          @the-new-term-is-an-integer |
+                            isInteger(rational.mul(
+                              qpoly.qcoeff(p, peano.succ(k)),
+                              qpoly.qcoeff(q,
+                              subtraction.sub(i,
+                              peano.succ(k)))))
+                            [using specialize rational.isIntegerMul(qpoly.qcoeff(p, peano.succ(k)), qpoly.qcoeff(q, subtraction.sub(i, peano.succ(k)))) p-at-the-successor q-at-the-difference]
+                          @the-p-class-at-the-successor |
+                            mod_n_poly.zcoeff(qreduce(p),
+                              peano.succ(k)) =
+                              qcls(qpoly.qcoeff(p,
+                              peano.succ(k)))
+                            [using specialize qreduceCoefficientwise(p, peano.succ(k)) p-is-integral]
+                          @the-q-class-at-the-difference |
+                            mod_n_poly.zcoeff(qreduce(q),
+                              subtraction.sub(i,
+                              peano.succ(k))) =
+                              qcls(qpoly.qcoeff(q,
+                              subtraction.sub(i,
+                              peano.succ(k))))
+                            [using specialize qreduceCoefficientwise(q, subtraction.sub(i, peano.succ(k))) q-is-integral]
+                          @the-new-classes-multiply |
+                            mod_n.mul(qcls(qpoly.qcoeff(p,
+                              peano.succ(k))),
+                              qcls(qpoly.qcoeff(q,
+                              subtraction.sub(i,
+                              peano.succ(k))))) =
+                              qcls(rational.mul(
+                              qpoly.qcoeff(p, peano.succ(k)),
+                              qpoly.qcoeff(q,
+                              subtraction.sub(i,
+                              peano.succ(k)))))
+                            [using specialize qclsMul(qpoly.qcoeff(p, peano.succ(k)), qpoly.qcoeff(q, subtraction.sub(i, peano.succ(k)))) p-at-the-successor q-at-the-difference]
+                          // substitute everything into the reduced step
+                          @the-reduced-step-in-classes |
+                            mod_n_poly.zconvolution(qreduce(p),
+                              qreduce(q), i, peano.succ(k)) =
+                              mod_n.add(
+                              qcls(qpoly.qconvolution(p, q, i, k)),
+                              qcls(rational.mul(
+                              qpoly.qcoeff(p, peano.succ(k)),
+                              qpoly.qcoeff(q,
+                              subtraction.sub(i,
+                              peano.succ(k))))))
+                            [using simplify the-reduced-step inductive-hypothesis the-p-class-at-the-successor the-q-class-at-the-difference the-new-classes-multiply]
+                          // and fold with additivity
+                          @the-classes-add |
+                            mod_n.add(
+                              qcls(qpoly.qconvolution(p, q, i, k)),
+                              qcls(rational.mul(
+                              qpoly.qcoeff(p, peano.succ(k)),
+                              qpoly.qcoeff(q,
+                              subtraction.sub(i,
+                              peano.succ(k)))))) =
+                              qcls(rational.add(
+                              qpoly.qconvolution(p, q, i, k),
+                              rational.mul(
+                              qpoly.qcoeff(p, peano.succ(k)),
+                              qpoly.qcoeff(q,
+                              subtraction.sub(i,
+                              peano.succ(k))))))
+                            [using specialize qclsAdd(qpoly.qconvolution(p, q, i, k), rational.mul(qpoly.qcoeff(p, peano.succ(k)), qpoly.qcoeff(q, subtraction.sub(i, peano.succ(k))))) the-running-convolution-is-an-integer the-new-term-is-an-integer]
+                          @the-reduced-step-folded |
+                            mod_n_poly.zconvolution(qreduce(p),
+                              qreduce(q), i, peano.succ(k)) =
+                              qcls(rational.add(
+                              qpoly.qconvolution(p, q, i, k),
+                              rational.mul(
+                              qpoly.qcoeff(p, peano.succ(k)),
+                              qpoly.qcoeff(q,
+                              subtraction.sub(i,
+                              peano.succ(k))))))
+                            [using simplify the-reduced-step-in-classes the-classes-add]
+                          @conclusion-the-step |
+                            mod_n_poly.zconvolution(qreduce(p),
+                              qreduce(q), i, peano.succ(k)) =
+                              qcls(qpoly.qconvolution(p, q, i,
+                              peano.succ(k)))
+                            [by rewrite the-step the-reduced-step-folded]
+                        }
+                      @induction-step-at-k |
+                        (mod_n_poly.zconvolution(qreduce(p),
+                          qreduce(q), i, k) =
+                          qcls(qpoly.qconvolution(p, q, i, k))) ->
+                          (mod_n_poly.zconvolution(qreduce(p),
+                          qreduce(q), i, peano.succ(k)) =
+                          qcls(qpoly.qconvolution(p, q, i,
+                          peano.succ(k))))
+                        [by discharge given-inductive-hypothesis]
+                    }
+                  @induction-step-for-all-k |
+                    forall k: Nat;
+                      (mod_n_poly.zconvolution(qreduce(p),
+                      qreduce(q), i, k) =
+                      qcls(qpoly.qconvolution(p, q, i, k))) ->
+                      (mod_n_poly.zconvolution(qreduce(p),
+                      qreduce(q), i, peano.succ(k)) =
+                      qcls(qpoly.qconvolution(p, q, i,
+                      peano.succ(k))))
+                    [by generalize induction-step]
+                  @all-convolution-indices |
+                    forall k: Nat;
+                      mod_n_poly.zconvolution(qreduce(p),
+                      qreduce(q), i, k) =
+                      qcls(qpoly.qconvolution(p, q, i, k))
+                    [using instantiation peano.induction((fun z: Nat => (mod_n_poly.zconvolution(qreduce(p), qreduce(q), i, z) = qcls(qpoly.qconvolution(p, q, i, z))))) base-case induction-step-for-all-k]
+                }
+              @conclusion-all-pairs |
+                forall i2: Nat; forall k: Nat;
+                  mod_n_poly.zconvolution(qreduce(p), qreduce(q),
+                  i2, k) =
+                  qcls(qpoly.qconvolution(p, q, i2, k))
+                [by generalize generalize-i]
+            }
+          @the-implication |
+            (hasIntegerCoefficients(p) and
+              hasIntegerCoefficients(q)) ->
+              (forall i2: Nat; forall k: Nat;
+              mod_n_poly.zconvolution(qreduce(p), qreduce(q),
+              i2, k) =
+              qcls(qpoly.qconvolution(p, q, i2, k)))
+            [by discharge given-both]
+          @each-pair |
+            fix i: Nat {
+              @each-convolution-index |
+                fix k: Nat {
+                  @given-both-again |
+                    assume hasIntegerCoefficients(p) and
+                      hasIntegerCoefficients(q) {
+                      @both-again |
+                        hasIntegerCoefficients(p) and
+                          hasIntegerCoefficients(q)
+                        [by hypothesis given-both-again]
+                      @all-pairs |
+                        forall i2: Nat; forall k2: Nat;
+                          mod_n_poly.zconvolution(qreduce(p),
+                          qreduce(q), i2, k2) =
+                          qcls(qpoly.qconvolution(p, q, i2, k2))
+                        [by modus_ponens the-implication both-again]
+                      @at-i |
+                        forall k2: Nat;
+                          mod_n_poly.zconvolution(qreduce(p),
+                          qreduce(q), i, k2) =
+                          qcls(qpoly.qconvolution(p, q, i, k2))
+                        [using specialize all-pairs(i)]
+                      @conclusion-at-the-pair |
+                        mod_n_poly.zconvolution(qreduce(p),
+                          qreduce(q), i, k) =
+                          qcls(qpoly.qconvolution(p, q, i, k))
+                        [using specialize at-i(k)]
+                    }
+                  @the-pair-implication |
+                    (hasIntegerCoefficients(p) and
+                      hasIntegerCoefficients(q)) ->
+                      mod_n_poly.zconvolution(qreduce(p),
+                      qreduce(q), i, k) =
+                      qcls(qpoly.qconvolution(p, q, i, k))
+                    [by discharge given-both-again]
+                  @curried-at-the-pair |
+                    hasIntegerCoefficients(p) ->
+                      hasIntegerCoefficients(q) ->
+                      mod_n_poly.zconvolution(qreduce(p),
+                      qreduce(q), i, k) =
+                      qcls(qpoly.qconvolution(p, q, i, k))
+                    [using tautology the-pair-implication]
+                }
+              @all-k-at-i |
+                forall k: Nat;
+                  hasIntegerCoefficients(p) ->
+                  hasIntegerCoefficients(q) ->
+                  mod_n_poly.zconvolution(qreduce(p), qreduce(q),
+                  i, k) =
+                  qcls(qpoly.qconvolution(p, q, i, k))
+                [by generalize each-convolution-index]
+            }
+          @conclusion-curried |
+            forall i, k: Nat;
+              hasIntegerCoefficients(p) ->
+              hasIntegerCoefficients(q) ->
+              mod_n_poly.zconvolution(qreduce(p), qreduce(q), i, k) =
+              qcls(qpoly.qconvolution(p, q, i, k))
+            [by generalize each-pair]
+        }
+      @discharge-q |
+        forall q9: QPoly; forall i, k: Nat;
+          hasIntegerCoefficients(p) -> hasIntegerCoefficients(q9) ->
+          mod_n_poly.zconvolution(qreduce(p), qreduce(q9), i, k) =
+          qcls(qpoly.qconvolution(p, q9, i, k))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: QPoly; forall i, k: Nat;
+      hasIntegerCoefficients(p) -> hasIntegerCoefficients(q) ->
+      mod_n_poly.zconvolution(qreduce(p), qreduce(q), i, k) =
+      qcls(qpoly.qconvolution(p, q, i, k))
+    [by generalize generalize-p]
+qed
+
+// Reduction is multiplicative: Judson's α₁'β₁' = (α₁β₁)'.
+theorem qreduceIsMultiplicative: forall p, q: QPoly;
+  hasIntegerCoefficients(p) -> hasIntegerCoefficients(q) ->
+  mod_n_poly.zmulP(qreduce(p), qreduce(q)) =
+  qreduce(qpoly.qmulP(p, q))
+proof
+  @generalize-p |
+    fix p: QPoly {
+      @generalize-q |
+        fix q: QPoly {
+          @given-both |
+            assume hasIntegerCoefficients(p) and
+              hasIntegerCoefficients(q) {
+              @both |
+                hasIntegerCoefficients(p) and
+                  hasIntegerCoefficients(q)
+                [by hypothesis given-both]
+              @p-is-integral |
+                hasIntegerCoefficients(p)
+                [by and_lhs both]
+              @q-is-integral |
+                hasIntegerCoefficients(q)
+                [by and_rhs both]
+              @the-product-is-integral |
+                hasIntegerCoefficients(qpoly.qmulP(p, q))
+                [using specialize theProductIsIntegral(p, q) p-is-integral q-is-integral]
+              @each-index |
+                fix i: Nat {
+                  // the reduced product's coefficient
+                  @the-reduced-product-coefficient |
+                    mod_n_poly.zcoeff(
+                      mod_n_poly.zmulP(qreduce(p), qreduce(q)), i) =
+                      mod_n_poly.zconvolution(qreduce(p),
+                      qreduce(q), i, i)
+                    [using specialize mod_n_poly.zMulPolyCoeff(qreduce(p), qreduce(q), i)]
+                  @the-convolutions-agree |
+                    mod_n_poly.zconvolution(qreduce(p), qreduce(q),
+                      i, i) =
+                      qcls(qpoly.qconvolution(p, q, i, i))
+                    [using specialize qreduceCommutesWithTheConvolution(p, q, i, i) p-is-integral q-is-integral]
+                  @the-reduced-product-in-classes |
+                    mod_n_poly.zcoeff(
+                      mod_n_poly.zmulP(qreduce(p), qreduce(q)), i) =
+                      qcls(qpoly.qconvolution(p, q, i, i))
+                    [using simplify the-reduced-product-coefficient the-convolutions-agree]
+                  // the product's own reduced coefficient
+                  @the-product-coefficient |
+                    qpoly.qcoeff(qpoly.qmulP(p, q), i) =
+                      qpoly.qconvolution(p, q, i, i)
+                    [using specialize qpoly.qMulPolyCoeff(p, q, i)]
+                  @the-reduction-of-the-product |
+                    mod_n_poly.zcoeff(qreduce(qpoly.qmulP(p, q)),
+                      i) =
+                      qcls(qpoly.qcoeff(qpoly.qmulP(p, q), i))
+                    [using specialize qreduceCoefficientwise(qpoly.qmulP(p, q), i) the-product-is-integral]
+                  @the-reduction-in-the-convolution |
+                    mod_n_poly.zcoeff(qreduce(qpoly.qmulP(p, q)),
+                      i) =
+                      qcls(qpoly.qconvolution(p, q, i, i))
+                    [by rewrite the-product-coefficient the-reduction-of-the-product]
+                  @conclusion-agree-at-i |
+                    mod_n_poly.zcoeff(
+                      mod_n_poly.zmulP(qreduce(p), qreduce(q)), i) =
+                      mod_n_poly.zcoeff(
+                      qreduce(qpoly.qmulP(p, q)), i)
+                    [using simplify the-reduced-product-in-classes the-reduction-in-the-convolution]
+                }
+              @all-coefficients-agree |
+                forall i: Nat;
+                  mod_n_poly.zcoeff(
+                  mod_n_poly.zmulP(qreduce(p), qreduce(q)), i) =
+                  mod_n_poly.zcoeff(qreduce(qpoly.qmulP(p, q)), i)
+                [by generalize each-index]
+              @the-extensionality |
+                forall a, b: ZnPoly;
+                  (forall i: Nat;
+                  mod_n_poly.zcoeff(a, i) =
+                  mod_n_poly.zcoeff(b, i)) -> a = b
+                [using import(mod_n_poly) zPolyExtensionality]
+              @conclusion-multiplicative |
+                mod_n_poly.zmulP(qreduce(p), qreduce(q)) =
+                  qreduce(qpoly.qmulP(p, q))
+                [using specialize the-extensionality(mod_n_poly.zmulP(qreduce(p), qreduce(q)), qreduce(qpoly.qmulP(p, q))) all-coefficients-agree]
+            }
+          @the-implication |
+            (hasIntegerCoefficients(p) and
+              hasIntegerCoefficients(q)) ->
+              mod_n_poly.zmulP(qreduce(p), qreduce(q)) =
+              qreduce(qpoly.qmulP(p, q))
+            [by discharge given-both]
+          @curried |
+            hasIntegerCoefficients(p) ->
+              hasIntegerCoefficients(q) ->
+              mod_n_poly.zmulP(qreduce(p), qreduce(q)) =
+              qreduce(qpoly.qmulP(p, q))
+            [using tautology the-implication]
+        }
+      @discharge-q |
+        forall q9: QPoly;
+          hasIntegerCoefficients(p) -> hasIntegerCoefficients(q9) ->
+          mod_n_poly.zmulP(qreduce(p), qreduce(q9)) =
+          qreduce(qpoly.qmulP(p, q9))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: QPoly;
+      hasIntegerCoefficients(p) -> hasIntegerCoefficients(q) ->
+      mod_n_poly.zmulP(qreduce(p), qreduce(q)) =
+      qreduce(qpoly.qmulP(p, q))
+    [by generalize generalize-p]
+qed
+
+// A polynomial every coefficient of which the modulus divides reduces to ZERO.
+theorem aPolynomialTheModulusDividesReducesToZero: forall f: QPoly;
+  hasIntegerCoefficients(f) ->
+  (forall i: Nat; dividesIntegrally(QN, qpoly.qcoeff(f, i))) ->
+  qreduce(f) = mod_n_poly.ZZEROP
+proof
+  @generalize-f |
+    fix f: QPoly {
+      @given-the-setup |
+        assume hasIntegerCoefficients(f) and
+          (forall i: Nat;
+          dividesIntegrally(QN, qpoly.qcoeff(f, i))) {
+          @the-setup |
+            hasIntegerCoefficients(f) and
+              (forall i: Nat;
+              dividesIntegrally(QN, qpoly.qcoeff(f, i)))
+            [by hypothesis given-the-setup]
+          @f-is-integral |
+            hasIntegerCoefficients(f)
+            [by and_lhs the-setup]
+          @the-modulus-divides-everything |
+            forall i: Nat;
+              dividesIntegrally(QN, qpoly.qcoeff(f, i))
+            [by and_rhs the-setup]
+          @the-f-meaning |
+            hasIntegerCoefficients(f) iff
+              (forall j: Nat; isInteger(qpoly.qcoeff(f, j)))
+            [using specialize integerCoefficientsEverywhere(f)]
+          @f-coefficients |
+            forall j: Nat; isInteger(qpoly.qcoeff(f, j))
+            [using tautology the-f-meaning f-is-integral]
+          @each-index |
+            fix i: Nat {
+              @the-coefficient-is-an-integer |
+                isInteger(qpoly.qcoeff(f, i))
+                [using specialize f-coefficients(i)]
+              @the-modulus-divides-it |
+                dividesIntegrally(QN, qpoly.qcoeff(f, i))
+                [using specialize the-modulus-divides-everything(i)]
+              @the-vanishing-law |
+                qcls(qpoly.qcoeff(f, i)) = mod_n.ZERO iff
+                  dividesIntegrally(QN, qpoly.qcoeff(f, i))
+                [using specialize aClassIsZeroWhenTheModulusDivides(qpoly.qcoeff(f, i)) the-coefficient-is-an-integer]
+              @the-class-vanishes |
+                qcls(qpoly.qcoeff(f, i)) = mod_n.ZERO
+                [using tautology the-vanishing-law the-modulus-divides-it]
+              @the-reduced-coefficient |
+                mod_n_poly.zcoeff(qreduce(f), i) =
+                  qcls(qpoly.qcoeff(f, i))
+                [using specialize qreduceCoefficientwise(f, i) f-is-integral]
+              @the-reduced-coefficient-vanishes |
+                mod_n_poly.zcoeff(qreduce(f), i) = mod_n.ZERO
+                [using simplify the-reduced-coefficient the-class-vanishes]
+              @the-zero-polynomials-coefficient |
+                mod_n_poly.zcoeff(mod_n_poly.ZZEROP, i) =
+                  mod_n.ZERO
+                [using specialize mod_n_poly.zZeroPolyCoeff(i)]
+              @conclusion-agree-at-i |
+                mod_n_poly.zcoeff(qreduce(f), i) =
+                  mod_n_poly.zcoeff(mod_n_poly.ZZEROP, i)
+                [using simplify the-reduced-coefficient-vanishes the-zero-polynomials-coefficient]
+            }
+          @all-coefficients-agree |
+            forall i: Nat;
+              mod_n_poly.zcoeff(qreduce(f), i) =
+              mod_n_poly.zcoeff(mod_n_poly.ZZEROP, i)
+            [by generalize each-index]
+          @the-extensionality |
+            forall a, b: ZnPoly;
+              (forall i: Nat;
+              mod_n_poly.zcoeff(a, i) =
+              mod_n_poly.zcoeff(b, i)) -> a = b
+            [using import(mod_n_poly) zPolyExtensionality]
+          @conclusion-reduces-to-zero |
+            qreduce(f) = mod_n_poly.ZZEROP
+            [using specialize the-extensionality(qreduce(f), mod_n_poly.ZZEROP) all-coefficients-agree]
+        }
+      @the-implication |
+        (hasIntegerCoefficients(f) and
+          (forall i: Nat;
+          dividesIntegrally(QN, qpoly.qcoeff(f, i)))) ->
+          qreduce(f) = mod_n_poly.ZZEROP
+        [by discharge given-the-setup]
+      @curried |
+        hasIntegerCoefficients(f) ->
+          (forall i: Nat;
+          dividesIntegrally(QN, qpoly.qcoeff(f, i))) ->
+          qreduce(f) = mod_n_poly.ZZEROP
+        [using tautology the-implication]
+    }
+  @conclusion |
+    forall f: QPoly;
+      hasIntegerCoefficients(f) ->
+      (forall i: Nat; dividesIntegrally(QN, qpoly.qcoeff(f, i))) ->
+      qreduce(f) = mod_n_poly.ZZEROP
+    [by generalize generalize-f]
+qed
+
+// -- THE REDUCTION ARGUMENT, ON THE CUT ----------------------------------------------------
+// The engine of both Gauss's d ≠ 1 case and Eisenstein's Criterion, now stated about
+// polynomials in ℚ[x] rather than in a separate ℤ[x] sort.
+//
+// Judson: reduce both factors modulo the prime. The product reduces to zero, because the
+// modulus divides every coefficient of the product. But ℤ_N[x] is an integral domain and
+// neither factor reduced to zero. Contradiction.
+//
+// `modNPolynomialsHaveNoZeroDivisors` is cited DIRECTLY — it is a fact about ℤ_N[x] with no ℚ
+// in it, so no transfer is involved. That is what made this reproof affordable.
+theorem theModulusCannotDivideEveryProductCoefficient: forall f, g: QPoly;
+  forall i, j: Nat;
+  mod_n_poly.is_prime(mod_n.N) ->
+  hasIntegerCoefficients(f) -> hasIntegerCoefficients(g) ->
+  (not dividesIntegrally(QN, qpoly.qcoeff(f, i))) ->
+  (not dividesIntegrally(QN, qpoly.qcoeff(g, j))) ->
+  (not (forall t: Nat;
+  dividesIntegrally(QN, qpoly.qcoeff(qpoly.qmulP(f, g), t))))
+proof
+  @generalize-f |
+    fix f: QPoly {
+      @generalize-g |
+        fix g: QPoly {
+          @generalize-i |
+            fix i: Nat {
+              @generalize-j |
+                fix j: Nat {
+                  @given-the-setup |
+                    assume mod_n_poly.is_prime(mod_n.N) and
+                      hasIntegerCoefficients(f) and
+                      hasIntegerCoefficients(g) and
+                      (not dividesIntegrally(QN,
+                      qpoly.qcoeff(f, i))) and
+                      (not dividesIntegrally(QN,
+                      qpoly.qcoeff(g, j))) {
+                      @the-setup |
+                        mod_n_poly.is_prime(mod_n.N) and
+                          hasIntegerCoefficients(f) and
+                          hasIntegerCoefficients(g) and
+                          (not dividesIntegrally(QN,
+                          qpoly.qcoeff(f, i))) and
+                          (not dividesIntegrally(QN,
+                          qpoly.qcoeff(g, j)))
+                        [by hypothesis given-the-setup]
+                      @the-modulus-is-prime |
+                        mod_n_poly.is_prime(mod_n.N)
+                        [using tautology the-setup]
+                      @f-is-integral |
+                        hasIntegerCoefficients(f)
+                        [using tautology the-setup]
+                      @g-is-integral |
+                        hasIntegerCoefficients(g)
+                        [using tautology the-setup]
+                      @the-modulus-misses-f |
+                        not dividesIntegrally(QN,
+                          qpoly.qcoeff(f, i))
+                        [using tautology the-setup]
+                      @the-modulus-misses-g |
+                        not dividesIntegrally(QN,
+                          qpoly.qcoeff(g, j))
+                        [using tautology the-setup]
+                      // neither factor reduces to zero
+                      @f-survives |
+                        not (qreduce(f) = mod_n_poly.ZZEROP)
+                        [using specialize aSurvivingCoefficientSurvivesReduction(f, i) f-is-integral the-modulus-misses-f]
+                      @g-survives |
+                        not (qreduce(g) = mod_n_poly.ZZEROP)
+                        [using specialize aSurvivingCoefficientSurvivesReduction(g, j) g-is-integral the-modulus-misses-g]
+                      // so neither does their product, ℤ_N[x] being a domain
+                      @the-domain-property |
+                        forall a, b: ZnPoly;
+                          mod_n_poly.is_prime(mod_n.N) ->
+                          (not (a = mod_n_poly.ZZEROP)) ->
+                          (not (b = mod_n_poly.ZZEROP)) ->
+                          (not (mod_n_poly.zmulP(a, b) =
+                          mod_n_poly.ZZEROP))
+                        [using import(mod_n_poly) modNPolynomialsHaveNoZeroDivisors]
+                      @the-reduced-product-survives |
+                        not (mod_n_poly.zmulP(qreduce(f),
+                          qreduce(g)) = mod_n_poly.ZZEROP)
+                        [using specialize the-domain-property(qreduce(f), qreduce(g)) the-modulus-is-prime f-survives g-survives]
+                      @the-reductions-multiply |
+                        mod_n_poly.zmulP(qreduce(f), qreduce(g)) =
+                          qreduce(qpoly.qmulP(f, g))
+                        [using specialize qreduceIsMultiplicative(f, g) f-is-integral g-is-integral]
+                      @the-products-reduction-survives |
+                        not (qreduce(qpoly.qmulP(f, g)) =
+                          mod_n_poly.ZZEROP)
+                        [by rewrite the-reductions-multiply the-reduced-product-survives]
+                      // but if the modulus divided every product coefficient, it would vanish
+                      @the-product-is-integral |
+                        hasIntegerCoefficients(qpoly.qmulP(f, g))
+                        [using specialize theProductIsIntegral(f, g) f-is-integral g-is-integral]
+                      @given-the-modulus-divides-everything |
+                        assume forall t: Nat;
+                          dividesIntegrally(QN,
+                          qpoly.qcoeff(qpoly.qmulP(f, g), t)) {
+                          @the-modulus-divides-everything |
+                            forall t: Nat;
+                              dividesIntegrally(QN,
+                              qpoly.qcoeff(qpoly.qmulP(f, g), t))
+                            [by hypothesis given-the-modulus-divides-everything]
+                          @the-products-reduction-vanishes |
+                            qreduce(qpoly.qmulP(f, g)) =
+                              mod_n_poly.ZZEROP
+                            [using specialize aPolynomialTheModulusDividesReducesToZero(qpoly.qmulP(f, g)) the-product-is-integral the-modulus-divides-everything]
+                        }
+                      @conclusion-the-absurdity |
+                        not (forall t: Nat;
+                          dividesIntegrally(QN,
+                          qpoly.qcoeff(qpoly.qmulP(f, g), t)))
+                        [by contradiction given-the-modulus-divides-everything the-products-reduction-vanishes the-products-reduction-survives]
+                    }
+                  @the-implication |
+                    (mod_n_poly.is_prime(mod_n.N) and
+                      hasIntegerCoefficients(f) and
+                      hasIntegerCoefficients(g) and
+                      (not dividesIntegrally(QN,
+                      qpoly.qcoeff(f, i))) and
+                      (not dividesIntegrally(QN,
+                      qpoly.qcoeff(g, j)))) ->
+                      (not (forall t: Nat;
+                      dividesIntegrally(QN,
+                      qpoly.qcoeff(qpoly.qmulP(f, g), t))))
+                    [by discharge given-the-setup]
+                  @curried |
+                    mod_n_poly.is_prime(mod_n.N) ->
+                      hasIntegerCoefficients(f) ->
+                      hasIntegerCoefficients(g) ->
+                      (not dividesIntegrally(QN,
+                      qpoly.qcoeff(f, i))) ->
+                      (not dividesIntegrally(QN,
+                      qpoly.qcoeff(g, j))) ->
+                      (not (forall t: Nat;
+                      dividesIntegrally(QN,
+                      qpoly.qcoeff(qpoly.qmulP(f, g), t))))
+                    [using tautology the-implication]
+                }
+              @discharge-j |
+                forall j9: Nat;
+                  mod_n_poly.is_prime(mod_n.N) ->
+                  hasIntegerCoefficients(f) ->
+                  hasIntegerCoefficients(g) ->
+                  (not dividesIntegrally(QN,
+                  qpoly.qcoeff(f, i))) ->
+                  (not dividesIntegrally(QN,
+                  qpoly.qcoeff(g, j9))) ->
+                  (not (forall t: Nat;
+                  dividesIntegrally(QN,
+                  qpoly.qcoeff(qpoly.qmulP(f, g), t))))
+                [by generalize generalize-j]
+            }
+          @discharge-i |
+            forall i9, j9: Nat;
+              mod_n_poly.is_prime(mod_n.N) ->
+              hasIntegerCoefficients(f) ->
+              hasIntegerCoefficients(g) ->
+              (not dividesIntegrally(QN, qpoly.qcoeff(f, i9))) ->
+              (not dividesIntegrally(QN, qpoly.qcoeff(g, j9))) ->
+              (not (forall t: Nat;
+              dividesIntegrally(QN,
+              qpoly.qcoeff(qpoly.qmulP(f, g), t))))
+            [by generalize generalize-i]
+        }
+      @discharge-g |
+        forall g9: QPoly; forall i9, j9: Nat;
+          mod_n_poly.is_prime(mod_n.N) ->
+          hasIntegerCoefficients(f) ->
+          hasIntegerCoefficients(g9) ->
+          (not dividesIntegrally(QN, qpoly.qcoeff(f, i9))) ->
+          (not dividesIntegrally(QN, qpoly.qcoeff(g9, j9))) ->
+          (not (forall t: Nat;
+          dividesIntegrally(QN,
+          qpoly.qcoeff(qpoly.qmulP(f, g9), t))))
+        [by generalize generalize-g]
+    }
+  @conclusion |
+    forall f, g: QPoly; forall i, j: Nat;
+      mod_n_poly.is_prime(mod_n.N) ->
+      hasIntegerCoefficients(f) -> hasIntegerCoefficients(g) ->
+      (not dividesIntegrally(QN, qpoly.qcoeff(f, i))) ->
+      (not dividesIntegrally(QN, qpoly.qcoeff(g, j))) ->
+      (not (forall t: Nat;
+      dividesIntegrally(QN, qpoly.qcoeff(qpoly.qmulP(f, g), t))))
+    [by generalize generalize-f]
+qed
