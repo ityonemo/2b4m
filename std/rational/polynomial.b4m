@@ -25,6 +25,9 @@ import fieldpoly <<< "std/field/polynomial.b4m"
 import rational <<< "std/rational.b4m"
 import peano <<< "std/peano.b4m"
 import subtraction <<< "std/peano/subtraction.b4m"
+import ring <<< "std/ring.b4m"
+import ring_poly <<< "std/ring/polynomial.b4m"
+import ring_leading <<< "std/ring/polynomial-leading.b4m"
 
 sort Q = rational.Q
 sort Nat = peano.Nat
@@ -1029,4 +1032,86 @@ proof
       qcoeff(qmulP(qmonomial(c, NAT_ZERO), q), i) =
       rational.mul(c, qcoeff(q, i))
     [by generalize generalize-q]
+qed
+
+// -- THE PRODUCT'S DEGREE AND LEADING COEFFICIENT ----------------------------------------
+// Gauss's d = 1 branch reads `c·a_m·b_n = 1` off the monic hypothesis, which needs the
+// product's leading coefficient to be the product of the leading coefficients.
+//
+// It is proved in `std/ring/polynomial-leading.b4m` over a commutative ring, and restated in
+// `std/field/polynomial.b4m` for F[x] — but F[x]'s version is NOT transferable here, because
+// it is itself a model-transfer through `FieldPolyModelsRingPoly`, and 2b4m RE-CHECKS an
+// inner transfer rather than composing models. Going through F[x] would therefore demand ℚ
+// be mapped onto `ring.Ring` as a nested step, which fails with
+// `std/ring.b4m:143: expected sort 'Field', got 'Q'`.
+//
+// So map ℚ[x] onto `ring_poly` DIRECTLY — one transfer, not two. The extra cost is that
+// `ring_poly` carries a ONE polynomial that ℚ[x] does not declare. A model maps a CONST to a
+// CONST, never to a term, so `qmonomial(ONE, ZERO)` cannot serve and ℚ[x] gets its own, with
+// the two coefficient clauses `ring_poly` demands — which say exactly what the monomial laws
+// read at index ZERO would say.
+const QONEP: QPoly
+axiom qOnePolyCoeffZero: qcoeff(QONEP, peano.ZERO) = rational.ONE
+axiom qOnePolyCoeffHigher: forall i: peano.Nat;
+  qcoeff(QONEP, peano.succ(i)) = ZERO
+
+// ℚ[x] as a polynomial ring over the commutative ring ℚ. Both namespaces are mapped in one
+// block, since `ring_poly.R` ALIASES `ring.Ring` and an alias cannot be mapped apart from
+// its origin.
+model RationalPolynomialsOverARing {
+  ring.Ring: Q
+  ring.ZERO: ZERO
+  ring.ONE: rational.ONE
+  ring.add: rational.add
+  ring.mul: rational.mul
+  ring.neg: rational.neg
+  ring.addIsAssociative <- rational.addIsAssociative
+  ring.addZeroLeft <- rational.addZeroLeft
+  ring.addNegLeft <- rational.addNegLeft
+  ring.addIsCommutative <- rational.addIsCommutative
+  ring.mulIsAssociative <- rational.mulIsAssociative
+  ring.mulAddDistribLeft <- rational.mulAddDistribLeft
+  ring.mulAddDistribRight <- rational.mulAddDistribRight
+  ring_poly.mulOneLeftR <- rational.mulOneLeft
+  ring_poly.mulIsCommutativeR <- rational.mulIsCommutative
+  ring_poly.Nat: peano.Nat
+  ring_poly.ZERO: peano.ZERO
+  ring_poly.succ: peano.succ
+  ring_poly.addN: peano.add
+  ring_poly.less_than: peano.less_than
+  ring_poly.Poly: QPoly
+  ring_poly.coeff: qcoeff
+  ring_poly.ZEROP: QZEROP
+  ring_poly.ONEP: QONEP
+  ring_poly.addP: qaddP
+  ring_poly.negP: qnegP
+  ring_poly.mulP: qmulP
+  ring_poly.convolution: qconvolution
+  ring_poly.degreeAtMost: qdegreeAtMost
+  ring_poly.degree: qdegree
+  ring_poly.polyExtensionality <- qPolyExtensionality
+  ring_poly.zeroPolyCoeff <- qZeroPolyCoeff
+  ring_poly.onePolyCoeffZero <- qOnePolyCoeffZero
+  ring_poly.onePolyCoeffHigher <- qOnePolyCoeffHigher
+  ring_poly.addPolyCoeff <- qAddPolyCoeff
+  ring_poly.negPolyCoeff <- qNegPolyCoeff
+  ring_poly.degreeAtMostMeaning <- qDegreeAtMostMeaning
+  ring_poly.degreeIsALeadingIndex <- qDegreeIsALeadingIndex
+  ring_poly.degreeBoundsTheCoefficients <- qDegreeBoundsTheCoefficients
+  ring_poly.convolutionZero <- qConvolutionZero
+  ring_poly.convolutionSucc <- qConvolutionSucc
+  ring_poly.mulPolyCoeff <- qMulPolyCoeff
+}
+
+theorem qTheProductsLeadingCoefficient: forall p, q: QPoly; forall m, n: peano.Nat;
+  qdegreeAtMost(p, m) -> qdegreeAtMost(q, n) ->
+  qcoeff(qmulP(p, q), peano.add(m, n)) =
+  rational.mul(qcoeff(p, m), qcoeff(q, n))
+proof
+  @conclusion |
+    forall p, q: QPoly; forall m, n: peano.Nat;
+      qdegreeAtMost(p, m) -> qdegreeAtMost(q, n) ->
+      qcoeff(qmulP(p, q), peano.add(m, n)) =
+      rational.mul(qcoeff(p, m), qcoeff(q, n))
+    [using model(RationalPolynomialsOverARing) ring_leading.theProductsLeadingCoefficient]
 qed
