@@ -2272,3 +2272,56 @@ proof
       rational.add(rational.mul(a, r), rational.mul(b, s)) = ONE)
     [by generalize generalize-a]
 qed
+
+// -- SMALL ALGEBRAIC LAWS, STATED ABSTRACTLY -----------------------------------------------
+// `polynomial(rational)` cannot look inside a term whose subterm has a `Nat` argument (a
+// power's exponent): it reports `expected sort 'Q', got 'Nat'`. Stating the law over ABSTRACT
+// ℚ variables and specializing at the compound term keeps the tactic away from the exponent.
+theorem addingAndSubtractingCancels: forall x, y: Q;
+  rational.add(rational.add(x, y), neg(y)) = x
+proof
+  @generalize-x |
+    fix x: Q {
+      @generalize-y |
+        fix y: Q {
+          @conclusion-cancels |
+            rational.add(rational.add(x, y), neg(y)) = x
+            [using polynomial(rational)]
+        }
+      @discharge-y |
+        forall y9: Q;
+          rational.add(rational.add(x, y9), neg(y9)) = x
+        [by generalize generalize-y]
+    }
+  @conclusion |
+    forall x, y: Q;
+      rational.add(rational.add(x, y), neg(y)) = x
+    [by generalize generalize-x]
+qed
+
+// `0 + (-(a·b)) = a·(-b)` — same reason.
+theorem theNegatedProductFromZero: forall a, b: Q;
+  rational.add(ZERO, neg(rational.mul(a, b))) =
+  rational.mul(a, neg(b))
+proof
+  @generalize-a |
+    fix a: Q {
+      @generalize-b |
+        fix b: Q {
+          @conclusion-negated |
+            rational.add(ZERO, neg(rational.mul(a, b))) =
+              rational.mul(a, neg(b))
+            [using polynomial(rational)]
+        }
+      @discharge-b |
+        forall b9: Q;
+          rational.add(ZERO, neg(rational.mul(a, b9))) =
+          rational.mul(a, neg(b9))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Q;
+      rational.add(ZERO, neg(rational.mul(a, b))) =
+      rational.mul(a, neg(b))
+    [by generalize generalize-a]
+qed
