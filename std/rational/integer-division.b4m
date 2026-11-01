@@ -1627,3 +1627,648 @@ proof
       (exists k: Q; isInteger(k) and x = rational.mul(g, k))
     [by generalize generalize-a]
 qed
+
+// a and b are themselves combinations, at (1, 0) and (0, 1).
+theorem bothArgumentsAreCombinations: forall a, b: Q;
+  isInteger(a) -> isInteger(b) ->
+  (isACombination(a, b, a) and isACombination(a, b, b))
+proof
+  @generalize-a |
+    fix a: Q {
+      @generalize-b |
+        fix b: Q {
+          @given-both-integers |
+            assume isInteger(a) and isInteger(b) {
+              @zero-is-an-integer |
+                isInteger(ZERO)
+                [using import(rational) zeroIsAnInteger]
+              @one-is-an-integer |
+                isInteger(ONE)
+                [using import(rational) oneIsAnInteger]
+              // a = a·1 + b·0
+              @a-at-one-zero |
+                a = rational.add(rational.mul(a, ONE),
+                  rational.mul(b, ZERO))
+                [using polynomial(rational)]
+              @the-a-pair-works |
+                isInteger(ONE) and isInteger(ZERO) and
+                  a = rational.add(rational.mul(a, ONE),
+                  rational.mul(b, ZERO))
+                [using tautology one-is-an-integer zero-is-an-integer a-at-one-zero]
+              @the-a-s-witness |
+                exists s: Q; isInteger(ONE) and isInteger(s) and
+                  a = rational.add(rational.mul(a, ONE),
+                  rational.mul(b, s))
+                [by witness(ZERO) the-a-pair-works]
+              @the-a-r-witness |
+                exists r: Q; exists s: Q;
+                  isInteger(r) and isInteger(s) and
+                  a = rational.add(rational.mul(a, r),
+                  rational.mul(b, s))
+                [by witness(ONE) the-a-s-witness]
+              @the-a-meaning |
+                isACombination(a, b, a) iff
+                  (exists r: Q; exists s: Q;
+                  isInteger(r) and isInteger(s) and
+                  a = rational.add(rational.mul(a, r),
+                  rational.mul(b, s)))
+                [using specialize combinationMeaning(a, b, a)]
+              @a-is-a-combination |
+                isACombination(a, b, a)
+                [using tautology the-a-meaning the-a-r-witness]
+              // b = a·0 + b·1
+              @b-at-zero-one |
+                b = rational.add(rational.mul(a, ZERO),
+                  rational.mul(b, ONE))
+                [using polynomial(rational)]
+              @the-b-pair-works |
+                isInteger(ZERO) and isInteger(ONE) and
+                  b = rational.add(rational.mul(a, ZERO),
+                  rational.mul(b, ONE))
+                [using tautology zero-is-an-integer one-is-an-integer b-at-zero-one]
+              @the-b-s-witness |
+                exists s: Q; isInteger(ZERO) and isInteger(s) and
+                  b = rational.add(rational.mul(a, ZERO),
+                  rational.mul(b, s))
+                [by witness(ONE) the-b-pair-works]
+              @the-b-r-witness |
+                exists r: Q; exists s: Q;
+                  isInteger(r) and isInteger(s) and
+                  b = rational.add(rational.mul(a, r),
+                  rational.mul(b, s))
+                [by witness(ZERO) the-b-s-witness]
+              @the-b-meaning |
+                isACombination(a, b, b) iff
+                  (exists r: Q; exists s: Q;
+                  isInteger(r) and isInteger(s) and
+                  b = rational.add(rational.mul(a, r),
+                  rational.mul(b, s)))
+                [using specialize combinationMeaning(a, b, b)]
+              @b-is-a-combination |
+                isACombination(a, b, b)
+                [using tautology the-b-meaning the-b-r-witness]
+              @conclusion-both |
+                isACombination(a, b, a) and isACombination(a, b, b)
+                [by both a-is-a-combination b-is-a-combination]
+            }
+          @the-implication |
+            (isInteger(a) and isInteger(b)) ->
+              (isACombination(a, b, a) and isACombination(a, b, b))
+            [by discharge given-both-integers]
+          @curried |
+            isInteger(a) -> isInteger(b) ->
+              (isACombination(a, b, a) and isACombination(a, b, b))
+            [using tautology the-implication]
+        }
+      @discharge-b |
+        forall b9: Q;
+          isInteger(a) -> isInteger(b9) ->
+          (isACombination(a, b9, a) and isACombination(a, b9, b9))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Q;
+      isInteger(a) -> isInteger(b) ->
+      (isACombination(a, b, a) and isACombination(a, b, b))
+    [by generalize generalize-a]
+qed
+
+// The well-ordering hands back leastness over NATURALS; the descent wants it over positive
+// INTEGERS. They are the same set (`aPositiveIntegerIsNatural`), so this just re-shapes the
+// quantifier — a step that would be invisible in prose but is real here, because `tautology`
+// sees a `forall` as one opaque atom and cannot reindex it.
+theorem theLeastnessReshapes: forall a, b, g: Q;
+  (forall m: Q; isNatural(m) ->
+  (less_than(ZERO, m) and isACombination(a, b, m)) ->
+  (not less_than(m, g))) ->
+  (forall m: Q; isInteger(m) -> less_than(ZERO, m) ->
+  isACombination(a, b, m) -> (not less_than(m, g)))
+proof
+  @generalize-a |
+    fix a: Q {
+      @generalize-b |
+        fix b: Q {
+          @generalize-g |
+            fix g: Q {
+              @given-natural-leastness |
+                assume forall m: Q; isNatural(m) ->
+                  (less_than(ZERO, m) and
+                  isACombination(a, b, m)) ->
+                  (not less_than(m, g)) {
+                  @natural-leastness |
+                    forall m: Q; isNatural(m) ->
+                      (less_than(ZERO, m) and
+                      isACombination(a, b, m)) ->
+                      (not less_than(m, g))
+                    [by hypothesis given-natural-leastness]
+                  @each-integer |
+                    fix m: Q {
+                      @given-m-is-a-positive-combination |
+                        assume isInteger(m) and less_than(ZERO, m) and
+                          isACombination(a, b, m) {
+                          @the-m-setup |
+                            isInteger(m) and less_than(ZERO, m) and
+                              isACombination(a, b, m)
+                            [by hypothesis given-m-is-a-positive-combination]
+                          @m-is-an-integer |
+                            isInteger(m)
+                            [using tautology the-m-setup]
+                          @m-is-positive |
+                            less_than(ZERO, m)
+                            [using tautology the-m-setup]
+                          @m-is-a-combination |
+                            isACombination(a, b, m)
+                            [using tautology the-m-setup]
+                          @m-is-natural |
+                            isNatural(m)
+                            [using specialize rational_integer_order.aPositiveIntegerIsNatural(m) m-is-an-integer m-is-positive]
+                          @the-m-conjunction |
+                            less_than(ZERO, m) and
+                              isACombination(a, b, m)
+                            [by both m-is-positive m-is-a-combination]
+                          @conclusion-not-below |
+                            not less_than(m, g)
+                            [using specialize natural-leastness(m) m-is-natural the-m-conjunction]
+                        }
+                      @the-m-implication |
+                        (isInteger(m) and less_than(ZERO, m) and
+                          isACombination(a, b, m)) ->
+                          (not less_than(m, g))
+                        [by discharge given-m-is-a-positive-combination]
+                      @curried-at-m |
+                        isInteger(m) -> less_than(ZERO, m) ->
+                          isACombination(a, b, m) ->
+                          (not less_than(m, g))
+                        [using tautology the-m-implication]
+                    }
+                  @conclusion-reshaped |
+                    forall m: Q; isInteger(m) ->
+                      less_than(ZERO, m) ->
+                      isACombination(a, b, m) ->
+                      (not less_than(m, g))
+                    [by generalize each-integer]
+                }
+              @the-implication |
+                (forall m: Q; isNatural(m) ->
+                  (less_than(ZERO, m) and
+                  isACombination(a, b, m)) ->
+                  (not less_than(m, g))) ->
+                  (forall m: Q; isInteger(m) ->
+                  less_than(ZERO, m) ->
+                  isACombination(a, b, m) ->
+                  (not less_than(m, g)))
+                [by discharge given-natural-leastness]
+            }
+          @discharge-g |
+            forall g9: Q;
+              (forall m: Q; isNatural(m) ->
+              (less_than(ZERO, m) and isACombination(a, b, m)) ->
+              (not less_than(m, g9))) ->
+              (forall m: Q; isInteger(m) -> less_than(ZERO, m) ->
+              isACombination(a, b, m) -> (not less_than(m, g9)))
+            [by generalize generalize-g]
+        }
+      @discharge-b |
+        forall b9: Q; forall g9: Q;
+          (forall m: Q; isNatural(m) ->
+          (less_than(ZERO, m) and isACombination(a, b9, m)) ->
+          (not less_than(m, g9))) ->
+          (forall m: Q; isInteger(m) -> less_than(ZERO, m) ->
+          isACombination(a, b9, m) -> (not less_than(m, g9)))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b, g: Q;
+      (forall m: Q; isNatural(m) ->
+      (less_than(ZERO, m) and isACombination(a, b, m)) ->
+      (not less_than(m, g))) ->
+      (forall m: Q; isInteger(m) -> less_than(ZERO, m) ->
+      isACombination(a, b, m) -> (not less_than(m, g)))
+    [by generalize generalize-a]
+qed
+
+// A POSITIVE integer dividing ONE is ONE. `anIntegerDividingOneIsAUnit` gives ±1; positivity
+// rules out -1, since -1 < 0.
+theorem aPositiveIntegerDividingOneIsOneHere: forall e: Q;
+  isInteger(e) -> less_than(ZERO, e) ->
+  (exists k: Q; isInteger(k) and ONE = rational.mul(e, k)) ->
+  e = ONE
+proof
+  @generalize-e |
+    fix e: Q {
+      @given-the-setup |
+        assume isInteger(e) and less_than(ZERO, e) and
+          (exists k: Q; isInteger(k) and
+          ONE = rational.mul(e, k)) {
+          @the-setup |
+            isInteger(e) and less_than(ZERO, e) and
+              (exists k: Q; isInteger(k) and
+              ONE = rational.mul(e, k))
+            [by hypothesis given-the-setup]
+          @e-is-an-integer |
+            isInteger(e)
+            [using tautology the-setup]
+          @e-is-positive |
+            less_than(ZERO, e)
+            [using tautology the-setup]
+          @a-quotient-exists |
+            exists k: Q; isInteger(k) and
+              ONE = rational.mul(e, k)
+            [using tautology the-setup]
+          @conclusion-with-the-quotient |
+            unpack k: Q from a-quotient-exists {
+              @the-quotient |
+                isInteger(k) and ONE = rational.mul(e, k)
+                [by hypothesis conclusion-with-the-quotient]
+              @k-is-an-integer |
+                isInteger(k)
+                [by and_lhs the-quotient]
+              @one-factors |
+                ONE = rational.mul(e, k)
+                [by and_rhs the-quotient]
+              @e-is-a-unit |
+                e = ONE or e = neg(ONE)
+                [using specialize rational_integer_order.anIntegerDividingOneIsAUnit(e, k) e-is-an-integer k-is-an-integer one-factors]
+              @conclusion-e-is-one |
+                e = ONE
+                case e-is-a-unit {
+                  @when-one |
+                    assume e = ONE {
+                      @conclusion-already |
+                        e = ONE
+                        [by hypothesis when-one]
+                    }
+                  // e = -1 contradicts 0 < e
+                  @when-minus-one |
+                    assume e = neg(ONE) {
+                      @e-is-minus-one |
+                        e = neg(ONE)
+                        [by hypothesis when-minus-one]
+                      @minus-one-is-positive |
+                        less_than(ZERO, neg(ONE))
+                        [by rewrite e-is-minus-one e-is-positive]
+                      @zero-below-one |
+                        less_than(ZERO, ONE)
+                        [using model(rational.RationalOrderedField) field_order.zeroLessThanOne]
+                      // 0 < -1 and 0 < 1 give 0 < 0 by transitivity through
+                      // the shift, which irreflexivity forbids
+                      @shifting-the-order |
+                        forall p, q, z: Q;
+                          less_than(p, q) ->
+                          less_than(rational.add(p, z),
+                          rational.add(q, z))
+                        [using import(rational) lessThanAddRight]
+                      @shifted-by-one |
+                        less_than(rational.add(ZERO, ONE),
+                          rational.add(neg(ONE), ONE))
+                        [using specialize shifting-the-order(ZERO, neg(ONE), ONE) minus-one-is-positive]
+                      @the-left-is-one |
+                        rational.add(ZERO, ONE) = ONE
+                        [using polynomial(rational)]
+                      @the-right-is-zero |
+                        rational.add(neg(ONE), ONE) = ZERO
+                        [using polynomial(rational)]
+                      @one-below-the-right |
+                        less_than(ONE, rational.add(neg(ONE), ONE))
+                        [by rewrite the-left-is-one shifted-by-one]
+                      @one-below-zero |
+                        less_than(ONE, ZERO)
+                        [by rewrite the-right-is-zero one-below-the-right]
+                      @the-transitivity |
+                        forall p, q, z: Q;
+                          less_than(p, q) -> less_than(q, z) ->
+                          less_than(p, z)
+                        [using import(rational) lessThanTransitive]
+                      @zero-below-zero |
+                        less_than(ZERO, ZERO)
+                        [using specialize the-transitivity(ZERO, ONE, ZERO) zero-below-one one-below-zero]
+                      @zero-not-below-zero |
+                        not less_than(ZERO, ZERO)
+                        [using specialize rational.lessThanIrreflexive(ZERO)]
+                      @conclusion-impossible |
+                        e = ONE
+                        [by ex_falso zero-below-zero zero-not-below-zero]
+                    }
+                }
+            }
+          @the-exported |
+            e = ONE
+            [by unpacked conclusion-with-the-quotient]
+        }
+      @the-implication |
+        (isInteger(e) and less_than(ZERO, e) and
+          (exists k: Q; isInteger(k) and
+          ONE = rational.mul(e, k))) ->
+          e = ONE
+        [by discharge given-the-setup]
+      @curried |
+        isInteger(e) -> less_than(ZERO, e) ->
+          (exists k: Q; isInteger(k) and
+          ONE = rational.mul(e, k)) ->
+          e = ONE
+        [using tautology the-implication]
+    }
+  @conclusion |
+    forall e: Q;
+      isInteger(e) -> less_than(ZERO, e) ->
+      (exists k: Q; isInteger(k) and ONE = rational.mul(e, k)) ->
+      e = ONE
+    [by generalize generalize-e]
+qed
+
+// -- BÉZOUT ---------------------------------------------------------------------------------
+// For a POSITIVE a and any integer b, a coprime pair admits a Bézout certificate.
+//
+// Positivity of a (rather than mere nonzeroness) is what 17.14's caller actually has —
+// `aReducedFractionExists` delivers a positive numerator — and it saves an `abs` layer the
+// cut does not have: a itself is then the positive combination the well-ordering starts from.
+//
+// Coprimality is the QUANTIFIED reading, matching `arePairwiseRelativelyPrime`: every integer
+// dividing both divides ONE. That is exactly what the descent's conclusion feeds.
+theorem bezoutOnTheCut: forall a, b: Q;
+  isInteger(a) -> isInteger(b) -> less_than(ZERO, a) ->
+  (forall e: Q; isInteger(e) ->
+  (exists k: Q; isInteger(k) and a = rational.mul(e, k)) ->
+  (exists k: Q; isInteger(k) and b = rational.mul(e, k)) ->
+  (exists k: Q; isInteger(k) and ONE = rational.mul(e, k))) ->
+  (exists r, s: Q; isInteger(r) and isInteger(s) and
+  rational.add(rational.mul(a, r), rational.mul(b, s)) = ONE)
+proof
+  @generalize-a |
+    fix a: Q {
+      @generalize-b |
+        fix b: Q {
+          @given-the-setup |
+            assume isInteger(a) and isInteger(b) and
+              less_than(ZERO, a) and
+              (forall e: Q; isInteger(e) ->
+              (exists k: Q; isInteger(k) and
+              a = rational.mul(e, k)) ->
+              (exists k: Q; isInteger(k) and
+              b = rational.mul(e, k)) ->
+              (exists k: Q; isInteger(k) and
+              ONE = rational.mul(e, k))) {
+              @the-setup |
+                isInteger(a) and isInteger(b) and
+                  less_than(ZERO, a) and
+                  (forall e: Q; isInteger(e) ->
+                  (exists k: Q; isInteger(k) and
+                  a = rational.mul(e, k)) ->
+                  (exists k: Q; isInteger(k) and
+                  b = rational.mul(e, k)) ->
+                  (exists k: Q; isInteger(k) and
+                  ONE = rational.mul(e, k)))
+                [by hypothesis given-the-setup]
+              @a-is-an-integer |
+                isInteger(a)
+                [using tautology the-setup]
+              @b-is-an-integer |
+                isInteger(b)
+                [using tautology the-setup]
+              @a-is-positive |
+                less_than(ZERO, a)
+                [using tautology the-setup]
+              @the-coprimality |
+                forall e: Q; isInteger(e) ->
+                  (exists k: Q; isInteger(k) and
+                  a = rational.mul(e, k)) ->
+                  (exists k: Q; isInteger(k) and
+                  b = rational.mul(e, k)) ->
+                  (exists k: Q; isInteger(k) and
+                  ONE = rational.mul(e, k))
+                [using tautology the-setup]
+              @both-are-combinations |
+                isACombination(a, b, a) and isACombination(a, b, b)
+                [using specialize bothArgumentsAreCombinations(a, b) a-is-an-integer b-is-an-integer]
+              @a-is-a-combination |
+                isACombination(a, b, a)
+                [by and_lhs both-are-combinations]
+              @b-is-a-combination |
+                isACombination(a, b, b)
+                [by and_rhs both-are-combinations]
+              // a is a POSITIVE combination, so the set is inhabited
+              @a-is-natural |
+                isNatural(a)
+                [using specialize rational_integer_order.aPositiveIntegerIsNatural(a) a-is-an-integer a-is-positive]
+              @the-inhabitant |
+                isNatural(a) and (less_than(ZERO, a) and
+                  isACombination(a, b, a))
+                [using tautology a-is-natural a-is-positive a-is-a-combination]
+              @inhabited |
+                exists n: Q; isNatural(n) and
+                  (less_than(ZERO, n) and isACombination(a, b, n))
+                [by witness(a) the-inhabitant]
+              // well-order the POSITIVE combinations
+              @the-well-ordering |
+                (exists n: Q; isNatural(n) and
+                  (less_than(ZERO, n) and
+                  isACombination(a, b, n))) ->
+                  (exists least: Q; isNatural(least) and
+                  (less_than(ZERO, least) and
+                  isACombination(a, b, least)) and
+                  (forall m: Q; isNatural(m) ->
+                  (less_than(ZERO, m) and
+                  isACombination(a, b, m)) ->
+                  (not less_than(m, least))))
+                [using instantiation natural_wellordering.naturalWellOrdering(fun n: Q => (less_than(ZERO, n) and isACombination(a, b, n)))]
+              @a-least-exists |
+                exists least: Q; isNatural(least) and
+                  (less_than(ZERO, least) and
+                  isACombination(a, b, least)) and
+                  (forall m: Q; isNatural(m) ->
+                  (less_than(ZERO, m) and
+                  isACombination(a, b, m)) ->
+                  (not less_than(m, least)))
+                [by modus_ponens the-well-ordering inhabited]
+              @conclusion-with-the-least |
+                unpack g: Q from a-least-exists {
+                  @the-least-parts |
+                    isNatural(g) and
+                      (less_than(ZERO, g) and
+                      isACombination(a, b, g)) and
+                      (forall m: Q; isNatural(m) ->
+                      (less_than(ZERO, m) and
+                      isACombination(a, b, m)) ->
+                      (not less_than(m, g)))
+                    [by hypothesis conclusion-with-the-least]
+                  @g-is-natural |
+                    isNatural(g)
+                    [using tautology the-least-parts]
+                  @g-is-positive |
+                    less_than(ZERO, g)
+                    [using tautology the-least-parts]
+                  @g-is-a-combination |
+                    isACombination(a, b, g)
+                    [using tautology the-least-parts]
+                  @g-is-least-among-naturals |
+                    forall m: Q; isNatural(m) ->
+                      (less_than(ZERO, m) and
+                      isACombination(a, b, m)) ->
+                      (not less_than(m, g))
+                    [using tautology the-least-parts]
+                  @g-is-an-integer |
+                    isInteger(g)
+                    [using specialize rational.isNaturalIsInteger(g) g-is-natural]
+                  // re-shape leastness to the descent's interface: over INTEGERS
+                  // rather than naturals (a positive integer IS natural)
+                  @g-is-least |
+                    forall m: Q; isInteger(m) ->
+                      less_than(ZERO, m) ->
+                      isACombination(a, b, m) ->
+                      (not less_than(m, g))
+                    [using specialize theLeastnessReshapes(a, b, g) g-is-least-among-naturals]
+                  // g divides both a and b
+                  @g-divides-a |
+                    exists k: Q; isInteger(k) and
+                      a = rational.mul(g, k)
+                    [using specialize theLeastPositiveCombinationDividesEveryCombination(a, b, g, a) g-is-an-integer g-is-positive g-is-a-combination g-is-least a-is-an-integer a-is-a-combination]
+                  @g-divides-b |
+                    exists k: Q; isInteger(k) and
+                      b = rational.mul(g, k)
+                    [using specialize theLeastPositiveCombinationDividesEveryCombination(a, b, g, b) g-is-an-integer g-is-positive g-is-a-combination g-is-least b-is-an-integer b-is-a-combination]
+                  // so coprimality makes g divide ONE, hence g = ONE
+                  @g-divides-one |
+                    exists k: Q; isInteger(k) and
+                      ONE = rational.mul(g, k)
+                    [using specialize the-coprimality(g) g-is-an-integer g-divides-a g-divides-b]
+                  @g-is-one |
+                    g = ONE
+                    [using specialize aPositiveIntegerDividingOneIsOneHere(g) g-is-an-integer g-is-positive g-divides-one]
+                  // unfold g's own combination at g = ONE
+                  @the-g-meaning |
+                    isACombination(a, b, g) iff
+                      (exists r: Q; exists s: Q;
+                      isInteger(r) and isInteger(s) and
+                      g = rational.add(rational.mul(a, r),
+                      rational.mul(b, s)))
+                    [using specialize combinationMeaning(a, b, g)]
+                  @a-g-pair-exists |
+                    exists r: Q; exists s: Q;
+                      isInteger(r) and isInteger(s) and
+                      g = rational.add(rational.mul(a, r),
+                      rational.mul(b, s))
+                    [using tautology the-g-meaning g-is-a-combination]
+                  @conclusion-with-the-pair |
+                    unpack r: Q from a-g-pair-exists {
+                      @the-s-exists |
+                        exists s: Q;
+                          isInteger(r) and isInteger(s) and
+                          g = rational.add(rational.mul(a, r),
+                          rational.mul(b, s))
+                        [by hypothesis conclusion-with-the-pair]
+                      @conclusion-with-the-pair-inner |
+                        unpack s: Q from the-s-exists {
+                          @the-pair |
+                            isInteger(r) and isInteger(s) and
+                              g = rational.add(
+                              rational.mul(a, r),
+                              rational.mul(b, s))
+                            [by hypothesis conclusion-with-the-pair-inner]
+                          @r-is-an-integer |
+                            isInteger(r)
+                            [using tautology the-pair]
+                          @s-is-an-integer |
+                            isInteger(s)
+                            [using tautology the-pair]
+                          @g-expands |
+                            g = rational.add(rational.mul(a, r),
+                              rational.mul(b, s))
+                            [using tautology the-pair]
+                          @one-expands |
+                            ONE = rational.add(
+                              rational.mul(a, r),
+                              rational.mul(b, s))
+                            [by rewrite g-is-one g-expands]
+                          @the-combination-is-one |
+                            rational.add(rational.mul(a, r),
+                              rational.mul(b, s)) = ONE
+                            [by symmetry one-expands]
+                          @the-pair-works |
+                            isInteger(r) and isInteger(s) and
+                              rational.add(rational.mul(a, r),
+                              rational.mul(b, s)) = ONE
+                            [using tautology r-is-an-integer s-is-an-integer the-combination-is-one]
+                          @the-s-witness |
+                            exists s2: Q; isInteger(r) and
+                              isInteger(s2) and
+                              rational.add(rational.mul(a, r),
+                              rational.mul(b, s2)) = ONE
+                            [by witness(s) the-pair-works]
+                          @conclusion-the-certificate |
+                            exists r2, s2: Q; isInteger(r2) and
+                              isInteger(s2) and
+                              rational.add(rational.mul(a, r2),
+                              rational.mul(b, s2)) = ONE
+                            [by witness(r) the-s-witness]
+                        }
+                      @the-inner-exported |
+                        exists r2, s2: Q; isInteger(r2) and
+                          isInteger(s2) and
+                          rational.add(rational.mul(a, r2),
+                          rational.mul(b, s2)) = ONE
+                        [by unpacked conclusion-with-the-pair-inner]
+                    }
+                  @the-pair-exported |
+                    exists r2, s2: Q; isInteger(r2) and
+                      isInteger(s2) and
+                      rational.add(rational.mul(a, r2),
+                      rational.mul(b, s2)) = ONE
+                    [by unpacked conclusion-with-the-pair]
+                }
+              @the-least-exported |
+                exists r2, s2: Q; isInteger(r2) and isInteger(s2) and
+                  rational.add(rational.mul(a, r2),
+                  rational.mul(b, s2)) = ONE
+                [by unpacked conclusion-with-the-least]
+            }
+          @the-implication |
+            (isInteger(a) and isInteger(b) and
+              less_than(ZERO, a) and
+              (forall e: Q; isInteger(e) ->
+              (exists k: Q; isInteger(k) and
+              a = rational.mul(e, k)) ->
+              (exists k: Q; isInteger(k) and
+              b = rational.mul(e, k)) ->
+              (exists k: Q; isInteger(k) and
+              ONE = rational.mul(e, k)))) ->
+              (exists r, s: Q; isInteger(r) and isInteger(s) and
+              rational.add(rational.mul(a, r),
+              rational.mul(b, s)) = ONE)
+            [by discharge given-the-setup]
+          @curried |
+            isInteger(a) -> isInteger(b) -> less_than(ZERO, a) ->
+              (forall e: Q; isInteger(e) ->
+              (exists k: Q; isInteger(k) and
+              a = rational.mul(e, k)) ->
+              (exists k: Q; isInteger(k) and
+              b = rational.mul(e, k)) ->
+              (exists k: Q; isInteger(k) and
+              ONE = rational.mul(e, k))) ->
+              (exists r, s: Q; isInteger(r) and isInteger(s) and
+              rational.add(rational.mul(a, r),
+              rational.mul(b, s)) = ONE)
+            [using tautology the-implication]
+        }
+      @discharge-b |
+        forall b9: Q;
+          isInteger(a) -> isInteger(b9) -> less_than(ZERO, a) ->
+          (forall e: Q; isInteger(e) ->
+          (exists k: Q; isInteger(k) and a = rational.mul(e, k)) ->
+          (exists k: Q; isInteger(k) and b9 = rational.mul(e, k)) ->
+          (exists k: Q; isInteger(k) and ONE = rational.mul(e, k))) ->
+          (exists r, s: Q; isInteger(r) and isInteger(s) and
+          rational.add(rational.mul(a, r),
+          rational.mul(b9, s)) = ONE)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Q;
+      isInteger(a) -> isInteger(b) -> less_than(ZERO, a) ->
+      (forall e: Q; isInteger(e) ->
+      (exists k: Q; isInteger(k) and a = rational.mul(e, k)) ->
+      (exists k: Q; isInteger(k) and b = rational.mul(e, k)) ->
+      (exists k: Q; isInteger(k) and ONE = rational.mul(e, k))) ->
+      (exists r, s: Q; isInteger(r) and isInteger(s) and
+      rational.add(rational.mul(a, r), rational.mul(b, s)) = ONE)
+    [by generalize generalize-a]
+qed
