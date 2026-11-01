@@ -22,6 +22,7 @@ import mod_n <<< "std/integer/mod-n.b4m"
 import mod_n_domain <<< "std/integer/mod-n-domain.b4m"
 import mod_n_poly <<< "std/integer/mod-n-polynomial.b4m"
 import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
 import subtraction <<< "std/peano/subtraction.b4m"
 
 sort Int = integer.Int
@@ -612,5 +613,472 @@ proof
       (not divides(N, icoeff(f, i))) ->
       (not divides(N, icoeff(g, j))) ->
       (not (forall t: Nat; divides(N, icoeff(imulP(f, g), t))))
+    [by generalize generalize-f]
+qed
+
+// -- EISENSTEIN'S CRITERION, THE CORE STEP -------------------------------------------------
+// AATA Theorem 17.15. Judson: "If p | a_i for i = 0, …, n-1, but p ∤ a_n and p² ∤ a_0, then
+// f(x) is irreducible over ℚ."
+//
+// Gauss's Lemma reduces irreducibility over ℚ to irreducibility over ℤ, so what has to be
+// ruled out is `f = g·h` in ℤ[x] with both factors of degree below n. This is where
+// Eisenstein's hypotheses bite, and the shape is the MINIMAL-INDEX argument:
+//
+//   p | a_0 = b_0·c_0 but p² ∤ a_0, so p divides EXACTLY ONE of b_0, c_0. Say p | b_0 and
+//   p ∤ c_0 (the other case is symmetric, taken by swapping the factors — `imulP` is
+//   commutative, so the swap is free).
+//
+//   p ∤ a_n = b_m·c_k, so p misses the leading coefficient of each factor; in particular
+//   p ∤ b_m. So p misses a coefficient of g (at m) and of h (at 0).
+//
+//   `theDenominatorCannotExceedOne` then says p cannot divide EVERY coefficient of g·h = f.
+//   But p divides a_0 … a_{n-1} by hypothesis, so the coefficient p misses is at index n or
+//   above — and above the degree sum every coefficient vanishes, which p divides. Since both
+//   factors have degree below n, their degree sum is below n too. Contradiction.
+//
+// What is stated here is that core step. The reduction FROM irreducibility over ℚ is Gauss's
+// Lemma, already proved (`std/rational/gauss.b4m`).
+// `theIntegerProductVanishesAboveTheDegreeSum` under its own name, so the Eisenstein proof
+// reads the quantifier order it needs.
+theorem theConvolutionVanishesAboveTheSum: forall p, q: IntPoly;
+  forall m, n: Nat;
+  idegreeAtMost(p, m) -> idegreeAtMost(q, n) ->
+  (forall i: Nat; peano.less_than(add(m, n), i) ->
+  (forall k: Nat; iconvolution(p, q, i, k) = IZERO))
+proof
+  @generalize-p |
+    fix p: IntPoly {
+      @generalize-q |
+        fix q: IntPoly {
+          @generalize-m |
+            fix m: Nat {
+              @generalize-n |
+                fix n: Nat {
+                  @given-both-bounded |
+                    assume idegreeAtMost(p, m) and
+                      idegreeAtMost(q, n) {
+                      @both-bounded |
+                        idegreeAtMost(p, m) and idegreeAtMost(q, n)
+                        [by hypothesis given-both-bounded]
+                      @p-is-bounded |
+                        idegreeAtMost(p, m)
+                        [by and_lhs both-bounded]
+                      @q-is-bounded |
+                        idegreeAtMost(q, n)
+                        [by and_rhs both-bounded]
+                      @each-index |
+                        fix i: Nat {
+                          @given-above |
+                            assume peano.less_than(add(m, n), i) {
+                              @above |
+                                peano.less_than(add(m, n), i)
+                                [by hypothesis given-above]
+                              @conclusion-vanishes |
+                                forall k: Nat;
+                                  iconvolution(p, q, i, k) = IZERO
+                                [using specialize theIntegerProductVanishesAboveTheDegreeSum(p, q, m, n, i) p-is-bounded q-is-bounded above]
+                            }
+                          @above-implies |
+                            peano.less_than(add(m, n), i) ->
+                              (forall k: Nat;
+                              iconvolution(p, q, i, k) = IZERO)
+                            [by discharge given-above]
+                        }
+                      @conclusion-all |
+                        forall i: Nat;
+                          peano.less_than(add(m, n), i) ->
+                          (forall k: Nat;
+                          iconvolution(p, q, i, k) = IZERO)
+                        [by generalize each-index]
+                    }
+                  @the-implication |
+                    (idegreeAtMost(p, m) and idegreeAtMost(q, n)) ->
+                      (forall i: Nat;
+                      peano.less_than(add(m, n), i) ->
+                      (forall k: Nat;
+                      iconvolution(p, q, i, k) = IZERO))
+                    [by discharge given-both-bounded]
+                  @curried |
+                    idegreeAtMost(p, m) -> idegreeAtMost(q, n) ->
+                      (forall i: Nat;
+                      peano.less_than(add(m, n), i) ->
+                      (forall k: Nat;
+                      iconvolution(p, q, i, k) = IZERO))
+                    [using tautology the-implication]
+                }
+              @discharge-n |
+                forall n9: Nat;
+                  idegreeAtMost(p, m) -> idegreeAtMost(q, n9) ->
+                  (forall i: Nat; peano.less_than(add(m, n9), i) ->
+                  (forall k: Nat; iconvolution(p, q, i, k) = IZERO))
+                [by generalize generalize-n]
+            }
+          @discharge-m |
+            forall m9, n9: Nat;
+              idegreeAtMost(p, m9) -> idegreeAtMost(q, n9) ->
+              (forall i: Nat; peano.less_than(add(m9, n9), i) ->
+              (forall k: Nat; iconvolution(p, q, i, k) = IZERO))
+            [by generalize generalize-m]
+        }
+      @discharge-q |
+        forall q9: IntPoly; forall m9, n9: Nat;
+          idegreeAtMost(p, m9) -> idegreeAtMost(q9, n9) ->
+          (forall i: Nat; peano.less_than(add(m9, n9), i) ->
+          (forall k: Nat; iconvolution(p, q9, i, k) = IZERO))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: IntPoly; forall m, n: Nat;
+      idegreeAtMost(p, m) -> idegreeAtMost(q, n) ->
+      (forall i: Nat; peano.less_than(add(m, n), i) ->
+      (forall k: Nat; iconvolution(p, q, i, k) = IZERO))
+    [by generalize generalize-p]
+qed
+
+// If a bound is below n and t is NOT below n, the bound is below t. Pure order plumbing, but
+// `tautology` cannot see it (a `less_than` atom carries no arithmetic).
+theorem theBoundIsBelowAnythingNotBelowIt: forall b, n, t: Nat;
+  peano.less_than(b, n) -> (not peano.less_than(t, n)) ->
+  peano.less_than(b, t)
+proof
+  @generalize-b |
+    fix b: Nat {
+      @generalize-n |
+        fix n: Nat {
+          @generalize-t |
+            fix t: Nat {
+              @given-the-setup |
+                assume peano.less_than(b, n) and
+                  (not peano.less_than(t, n)) {
+                  @the-setup |
+                    peano.less_than(b, n) and
+                      (not peano.less_than(t, n))
+                    [by hypothesis given-the-setup]
+                  @b-below-n |
+                    peano.less_than(b, n)
+                    [by and_lhs the-setup]
+                  @t-not-below-n |
+                    not peano.less_than(t, n)
+                    [by and_rhs the-setup]
+                  // n <= t, since t is not below n
+                  @the-trichotomy |
+                    peano.less_than(n, t) or n = t or
+                      peano.less_than(t, n)
+                    [using specialize peano_order.trichotomy(n, t)]
+                  @n-is-at-most-t |
+                    peano.less_than(n, t) or n = t
+                    [using tautology the-trichotomy t-not-below-n]
+                  @conclusion-b-below-t |
+                    peano.less_than(b, t)
+                    case n-is-at-most-t {
+                      @when-n-below-t |
+                        assume peano.less_than(n, t) {
+                          @n-below-t |
+                            peano.less_than(n, t)
+                            [by hypothesis when-n-below-t]
+                          @conclusion-transitive |
+                            peano.less_than(b, t)
+                            [using specialize peano_order.lessThanTransitive(b, n, t) b-below-n n-below-t]
+                        }
+                      @when-n-is-t |
+                        assume n = t {
+                          @n-is-t |
+                            n = t
+                            [by hypothesis when-n-is-t]
+                          @conclusion-rewritten |
+                            peano.less_than(b, t)
+                            [by rewrite n-is-t b-below-n]
+                        }
+                    }
+                }
+              @the-implication |
+                (peano.less_than(b, n) and
+                  (not peano.less_than(t, n))) ->
+                  peano.less_than(b, t)
+                [by discharge given-the-setup]
+              @curried |
+                peano.less_than(b, n) ->
+                  (not peano.less_than(t, n)) ->
+                  peano.less_than(b, t)
+                [using tautology the-implication]
+            }
+          @discharge-t |
+            forall t9: Nat;
+              peano.less_than(b, n) ->
+              (not peano.less_than(t9, n)) ->
+              peano.less_than(b, t9)
+            [by generalize generalize-t]
+        }
+      @discharge-n |
+        forall n9, t9: Nat;
+          peano.less_than(b, n9) ->
+          (not peano.less_than(t9, n9)) ->
+          peano.less_than(b, t9)
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall b, n, t: Nat;
+      peano.less_than(b, n) -> (not peano.less_than(t, n)) ->
+      peano.less_than(b, t)
+    [by generalize generalize-b]
+qed
+
+// Stated as the positive fact rather than an absurdity: under Eisenstein's divisibility
+// hypotheses, the two factors' degree bound CANNOT stay below n. That is the form Gauss's
+// reduction consumes, and it avoids an `ONE = ONE`-style fake conclusion.
+theorem eisensteinForcesTheFullDegree: forall f, g, h: IntPoly;
+  forall n, m, k: Nat;
+  is_prime(N) ->
+  f = imulP(g, h) ->
+  idegreeAtMost(g, m) -> idegreeAtMost(h, k) ->
+  (forall i: Nat; peano.less_than(i, n) -> divides(N, icoeff(f, i))) ->
+  (not divides(N, icoeff(g, m))) ->
+  (not divides(N, icoeff(h, ZERO))) ->
+  (not peano.less_than(add(m, k), n))
+proof
+  @generalize-f |
+    fix f: IntPoly {
+      @generalize-g |
+        fix g: IntPoly {
+          @generalize-h |
+            fix h: IntPoly {
+              @generalize-n |
+                fix n: Nat {
+                  @generalize-m |
+                    fix m: Nat {
+                      @generalize-k |
+                        fix k: Nat {
+                          @given-the-setup |
+                            assume is_prime(N) and
+                              f = imulP(g, h) and
+                              idegreeAtMost(g, m) and
+                              idegreeAtMost(h, k) and
+                              (forall i: Nat; peano.less_than(i, n) ->
+                              divides(N, icoeff(f, i))) and
+                              (not divides(N, icoeff(g, m))) and
+                              (not divides(N,
+                              icoeff(h, ZERO))) {
+                              @the-setup |
+                                is_prime(N) and
+                                  f = imulP(g, h) and
+                                  idegreeAtMost(g, m) and
+                                  idegreeAtMost(h, k) and
+                                  (forall i: Nat;
+                                  peano.less_than(i, n) ->
+                                  divides(N, icoeff(f, i))) and
+                                  (not divides(N,
+                                  icoeff(g, m))) and
+                                  (not divides(N,
+                                  icoeff(h, ZERO)))
+                                [by hypothesis given-the-setup]
+                              @the-modulus-is-prime |
+                                is_prime(N)
+                                [using tautology the-setup]
+                              @f-factors |
+                                f = imulP(g, h)
+                                [using tautology the-setup]
+                              @g-is-bounded |
+                                idegreeAtMost(g, m)
+                                [using tautology the-setup]
+                              @h-is-bounded |
+                                idegreeAtMost(h, k)
+                                [using tautology the-setup]
+                              @the-low-coefficients-are-divisible |
+                                forall i: Nat; peano.less_than(i, n) ->
+                                  divides(N, icoeff(f, i))
+                                [using tautology the-setup]
+                              @the-modulus-misses-g |
+                                not divides(N, icoeff(g, m))
+                                [using tautology the-setup]
+                              @the-modulus-misses-h |
+                                not divides(N, icoeff(h, ZERO))
+                                [using tautology the-setup]
+                              // N misses a coefficient of the PRODUCT
+                              @the-product-is-not-all-divisible |
+                                not (forall t: Nat;
+                                  divides(N,
+                                  icoeff(imulP(g, h), t)))
+                                [using specialize theDenominatorCannotExceedOne(g, h, m, ZERO) the-modulus-is-prime the-modulus-misses-g the-modulus-misses-h]
+                              @f-is-not-all-divisible |
+                                not (forall t: Nat;
+                                  divides(N, icoeff(f, t)))
+                                [by rewrite f-factors the-product-is-not-all-divisible]
+                              // suppose the degree sum stayed below n
+                              @given-the-sum-is-below |
+                                assume peano.less_than(add(m, k), n) {
+                                  @the-sum-is-below |
+                                    peano.less_than(add(m, k), n)
+                                    [by hypothesis given-the-sum-is-below]
+                                  // then EVERY coefficient of f is divisible:
+                                  // below n by hypothesis, above the degree sum
+                                  // because it vanishes
+                                  // the existing theorem concludes about the
+                                  // CONVOLUTION; `iMulPolyCoeff` turns that into
+                                  // the coefficient at the same index
+                                  @the-convolution-vanishes-above |
+                                    forall t: Nat;
+                                      peano.less_than(add(m, k), t) ->
+                                      (forall j: Nat;
+                                      iconvolution(g, h, t, j) =
+                                      IZERO)
+                                    [using specialize theConvolutionVanishesAboveTheSum(g, h, m, k) g-is-bounded h-is-bounded]
+                                  @each-index |
+                                    fix t: Nat {
+                                      @the-position-split |
+                                        peano.less_than(t, n) or
+                                          (not peano.less_than(t, n))
+                                        [using tautology]
+                                      @conclusion-divisible-at-t |
+                                        divides(N, icoeff(f, t))
+                                        case the-position-split {
+                                          // below n: the hypothesis
+                                          @when-below |
+                                            assume peano.less_than(t, n) {
+                                              @t-below-n |
+                                                peano.less_than(t, n)
+                                                [by hypothesis when-below]
+                                              @conclusion-below |
+                                                divides(N,
+                                                  icoeff(f, t))
+                                                [using specialize the-low-coefficients-are-divisible(t) t-below-n]
+                                            }
+                                          // not below n: then it is above the
+                                          // degree sum, so it vanishes
+                                          @when-not-below |
+                                            assume not peano.less_than(t, n) {
+                                              @t-not-below-n |
+                                                not peano.less_than(t, n)
+                                                [by hypothesis when-not-below]
+                                              @the-sum-is-below-t |
+                                                peano.less_than(add(m, k), t)
+                                                [using specialize theBoundIsBelowAnythingNotBelowIt(add(m, k), n, t) the-sum-is-below t-not-below-n]
+                                              @the-convolutions-vanish-at-t |
+                                                forall j: Nat;
+                                                  iconvolution(g, h, t, j) =
+                                                  IZERO
+                                                [using specialize the-convolution-vanishes-above(t) the-sum-is-below-t]
+                                              @the-diagonal-convolution-vanishes |
+                                                iconvolution(g, h, t, t) =
+                                                  IZERO
+                                                [using specialize the-convolutions-vanish-at-t(t)]
+                                              @the-coefficient-is-the-convolution |
+                                                icoeff(imulP(g, h), t) =
+                                                  iconvolution(g, h, t, t)
+                                                [using specialize iMulPolyCoeff(g, h, t)]
+                                              @the-product-vanishes-at-t |
+                                                icoeff(imulP(g, h), t) =
+                                                  IZERO
+                                                [using simplify the-coefficient-is-the-convolution the-diagonal-convolution-vanishes]
+                                              @f-vanishes-at-t |
+                                                icoeff(f, t) =
+                                                  IZERO
+                                                [by rewrite f-factors the-product-vanishes-at-t]
+                                              @the-modulus-divides-zero |
+                                                divides(N, IZERO)
+                                                [using specialize int_divides.dividesZero(N)]
+                                              @conclusion-not-below |
+                                                divides(N,
+                                                  icoeff(f, t))
+                                                [by rewrite f-vanishes-at-t the-modulus-divides-zero]
+                                            }
+                                        }
+                                    }
+                                  @all-coefficients-divisible |
+                                    forall t: Nat;
+                                      divides(N, icoeff(f, t))
+                                    [by generalize each-index]
+                                }
+                              @conclusion-the-degree-is-forced |
+                                not peano.less_than(add(m, k), n)
+                                [by contradiction given-the-sum-is-below all-coefficients-divisible f-is-not-all-divisible]
+                            }
+                          @the-implication |
+                            (is_prime(N) and f = imulP(g, h) and
+                              idegreeAtMost(g, m) and
+                              idegreeAtMost(h, k) and
+                              (forall i: Nat; peano.less_than(i, n) ->
+                              divides(N, icoeff(f, i))) and
+                              (not divides(N, icoeff(g, m))) and
+                              (not divides(N,
+                              icoeff(h, ZERO)))) ->
+                              (not peano.less_than(add(m, k), n))
+                            [by discharge given-the-setup]
+                          @curried |
+                            is_prime(N) -> f = imulP(g, h) ->
+                              idegreeAtMost(g, m) ->
+                              idegreeAtMost(h, k) ->
+                              (forall i: Nat; peano.less_than(i, n) ->
+                              divides(N, icoeff(f, i))) ->
+                              (not divides(N, icoeff(g, m))) ->
+                              (not divides(N, icoeff(h, ZERO))) ->
+                              (not peano.less_than(add(m, k), n))
+                            [using tautology the-implication]
+                        }
+                      @discharge-k |
+                        forall k9: Nat;
+                          is_prime(N) -> f = imulP(g, h) ->
+                          idegreeAtMost(g, m) ->
+                          idegreeAtMost(h, k9) ->
+                          (forall i: Nat; peano.less_than(i, n) ->
+                          divides(N, icoeff(f, i))) ->
+                          (not divides(N, icoeff(g, m))) ->
+                          (not divides(N, icoeff(h, ZERO))) ->
+                          (not peano.less_than(add(m, k9), n))
+                        [by generalize generalize-k]
+                    }
+                  @discharge-m |
+                    forall m9, k9: Nat;
+                      is_prime(N) -> f = imulP(g, h) ->
+                      idegreeAtMost(g, m9) ->
+                      idegreeAtMost(h, k9) ->
+                      (forall i: Nat; peano.less_than(i, n) ->
+                      divides(N, icoeff(f, i))) ->
+                      (not divides(N, icoeff(g, m9))) ->
+                      (not divides(N, icoeff(h, ZERO))) ->
+                      (not peano.less_than(add(m9, k9), n))
+                    [by generalize generalize-m]
+                }
+              @discharge-n |
+                forall n9: Nat; forall m9, k9: Nat;
+                  is_prime(N) -> f = imulP(g, h) ->
+                  idegreeAtMost(g, m9) ->
+                  idegreeAtMost(h, k9) ->
+                  (forall i: Nat; peano.less_than(i, n9) ->
+                  divides(N, icoeff(f, i))) ->
+                  (not divides(N, icoeff(g, m9))) ->
+                  (not divides(N, icoeff(h, ZERO))) ->
+                  (not peano.less_than(add(m9, k9), n9))
+                [by generalize generalize-n]
+            }
+          @discharge-h |
+            forall h9: IntPoly; forall n9, m9, k9: Nat;
+              is_prime(N) -> f = imulP(g, h9) ->
+              idegreeAtMost(g, m9) -> idegreeAtMost(h9, k9) ->
+              (forall i: Nat; peano.less_than(i, n9) ->
+              divides(N, icoeff(f, i))) ->
+              (not divides(N, icoeff(g, m9))) ->
+              (not divides(N, icoeff(h9, ZERO))) ->
+              (not peano.less_than(add(m9, k9), n9))
+            [by generalize generalize-h]
+        }
+      @discharge-g |
+        forall g9, h9: IntPoly; forall n9, m9, k9: Nat;
+          is_prime(N) -> f = imulP(g9, h9) ->
+          idegreeAtMost(g9, m9) -> idegreeAtMost(h9, k9) ->
+          (forall i: Nat; peano.less_than(i, n9) ->
+          divides(N, icoeff(f, i))) ->
+          (not divides(N, icoeff(g9, m9))) ->
+          (not divides(N, icoeff(h9, ZERO))) ->
+          (not peano.less_than(add(m9, k9), n9))
+        [by generalize generalize-g]
+    }
+  @conclusion |
+    forall f, g, h: IntPoly; forall n, m, k: Nat;
+      is_prime(N) -> f = imulP(g, h) ->
+      idegreeAtMost(g, m) -> idegreeAtMost(h, k) ->
+      (forall i: Nat; peano.less_than(i, n) -> divides(N, icoeff(f, i))) ->
+      (not divides(N, icoeff(g, m))) ->
+      (not divides(N, icoeff(h, ZERO))) ->
+      (not peano.less_than(add(m, k), n))
     [by generalize generalize-f]
 qed
