@@ -3428,74 +3428,235 @@ proof
 qed
 
 // -- THE QUOTIENT SEQUENCE AT A LOCALLY BOUND DIVISOR -------------------------------------
-// The piece that closes the minimality assembly, and the one that was impossible before the
-// mixed-sort lambda landed (`2f9c535`). `anIndexPinnedChoiceIsRealized`'s spec relates an
-// INDEX to a VALUE — `Nat` and `Q` — so instantiating it needs a two-sort lambda; without one
-// the only route was a bare predicate name, which forces the subject to be pinned as a
-// file-scope nullary func and so works at exactly ONE divisor. The descent needs it at a
-// divisor bound inside the proof, which is now just the lambda closing over `e`.
-theorem theQuotientSequenceByADivisorExists: forall q: QSeq; forall e: Q;
-  (forall i: Nat; dividesIntegrally(e, qat(q, i))) ->
-  forall n: Nat; exists t: QSeq; forall i: Nat; nat_less_than(i, n) ->
-  (isInteger(qat(t, i)) and qat(q, i) = rational.mul(e, qat(t, i)))
+// The piece the mixed-sort lambda (`2f9c535`) unblocked. `anIndexPinnedChoiceIsRealized`'s
+// spec relates an INDEX to a VALUE (`Nat` and `Q`), so instantiating it needs a two-sort
+// lambda; without one the only route was a bare predicate name, which forces the subject
+// pinned as a file-scope nullary func and so works at exactly ONE divisor — while the descent
+// needs it at a divisor bound inside the proof.
+//
+// BOUNDED PREMISE. The caller has divisibility only BELOW n (that is what coprimality gives),
+// so the spec's equation clause is CONDITIONAL on being in range: that makes the spec
+// satisfiable at every index — above n, ONE serves — which is what the choice schema's
+// unbounded witness hypothesis requires. Same technique as
+// `theClearedNumeratorSequenceExists`; an earlier version demanded unbounded divisibility and
+// no caller could supply it.
+theorem theQuotientSequenceByADivisorExists: forall q: QSeq; forall e: Q; forall n: Nat;
+  (forall i: Nat; nat_less_than(i, n) -> dividesIntegrally(e, qat(q, i))) ->
+  (exists t: QSeq; forall i: Nat; nat_less_than(i, n) ->
+  (isInteger(qat(t, i)) and qat(q, i) = rational.mul(e, qat(t, i))))
 proof
   @generalize-q |
     fix q: QSeq {
       @generalize-e |
         fix e: Q {
-          @given-divides |
-            assume forall i: Nat; dividesIntegrally(e, qat(q, i)) {
-              @divides |
-                forall i: Nat; dividesIntegrally(e, qat(q, i))
-                [by hypothesis given-divides]
-              @each-index |
-                fix i: Nat {
-                  @divides-here |
-                    dividesIntegrally(e, qat(q, i))
-                    [using specialize divides(i)]
-                  @the-meaning |
-                    dividesIntegrally(e, qat(q, i)) iff
-                      (exists k: Q; isInteger(k) and
-                      qat(q, i) = rational.mul(e, k))
-                    [using specialize dividesIntegrallyMeaning(e, qat(q, i))]
-                  @conclusion-at-i |
-                    exists v: Q;
-                      (isInteger(v) and qat(q, i) = rational.mul(e, v))
-                    [using tautology the-meaning divides-here]
+          @generalize-n |
+            fix n: Nat {
+              @given-divides-below |
+                assume forall i: Nat; nat_less_than(i, n) ->
+                  dividesIntegrally(e, qat(q, i)) {
+                  @divides-below |
+                    forall i: Nat; nat_less_than(i, n) ->
+                      dividesIntegrally(e, qat(q, i))
+                    [by hypothesis given-divides-below]
+                  @one-is-an-integer |
+                    isInteger(ONE)
+                    [by cite rational.oneIsAnInteger]
+                  @each-index |
+                    fix i: Nat {
+                      @given-i-below |
+                        assume nat_less_than(i, n) {
+                          @i-below |
+                            nat_less_than(i, n)
+                            [by hypothesis given-i-below]
+                          @divides-here |
+                            dividesIntegrally(e, qat(q, i))
+                            [using specialize divides-below(i) i-below]
+                          @the-meaning |
+                            dividesIntegrally(e, qat(q, i)) iff
+                              (exists k: Q; isInteger(k) and
+                              qat(q, i) = rational.mul(e, k))
+                            [using specialize dividesIntegrallyMeaning(e, qat(q, i))]
+                          @a-quotient |
+                            exists k: Q; isInteger(k) and
+                              qat(q, i) = rational.mul(e, k)
+                            [using tautology the-meaning divides-here]
+                          @with-the-quotient |
+                            unpack k: Q from a-quotient {
+                              @with-quotient-k |
+                                isInteger(k) and
+                                  qat(q, i) = rational.mul(e, k)
+                                [by hypothesis with-the-quotient]
+                              @k-is-an-integer |
+                                isInteger(k)
+                                [by and_lhs with-quotient-k]
+                              @the-equation |
+                                qat(q, i) = rational.mul(e, k)
+                                [by and_rhs with-quotient-k]
+                              @the-guarded-equation |
+                                nat_less_than(i, n) ->
+                                  qat(q, i) = rational.mul(e, k)
+                                [using tautology the-equation]
+                              @the-witness-works |
+                                isInteger(k) and
+                                  (nat_less_than(i, n) ->
+                                  qat(q, i) = rational.mul(e, k))
+                                [by both k-is-an-integer the-guarded-equation]
+                              @conclusion-in-range |
+                                exists v: Q;
+                                  (isInteger(v) and
+                                  (nat_less_than(i, n) ->
+                                  qat(q, i) = rational.mul(e, v)))
+                                [by witness(k) the-witness-works]
+                            }
+                          @conclusion-in-range-exported |
+                            exists v: Q;
+                              (isInteger(v) and
+                              (nat_less_than(i, n) ->
+                              qat(q, i) = rational.mul(e, v)))
+                            [by unpacked with-the-quotient]
+                        }
+                      @in-range-implies |
+                        nat_less_than(i, n) ->
+                          (exists v: Q;
+                          (isInteger(v) and
+                          (nat_less_than(i, n) ->
+                          qat(q, i) = rational.mul(e, v))))
+                        [by discharge given-i-below]
+                      @given-i-out-of-range |
+                        assume not nat_less_than(i, n) {
+                          @i-out-of-range |
+                            not nat_less_than(i, n)
+                            [by hypothesis given-i-out-of-range]
+                          @the-clause-is-vacuous |
+                            nat_less_than(i, n) ->
+                              qat(q, i) = rational.mul(e, ONE)
+                            [using tautology i-out-of-range]
+                          @one-works |
+                            isInteger(ONE) and
+                              (nat_less_than(i, n) ->
+                              qat(q, i) = rational.mul(e, ONE))
+                            [by both one-is-an-integer the-clause-is-vacuous]
+                          @conclusion-out-of-range |
+                            exists v: Q;
+                              (isInteger(v) and
+                              (nat_less_than(i, n) ->
+                              qat(q, i) = rational.mul(e, v)))
+                            [by witness(ONE) one-works]
+                        }
+                      @out-of-range-implies |
+                        (not nat_less_than(i, n)) ->
+                          (exists v: Q;
+                          (isInteger(v) and
+                          (nat_less_than(i, n) ->
+                          qat(q, i) = rational.mul(e, v))))
+                        [by discharge given-i-out-of-range]
+                      @conclusion-at-i |
+                        exists v: Q;
+                          (isInteger(v) and
+                          (nat_less_than(i, n) ->
+                          qat(q, i) = rational.mul(e, v)))
+                        [using tautology in-range-implies out-of-range-implies]
+                    }
+                  @the-witnesses |
+                    forall i: Nat; exists v: Q;
+                      (isInteger(v) and
+                      (nat_less_than(i, n) ->
+                      qat(q, i) = rational.mul(e, v)))
+                    [by generalize each-index]
+                  @the-sequences |
+                    forall m: Nat; exists t: QSeq; forall i: Nat;
+                      nat_less_than(i, m) ->
+                      (isInteger(qat(t, i)) and
+                      (nat_less_than(i, n) ->
+                      qat(q, i) = rational.mul(e, qat(t, i))))
+                    [using instantiation anIndexPinnedChoiceIsRealized(fun i: Nat, v: Q => (isInteger(v) and (nat_less_than(i, n) -> qat(q, i) = rational.mul(e, v)))) the-witnesses]
+                  @at-this-bound |
+                    exists t: QSeq; forall i: Nat; nat_less_than(i, n) ->
+                      (isInteger(qat(t, i)) and
+                      (nat_less_than(i, n) ->
+                      qat(q, i) = rational.mul(e, qat(t, i))))
+                    [using specialize the-sequences(n)]
+                  @conclusion-unguarded |
+                    unpack t: QSeq from at-this-bound {
+                      @the-guarded-match |
+                        forall i: Nat; nat_less_than(i, n) ->
+                          (isInteger(qat(t, i)) and
+                          (nat_less_than(i, n) ->
+                          qat(q, i) = rational.mul(e, qat(t, i))))
+                        [by hypothesis conclusion-unguarded]
+                      @each-in-range |
+                        fix i: Nat {
+                          @given-i-below |
+                            assume nat_less_than(i, n) {
+                              @i-below |
+                                nat_less_than(i, n)
+                                [by hypothesis given-i-below]
+                              @the-guarded-at-i |
+                                isInteger(qat(t, i)) and
+                                  (nat_less_than(i, n) ->
+                                  qat(q, i) = rational.mul(e, qat(t, i)))
+                                [using specialize the-guarded-match(i) i-below]
+                              @conclusion-unguarded-at-i |
+                                isInteger(qat(t, i)) and
+                                  qat(q, i) = rational.mul(e, qat(t, i))
+                                [using tautology the-guarded-at-i i-below]
+                            }
+                          @below-implies |
+                            nat_less_than(i, n) ->
+                              (isInteger(qat(t, i)) and
+                              qat(q, i) = rational.mul(e, qat(t, i)))
+                            [by discharge given-i-below]
+                        }
+                      @all-unguarded |
+                        forall i: Nat; nat_less_than(i, n) ->
+                          (isInteger(qat(t, i)) and
+                          qat(q, i) = rational.mul(e, qat(t, i)))
+                        [by generalize each-in-range]
+                      @conclusion-witnessed |
+                        exists t2: QSeq; forall i: Nat;
+                          nat_less_than(i, n) ->
+                          (isInteger(qat(t2, i)) and
+                          qat(q, i) = rational.mul(e, qat(t2, i)))
+                        [by witness(t) all-unguarded]
+                    }
+                  @the-sequence-exported |
+                    exists t: QSeq; forall i: Nat; nat_less_than(i, n) ->
+                      (isInteger(qat(t, i)) and
+                      qat(q, i) = rational.mul(e, qat(t, i)))
+                    [by unpacked conclusion-unguarded]
                 }
-              @the-witnesses |
-                forall i: Nat; exists v: Q;
-                  (isInteger(v) and qat(q, i) = rational.mul(e, v))
-                [by generalize each-index]
-              @conclusion-the-sequences |
-                forall n: Nat; exists t: QSeq; forall i: Nat;
-                  nat_less_than(i, n) ->
+              @the-implication |
+                (forall i: Nat; nat_less_than(i, n) ->
+                  dividesIntegrally(e, qat(q, i))) ->
+                  (exists t: QSeq; forall i: Nat; nat_less_than(i, n) ->
                   (isInteger(qat(t, i)) and
-                  qat(q, i) = rational.mul(e, qat(t, i)))
-                [using instantiation anIndexPinnedChoiceIsRealized(fun i: Nat, v: Q => (isInteger(v) and qat(q, i) = rational.mul(e, v))) the-witnesses]
+                  qat(q, i) = rational.mul(e, qat(t, i))))
+                [by discharge given-divides-below]
             }
-          @divides-implies |
-            (forall i: Nat; dividesIntegrally(e, qat(q, i))) ->
-              forall n: Nat; exists t: QSeq; forall i: Nat;
-              nat_less_than(i, n) ->
+          @discharge-n |
+            forall n9: Nat;
+              (forall i: Nat; nat_less_than(i, n9) ->
+              dividesIntegrally(e, qat(q, i))) ->
+              (exists t: QSeq; forall i: Nat; nat_less_than(i, n9) ->
               (isInteger(qat(t, i)) and
-              qat(q, i) = rational.mul(e, qat(t, i)))
-            [by discharge given-divides]
+              qat(q, i) = rational.mul(e, qat(t, i))))
+            [by generalize generalize-n]
         }
       @discharge-e |
-        forall e9: Q;
-          (forall i: Nat; dividesIntegrally(e9, qat(q, i))) ->
-          forall n: Nat; exists t: QSeq; forall i: Nat;
-          nat_less_than(i, n) ->
+        forall e9: Q; forall n9: Nat;
+          (forall i: Nat; nat_less_than(i, n9) ->
+          dividesIntegrally(e9, qat(q, i))) ->
+          (exists t: QSeq; forall i: Nat; nat_less_than(i, n9) ->
           (isInteger(qat(t, i)) and
-          qat(q, i) = rational.mul(e9, qat(t, i)))
+          qat(q, i) = rational.mul(e9, qat(t, i))))
         [by generalize generalize-e]
     }
   @conclusion |
-    forall q: QSeq; forall e: Q;
-      (forall i: Nat; dividesIntegrally(e, qat(q, i))) ->
-      forall n: Nat; exists t: QSeq; forall i: Nat; nat_less_than(i, n) ->
-      (isInteger(qat(t, i)) and qat(q, i) = rational.mul(e, qat(t, i)))
+    forall q: QSeq; forall e: Q; forall n: Nat;
+      (forall i: Nat; nat_less_than(i, n) ->
+      dividesIntegrally(e, qat(q, i))) ->
+      (exists t: QSeq; forall i: Nat; nat_less_than(i, n) ->
+      (isInteger(qat(t, i)) and qat(q, i) = rational.mul(e, qat(t, i))))
     [by generalize generalize-q]
 qed
 
@@ -4074,7 +4235,6 @@ proof
       forall i: Nat; nat_less_than(i, n) -> isInteger(qat(t, i))
     [by generalize generalize-q]
 qed
-
 // -- THE DESCENT STEP ---------------------------------------------------------------------
 // A non-unit common divisor of the quotients yields a STRICTLY SMALLER first quotient. This is
 // what contradicts leastness, and so what makes the minimal first quotient's divisor leave
@@ -4159,19 +4319,32 @@ proof
                             forall i: Nat; dividesIntegrally(e, qat(q, i))
                             [using tautology the-setup]
 
-                          // the e-quotients of q, at a divisor bound right here
-                          @the-sequences-exist |
-                            forall m: Nat; exists t: QSeq; forall i: Nat;
-                              nat_less_than(i, m) ->
-                              (isInteger(qat(t, i)) and
-                              qat(q, i) = rational.mul(e, qat(t, i)))
-                            [using specialize theQuotientSequenceByADivisorExists(q, e) e-divides-all]
+                          // the e-quotients of q, at a divisor bound right here. The
+                          // premise is BOUNDED now, so the unbounded divisibility
+                          // hypothesis is weakened to the range first.
+                          @e-divides-below-each |
+                            fix i: Nat {
+                              @given-i-below |
+                                assume nat_less_than(i, n) {
+                                  @divides-here |
+                                    dividesIntegrally(e, qat(q, i))
+                                    [using specialize e-divides-all(i)]
+                                }
+                              @below-implies |
+                                nat_less_than(i, n) ->
+                                  dividesIntegrally(e, qat(q, i))
+                                [by discharge given-i-below]
+                            }
+                          @e-divides-below |
+                            forall i: Nat; nat_less_than(i, n) ->
+                              dividesIntegrally(e, qat(q, i))
+                            [by generalize e-divides-below-each]
                           @at-this-bound |
                             exists t: QSeq; forall i: Nat;
                               nat_less_than(i, n) ->
                               (isInteger(qat(t, i)) and
                               qat(q, i) = rational.mul(e, qat(t, i)))
-                            [using specialize the-sequences-exist(n)]
+                            [using specialize theQuotientSequenceByADivisorExists(q, e, n) e-divides-below]
                           @with-the-quotients |
                             unpack t: QSeq from at-this-bound {
                               @the-quotients |
