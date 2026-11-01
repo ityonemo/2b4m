@@ -264,39 +264,66 @@ thing that found any of these, and it found one every time it was run.
   `productUpTo` with a real corpus, and `std/sequence.b4m` instantiates at ℚ cleanly because
   `Value: Q` is unguarded). Both were reasoned rather than measured.
 
-## 11. Euclid's Lemma is unreachable on ℚ's integer cut (BLOCKS 17.14 and 17.15)
+## 11. The cut had no division algorithm, so no Bézout, so no Euclid (RESOLVED 2026-11-01)
 
-**Measured 2026-11-01, after Lemma 17.12 and Gauss's d = 1 branch were both closed.**
+**This was chapter 17's last blocker, and it is now closed** — `std/rational/integer-division.b4m`,
+20 theorems. Recording it because the DIAGNOSIS took three tries and two of them were wrong.
 
-Corollary 17.14 and Theorem 17.15 are each ONE theorem from done, and it is the same theorem:
-from `r | a·b` on the cut plus `gcd(r, b) = 1`, conclude `r | a`.
+**What was actually true:** ℤ's `divisionAlgorithmExists` and `coprimeBezout` cannot transfer
+onto the cut — each reaches `nonnegCases`, itself a transfer of `peano.zeroOrSucc` through ℤ's
+NonNeg cut, so composing ℕ → ℤ's NonNeg → ℚ's isInteger wants `Nat` to be both `Int` and `Q`
+(`std/peano.b4m:857`). That is pain point 2 (no model COMPOSITION) biting again, and it is
+structural.
 
-Everything else is built. 17.14's "multiply p(r/s) = 0 through by s^n" is
-`clearingTheDenominatorGivesTheClearedSum`, and the two end-splits
-(`theClearedSumSplitsOffTheConstantTerm` / `…TheLeadingTerm`) deliver exactly
-`r | a_0·s^(n+1)` and `s | a_n·r^n`. 17.15's minimal-index argument has its
-least-witness extraction in `std/rational/natural-wellordering.b4m`.
+**What I wrongly believed first:** that `euclidFromBezout` needed `div`, `mod`, `gcd`, `order`
+and `wellordering` mapped, making the whole thing wait for the de-totalization. It needs 15
+axioms, every one already mapped by `IntegersInRational`, and its `divides` is a `define` —
+a macro, nothing to map. **I had read the FILE's symbol table instead of the theorem's
+dependency set.** `check --axioms <file> <theorem>` answers that in one command, and I should
+have run it before costing the route.
 
-**Why it is blocked.** Coprimality on the cut is the QUANTIFIED reading — every common
-divisor divides ONE — which does not give Euclid without Bézout. And the cut has no Bézout
-because it has no division algorithm.
+**What I also wrongly believed:** that `lessThanIntro`/`lessThanElim` blocked the cut.
+`IntegerOrderOnTheCut` had discharged both on 2026-10-30 — the genuinely hard part was already
+done, and a stale comment in that file still said it blocked 17.13/17.14/17.15.
 
-**Three routes, all costed:**
+**The resolution** was to prove the CONSTRUCTIONS natively on `naturalWellOrdering` and keep
+Euclid taking the certificate as a HYPOTHESIS. That last choice is the load-bearing one: it
+keeps the whole development off `gcd`/`div`/`mod`, so nothing here rests on what queue item 2
+deletes.
 
-1. Transfer ℤ's `bezout` through `IntegersInRational`. Blocked by pain point 2 (no model
-   COMPOSITION): `bezout` is in `std/integer/divides.b4m`, a different namespace from the
-   mapped `integer`, and the transfer re-checks the source proof — so it demands mapping that
-   file's `pow`, `div`, `mod`, `abs`, `gcd`, `lcm` plus `order` and `wellordering`. Three of
-   those are the total functions queue item 2 deletes.
-2. Prove Bézout on the cut from `naturalWellOrdering` (least positive element of {ar+bs}).
-   Needs division-with-remainder on the cut, which is also absent.
-3. Wait for the de-totalization, then take route 1 against a smaller, stable surface.
+**The process lesson, which is the reusable part:** a deferral note that names a DEPENDENCY
+("waits on Gauss") rather than a measured missing theorem will keep being wrong, because the
+dependency is the first thing that changes. Three successive versions of 17.14's note blamed
+Gauss's open half; when Gauss closed it turned out the corollary never needed it at all. Name
+the theorem, and measure it with `--axioms`.
 
-Route 3 is the right one, and the queue already schedules it. **This is the only thing left
-in chapter 17.**
+## 12. `polynomial` cannot see inside a term with a Nat subterm (LIVE)
 
-**The lesson for the pain-point list itself:** three successive versions of 17.14's deferral
-note blamed Gauss's open half. Gauss is now closed and the corollary turns out not to need it
-at all — the proof is direct. A deferral note that names a *dependency* rather than a
-*measured missing theorem* will keep being wrong, because the dependency is the first thing
-that changes. Name the theorem.
+`[using polynomial(rational)]` fails with `expected sort 'Q', got 'Nat'` when the goal holds a
+power whose exponent is a `Nat` — which is any `qpower(s, k)`. Hit twice in 17.14.
+
+**Workaround:** state the algebraic law over ABSTRACT ℚ variables and `specialize` it at the
+compound term, so the tactic never descends into the exponent. `addingAndSubtractingCancels`
+and `theNegatedProductFromZero` in `std/rational/integer-division.b4m` exist only for this.
+
+Related: `polynomial` also cannot CONSUME a cited equation as an input (it proves identities,
+not consequences), so a rearrangement like `0 = X + r·t ⟹ X = r·(−t)` must be done by explicit
+`rewrite` steps.
+
+## 13. The accelerant param-guard gap, half fixed (ENGINE)
+
+**FIXED (`f41c60f`):** a `simplify` whose rewrite set mentions a lemma quantified over a
+MODEL-REFINED sort could not transfer at all — `simplify` abstracts the caller's `fix n` into
+a schema param, the relativized lemma leaks `good(p1)`, and a param sits in no `fix`'s scope
+so nothing can discharge it. `paramGuards`/`wrapParamGuards` exist for exactly this but were
+wired only into `finishReorder`; `produceSimplify` never called them. Also `paramGuards` read
+the SOURCE binder's refinement, which is `none` precisely when the model introduces it.
+
+**STILL OPEN, same family:** `polynomial`'s hardcoded rule set cites ring lemmas by well-known
+name with SOURCE-SPACE formulas, so under a transfer the cite claims a guard-free universal
+while the resolved theorem is relativized. Different mechanism — a citation, not a param guard
+— and the hardcoded rule set makes it a design question rather than a one-line fix.
+
+**Process note:** I mis-diagnosed the fixed half twice (wrong refinement lookup, then wrong
+accelerant path) by reasoning from the code's own comments, which described the mechanism as
+if it were already wired everywhere. One `std.debug.print` settled it. Instrument first.
