@@ -1,0 +1,52 @@
+// PROBE: `reduce` from the ℚ[x] CUT into the EXISTING ℤ_N[x].
+//
+// The insight that shrinks the reproof: `modNPolynomialsHaveNoZeroDivisors` is a fact about
+// ℤ_N[x] ALONE — no ℚ in it — so it is citable directly, not transferred. And `N` is a fixed
+// `Int` constant, so Eisenstein's prime never has to live on ℚ's cut either. The ONLY thing
+// that must cross is the divisibility of a ℚ-cut coefficient by N.
+//
+// So the cut needs its own class map. The question this probe answers: can a function from
+// ℚ (restricted to the cut) into Zn be axiomatised compatibly with `cls`, or does the
+// coefficient have to become an `Int` first (which the number-tower refactor forbids — it
+// dropped the `from*` functions deliberately)?
+import qpoly <<< "std/rational/polynomial.b4m"
+import rational <<< "std/rational.b4m"
+import mod_n <<< "std/integer/mod-n.b4m"
+import mod_n_poly <<< "std/integer/mod-n-polynomial.b4m"
+import peano <<< "std/peano.b4m"
+import closure <<< "closure.b4m"
+
+sort Q = rational.Q
+sort QPoly = qpoly.QPoly
+sort Nat = peano.Nat
+sort Zn = mod_n.Zn
+pred isInteger = rational.isInteger
+pred hasIntegerCoefficients = closure.hasIntegerCoefficients
+
+// the cut's class map, stated DIRECTLY on ℚ's integers (no detour through Int)
+func qcls(a: Q) => Zn requires isInteger(a)
+axiom qclsZero: qcls(rational.ZERO) = mod_n.ZERO
+axiom qclsAdd: forall a, b: Q; isInteger(a) -> isInteger(b) ->
+  mod_n.add(qcls(a), qcls(b)) = qcls(rational.add(a, b))
+axiom qclsMul: forall a, b: Q; isInteger(a) -> isInteger(b) ->
+  mod_n.mul(qcls(a), qcls(b)) = qcls(rational.mul(a, b))
+
+// `reduce` on the cut, coefficientwise
+func qreduce(p: QPoly) => mod_n_poly.ZnPoly requires hasIntegerCoefficients(p)
+axiom qreduceCoefficientwise: forall p: QPoly; forall i: Nat;
+  hasIntegerCoefficients(p) ->
+  mod_n_poly.zcoeff(qreduce(p), i) = qcls(qpoly.qcoeff(p, i))
+
+// THE PROBE: does the domain property cite directly, with no transfer?
+theorem probeTheDomainPropertyCites: forall p, q: mod_n_poly.ZnPoly;
+  mod_n_poly.is_prime(mod_n.N) ->
+  (not (p = mod_n_poly.ZZEROP)) -> (not (q = mod_n_poly.ZZEROP)) ->
+  (not (mod_n_poly.zmulP(p, q) = mod_n_poly.ZZEROP))
+proof
+  @conclusion |
+    forall p, q: mod_n_poly.ZnPoly;
+      mod_n_poly.is_prime(mod_n.N) ->
+      (not (p = mod_n_poly.ZZEROP)) -> (not (q = mod_n_poly.ZZEROP)) ->
+      (not (mod_n_poly.zmulP(p, q) = mod_n_poly.ZZEROP))
+    [using import(mod_n_poly) modNPolynomialsHaveNoZeroDivisors]
+qed
