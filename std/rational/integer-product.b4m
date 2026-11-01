@@ -1518,7 +1518,7 @@ func theSubject() => qpoly.QPoly
 pred isADenominatorFor(i: Nat, v: Q)
 axiom denominatorMeaning: forall i: Nat; forall v: Q;
   isADenominatorFor(i, v) iff
-  (isInteger(v) and (not (v = rational.ZERO)) and
+  (isInteger(v) and less_than(ZERO, v) and (not (v = rational.ZERO)) and
   (exists b: Q; isInteger(b) and
   qpoly.qcoeff(theSubject, i) = rational.mul(b, recip(v))))
 
@@ -1565,31 +1565,150 @@ proof
               @the-coefficient |
                 qpoly.qcoeff(theSubject, i) = rational.mul(b, recip(c))
                 [using tautology the-parts]
-              @the-numerator-works |
-                isInteger(b) and
-                  qpoly.qcoeff(theSubject, i) = rational.mul(b, recip(c))
-                [by both b-is-an-integer the-coefficient]
-              @a-numerator-exists |
-                exists b2: Q; isInteger(b2) and
-                  qpoly.qcoeff(theSubject, i) = rational.mul(b2, recip(c))
-                [by witness(b) the-numerator-works]
-              @the-spec-parts |
-                isInteger(c) and (not (c = rational.ZERO)) and
-                  (exists b2: Q; isInteger(b2) and
-                  qpoly.qcoeff(theSubject, i) = rational.mul(b2, recip(c)))
-                [using tautology c-is-an-integer c-is-nonzero a-numerator-exists]
-              @the-spec-meaning |
-                isADenominatorFor(i, c) iff
-                  (isInteger(c) and (not (c = rational.ZERO)) and
-                  (exists b2: Q; isInteger(b2) and
-                  qpoly.qcoeff(theSubject, i) = rational.mul(b2, recip(c))))
-                [using specialize denominatorMeaning(i, c)]
-              @c-is-a-denominator |
-                isADenominatorFor(i, c)
-                [using tautology the-spec-meaning the-spec-parts]
+              // ℚ's fraction axiom hands over SOME nonzero c; the spec
+              // wants a POSITIVE one. If c is negative, (neg(b), neg(c))
+              // names the same number — `theFractionSurvivesASignFlip`.
+              @the-sign-split |
+                less_than(ZERO, c) or ZERO = c or
+                  less_than(c, ZERO)
+                [using specialize rational.lessThanTrichotomy(ZERO, c)]
               @conclusion-a-denominator-exists |
                 exists v: Q; isADenominatorFor(i, v)
-                [by witness(c) c-is-a-denominator]
+                case the-sign-split {
+                  @when-not-negative |
+                    assume less_than(ZERO, c) or ZERO = c {
+                      @the-nonnegative-cases |
+                        less_than(ZERO, c) or ZERO = c
+                        [by hypothesis when-not-negative]
+                      @conclusion-nonnegative |
+                        exists v: Q; isADenominatorFor(i, v)
+                        case the-nonnegative-cases {
+                          // c > 0: it already serves
+                          @when-positive |
+                            assume less_than(ZERO, c) {
+                              @c-is-positive |
+                                less_than(ZERO, c)
+                                [by hypothesis when-positive]
+                              @the-numerator-works |
+                                isInteger(b) and
+                                  qpoly.qcoeff(theSubject, i) =
+                                  rational.mul(b, recip(c))
+                                [by both b-is-an-integer the-coefficient]
+                              @a-numerator-exists |
+                                exists b2: Q; isInteger(b2) and
+                                  qpoly.qcoeff(theSubject, i) =
+                                  rational.mul(b2, recip(c))
+                                [by witness(b) the-numerator-works]
+                              @the-spec-parts |
+                                isInteger(c) and less_than(ZERO, c) and
+                                  (not (c = rational.ZERO)) and
+                                  (exists b2: Q; isInteger(b2) and
+                                  qpoly.qcoeff(theSubject, i) =
+                                  rational.mul(b2, recip(c)))
+                                [using tautology c-is-an-integer c-is-positive c-is-nonzero a-numerator-exists]
+                              @the-spec-meaning |
+                                isADenominatorFor(i, c) iff
+                                  (isInteger(c) and
+                                  less_than(ZERO, c) and
+                                  (not (c = rational.ZERO)) and
+                                  (exists b2: Q; isInteger(b2) and
+                                  qpoly.qcoeff(theSubject, i) =
+                                  rational.mul(b2, recip(c))))
+                                [using specialize denominatorMeaning(i, c)]
+                              @c-is-a-denominator |
+                                isADenominatorFor(i, c)
+                                [using tautology the-spec-meaning the-spec-parts]
+                              @conclusion-positive |
+                                exists v: Q; isADenominatorFor(i, v)
+                                [by witness(c) c-is-a-denominator]
+                            }
+                          // c = 0 contradicts the fraction axiom's own c != 0
+                          @when-zero |
+                            assume ZERO = c {
+                              @zero-is-c |
+                                ZERO = c
+                                [by hypothesis when-zero]
+                              @c-is-zero |
+                                c = rational.ZERO
+                                [by symmetry zero-is-c]
+                              @conclusion-zero |
+                                exists v: Q; isADenominatorFor(i, v)
+                                [by ex_falso c-is-zero c-is-nonzero]
+                            }
+                        }
+                    }
+                  // c < 0: flip both halves
+                  @when-negative |
+                    assume less_than(c, ZERO) {
+                      @c-is-negative |
+                        less_than(c, ZERO)
+                        [by hypothesis when-negative]
+                      @negatives-of-negatives |
+                        forall x: Q; less_than(x, ZERO) ->
+                          less_than(ZERO, rational.neg(x))
+                        [using model(rational.RationalOrderedField) field_order.negOfNegativeIsPositive]
+                      @minus-c-is-positive |
+                        less_than(ZERO, rational.neg(c))
+                        [using specialize negatives-of-negatives(c) c-is-negative]
+                      @minus-c-is-nonzero |
+                        not (rational.neg(c) = rational.ZERO)
+                        [using specialize rational_integer_order.aPositiveIsNonzero(rational.neg(c)) minus-c-is-positive]
+                      @the-integer-negations |
+                        forall x: Q; isInteger(x) ->
+                          isInteger(rational.neg(x))
+                        [using import(rational) isIntegerNeg]
+                      @minus-c-is-an-integer |
+                        isInteger(rational.neg(c))
+                        [using specialize the-integer-negations(c) c-is-an-integer]
+                      @minus-b-is-an-integer |
+                        isInteger(rational.neg(b))
+                        [using specialize the-integer-negations(b) b-is-an-integer]
+                      @the-flip |
+                        rational.mul(rational.neg(b),
+                          recip(rational.neg(c))) =
+                          rational.mul(b, recip(c))
+                        [using specialize theFractionSurvivesASignFlip(b, c) c-is-nonzero]
+                      @the-flipped-coefficient |
+                        qpoly.qcoeff(theSubject, i) =
+                          rational.mul(rational.neg(b),
+                          recip(rational.neg(c)))
+                        [by rewrite the-flip the-coefficient]
+                      @the-flipped-numerator-works |
+                        isInteger(rational.neg(b)) and
+                          qpoly.qcoeff(theSubject, i) =
+                          rational.mul(rational.neg(b),
+                          recip(rational.neg(c)))
+                        [by both minus-b-is-an-integer the-flipped-coefficient]
+                      @a-flipped-numerator-exists |
+                        exists b2: Q; isInteger(b2) and
+                          qpoly.qcoeff(theSubject, i) =
+                          rational.mul(b2, recip(rational.neg(c)))
+                        [by witness(rational.neg(b)) the-flipped-numerator-works]
+                      @the-flipped-spec-parts |
+                        isInteger(rational.neg(c)) and
+                          less_than(ZERO, rational.neg(c)) and
+                          (not (rational.neg(c) = rational.ZERO)) and
+                          (exists b2: Q; isInteger(b2) and
+                          qpoly.qcoeff(theSubject, i) =
+                          rational.mul(b2, recip(rational.neg(c))))
+                        [using tautology minus-c-is-an-integer minus-c-is-positive minus-c-is-nonzero a-flipped-numerator-exists]
+                      @the-flipped-spec-meaning |
+                        isADenominatorFor(i, rational.neg(c)) iff
+                          (isInteger(rational.neg(c)) and
+                          less_than(ZERO, rational.neg(c)) and
+                          (not (rational.neg(c) = rational.ZERO)) and
+                          (exists b2: Q; isInteger(b2) and
+                          qpoly.qcoeff(theSubject, i) =
+                          rational.mul(b2, recip(rational.neg(c)))))
+                        [using specialize denominatorMeaning(i, rational.neg(c))]
+                      @minus-c-is-a-denominator |
+                        isADenominatorFor(i, rational.neg(c))
+                        [using tautology the-flipped-spec-meaning the-flipped-spec-parts]
+                      @conclusion-negative |
+                        exists v: Q; isADenominatorFor(i, v)
+                        [by witness(rational.neg(c)) minus-c-is-a-denominator]
+                    }
+                }
             }
           @conclusion-inner |
             exists v: Q; isADenominatorFor(i, v)
@@ -1718,12 +1837,14 @@ proof
                     [by hypothesis given-v-is-a-denominator]
                   @the-spec |
                     isADenominatorFor(i, v) iff
-                      (isInteger(v) and (not (v = rational.ZERO)) and
+                      (isInteger(v) and less_than(ZERO, v) and
+                      (not (v = rational.ZERO)) and
                       (exists b: Q; isInteger(b) and
                       qpoly.qcoeff(theSubject, i) = rational.mul(b, recip(v))))
                     [using specialize denominatorMeaning(i, v)]
                   @the-parts |
-                    isInteger(v) and (not (v = rational.ZERO)) and
+                    isInteger(v) and less_than(ZERO, v) and
+                      (not (v = rational.ZERO)) and
                       (exists b: Q; isInteger(b) and
                       qpoly.qcoeff(theSubject, i) = rational.mul(b, recip(v)))
                     [using tautology the-spec v-is-a-denominator]
@@ -1946,7 +2067,8 @@ qed
 pred isAMaximalCommonDivisorUpTo(d: Q, s: QSeq, n: Nat)
 axiom maximalCommonDivisorMeaning: forall d: Q; forall s: QSeq; forall n: Nat;
   isAMaximalCommonDivisorUpTo(d, s, n) iff
-  (isInteger(d) and (not (d = rational.ZERO)) and
+  (isInteger(d) and less_than(ZERO, d) and
+  (not (d = rational.ZERO)) and
   isACommonDivisorUpTo(d, s, n) and
   (forall e: Q; isInteger(e) -> isACommonDivisorUpTo(e, s, n) ->
   dividesIntegrally(e, d)))
@@ -2049,6 +2171,142 @@ proof
       (not (a = rational.ZERO)) ->
       rational.mul(a, b) = rational.mul(a, c) -> b = c
     [by generalize generalize-a]
+qed
+
+// Negating numerator and denominator together leaves a fraction alone. This is what lets the
+// denominator spec insist on a POSITIVE denominator: ℚ's fraction axiom hands over some
+// nonzero c, and if c is negative, (neg(b), neg(c)) names the same number.
+//
+// Both belong in `std/rational.b4m` beside the other `recip` algebra; they are here because
+// the proof needs `aNonzeroFactorCancels`, which `std/rational.b4m` does not have.
+theorem theReciprocalOfANegation: forall c: Q;
+  (not (c = ZERO)) ->
+  rational.recip(rational.neg(c)) = rational.neg(rational.recip(c))
+proof
+  @generalize-c |
+    fix c: Q {
+      @given-c-nonzero |
+        assume not (c = ZERO) {
+          @c-nonzero |
+            not (c = ZERO)
+            [by hypothesis given-c-nonzero]
+          @c-inverts |
+            rational.mul(c, rational.recip(c)) = rational.ONE
+            [using specialize rational.fieldInverse(c) c-nonzero]
+          // neg(c) is nonzero too: otherwise c = neg(neg(c)) = neg(ZERO) = ZERO
+          @given-neg-c-is-zero |
+            assume rational.neg(c) = ZERO {
+              @neg-c-is-zero |
+                rational.neg(c) = ZERO
+                [by hypothesis given-neg-c-is-zero]
+              @the-double-negation |
+                rational.neg(rational.neg(c)) = c
+                [using specialize rational.negNeg(c)]
+              @c-is-the-double-negation |
+                c = rational.neg(rational.neg(c))
+                [by symmetry the-double-negation]
+              @c-is-neg-zero |
+                c = rational.neg(ZERO)
+                [by rewrite neg-c-is-zero c-is-the-double-negation]
+              @neg-zero-is-zero |
+                rational.neg(ZERO) = ZERO
+                [using import(rational) negZero]
+              @c-is-zero |
+                c = ZERO
+                [using simplify c-is-neg-zero neg-zero-is-zero]
+            }
+          @neg-c-nonzero |
+            not (rational.neg(c) = ZERO)
+            [by contradiction given-neg-c-is-zero c-is-zero c-nonzero]
+          @neg-c-inverts |
+            rational.mul(rational.neg(c),
+              rational.recip(rational.neg(c))) = rational.ONE
+            [using specialize rational.fieldInverse(rational.neg(c)) neg-c-nonzero]
+          // the two negations cancel, so neg(recip(c)) is also an inverse
+          @the-two-negations-cancel |
+            rational.mul(rational.neg(c),
+              rational.neg(rational.recip(c))) =
+              rational.mul(c, rational.recip(c))
+            [using polynomial(rational)]
+          @the-negation-inverts |
+            rational.mul(rational.neg(c),
+              rational.neg(rational.recip(c))) = rational.ONE
+            [using simplify the-two-negations-cancel c-inverts]
+          @the-two-agree |
+            rational.mul(rational.neg(c),
+              rational.recip(rational.neg(c))) =
+              rational.mul(rational.neg(c),
+              rational.neg(rational.recip(c)))
+            [using simplify neg-c-inverts the-negation-inverts]
+          @conclusion-the-reciprocal |
+            rational.recip(rational.neg(c)) =
+              rational.neg(rational.recip(c))
+            [using specialize aNonzeroFactorCancels(rational.neg(c), rational.recip(rational.neg(c)), rational.neg(rational.recip(c))) neg-c-nonzero the-two-agree]
+        }
+      @nonzero-implies |
+        (not (c = ZERO)) ->
+          rational.recip(rational.neg(c)) =
+          rational.neg(rational.recip(c))
+        [by discharge given-c-nonzero]
+    }
+  @conclusion |
+    forall c: Q;
+      (not (c = ZERO)) ->
+      rational.recip(rational.neg(c)) = rational.neg(rational.recip(c))
+    [by generalize generalize-c]
+qed
+
+// The fraction itself is unchanged when both halves flip sign.
+theorem theFractionSurvivesASignFlip: forall b, c: Q;
+  (not (c = ZERO)) ->
+  rational.mul(rational.neg(b), rational.recip(rational.neg(c))) =
+  rational.mul(b, rational.recip(c))
+proof
+  @generalize-b |
+    fix b: Q {
+      @generalize-c |
+        fix c: Q {
+          @given-c-nonzero |
+            assume not (c = ZERO) {
+              @c-nonzero |
+                not (c = ZERO)
+                [by hypothesis given-c-nonzero]
+              @the-reciprocal-flips |
+                rational.recip(rational.neg(c)) =
+                  rational.neg(rational.recip(c))
+                [using specialize theReciprocalOfANegation(c) c-nonzero]
+              @the-negations-cancel |
+                rational.mul(rational.neg(b),
+                  rational.neg(rational.recip(c))) =
+                  rational.mul(b, rational.recip(c))
+                [using polynomial(rational)]
+              @conclusion-unchanged |
+                rational.mul(rational.neg(b),
+                  rational.recip(rational.neg(c))) =
+                  rational.mul(b, rational.recip(c))
+                [by rewrite the-reciprocal-flips the-negations-cancel]
+            }
+          @nonzero-implies |
+            (not (c = ZERO)) ->
+              rational.mul(rational.neg(b),
+              rational.recip(rational.neg(c))) =
+              rational.mul(b, rational.recip(c))
+            [by discharge given-c-nonzero]
+        }
+      @discharge-c |
+        forall c9: Q;
+          (not (c9 = ZERO)) ->
+          rational.mul(rational.neg(b),
+          rational.recip(rational.neg(c9))) =
+          rational.mul(b, rational.recip(c9))
+        [by generalize generalize-c]
+    }
+  @conclusion |
+    forall b, c: Q;
+      (not (c = ZERO)) ->
+      rational.mul(rational.neg(b), rational.recip(rational.neg(c))) =
+      rational.mul(b, rational.recip(c))
+    [by generalize generalize-b]
 qed
 
 // If e divides every quotient and each entry is d·quotient, then d·e divides every entry:
@@ -2371,14 +2629,16 @@ proof
                             [by hypothesis given-d-is-maximal]
                           @the-maximal-meaning |
                             isAMaximalCommonDivisorUpTo(d, s, n) iff
-                              (isInteger(d) and (not (d = rational.ZERO)) and
+                              (isInteger(d) and less_than(ZERO, d) and
+                              (not (d = rational.ZERO)) and
                               isACommonDivisorUpTo(d, s, n) and
                               (forall e2: Q; isInteger(e2) ->
                               isACommonDivisorUpTo(e2, s, n) ->
                               dividesIntegrally(e2, d)))
                             [using specialize maximalCommonDivisorMeaning(d, s, n)]
                           @the-maximal-parts |
-                            isInteger(d) and (not (d = rational.ZERO)) and
+                            isInteger(d) and less_than(ZERO, d) and
+                              (not (d = rational.ZERO)) and
                               isACommonDivisorUpTo(d, s, n) and
                               (forall e2: Q; isInteger(e2) ->
                               isACommonDivisorUpTo(e2, s, n) ->
@@ -2630,7 +2890,8 @@ qed
 pred isAMaximalCommonDivisorOfThePair(g: Q, a: Q, b: Q)
 axiom pairDivisorMeaning: forall g, a, b: Q;
   isAMaximalCommonDivisorOfThePair(g, a, b) iff
-  (isInteger(g) and (not (g = rational.ZERO)) and
+  (isInteger(g) and less_than(ZERO, g) and
+  (not (g = rational.ZERO)) and
   dividesIntegrally(g, a) and dividesIntegrally(g, b) and
   (forall e: Q; isInteger(e) -> dividesIntegrally(e, a) ->
   dividesIntegrally(e, b) -> dividesIntegrally(e, g)))
@@ -2663,7 +2924,8 @@ proof
                                 [by hypothesis given-g-is-maximal]
                               @the-pair-meaning |
                                 isAMaximalCommonDivisorOfThePair(g, a, b) iff
-                                  (isInteger(g) and (not (g = rational.ZERO)) and
+                                  (isInteger(g) and less_than(ZERO, g) and
+                                  (not (g = rational.ZERO)) and
                                   dividesIntegrally(g, a) and
                                   dividesIntegrally(g, b) and
                                   (forall e2: Q; isInteger(e2) ->
@@ -2672,7 +2934,8 @@ proof
                                   dividesIntegrally(e2, g)))
                                 [using specialize pairDivisorMeaning(g, a, b)]
                               @the-pair-parts |
-                                isInteger(g) and (not (g = rational.ZERO)) and
+                                isInteger(g) and less_than(ZERO, g) and
+                                  (not (g = rational.ZERO)) and
                                   dividesIntegrally(g, a) and
                                   dividesIntegrally(g, b) and
                                   (forall e2: Q; isInteger(e2) ->
@@ -5002,6 +5265,135 @@ proof
     [by generalize generalize-s]
 qed
 
+// A product of POSITIVES is positive — the sharpening of the lemma above that makes the
+// common denominator usable by the descent. `positiveProduct` is ℚ's own axiom; the induction
+// is the same shape, and simpler, since there is no contradiction to route through.
+theorem theProductOfPositivesIsPositive: forall s: QSeq; forall n: Nat;
+  (forall i: Nat; nat_less_than(i, n) -> less_than(ZERO, qat(s, i))) ->
+  less_than(ZERO, qProductUpTo(s, n))
+proof
+  @generalize-s |
+    fix s: QSeq {
+      // base: the empty product is ONE, and ZERO < ONE
+      @base-case-proof |
+        assume forall i: Nat; nat_less_than(i, NAT_ZERO) ->
+          less_than(ZERO, qat(s, i)) {
+          @the-empty-product |
+            qProductUpTo(s, NAT_ZERO) = ONE
+            [using specialize qProductUpToZero(s)]
+          @zero-is-below-one |
+            less_than(ZERO, ONE)
+            [using model(rational.RationalOrderedField) field_order.zeroLessThanOne]
+          @conclusion-base |
+            less_than(ZERO, qProductUpTo(s, NAT_ZERO))
+            [by rewrite the-empty-product zero-is-below-one]
+        }
+      @base-case |
+        (forall i: Nat; nat_less_than(i, NAT_ZERO) ->
+          less_than(ZERO, qat(s, i))) ->
+          less_than(ZERO, qProductUpTo(s, NAT_ZERO))
+        [by discharge base-case-proof]
+
+      @induction-step |
+        fix k: Nat {
+          @given-inductive-hypothesis |
+            assume (forall i: Nat; nat_less_than(i, k) ->
+              less_than(ZERO, qat(s, i))) ->
+              less_than(ZERO, qProductUpTo(s, k)) {
+              @inductive-hypothesis |
+                (forall i: Nat; nat_less_than(i, k) ->
+                  less_than(ZERO, qat(s, i))) ->
+                  less_than(ZERO, qProductUpTo(s, k))
+                [by hypothesis given-inductive-hypothesis]
+              @given-all-positive |
+                assume forall i: Nat; nat_less_than(i, nat_succ(k)) ->
+                  less_than(ZERO, qat(s, i)) {
+                  @all-positive |
+                    forall i: Nat; nat_less_than(i, nat_succ(k)) ->
+                      less_than(ZERO, qat(s, i))
+                    [by hypothesis given-all-positive]
+                  @k-below-its-successor |
+                    nat_less_than(k, nat_succ(k))
+                    [using specialize peano_order.lessThanSelf(k)]
+                  @below-k-positive |
+                    fix i: Nat {
+                      @given-i-below-k |
+                        assume nat_less_than(i, k) {
+                          @i-below-k |
+                            nat_less_than(i, k)
+                            [by hypothesis given-i-below-k]
+                          @i-below-succ-k |
+                            nat_less_than(i, nat_succ(k))
+                            [using specialize peano_order.lessThanTransitive(i, k, nat_succ(k)) i-below-k k-below-its-successor]
+                          @conclusion-this-positive |
+                            less_than(ZERO, qat(s, i))
+                            [using specialize all-positive(i) i-below-succ-k]
+                        }
+                      @below-k-implies |
+                        nat_less_than(i, k) ->
+                          less_than(ZERO, qat(s, i))
+                        [by discharge given-i-below-k]
+                    }
+                  @all-below-k-positive |
+                    forall i: Nat; nat_less_than(i, k) ->
+                      less_than(ZERO, qat(s, i))
+                    [by generalize below-k-positive]
+                  @the-partial-is-positive |
+                    less_than(ZERO, qProductUpTo(s, k))
+                    [by modus_ponens inductive-hypothesis all-below-k-positive]
+                  @the-k-th-is-positive |
+                    less_than(ZERO, qat(s, k))
+                    [using specialize all-positive(k) k-below-its-successor]
+                  @the-next-product |
+                    qProductUpTo(s, nat_succ(k)) =
+                      rational.mul(qProductUpTo(s, k), qat(s, k))
+                    [using specialize qProductUpToSucc(s, k)]
+                  @the-factors-product-is-positive |
+                    less_than(ZERO,
+                      rational.mul(qProductUpTo(s, k), qat(s, k)))
+                    [using specialize rational.positiveProduct(qProductUpTo(s, k), qat(s, k)) the-partial-is-positive the-k-th-is-positive]
+                  @conclusion-the-step |
+                    less_than(ZERO, qProductUpTo(s, nat_succ(k)))
+                    [by rewrite the-next-product the-factors-product-is-positive]
+                }
+              @conclusion-step-implication |
+                (forall i: Nat; nat_less_than(i, nat_succ(k)) ->
+                  less_than(ZERO, qat(s, i))) ->
+                  less_than(ZERO, qProductUpTo(s, nat_succ(k)))
+                [by discharge given-all-positive]
+            }
+          @induction-step-at-k |
+            ((forall i: Nat; nat_less_than(i, k) ->
+              less_than(ZERO, qat(s, i))) ->
+              less_than(ZERO, qProductUpTo(s, k))) ->
+              ((forall i: Nat; nat_less_than(i, nat_succ(k)) ->
+              less_than(ZERO, qat(s, i))) ->
+              less_than(ZERO, qProductUpTo(s, nat_succ(k))))
+            [by discharge given-inductive-hypothesis]
+        }
+      @induction-step-for-all-k |
+        forall k: Nat;
+          ((forall i: Nat; nat_less_than(i, k) ->
+          less_than(ZERO, qat(s, i))) ->
+          less_than(ZERO, qProductUpTo(s, k))) ->
+          ((forall i: Nat; nat_less_than(i, nat_succ(k)) ->
+          less_than(ZERO, qat(s, i))) ->
+          less_than(ZERO, qProductUpTo(s, nat_succ(k))))
+        [by generalize induction-step]
+      @all-bounds |
+        forall n: Nat;
+          (forall i: Nat; nat_less_than(i, n) ->
+          less_than(ZERO, qat(s, i))) ->
+          less_than(ZERO, qProductUpTo(s, n))
+        [using instantiation peano.induction((fun z: Nat => ((forall i: Nat; nat_less_than(i, z) -> less_than(ZERO, qat(s, i))) -> less_than(ZERO, qProductUpTo(s, z))))) base-case induction-step-for-all-k]
+    }
+  @conclusion |
+    forall s: QSeq; forall n: Nat;
+      (forall i: Nat; nat_less_than(i, n) -> less_than(ZERO, qat(s, i))) ->
+      less_than(ZERO, qProductUpTo(s, n))
+    [by generalize generalize-s]
+qed
+
 // Integrality transfers across the same match — the companion to
 // `coprimeEntriesMakeCoprimeCoefficients`, for the decomposition's
 // `hasIntegerCoefficientsUpTo` conjunct.
@@ -5873,6 +6265,7 @@ proof
                       @the-meaning |
                         isADenominatorFor(i, qat(t, i)) iff
                           (isInteger(qat(t, i)) and
+                          less_than(ZERO, qat(t, i)) and
                           (not (qat(t, i) = ZERO)) and
                           (exists b: Q; isInteger(b) and
                           qpoly.qcoeff(theSubject, i) =
@@ -5938,6 +6331,7 @@ proof
                       @the-meaning |
                         isADenominatorFor(i, qat(t, i)) iff
                           (isInteger(qat(t, i)) and
+                          less_than(ZERO, qat(t, i)) and
                           (not (qat(t, i) = ZERO)) and
                           (exists b: Q; isInteger(b) and
                           qpoly.qcoeff(theSubject, i) =
@@ -5975,6 +6369,78 @@ proof
     forall t: QSeq; forall n: Nat;
       (forall i: Nat; nat_less_than(i, n) -> isADenominatorFor(i, qat(t, i))) ->
       (forall i: Nat; nat_less_than(i, n) -> (not (qat(t, i) = ZERO)))
+    [by generalize generalize-t]
+qed
+
+// The positivity half, added so the common denominator is POSITIVE — which is what the
+// descent in stage C needs, since it well-orders the first quotient and a natural number has
+// to be what it descends on.
+theorem aDenominatorIsPositive: forall t: QSeq; forall n: Nat;
+  (forall i: Nat; nat_less_than(i, n) -> isADenominatorFor(i, qat(t, i))) ->
+  (forall i: Nat; nat_less_than(i, n) -> less_than(ZERO, qat(t, i)))
+proof
+  @generalize-t |
+    fix t: QSeq {
+      @generalize-n |
+        fix n: Nat {
+          @given-the-denominators |
+            assume forall i: Nat; nat_less_than(i, n) ->
+              isADenominatorFor(i, qat(t, i)) {
+              @the-denominators |
+                forall i: Nat; nat_less_than(i, n) ->
+                  isADenominatorFor(i, qat(t, i))
+                [by hypothesis given-the-denominators]
+              @each-index |
+                fix i: Nat {
+                  @given-i-below |
+                    assume nat_less_than(i, n) {
+                      @i-below |
+                        nat_less_than(i, n)
+                        [by hypothesis given-i-below]
+                      @the-spec-here |
+                        isADenominatorFor(i, qat(t, i))
+                        [using specialize the-denominators(i) i-below]
+                      @the-meaning |
+                        isADenominatorFor(i, qat(t, i)) iff
+                          (isInteger(qat(t, i)) and
+                          less_than(ZERO, qat(t, i)) and
+                          (not (qat(t, i) = ZERO)) and
+                          (exists b: Q; isInteger(b) and
+                          qpoly.qcoeff(theSubject, i) =
+                          rational.mul(b, recip(qat(t, i)))))
+                        [using specialize denominatorMeaning(i, qat(t, i))]
+                      @conclusion-positive |
+                        less_than(ZERO, qat(t, i))
+                        [using tautology the-meaning the-spec-here]
+                    }
+                  @below-implies |
+                    nat_less_than(i, n) -> less_than(ZERO, qat(t, i))
+                    [by discharge given-i-below]
+                }
+              @conclusion-all |
+                forall i: Nat; nat_less_than(i, n) ->
+                  less_than(ZERO, qat(t, i))
+                [by generalize each-index]
+            }
+          @the-implication |
+            (forall i: Nat; nat_less_than(i, n) ->
+              isADenominatorFor(i, qat(t, i))) ->
+              (forall i: Nat; nat_less_than(i, n) ->
+              less_than(ZERO, qat(t, i)))
+            [by discharge given-the-denominators]
+        }
+      @discharge-n |
+        forall n9: Nat;
+          (forall i: Nat; nat_less_than(i, n9) ->
+          isADenominatorFor(i, qat(t, i))) ->
+          (forall i: Nat; nat_less_than(i, n9) ->
+          less_than(ZERO, qat(t, i)))
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall t: QSeq; forall n: Nat;
+      (forall i: Nat; nat_less_than(i, n) -> isADenominatorFor(i, qat(t, i))) ->
+      (forall i: Nat; nat_less_than(i, n) -> less_than(ZERO, qat(t, i)))
     [by generalize generalize-t]
 qed
 
@@ -6090,6 +6556,7 @@ theorem theCommonDenominatorAndItsNumeratorsExist: forall n: Nat;
   isADenominatorFor(i, qat(denominators, i))) and
   isInteger(qProductUpTo(denominators, n)) and
   (not (qProductUpTo(denominators, n) = ZERO)) and
+  less_than(ZERO, qProductUpTo(denominators, n)) and
   (forall i: Nat; nat_less_than(i, n) ->
   dividesIntegrally(qat(denominators, i),
   qProductUpTo(denominators, n))) and
@@ -6123,6 +6590,13 @@ proof
           @the-product-is-nonzero |
             not (qProductUpTo(t, n) = ZERO)
             [using specialize theProductOfNonzerosIsNonzero(t, n) the-entries-are-nonzero]
+          @the-entries-are-positive |
+            forall i: Nat; nat_less_than(i, n) ->
+              less_than(ZERO, qat(t, i))
+            [using specialize aDenominatorIsPositive(t, n) the-denominators]
+          @the-product-is-positive |
+            less_than(ZERO, qProductUpTo(t, n))
+            [using specialize theProductOfPositivesIsPositive(t, n) the-entries-are-positive]
           @each-divides-the-product |
             forall i: Nat; nat_less_than(i, n) ->
               dividesIntegrally(qat(t, i), qProductUpTo(t, n))
@@ -6138,18 +6612,20 @@ proof
               isADenominatorFor(i, qat(t, i))) and
               isInteger(qProductUpTo(t, n)) and
               (not (qProductUpTo(t, n) = ZERO)) and
+              less_than(ZERO, qProductUpTo(t, n)) and
               (forall i: Nat; nat_less_than(i, n) ->
               dividesIntegrally(qat(t, i), qProductUpTo(t, n))) and
               (forall i: Nat; nat_less_than(i, n) ->
               isInteger(rational.mul(qProductUpTo(t, n),
               qpoly.qcoeff(theSubject, i))))
-            [using tautology the-denominators the-product-is-an-integer the-product-is-nonzero each-divides-the-product every-coefficient-cleared]
+            [using tautology the-denominators the-product-is-an-integer the-product-is-nonzero the-product-is-positive each-divides-the-product every-coefficient-cleared]
           @conclusion-the-parts |
             exists denominators: QSeq;
               (forall i: Nat; nat_less_than(i, n) ->
               isADenominatorFor(i, qat(denominators, i))) and
               isInteger(qProductUpTo(denominators, n)) and
               (not (qProductUpTo(denominators, n) = ZERO)) and
+              less_than(ZERO, qProductUpTo(denominators, n)) and
               (forall i: Nat; nat_less_than(i, n) ->
               dividesIntegrally(qat(denominators, i),
               qProductUpTo(denominators, n))) and
@@ -6164,6 +6640,7 @@ proof
           isADenominatorFor(i, qat(denominators, i))) and
           isInteger(qProductUpTo(denominators, n)) and
           (not (qProductUpTo(denominators, n) = ZERO)) and
+          less_than(ZERO, qProductUpTo(denominators, n)) and
           (forall i: Nat; nat_less_than(i, n) ->
           dividesIntegrally(qat(denominators, i),
           qProductUpTo(denominators, n))) and
@@ -6179,6 +6656,7 @@ proof
       isADenominatorFor(i, qat(denominators, i))) and
       isInteger(qProductUpTo(denominators, n)) and
       (not (qProductUpTo(denominators, n) = ZERO)) and
+      less_than(ZERO, qProductUpTo(denominators, n)) and
       (forall i: Nat; nat_less_than(i, n) ->
       dividesIntegrally(qat(denominators, i),
       qProductUpTo(denominators, n))) and
@@ -11425,6 +11903,124 @@ proof
       isInteger(rational.mul(whole, qpoly.qcoeff(theSubject, i)))) ->
       less_than(ZERO, rational.mul(whole,
       qpoly.qcoeff(theSubject, NAT_ZERO))) ->
+      (exists q: qpoly.QPoly; exists r, s: Q;
+      qpoly.isTheIntegerDecomposition(theSubject, q, r, s, nat_succ(n)))
+    [by generalize generalize-n]
+qed
+
+// -- LEMMA 17.12, UNCONDITIONAL ON THE DENOMINATOR -----------------------------------------
+// Stage A now delivers a POSITIVE common denominator (the spec picks positive denominators,
+// and a product of positives is positive), so the sign condition the descent needs no longer
+// has to be assumed about a constructed quantity: it follows from `coeff_0 > 0`.
+//
+// What remains as a hypothesis is the degree bound — faithful to Judson, whose p(x) IS of
+// degree n — and the positivity of p's own constant coefficient, which the descent needs
+// because it well-orders the first quotient and a natural number is what it descends on.
+// Judson takes the gcd of the cleared numerators instead, and a gcd needs no sign.
+theorem theIntegerDecompositionExists: forall n: Nat;
+  qpoly.qdegreeAtMost(theSubject, n) ->
+  less_than(ZERO, qpoly.qcoeff(theSubject, NAT_ZERO)) ->
+  (exists q: qpoly.QPoly; exists r, s: Q;
+  qpoly.isTheIntegerDecomposition(theSubject, q, r, s, nat_succ(n)))
+proof
+  @generalize-n |
+    fix n: Nat {
+      @given-the-degree-bound |
+        assume qpoly.qdegreeAtMost(theSubject, n) {
+          @the-degree-bound |
+            qpoly.qdegreeAtMost(theSubject, n)
+            [by hypothesis given-the-degree-bound]
+          @given-the-constant-is-positive |
+            assume less_than(ZERO,
+              qpoly.qcoeff(theSubject, NAT_ZERO)) {
+              @the-constant-is-positive |
+                less_than(ZERO, qpoly.qcoeff(theSubject, NAT_ZERO))
+                [by hypothesis given-the-constant-is-positive]
+              // STAGE A: the common denominator, now positive
+              @the-denominator-exists |
+                exists denominators: QSeq;
+                  (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+                  isADenominatorFor(i, qat(denominators, i))) and
+                  isInteger(qProductUpTo(denominators, nat_succ(n))) and
+                  (not (qProductUpTo(denominators,
+                  nat_succ(n)) = ZERO)) and
+                  less_than(ZERO, qProductUpTo(denominators,
+                  nat_succ(n))) and
+                  (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+                  dividesIntegrally(qat(denominators, i),
+                  qProductUpTo(denominators, nat_succ(n)))) and
+                  (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+                  isInteger(rational.mul(qProductUpTo(denominators,
+                  nat_succ(n)), qpoly.qcoeff(theSubject, i))))
+                [using specialize theCommonDenominatorAndItsNumeratorsExist(nat_succ(n))]
+              @with-the-denominators |
+                unpack denominators: QSeq from the-denominator-exists {
+                  @the-denominator-parts |
+                    (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+                      isADenominatorFor(i, qat(denominators, i))) and
+                      isInteger(qProductUpTo(denominators,
+                      nat_succ(n))) and
+                      (not (qProductUpTo(denominators,
+                      nat_succ(n)) = ZERO)) and
+                      less_than(ZERO, qProductUpTo(denominators,
+                      nat_succ(n))) and
+                      (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+                      dividesIntegrally(qat(denominators, i),
+                      qProductUpTo(denominators, nat_succ(n)))) and
+                      (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+                      isInteger(rational.mul(qProductUpTo(denominators,
+                      nat_succ(n)), qpoly.qcoeff(theSubject, i))))
+                    [by hypothesis with-the-denominators]
+                  @the-whole-is-an-integer |
+                    isInteger(qProductUpTo(denominators, nat_succ(n)))
+                    [using tautology the-denominator-parts]
+                  @the-whole-is-positive |
+                    less_than(ZERO, qProductUpTo(denominators,
+                      nat_succ(n)))
+                    [using tautology the-denominator-parts]
+                  @the-whole-clears-everything |
+                    forall i: Nat; nat_less_than(i, nat_succ(n)) ->
+                      isInteger(rational.mul(qProductUpTo(denominators,
+                      nat_succ(n)), qpoly.qcoeff(theSubject, i)))
+                    [using tautology the-denominator-parts]
+                  // the cleared constant coefficient is a product of positives
+                  @the-cleared-constant-is-positive |
+                    less_than(ZERO,
+                      rational.mul(qProductUpTo(denominators,
+                      nat_succ(n)),
+                      qpoly.qcoeff(theSubject, NAT_ZERO)))
+                    [using specialize rational.positiveProduct(qProductUpTo(denominators, nat_succ(n)), qpoly.qcoeff(theSubject, NAT_ZERO)) the-whole-is-positive the-constant-is-positive]
+                  @conclusion-with-the-denominators |
+                    exists q: qpoly.QPoly; exists r, s: Q;
+                      qpoly.isTheIntegerDecomposition(theSubject, q, r, s,
+                      nat_succ(n))
+                    [using specialize theIntegerDecompositionExistsForAClearingDenominator(n, qProductUpTo(denominators, nat_succ(n))) the-degree-bound the-whole-is-an-integer the-whole-clears-everything the-cleared-constant-is-positive]
+                }
+              @the-decomposition-exists |
+                exists q: qpoly.QPoly; exists r, s: Q;
+                  qpoly.isTheIntegerDecomposition(theSubject, q, r, s,
+                  nat_succ(n))
+                [by unpacked with-the-denominators]
+            }
+          @constant-positive-implies |
+            less_than(ZERO, qpoly.qcoeff(theSubject, NAT_ZERO)) ->
+              (exists q: qpoly.QPoly; exists r, s: Q;
+              qpoly.isTheIntegerDecomposition(theSubject, q, r, s,
+              nat_succ(n)))
+            [by discharge given-the-constant-is-positive]
+        }
+      @the-implication |
+        qpoly.qdegreeAtMost(theSubject, n) ->
+          (less_than(ZERO, qpoly.qcoeff(theSubject, NAT_ZERO)) ->
+          (exists q: qpoly.QPoly; exists r, s: Q;
+          qpoly.isTheIntegerDecomposition(theSubject, q, r, s,
+          nat_succ(n))))
+        [by discharge given-the-degree-bound]
+    }
+  @conclusion |
+    forall n: Nat;
+      qpoly.qdegreeAtMost(theSubject, n) ->
+      less_than(ZERO, qpoly.qcoeff(theSubject, NAT_ZERO)) ->
       (exists q: qpoly.QPoly; exists r, s: Q;
       qpoly.isTheIntegerDecomposition(theSubject, q, r, s, nat_succ(n)))
     [by generalize generalize-n]
