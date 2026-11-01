@@ -213,6 +213,37 @@ while the machinery could not be joined up.
 
 ---
 
+## 8b. "Packaging" was never pure assembly — three real theorems hid inside it
+
+Each time I called the remaining work "threading the pieces together", tracing it turned up
+something unproved. Logged because the estimate was wrong three times in the same way.
+
+1. **Nothing constructed a polynomial from a sequence** (entry 7b) — the bridges took the
+   coefficient match as a hypothesis and nothing supplied it.
+2. **`isAMaximalCommonDivisorOfThePair` had no existence proof.** Every occurrence in
+   `std/rational/integer-product.b4m` is a HYPOTHESIS, never a conclusion. Step 4 had always
+   taken it on faith. A pair is a two-element sequence
+   (`aTwoElementSequenceExists`, `ebcb8ac`) so the sequence descent covers it — but that is
+   still a theorem, not assembly.
+3. **The descent step and coprimality do not line up**, and this one is still open:
+
+       coprimality needs:  forall e; isInteger(e) -> (e divides q BELOW n)
+                                     -> e divides ONE
+       descent step gives: less_than(ZERO, e)                  <- POSITIVE only
+                           forall i; e divides q_i              <- UNBOUNDED
+
+   So (a) negative and zero `e` are not covered — and they matter, since `-1` *does* divide
+   `ONE`, so coprimality is not a statement about positive divisors only — and (b) bounded vs
+   unbounded divisibility. Both need real lemmas.
+
+**The pattern worth naming:** a predicate whose conjuncts are each individually provable can
+still be unreachable, because the *hypotheses* of the proving theorems do not match the
+*conclusions* of the producing ones. Counting conjuncts measures nothing. The composition
+audit — matching each theorem's demanded premises against what the chain supplies — is the only
+thing that found any of these, and it found one every time it was run.
+
+---
+
 ## 9. Process lessons (mine, not the tool's)
 
 - **Probe each mechanism on a scratch file BEFORE writing the proof around it.** The first
