@@ -6492,3 +6492,186 @@ proof
       qat(s, NAT_ZERO) = a and qat(s, nat_succ(NAT_ZERO)) = b
     [by generalize generalize-a]
 qed
+
+// -- DIVISIBILITY AND SIGN ----------------------------------------------------------------
+// Coprimality quantifies over EVERY integer divisor, while the descent step only speaks about
+// POSITIVE ones. These two facts close that gap: a negative divisor divides exactly what its
+// negation does, so the positive case covers all of them.
+
+// `neg(e)` divides whatever `e` does: negate the quotient.
+theorem theNegationDividesTheSame: forall e, m: Q;
+  dividesIntegrally(e, m) -> dividesIntegrally(rational.neg(e), m)
+proof
+  @generalize-e |
+    fix e: Q {
+      @generalize-m |
+        fix m: Q {
+          @given-e-divides |
+            assume dividesIntegrally(e, m) {
+              @e-divides |
+                dividesIntegrally(e, m)
+                [by hypothesis given-e-divides]
+              @the-meaning |
+                dividesIntegrally(e, m) iff
+                  (exists k: Q; isInteger(k) and m = rational.mul(e, k))
+                [using specialize dividesIntegrallyMeaning(e, m)]
+              @a-quotient-exists |
+                exists k: Q; isInteger(k) and m = rational.mul(e, k)
+                [using tautology the-meaning e-divides]
+              @with-the-quotient |
+                unpack k: Q from a-quotient-exists {
+                  @with-quotient-k |
+                    isInteger(k) and m = rational.mul(e, k)
+                    [by hypothesis with-the-quotient]
+                  @k-is-an-integer |
+                    isInteger(k)
+                    [by and_lhs with-quotient-k]
+                  @m-is-e-times-k |
+                    m = rational.mul(e, k)
+                    [by and_rhs with-quotient-k]
+                  @neg-k-is-an-integer |
+                    isInteger(rational.neg(k))
+                    [using specialize rational.isIntegerNeg(k) k-is-an-integer]
+                  // e·k = (-e)·(-k)
+                  @the-negations-multiply |
+                    forall x, y: Q;
+                      rational.mul(rational.neg(x), rational.neg(y)) =
+                      rational.mul(x, y)
+                    [using model(rational.RationalOrderedField) field_order.negMulNeg]
+                  @at-e-and-k |
+                    rational.mul(rational.neg(e), rational.neg(k)) =
+                      rational.mul(e, k)
+                    [using specialize the-negations-multiply(e, k)]
+                  @m-is-the-negated-product |
+                    m = rational.mul(rational.neg(e), rational.neg(k))
+                    [by rewrite at-e-and-k m-is-e-times-k]
+                  @the-witness-works |
+                    isInteger(rational.neg(k)) and
+                      m = rational.mul(rational.neg(e), rational.neg(k))
+                    [by both neg-k-is-an-integer m-is-the-negated-product]
+                  @a-negated-quotient-exists |
+                    exists k2: Q; isInteger(k2) and
+                      m = rational.mul(rational.neg(e), k2)
+                    [by witness(rational.neg(k)) the-witness-works]
+                  @the-negated-meaning |
+                    dividesIntegrally(rational.neg(e), m) iff
+                      (exists k2: Q; isInteger(k2) and
+                      m = rational.mul(rational.neg(e), k2))
+                    [using specialize dividesIntegrallyMeaning(rational.neg(e), m)]
+                  @conclusion-negation-divides |
+                    dividesIntegrally(rational.neg(e), m)
+                    [using tautology the-negated-meaning a-negated-quotient-exists]
+                }
+              @conclusion-exported |
+                dividesIntegrally(rational.neg(e), m)
+                [by unpacked with-the-quotient]
+            }
+          @divides-implies |
+            dividesIntegrally(e, m) ->
+              dividesIntegrally(rational.neg(e), m)
+            [by discharge given-e-divides]
+        }
+      @discharge-m |
+        forall m9: Q;
+          dividesIntegrally(e, m9) ->
+          dividesIntegrally(rational.neg(e), m9)
+        [by generalize generalize-m]
+    }
+  @conclusion |
+    forall e, m: Q;
+      dividesIntegrally(e, m) -> dividesIntegrally(rational.neg(e), m)
+    [by generalize generalize-e]
+qed
+
+// And back: if `neg(e)` divides m then so does `e`, since `e = neg(neg(e))`. The two together
+// make divisibility sign-blind, which is what lets the positive-only descent cover every
+// integer divisor.
+theorem divisibilityIsSignBlind: forall e, m: Q;
+  dividesIntegrally(rational.neg(e), m) -> dividesIntegrally(e, m)
+proof
+  @generalize-e |
+    fix e: Q {
+      @generalize-m |
+        fix m: Q {
+          @given-the-negation-divides |
+            assume dividesIntegrally(rational.neg(e), m) {
+              @the-negation-divides |
+                dividesIntegrally(rational.neg(e), m)
+                [by hypothesis given-the-negation-divides]
+              // neg(neg(e)) divides m, and that IS e
+              @the-double-negation-divides |
+                dividesIntegrally(rational.neg(rational.neg(e)), m)
+                [using specialize theNegationDividesTheSame(rational.neg(e), m) the-negation-divides]
+              @double-negation |
+                forall x: Q; rational.neg(rational.neg(x)) = x
+                [using model(rational.RationalOrderedField) field_order.negNeg]
+              @at-e |
+                rational.neg(rational.neg(e)) = e
+                [using specialize double-negation(e)]
+              @conclusion-e-divides |
+                dividesIntegrally(e, m)
+                [by rewrite at-e the-double-negation-divides]
+            }
+          @negation-implies |
+            dividesIntegrally(rational.neg(e), m) ->
+              dividesIntegrally(e, m)
+            [by discharge given-the-negation-divides]
+        }
+      @discharge-m |
+        forall m9: Q;
+          dividesIntegrally(rational.neg(e), m9) ->
+          dividesIntegrally(e, m9)
+        [by generalize generalize-m]
+    }
+  @conclusion |
+    forall e, m: Q;
+      dividesIntegrally(rational.neg(e), m) -> dividesIntegrally(e, m)
+    [by generalize generalize-e]
+qed
+
+// ZERO cannot divide a nonzero value: `m = 0·k = 0`. This rules out the `e = 0` arm of the
+// sign split, given a positive first quotient.
+theorem zeroDividesOnlyZero: forall m: Q;
+  dividesIntegrally(ZERO, m) -> m = ZERO
+proof
+  @generalize-m |
+    fix m: Q {
+      @given-zero-divides |
+        assume dividesIntegrally(ZERO, m) {
+          @zero-divides |
+            dividesIntegrally(ZERO, m)
+            [by hypothesis given-zero-divides]
+          @the-meaning |
+            dividesIntegrally(ZERO, m) iff
+              (exists k: Q; isInteger(k) and m = rational.mul(ZERO, k))
+            [using specialize dividesIntegrallyMeaning(ZERO, m)]
+          @a-quotient-exists |
+            exists k: Q; isInteger(k) and m = rational.mul(ZERO, k)
+            [using tautology the-meaning zero-divides]
+          @with-the-quotient |
+            unpack k: Q from a-quotient-exists {
+              @with-quotient-k |
+                isInteger(k) and m = rational.mul(ZERO, k)
+                [by hypothesis with-the-quotient]
+              @m-is-zero-times-k |
+                m = rational.mul(ZERO, k)
+                [by and_rhs with-quotient-k]
+              @zero-times-k |
+                rational.mul(ZERO, k) = ZERO
+                [using specialize rational.mulZeroLeft(k)]
+              @conclusion-m-is-zero |
+                m = ZERO
+                [by rewrite zero-times-k m-is-zero-times-k]
+            }
+          @conclusion-exported |
+            m = ZERO
+            [by unpacked with-the-quotient]
+        }
+      @divides-implies |
+        dividesIntegrally(ZERO, m) -> m = ZERO
+        [by discharge given-zero-divides]
+    }
+  @conclusion |
+    forall m: Q; dividesIntegrally(ZERO, m) -> m = ZERO
+    [by generalize generalize-m]
+qed
