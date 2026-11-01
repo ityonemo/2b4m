@@ -263,3 +263,40 @@ thing that found any of these, and it found one every time it was run.
   denominator product "has no relational substitute" (`std/integer/product.b4m` has
   `productUpTo` with a real corpus, and `std/sequence.b4m` instantiates at ℚ cleanly because
   `Value: Q` is unguarded). Both were reasoned rather than measured.
+
+## 11. Euclid's Lemma is unreachable on ℚ's integer cut (BLOCKS 17.14 and 17.15)
+
+**Measured 2026-11-01, after Lemma 17.12 and Gauss's d = 1 branch were both closed.**
+
+Corollary 17.14 and Theorem 17.15 are each ONE theorem from done, and it is the same theorem:
+from `r | a·b` on the cut plus `gcd(r, b) = 1`, conclude `r | a`.
+
+Everything else is built. 17.14's "multiply p(r/s) = 0 through by s^n" is
+`clearingTheDenominatorGivesTheClearedSum`, and the two end-splits
+(`theClearedSumSplitsOffTheConstantTerm` / `…TheLeadingTerm`) deliver exactly
+`r | a_0·s^(n+1)` and `s | a_n·r^n`. 17.15's minimal-index argument has its
+least-witness extraction in `std/rational/natural-wellordering.b4m`.
+
+**Why it is blocked.** Coprimality on the cut is the QUANTIFIED reading — every common
+divisor divides ONE — which does not give Euclid without Bézout. And the cut has no Bézout
+because it has no division algorithm.
+
+**Three routes, all costed:**
+
+1. Transfer ℤ's `bezout` through `IntegersInRational`. Blocked by pain point 2 (no model
+   COMPOSITION): `bezout` is in `std/integer/divides.b4m`, a different namespace from the
+   mapped `integer`, and the transfer re-checks the source proof — so it demands mapping that
+   file's `pow`, `div`, `mod`, `abs`, `gcd`, `lcm` plus `order` and `wellordering`. Three of
+   those are the total functions queue item 2 deletes.
+2. Prove Bézout on the cut from `naturalWellOrdering` (least positive element of {ar+bs}).
+   Needs division-with-remainder on the cut, which is also absent.
+3. Wait for the de-totalization, then take route 1 against a smaller, stable surface.
+
+Route 3 is the right one, and the queue already schedules it. **This is the only thing left
+in chapter 17.**
+
+**The lesson for the pain-point list itself:** three successive versions of 17.14's deferral
+note blamed Gauss's open half. Gauss is now closed and the corollary turns out not to need it
+at all — the proof is direct. A deferral note that names a *dependency* rather than a
+*measured missing theorem* will keep being wrong, because the dependency is the first thing
+that changes. Name the theorem.
