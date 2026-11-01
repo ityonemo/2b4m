@@ -85,6 +85,32 @@ axiom qConvolutionSucc: forall p, q: QPoly; forall i, k: Nat;
 axiom qMulPolyCoeff: forall p, q: QPoly; forall i: Nat;
   qcoeff(qmulP(p, q), i) = qconvolution(p, q, i, i)
 
+// The same partial sum grown at the BASE rather than the top. `ring_poly` needs it to prove
+// `polyMulIsCommutative` — the reversed product's partial sum IS this segment — and a model
+// must map every symbol the transferred proof mentions, so ℚ[x] declares it too.
+func qtailConvolution(p: QPoly, q: QPoly, i: Nat, k: Nat) => Q
+axiom qTailConvolutionZero: forall p, q: QPoly; forall i: Nat;
+  qtailConvolution(p, q, i, NAT_ZERO) =
+  rational.mul(qcoeff(p, i), qcoeff(q, NAT_ZERO))
+axiom qTailConvolutionSucc: forall p, q: QPoly; forall i, k: Nat;
+  qtailConvolution(p, q, i, peano.succ(k)) =
+  rational.add(rational.mul(
+  qcoeff(p, subtraction.sub(i, peano.succ(k))),
+  qcoeff(q, peano.succ(k))),
+  qtailConvolution(p, q, i, k))
+
+// And the two-bound generalization `ring_poly` inducts on: the n+1 terms starting at index m,
+// grown at the top. Same reason it is here — a transferred proof mentions it.
+func qsegment(p: QPoly, q: QPoly, i: Nat, m: Nat, n: Nat) => Q
+axiom qSegmentZero: forall p, q: QPoly; forall i, m: Nat;
+  qsegment(p, q, i, m, NAT_ZERO) =
+  rational.mul(qcoeff(p, m), qcoeff(q, subtraction.sub(i, m)))
+axiom qSegmentSucc: forall p, q: QPoly; forall i, m, n: Nat;
+  qsegment(p, q, i, m, peano.succ(n)) =
+  rational.add(qsegment(p, q, i, m, n),
+  rational.mul(qcoeff(p, peano.add(m, peano.succ(n))),
+  qcoeff(q, subtraction.sub(i, peano.add(m, peano.succ(n))))))
+
 // F[x]'s corpus, transferred. The coefficient field AND the polynomial layer both travel.
 model RationalPolynomials {
   fieldpoly.F: Q
@@ -1087,6 +1113,8 @@ model RationalPolynomialsOverARing {
   ring_poly.negP: qnegP
   ring_poly.mulP: qmulP
   ring_poly.convolution: qconvolution
+  ring_poly.tailConvolution: qtailConvolution
+  ring_poly.segment: qsegment
   ring_poly.degreeAtMost: qdegreeAtMost
   ring_poly.degree: qdegree
   ring_poly.polyExtensionality <- qPolyExtensionality
@@ -1100,6 +1128,10 @@ model RationalPolynomialsOverARing {
   ring_poly.degreeBoundsTheCoefficients <- qDegreeBoundsTheCoefficients
   ring_poly.convolutionZero <- qConvolutionZero
   ring_poly.convolutionSucc <- qConvolutionSucc
+  ring_poly.tailConvolutionZero <- qTailConvolutionZero
+  ring_poly.tailConvolutionSucc <- qTailConvolutionSucc
+  ring_poly.segmentZero <- qSegmentZero
+  ring_poly.segmentSucc <- qSegmentSucc
   ring_poly.mulPolyCoeff <- qMulPolyCoeff
 }
 
@@ -1114,4 +1146,370 @@ proof
       qcoeff(qmulP(p, q), peano.add(m, n)) =
       rational.mul(qcoeff(p, m), qcoeff(q, n))
     [using model(RationalPolynomialsOverARing) ring_leading.theProductsLeadingCoefficient]
+qed
+
+// -- NEGATION AS A SCALING ------------------------------------------------------------------
+// Negating a polynomial is scaling it by -1. Gauss's d = 1 branch needs
+// (-α)(-β) = αβ, and routing it through the scaling form turns a polynomial identity into
+// coefficient algebra: both sides' coefficients are neg(ONE)·neg(ONE)·(…) = (…).
+theorem theNegationIsTheMinusOneScaling: forall p: QPoly;
+  qnegP(p) = qmulP(qmonomial(rational.neg(rational.ONE), peano.ZERO), p)
+proof
+  @generalize-p |
+    fix p: QPoly {
+      @each-index |
+        fix i: peano.Nat {
+          @the-negations-coefficient |
+            qcoeff(qnegP(p), i) = rational.neg(qcoeff(p, i))
+            [using specialize qNegPolyCoeff(p, i)]
+          @the-scalings-coefficient |
+            qcoeff(qmulP(qmonomial(rational.neg(rational.ONE),
+              peano.ZERO), p), i) =
+              rational.mul(rational.neg(rational.ONE), qcoeff(p, i))
+            [using specialize scalingByAConstantScalesTheCoefficients(p, rational.neg(rational.ONE), i)]
+          @minus-one-times-is-the-negation |
+            rational.mul(rational.neg(rational.ONE), qcoeff(p, i)) =
+              rational.neg(qcoeff(p, i))
+            [using polynomial(rational)]
+          @the-scaling-is-the-negation |
+            qcoeff(qmulP(qmonomial(rational.neg(rational.ONE),
+              peano.ZERO), p), i) = rational.neg(qcoeff(p, i))
+            [using simplify the-scalings-coefficient minus-one-times-is-the-negation]
+          @conclusion-agree-at-i |
+            qcoeff(qnegP(p), i) =
+              qcoeff(qmulP(qmonomial(rational.neg(rational.ONE),
+              peano.ZERO), p), i)
+            [using simplify the-negations-coefficient the-scaling-is-the-negation]
+        }
+      @all-coefficients-agree |
+        forall i: peano.Nat;
+          qcoeff(qnegP(p), i) =
+          qcoeff(qmulP(qmonomial(rational.neg(rational.ONE),
+          peano.ZERO), p), i)
+        [by generalize each-index]
+      @the-extensionality |
+        forall a, b: QPoly;
+          (forall i: peano.Nat; qcoeff(a, i) = qcoeff(b, i)) -> a = b
+        [by cite qPolyExtensionality]
+      @conclusion-equal |
+        qnegP(p) = qmulP(qmonomial(rational.neg(rational.ONE),
+          peano.ZERO), p)
+        [using specialize the-extensionality(qnegP(p), qmulP(qmonomial(rational.neg(rational.ONE), peano.ZERO), p)) all-coefficients-agree]
+    }
+  @conclusion |
+    forall p: QPoly;
+      qnegP(p) = qmulP(qmonomial(rational.neg(rational.ONE), peano.ZERO), p)
+    [by generalize generalize-p]
+qed
+
+// -- NEGATION PULLS OUT OF A PRODUCT --------------------------------------------------------
+// Judson's d = 1 branch writes p(x) = (-α₁(x))(-β₁(x)), so the two negations must cancel. The
+// step that makes it work is that negation pulls out of ONE factor: the convolution is linear
+// in the first argument's coefficients, so negating them negates every summand.
+//
+// Induction on the CONVOLUTION INDEX k, with the output index i fixed — the same shape the
+// §17.1 reindexing lemma uses.
+theorem theNegationPullsOutOfTheConvolution: forall p, q: QPoly;
+  forall i, k: peano.Nat;
+  qconvolution(qnegP(p), q, i, k) =
+  rational.neg(qconvolution(p, q, i, k))
+proof
+  @generalize-p |
+    fix p: QPoly {
+      @generalize-q |
+        fix q: QPoly {
+          @generalize-i |
+            fix i: peano.Nat {
+              // base: one summand, and neg distributes over a product
+              @the-negated-base |
+                qconvolution(qnegP(p), q, i, peano.ZERO) =
+                  rational.mul(qcoeff(qnegP(p), peano.ZERO),
+                  qcoeff(q, i))
+                [using specialize qConvolutionZero(qnegP(p), q, i)]
+              @the-base |
+                qconvolution(p, q, i, peano.ZERO) =
+                  rational.mul(qcoeff(p, peano.ZERO), qcoeff(q, i))
+                [using specialize qConvolutionZero(p, q, i)]
+              @the-negated-coefficient-at-zero |
+                qcoeff(qnegP(p), peano.ZERO) =
+                  rational.neg(qcoeff(p, peano.ZERO))
+                [using specialize qNegPolyCoeff(p, peano.ZERO)]
+              @the-negated-base-expanded |
+                qconvolution(qnegP(p), q, i, peano.ZERO) =
+                  rational.mul(rational.neg(qcoeff(p, peano.ZERO)),
+                  qcoeff(q, i))
+                [by rewrite the-negated-coefficient-at-zero the-negated-base]
+              @the-negation-distributes-at-zero |
+                rational.mul(rational.neg(qcoeff(p, peano.ZERO)),
+                  qcoeff(q, i)) =
+                  rational.neg(rational.mul(qcoeff(p, peano.ZERO),
+                  qcoeff(q, i)))
+                [using polynomial(rational)]
+              @the-negated-base-is-the-negation |
+                qconvolution(qnegP(p), q, i, peano.ZERO) =
+                  rational.neg(rational.mul(qcoeff(p, peano.ZERO),
+                  qcoeff(q, i)))
+                [using simplify the-negated-base-expanded the-negation-distributes-at-zero]
+              @base-case |
+                qconvolution(qnegP(p), q, i, peano.ZERO) =
+                  rational.neg(qconvolution(p, q, i, peano.ZERO))
+                [by rewrite the-base the-negated-base-is-the-negation]
+
+              @induction-step |
+                fix k: peano.Nat {
+                  @given-inductive-hypothesis |
+                    assume qconvolution(qnegP(p), q, i, k) =
+                      rational.neg(qconvolution(p, q, i, k)) {
+                      @inductive-hypothesis |
+                        qconvolution(qnegP(p), q, i, k) =
+                          rational.neg(qconvolution(p, q, i, k))
+                        [by hypothesis given-inductive-hypothesis]
+                      @the-negated-step |
+                        qconvolution(qnegP(p), q, i, peano.succ(k)) =
+                          rational.add(
+                          qconvolution(qnegP(p), q, i, k),
+                          rational.mul(
+                          qcoeff(qnegP(p), peano.succ(k)),
+                          qcoeff(q, subtraction.sub(i,
+                          peano.succ(k)))))
+                        [using specialize qConvolutionSucc(qnegP(p), q, i, k)]
+                      @the-step |
+                        qconvolution(p, q, i, peano.succ(k)) =
+                          rational.add(qconvolution(p, q, i, k),
+                          rational.mul(qcoeff(p, peano.succ(k)),
+                          qcoeff(q, subtraction.sub(i,
+                          peano.succ(k)))))
+                        [using specialize qConvolutionSucc(p, q, i, k)]
+                      @the-negated-coefficient |
+                        qcoeff(qnegP(p), peano.succ(k)) =
+                          rational.neg(qcoeff(p, peano.succ(k)))
+                        [using specialize qNegPolyCoeff(p, peano.succ(k))]
+                      // substitute both the hypothesis and the coefficient flip
+                      @the-negated-step-with-the-hypothesis |
+                        qconvolution(qnegP(p), q, i, peano.succ(k)) =
+                          rational.add(
+                          rational.neg(qconvolution(p, q, i, k)),
+                          rational.mul(
+                          qcoeff(qnegP(p), peano.succ(k)),
+                          qcoeff(q, subtraction.sub(i,
+                          peano.succ(k)))))
+                        [by rewrite inductive-hypothesis the-negated-step]
+                      @the-negated-step-expanded |
+                        qconvolution(qnegP(p), q, i, peano.succ(k)) =
+                          rational.add(
+                          rational.neg(qconvolution(p, q, i, k)),
+                          rational.mul(
+                          rational.neg(qcoeff(p, peano.succ(k))),
+                          qcoeff(q, subtraction.sub(i,
+                          peano.succ(k)))))
+                        [by rewrite the-negated-coefficient the-negated-step-with-the-hypothesis]
+                      // -(A) + (-B)·C = -(A + B·C)
+                      @the-negations-gather |
+                        rational.add(
+                          rational.neg(qconvolution(p, q, i, k)),
+                          rational.mul(
+                          rational.neg(qcoeff(p, peano.succ(k))),
+                          qcoeff(q, subtraction.sub(i,
+                          peano.succ(k))))) =
+                          rational.neg(rational.add(
+                          qconvolution(p, q, i, k),
+                          rational.mul(qcoeff(p, peano.succ(k)),
+                          qcoeff(q, subtraction.sub(i,
+                          peano.succ(k))))))
+                        [using polynomial(rational)]
+                      @the-negated-step-gathered |
+                        qconvolution(qnegP(p), q, i, peano.succ(k)) =
+                          rational.neg(rational.add(
+                          qconvolution(p, q, i, k),
+                          rational.mul(qcoeff(p, peano.succ(k)),
+                          qcoeff(q, subtraction.sub(i,
+                          peano.succ(k))))))
+                        [using simplify the-negated-step-expanded the-negations-gather]
+                      @conclusion-the-step |
+                        qconvolution(qnegP(p), q, i, peano.succ(k)) =
+                          rational.neg(
+                          qconvolution(p, q, i, peano.succ(k)))
+                        [by rewrite the-step the-negated-step-gathered]
+                    }
+                  @induction-step-at-k |
+                    (qconvolution(qnegP(p), q, i, k) =
+                      rational.neg(qconvolution(p, q, i, k))) ->
+                      (qconvolution(qnegP(p), q, i, peano.succ(k)) =
+                      rational.neg(
+                      qconvolution(p, q, i, peano.succ(k))))
+                    [by discharge given-inductive-hypothesis]
+                }
+              @induction-step-for-all-k |
+                forall k: peano.Nat;
+                  (qconvolution(qnegP(p), q, i, k) =
+                  rational.neg(qconvolution(p, q, i, k))) ->
+                  (qconvolution(qnegP(p), q, i, peano.succ(k)) =
+                  rational.neg(qconvolution(p, q, i, peano.succ(k))))
+                [by generalize induction-step]
+              @all-convolution-indices |
+                forall k: peano.Nat;
+                  qconvolution(qnegP(p), q, i, k) =
+                  rational.neg(qconvolution(p, q, i, k))
+                [using instantiation peano.induction((fun z: peano.Nat => (qconvolution(qnegP(p), q, i, z) = rational.neg(qconvolution(p, q, i, z))))) base-case induction-step-for-all-k]
+            }
+          @discharge-i |
+            forall i2: peano.Nat; forall k: peano.Nat;
+              qconvolution(qnegP(p), q, i2, k) =
+              rational.neg(qconvolution(p, q, i2, k))
+            [by generalize generalize-i]
+        }
+      @discharge-q |
+        forall q2: QPoly; forall i2, k: peano.Nat;
+          qconvolution(qnegP(p), q2, i2, k) =
+          rational.neg(qconvolution(p, q2, i2, k))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: QPoly; forall i, k: peano.Nat;
+      qconvolution(qnegP(p), q, i, k) =
+      rational.neg(qconvolution(p, q, i, k))
+    [by generalize generalize-p]
+qed
+
+// At the polynomial level: negating the first factor negates the product.
+theorem theNegationPullsOutOfTheProduct: forall p, q: QPoly;
+  qmulP(qnegP(p), q) = qnegP(qmulP(p, q))
+proof
+  @generalize-p |
+    fix p: QPoly {
+      @generalize-q |
+        fix q: QPoly {
+          @each-index |
+            fix i: peano.Nat {
+              @the-negated-product |
+                qcoeff(qmulP(qnegP(p), q), i) =
+                  qconvolution(qnegP(p), q, i, i)
+                [using specialize qMulPolyCoeff(qnegP(p), q, i)]
+              @the-product |
+                qcoeff(qmulP(p, q), i) = qconvolution(p, q, i, i)
+                [using specialize qMulPolyCoeff(p, q, i)]
+              @the-pull-out |
+                qconvolution(qnegP(p), q, i, i) =
+                  rational.neg(qconvolution(p, q, i, i))
+                [using specialize theNegationPullsOutOfTheConvolution(p, q, i, i)]
+              @the-negated-products-coefficient |
+                qcoeff(qnegP(qmulP(p, q)), i) =
+                  rational.neg(qcoeff(qmulP(p, q), i))
+                [using specialize qNegPolyCoeff(qmulP(p, q), i)]
+              @the-right-side-is-the-negated-convolution |
+                qcoeff(qnegP(qmulP(p, q)), i) =
+                  rational.neg(qconvolution(p, q, i, i))
+                [by rewrite the-product the-negated-products-coefficient]
+              @the-left-side-is-the-negated-convolution |
+                qcoeff(qmulP(qnegP(p), q), i) =
+                  rational.neg(qconvolution(p, q, i, i))
+                [by rewrite the-pull-out the-negated-product]
+              @conclusion-agree-at-i |
+                qcoeff(qmulP(qnegP(p), q), i) =
+                  qcoeff(qnegP(qmulP(p, q)), i)
+                [using simplify the-left-side-is-the-negated-convolution the-right-side-is-the-negated-convolution]
+            }
+          @all-coefficients-agree |
+            forall i: peano.Nat;
+              qcoeff(qmulP(qnegP(p), q), i) =
+              qcoeff(qnegP(qmulP(p, q)), i)
+            [by generalize each-index]
+          @the-extensionality |
+            forall a, b: QPoly;
+              (forall i: peano.Nat; qcoeff(a, i) = qcoeff(b, i)) -> a = b
+            [by cite qPolyExtensionality]
+          @conclusion-equal |
+            qmulP(qnegP(p), q) = qnegP(qmulP(p, q))
+            [using specialize the-extensionality(qmulP(qnegP(p), q), qnegP(qmulP(p, q))) all-coefficients-agree]
+        }
+      @discharge-q |
+        forall q2: QPoly; qmulP(qnegP(p), q2) = qnegP(qmulP(p, q2))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: QPoly; qmulP(qnegP(p), q) = qnegP(qmulP(p, q))
+    [by generalize generalize-p]
+qed
+
+// Judson's `p(x) = (-α₁(x))(-β₁(x))`: both negations cancel. Pull the first out, commute to
+// pull the second out, then `negP(negP(_))` is the identity — which follows coefficientwise
+// from ℚ's own `negNeg`.
+theorem theTwoNegationsCancelInAProduct: forall p, q: QPoly;
+  qmulP(qnegP(p), qnegP(q)) = qmulP(p, q)
+proof
+  @generalize-p |
+    fix p: QPoly {
+      @generalize-q |
+        fix q: QPoly {
+          @pull-the-first-out |
+            qmulP(qnegP(p), qnegP(q)) = qnegP(qmulP(p, qnegP(q)))
+            [using specialize theNegationPullsOutOfTheProduct(p, qnegP(q))]
+          @the-commutation |
+            forall a, b: QPoly; qmulP(a, b) = qmulP(b, a)
+            [using model(RationalPolynomialsOverARing) ring_poly.polyMulIsCommutative]
+          @commute-the-inner |
+            qmulP(p, qnegP(q)) = qmulP(qnegP(q), p)
+            [using specialize the-commutation(p, qnegP(q))]
+          @pull-the-second-out |
+            qmulP(qnegP(q), p) = qnegP(qmulP(q, p))
+            [using specialize theNegationPullsOutOfTheProduct(q, p)]
+          @the-inner-is-doubly-negated |
+            qmulP(p, qnegP(q)) = qnegP(qmulP(q, p))
+            [using simplify commute-the-inner pull-the-second-out]
+          @the-whole-is-doubly-negated |
+            qmulP(qnegP(p), qnegP(q)) = qnegP(qnegP(qmulP(q, p)))
+            [by rewrite the-inner-is-doubly-negated pull-the-first-out]
+          // negP(negP(_)) is the identity, coefficientwise
+          @each-index |
+            fix i: peano.Nat {
+              @the-outer-negation |
+                qcoeff(qnegP(qnegP(qmulP(q, p))), i) =
+                  rational.neg(qcoeff(qnegP(qmulP(q, p)), i))
+                [using specialize qNegPolyCoeff(qnegP(qmulP(q, p)), i)]
+              @the-inner-negation |
+                qcoeff(qnegP(qmulP(q, p)), i) =
+                  rational.neg(qcoeff(qmulP(q, p), i))
+                [using specialize qNegPolyCoeff(qmulP(q, p), i)]
+              @the-double-negation |
+                qcoeff(qnegP(qnegP(qmulP(q, p))), i) =
+                  rational.neg(rational.neg(qcoeff(qmulP(q, p), i)))
+                [by rewrite the-inner-negation the-outer-negation]
+              @the-negations-undo |
+                rational.neg(rational.neg(qcoeff(qmulP(q, p), i))) =
+                  qcoeff(qmulP(q, p), i)
+                [using specialize rational.negNeg(qcoeff(qmulP(q, p), i))]
+              @conclusion-agree-at-i |
+                qcoeff(qnegP(qnegP(qmulP(q, p))), i) =
+                  qcoeff(qmulP(q, p), i)
+                [using simplify the-double-negation the-negations-undo]
+            }
+          @all-coefficients-agree |
+            forall i: peano.Nat;
+              qcoeff(qnegP(qnegP(qmulP(q, p))), i) =
+              qcoeff(qmulP(q, p), i)
+            [by generalize each-index]
+          @the-extensionality |
+            forall a, b: QPoly;
+              (forall i: peano.Nat; qcoeff(a, i) = qcoeff(b, i)) -> a = b
+            [by cite qPolyExtensionality]
+          @the-double-negation-is-the-identity |
+            qnegP(qnegP(qmulP(q, p))) = qmulP(q, p)
+            [using specialize the-extensionality(qnegP(qnegP(qmulP(q, p))), qmulP(q, p)) all-coefficients-agree]
+          @the-product-commuted-back |
+            qmulP(q, p) = qmulP(p, q)
+            [using specialize the-commutation(q, p)]
+          @the-whole-is-the-commuted-product |
+            qmulP(qnegP(p), qnegP(q)) = qmulP(q, p)
+            [by rewrite the-double-negation-is-the-identity the-whole-is-doubly-negated]
+          @conclusion-cancelled |
+            qmulP(qnegP(p), qnegP(q)) = qmulP(p, q)
+            [by rewrite the-product-commuted-back the-whole-is-the-commuted-product]
+        }
+      @discharge-q |
+        forall q2: QPoly; qmulP(qnegP(p), qnegP(q2)) = qmulP(p, q2)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: QPoly; qmulP(qnegP(p), qnegP(q)) = qmulP(p, q)
+    [by generalize generalize-p]
 qed

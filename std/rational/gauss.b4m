@@ -1,0 +1,410 @@
+// Gauss's Lemma, the d = 1 branch (AATA Theorem 17.13).
+//
+// Judson: "If d = 1, then c·a_m·b_n = 1 since p(x) is a monic polynomial. Hence, either c = 1
+// or c = -1. If c = 1, then either a_m = b_n = 1 or a_m = b_n = -1. In the first case
+// p(x) = α₁(x)β₁(x) … In the second case a(x) = -α₁(x) and b(x) = -β₁(x) are the correct
+// monic polynomials since p(x) = (-α₁(x))(-β₁(x)) = a(x)b(x). The case in which c = -1 can be
+// handled similarly."
+//
+// Everything here is about ℚ[x] with integer coefficients — ℚ carries its integers as a CUT,
+// so there is no embedding to cross. The two facts the branch turns on are
+// `anIntegerDividingOneIsAUnit` (an integer dividing 1 is ±1, which rests on ℚ's integers
+// being discrete) and `qTheProductsLeadingCoefficient` (where the product's leading
+// coefficient sits, and what it is).
+
+import qpoly <<< "std/rational/polynomial.b4m"
+import rational <<< "std/rational.b4m"
+import rational_integer_order <<< "std/rational/integer-order.b4m"
+import peano <<< "std/peano.b4m"
+
+sort Q = rational.Q
+sort QPoly = qpoly.QPoly
+sort Nat = peano.Nat
+const ONE = rational.ONE
+const NAT_ZERO = peano.ZERO
+pred isInteger = rational.isInteger
+
+// -- THE LEADING EQUATION ------------------------------------------------------------------
+// "c·a_m·b_n = 1 since p(x) is a monic polynomial." Reading the leading coefficient of
+// c·α₁·β₁ at index m+n: the scaling contributes c and the product contributes a_m·b_n, and a
+// monic p has ONE there.
+theorem theLeadingCoefficientsMultiplyToOne: forall p, alpha, beta: QPoly;
+  forall c: Q; forall m, n: Nat;
+  qpoly.qdegreeAtMost(alpha, m) -> qpoly.qdegreeAtMost(beta, n) ->
+  p = qpoly.qmulP(qpoly.qmonomial(c, NAT_ZERO),
+  qpoly.qmulP(alpha, beta)) ->
+  qpoly.qcoeff(p, peano.add(m, n)) = ONE ->
+  ONE = rational.mul(c, rational.mul(qpoly.qcoeff(alpha, m),
+  qpoly.qcoeff(beta, n)))
+proof
+  @generalize-p |
+    fix p: QPoly {
+      @generalize-alpha |
+        fix alpha: QPoly {
+          @generalize-beta |
+            fix beta: QPoly {
+              @generalize-c |
+                fix c: Q {
+                  @generalize-m |
+                    fix m: Nat {
+                      @generalize-n |
+                        fix n: Nat {
+                          @given-the-setup |
+                            assume qpoly.qdegreeAtMost(alpha, m) and
+                              qpoly.qdegreeAtMost(beta, n) and
+                              p = qpoly.qmulP(
+                              qpoly.qmonomial(c, NAT_ZERO),
+                              qpoly.qmulP(alpha, beta)) and
+                              qpoly.qcoeff(p, peano.add(m, n)) = ONE {
+                              @the-setup |
+                                qpoly.qdegreeAtMost(alpha, m) and
+                                  qpoly.qdegreeAtMost(beta, n) and
+                                  p = qpoly.qmulP(
+                                  qpoly.qmonomial(c, NAT_ZERO),
+                                  qpoly.qmulP(alpha, beta)) and
+                                  qpoly.qcoeff(p, peano.add(m, n)) = ONE
+                                [by hypothesis given-the-setup]
+                              @alpha-is-bounded |
+                                qpoly.qdegreeAtMost(alpha, m)
+                                [using tautology the-setup]
+                              @beta-is-bounded |
+                                qpoly.qdegreeAtMost(beta, n)
+                                [using tautology the-setup]
+                              @p-is-the-scaling |
+                                p = qpoly.qmulP(
+                                  qpoly.qmonomial(c, NAT_ZERO),
+                                  qpoly.qmulP(alpha, beta))
+                                [using tautology the-setup]
+                              @p-is-monic-at-the-top |
+                                qpoly.qcoeff(p, peano.add(m, n)) = ONE
+                                [using tautology the-setup]
+                              // the scaling's coefficient at any index
+                              @the-scaling-law |
+                                forall q2: QPoly; forall c2: Q;
+                                  forall i: Nat;
+                                  qpoly.qcoeff(qpoly.qmulP(
+                                  qpoly.qmonomial(c2, NAT_ZERO), q2), i) =
+                                  rational.mul(c2, qpoly.qcoeff(q2, i))
+                                [using import(qpoly) scalingByAConstantScalesTheCoefficients]
+                              @the-scaling-at-the-top |
+                                qpoly.qcoeff(qpoly.qmulP(
+                                  qpoly.qmonomial(c, NAT_ZERO),
+                                  qpoly.qmulP(alpha, beta)),
+                                  peano.add(m, n)) =
+                                  rational.mul(c,
+                                  qpoly.qcoeff(qpoly.qmulP(alpha, beta),
+                                  peano.add(m, n)))
+                                [using specialize the-scaling-law(qpoly.qmulP(alpha, beta), c, peano.add(m, n))]
+                              // and the product's, at m+n
+                              @the-product-at-the-top |
+                                qpoly.qcoeff(qpoly.qmulP(alpha, beta),
+                                  peano.add(m, n)) =
+                                  rational.mul(qpoly.qcoeff(alpha, m),
+                                  qpoly.qcoeff(beta, n))
+                                [using specialize qpoly.qTheProductsLeadingCoefficient(alpha, beta, m, n) alpha-is-bounded beta-is-bounded]
+                              @the-scaling-expanded |
+                                qpoly.qcoeff(qpoly.qmulP(
+                                  qpoly.qmonomial(c, NAT_ZERO),
+                                  qpoly.qmulP(alpha, beta)),
+                                  peano.add(m, n)) =
+                                  rational.mul(c,
+                                  rational.mul(qpoly.qcoeff(alpha, m),
+                                  qpoly.qcoeff(beta, n)))
+                                [by rewrite the-product-at-the-top the-scaling-at-the-top]
+                              @p-at-the-top |
+                                qpoly.qcoeff(p, peano.add(m, n)) =
+                                  rational.mul(c,
+                                  rational.mul(qpoly.qcoeff(alpha, m),
+                                  qpoly.qcoeff(beta, n)))
+                                [by rewrite p-is-the-scaling the-scaling-expanded]
+                              @conclusion-the-equation |
+                                ONE = rational.mul(c,
+                                  rational.mul(qpoly.qcoeff(alpha, m),
+                                  qpoly.qcoeff(beta, n)))
+                                [by rewrite p-is-monic-at-the-top p-at-the-top]
+                            }
+                          @the-implication |
+                            (qpoly.qdegreeAtMost(alpha, m) and
+                              qpoly.qdegreeAtMost(beta, n) and
+                              p = qpoly.qmulP(
+                              qpoly.qmonomial(c, NAT_ZERO),
+                              qpoly.qmulP(alpha, beta)) and
+                              qpoly.qcoeff(p, peano.add(m, n)) = ONE) ->
+                              ONE = rational.mul(c,
+                              rational.mul(qpoly.qcoeff(alpha, m),
+                              qpoly.qcoeff(beta, n)))
+                            [by discharge given-the-setup]
+                          @curried |
+                            qpoly.qdegreeAtMost(alpha, m) ->
+                              qpoly.qdegreeAtMost(beta, n) ->
+                              p = qpoly.qmulP(
+                              qpoly.qmonomial(c, NAT_ZERO),
+                              qpoly.qmulP(alpha, beta)) ->
+                              qpoly.qcoeff(p, peano.add(m, n)) = ONE ->
+                              ONE = rational.mul(c,
+                              rational.mul(qpoly.qcoeff(alpha, m),
+                              qpoly.qcoeff(beta, n)))
+                            [using tautology the-implication]
+                        }
+                      @discharge-n |
+                        forall n9: Nat;
+                          qpoly.qdegreeAtMost(alpha, m) ->
+                          qpoly.qdegreeAtMost(beta, n9) ->
+                          p = qpoly.qmulP(qpoly.qmonomial(c, NAT_ZERO),
+                          qpoly.qmulP(alpha, beta)) ->
+                          qpoly.qcoeff(p, peano.add(m, n9)) = ONE ->
+                          ONE = rational.mul(c,
+                          rational.mul(qpoly.qcoeff(alpha, m),
+                          qpoly.qcoeff(beta, n9)))
+                        [by generalize generalize-n]
+                    }
+                  @discharge-m |
+                    forall m9, n9: Nat;
+                      qpoly.qdegreeAtMost(alpha, m9) ->
+                      qpoly.qdegreeAtMost(beta, n9) ->
+                      p = qpoly.qmulP(qpoly.qmonomial(c, NAT_ZERO),
+                      qpoly.qmulP(alpha, beta)) ->
+                      qpoly.qcoeff(p, peano.add(m9, n9)) = ONE ->
+                      ONE = rational.mul(c,
+                      rational.mul(qpoly.qcoeff(alpha, m9),
+                      qpoly.qcoeff(beta, n9)))
+                    [by generalize generalize-m]
+                }
+              @discharge-c |
+                forall c9: Q; forall m9, n9: Nat;
+                  qpoly.qdegreeAtMost(alpha, m9) ->
+                  qpoly.qdegreeAtMost(beta, n9) ->
+                  p = qpoly.qmulP(qpoly.qmonomial(c9, NAT_ZERO),
+                  qpoly.qmulP(alpha, beta)) ->
+                  qpoly.qcoeff(p, peano.add(m9, n9)) = ONE ->
+                  ONE = rational.mul(c9,
+                  rational.mul(qpoly.qcoeff(alpha, m9),
+                  qpoly.qcoeff(beta, n9)))
+                [by generalize generalize-c]
+            }
+          @discharge-beta |
+            forall beta9: QPoly; forall c9: Q; forall m9, n9: Nat;
+              qpoly.qdegreeAtMost(alpha, m9) ->
+              qpoly.qdegreeAtMost(beta9, n9) ->
+              p = qpoly.qmulP(qpoly.qmonomial(c9, NAT_ZERO),
+              qpoly.qmulP(alpha, beta9)) ->
+              qpoly.qcoeff(p, peano.add(m9, n9)) = ONE ->
+              ONE = rational.mul(c9,
+              rational.mul(qpoly.qcoeff(alpha, m9),
+              qpoly.qcoeff(beta9, n9)))
+            [by generalize generalize-beta]
+        }
+      @discharge-alpha |
+        forall alpha9, beta9: QPoly; forall c9: Q; forall m9, n9: Nat;
+          qpoly.qdegreeAtMost(alpha9, m9) ->
+          qpoly.qdegreeAtMost(beta9, n9) ->
+          p = qpoly.qmulP(qpoly.qmonomial(c9, NAT_ZERO),
+          qpoly.qmulP(alpha9, beta9)) ->
+          qpoly.qcoeff(p, peano.add(m9, n9)) = ONE ->
+          ONE = rational.mul(c9,
+          rational.mul(qpoly.qcoeff(alpha9, m9),
+          qpoly.qcoeff(beta9, n9)))
+        [by generalize generalize-alpha]
+    }
+  @conclusion |
+    forall p, alpha, beta: QPoly; forall c: Q; forall m, n: Nat;
+      qpoly.qdegreeAtMost(alpha, m) -> qpoly.qdegreeAtMost(beta, n) ->
+      p = qpoly.qmulP(qpoly.qmonomial(c, NAT_ZERO),
+      qpoly.qmulP(alpha, beta)) ->
+      qpoly.qcoeff(p, peano.add(m, n)) = ONE ->
+      ONE = rational.mul(c, rational.mul(qpoly.qcoeff(alpha, m),
+      qpoly.qcoeff(beta, n)))
+    [by generalize generalize-p]
+qed
+
+// -- THE SCALAR IS A UNIT ------------------------------------------------------------------
+// "Hence, either c = 1 or c = -1." The leading equation says c divides ONE on the cut, and
+// `anIntegerDividingOneIsAUnit` is exactly that step — it rests on ℚ's integers being
+// discrete, which is what rules out a proper divisor of 1.
+theorem theScalarIsAUnit: forall p, alpha, beta: QPoly;
+  forall c: Q; forall m, n: Nat;
+  isInteger(c) ->
+  isInteger(qpoly.qcoeff(alpha, m)) -> isInteger(qpoly.qcoeff(beta, n)) ->
+  qpoly.qdegreeAtMost(alpha, m) -> qpoly.qdegreeAtMost(beta, n) ->
+  p = qpoly.qmulP(qpoly.qmonomial(c, NAT_ZERO), qpoly.qmulP(alpha, beta)) ->
+  qpoly.qcoeff(p, peano.add(m, n)) = ONE ->
+  (c = ONE or c = rational.neg(ONE))
+proof
+  @generalize-p |
+    fix p: QPoly {
+      @generalize-alpha |
+        fix alpha: QPoly {
+          @generalize-beta |
+            fix beta: QPoly {
+              @generalize-c |
+                fix c: Q {
+                  @generalize-m |
+                    fix m: Nat {
+                      @generalize-n |
+                        fix n: Nat {
+                          @given-the-setup |
+                            assume isInteger(c) and
+                              isInteger(qpoly.qcoeff(alpha, m)) and
+                              isInteger(qpoly.qcoeff(beta, n)) and
+                              qpoly.qdegreeAtMost(alpha, m) and
+                              qpoly.qdegreeAtMost(beta, n) and
+                              p = qpoly.qmulP(
+                              qpoly.qmonomial(c, NAT_ZERO),
+                              qpoly.qmulP(alpha, beta)) and
+                              qpoly.qcoeff(p, peano.add(m, n)) = ONE {
+                              @the-setup |
+                                isInteger(c) and
+                                  isInteger(qpoly.qcoeff(alpha, m)) and
+                                  isInteger(qpoly.qcoeff(beta, n)) and
+                                  qpoly.qdegreeAtMost(alpha, m) and
+                                  qpoly.qdegreeAtMost(beta, n) and
+                                  p = qpoly.qmulP(
+                                  qpoly.qmonomial(c, NAT_ZERO),
+                                  qpoly.qmulP(alpha, beta)) and
+                                  qpoly.qcoeff(p, peano.add(m, n)) = ONE
+                                [by hypothesis given-the-setup]
+                              @c-is-an-integer |
+                                isInteger(c)
+                                [using tautology the-setup]
+                              @the-alpha-leading-is-an-integer |
+                                isInteger(qpoly.qcoeff(alpha, m))
+                                [using tautology the-setup]
+                              @the-beta-leading-is-an-integer |
+                                isInteger(qpoly.qcoeff(beta, n))
+                                [using tautology the-setup]
+                              @alpha-is-bounded |
+                                qpoly.qdegreeAtMost(alpha, m)
+                                [using tautology the-setup]
+                              @beta-is-bounded |
+                                qpoly.qdegreeAtMost(beta, n)
+                                [using tautology the-setup]
+                              @p-is-the-scaling |
+                                p = qpoly.qmulP(
+                                  qpoly.qmonomial(c, NAT_ZERO),
+                                  qpoly.qmulP(alpha, beta))
+                                [using tautology the-setup]
+                              @p-is-monic-at-the-top |
+                                qpoly.qcoeff(p, peano.add(m, n)) = ONE
+                                [using tautology the-setup]
+                              @the-leading-equation |
+                                ONE = rational.mul(c,
+                                  rational.mul(qpoly.qcoeff(alpha, m),
+                                  qpoly.qcoeff(beta, n)))
+                                [using specialize theLeadingCoefficientsMultiplyToOne(p, alpha, beta, c, m, n) alpha-is-bounded beta-is-bounded p-is-the-scaling p-is-monic-at-the-top]
+                              // the cofactor a_m·b_n is an integer, so c divides ONE
+                              @the-integer-products |
+                                forall x, y: Q; isInteger(x) ->
+                                  isInteger(y) ->
+                                  isInteger(rational.mul(x, y))
+                                [using import(rational) isIntegerMul]
+                              @the-cofactor-is-an-integer |
+                                isInteger(rational.mul(
+                                  qpoly.qcoeff(alpha, m),
+                                  qpoly.qcoeff(beta, n)))
+                                [using specialize the-integer-products(qpoly.qcoeff(alpha, m), qpoly.qcoeff(beta, n)) the-alpha-leading-is-an-integer the-beta-leading-is-an-integer]
+                              @conclusion-c-is-a-unit |
+                                c = ONE or c = rational.neg(ONE)
+                                [using specialize rational_integer_order.anIntegerDividingOneIsAUnit(c, rational.mul(qpoly.qcoeff(alpha, m), qpoly.qcoeff(beta, n))) c-is-an-integer the-cofactor-is-an-integer the-leading-equation]
+                            }
+                          @the-implication |
+                            (isInteger(c) and
+                              isInteger(qpoly.qcoeff(alpha, m)) and
+                              isInteger(qpoly.qcoeff(beta, n)) and
+                              qpoly.qdegreeAtMost(alpha, m) and
+                              qpoly.qdegreeAtMost(beta, n) and
+                              p = qpoly.qmulP(
+                              qpoly.qmonomial(c, NAT_ZERO),
+                              qpoly.qmulP(alpha, beta)) and
+                              qpoly.qcoeff(p, peano.add(m, n)) = ONE) ->
+                              (c = ONE or c = rational.neg(ONE))
+                            [by discharge given-the-setup]
+                          @curried |
+                            isInteger(c) ->
+                              isInteger(qpoly.qcoeff(alpha, m)) ->
+                              isInteger(qpoly.qcoeff(beta, n)) ->
+                              qpoly.qdegreeAtMost(alpha, m) ->
+                              qpoly.qdegreeAtMost(beta, n) ->
+                              p = qpoly.qmulP(
+                              qpoly.qmonomial(c, NAT_ZERO),
+                              qpoly.qmulP(alpha, beta)) ->
+                              qpoly.qcoeff(p, peano.add(m, n)) = ONE ->
+                              (c = ONE or c = rational.neg(ONE))
+                            [using tautology the-implication]
+                        }
+                      @discharge-n |
+                        forall n9: Nat;
+                          isInteger(c) ->
+                          isInteger(qpoly.qcoeff(alpha, m)) ->
+                          isInteger(qpoly.qcoeff(beta, n9)) ->
+                          qpoly.qdegreeAtMost(alpha, m) ->
+                          qpoly.qdegreeAtMost(beta, n9) ->
+                          p = qpoly.qmulP(qpoly.qmonomial(c, NAT_ZERO),
+                          qpoly.qmulP(alpha, beta)) ->
+                          qpoly.qcoeff(p, peano.add(m, n9)) = ONE ->
+                          (c = ONE or c = rational.neg(ONE))
+                        [by generalize generalize-n]
+                    }
+                  @discharge-m |
+                    forall m9, n9: Nat;
+                      isInteger(c) ->
+                      isInteger(qpoly.qcoeff(alpha, m9)) ->
+                      isInteger(qpoly.qcoeff(beta, n9)) ->
+                      qpoly.qdegreeAtMost(alpha, m9) ->
+                      qpoly.qdegreeAtMost(beta, n9) ->
+                      p = qpoly.qmulP(qpoly.qmonomial(c, NAT_ZERO),
+                      qpoly.qmulP(alpha, beta)) ->
+                      qpoly.qcoeff(p, peano.add(m9, n9)) = ONE ->
+                      (c = ONE or c = rational.neg(ONE))
+                    [by generalize generalize-m]
+                }
+              @discharge-c |
+                forall c9: Q; forall m9, n9: Nat;
+                  isInteger(c9) ->
+                  isInteger(qpoly.qcoeff(alpha, m9)) ->
+                  isInteger(qpoly.qcoeff(beta, n9)) ->
+                  qpoly.qdegreeAtMost(alpha, m9) ->
+                  qpoly.qdegreeAtMost(beta, n9) ->
+                  p = qpoly.qmulP(qpoly.qmonomial(c9, NAT_ZERO),
+                  qpoly.qmulP(alpha, beta)) ->
+                  qpoly.qcoeff(p, peano.add(m9, n9)) = ONE ->
+                  (c9 = ONE or c9 = rational.neg(ONE))
+                [by generalize generalize-c]
+            }
+          @discharge-beta |
+            forall beta9: QPoly; forall c9: Q; forall m9, n9: Nat;
+              isInteger(c9) ->
+              isInteger(qpoly.qcoeff(alpha, m9)) ->
+              isInteger(qpoly.qcoeff(beta9, n9)) ->
+              qpoly.qdegreeAtMost(alpha, m9) ->
+              qpoly.qdegreeAtMost(beta9, n9) ->
+              p = qpoly.qmulP(qpoly.qmonomial(c9, NAT_ZERO),
+              qpoly.qmulP(alpha, beta9)) ->
+              qpoly.qcoeff(p, peano.add(m9, n9)) = ONE ->
+              (c9 = ONE or c9 = rational.neg(ONE))
+            [by generalize generalize-beta]
+        }
+      @discharge-alpha |
+        forall alpha9, beta9: QPoly; forall c9: Q; forall m9, n9: Nat;
+          isInteger(c9) ->
+          isInteger(qpoly.qcoeff(alpha9, m9)) ->
+          isInteger(qpoly.qcoeff(beta9, n9)) ->
+          qpoly.qdegreeAtMost(alpha9, m9) ->
+          qpoly.qdegreeAtMost(beta9, n9) ->
+          p = qpoly.qmulP(qpoly.qmonomial(c9, NAT_ZERO),
+          qpoly.qmulP(alpha9, beta9)) ->
+          qpoly.qcoeff(p, peano.add(m9, n9)) = ONE ->
+          (c9 = ONE or c9 = rational.neg(ONE))
+        [by generalize generalize-alpha]
+    }
+  @conclusion |
+    forall p, alpha, beta: QPoly; forall c: Q; forall m, n: Nat;
+      isInteger(c) ->
+      isInteger(qpoly.qcoeff(alpha, m)) ->
+      isInteger(qpoly.qcoeff(beta, n)) ->
+      qpoly.qdegreeAtMost(alpha, m) -> qpoly.qdegreeAtMost(beta, n) ->
+      p = qpoly.qmulP(qpoly.qmonomial(c, NAT_ZERO),
+      qpoly.qmulP(alpha, beta)) ->
+      qpoly.qcoeff(p, peano.add(m, n)) = ONE ->
+      (c = ONE or c = rational.neg(ONE))
+    [by generalize generalize-p]
+qed
