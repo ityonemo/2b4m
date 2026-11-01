@@ -8893,3 +8893,99 @@ proof
       qpoly.arePairwiseRelativelyPrime(r, s))
     [by generalize generalize-a]
 qed
+
+// -- THE SCALING IDENTITY -----------------------------------------------------------------
+// `isTheIntegerDecomposition`'s last conjunct, `p = (r/s)·q`, is an UNBOUNDED polynomial
+// equation while every other conjunct is bounded by n. Deriving it needs `p` to vanish above
+// n — and that is faithful to Judson, whose `p(x)` IS of degree n ("p(x) = (r/s)(a_0 + a_1 x +
+// … + a_n x^n)"): his polynomial has no coefficients above n to disagree about. An arbitrary
+// `QPoly` does, so `qdegreeAtMost(p, n)` is a real hypothesis of the construction, not
+// bookkeeping.
+//
+// The per-coefficient identity, from which extensionality gives the polynomial equation.
+theorem theScaledCoefficientsAgree: forall p, q: qpoly.QPoly; forall c: Q;
+  (forall i: Nat; qpoly.qcoeff(p, i) = rational.mul(c, qpoly.qcoeff(q, i))) ->
+  p = qpoly.qmulP(qpoly.qmonomial(c, NAT_ZERO), q)
+proof
+  @generalize-p |
+    fix p: qpoly.QPoly {
+      @generalize-q |
+        fix q: qpoly.QPoly {
+          @generalize-c |
+            fix c: Q {
+              @given-the-coefficients |
+                assume forall i: Nat;
+                  qpoly.qcoeff(p, i) =
+                  rational.mul(c, qpoly.qcoeff(q, i)) {
+                  @the-coefficients |
+                    forall i: Nat;
+                      qpoly.qcoeff(p, i) =
+                      rational.mul(c, qpoly.qcoeff(q, i))
+                    [by hypothesis given-the-coefficients]
+                  @each-index |
+                    fix i: Nat {
+                      @the-coefficient-at-i |
+                        qpoly.qcoeff(p, i) =
+                          rational.mul(c, qpoly.qcoeff(q, i))
+                        [using specialize the-coefficients(i)]
+                      @the-scaling-law |
+                        forall q2: qpoly.QPoly; forall c2: Q; forall j: Nat;
+                          qpoly.qcoeff(
+                          qpoly.qmulP(qpoly.qmonomial(c2, NAT_ZERO), q2), j) =
+                          rational.mul(c2, qpoly.qcoeff(q2, j))
+                        [using import(qpoly) scalingByAConstantScalesTheCoefficients]
+                      @the-scaling-at-i |
+                        qpoly.qcoeff(
+                          qpoly.qmulP(qpoly.qmonomial(c, NAT_ZERO), q), i) =
+                          rational.mul(c, qpoly.qcoeff(q, i))
+                        [using specialize the-scaling-law(q, c, i)]
+                      @conclusion-agree-at-i |
+                        qpoly.qcoeff(p, i) =
+                          qpoly.qcoeff(
+                          qpoly.qmulP(qpoly.qmonomial(c, NAT_ZERO), q), i)
+                        [using simplify the-coefficient-at-i the-scaling-at-i]
+                    }
+                  @all-agree |
+                    forall i: Nat;
+                      qpoly.qcoeff(p, i) =
+                      qpoly.qcoeff(
+                      qpoly.qmulP(qpoly.qmonomial(c, NAT_ZERO), q), i)
+                    [by generalize each-index]
+                  @the-extensionality |
+                    forall a, b: qpoly.QPoly;
+                      (forall i: Nat;
+                      qpoly.qcoeff(a, i) = qpoly.qcoeff(b, i)) -> a = b
+                    [using import(qpoly) qPolyExtensionality]
+                  @conclusion-equal |
+                    p = qpoly.qmulP(qpoly.qmonomial(c, NAT_ZERO), q)
+                    [using specialize the-extensionality(p, qpoly.qmulP(qpoly.qmonomial(c, NAT_ZERO), q)) all-agree]
+                }
+              @the-implication |
+                (forall i: Nat;
+                  qpoly.qcoeff(p, i) =
+                  rational.mul(c, qpoly.qcoeff(q, i))) ->
+                  p = qpoly.qmulP(qpoly.qmonomial(c, NAT_ZERO), q)
+                [by discharge given-the-coefficients]
+            }
+          @discharge-c |
+            forall c9: Q;
+              (forall i: Nat;
+              qpoly.qcoeff(p, i) =
+              rational.mul(c9, qpoly.qcoeff(q, i))) ->
+              p = qpoly.qmulP(qpoly.qmonomial(c9, NAT_ZERO), q)
+            [by generalize generalize-c]
+        }
+      @discharge-q |
+        forall q9: qpoly.QPoly; forall c9: Q;
+          (forall i: Nat;
+          qpoly.qcoeff(p, i) =
+          rational.mul(c9, qpoly.qcoeff(q9, i))) ->
+          p = qpoly.qmulP(qpoly.qmonomial(c9, NAT_ZERO), q9)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: qpoly.QPoly; forall c: Q;
+      (forall i: Nat; qpoly.qcoeff(p, i) = rational.mul(c, qpoly.qcoeff(q, i))) ->
+      p = qpoly.qmulP(qpoly.qmonomial(c, NAT_ZERO), q)
+    [by generalize generalize-p]
+qed
