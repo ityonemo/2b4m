@@ -4594,8 +4594,20 @@ fn buildSimplify(self: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: T
     steps = try self.wrapSimplifyPremises(&b, local_cites.items, local_formulae.items, eq_prop, steps);
     steps = try self.wrapSimplifyForall(&b, eigen, inner_prop, steps);
 
-    // the schema body proposition = the ∀-generalized `inner_prop` (params already in place).
-    const full_prop = try self.closeOverEigen(inner_prop, eigen);
+    // PARAM GUARDS, exactly as `finishReorder` does for the reorder path. A rewrite rule
+    // quantified over a sort the MODEL refines relativizes to `∀a; good(a) -> …`; opening it
+    // at the abstracted param `p1` leaks `good(p1)`, which is dischargeable NOWHERE inside
+    // the synthetic — a param sits in no `fix`'s scope, and closure recursion dead-ends on a
+    // bare fvar. So the guard becomes an OUTERMOST antecedent of the synthetic's statement
+    // and `withGuardPremises` discharges it at the call site, where the original binder's
+    // guard really is in scope. Empty outside a guarded model, so the universe is unaffected.
+    var e_guard = self.elab(w);
+    const guards = try self.paramGuards(w, &e_guard, abs);
+    const eigen_prop = try self.closeOverEigen(inner_prop, eigen);
+    steps = try self.wrapParamGuards(&b, guards, eigen_prop, steps);
+
+    // the schema body proposition = the guard-prefixed ∀-generalized `inner_prop`.
+    const full_prop = try self.impliesChain(eigen_prop, guards);
     const body_expr = try b.termExpr(full_prop);
 
     // params from the abstracted free fvars (value params of the fvars' sorts).
@@ -4887,14 +4899,36 @@ fn paramGuards(self: *Prove, w: *const Walk, e: *Elab, abs: FvarAbstraction) Err
     var out: std.ArrayList(TermId) = .empty;
     for (abs.origs, abs.names, abs.sorts) |orig, pname, psort| {
         const ident = w.findIdentByFvar(orig) orelse continue;
-        if (ident.info.refined == InternPool.Index.none) continue;
-        const quals = self.ctx.interner.qualifiersOf(self.ctx.arena, ident.info.refined) catch return error.OutOfMemory;
+        const refined = self.refinedImageOf(ident, psort);
+        if (refined == InternPool.Index.none) continue;
+        const quals = self.ctx.interner.qualifiersOf(self.ctx.arena, refined) catch return error.OutOfMemory;
         for (quals) |qual| {
             const pf = try self.pool.add(.{ .fvar = .{ .name = pname, .sort = psort } });
             try out.append(self.ctx.arena, try e.qualifierApp(qual, pf));
         }
     }
     return out.items;
+}
+
+/// The REFINED sort a param carries, if any — as seen from the space the synthetic will be
+/// CHECKED in, not the space it is written in.
+///
+/// A binder whose own sort is refined (`fix h: Perm`) reports it directly. But when the
+/// refinement is introduced by the MODEL (`Src: GoodTgt` with `GoodTgt = Tgt where good`),
+/// the source binder is `fix n: Src` — unrefined — while the transferred proof's `apply_at`
+/// steps nonetheless leak `good(p1)`. Reading only `ident.info.refined` missed exactly that
+/// case and left the guard undischargeable (a param is in no `fix`'s scope, and closure
+/// recursion dead-ends on a bare fvar), so a `simplify` whose rewrite set mentions a lemma
+/// quantified over the mapped sort could not transfer at all.
+///
+/// Same test as `freeFvarParams` makes for its own abstraction: map the sort through the
+/// active model and ask whether the IMAGE is refined.
+fn refinedImageOf(self: *Prove, ident: Walk.LocalIdent, psort: SortId) InternPool.Index {
+    if (ident.info.refined != InternPool.Index.none) return ident.info.refined;
+    if (self.model == InternPool.Index.none or self.model == .universe) return .none;
+    const src_sort: InternPool.Index = @enumFromInt(@intFromEnum(psort));
+    const image = self.ctx.interner.applyModel(self.model, src_sort);
+    return if (self.ctx.interner.isRefined(image)) image else .none;
 }
 
 fn fvarBinds(self: *Prove, w: *const Walk, abs: FvarAbstraction) Error![]const Accelerant.Synthetic.FvarBind {

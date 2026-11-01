@@ -1,0 +1,72 @@
+// MODEL TRANSFER OF A `simplify` WHOSE REWRITE LEMMA LEAKS A GUARD ON A BARE PARAM.
+//
+// `model_accel_simplify.b4m` already covers the case where a leaked guard closes by the
+// model's CLOSURE dischargers — the guard sits on a composite term `good(ts(k))`, so
+// `setupClosure` can cite `goodSucc` and recurse.
+//
+// This is the case it does NOT cover: the leaked guard sits on the accelerant's own
+// abstracted PARAM. `simplify` lifts `mul(n, ZERO)` into a synthetic schema
+// `simplify(p1: Src)`, so the caller's `fix n` becomes the param `p1`. Under the transfer the
+// rewrite lemma relativizes to `forall a; good(a) -> tmul(a, TZ) = TZ`, and opening it at
+// `p1` leaks `good(p1)` — which has NO enclosing `fix` to supply it (a param is in no fix's
+// scope) and is NOT a composite term, so closure recursion dead-ends.
+//
+// `paramGuards` exists for exactly this and emits `good(p_i)` as an outermost antecedent of
+// the synthetic, for the CALL SITE to discharge. But it decided whether a param needs a guard
+// by reading the SOURCE binder's refinement — and in the source `Src` is unrefined, the
+// refinement being introduced only by the model's mapping `Src: GoodTgt`. So no guard was
+// emitted and the transfer failed with
+//   step claims 'tmul(p1, TZ) = TZ' but apply_at derives 'good(p1) -> tmul(p1, TZ) = TZ'.
+
+sort Src
+const Z: Src
+func mul(a: Src, b: Src) => Src
+func f(a: Src) => Src
+
+axiom mulZeroRight: forall a: Src; mul(a, Z) = Z
+axiom fOfZero: f(Z) = Z
+
+// the `simplify` step's rewrite set includes `mulZeroRight`, which is quantified over the
+// sort the model refines — that is what leaks the param guard.
+theorem fMulZero: forall n: Src; f(mul(n, Z)) = Z
+proof
+  @generalize-n |
+    fix n: Src {
+      @conclusion-for-n |
+        f(mul(n, Z)) = Z
+        [using simplify mulZeroRight fOfZero]
+    }
+  @conclusion |
+    forall n: Src; f(mul(n, Z)) = Z
+    [by generalize generalize-n]
+qed
+
+sort Tgt
+const TZ: Tgt
+func tmul(a: Tgt, b: Tgt) => Tgt
+func tf(a: Tgt) => Tgt
+pred good(x: Tgt)
+sort GoodTgt = Tgt where good
+
+axiom goodZero: good(TZ)
+axiom goodMul: forall a, b: Tgt; good(a) -> good(b) -> good(tmul(a, b))
+axiom goodF: forall a: Tgt; good(a) -> good(tf(a))
+
+axiom tmulZeroRight: forall a: Tgt; good(a) -> tmul(a, TZ) = TZ
+axiom tfOfZero: tf(TZ) = TZ
+
+model SrcIsGood {
+  Src: GoodTgt
+  Z: TZ(goodZero)
+  mul: tmul -| goodMul
+  f: tf -| goodF
+  mulZeroRight <- tmulZeroRight
+  fOfZero <- tfOfZero
+}
+
+theorem transferred: forall n: GoodTgt; tf(tmul(n, TZ)) = TZ
+proof
+  @conclusion |
+    forall n: GoodTgt; tf(tmul(n, TZ)) = TZ
+    [using model(SrcIsGood) fMulZero]
+qed
