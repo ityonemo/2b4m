@@ -408,3 +408,522 @@ proof
       (c = ONE or c = rational.neg(ONE))
     [by generalize generalize-p]
 qed
+
+// -- SCALING BY ONE AND BY MINUS ONE --------------------------------------------------------
+// The two arms of `c = ±1` each need to turn the scaling into something without a scalar:
+// by ONE the scaling vanishes, by neg(ONE) it becomes a negation.
+theorem scalingByOneChangesNothing: forall r: QPoly;
+  qpoly.qmulP(qpoly.qmonomial(ONE, NAT_ZERO), r) = r
+proof
+  @generalize-r |
+    fix r: QPoly {
+      @each-index |
+        fix i: Nat {
+          @the-scaling-at-i |
+            qpoly.qcoeff(qpoly.qmulP(
+              qpoly.qmonomial(ONE, NAT_ZERO), r), i) =
+              rational.mul(ONE, qpoly.qcoeff(r, i))
+            [using specialize qpoly.scalingByAConstantScalesTheCoefficients(r, ONE, i)]
+          @one-times-is-itself |
+            rational.mul(ONE, qpoly.qcoeff(r, i)) = qpoly.qcoeff(r, i)
+            [using specialize rational.mulOneLeft(qpoly.qcoeff(r, i))]
+          @conclusion-agree-at-i |
+            qpoly.qcoeff(qpoly.qmulP(
+              qpoly.qmonomial(ONE, NAT_ZERO), r), i) =
+              qpoly.qcoeff(r, i)
+            [using simplify the-scaling-at-i one-times-is-itself]
+        }
+      @all-coefficients-agree |
+        forall i: Nat;
+          qpoly.qcoeff(qpoly.qmulP(
+          qpoly.qmonomial(ONE, NAT_ZERO), r), i) = qpoly.qcoeff(r, i)
+        [by generalize each-index]
+      @the-extensionality |
+        forall a, b: QPoly;
+          (forall i: Nat; qpoly.qcoeff(a, i) = qpoly.qcoeff(b, i)) -> a = b
+        [using import(qpoly) qPolyExtensionality]
+      @conclusion-equal |
+        qpoly.qmulP(qpoly.qmonomial(ONE, NAT_ZERO), r) = r
+        [using specialize the-extensionality(qpoly.qmulP(qpoly.qmonomial(ONE, NAT_ZERO), r), r) all-coefficients-agree]
+    }
+  @conclusion |
+    forall r: QPoly;
+      qpoly.qmulP(qpoly.qmonomial(ONE, NAT_ZERO), r) = r
+    [by generalize generalize-r]
+qed
+
+// -- THE COFACTORS ARE EQUAL UNITS ----------------------------------------------------------
+// "If c = 1, then either a_m = b_n = 1 or a_m = b_n = -1." This is where that comes from: with
+// c = 1 the leading equation reads a_m·b_n = 1, so a_m is a unit, hence ±1 — and in either
+// case a_m·a_m = 1, so cancelling a_m against the equation gives b_n = a_m.
+theorem theCofactorsAreEqualUnits: forall a, b: Q;
+  isInteger(a) -> isInteger(b) -> ONE = rational.mul(a, b) ->
+  ((a = ONE and b = ONE) or (a = rational.neg(ONE) and
+  b = rational.neg(ONE)))
+proof
+  @generalize-a |
+    fix a: Q {
+      @generalize-b |
+        fix b: Q {
+          @given-the-setup |
+            assume isInteger(a) and isInteger(b) and
+              ONE = rational.mul(a, b) {
+              @the-setup |
+                isInteger(a) and isInteger(b) and
+                  ONE = rational.mul(a, b)
+                [by hypothesis given-the-setup]
+              @a-is-an-integer |
+                isInteger(a)
+                [using tautology the-setup]
+              @b-is-an-integer |
+                isInteger(b)
+                [using tautology the-setup]
+              @the-equation |
+                ONE = rational.mul(a, b)
+                [using tautology the-setup]
+              @a-is-a-unit |
+                a = ONE or a = rational.neg(ONE)
+                [using specialize rational_integer_order.anIntegerDividingOneIsAUnit(a, b) a-is-an-integer b-is-an-integer the-equation]
+              @conclusion-both-are-the-same-unit |
+                (a = ONE and b = ONE) or
+                  (a = rational.neg(ONE) and b = rational.neg(ONE))
+                case a-is-a-unit {
+                  // a = 1: then 1 = 1·b = b
+                  @when-a-is-one |
+                    assume a = ONE {
+                      @a-is-one |
+                        a = ONE
+                        [by hypothesis when-a-is-one]
+                      @the-equation-at-one |
+                        ONE = rational.mul(ONE, b)
+                        [by rewrite a-is-one the-equation]
+                      @one-times-b |
+                        rational.mul(ONE, b) = b
+                        [using specialize rational.mulOneLeft(b)]
+                      @b-is-one |
+                        ONE = b
+                        [by rewrite one-times-b the-equation-at-one]
+                      @b-is-one-flipped |
+                        b = ONE
+                        [by symmetry b-is-one]
+                      @conclusion-both-one |
+                        (a = ONE and b = ONE) or
+                          (a = rational.neg(ONE) and
+                          b = rational.neg(ONE))
+                        [using tautology a-is-one b-is-one-flipped]
+                    }
+                  // a = -1: then 1 = (-1)·b, so b = -1
+                  @when-a-is-minus-one |
+                    assume a = rational.neg(ONE) {
+                      @a-is-minus-one |
+                        a = rational.neg(ONE)
+                        [by hypothesis when-a-is-minus-one]
+                      @the-equation-at-minus-one |
+                        ONE = rational.mul(rational.neg(ONE), b)
+                        [by rewrite a-is-minus-one the-equation]
+                      @minus-one-times-b |
+                        rational.mul(rational.neg(ONE), b) =
+                          rational.neg(b)
+                        [using polynomial(rational)]
+                      @one-is-minus-b |
+                        ONE = rational.neg(b)
+                        [by rewrite minus-one-times-b the-equation-at-minus-one]
+                      // negate both sides: -1 = -(-b) = b
+                      @minus-b-doubly-negated |
+                        rational.neg(rational.neg(b)) = b
+                        [using specialize rational.negNeg(b)]
+                      // replace neg(b) by ONE inside neg(neg(b)) = b
+                      @minus-one-is-b |
+                        rational.neg(ONE) = b
+                        [by rewrite one-is-minus-b minus-b-doubly-negated]
+                      @b-is-minus-one |
+                        b = rational.neg(ONE)
+                        [by symmetry minus-one-is-b]
+                      @conclusion-both-minus-one |
+                        (a = ONE and b = ONE) or
+                          (a = rational.neg(ONE) and
+                          b = rational.neg(ONE))
+                        [using tautology a-is-minus-one b-is-minus-one]
+                    }
+                }
+            }
+          @the-implication |
+            (isInteger(a) and isInteger(b) and
+              ONE = rational.mul(a, b)) ->
+              ((a = ONE and b = ONE) or
+              (a = rational.neg(ONE) and b = rational.neg(ONE)))
+            [by discharge given-the-setup]
+          @curried |
+            isInteger(a) -> isInteger(b) ->
+              ONE = rational.mul(a, b) ->
+              ((a = ONE and b = ONE) or
+              (a = rational.neg(ONE) and b = rational.neg(ONE)))
+            [using tautology the-implication]
+        }
+      @discharge-b |
+        forall b9: Q;
+          isInteger(a) -> isInteger(b9) ->
+          ONE = rational.mul(a, b9) ->
+          ((a = ONE and b9 = ONE) or
+          (a = rational.neg(ONE) and b9 = rational.neg(ONE)))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Q;
+      isInteger(a) -> isInteger(b) -> ONE = rational.mul(a, b) ->
+      ((a = ONE and b = ONE) or
+      (a = rational.neg(ONE) and b = rational.neg(ONE)))
+    [by generalize generalize-a]
+qed
+
+// -- THE d = 1 BRANCH, c = 1 ----------------------------------------------------------------
+// "If c = 1, then either a_m = b_n = 1 or a_m = b_n = -1. In the first case p(x) = α₁(x)β₁(x),
+// where α₁(x) and β₁(x) are monic … In the second case a(x) = -α₁(x) and b(x) = -β₁(x) are the
+// correct monic polynomials since p(x) = (-α₁(x))(-β₁(x)) = a(x)b(x)."
+//
+// Stated with BOUNDED leading coefficients rather than `qIsMonic`: `qIsMonic` reads at
+// `qdegree(p)`, and the chain carries `qdegreeAtMost(α, m)` where m need not be the exact
+// degree. "The degree is at most m and the coefficient at m is ONE" says the same thing about
+// a polynomial whose degree IS m, and is what the hypotheses actually supply — the
+// exact-degree bridge (`degreeAtMost(p, m)` and `coeff(p, m) != ZERO` give `degree(p) = m`)
+// is in the corpus at no layer.
+//
+// The conclusion is Judson's: factors with the SAME degree bounds, both leading coefficients
+// ONE, multiplying to p. Read on ℚ's integer cut, so "in ℤ[x]" needs no embedding.
+theorem theMonicFactorsExistWhenTheScalarIsOne: forall p, alpha, beta: QPoly;
+  forall m, n: Nat;
+  isInteger(qpoly.qcoeff(alpha, m)) -> isInteger(qpoly.qcoeff(beta, n)) ->
+  qpoly.qdegreeAtMost(alpha, m) -> qpoly.qdegreeAtMost(beta, n) ->
+  p = qpoly.qmulP(qpoly.qmonomial(ONE, NAT_ZERO),
+  qpoly.qmulP(alpha, beta)) ->
+  qpoly.qcoeff(p, peano.add(m, n)) = ONE ->
+  (exists a, b: QPoly;
+  qpoly.qdegreeAtMost(a, m) and qpoly.qdegreeAtMost(b, n) and
+  qpoly.qcoeff(a, m) = ONE and qpoly.qcoeff(b, n) = ONE and
+  p = qpoly.qmulP(a, b))
+proof
+  @generalize-p |
+    fix p: QPoly {
+      @generalize-alpha |
+        fix alpha: QPoly {
+          @generalize-beta |
+            fix beta: QPoly {
+              @generalize-m |
+                fix m: Nat {
+                  @generalize-n |
+                    fix n: Nat {
+                      @given-the-setup |
+                        assume isInteger(qpoly.qcoeff(alpha, m)) and
+                          isInteger(qpoly.qcoeff(beta, n)) and
+                          qpoly.qdegreeAtMost(alpha, m) and
+                          qpoly.qdegreeAtMost(beta, n) and
+                          p = qpoly.qmulP(
+                          qpoly.qmonomial(ONE, NAT_ZERO),
+                          qpoly.qmulP(alpha, beta)) and
+                          qpoly.qcoeff(p, peano.add(m, n)) = ONE {
+                          @the-setup |
+                            isInteger(qpoly.qcoeff(alpha, m)) and
+                              isInteger(qpoly.qcoeff(beta, n)) and
+                              qpoly.qdegreeAtMost(alpha, m) and
+                              qpoly.qdegreeAtMost(beta, n) and
+                              p = qpoly.qmulP(
+                              qpoly.qmonomial(ONE, NAT_ZERO),
+                              qpoly.qmulP(alpha, beta)) and
+                              qpoly.qcoeff(p, peano.add(m, n)) = ONE
+                            [by hypothesis given-the-setup]
+                          @the-alpha-leading-is-an-integer |
+                            isInteger(qpoly.qcoeff(alpha, m))
+                            [using tautology the-setup]
+                          @the-beta-leading-is-an-integer |
+                            isInteger(qpoly.qcoeff(beta, n))
+                            [using tautology the-setup]
+                          @alpha-is-bounded |
+                            qpoly.qdegreeAtMost(alpha, m)
+                            [using tautology the-setup]
+                          @beta-is-bounded |
+                            qpoly.qdegreeAtMost(beta, n)
+                            [using tautology the-setup]
+                          @p-is-the-scaling |
+                            p = qpoly.qmulP(
+                              qpoly.qmonomial(ONE, NAT_ZERO),
+                              qpoly.qmulP(alpha, beta))
+                            [using tautology the-setup]
+                          @p-is-monic-at-the-top |
+                            qpoly.qcoeff(p, peano.add(m, n)) = ONE
+                            [using tautology the-setup]
+                          // the scaling by ONE does nothing, so p IS the product
+                          @the-scaling-is-the-product |
+                            qpoly.qmulP(qpoly.qmonomial(ONE, NAT_ZERO),
+                              qpoly.qmulP(alpha, beta)) =
+                              qpoly.qmulP(alpha, beta)
+                            [using specialize scalingByOneChangesNothing(qpoly.qmulP(alpha, beta))]
+                          @p-is-the-product |
+                            p = qpoly.qmulP(alpha, beta)
+                            [by rewrite the-scaling-is-the-product p-is-the-scaling]
+                          // c = ONE, so the leading equation is a_m·b_n = 1
+                          @the-leading-equation |
+                            ONE = rational.mul(ONE,
+                              rational.mul(qpoly.qcoeff(alpha, m),
+                              qpoly.qcoeff(beta, n)))
+                            [using specialize theLeadingCoefficientsMultiplyToOne(p, alpha, beta, ONE, m, n) alpha-is-bounded beta-is-bounded p-is-the-scaling p-is-monic-at-the-top]
+                          @the-scalar-drops |
+                            rational.mul(ONE,
+                              rational.mul(qpoly.qcoeff(alpha, m),
+                              qpoly.qcoeff(beta, n))) =
+                              rational.mul(qpoly.qcoeff(alpha, m),
+                              qpoly.qcoeff(beta, n))
+                            [using specialize rational.mulOneLeft(rational.mul(qpoly.qcoeff(alpha, m), qpoly.qcoeff(beta, n)))]
+                          @the-cofactors-multiply-to-one |
+                            ONE = rational.mul(qpoly.qcoeff(alpha, m),
+                              qpoly.qcoeff(beta, n))
+                            [by rewrite the-scalar-drops the-leading-equation]
+                          @the-cofactors-are-the-same-unit |
+                            (qpoly.qcoeff(alpha, m) = ONE and
+                              qpoly.qcoeff(beta, n) = ONE) or
+                              (qpoly.qcoeff(alpha, m) =
+                              rational.neg(ONE) and
+                              qpoly.qcoeff(beta, n) =
+                              rational.neg(ONE))
+                            [using specialize theCofactorsAreEqualUnits(qpoly.qcoeff(alpha, m), qpoly.qcoeff(beta, n)) the-alpha-leading-is-an-integer the-beta-leading-is-an-integer the-cofactors-multiply-to-one]
+                          @conclusion-the-factors-exist |
+                            exists a, b: QPoly;
+                              qpoly.qdegreeAtMost(a, m) and
+                              qpoly.qdegreeAtMost(b, n) and
+                              qpoly.qcoeff(a, m) = ONE and
+                              qpoly.qcoeff(b, n) = ONE and
+                              p = qpoly.qmulP(a, b)
+                            case the-cofactors-are-the-same-unit {
+                              // a_m = b_n = 1: alpha and beta already serve
+                              @when-both-are-one |
+                                assume qpoly.qcoeff(alpha, m) = ONE and
+                                  qpoly.qcoeff(beta, n) = ONE {
+                                  @both-are-one |
+                                    qpoly.qcoeff(alpha, m) = ONE and
+                                      qpoly.qcoeff(beta, n) = ONE
+                                    [by hypothesis when-both-are-one]
+                                  @alpha-is-monic |
+                                    qpoly.qcoeff(alpha, m) = ONE
+                                    [by and_lhs both-are-one]
+                                  @beta-is-monic |
+                                    qpoly.qcoeff(beta, n) = ONE
+                                    [by and_rhs both-are-one]
+                                  @the-pair-works |
+                                    qpoly.qdegreeAtMost(alpha, m) and
+                                      qpoly.qdegreeAtMost(beta, n) and
+                                      qpoly.qcoeff(alpha, m) = ONE and
+                                      qpoly.qcoeff(beta, n) = ONE and
+                                      p = qpoly.qmulP(alpha, beta)
+                                    [using tautology alpha-is-bounded beta-is-bounded alpha-is-monic beta-is-monic p-is-the-product]
+                                  @the-second-witness |
+                                    exists b: QPoly;
+                                      qpoly.qdegreeAtMost(alpha, m) and
+                                      qpoly.qdegreeAtMost(b, n) and
+                                      qpoly.qcoeff(alpha, m) = ONE and
+                                      qpoly.qcoeff(b, n) = ONE and
+                                      p = qpoly.qmulP(alpha, b)
+                                    [by witness(beta) the-pair-works]
+                                  @conclusion-positive-case |
+                                    exists a, b: QPoly;
+                                      qpoly.qdegreeAtMost(a, m) and
+                                      qpoly.qdegreeAtMost(b, n) and
+                                      qpoly.qcoeff(a, m) = ONE and
+                                      qpoly.qcoeff(b, n) = ONE and
+                                      p = qpoly.qmulP(a, b)
+                                    [by witness(alpha) the-second-witness]
+                                }
+                              // a_m = b_n = -1: the negations serve, and the
+                              // two negations cancel in the product
+                              @when-both-are-minus-one |
+                                assume qpoly.qcoeff(alpha, m) =
+                                  rational.neg(ONE) and
+                                  qpoly.qcoeff(beta, n) =
+                                  rational.neg(ONE) {
+                                  @both-are-minus-one |
+                                    qpoly.qcoeff(alpha, m) =
+                                      rational.neg(ONE) and
+                                      qpoly.qcoeff(beta, n) =
+                                      rational.neg(ONE)
+                                    [by hypothesis when-both-are-minus-one]
+                                  @alpha-leads-with-minus-one |
+                                    qpoly.qcoeff(alpha, m) =
+                                      rational.neg(ONE)
+                                    [by and_lhs both-are-minus-one]
+                                  @beta-leads-with-minus-one |
+                                    qpoly.qcoeff(beta, n) =
+                                      rational.neg(ONE)
+                                    [by and_rhs both-are-minus-one]
+                                  @the-negations-flip-alpha |
+                                    qpoly.qcoeff(qpoly.qnegP(alpha), m) =
+                                      ONE
+                                    [using specialize qpoly.theNegationsCoefficientFlips(alpha, m) alpha-leads-with-minus-one]
+                                  @the-negations-flip-beta |
+                                    qpoly.qcoeff(qpoly.qnegP(beta), n) =
+                                      ONE
+                                    [using specialize qpoly.theNegationsCoefficientFlips(beta, n) beta-leads-with-minus-one]
+                                  @the-negation-of-alpha-is-bounded |
+                                    qpoly.qdegreeAtMost(
+                                      qpoly.qnegP(alpha), m)
+                                    [using specialize qpoly.theNegationIsBoundedWhereverTheOriginalIs(alpha, m) alpha-is-bounded]
+                                  @the-negation-of-beta-is-bounded |
+                                    qpoly.qdegreeAtMost(
+                                      qpoly.qnegP(beta), n)
+                                    [using specialize qpoly.theNegationIsBoundedWhereverTheOriginalIs(beta, n) beta-is-bounded]
+                                  @the-negations-cancel |
+                                    qpoly.qmulP(qpoly.qnegP(alpha),
+                                      qpoly.qnegP(beta)) =
+                                      qpoly.qmulP(alpha, beta)
+                                    [using specialize qpoly.theTwoNegationsCancelInAProduct(alpha, beta)]
+                                  @p-is-the-negated-product |
+                                    p = qpoly.qmulP(qpoly.qnegP(alpha),
+                                      qpoly.qnegP(beta))
+                                    [by rewrite the-negations-cancel p-is-the-product]
+                                  @the-negated-pair-works |
+                                    qpoly.qdegreeAtMost(
+                                      qpoly.qnegP(alpha), m) and
+                                      qpoly.qdegreeAtMost(
+                                      qpoly.qnegP(beta), n) and
+                                      qpoly.qcoeff(
+                                      qpoly.qnegP(alpha), m) = ONE and
+                                      qpoly.qcoeff(
+                                      qpoly.qnegP(beta), n) = ONE and
+                                      p = qpoly.qmulP(
+                                      qpoly.qnegP(alpha),
+                                      qpoly.qnegP(beta))
+                                    [using tautology the-negation-of-alpha-is-bounded the-negation-of-beta-is-bounded the-negations-flip-alpha the-negations-flip-beta p-is-the-negated-product]
+                                  @the-second-negated-witness |
+                                    exists b: QPoly;
+                                      qpoly.qdegreeAtMost(
+                                      qpoly.qnegP(alpha), m) and
+                                      qpoly.qdegreeAtMost(b, n) and
+                                      qpoly.qcoeff(
+                                      qpoly.qnegP(alpha), m) = ONE and
+                                      qpoly.qcoeff(b, n) = ONE and
+                                      p = qpoly.qmulP(
+                                      qpoly.qnegP(alpha), b)
+                                    [by witness(qpoly.qnegP(beta)) the-negated-pair-works]
+                                  @conclusion-negative-case |
+                                    exists a, b: QPoly;
+                                      qpoly.qdegreeAtMost(a, m) and
+                                      qpoly.qdegreeAtMost(b, n) and
+                                      qpoly.qcoeff(a, m) = ONE and
+                                      qpoly.qcoeff(b, n) = ONE and
+                                      p = qpoly.qmulP(a, b)
+                                    [by witness(qpoly.qnegP(alpha)) the-second-negated-witness]
+                                }
+                            }
+                        }
+                      @the-implication |
+                        (isInteger(qpoly.qcoeff(alpha, m)) and
+                          isInteger(qpoly.qcoeff(beta, n)) and
+                          qpoly.qdegreeAtMost(alpha, m) and
+                          qpoly.qdegreeAtMost(beta, n) and
+                          p = qpoly.qmulP(
+                          qpoly.qmonomial(ONE, NAT_ZERO),
+                          qpoly.qmulP(alpha, beta)) and
+                          qpoly.qcoeff(p, peano.add(m, n)) = ONE) ->
+                          (exists a, b: QPoly;
+                          qpoly.qdegreeAtMost(a, m) and
+                          qpoly.qdegreeAtMost(b, n) and
+                          qpoly.qcoeff(a, m) = ONE and
+                          qpoly.qcoeff(b, n) = ONE and
+                          p = qpoly.qmulP(a, b))
+                        [by discharge given-the-setup]
+                      @curried |
+                        isInteger(qpoly.qcoeff(alpha, m)) ->
+                          isInteger(qpoly.qcoeff(beta, n)) ->
+                          qpoly.qdegreeAtMost(alpha, m) ->
+                          qpoly.qdegreeAtMost(beta, n) ->
+                          p = qpoly.qmulP(
+                          qpoly.qmonomial(ONE, NAT_ZERO),
+                          qpoly.qmulP(alpha, beta)) ->
+                          qpoly.qcoeff(p, peano.add(m, n)) = ONE ->
+                          (exists a, b: QPoly;
+                          qpoly.qdegreeAtMost(a, m) and
+                          qpoly.qdegreeAtMost(b, n) and
+                          qpoly.qcoeff(a, m) = ONE and
+                          qpoly.qcoeff(b, n) = ONE and
+                          p = qpoly.qmulP(a, b))
+                        [using tautology the-implication]
+                    }
+                  @discharge-n |
+                    forall n9: Nat;
+                      isInteger(qpoly.qcoeff(alpha, m)) ->
+                      isInteger(qpoly.qcoeff(beta, n9)) ->
+                      qpoly.qdegreeAtMost(alpha, m) ->
+                      qpoly.qdegreeAtMost(beta, n9) ->
+                      p = qpoly.qmulP(qpoly.qmonomial(ONE, NAT_ZERO),
+                      qpoly.qmulP(alpha, beta)) ->
+                      qpoly.qcoeff(p, peano.add(m, n9)) = ONE ->
+                      (exists a, b: QPoly;
+                      qpoly.qdegreeAtMost(a, m) and
+                      qpoly.qdegreeAtMost(b, n9) and
+                      qpoly.qcoeff(a, m) = ONE and
+                      qpoly.qcoeff(b, n9) = ONE and
+                      p = qpoly.qmulP(a, b))
+                    [by generalize generalize-n]
+                }
+              @discharge-m |
+                forall m9, n9: Nat;
+                  isInteger(qpoly.qcoeff(alpha, m9)) ->
+                  isInteger(qpoly.qcoeff(beta, n9)) ->
+                  qpoly.qdegreeAtMost(alpha, m9) ->
+                  qpoly.qdegreeAtMost(beta, n9) ->
+                  p = qpoly.qmulP(qpoly.qmonomial(ONE, NAT_ZERO),
+                  qpoly.qmulP(alpha, beta)) ->
+                  qpoly.qcoeff(p, peano.add(m9, n9)) = ONE ->
+                  (exists a, b: QPoly;
+                  qpoly.qdegreeAtMost(a, m9) and
+                  qpoly.qdegreeAtMost(b, n9) and
+                  qpoly.qcoeff(a, m9) = ONE and
+                  qpoly.qcoeff(b, n9) = ONE and
+                  p = qpoly.qmulP(a, b))
+                [by generalize generalize-m]
+            }
+          @discharge-beta |
+            forall beta9: QPoly; forall m9, n9: Nat;
+              isInteger(qpoly.qcoeff(alpha, m9)) ->
+              isInteger(qpoly.qcoeff(beta9, n9)) ->
+              qpoly.qdegreeAtMost(alpha, m9) ->
+              qpoly.qdegreeAtMost(beta9, n9) ->
+              p = qpoly.qmulP(qpoly.qmonomial(ONE, NAT_ZERO),
+              qpoly.qmulP(alpha, beta9)) ->
+              qpoly.qcoeff(p, peano.add(m9, n9)) = ONE ->
+              (exists a, b: QPoly;
+              qpoly.qdegreeAtMost(a, m9) and
+              qpoly.qdegreeAtMost(b, n9) and
+              qpoly.qcoeff(a, m9) = ONE and
+              qpoly.qcoeff(b, n9) = ONE and
+              p = qpoly.qmulP(a, b))
+            [by generalize generalize-beta]
+        }
+      @discharge-alpha |
+        forall alpha9, beta9: QPoly; forall m9, n9: Nat;
+          isInteger(qpoly.qcoeff(alpha9, m9)) ->
+          isInteger(qpoly.qcoeff(beta9, n9)) ->
+          qpoly.qdegreeAtMost(alpha9, m9) ->
+          qpoly.qdegreeAtMost(beta9, n9) ->
+          p = qpoly.qmulP(qpoly.qmonomial(ONE, NAT_ZERO),
+          qpoly.qmulP(alpha9, beta9)) ->
+          qpoly.qcoeff(p, peano.add(m9, n9)) = ONE ->
+          (exists a, b: QPoly;
+          qpoly.qdegreeAtMost(a, m9) and
+          qpoly.qdegreeAtMost(b, n9) and
+          qpoly.qcoeff(a, m9) = ONE and
+          qpoly.qcoeff(b, n9) = ONE and
+          p = qpoly.qmulP(a, b))
+        [by generalize generalize-alpha]
+    }
+  @conclusion |
+    forall p, alpha, beta: QPoly; forall m, n: Nat;
+      isInteger(qpoly.qcoeff(alpha, m)) ->
+      isInteger(qpoly.qcoeff(beta, n)) ->
+      qpoly.qdegreeAtMost(alpha, m) -> qpoly.qdegreeAtMost(beta, n) ->
+      p = qpoly.qmulP(qpoly.qmonomial(ONE, NAT_ZERO),
+      qpoly.qmulP(alpha, beta)) ->
+      qpoly.qcoeff(p, peano.add(m, n)) = ONE ->
+      (exists a, b: QPoly;
+      qpoly.qdegreeAtMost(a, m) and qpoly.qdegreeAtMost(b, n) and
+      qpoly.qcoeff(a, m) = ONE and qpoly.qcoeff(b, n) = ONE and
+      p = qpoly.qmulP(a, b))
+    [by generalize generalize-p]
+qed
