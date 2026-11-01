@@ -2325,3 +2325,372 @@ proof
       rational.mul(a, neg(b))
     [by generalize generalize-a]
 qed
+
+// `n = a·b` with a and b integers makes n an integer — the form the cleared-sum induction
+// needs, where n is named by a defining clause rather than written as the product.
+theorem theScaledIntegerIsAnInteger: forall a, b, n: Q;
+  isInteger(a) -> isInteger(b) -> n = rational.mul(a, b) ->
+  isInteger(n)
+proof
+  @generalize-a |
+    fix a: Q {
+      @generalize-b |
+        fix b: Q {
+          @generalize-n |
+            fix n: Q {
+              @given-the-setup |
+                assume isInteger(a) and isInteger(b) and
+                  n = rational.mul(a, b) {
+                  @the-setup |
+                    isInteger(a) and isInteger(b) and
+                      n = rational.mul(a, b)
+                    [by hypothesis given-the-setup]
+                  @a-is-an-integer |
+                    isInteger(a)
+                    [using tautology the-setup]
+                  @b-is-an-integer |
+                    isInteger(b)
+                    [using tautology the-setup]
+                  @n-factors |
+                    n = rational.mul(a, b)
+                    [using tautology the-setup]
+                  @the-product-is-an-integer |
+                    isInteger(rational.mul(a, b))
+                    [using specialize rational.isIntegerMul(a, b) a-is-an-integer b-is-an-integer]
+                  @conclusion-n-is-an-integer |
+                    isInteger(n)
+                    [by rewrite n-factors the-product-is-an-integer]
+                }
+              @the-implication |
+                (isInteger(a) and isInteger(b) and
+                  n = rational.mul(a, b)) -> isInteger(n)
+                [by discharge given-the-setup]
+              @curried |
+                isInteger(a) -> isInteger(b) ->
+                  n = rational.mul(a, b) -> isInteger(n)
+                [using tautology the-implication]
+            }
+          @discharge-n |
+            forall n9: Q;
+              isInteger(a) -> isInteger(b) ->
+              n9 = rational.mul(a, b) -> isInteger(n9)
+            [by generalize generalize-n]
+        }
+      @discharge-b |
+        forall b9, n9: Q;
+          isInteger(a) -> isInteger(b9) ->
+          n9 = rational.mul(a, b9) -> isInteger(n9)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b, n: Q;
+      isInteger(a) -> isInteger(b) -> n = rational.mul(a, b) ->
+      isInteger(n)
+    [by generalize generalize-a]
+qed
+
+// The negation of a multiple is a multiple.
+theorem theNegationOfAMultipleIsAMultiple: forall d, n: Q;
+  (exists k: Q; isInteger(k) and n = rational.mul(d, k)) ->
+  (exists k: Q; isInteger(k) and neg(n) = rational.mul(d, k))
+proof
+  @generalize-d |
+    fix d: Q {
+      @generalize-n |
+        fix n: Q {
+          @given-a-multiple |
+            assume exists k: Q; isInteger(k) and
+              n = rational.mul(d, k) {
+              @a-multiple |
+                exists k: Q; isInteger(k) and
+                  n = rational.mul(d, k)
+                [by hypothesis given-a-multiple]
+              @conclusion-negated |
+                unpack k: Q from a-multiple {
+                  @the-quotient |
+                    isInteger(k) and n = rational.mul(d, k)
+                    [by hypothesis conclusion-negated]
+                  @k-is-an-integer |
+                    isInteger(k)
+                    [by and_lhs the-quotient]
+                  @n-factors |
+                    n = rational.mul(d, k)
+                    [by and_rhs the-quotient]
+                  @minus-k-is-an-integer |
+                    isInteger(neg(k))
+                    [using specialize rational.isIntegerNeg(k) k-is-an-integer]
+                  @the-negated-product |
+                    neg(rational.mul(d, k)) =
+                      rational.mul(d, neg(k))
+                    [using polynomial(rational)]
+                  @reflexivity-of-the-negation |
+                    neg(n) = neg(n)
+                    [by reflexivity]
+                  @the-negation-at-the-factorization |
+                    neg(n) = neg(rational.mul(d, k))
+                    [by rewrite n-factors reflexivity-of-the-negation]
+                  @the-negation-factors |
+                    neg(n) = rational.mul(d, neg(k))
+                    [by rewrite the-negated-product the-negation-at-the-factorization]
+                  @the-negated-quotient-works |
+                    isInteger(neg(k)) and
+                      neg(n) = rational.mul(d, neg(k))
+                    [by both minus-k-is-an-integer the-negation-factors]
+                  @conclusion-a-negated-quotient |
+                    exists k2: Q; isInteger(k2) and
+                      neg(n) = rational.mul(d, k2)
+                    [by witness(neg(k)) the-negated-quotient-works]
+                }
+              @the-exported |
+                exists k2: Q; isInteger(k2) and
+                  neg(n) = rational.mul(d, k2)
+                [by unpacked conclusion-negated]
+            }
+          @the-implication |
+            (exists k: Q; isInteger(k) and
+              n = rational.mul(d, k)) ->
+              (exists k: Q; isInteger(k) and
+              neg(n) = rational.mul(d, k))
+            [by discharge given-a-multiple]
+        }
+      @discharge-n |
+        forall n9: Q;
+          (exists k: Q; isInteger(k) and
+          n9 = rational.mul(d, k)) ->
+          (exists k: Q; isInteger(k) and
+          neg(n9) = rational.mul(d, k))
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall d, n: Q;
+      (exists k: Q; isInteger(k) and n = rational.mul(d, k)) ->
+      (exists k: Q; isInteger(k) and neg(n) = rational.mul(d, k))
+    [by generalize generalize-d]
+qed
+
+// From `x + y = 0`, y is the negation of x.
+theorem theOtherSummandIsTheNegation: forall x, y: Q;
+  rational.add(x, y) = ZERO -> y = neg(x)
+proof
+  @generalize-x |
+    fix x: Q {
+      @generalize-y |
+        fix y: Q {
+          @given-the-sum-vanishes |
+            assume rational.add(x, y) = ZERO {
+              @the-sum-vanishes |
+                rational.add(x, y) = ZERO
+                [by hypothesis given-the-sum-vanishes]
+              @the-isolation |
+                rational.add(neg(x), rational.add(x, y)) = y
+                [using polynomial(rational)]
+              @the-isolation-at-zero |
+                rational.add(neg(x), ZERO) = y
+                [by rewrite the-sum-vanishes the-isolation]
+              @adding-zero |
+                rational.add(neg(x), ZERO) = neg(x)
+                [using polynomial(rational)]
+              @the-negation-is-y |
+                neg(x) = y
+                [by rewrite adding-zero the-isolation-at-zero]
+              @conclusion-y-is-the-negation |
+                y = neg(x)
+                [by symmetry the-negation-is-y]
+            }
+          @the-implication |
+            rational.add(x, y) = ZERO -> y = neg(x)
+            [by discharge given-the-sum-vanishes]
+        }
+      @discharge-y |
+        forall y9: Q;
+          rational.add(x, y9) = ZERO -> y9 = neg(x)
+        [by generalize generalize-y]
+    }
+  @conclusion |
+    forall x, y: Q;
+      rational.add(x, y) = ZERO -> y = neg(x)
+    [by generalize generalize-x]
+qed
+
+// -- BÉZOUT WITH THE ROLES SWAPPED ---------------------------------------------------------
+// `bezoutOnTheCut` wants its FIRST argument positive (that is what makes it the positive
+// combination the well-ordering starts from). 17.14's denominator half needs the certificate
+// with s first, and has only `s != 0` for it — but it DOES have `0 < r`. So run the original
+// at (r, s) and commute the sum: `r·x + s·y = 1` is `s·y + r·x = 1`.
+//
+// The coprimality argument order also flips, which is why this is not a one-line alias: the
+// quantified reading is symmetric in content but not in the order its two premises appear.
+theorem bezoutOnTheCutSwapped: forall s, r: Q;
+  isInteger(s) -> isInteger(r) -> less_than(ZERO, r) ->
+  (forall e: Q; isInteger(e) ->
+  (exists k: Q; isInteger(k) and r = rational.mul(e, k)) ->
+  (exists k: Q; isInteger(k) and s = rational.mul(e, k)) ->
+  (exists k: Q; isInteger(k) and ONE = rational.mul(e, k))) ->
+  (exists cs, cr: Q; isInteger(cs) and isInteger(cr) and
+  rational.add(rational.mul(s, cs), rational.mul(r, cr)) = ONE)
+proof
+  @generalize-s |
+    fix s: Q {
+      @generalize-r |
+        fix r: Q {
+          @given-the-setup |
+            assume isInteger(s) and isInteger(r) and
+              less_than(ZERO, r) and
+              (forall e: Q; isInteger(e) ->
+              (exists k: Q; isInteger(k) and
+              r = rational.mul(e, k)) ->
+              (exists k: Q; isInteger(k) and
+              s = rational.mul(e, k)) ->
+              (exists k: Q; isInteger(k) and
+              ONE = rational.mul(e, k))) {
+              @the-setup |
+                isInteger(s) and isInteger(r) and
+                  less_than(ZERO, r) and
+                  (forall e: Q; isInteger(e) ->
+                  (exists k: Q; isInteger(k) and
+                  r = rational.mul(e, k)) ->
+                  (exists k: Q; isInteger(k) and
+                  s = rational.mul(e, k)) ->
+                  (exists k: Q; isInteger(k) and
+                  ONE = rational.mul(e, k)))
+                [by hypothesis given-the-setup]
+              @s-is-an-integer |
+                isInteger(s)
+                [using tautology the-setup]
+              @r-is-an-integer |
+                isInteger(r)
+                [using tautology the-setup]
+              @r-is-positive |
+                less_than(ZERO, r)
+                [using tautology the-setup]
+              @the-coprimality |
+                forall e: Q; isInteger(e) ->
+                  (exists k: Q; isInteger(k) and
+                  r = rational.mul(e, k)) ->
+                  (exists k: Q; isInteger(k) and
+                  s = rational.mul(e, k)) ->
+                  (exists k: Q; isInteger(k) and
+                  ONE = rational.mul(e, k))
+                [using tautology the-setup]
+              @the-certificate-at-r-first |
+                exists cr, cs: Q; isInteger(cr) and isInteger(cs) and
+                  rational.add(rational.mul(r, cr),
+                  rational.mul(s, cs)) = ONE
+                [using specialize bezoutOnTheCut(r, s) r-is-an-integer s-is-an-integer r-is-positive the-coprimality]
+              @conclusion-swapped |
+                unpack cr: Q from the-certificate-at-r-first {
+                  @the-s-coefficient-exists |
+                    exists cs: Q; isInteger(cr) and isInteger(cs) and
+                      rational.add(rational.mul(r, cr),
+                      rational.mul(s, cs)) = ONE
+                    [by hypothesis conclusion-swapped]
+                  @conclusion-swapped-inner |
+                    unpack cs: Q from the-s-coefficient-exists {
+                      @the-certificate-parts |
+                        isInteger(cr) and isInteger(cs) and
+                          rational.add(rational.mul(r, cr),
+                          rational.mul(s, cs)) = ONE
+                        [by hypothesis conclusion-swapped-inner]
+                      @cr-is-an-integer |
+                        isInteger(cr)
+                        [using tautology the-certificate-parts]
+                      @cs-is-an-integer |
+                        isInteger(cs)
+                        [using tautology the-certificate-parts]
+                      @the-certificate |
+                        rational.add(rational.mul(r, cr),
+                          rational.mul(s, cs)) = ONE
+                        [using tautology the-certificate-parts]
+                      @the-commuted-sum |
+                        rational.add(rational.mul(s, cs),
+                          rational.mul(r, cr)) =
+                          rational.add(rational.mul(r, cr),
+                          rational.mul(s, cs))
+                        [using polynomial(rational)]
+                      @the-swapped-certificate |
+                        rational.add(rational.mul(s, cs),
+                          rational.mul(r, cr)) = ONE
+                        [by rewrite the-commuted-sum the-certificate]
+                      @the-swapped-pair-works |
+                        isInteger(cs) and isInteger(cr) and
+                          rational.add(rational.mul(s, cs),
+                          rational.mul(r, cr)) = ONE
+                        [using tautology cs-is-an-integer cr-is-an-integer the-swapped-certificate]
+                      @the-cr-witness |
+                        exists cr2: Q; isInteger(cs) and
+                          isInteger(cr2) and
+                          rational.add(rational.mul(s, cs),
+                          rational.mul(r, cr2)) = ONE
+                        [by witness(cr) the-swapped-pair-works]
+                      @conclusion-both-swapped |
+                        exists cs2, cr2: Q; isInteger(cs2) and
+                          isInteger(cr2) and
+                          rational.add(rational.mul(s, cs2),
+                          rational.mul(r, cr2)) = ONE
+                        [by witness(cs) the-cr-witness]
+                    }
+                  @the-inner-exported |
+                    exists cs2, cr2: Q; isInteger(cs2) and
+                      isInteger(cr2) and
+                      rational.add(rational.mul(s, cs2),
+                      rational.mul(r, cr2)) = ONE
+                    [by unpacked conclusion-swapped-inner]
+                }
+              @the-outer-exported |
+                exists cs2, cr2: Q; isInteger(cs2) and
+                  isInteger(cr2) and
+                  rational.add(rational.mul(s, cs2),
+                  rational.mul(r, cr2)) = ONE
+                [by unpacked conclusion-swapped]
+            }
+          @the-implication |
+            (isInteger(s) and isInteger(r) and
+              less_than(ZERO, r) and
+              (forall e: Q; isInteger(e) ->
+              (exists k: Q; isInteger(k) and
+              r = rational.mul(e, k)) ->
+              (exists k: Q; isInteger(k) and
+              s = rational.mul(e, k)) ->
+              (exists k: Q; isInteger(k) and
+              ONE = rational.mul(e, k)))) ->
+              (exists cs, cr: Q; isInteger(cs) and isInteger(cr) and
+              rational.add(rational.mul(s, cs),
+              rational.mul(r, cr)) = ONE)
+            [by discharge given-the-setup]
+          @curried |
+            isInteger(s) -> isInteger(r) -> less_than(ZERO, r) ->
+              (forall e: Q; isInteger(e) ->
+              (exists k: Q; isInteger(k) and
+              r = rational.mul(e, k)) ->
+              (exists k: Q; isInteger(k) and
+              s = rational.mul(e, k)) ->
+              (exists k: Q; isInteger(k) and
+              ONE = rational.mul(e, k))) ->
+              (exists cs, cr: Q; isInteger(cs) and isInteger(cr) and
+              rational.add(rational.mul(s, cs),
+              rational.mul(r, cr)) = ONE)
+            [using tautology the-implication]
+        }
+      @discharge-r |
+        forall r9: Q;
+          isInteger(s) -> isInteger(r9) -> less_than(ZERO, r9) ->
+          (forall e: Q; isInteger(e) ->
+          (exists k: Q; isInteger(k) and r9 = rational.mul(e, k)) ->
+          (exists k: Q; isInteger(k) and s = rational.mul(e, k)) ->
+          (exists k: Q; isInteger(k) and ONE = rational.mul(e, k))) ->
+          (exists cs, cr: Q; isInteger(cs) and isInteger(cr) and
+          rational.add(rational.mul(s, cs),
+          rational.mul(r9, cr)) = ONE)
+        [by generalize generalize-r]
+    }
+  @conclusion |
+    forall s, r: Q;
+      isInteger(s) -> isInteger(r) -> less_than(ZERO, r) ->
+      (forall e: Q; isInteger(e) ->
+      (exists k: Q; isInteger(k) and r = rational.mul(e, k)) ->
+      (exists k: Q; isInteger(k) and s = rational.mul(e, k)) ->
+      (exists k: Q; isInteger(k) and ONE = rational.mul(e, k))) ->
+      (exists cs, cr: Q; isInteger(cs) and isInteger(cr) and
+      rational.add(rational.mul(s, cs), rational.mul(r, cr)) = ONE)
+    [by generalize generalize-s]
+qed
