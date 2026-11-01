@@ -2228,3 +2228,87 @@ proof
     forall a, n: Nat; less_or_equal(n, add(a, n))
     [by generalize generalize-a]
 qed
+
+// -- SMALL-BOUND INDEX ENUMERATION --------------------------------------------------------
+// "Below ONE means ZERO", "below TWO means ZERO or ONE". A consumer iterating a fixed, tiny
+// index range (a PAIR as a two-element sequence, say) needs to turn a bounded quantifier into
+// the finitely many cases it covers. `lessThanSuccSplit` does one step; these chain it.
+
+// Strategy: `i < succ(ZERO)` splits into `i < ZERO` (impossible) or `i = ZERO`.
+theorem belowOneMeansZero: forall i: Nat;
+  less_than(i, succ(ZERO)) -> i = ZERO
+proof
+  @generalize-i |
+    fix i: Nat {
+      @given-i-below-one |
+        assume less_than(i, succ(ZERO)) {
+          @i-below-one |
+            less_than(i, succ(ZERO))
+            [by hypothesis given-i-below-one]
+          @the-split |
+            less_than(i, ZERO) or i = ZERO
+            [using specialize lessThanSuccSplit(i, ZERO) i-below-one]
+          @nothing-below-zero |
+            not less_than(i, ZERO)
+            [using specialize notLessThanZero(i)]
+          @conclusion-i-is-zero |
+            i = ZERO
+            [using tautology the-split nothing-below-zero]
+        }
+      @below-one-implies |
+        less_than(i, succ(ZERO)) -> i = ZERO
+        [by discharge given-i-below-one]
+    }
+  @conclusion |
+    forall i: Nat; less_than(i, succ(ZERO)) -> i = ZERO
+    [by generalize generalize-i]
+qed
+
+// Strategy: `i < succ(succ ZERO)` splits into `i < succ ZERO` — which `belowOneMeansZero`
+// collapses — or `i = succ ZERO`.
+theorem belowTwoMeansZeroOrOne: forall i: Nat;
+  less_than(i, succ(succ(ZERO))) -> (i = ZERO or i = succ(ZERO))
+proof
+  @generalize-i |
+    fix i: Nat {
+      @given-i-below-two |
+        assume less_than(i, succ(succ(ZERO))) {
+          @i-below-two |
+            less_than(i, succ(succ(ZERO)))
+            [by hypothesis given-i-below-two]
+          @the-split |
+            less_than(i, succ(ZERO)) or i = succ(ZERO)
+            [using specialize lessThanSuccSplit(i, succ(ZERO)) i-below-two]
+          @below-one-collapses |
+            less_than(i, succ(ZERO)) -> i = ZERO
+            [using specialize belowOneMeansZero(i)]
+          @conclusion-zero-or-one |
+            i = ZERO or i = succ(ZERO)
+            [using tautology the-split below-one-collapses]
+        }
+      @below-two-implies |
+        less_than(i, succ(succ(ZERO))) -> (i = ZERO or i = succ(ZERO))
+        [by discharge given-i-below-two]
+    }
+  @conclusion |
+    forall i: Nat;
+      less_than(i, succ(succ(ZERO))) -> (i = ZERO or i = succ(ZERO))
+    [by generalize generalize-i]
+qed
+
+// And the converses, so a consumer can discharge the bound at each enumerated index.
+theorem zeroIsBelowAnySuccessor: forall k: Nat; less_than(ZERO, succ(k))
+proof
+  @generalize-k |
+    fix k: Nat {
+      @zero-plus-succ-k |
+        add(ZERO, succ(k)) = succ(k)
+        [using specialize peano.addZeroLeft(succ(k))]
+      @conclusion-zero-below |
+        less_than(ZERO, succ(k))
+        [using specialize lessThanIntro(ZERO, k, succ(k)) zero-plus-succ-k]
+    }
+  @conclusion |
+    forall k: Nat; less_than(ZERO, succ(k))
+    [by generalize generalize-k]
+qed
