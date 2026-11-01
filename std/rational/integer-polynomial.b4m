@@ -592,6 +592,24 @@ qed
 // No `isInteger(QN)` axiom: `dividesIntegrally` constrains only the QUOTIENT, never the
 // divisor, so nothing below needs the modulus to be on the cut. I had posited that axiom
 // speculatively and the `--library` gate caught it as unused — which is what that gate is for.
+//
+// ⚠ KNOWN GAP, recorded rather than hidden. `QN` and `mod_n.N` are INDEPENDENT constants.
+// `qcls` lands in `mod_n.Zn`, whose own `clsCongruent` is congruence by `N`, while
+// `qclsCongruent` below is congruence by `QN` — and nothing states these are the same number.
+//
+// Consequence: `theCutModulusCannotDivideEveryProductCoefficient` takes `is_prime(mod_n.N)` as a
+// hypothesis but states divisibility by `QN`. Every step of it is valid, and `--axioms` shows
+// BOTH congruence axioms in its base, which is the tell: the primality hypothesis constrains
+// one constant while the conclusion speaks of another. So the theorem is weaker than its name
+// suggests — it does not establish that the thing missing the coefficients is prime.
+//
+// This does NOT make the development unsound; it makes one theorem's hypothesis fail to
+// connect. The fix is to carry primality ON THE CUT through the reduction argument, which
+// means the Z_N[x] domain property has to be reached from a cut-side hypothesis rather than
+// from `is_prime(mod_n.N)` — the one piece of the reproof I got wrong, and it is not a
+// two-line change. Flagged here so nothing downstream reads this theorem as more than it is.
+//
+// Both halves type-check either way, which is exactly why this needed saying out loud.
 const QN: Q
 
 // `qcls` is the cut's reduction modulo QN, landing in the EXISTING ℤ_N[x]'s coefficient ring.
@@ -1332,7 +1350,7 @@ qed
 //
 // `modNPolynomialsHaveNoZeroDivisors` is cited DIRECTLY — it is a fact about ℤ_N[x] with no ℚ
 // in it, so no transfer is involved. That is what made this reproof affordable.
-theorem theModulusCannotDivideEveryProductCoefficient: forall f, g: QPoly;
+theorem theCutModulusCannotDivideEveryProductCoefficient: forall f, g: QPoly;
   forall i, j: Nat;
   mod_n_poly.is_prime(mod_n.N) ->
   hasIntegerCoefficients(f) -> hasIntegerCoefficients(g) ->
