@@ -130,6 +130,9 @@ model RationalPolynomials {
   fieldpoly.degreeAtMost: qdegreeAtMost
   fieldpoly.degree: qdegree
   fieldpoly.convolution: qconvolution
+  fieldpoly.power: qpower
+  fieldpoly.evalUpTo: qevalUpTo
+  fieldpoly.isZeroOf: qIsZeroOf
   fieldpoly.polyExtensionality <- qPolyExtensionality
   fieldpoly.zeroPolyCoeff <- qZeroPolyCoeff
   fieldpoly.addPolyCoeff <- qAddPolyCoeff
@@ -142,6 +145,11 @@ model RationalPolynomials {
   fieldpoly.convolutionZero <- qConvolutionZero
   fieldpoly.convolutionSucc <- qConvolutionSucc
   fieldpoly.mulPolyCoeff <- qMulPolyCoeff
+  fieldpoly.powerZero <- qPowerZero
+  fieldpoly.powerSucc <- qPowerSucc
+  fieldpoly.evalZero <- qEvalZero
+  fieldpoly.evalSucc <- qEvalSucc
+  fieldpoly.isZeroOfMeaning <- qIsZeroOfMeaning
 }
 
 // -- integer coefficients -----------------------------------------------------------------
@@ -1371,6 +1379,31 @@ proof
     [by generalize generalize-p]
 qed
 
+// -- EVALUATION ----------------------------------------------------------------------------
+// Corollary 17.14 (the Rational Root Theorem) is about a ZERO of a polynomial, so ℚ[x] needs
+// evaluation. F[x] has the whole layer; these are its symbols at ℚ, declared here so the
+// `RationalPolynomials` model can map them and F[x]'s evaluation corpus can travel.
+func qpower(a: Q, n: peano.Nat) => Q
+axiom qPowerZero: forall a: Q; qpower(a, peano.ZERO) = rational.ONE
+axiom qPowerSucc: forall a: Q; forall n: peano.Nat;
+  qpower(a, peano.succ(n)) = rational.mul(a, qpower(a, n))
+
+func qevalUpTo(p: QPoly, a: Q, k: peano.Nat) => Q
+axiom qEvalZero: forall p: QPoly; forall a: Q;
+  qevalUpTo(p, a, peano.ZERO) = ZERO
+axiom qEvalSucc: forall p: QPoly; forall a: Q; forall k: peano.Nat;
+  qevalUpTo(p, a, peano.succ(k)) =
+  rational.add(qevalUpTo(p, a, k),
+  rational.mul(qcoeff(p, k), qpower(a, k)))
+
+// Judson's `p(a)`: the sum over every index up to AND INCLUDING the degree, which is what
+// the `succ` bound buys.
+define qevaluate(p, a) = qevalUpTo(p, a, peano.succ(qdegree(p)))
+
+pred qIsZeroOf(a: Q, p: QPoly)
+axiom qIsZeroOfMeaning: forall a: Q; forall p: QPoly;
+  qIsZeroOf(a, p) iff qevaluate(p, a) = ZERO
+
 // ℚ[x]'s multiplication is commutative, named locally so callers need not re-open the model.
 theorem qMulIsCommutative: forall p, q: QPoly;
   qmulP(p, q) = qmulP(q, p)
@@ -1520,5 +1553,576 @@ proof
     }
   @conclusion |
     forall p, q: QPoly; qmulP(qnegP(p), qnegP(q)) = qmulP(p, q)
+    [by generalize generalize-p]
+qed
+
+// -- CLEARING DENOMINATORS FROM AN EVALUATION -----------------------------------------------
+// Corollary 17.14's whole move is "multiply p(r/s) = 0 through by s^n". Done with the bound
+// as the induction variable, the cleared sum has its own recursion and no subtraction
+// anywhere — `sum_{i<k} a_i r^i s^(k-i)` grows at the top as
+// `S(k+1) = s·(S(k) + a_k·r^k)`, since the new term's s-exponent is exactly 1.
+func qclearedSum(p: QPoly, r: Q, s: Q, k: peano.Nat) => Q
+axiom qClearedSumZero: forall p: QPoly; forall r, s: Q;
+  qclearedSum(p, r, s, peano.ZERO) = ZERO
+axiom qClearedSumSucc: forall p: QPoly; forall r, s: Q; forall k: peano.Nat;
+  qclearedSum(p, r, s, peano.succ(k)) =
+  rational.mul(s, rational.add(qclearedSum(p, r, s, k),
+  rational.mul(qcoeff(p, k), qpower(r, k))))
+
+// A product's power splits, by induction on the exponent.
+theorem aProductsPowerSplits: forall a, b: Q; forall k: peano.Nat;
+  qpower(rational.mul(a, b), k) =
+  rational.mul(qpower(a, k), qpower(b, k))
+proof
+  @generalize-a |
+    fix a: Q {
+      @generalize-b |
+        fix b: Q {
+          // base: all three powers are ONE
+          @the-zero-power-of-the-product |
+            qpower(rational.mul(a, b), peano.ZERO) = rational.ONE
+            [using specialize qPowerZero(rational.mul(a, b))]
+          @the-zero-power-of-a |
+            qpower(a, peano.ZERO) = rational.ONE
+            [using specialize qPowerZero(a)]
+          @the-zero-power-of-b |
+            qpower(b, peano.ZERO) = rational.ONE
+            [using specialize qPowerZero(b)]
+          @one-times-one |
+            rational.mul(rational.ONE, rational.ONE) = rational.ONE
+            [using specialize rational.mulOneLeft(rational.ONE)]
+          @the-base-right-side |
+            rational.mul(qpower(a, peano.ZERO),
+              qpower(b, peano.ZERO)) = rational.ONE
+            [using simplify the-zero-power-of-a the-zero-power-of-b one-times-one]
+          @base-case |
+            qpower(rational.mul(a, b), peano.ZERO) =
+              rational.mul(qpower(a, peano.ZERO),
+              qpower(b, peano.ZERO))
+            [using simplify the-zero-power-of-the-product the-base-right-side]
+
+          @induction-step |
+            fix k: peano.Nat {
+              @given-inductive-hypothesis |
+                assume qpower(rational.mul(a, b), k) =
+                  rational.mul(qpower(a, k), qpower(b, k)) {
+                  @inductive-hypothesis |
+                    qpower(rational.mul(a, b), k) =
+                      rational.mul(qpower(a, k), qpower(b, k))
+                    [by hypothesis given-inductive-hypothesis]
+                  @the-next-power-of-the-product |
+                    qpower(rational.mul(a, b), peano.succ(k)) =
+                      rational.mul(rational.mul(a, b),
+                      qpower(rational.mul(a, b), k))
+                    [using specialize qPowerSucc(rational.mul(a, b), k)]
+                  @the-next-power-with-the-hypothesis |
+                    qpower(rational.mul(a, b), peano.succ(k)) =
+                      rational.mul(rational.mul(a, b),
+                      rational.mul(qpower(a, k), qpower(b, k)))
+                    [by rewrite inductive-hypothesis the-next-power-of-the-product]
+                  @the-next-power-of-a |
+                    qpower(a, peano.succ(k)) =
+                      rational.mul(a, qpower(a, k))
+                    [using specialize qPowerSucc(a, k)]
+                  @the-next-power-of-b |
+                    qpower(b, peano.succ(k)) =
+                      rational.mul(b, qpower(b, k))
+                    [using specialize qPowerSucc(b, k)]
+                  @the-right-side-expanded |
+                    rational.mul(qpower(a, peano.succ(k)),
+                      qpower(b, peano.succ(k))) =
+                      rational.mul(rational.mul(a, qpower(a, k)),
+                      rational.mul(b, qpower(b, k)))
+                    [using simplify the-next-power-of-a the-next-power-of-b]
+                  @the-two-groupings-agree |
+                    rational.mul(rational.mul(a, b),
+                      rational.mul(qpower(a, k), qpower(b, k))) =
+                      rational.mul(rational.mul(a, qpower(a, k)),
+                      rational.mul(b, qpower(b, k)))
+                    [using polynomial(rational)]
+                  @the-next-power-regrouped |
+                    qpower(rational.mul(a, b), peano.succ(k)) =
+                      rational.mul(rational.mul(a, qpower(a, k)),
+                      rational.mul(b, qpower(b, k)))
+                    [by rewrite the-two-groupings-agree the-next-power-with-the-hypothesis]
+                  @conclusion-the-step |
+                    qpower(rational.mul(a, b), peano.succ(k)) =
+                      rational.mul(qpower(a, peano.succ(k)),
+                      qpower(b, peano.succ(k)))
+                    [by rewrite the-right-side-expanded the-next-power-regrouped]
+                }
+              @induction-step-at-k |
+                (qpower(rational.mul(a, b), k) =
+                  rational.mul(qpower(a, k), qpower(b, k))) ->
+                  (qpower(rational.mul(a, b), peano.succ(k)) =
+                  rational.mul(qpower(a, peano.succ(k)),
+                  qpower(b, peano.succ(k))))
+                [by discharge given-inductive-hypothesis]
+            }
+          @induction-step-for-all-k |
+            forall k: peano.Nat;
+              (qpower(rational.mul(a, b), k) =
+              rational.mul(qpower(a, k), qpower(b, k))) ->
+              (qpower(rational.mul(a, b), peano.succ(k)) =
+              rational.mul(qpower(a, peano.succ(k)),
+              qpower(b, peano.succ(k))))
+            [by generalize induction-step]
+          @all-exponents |
+            forall k: peano.Nat;
+              qpower(rational.mul(a, b), k) =
+              rational.mul(qpower(a, k), qpower(b, k))
+            [using instantiation peano.induction((fun z: peano.Nat => (qpower(rational.mul(a, b), z) = rational.mul(qpower(a, z), qpower(b, z))))) base-case induction-step-for-all-k]
+        }
+      @discharge-b |
+        forall b9: Q; forall k: peano.Nat;
+          qpower(rational.mul(a, b9), k) =
+          rational.mul(qpower(a, k), qpower(b9, k))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Q; forall k: peano.Nat;
+      qpower(rational.mul(a, b), k) =
+      rational.mul(qpower(a, k), qpower(b, k))
+    [by generalize generalize-a]
+qed
+
+// A power and its reciprocal's power cancel. The one auxiliary the clearing identity needs.
+theorem aPowerCancelsTheReciprocalsPower: forall s: Q; forall k: peano.Nat;
+  (not (s = ZERO)) ->
+  rational.mul(qpower(s, k), qpower(rational.recip(s), k)) = rational.ONE
+proof
+  @generalize-s |
+    fix s: Q {
+      @given-s-nonzero |
+        assume not (s = ZERO) {
+          @s-nonzero |
+            not (s = ZERO)
+            [by hypothesis given-s-nonzero]
+          @s-inverts |
+            rational.mul(s, rational.recip(s)) = rational.ONE
+            [using specialize rational.fieldInverse(s) s-nonzero]
+          // base: both powers are ONE
+          @the-zero-power |
+            qpower(s, peano.ZERO) = rational.ONE
+            [using specialize qPowerZero(s)]
+          @the-zero-reciprocal-power |
+            qpower(rational.recip(s), peano.ZERO) = rational.ONE
+            [using specialize qPowerZero(rational.recip(s))]
+          @one-times-one |
+            rational.mul(rational.ONE, rational.ONE) = rational.ONE
+            [using specialize rational.mulOneLeft(rational.ONE)]
+          @the-base-product |
+            rational.mul(qpower(s, peano.ZERO),
+              qpower(rational.recip(s), peano.ZERO)) =
+              rational.mul(rational.ONE, rational.ONE)
+            [using simplify the-zero-power the-zero-reciprocal-power]
+          @base-case |
+            rational.mul(qpower(s, peano.ZERO),
+              qpower(rational.recip(s), peano.ZERO)) = rational.ONE
+            [using simplify the-base-product one-times-one]
+
+          @induction-step |
+            fix k: peano.Nat {
+              @given-inductive-hypothesis |
+                assume rational.mul(qpower(s, k),
+                  qpower(rational.recip(s), k)) = rational.ONE {
+                  @inductive-hypothesis |
+                    rational.mul(qpower(s, k),
+                      qpower(rational.recip(s), k)) = rational.ONE
+                    [by hypothesis given-inductive-hypothesis]
+                  @the-next-power |
+                    qpower(s, peano.succ(k)) =
+                      rational.mul(s, qpower(s, k))
+                    [using specialize qPowerSucc(s, k)]
+                  @the-next-reciprocal-power |
+                    qpower(rational.recip(s), peano.succ(k)) =
+                      rational.mul(rational.recip(s),
+                      qpower(rational.recip(s), k))
+                    [using specialize qPowerSucc(rational.recip(s), k)]
+                  @the-product-expanded |
+                    rational.mul(qpower(s, peano.succ(k)),
+                      qpower(rational.recip(s), peano.succ(k))) =
+                      rational.mul(rational.mul(s, qpower(s, k)),
+                      rational.mul(rational.recip(s),
+                      qpower(rational.recip(s), k)))
+                    [using simplify the-next-power the-next-reciprocal-power]
+                  // regroup as (s·recip s)·(s^k·recip(s)^k)
+                  @the-regrouping |
+                    rational.mul(rational.mul(s, qpower(s, k)),
+                      rational.mul(rational.recip(s),
+                      qpower(rational.recip(s), k))) =
+                      rational.mul(rational.mul(s,
+                      rational.recip(s)),
+                      rational.mul(qpower(s, k),
+                      qpower(rational.recip(s), k)))
+                    [using polynomial(rational)]
+                  @the-product-regrouped |
+                    rational.mul(qpower(s, peano.succ(k)),
+                      qpower(rational.recip(s), peano.succ(k))) =
+                      rational.mul(rational.mul(s,
+                      rational.recip(s)),
+                      rational.mul(qpower(s, k),
+                      qpower(rational.recip(s), k)))
+                    [by rewrite the-regrouping the-product-expanded]
+                  @both-halves-are-one |
+                    rational.mul(qpower(s, peano.succ(k)),
+                      qpower(rational.recip(s), peano.succ(k))) =
+                      rational.mul(rational.ONE, rational.ONE)
+                    [using simplify the-product-regrouped s-inverts inductive-hypothesis]
+                  @conclusion-the-step |
+                    rational.mul(qpower(s, peano.succ(k)),
+                      qpower(rational.recip(s), peano.succ(k))) =
+                      rational.ONE
+                    [using simplify both-halves-are-one one-times-one]
+                }
+              @induction-step-at-k |
+                (rational.mul(qpower(s, k),
+                  qpower(rational.recip(s), k)) = rational.ONE) ->
+                  (rational.mul(qpower(s, peano.succ(k)),
+                  qpower(rational.recip(s), peano.succ(k))) =
+                  rational.ONE)
+                [by discharge given-inductive-hypothesis]
+            }
+          @induction-step-for-all-k |
+            forall k: peano.Nat;
+              (rational.mul(qpower(s, k),
+              qpower(rational.recip(s), k)) = rational.ONE) ->
+              (rational.mul(qpower(s, peano.succ(k)),
+              qpower(rational.recip(s), peano.succ(k))) = rational.ONE)
+            [by generalize induction-step]
+          @all-exponents |
+            forall k: peano.Nat;
+              rational.mul(qpower(s, k),
+              qpower(rational.recip(s), k)) = rational.ONE
+            [using instantiation peano.induction((fun z: peano.Nat => (rational.mul(qpower(s, z), qpower(rational.recip(s), z)) = rational.ONE))) base-case induction-step-for-all-k]
+        }
+      @nonzero-implies |
+        (not (s = ZERO)) ->
+          (forall k: peano.Nat;
+          rational.mul(qpower(s, k),
+          qpower(rational.recip(s), k)) = rational.ONE)
+        [by discharge given-s-nonzero]
+      // move the bound binder outside the implication: fix k, re-assume, and
+      // specialize the universal the implication delivers
+      @each-exponent |
+        fix k: peano.Nat {
+          @given-s-nonzero-again |
+            assume not (s = ZERO) {
+              @s-nonzero-again |
+                not (s = ZERO)
+                [by hypothesis given-s-nonzero-again]
+              @all-exponents-here |
+                forall k2: peano.Nat;
+                  rational.mul(qpower(s, k2),
+                  qpower(rational.recip(s), k2)) = rational.ONE
+                [by modus_ponens nonzero-implies s-nonzero-again]
+              @conclusion-at-k |
+                rational.mul(qpower(s, k),
+                  qpower(rational.recip(s), k)) = rational.ONE
+                [using specialize all-exponents-here(k)]
+            }
+          @nonzero-implies-at-k |
+            (not (s = ZERO)) ->
+              rational.mul(qpower(s, k),
+              qpower(rational.recip(s), k)) = rational.ONE
+            [by discharge given-s-nonzero-again]
+        }
+      @discharge-s |
+        forall k: peano.Nat;
+          (not (s = ZERO)) ->
+          rational.mul(qpower(s, k),
+          qpower(rational.recip(s), k)) = rational.ONE
+        [by generalize each-exponent]
+    }
+  @conclusion |
+    forall s: Q; forall k: peano.Nat;
+      (not (s = ZERO)) ->
+      rational.mul(qpower(s, k), qpower(rational.recip(s), k)) =
+      rational.ONE
+    [by generalize generalize-s]
+qed
+
+// The clearing identity: multiplying an evaluation at r/s by s^k gives the cleared sum,
+// whose terms are all integers when p's coefficients, r and s are.
+theorem clearingTheDenominatorGivesTheClearedSum: forall p: QPoly;
+  forall r, s: Q; forall k: peano.Nat;
+  (not (s = ZERO)) ->
+  rational.mul(qpower(s, k),
+  qevalUpTo(p, rational.mul(r, rational.recip(s)), k)) =
+  qclearedSum(p, r, s, k)
+proof
+  @generalize-p |
+    fix p: QPoly {
+      @generalize-r |
+        fix r: Q {
+          @generalize-s |
+            fix s: Q {
+              @given-s-nonzero |
+                assume not (s = ZERO) {
+                  @s-nonzero |
+                    not (s = ZERO)
+                    [by hypothesis given-s-nonzero]
+                  // base: s^0 · 0 = 0
+                  @the-zero-power |
+                    qpower(s, peano.ZERO) = rational.ONE
+                    [using specialize qPowerZero(s)]
+                  @the-empty-evaluation |
+                    qevalUpTo(p, rational.mul(r, rational.recip(s)),
+                      peano.ZERO) = ZERO
+                    [using specialize qEvalZero(p, rational.mul(r, rational.recip(s)))]
+                  @the-empty-cleared-sum |
+                    qclearedSum(p, r, s, peano.ZERO) = ZERO
+                    [using specialize qClearedSumZero(p, r, s)]
+                  @one-times-zero |
+                    rational.mul(rational.ONE, ZERO) = ZERO
+                    [using specialize rational.mulOneLeft(ZERO)]
+                  @the-base-product |
+                    rational.mul(qpower(s, peano.ZERO),
+                      qevalUpTo(p, rational.mul(r,
+                      rational.recip(s)), peano.ZERO)) =
+                      rational.mul(rational.ONE, ZERO)
+                    [using simplify the-zero-power the-empty-evaluation]
+                  @the-base-is-zero |
+                    rational.mul(qpower(s, peano.ZERO),
+                      qevalUpTo(p, rational.mul(r,
+                      rational.recip(s)), peano.ZERO)) = ZERO
+                    [using simplify the-base-product one-times-zero]
+                  @base-case |
+                    rational.mul(qpower(s, peano.ZERO),
+                      qevalUpTo(p, rational.mul(r,
+                      rational.recip(s)), peano.ZERO)) =
+                      qclearedSum(p, r, s, peano.ZERO)
+                    [by rewrite the-empty-cleared-sum the-base-is-zero]
+
+                  @induction-step |
+                    fix k: peano.Nat {
+                      @given-inductive-hypothesis |
+                        assume rational.mul(qpower(s, k),
+                          qevalUpTo(p, rational.mul(r,
+                          rational.recip(s)), k)) =
+                          qclearedSum(p, r, s, k) {
+                          @inductive-hypothesis |
+                            rational.mul(qpower(s, k),
+                              qevalUpTo(p, rational.mul(r,
+                              rational.recip(s)), k)) =
+                              qclearedSum(p, r, s, k)
+                            [by hypothesis given-inductive-hypothesis]
+                          @the-next-evaluation |
+                            qevalUpTo(p, rational.mul(r,
+                              rational.recip(s)), peano.succ(k)) =
+                              rational.add(
+                              qevalUpTo(p, rational.mul(r,
+                              rational.recip(s)), k),
+                              rational.mul(qcoeff(p, k),
+                              qpower(rational.mul(r,
+                              rational.recip(s)), k)))
+                            [using specialize qEvalSucc(p, rational.mul(r, rational.recip(s)), k)]
+                          @the-next-power |
+                            qpower(s, peano.succ(k)) =
+                              rational.mul(s, qpower(s, k))
+                            [using specialize qPowerSucc(s, k)]
+                          // the quotient's power splits
+                          @the-quotients-power-splits |
+                            qpower(rational.mul(r,
+                              rational.recip(s)), k) =
+                              rational.mul(qpower(r, k),
+                              qpower(rational.recip(s), k))
+                            [using specialize aProductsPowerSplits(r, rational.recip(s), k)]
+                          @the-powers-cancel |
+                            rational.mul(qpower(s, k),
+                              qpower(rational.recip(s), k)) =
+                              rational.ONE
+                            [using specialize aPowerCancelsTheReciprocalsPower(s, k) s-nonzero]
+                          // s^(k+1) · eval(k+1)
+                          //   = s·(s^k·eval k) + s·(s^k·recip(s)^k)·a_k·r^k
+                          @the-product-expanded |
+                            rational.mul(qpower(s, peano.succ(k)),
+                              qevalUpTo(p, rational.mul(r,
+                              rational.recip(s)), peano.succ(k))) =
+                              rational.mul(
+                              rational.mul(s, qpower(s, k)),
+                              rational.add(
+                              qevalUpTo(p, rational.mul(r,
+                              rational.recip(s)), k),
+                              rational.mul(qcoeff(p, k),
+                              rational.mul(qpower(r, k),
+                              qpower(rational.recip(s), k)))))
+                            [using simplify the-next-power the-next-evaluation the-quotients-power-splits]
+                          @the-regrouping |
+                            rational.mul(
+                              rational.mul(s, qpower(s, k)),
+                              rational.add(
+                              qevalUpTo(p, rational.mul(r,
+                              rational.recip(s)), k),
+                              rational.mul(qcoeff(p, k),
+                              rational.mul(qpower(r, k),
+                              qpower(rational.recip(s), k))))) =
+                              rational.mul(s, rational.add(
+                              rational.mul(qpower(s, k),
+                              qevalUpTo(p, rational.mul(r,
+                              rational.recip(s)), k)),
+                              rational.mul(
+                              rational.mul(qpower(s, k),
+                              qpower(rational.recip(s), k)),
+                              rational.mul(qcoeff(p, k),
+                              qpower(r, k)))))
+                            [using polynomial(rational)]
+                          @the-product-regrouped |
+                            rational.mul(qpower(s, peano.succ(k)),
+                              qevalUpTo(p, rational.mul(r,
+                              rational.recip(s)), peano.succ(k))) =
+                              rational.mul(s, rational.add(
+                              rational.mul(qpower(s, k),
+                              qevalUpTo(p, rational.mul(r,
+                              rational.recip(s)), k)),
+                              rational.mul(
+                              rational.mul(qpower(s, k),
+                              qpower(rational.recip(s), k)),
+                              rational.mul(qcoeff(p, k),
+                              qpower(r, k)))))
+                            [by rewrite the-regrouping the-product-expanded]
+                          // substitute the hypothesis and the cancellation
+                          @the-product-with-the-hypothesis |
+                            rational.mul(qpower(s, peano.succ(k)),
+                              qevalUpTo(p, rational.mul(r,
+                              rational.recip(s)), peano.succ(k))) =
+                              rational.mul(s, rational.add(
+                              qclearedSum(p, r, s, k),
+                              rational.mul(rational.ONE,
+                              rational.mul(qcoeff(p, k),
+                              qpower(r, k)))))
+                            [using simplify the-product-regrouped inductive-hypothesis the-powers-cancel]
+                          @the-unit-drops |
+                            rational.mul(s, rational.add(
+                              qclearedSum(p, r, s, k),
+                              rational.mul(rational.ONE,
+                              rational.mul(qcoeff(p, k),
+                              qpower(r, k))))) =
+                              rational.mul(s, rational.add(
+                              qclearedSum(p, r, s, k),
+                              rational.mul(qcoeff(p, k),
+                              qpower(r, k))))
+                            [using polynomial(rational)]
+                          @the-product-cleaned |
+                            rational.mul(qpower(s, peano.succ(k)),
+                              qevalUpTo(p, rational.mul(r,
+                              rational.recip(s)), peano.succ(k))) =
+                              rational.mul(s, rational.add(
+                              qclearedSum(p, r, s, k),
+                              rational.mul(qcoeff(p, k),
+                              qpower(r, k))))
+                            [by rewrite the-unit-drops the-product-with-the-hypothesis]
+                          @the-next-cleared-sum |
+                            qclearedSum(p, r, s, peano.succ(k)) =
+                              rational.mul(s, rational.add(
+                              qclearedSum(p, r, s, k),
+                              rational.mul(qcoeff(p, k),
+                              qpower(r, k))))
+                            [using specialize qClearedSumSucc(p, r, s, k)]
+                          @conclusion-the-step |
+                            rational.mul(qpower(s, peano.succ(k)),
+                              qevalUpTo(p, rational.mul(r,
+                              rational.recip(s)), peano.succ(k))) =
+                              qclearedSum(p, r, s, peano.succ(k))
+                            [by rewrite the-next-cleared-sum the-product-cleaned]
+                        }
+                      @induction-step-at-k |
+                        (rational.mul(qpower(s, k),
+                          qevalUpTo(p, rational.mul(r,
+                          rational.recip(s)), k)) =
+                          qclearedSum(p, r, s, k)) ->
+                          (rational.mul(qpower(s, peano.succ(k)),
+                          qevalUpTo(p, rational.mul(r,
+                          rational.recip(s)), peano.succ(k))) =
+                          qclearedSum(p, r, s, peano.succ(k)))
+                        [by discharge given-inductive-hypothesis]
+                    }
+                  @induction-step-for-all-k |
+                    forall k: peano.Nat;
+                      (rational.mul(qpower(s, k),
+                      qevalUpTo(p, rational.mul(r,
+                      rational.recip(s)), k)) =
+                      qclearedSum(p, r, s, k)) ->
+                      (rational.mul(qpower(s, peano.succ(k)),
+                      qevalUpTo(p, rational.mul(r,
+                      rational.recip(s)), peano.succ(k))) =
+                      qclearedSum(p, r, s, peano.succ(k)))
+                    [by generalize induction-step]
+                  @all-bounds |
+                    forall k: peano.Nat;
+                      rational.mul(qpower(s, k),
+                      qevalUpTo(p, rational.mul(r,
+                      rational.recip(s)), k)) =
+                      qclearedSum(p, r, s, k)
+                    [using instantiation peano.induction((fun z: peano.Nat => (rational.mul(qpower(s, z), qevalUpTo(p, rational.mul(r, rational.recip(s)), z)) = qclearedSum(p, r, s, z)))) base-case induction-step-for-all-k]
+                }
+              @nonzero-implies |
+                (not (s = ZERO)) ->
+                  (forall k: peano.Nat;
+                  rational.mul(qpower(s, k),
+                  qevalUpTo(p, rational.mul(r,
+                  rational.recip(s)), k)) =
+                  qclearedSum(p, r, s, k))
+                [by discharge given-s-nonzero]
+              @each-bound |
+                fix k: peano.Nat {
+                  @given-s-nonzero-again |
+                    assume not (s = ZERO) {
+                      @s-nonzero-again |
+                        not (s = ZERO)
+                        [by hypothesis given-s-nonzero-again]
+                      @all-bounds-here |
+                        forall k2: peano.Nat;
+                          rational.mul(qpower(s, k2),
+                          qevalUpTo(p, rational.mul(r,
+                          rational.recip(s)), k2)) =
+                          qclearedSum(p, r, s, k2)
+                        [by modus_ponens nonzero-implies s-nonzero-again]
+                      @conclusion-at-k |
+                        rational.mul(qpower(s, k),
+                          qevalUpTo(p, rational.mul(r,
+                          rational.recip(s)), k)) =
+                          qclearedSum(p, r, s, k)
+                        [using specialize all-bounds-here(k)]
+                    }
+                  @nonzero-implies-at-k |
+                    (not (s = ZERO)) ->
+                      rational.mul(qpower(s, k),
+                      qevalUpTo(p, rational.mul(r,
+                      rational.recip(s)), k)) =
+                      qclearedSum(p, r, s, k)
+                    [by discharge given-s-nonzero-again]
+                }
+              @discharge-s |
+                forall k: peano.Nat;
+                  (not (s = ZERO)) ->
+                  rational.mul(qpower(s, k),
+                  qevalUpTo(p, rational.mul(r,
+                  rational.recip(s)), k)) =
+                  qclearedSum(p, r, s, k)
+                [by generalize each-bound]
+            }
+          @discharge-r |
+            forall s9: Q; forall k: peano.Nat;
+              (not (s9 = ZERO)) ->
+              rational.mul(qpower(s9, k),
+              qevalUpTo(p, rational.mul(r, rational.recip(s9)), k)) =
+              qclearedSum(p, r, s9, k)
+            [by generalize generalize-s]
+        }
+      @discharge-p |
+        forall r9, s9: Q; forall k: peano.Nat;
+          (not (s9 = ZERO)) ->
+          rational.mul(qpower(s9, k),
+          qevalUpTo(p, rational.mul(r9, rational.recip(s9)), k)) =
+          qclearedSum(p, r9, s9, k)
+        [by generalize generalize-r]
+    }
+  @conclusion |
+    forall p: QPoly; forall r, s: Q; forall k: peano.Nat;
+      (not (s = ZERO)) ->
+      rational.mul(qpower(s, k),
+      qevalUpTo(p, rational.mul(r, rational.recip(s)), k)) =
+      qclearedSum(p, r, s, k)
     [by generalize generalize-p]
 qed
