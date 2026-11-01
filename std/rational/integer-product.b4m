@@ -8663,3 +8663,233 @@ proof
       qat(q, nat_succ(NAT_ZERO)))
     [by generalize generalize-q]
 qed
+
+// -- THE REDUCED FRACTION EXISTS ----------------------------------------------------------
+// `isTheIntegerDecomposition`'s reduced fraction: given a positive integer `a` and an integer
+// `b`, there are `g`, `r`, `s` with `a = g·r`, `b = g·s` and `r`, `s` coprime. This is
+// Judson's "reducing d/(c_0 ⋯ c_n) to its lowest terms".
+//
+// The pair is read as a two-element sequence and `aCoprimeDivisorOfASequenceExists` does the
+// work — no separate descent, and `isAMaximalCommonDivisorOfThePair` is never needed.
+theorem aReducedFractionExists: forall a, b: Q;
+  isInteger(a) -> isInteger(b) -> less_than(ZERO, a) ->
+  (exists g, r, s: Q;
+  isInteger(g) and less_than(ZERO, g) and
+  a = rational.mul(g, r) and b = rational.mul(g, s) and
+  qpoly.arePairwiseRelativelyPrime(r, s))
+proof
+  @generalize-a |
+    fix a: Q {
+      @generalize-b |
+        fix b: Q {
+          @given-the-setup |
+            assume isInteger(a) and isInteger(b) and less_than(ZERO, a) {
+              @the-setup |
+                isInteger(a) and isInteger(b) and less_than(ZERO, a)
+                [by hypothesis given-the-setup]
+              @a-is-an-integer |
+                isInteger(a)
+                [using tautology the-setup]
+              @b-is-an-integer |
+                isInteger(b)
+                [using tautology the-setup]
+              @a-is-positive |
+                less_than(ZERO, a)
+                [using tautology the-setup]
+              @the-pair-exists |
+                exists t: QSeq;
+                  qat(t, NAT_ZERO) = a and qat(t, nat_succ(NAT_ZERO)) = b
+                [using specialize aTwoElementSequenceExists(a, b)]
+              @with-the-pair |
+                unpack t: QSeq from the-pair-exists {
+                  @the-pair |
+                    qat(t, NAT_ZERO) = a and qat(t, nat_succ(NAT_ZERO)) = b
+                    [by hypothesis with-the-pair]
+                  @t-at-zero |
+                    qat(t, NAT_ZERO) = a
+                    [by and_lhs the-pair]
+                  @t-at-one |
+                    qat(t, nat_succ(NAT_ZERO)) = b
+                    [by and_rhs the-pair]
+                  @the-entries-are-integers |
+                    forall i: Nat;
+                      nat_less_than(i, nat_succ(nat_succ(NAT_ZERO))) ->
+                      isInteger(qat(t, i))
+                    [using specialize aTwoElementSequenceHasIntegerEntries(t, a, b) t-at-zero t-at-one a-is-an-integer b-is-an-integer]
+                  @the-first-is-positive |
+                    less_than(ZERO, qat(t, NAT_ZERO))
+                    [by rewrite t-at-zero a-is-positive]
+                  @zero-below-two |
+                    nat_less_than(NAT_ZERO, nat_succ(nat_succ(NAT_ZERO)))
+                    [using specialize peano_order.zeroIsBelowAnySuccessor(nat_succ(NAT_ZERO))]
+                  @the-divisor-exists |
+                    exists d: Q; exists q: QSeq;
+                      isInteger(d) and less_than(ZERO, d) and
+                      isACommonDivisorUpTo(d, t,
+                      nat_succ(nat_succ(NAT_ZERO))) and
+                      aQuotientSequenceFor(d, t, q,
+                      nat_succ(nat_succ(NAT_ZERO))) and
+                      theQuotientsAreCoprime(q,
+                      nat_succ(nat_succ(NAT_ZERO)))
+                    [using specialize aCoprimeDivisorOfASequenceExists(t, nat_succ(nat_succ(NAT_ZERO))) zero-below-two the-entries-are-integers the-first-is-positive]
+                  @with-the-divisor |
+                    unpack d: Q from the-divisor-exists {
+                      @the-sequence-exists |
+                        exists q: QSeq;
+                          isInteger(d) and less_than(ZERO, d) and
+                          isACommonDivisorUpTo(d, t,
+                          nat_succ(nat_succ(NAT_ZERO))) and
+                          aQuotientSequenceFor(d, t, q,
+                          nat_succ(nat_succ(NAT_ZERO))) and
+                          theQuotientsAreCoprime(q,
+                          nat_succ(nat_succ(NAT_ZERO)))
+                        [by hypothesis with-the-divisor]
+                      @with-the-sequence |
+                        unpack q: QSeq from the-sequence-exists {
+                          @the-parts |
+                            isInteger(d) and less_than(ZERO, d) and
+                              isACommonDivisorUpTo(d, t,
+                              nat_succ(nat_succ(NAT_ZERO))) and
+                              aQuotientSequenceFor(d, t, q,
+                              nat_succ(nat_succ(NAT_ZERO))) and
+                              theQuotientsAreCoprime(q,
+                              nat_succ(nat_succ(NAT_ZERO)))
+                            [by hypothesis with-the-sequence]
+                          @d-is-an-integer |
+                            isInteger(d)
+                            [using tautology the-parts]
+                          @d-positive |
+                            less_than(ZERO, d)
+                            [using tautology the-parts]
+                          @the-quotients |
+                            aQuotientSequenceFor(d, t, q,
+                              nat_succ(nat_succ(NAT_ZERO)))
+                            [using tautology the-parts]
+                          @the-coprimality |
+                            theQuotientsAreCoprime(q,
+                              nat_succ(nat_succ(NAT_ZERO)))
+                            [using tautology the-parts]
+                          // read off a = d * q_0 and b = d * q_1
+                          @the-quotient-meaning |
+                            aQuotientSequenceFor(d, t, q,
+                              nat_succ(nat_succ(NAT_ZERO))) iff
+                              (forall i: Nat;
+                              nat_less_than(i,
+                              nat_succ(nat_succ(NAT_ZERO))) ->
+                              qat(t, i) = rational.mul(d, qat(q, i)))
+                            [using specialize quotientSequenceMeaning(d, t, q, nat_succ(nat_succ(NAT_ZERO)))]
+                          @the-factorization |
+                            forall i: Nat;
+                              nat_less_than(i,
+                              nat_succ(nat_succ(NAT_ZERO))) ->
+                              qat(t, i) = rational.mul(d, qat(q, i))
+                            [using tautology the-quotient-meaning the-quotients]
+                          @one-below-two |
+                            nat_less_than(nat_succ(NAT_ZERO),
+                              nat_succ(nat_succ(NAT_ZERO)))
+                            [using specialize peano_order.lessThanSelf(nat_succ(NAT_ZERO))]
+                          @t-zero-factors |
+                            qat(t, NAT_ZERO) =
+                              rational.mul(d, qat(q, NAT_ZERO))
+                            [using specialize the-factorization(NAT_ZERO) zero-below-two]
+                          @t-one-factors |
+                            qat(t, nat_succ(NAT_ZERO)) =
+                              rational.mul(d, qat(q, nat_succ(NAT_ZERO)))
+                            [using specialize the-factorization(nat_succ(NAT_ZERO)) one-below-two]
+                          @a-factors |
+                            a = rational.mul(d, qat(q, NAT_ZERO))
+                            [by rewrite t-at-zero t-zero-factors]
+                          @b-factors |
+                            b = rational.mul(d, qat(q, nat_succ(NAT_ZERO)))
+                            [by rewrite t-at-one t-one-factors]
+                          @the-pairwise-coprimality |
+                            qpoly.arePairwiseRelativelyPrime(
+                              qat(q, NAT_ZERO), qat(q, nat_succ(NAT_ZERO)))
+                            [using specialize theTwoQuotientsAreCoprime(q) the-coprimality]
+                          @the-full-witness |
+                            isInteger(d) and less_than(ZERO, d) and
+                              a = rational.mul(d, qat(q, NAT_ZERO)) and
+                              b = rational.mul(d, qat(q, nat_succ(NAT_ZERO))) and
+                              qpoly.arePairwiseRelativelyPrime(
+                              qat(q, NAT_ZERO), qat(q, nat_succ(NAT_ZERO)))
+                            [using tautology d-is-an-integer d-positive a-factors b-factors the-pairwise-coprimality]
+                          @the-s-witness |
+                            exists s2: Q;
+                              isInteger(d) and less_than(ZERO, d) and
+                              a = rational.mul(d, qat(q, NAT_ZERO)) and
+                              b = rational.mul(d, s2) and
+                              qpoly.arePairwiseRelativelyPrime(
+                              qat(q, NAT_ZERO), s2)
+                            [by witness(qat(q, nat_succ(NAT_ZERO))) the-full-witness]
+                          @the-r-witness |
+                            exists r2: Q; exists s2: Q;
+                              isInteger(d) and less_than(ZERO, d) and
+                              a = rational.mul(d, r2) and
+                              b = rational.mul(d, s2) and
+                              qpoly.arePairwiseRelativelyPrime(r2, s2)
+                            [by witness(qat(q, NAT_ZERO)) the-s-witness]
+                          @conclusion-all-three |
+                            exists g, r, s: Q;
+                              isInteger(g) and less_than(ZERO, g) and
+                              a = rational.mul(g, r) and
+                              b = rational.mul(g, s) and
+                              qpoly.arePairwiseRelativelyPrime(r, s)
+                            [by witness(d) the-r-witness]
+                        }
+                      @sequence-exported |
+                        exists g, r, s: Q;
+                          isInteger(g) and less_than(ZERO, g) and
+                          a = rational.mul(g, r) and
+                          b = rational.mul(g, s) and
+                          qpoly.arePairwiseRelativelyPrime(r, s)
+                        [by unpacked with-the-sequence]
+                    }
+                  @divisor-exported |
+                    exists g, r, s: Q;
+                      isInteger(g) and less_than(ZERO, g) and
+                      a = rational.mul(g, r) and
+                      b = rational.mul(g, s) and
+                      qpoly.arePairwiseRelativelyPrime(r, s)
+                    [by unpacked with-the-divisor]
+                }
+              @pair-exported |
+                exists g, r, s: Q;
+                  isInteger(g) and less_than(ZERO, g) and
+                  a = rational.mul(g, r) and
+                  b = rational.mul(g, s) and
+                  qpoly.arePairwiseRelativelyPrime(r, s)
+                [by unpacked with-the-pair]
+            }
+          @the-implication |
+            (isInteger(a) and isInteger(b) and less_than(ZERO, a)) ->
+              (exists g, r, s: Q;
+              isInteger(g) and less_than(ZERO, g) and
+              a = rational.mul(g, r) and b = rational.mul(g, s) and
+              qpoly.arePairwiseRelativelyPrime(r, s))
+            [by discharge given-the-setup]
+          @curried |
+            isInteger(a) -> isInteger(b) -> less_than(ZERO, a) ->
+              (exists g, r, s: Q;
+              isInteger(g) and less_than(ZERO, g) and
+              a = rational.mul(g, r) and b = rational.mul(g, s) and
+              qpoly.arePairwiseRelativelyPrime(r, s))
+            [using tautology the-implication]
+        }
+      @discharge-b |
+        forall b9: Q;
+          isInteger(a) -> isInteger(b9) -> less_than(ZERO, a) ->
+          (exists g, r, s: Q;
+          isInteger(g) and less_than(ZERO, g) and
+          a = rational.mul(g, r) and b9 = rational.mul(g, s) and
+          qpoly.arePairwiseRelativelyPrime(r, s))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Q;
+      isInteger(a) -> isInteger(b) -> less_than(ZERO, a) ->
+      (exists g, r, s: Q;
+      isInteger(g) and less_than(ZERO, g) and
+      a = rational.mul(g, r) and b = rational.mul(g, s) and
+      qpoly.arePairwiseRelativelyPrime(r, s))
+    [by generalize generalize-a]
+qed
