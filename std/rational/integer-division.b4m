@@ -2694,3 +2694,789 @@ proof
       rational.add(rational.mul(s, cs), rational.mul(r, cr)) = ONE)
     [by generalize generalize-s]
 qed
+
+// -- PRIMALITY ON THE CUT ------------------------------------------------------------------
+// Eisenstein's sign argument needs "p prime and p | ab implies p | a or p | b" for a modulus
+// living on ℚ's integer cut. `std/primes.b4m`'s `is_prime` is over `Int` and cannot transfer
+// (its corpus reaches the nested-transfer wall), so primality is restated here.
+//
+// Defined the IRREDUCIBILITY way, matching `std/primes.b4m`: bigger than one, and its only
+// positive divisors are one and itself. Euclid's product property is then PROVED from it via
+// `bezoutOnTheCut`, not assumed — which is the point of doing it this way rather than
+// defining a prime element by the product property directly.
+define isPrimeOnTheCut(p) =
+  less_than(ONE, p) and
+  (forall d: Q; isInteger(d) -> less_than(ZERO, d) ->
+  (exists k: Q; isInteger(k) and p = rational.mul(d, k)) ->
+  (d = ONE or d = p))
+
+// Negating a divisor keeps it a divisor: `n = e·k` is `n = (-e)·(-k)`. Stated on the raw
+// existential because `dividesIntegrally` lives downstream in `integer-product.b4m`, which
+// imports this file.
+theorem theNegationStillDivides: forall e, n: Q;
+  (exists k: Q; isInteger(k) and n = rational.mul(e, k)) ->
+  (exists k: Q; isInteger(k) and n = rational.mul(neg(e), k))
+proof
+  @generalize-e |
+    fix e: Q {
+      @generalize-n |
+        fix n: Q {
+          @given-a-quotient |
+            assume exists k: Q; isInteger(k) and
+              n = rational.mul(e, k) {
+              @a-quotient |
+                exists k: Q; isInteger(k) and
+                  n = rational.mul(e, k)
+                [by hypothesis given-a-quotient]
+              @with-the-quotient |
+                unpack k: Q from a-quotient {
+                  @the-quotient |
+                    isInteger(k) and n = rational.mul(e, k)
+                    [by hypothesis with-the-quotient]
+                  @k-is-an-integer |
+                    isInteger(k)
+                    [by and_lhs the-quotient]
+                  @n-factors |
+                    n = rational.mul(e, k)
+                    [by and_rhs the-quotient]
+                  @minus-k-is-an-integer |
+                    isInteger(neg(k))
+                    [using specialize rational.isIntegerNeg(k) k-is-an-integer]
+                  @the-double-negation |
+                    rational.mul(e, k) =
+                      rational.mul(neg(e), neg(k))
+                    [using polynomial(rational)]
+                  @n-factors-negated |
+                    n = rational.mul(neg(e), neg(k))
+                    [by rewrite the-double-negation n-factors]
+                  @the-negated-quotient-works |
+                    isInteger(neg(k)) and
+                      n = rational.mul(neg(e), neg(k))
+                    [by both minus-k-is-an-integer n-factors-negated]
+                  @conclusion-a-negated-quotient |
+                    exists k2: Q; isInteger(k2) and
+                      n = rational.mul(neg(e), k2)
+                    [by witness(neg(k)) the-negated-quotient-works]
+                }
+              @the-exported |
+                exists k2: Q; isInteger(k2) and
+                  n = rational.mul(neg(e), k2)
+                [by unpacked with-the-quotient]
+            }
+          @the-implication |
+            (exists k: Q; isInteger(k) and
+              n = rational.mul(e, k)) ->
+              (exists k: Q; isInteger(k) and
+              n = rational.mul(neg(e), k))
+            [by discharge given-a-quotient]
+        }
+      @discharge-n |
+        forall n9: Q;
+          (exists k: Q; isInteger(k) and
+          n9 = rational.mul(e, k)) ->
+          (exists k: Q; isInteger(k) and
+          n9 = rational.mul(neg(e), k))
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall e, n: Q;
+      (exists k: Q; isInteger(k) and n = rational.mul(e, k)) ->
+      (exists k: Q; isInteger(k) and n = rational.mul(neg(e), k))
+    [by generalize generalize-e]
+qed
+
+// The negative arm of the trichotomy: for e < 0, run primality on -e > 0. Then -e = 1 gives
+// e = -1, and -e = p is ruled out because it would make p divide `a`.
+theorem theNegativeDivisorCase: forall p, a, e: Q;
+  isInteger(e) -> less_than(ONE, p) ->
+  (forall d: Q; isInteger(d) -> less_than(ZERO, d) ->
+  (exists k: Q; isInteger(k) and p = rational.mul(d, k)) ->
+  (d = ONE or d = p)) ->
+  (not (exists k: Q; isInteger(k) and a = rational.mul(p, k))) ->
+  (exists k: Q; isInteger(k) and p = rational.mul(e, k)) ->
+  (exists k: Q; isInteger(k) and a = rational.mul(e, k)) ->
+  less_than(e, ZERO) ->
+  (e = ONE or e = neg(ONE))
+proof
+  @generalize-p |
+    fix p: Q {
+      @generalize-a |
+        fix a: Q {
+          @generalize-e |
+            fix e: Q {
+              @given-the-setup |
+                assume isInteger(e) and less_than(ONE, p) and
+                  (forall d: Q; isInteger(d) ->
+                  less_than(ZERO, d) ->
+                  (exists k: Q; isInteger(k) and
+                  p = rational.mul(d, k)) ->
+                  (d = ONE or d = p)) and
+                  (not (exists k: Q; isInteger(k) and
+                  a = rational.mul(p, k))) and
+                  (exists k: Q; isInteger(k) and
+                  p = rational.mul(e, k)) and
+                  (exists k: Q; isInteger(k) and
+                  a = rational.mul(e, k)) and
+                  less_than(e, ZERO) {
+                  @the-setup |
+                    isInteger(e) and less_than(ONE, p) and
+                      (forall d: Q; isInteger(d) ->
+                      less_than(ZERO, d) ->
+                      (exists k: Q; isInteger(k) and
+                      p = rational.mul(d, k)) ->
+                      (d = ONE or d = p)) and
+                      (not (exists k: Q; isInteger(k) and
+                      a = rational.mul(p, k))) and
+                      (exists k: Q; isInteger(k) and
+                      p = rational.mul(e, k)) and
+                      (exists k: Q; isInteger(k) and
+                      a = rational.mul(e, k)) and
+                      less_than(e, ZERO)
+                    [by hypothesis given-the-setup]
+                  @e-is-an-integer |
+                    isInteger(e)
+                    [using tautology the-setup]
+                  @the-only-divisors |
+                    forall d: Q; isInteger(d) ->
+                      less_than(ZERO, d) ->
+                      (exists k: Q; isInteger(k) and
+                      p = rational.mul(d, k)) ->
+                      (d = ONE or d = p)
+                    [using tautology the-setup]
+                  @p-misses-a |
+                    not (exists k: Q; isInteger(k) and
+                      a = rational.mul(p, k))
+                    [using tautology the-setup]
+                  @e-divides-p |
+                    exists k: Q; isInteger(k) and
+                      p = rational.mul(e, k)
+                    [using tautology the-setup]
+                  @e-divides-a |
+                    exists k: Q; isInteger(k) and
+                      a = rational.mul(e, k)
+                    [using tautology the-setup]
+                  @e-is-negative |
+                    less_than(e, ZERO)
+                    [using tautology the-setup]
+                  // -e is a positive integer dividing both
+                  @negatives-of-negatives |
+                    forall x: Q; less_than(x, ZERO) ->
+                      less_than(ZERO, neg(x))
+                    [using model(rational.RationalOrderedField) field_order.negOfNegativeIsPositive]
+                  @minus-e-is-positive |
+                    less_than(ZERO, neg(e))
+                    [using specialize negatives-of-negatives(e) e-is-negative]
+                  @minus-e-is-an-integer |
+                    isInteger(neg(e))
+                    [using specialize rational.isIntegerNeg(e) e-is-an-integer]
+                  @minus-e-divides-p |
+                    exists k: Q; isInteger(k) and
+                      p = rational.mul(neg(e), k)
+                    [using specialize theNegationStillDivides(e, p) e-divides-p]
+                  @minus-e-divides-a |
+                    exists k: Q; isInteger(k) and
+                      a = rational.mul(neg(e), k)
+                    [using specialize theNegationStillDivides(e, a) e-divides-a]
+                  @minus-e-is-one-or-p |
+                    neg(e) = ONE or neg(e) = p
+                    [using specialize the-only-divisors(neg(e)) minus-e-is-an-integer minus-e-is-positive minus-e-divides-p]
+                  @conclusion-the-negative-case |
+                    e = ONE or e = neg(ONE)
+                    case minus-e-is-one-or-p {
+                      // -e = 1 gives e = -1
+                      @when-minus-e-is-one |
+                        assume neg(e) = ONE {
+                          @minus-e-is-one |
+                            neg(e) = ONE
+                            [by hypothesis when-minus-e-is-one]
+                          @e-doubly-negated |
+                            neg(neg(e)) = e
+                            [using specialize rational.negNeg(e)]
+                          @minus-one-is-e |
+                            neg(ONE) = e
+                            [by rewrite minus-e-is-one e-doubly-negated]
+                          @e-is-minus-one |
+                            e = neg(ONE)
+                            [by symmetry minus-one-is-e]
+                          @conclusion-at-minus-one |
+                            e = ONE or e = neg(ONE)
+                            [using tautology e-is-minus-one]
+                        }
+                      // -e = p would make p divide a
+                      @when-minus-e-is-p |
+                        assume neg(e) = p {
+                          @minus-e-is-p |
+                            neg(e) = p
+                            [by hypothesis when-minus-e-is-p]
+                          @p-divides-a |
+                            exists k: Q; isInteger(k) and
+                              a = rational.mul(p, k)
+                            [by rewrite minus-e-is-p minus-e-divides-a]
+                          @conclusion-impossible |
+                            e = ONE or e = neg(ONE)
+                            [by ex_falso p-divides-a p-misses-a]
+                        }
+                    }
+                }
+              @the-implication |
+                (isInteger(e) and less_than(ONE, p) and
+                  (forall d: Q; isInteger(d) ->
+                  less_than(ZERO, d) ->
+                  (exists k: Q; isInteger(k) and
+                  p = rational.mul(d, k)) ->
+                  (d = ONE or d = p)) and
+                  (not (exists k: Q; isInteger(k) and
+                  a = rational.mul(p, k))) and
+                  (exists k: Q; isInteger(k) and
+                  p = rational.mul(e, k)) and
+                  (exists k: Q; isInteger(k) and
+                  a = rational.mul(e, k)) and
+                  less_than(e, ZERO)) ->
+                  (e = ONE or e = neg(ONE))
+                [by discharge given-the-setup]
+              @curried |
+                isInteger(e) -> less_than(ONE, p) ->
+                  (forall d: Q; isInteger(d) ->
+                  less_than(ZERO, d) ->
+                  (exists k: Q; isInteger(k) and
+                  p = rational.mul(d, k)) ->
+                  (d = ONE or d = p)) ->
+                  (not (exists k: Q; isInteger(k) and
+                  a = rational.mul(p, k))) ->
+                  (exists k: Q; isInteger(k) and
+                  p = rational.mul(e, k)) ->
+                  (exists k: Q; isInteger(k) and
+                  a = rational.mul(e, k)) ->
+                  less_than(e, ZERO) ->
+                  (e = ONE or e = neg(ONE))
+                [using tautology the-implication]
+            }
+          @discharge-e |
+            forall e9: Q;
+              isInteger(e9) -> less_than(ONE, p) ->
+              (forall d: Q; isInteger(d) -> less_than(ZERO, d) ->
+              (exists k: Q; isInteger(k) and
+              p = rational.mul(d, k)) ->
+              (d = ONE or d = p)) ->
+              (not (exists k: Q; isInteger(k) and
+              a = rational.mul(p, k))) ->
+              (exists k: Q; isInteger(k) and
+              p = rational.mul(e9, k)) ->
+              (exists k: Q; isInteger(k) and
+              a = rational.mul(e9, k)) ->
+              less_than(e9, ZERO) ->
+              (e9 = ONE or e9 = neg(ONE))
+            [by generalize generalize-e]
+        }
+      @discharge-a |
+        forall a9: Q; forall e9: Q;
+          isInteger(e9) -> less_than(ONE, p) ->
+          (forall d: Q; isInteger(d) -> less_than(ZERO, d) ->
+          (exists k: Q; isInteger(k) and
+          p = rational.mul(d, k)) ->
+          (d = ONE or d = p)) ->
+          (not (exists k: Q; isInteger(k) and
+          a9 = rational.mul(p, k))) ->
+          (exists k: Q; isInteger(k) and
+          p = rational.mul(e9, k)) ->
+          (exists k: Q; isInteger(k) and
+          a9 = rational.mul(e9, k)) ->
+          less_than(e9, ZERO) ->
+          (e9 = ONE or e9 = neg(ONE))
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall p, a, e: Q;
+      isInteger(e) -> less_than(ONE, p) ->
+      (forall d: Q; isInteger(d) -> less_than(ZERO, d) ->
+      (exists k: Q; isInteger(k) and p = rational.mul(d, k)) ->
+      (d = ONE or d = p)) ->
+      (not (exists k: Q; isInteger(k) and a = rational.mul(p, k))) ->
+      (exists k: Q; isInteger(k) and p = rational.mul(e, k)) ->
+      (exists k: Q; isInteger(k) and a = rational.mul(e, k)) ->
+      less_than(e, ZERO) ->
+      (e = ONE or e = neg(ONE))
+    [by generalize generalize-p]
+qed
+
+// The trichotomy core: a common divisor of a prime and something the prime misses is a unit.
+// For e > 0 primality gives e = 1 or e = p, and e = p would make p divide `a`; for e < 0 the
+// same applies to -e (divisibility is sign-blind); e = 0 would force p = 0, against p > 1.
+theorem aCommonDivisorOfAPrimeAndAMissIsAUnit: forall p, a, e: Q;
+  isInteger(p) -> isInteger(e) -> less_than(ONE, p) ->
+  (forall d: Q; isInteger(d) -> less_than(ZERO, d) ->
+  (exists k: Q; isInteger(k) and p = rational.mul(d, k)) ->
+  (d = ONE or d = p)) ->
+  (not (exists k: Q; isInteger(k) and a = rational.mul(p, k))) ->
+  (exists k: Q; isInteger(k) and p = rational.mul(e, k)) ->
+  (exists k: Q; isInteger(k) and a = rational.mul(e, k)) ->
+  (e = ONE or e = neg(ONE))
+proof
+  @generalize-p |
+    fix p: Q {
+      @generalize-a |
+        fix a: Q {
+          @generalize-e |
+            fix e: Q {
+              @given-the-setup |
+                assume isInteger(p) and isInteger(e) and
+                  less_than(ONE, p) and
+                  (forall d: Q; isInteger(d) ->
+                  less_than(ZERO, d) ->
+                  (exists k: Q; isInteger(k) and
+                  p = rational.mul(d, k)) ->
+                  (d = ONE or d = p)) and
+                  (not (exists k: Q; isInteger(k) and
+                  a = rational.mul(p, k))) and
+                  (exists k: Q; isInteger(k) and
+                  p = rational.mul(e, k)) and
+                  (exists k: Q; isInteger(k) and
+                  a = rational.mul(e, k)) {
+                  @the-setup |
+                    isInteger(p) and isInteger(e) and
+                      less_than(ONE, p) and
+                      (forall d: Q; isInteger(d) ->
+                      less_than(ZERO, d) ->
+                      (exists k: Q; isInteger(k) and
+                      p = rational.mul(d, k)) ->
+                      (d = ONE or d = p)) and
+                      (not (exists k: Q; isInteger(k) and
+                      a = rational.mul(p, k))) and
+                      (exists k: Q; isInteger(k) and
+                      p = rational.mul(e, k)) and
+                      (exists k: Q; isInteger(k) and
+                      a = rational.mul(e, k))
+                    [by hypothesis given-the-setup]
+                  @e-is-an-integer |
+                    isInteger(e)
+                    [using tautology the-setup]
+                  @one-below-p |
+                    less_than(ONE, p)
+                    [using tautology the-setup]
+                  @the-only-divisors |
+                    forall d: Q; isInteger(d) ->
+                      less_than(ZERO, d) ->
+                      (exists k: Q; isInteger(k) and
+                      p = rational.mul(d, k)) ->
+                      (d = ONE or d = p)
+                    [using tautology the-setup]
+                  @p-misses-a |
+                    not (exists k: Q; isInteger(k) and
+                      a = rational.mul(p, k))
+                    [using tautology the-setup]
+                  @e-divides-p |
+                    exists k: Q; isInteger(k) and
+                      p = rational.mul(e, k)
+                    [using tautology the-setup]
+                  @e-divides-a |
+                    exists k: Q; isInteger(k) and
+                      a = rational.mul(e, k)
+                    [using tautology the-setup]
+                  @the-sign-split |
+                    less_than(ZERO, e) or ZERO = e or
+                      less_than(e, ZERO)
+                    [using specialize rational.lessThanTrichotomy(ZERO, e)]
+                  @conclusion-e-is-a-unit |
+                    e = ONE or e = neg(ONE)
+                    case the-sign-split {
+                      @when-not-negative |
+                        assume less_than(ZERO, e) or ZERO = e {
+                          @the-nonneg-cases |
+                            less_than(ZERO, e) or ZERO = e
+                            [by hypothesis when-not-negative]
+                          @conclusion-nonneg |
+                            e = ONE or e = neg(ONE)
+                            case the-nonneg-cases {
+                              // e > 0: primality applies directly; e = p is ruled out
+                              @when-positive |
+                                assume less_than(ZERO, e) {
+                                  @e-is-positive |
+                                    less_than(ZERO, e)
+                                    [by hypothesis when-positive]
+                                  @e-is-one-or-p |
+                                    e = ONE or e = p
+                                    [using specialize the-only-divisors(e) e-is-an-integer e-is-positive e-divides-p]
+                                  @conclusion-positive-case |
+                                    e = ONE or e = neg(ONE)
+                                    case e-is-one-or-p {
+                                      @when-e-is-one |
+                                        assume e = ONE {
+                                          @e-is-one |
+                                            e = ONE
+                                            [by hypothesis when-e-is-one]
+                                          @conclusion-already-a-unit |
+                                            e = ONE or e = neg(ONE)
+                                            [using tautology e-is-one]
+                                        }
+                                      // e = p would make p divide a
+                                      @when-e-is-p |
+                                        assume e = p {
+                                          @e-is-p |
+                                            e = p
+                                            [by hypothesis when-e-is-p]
+                                          @p-divides-a |
+                                            exists k: Q; isInteger(k) and
+                                              a = rational.mul(p, k)
+                                            [by rewrite e-is-p e-divides-a]
+                                          @conclusion-impossible |
+                                            e = ONE or e = neg(ONE)
+                                            [by ex_falso p-divides-a p-misses-a]
+                                        }
+                                    }
+                                }
+                              // e = 0 would make p = 0, against 1 < p
+                              @when-zero |
+                                assume ZERO = e {
+                                  @zero-is-e |
+                                    ZERO = e
+                                    [by hypothesis when-zero]
+                                  @with-the-quotient |
+                                    unpack k: Q from e-divides-p {
+                                      @the-quotient |
+                                        isInteger(k) and
+                                          p = rational.mul(e, k)
+                                        [by hypothesis with-the-quotient]
+                                      @p-factors |
+                                        p = rational.mul(e, k)
+                                        [by and_rhs the-quotient]
+                                      @p-is-zero-times |
+                                        p = rational.mul(ZERO, k)
+                                        [by rewrite zero-is-e p-factors]
+                                      @zero-times-k |
+                                        rational.mul(ZERO, k) = ZERO
+                                        [using specialize rational.mulZeroLeft(k)]
+                                      @p-is-zero |
+                                        p = ZERO
+                                        [using simplify p-is-zero-times zero-times-k]
+                                      @one-below-zero |
+                                        less_than(ONE, ZERO)
+                                        [by rewrite p-is-zero one-below-p]
+                                      @zero-below-one |
+                                        less_than(ZERO, ONE)
+                                        [using model(rational.RationalOrderedField) field_order.zeroLessThanOne]
+                                      @the-transitivity |
+                                        forall x, y, z: Q;
+                                          less_than(x, y) ->
+                                          less_than(y, z) ->
+                                          less_than(x, z)
+                                        [using import(rational) lessThanTransitive]
+                                      @zero-below-zero |
+                                        less_than(ZERO, ZERO)
+                                        [using specialize the-transitivity(ZERO, ONE, ZERO) zero-below-one one-below-zero]
+                                      @zero-not-below-zero |
+                                        not less_than(ZERO, ZERO)
+                                        [using specialize rational.lessThanIrreflexive(ZERO)]
+                                      @conclusion-zero-impossible |
+                                        e = ONE or e = neg(ONE)
+                                        [by ex_falso zero-below-zero zero-not-below-zero]
+                                    }
+                                  @conclusion-zero-case |
+                                    e = ONE or e = neg(ONE)
+                                    [by unpacked with-the-quotient]
+                                }
+                            }
+                        }
+                      // e < 0: run the positive case on -e, then flip
+                      @when-negative |
+                        assume less_than(e, ZERO) {
+                          @e-is-negative |
+                            less_than(e, ZERO)
+                            [by hypothesis when-negative]
+                          @conclusion-negative-case |
+                            e = ONE or e = neg(ONE)
+                            [using specialize theNegativeDivisorCase(p, a, e) e-is-an-integer one-below-p the-only-divisors p-misses-a e-divides-p e-divides-a e-is-negative]
+                        }
+                    }
+                }
+              @the-implication |
+                (isInteger(p) and isInteger(e) and
+                  less_than(ONE, p) and
+                  (forall d: Q; isInteger(d) ->
+                  less_than(ZERO, d) ->
+                  (exists k: Q; isInteger(k) and
+                  p = rational.mul(d, k)) ->
+                  (d = ONE or d = p)) and
+                  (not (exists k: Q; isInteger(k) and
+                  a = rational.mul(p, k))) and
+                  (exists k: Q; isInteger(k) and
+                  p = rational.mul(e, k)) and
+                  (exists k: Q; isInteger(k) and
+                  a = rational.mul(e, k))) ->
+                  (e = ONE or e = neg(ONE))
+                [by discharge given-the-setup]
+              @curried |
+                isInteger(p) -> isInteger(e) ->
+                  less_than(ONE, p) ->
+                  (forall d: Q; isInteger(d) ->
+                  less_than(ZERO, d) ->
+                  (exists k: Q; isInteger(k) and
+                  p = rational.mul(d, k)) ->
+                  (d = ONE or d = p)) ->
+                  (not (exists k: Q; isInteger(k) and
+                  a = rational.mul(p, k))) ->
+                  (exists k: Q; isInteger(k) and
+                  p = rational.mul(e, k)) ->
+                  (exists k: Q; isInteger(k) and
+                  a = rational.mul(e, k)) ->
+                  (e = ONE or e = neg(ONE))
+                [using tautology the-implication]
+            }
+          @discharge-e |
+            forall e9: Q;
+              isInteger(p) -> isInteger(e9) ->
+              less_than(ONE, p) ->
+              (forall d: Q; isInteger(d) -> less_than(ZERO, d) ->
+              (exists k: Q; isInteger(k) and
+              p = rational.mul(d, k)) ->
+              (d = ONE or d = p)) ->
+              (not (exists k: Q; isInteger(k) and
+              a = rational.mul(p, k))) ->
+              (exists k: Q; isInteger(k) and
+              p = rational.mul(e9, k)) ->
+              (exists k: Q; isInteger(k) and
+              a = rational.mul(e9, k)) ->
+              (e9 = ONE or e9 = neg(ONE))
+            [by generalize generalize-e]
+        }
+      @discharge-a |
+        forall a9: Q; forall e9: Q;
+          isInteger(p) -> isInteger(e9) ->
+          less_than(ONE, p) ->
+          (forall d: Q; isInteger(d) -> less_than(ZERO, d) ->
+          (exists k: Q; isInteger(k) and
+          p = rational.mul(d, k)) ->
+          (d = ONE or d = p)) ->
+          (not (exists k: Q; isInteger(k) and
+          a9 = rational.mul(p, k))) ->
+          (exists k: Q; isInteger(k) and
+          p = rational.mul(e9, k)) ->
+          (exists k: Q; isInteger(k) and
+          a9 = rational.mul(e9, k)) ->
+          (e9 = ONE or e9 = neg(ONE))
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall p, a, e: Q;
+      isInteger(p) -> isInteger(e) -> less_than(ONE, p) ->
+      (forall d: Q; isInteger(d) -> less_than(ZERO, d) ->
+      (exists k: Q; isInteger(k) and p = rational.mul(d, k)) ->
+      (d = ONE or d = p)) ->
+      (not (exists k: Q; isInteger(k) and a = rational.mul(p, k))) ->
+      (exists k: Q; isInteger(k) and p = rational.mul(e, k)) ->
+      (exists k: Q; isInteger(k) and a = rational.mul(e, k)) ->
+      (e = ONE or e = neg(ONE))
+    [by generalize generalize-p]
+qed
+
+// A prime missing `a` is coprime to it: a common divisor is 1 or p by primality, and p is
+// ruled out because it would divide `a`. The negative case comes back by sign-blindness, and
+// zero is impossible since p > 0. This is the hypothesis `bezoutOnTheCut` wants.
+theorem coprimalityFromPrimalityOnTheCut: forall p, a: Q;
+  isInteger(p) -> isInteger(a) -> isPrimeOnTheCut(p) ->
+  (not (exists k: Q; isInteger(k) and a = rational.mul(p, k))) ->
+  (forall e: Q; isInteger(e) ->
+  (exists k: Q; isInteger(k) and p = rational.mul(e, k)) ->
+  (exists k: Q; isInteger(k) and a = rational.mul(e, k)) ->
+  (exists k: Q; isInteger(k) and ONE = rational.mul(e, k)))
+proof
+  @generalize-p |
+    fix p: Q {
+      @generalize-a |
+        fix a: Q {
+          @given-the-setup |
+            assume isInteger(p) and isInteger(a) and
+              isPrimeOnTheCut(p) and
+              (not (exists k: Q; isInteger(k) and
+              a = rational.mul(p, k))) {
+              @the-setup |
+                isInteger(p) and isInteger(a) and
+                  isPrimeOnTheCut(p) and
+                  (not (exists k: Q; isInteger(k) and
+                  a = rational.mul(p, k)))
+                [by hypothesis given-the-setup]
+              @p-is-an-integer |
+                isInteger(p)
+                [using tautology the-setup]
+              @p-is-prime |
+                isPrimeOnTheCut(p)
+                [using tautology the-setup]
+              @p-misses-a |
+                not (exists k: Q; isInteger(k) and
+                  a = rational.mul(p, k))
+                [using tautology the-setup]
+              @one-below-p |
+                less_than(ONE, p)
+                [using tautology p-is-prime]
+              @the-only-divisors |
+                forall d: Q; isInteger(d) -> less_than(ZERO, d) ->
+                  (exists k: Q; isInteger(k) and
+                  p = rational.mul(d, k)) ->
+                  (d = ONE or d = p)
+                [using tautology p-is-prime]
+              @each-divisor |
+                fix e: Q {
+                  @given-e-divides-both |
+                    assume isInteger(e) and
+                      (exists k: Q; isInteger(k) and
+                      p = rational.mul(e, k)) and
+                      (exists k: Q; isInteger(k) and
+                      a = rational.mul(e, k)) {
+                      @the-divisor-setup |
+                        isInteger(e) and
+                          (exists k: Q; isInteger(k) and
+                          p = rational.mul(e, k)) and
+                          (exists k: Q; isInteger(k) and
+                          a = rational.mul(e, k))
+                        [by hypothesis given-e-divides-both]
+                      @e-is-an-integer |
+                        isInteger(e)
+                        [using tautology the-divisor-setup]
+                      @e-divides-p |
+                        exists k: Q; isInteger(k) and
+                          p = rational.mul(e, k)
+                        [using tautology the-divisor-setup]
+                      @e-divides-a |
+                        exists k: Q; isInteger(k) and
+                          a = rational.mul(e, k)
+                        [using tautology the-divisor-setup]
+                      // e = 1 or -1, by trichotomy on e
+                      @e-is-a-unit |
+                        e = ONE or e = neg(ONE)
+                        [using specialize aCommonDivisorOfAPrimeAndAMissIsAUnit(p, a, e) p-is-an-integer e-is-an-integer one-below-p the-only-divisors p-misses-a e-divides-p e-divides-a]
+                      @one-is-an-integer |
+                        isInteger(ONE)
+                        [using import(rational) oneIsAnInteger]
+                      @conclusion-e-divides-one |
+                        exists k: Q; isInteger(k) and
+                          ONE = rational.mul(e, k)
+                        case e-is-a-unit {
+                          @when-one |
+                            assume e = ONE {
+                              @e-is-one |
+                                e = ONE
+                                [by hypothesis when-one]
+                              @one-is-one-times-one |
+                                ONE = rational.mul(ONE, ONE)
+                                [using polynomial(rational)]
+                              @the-unit-quotient-works |
+                                isInteger(ONE) and
+                                  ONE = rational.mul(ONE, ONE)
+                                [by both one-is-an-integer one-is-one-times-one]
+                              @a-unit-quotient-exists |
+                                exists k: Q; isInteger(k) and
+                                  ONE = rational.mul(ONE, k)
+                                [by witness(ONE) the-unit-quotient-works]
+                              @conclusion-at-one |
+                                exists k: Q; isInteger(k) and
+                                  ONE = rational.mul(e, k)
+                                [by rewrite e-is-one a-unit-quotient-exists]
+                            }
+                          @when-minus-one |
+                            assume e = neg(ONE) {
+                              @e-is-minus-one |
+                                e = neg(ONE)
+                                [by hypothesis when-minus-one]
+                              @minus-one-is-an-integer |
+                                isInteger(neg(ONE))
+                                [using specialize rational.isIntegerNeg(ONE) one-is-an-integer]
+                              @one-is-minus-times-minus |
+                                ONE = rational.mul(neg(ONE),
+                                  neg(ONE))
+                                [using polynomial(rational)]
+                              @the-negated-quotient-works |
+                                isInteger(neg(ONE)) and
+                                  ONE = rational.mul(neg(ONE),
+                                  neg(ONE))
+                                [by both minus-one-is-an-integer one-is-minus-times-minus]
+                              @a-negated-quotient-exists |
+                                exists k: Q; isInteger(k) and
+                                  ONE = rational.mul(neg(ONE), k)
+                                [by witness(neg(ONE)) the-negated-quotient-works]
+                              @conclusion-at-minus-one |
+                                exists k: Q; isInteger(k) and
+                                  ONE = rational.mul(e, k)
+                                [by rewrite e-is-minus-one a-negated-quotient-exists]
+                            }
+                        }
+                    }
+                  @the-divisor-implication |
+                    (isInteger(e) and
+                      (exists k: Q; isInteger(k) and
+                      p = rational.mul(e, k)) and
+                      (exists k: Q; isInteger(k) and
+                      a = rational.mul(e, k))) ->
+                      (exists k: Q; isInteger(k) and
+                      ONE = rational.mul(e, k))
+                    [by discharge given-e-divides-both]
+                  @curried-at-e |
+                    isInteger(e) ->
+                      (exists k: Q; isInteger(k) and
+                      p = rational.mul(e, k)) ->
+                      (exists k: Q; isInteger(k) and
+                      a = rational.mul(e, k)) ->
+                      (exists k: Q; isInteger(k) and
+                      ONE = rational.mul(e, k))
+                    [using tautology the-divisor-implication]
+                }
+              @conclusion-all-divisors |
+                forall e: Q; isInteger(e) ->
+                  (exists k: Q; isInteger(k) and
+                  p = rational.mul(e, k)) ->
+                  (exists k: Q; isInteger(k) and
+                  a = rational.mul(e, k)) ->
+                  (exists k: Q; isInteger(k) and
+                  ONE = rational.mul(e, k))
+                [by generalize each-divisor]
+            }
+          @the-implication |
+            (isInteger(p) and isInteger(a) and
+              isPrimeOnTheCut(p) and
+              (not (exists k: Q; isInteger(k) and
+              a = rational.mul(p, k)))) ->
+              (forall e: Q; isInteger(e) ->
+              (exists k: Q; isInteger(k) and
+              p = rational.mul(e, k)) ->
+              (exists k: Q; isInteger(k) and
+              a = rational.mul(e, k)) ->
+              (exists k: Q; isInteger(k) and
+              ONE = rational.mul(e, k)))
+            [by discharge given-the-setup]
+          @curried |
+            isInteger(p) -> isInteger(a) ->
+              isPrimeOnTheCut(p) ->
+              (not (exists k: Q; isInteger(k) and
+              a = rational.mul(p, k))) ->
+              (forall e: Q; isInteger(e) ->
+              (exists k: Q; isInteger(k) and
+              p = rational.mul(e, k)) ->
+              (exists k: Q; isInteger(k) and
+              a = rational.mul(e, k)) ->
+              (exists k: Q; isInteger(k) and
+              ONE = rational.mul(e, k)))
+            [using tautology the-implication]
+        }
+      @discharge-a |
+        forall a9: Q;
+          isInteger(p) -> isInteger(a9) ->
+          isPrimeOnTheCut(p) ->
+          (not (exists k: Q; isInteger(k) and
+          a9 = rational.mul(p, k))) ->
+          (forall e: Q; isInteger(e) ->
+          (exists k: Q; isInteger(k) and
+          p = rational.mul(e, k)) ->
+          (exists k: Q; isInteger(k) and
+          a9 = rational.mul(e, k)) ->
+          (exists k: Q; isInteger(k) and
+          ONE = rational.mul(e, k)))
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall p, a: Q;
+      isInteger(p) -> isInteger(a) -> isPrimeOnTheCut(p) ->
+      (not (exists k: Q; isInteger(k) and a = rational.mul(p, k))) ->
+      (forall e: Q; isInteger(e) ->
+      (exists k: Q; isInteger(k) and p = rational.mul(e, k)) ->
+      (exists k: Q; isInteger(k) and a = rational.mul(e, k)) ->
+      (exists k: Q; isInteger(k) and ONE = rational.mul(e, k)))
+    [by generalize generalize-p]
+qed
