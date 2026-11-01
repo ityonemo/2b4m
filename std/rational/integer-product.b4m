@@ -8989,3 +8989,170 @@ proof
       p = qpoly.qmulP(qpoly.qmonomial(c, NAT_ZERO), q)
     [by generalize generalize-p]
 qed
+
+// -- QUOTIENT ENTRIES ARE INTEGERS, AT ANY INDEX ------------------------------------------
+// `aQuotientEntryIsAnInteger` covers index ZERO only. The reduced fraction's `r` and `s` are
+// the quotient entries at indices ZERO and ONE, so both are needed — and the argument is the
+// same at every index in range: the divisor divides the entry integrally, giving an integer
+// quotient, and cancelling the nonzero divisor identifies it with the sequence's entry.
+theorem everyQuotientEntryIsAnInteger: forall s, q: QSeq; forall n: Nat; forall d: Q;
+  less_than(ZERO, d) ->
+  isACommonDivisorUpTo(d, s, n) ->
+  aQuotientSequenceFor(d, s, q, n) ->
+  (forall i: Nat; nat_less_than(i, n) -> isInteger(qat(q, i)))
+proof
+  @generalize-s |
+    fix s: QSeq {
+      @generalize-q |
+        fix q: QSeq {
+          @generalize-n |
+            fix n: Nat {
+              @generalize-d |
+                fix d: Q {
+                  @given-the-setup |
+                    assume less_than(ZERO, d) and
+                      isACommonDivisorUpTo(d, s, n) and
+                      aQuotientSequenceFor(d, s, q, n) {
+                      @the-setup |
+                        less_than(ZERO, d) and
+                          isACommonDivisorUpTo(d, s, n) and
+                          aQuotientSequenceFor(d, s, q, n)
+                        [by hypothesis given-the-setup]
+                      @d-positive |
+                        less_than(ZERO, d)
+                        [using tautology the-setup]
+                      @d-divides |
+                        isACommonDivisorUpTo(d, s, n)
+                        [using tautology the-setup]
+                      @the-quotients |
+                        aQuotientSequenceFor(d, s, q, n)
+                        [using tautology the-setup]
+                      @d-is-nonzero |
+                        not (d = ZERO)
+                        [using specialize rational_integer_order.aPositiveIsNonzero(d) d-positive]
+                      @the-divisor-meaning |
+                        isACommonDivisorUpTo(d, s, n) iff
+                          (forall i: Nat; nat_less_than(i, n) ->
+                          dividesIntegrally(d, qat(s, i)))
+                        [using specialize commonDivisorMeaning(d, s, n)]
+                      @d-divides-each |
+                        forall i: Nat; nat_less_than(i, n) ->
+                          dividesIntegrally(d, qat(s, i))
+                        [using tautology the-divisor-meaning d-divides]
+                      @the-quotient-meaning |
+                        aQuotientSequenceFor(d, s, q, n) iff
+                          (forall i: Nat; nat_less_than(i, n) ->
+                          qat(s, i) = rational.mul(d, qat(q, i)))
+                        [using specialize quotientSequenceMeaning(d, s, q, n)]
+                      @the-factorization |
+                        forall i: Nat; nat_less_than(i, n) ->
+                          qat(s, i) = rational.mul(d, qat(q, i))
+                        [using tautology the-quotient-meaning the-quotients]
+                      @each-index |
+                        fix i: Nat {
+                          @given-i-below |
+                            assume nat_less_than(i, n) {
+                              @i-below |
+                                nat_less_than(i, n)
+                                [by hypothesis given-i-below]
+                              @d-divides-here |
+                                dividesIntegrally(d, qat(s, i))
+                                [using specialize d-divides-each(i) i-below]
+                              @the-divides-meaning |
+                                dividesIntegrally(d, qat(s, i)) iff
+                                  (exists k: Q; isInteger(k) and
+                                  qat(s, i) = rational.mul(d, k))
+                                [using specialize dividesIntegrallyMeaning(d, qat(s, i))]
+                              @an-integer-quotient |
+                                exists k: Q; isInteger(k) and
+                                  qat(s, i) = rational.mul(d, k)
+                                [using tautology the-divides-meaning d-divides-here]
+                              @the-entry-factors |
+                                qat(s, i) = rational.mul(d, qat(q, i))
+                                [using specialize the-factorization(i) i-below]
+                              @with-the-integer-quotient |
+                                unpack k: Q from an-integer-quotient {
+                                  @with-quotient-k |
+                                    isInteger(k) and
+                                      qat(s, i) = rational.mul(d, k)
+                                    [by hypothesis with-the-integer-quotient]
+                                  @k-is-an-integer |
+                                    isInteger(k)
+                                    [by and_lhs with-quotient-k]
+                                  @the-entry-is-d-times-k |
+                                    qat(s, i) = rational.mul(d, k)
+                                    [by and_rhs with-quotient-k]
+                                  @the-products-agree |
+                                    rational.mul(d, qat(q, i)) =
+                                      rational.mul(d, k)
+                                    [by rewrite the-entry-factors the-entry-is-d-times-k]
+                                  @the-quotients-agree |
+                                    qat(q, i) = k
+                                    [using specialize aNonzeroFactorCancels(d, qat(q, i), k) d-is-nonzero the-products-agree]
+                                  @conclusion-integer-at-i |
+                                    isInteger(qat(q, i))
+                                    [by rewrite the-quotients-agree k-is-an-integer]
+                                }
+                              @conclusion-exported-at-i |
+                                isInteger(qat(q, i))
+                                [by unpacked with-the-integer-quotient]
+                            }
+                          @below-implies |
+                            nat_less_than(i, n) -> isInteger(qat(q, i))
+                            [by discharge given-i-below]
+                        }
+                      @conclusion-all |
+                        forall i: Nat; nat_less_than(i, n) ->
+                          isInteger(qat(q, i))
+                        [by generalize each-index]
+                    }
+                  @the-implication |
+                    (less_than(ZERO, d) and
+                      isACommonDivisorUpTo(d, s, n) and
+                      aQuotientSequenceFor(d, s, q, n)) ->
+                      (forall i: Nat; nat_less_than(i, n) ->
+                      isInteger(qat(q, i)))
+                    [by discharge given-the-setup]
+                  @curried |
+                    less_than(ZERO, d) ->
+                      isACommonDivisorUpTo(d, s, n) ->
+                      aQuotientSequenceFor(d, s, q, n) ->
+                      (forall i: Nat; nat_less_than(i, n) ->
+                      isInteger(qat(q, i)))
+                    [using tautology the-implication]
+                }
+              @discharge-d |
+                forall d9: Q;
+                  less_than(ZERO, d9) ->
+                  isACommonDivisorUpTo(d9, s, n) ->
+                  aQuotientSequenceFor(d9, s, q, n) ->
+                  (forall i: Nat; nat_less_than(i, n) ->
+                  isInteger(qat(q, i)))
+                [by generalize generalize-d]
+            }
+          @discharge-n |
+            forall n9: Nat; forall d9: Q;
+              less_than(ZERO, d9) ->
+              isACommonDivisorUpTo(d9, s, n9) ->
+              aQuotientSequenceFor(d9, s, q, n9) ->
+              (forall i: Nat; nat_less_than(i, n9) ->
+              isInteger(qat(q, i)))
+            [by generalize generalize-n]
+        }
+      @discharge-q |
+        forall q9: QSeq; forall n9: Nat; forall d9: Q;
+          less_than(ZERO, d9) ->
+          isACommonDivisorUpTo(d9, s, n9) ->
+          aQuotientSequenceFor(d9, s, q9, n9) ->
+          (forall i: Nat; nat_less_than(i, n9) ->
+          isInteger(qat(q9, i)))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall s, q: QSeq; forall n: Nat; forall d: Q;
+      less_than(ZERO, d) ->
+      isACommonDivisorUpTo(d, s, n) ->
+      aQuotientSequenceFor(d, s, q, n) ->
+      (forall i: Nat; nat_less_than(i, n) -> isInteger(qat(q, i)))
+    [by generalize generalize-s]
+qed
