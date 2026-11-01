@@ -2126,3 +2126,675 @@ proof
       qclearedSum(p, r, s, k)
     [by generalize generalize-p]
 qed
+
+// Every power of an integer is an integer — induction on the exponent, `isIntegerMul` at
+// each step and `oneIsAnInteger` at the base.
+theorem everyPowerOfAnIntegerIsAnInteger: forall a: Q;
+  rational.isInteger(a) ->
+  (forall k: peano.Nat; rational.isInteger(qpower(a, k)))
+proof
+  @generalize-a |
+    fix a: Q {
+      @given-a-is-an-integer |
+        assume rational.isInteger(a) {
+          @a-is-an-integer |
+            rational.isInteger(a)
+            [by hypothesis given-a-is-an-integer]
+          @the-integer-products |
+            forall x, y: Q; rational.isInteger(x) ->
+              rational.isInteger(y) ->
+              rational.isInteger(rational.mul(x, y))
+            [using import(rational) isIntegerMul]
+          @the-zero-power |
+            qpower(a, peano.ZERO) = rational.ONE
+            [using specialize qPowerZero(a)]
+          @one-is-an-integer |
+            rational.isInteger(rational.ONE)
+            [using import(rational) oneIsAnInteger]
+          @base-case |
+            rational.isInteger(qpower(a, peano.ZERO))
+            [by rewrite the-zero-power one-is-an-integer]
+
+          @induction-step |
+            fix k: peano.Nat {
+              @given-inductive-hypothesis |
+                assume rational.isInteger(qpower(a, k)) {
+                  @inductive-hypothesis |
+                    rational.isInteger(qpower(a, k))
+                    [by hypothesis given-inductive-hypothesis]
+                  @the-next-power |
+                    qpower(a, peano.succ(k)) =
+                      rational.mul(a, qpower(a, k))
+                    [using specialize qPowerSucc(a, k)]
+                  @the-product-is-an-integer |
+                    rational.isInteger(rational.mul(a, qpower(a, k)))
+                    [using specialize the-integer-products(a, qpower(a, k)) a-is-an-integer inductive-hypothesis]
+                  @conclusion-the-step |
+                    rational.isInteger(qpower(a, peano.succ(k)))
+                    [by rewrite the-next-power the-product-is-an-integer]
+                }
+              @induction-step-at-k |
+                rational.isInteger(qpower(a, k)) ->
+                  rational.isInteger(qpower(a, peano.succ(k)))
+                [by discharge given-inductive-hypothesis]
+            }
+          @induction-step-for-all-k |
+            forall k: peano.Nat;
+              rational.isInteger(qpower(a, k)) ->
+              rational.isInteger(qpower(a, peano.succ(k)))
+            [by generalize induction-step]
+          @all-exponents |
+            forall k: peano.Nat; rational.isInteger(qpower(a, k))
+            [using instantiation peano.induction((fun z: peano.Nat => (rational.isInteger(qpower(a, z))))) base-case induction-step-for-all-k]
+        }
+      @integer-implies |
+        rational.isInteger(a) ->
+          (forall k: peano.Nat; rational.isInteger(qpower(a, k)))
+        [by discharge given-a-is-an-integer]
+    }
+  @conclusion |
+    forall a: Q;
+      rational.isInteger(a) ->
+      (forall k: peano.Nat; rational.isInteger(qpower(a, k)))
+    [by generalize generalize-a]
+qed
+
+// -- SPLITTING THE CLEARED SUM AT EITHER END ------------------------------------------------
+// 17.14 reads the cleared sum twice, from opposite ends. Every term but the first carries a
+// factor r, and every term but the last carries a factor s, so:
+//
+//   S(k) = s^k·a_0 + r·t     for some integer t   (k >= 1)
+//   S(k+1) = s·u + a_k·r^k   for some integer u
+//
+// The first is an induction on k; the second is just the defining clause regrouped.
+theorem theClearedSumSplitsOffTheConstantTerm: forall p: QPoly;
+  forall r, s: Q; forall k: peano.Nat;
+  rational.isInteger(r) -> rational.isInteger(s) ->
+  (forall i: peano.Nat; rational.isInteger(qcoeff(p, i))) ->
+  (exists t: Q; rational.isInteger(t) and
+  qclearedSum(p, r, s, peano.succ(k)) =
+  rational.add(rational.mul(qpower(s, peano.succ(k)), qcoeff(p, peano.ZERO)),
+  rational.mul(r, t)))
+proof
+  @generalize-p |
+    fix p: QPoly {
+      @generalize-r |
+        fix r: Q {
+          @generalize-s |
+            fix s: Q {
+              @given-the-integrality |
+                assume rational.isInteger(r) and rational.isInteger(s) and
+                  (forall i: peano.Nat;
+                  rational.isInteger(qcoeff(p, i))) {
+                  @the-integrality |
+                    rational.isInteger(r) and rational.isInteger(s) and
+                      (forall i: peano.Nat;
+                      rational.isInteger(qcoeff(p, i)))
+                    [by hypothesis given-the-integrality]
+                  @r-is-an-integer |
+                    rational.isInteger(r)
+                    [using tautology the-integrality]
+                  @s-is-an-integer |
+                    rational.isInteger(s)
+                    [using tautology the-integrality]
+                  @the-coefficients-are-integers |
+                    forall i: peano.Nat;
+                      rational.isInteger(qcoeff(p, i))
+                    [using tautology the-integrality]
+                  @the-integer-products |
+                    forall x, y: Q; rational.isInteger(x) ->
+                      rational.isInteger(y) ->
+                      rational.isInteger(rational.mul(x, y))
+                    [using import(rational) isIntegerMul]
+                  @the-integer-sums |
+                    forall x, y: Q; rational.isInteger(x) ->
+                      rational.isInteger(y) ->
+                      rational.isInteger(rational.add(x, y))
+                    [using import(rational) isIntegerAdd]
+
+                  // base: S(1) = s·(0 + a_0·1) = s^1·a_0 + r·0
+                  @the-empty-cleared-sum |
+                    qclearedSum(p, r, s, peano.ZERO) = ZERO
+                    [using specialize qClearedSumZero(p, r, s)]
+                  @the-first-cleared-sum |
+                    qclearedSum(p, r, s, peano.succ(peano.ZERO)) =
+                      rational.mul(s, rational.add(
+                      qclearedSum(p, r, s, peano.ZERO),
+                      rational.mul(qcoeff(p, peano.ZERO),
+                      qpower(r, peano.ZERO))))
+                    [using specialize qClearedSumSucc(p, r, s, peano.ZERO)]
+                  @the-zero-power-of-r |
+                    qpower(r, peano.ZERO) = rational.ONE
+                    [using specialize qPowerZero(r)]
+                  @the-first-cleared-sum-expanded |
+                    qclearedSum(p, r, s, peano.succ(peano.ZERO)) =
+                      rational.mul(s, rational.add(ZERO,
+                      rational.mul(qcoeff(p, peano.ZERO),
+                      rational.ONE)))
+                    [using simplify the-first-cleared-sum the-empty-cleared-sum the-zero-power-of-r]
+                  @the-first-power-of-s |
+                    qpower(s, peano.succ(peano.ZERO)) =
+                      rational.mul(s, qpower(s, peano.ZERO))
+                    [using specialize qPowerSucc(s, peano.ZERO)]
+                  @the-zero-power-of-s |
+                    qpower(s, peano.ZERO) = rational.ONE
+                    [using specialize qPowerZero(s)]
+                  @the-first-power-of-s-expanded |
+                    qpower(s, peano.succ(peano.ZERO)) =
+                      rational.mul(s, rational.ONE)
+                    [using simplify the-first-power-of-s the-zero-power-of-s]
+                  // r·0 = 0, so the remainder slot takes the witness 0
+                  @r-times-zero |
+                    rational.mul(r, ZERO) = ZERO
+                    [using specialize rational.mulZeroRight(r)]
+                  // collapse the right side's own zero first: s·(0 + a_0·1) = s·a_0
+                  @s-times-zero |
+                    rational.mul(s, ZERO) = ZERO
+                    [using specialize rational.mulZeroRight(s)]
+                  @the-right-side-collapses |
+                    rational.mul(s, rational.add(ZERO,
+                      rational.mul(qcoeff(p, peano.ZERO),
+                      rational.ONE))) =
+                      rational.add(rational.mul(s, ZERO),
+                      rational.mul(s, qcoeff(p, peano.ZERO)))
+                    [using polynomial(rational)]
+                  @the-right-side-without-zero |
+                    rational.mul(s, rational.add(ZERO,
+                      rational.mul(qcoeff(p, peano.ZERO),
+                      rational.ONE))) =
+                      rational.add(ZERO,
+                      rational.mul(s, qcoeff(p, peano.ZERO)))
+                    [by rewrite s-times-zero the-right-side-collapses]
+                  @the-base-target-without-r |
+                    rational.add(rational.mul(
+                      rational.mul(s, rational.ONE),
+                      qcoeff(p, peano.ZERO)), ZERO) =
+                      rational.add(ZERO,
+                      rational.mul(s, qcoeff(p, peano.ZERO)))
+                    [using polynomial(rational)]
+                  @the-base-target-through-the-right |
+                    rational.add(rational.mul(
+                      rational.mul(s, rational.ONE),
+                      qcoeff(p, peano.ZERO)), ZERO) =
+                      rational.mul(s, rational.add(ZERO,
+                      rational.mul(qcoeff(p, peano.ZERO),
+                      rational.ONE)))
+                    [by rewrite the-right-side-without-zero the-base-target-without-r]
+                  @the-base-target |
+                    rational.add(rational.mul(
+                      rational.mul(s, rational.ONE),
+                      qcoeff(p, peano.ZERO)),
+                      rational.mul(r, ZERO)) =
+                      rational.mul(s, rational.add(ZERO,
+                      rational.mul(qcoeff(p, peano.ZERO),
+                      rational.ONE)))
+                    [by rewrite r-times-zero the-base-target-through-the-right]
+                  @the-base-equation |
+                    qclearedSum(p, r, s, peano.succ(peano.ZERO)) =
+                      rational.add(rational.mul(
+                      rational.mul(s, rational.ONE),
+                      qcoeff(p, peano.ZERO)),
+                      rational.mul(r, ZERO))
+                    [by rewrite the-base-target the-first-cleared-sum-expanded]
+                  @the-base-equation-in-the-power |
+                    qclearedSum(p, r, s, peano.succ(peano.ZERO)) =
+                      rational.add(rational.mul(
+                      qpower(s, peano.succ(peano.ZERO)),
+                      qcoeff(p, peano.ZERO)),
+                      rational.mul(r, ZERO))
+                    [by rewrite the-first-power-of-s-expanded the-base-equation]
+                  @zero-is-an-integer |
+                    rational.isInteger(ZERO)
+                    [using import(rational) zeroIsAnInteger]
+                  @the-base-witness-works |
+                    rational.isInteger(ZERO) and
+                      qclearedSum(p, r, s, peano.succ(peano.ZERO)) =
+                      rational.add(rational.mul(
+                      qpower(s, peano.succ(peano.ZERO)),
+                      qcoeff(p, peano.ZERO)),
+                      rational.mul(r, ZERO))
+                    [by both zero-is-an-integer the-base-equation-in-the-power]
+                  @base-case |
+                    exists t: Q; rational.isInteger(t) and
+                      qclearedSum(p, r, s, peano.succ(peano.ZERO)) =
+                      rational.add(rational.mul(
+                      qpower(s, peano.succ(peano.ZERO)),
+                      qcoeff(p, peano.ZERO)),
+                      rational.mul(r, t))
+                    [by witness(ZERO) the-base-witness-works]
+
+                  // step: S(k+2) = s·(S(k+1) + a_{k+1}·r^{k+1})
+                  //              = s^{k+2}·a_0 + r·(s·(t + a_{k+1}·r^k))
+                  @induction-step |
+                    fix k: peano.Nat {
+                      @given-inductive-hypothesis |
+                        assume exists t: Q; rational.isInteger(t) and
+                          qclearedSum(p, r, s, peano.succ(k)) =
+                          rational.add(rational.mul(
+                          qpower(s, peano.succ(k)),
+                          qcoeff(p, peano.ZERO)),
+                          rational.mul(r, t)) {
+                          @inductive-hypothesis |
+                            exists t: Q; rational.isInteger(t) and
+                              qclearedSum(p, r, s, peano.succ(k)) =
+                              rational.add(rational.mul(
+                              qpower(s, peano.succ(k)),
+                              qcoeff(p, peano.ZERO)),
+                              rational.mul(r, t))
+                            [by hypothesis given-inductive-hypothesis]
+                          @conclusion-the-step |
+                            unpack t: Q from inductive-hypothesis {
+                              @the-split-at-k |
+                                rational.isInteger(t) and
+                                  qclearedSum(p, r, s, peano.succ(k)) =
+                                  rational.add(rational.mul(
+                                  qpower(s, peano.succ(k)),
+                                  qcoeff(p, peano.ZERO)),
+                                  rational.mul(r, t))
+                                [by hypothesis conclusion-the-step]
+                              @t-is-an-integer |
+                                rational.isInteger(t)
+                                [by and_lhs the-split-at-k]
+                              @the-sum-at-k |
+                                qclearedSum(p, r, s, peano.succ(k)) =
+                                  rational.add(rational.mul(
+                                  qpower(s, peano.succ(k)),
+                                  qcoeff(p, peano.ZERO)),
+                                  rational.mul(r, t))
+                                [by and_rhs the-split-at-k]
+                              @the-next-sum |
+                                qclearedSum(p, r, s,
+                                  peano.succ(peano.succ(k))) =
+                                  rational.mul(s, rational.add(
+                                  qclearedSum(p, r, s, peano.succ(k)),
+                                  rational.mul(
+                                  qcoeff(p, peano.succ(k)),
+                                  qpower(r, peano.succ(k)))))
+                                [using specialize qClearedSumSucc(p, r, s, peano.succ(k))]
+                              @the-next-sum-expanded |
+                                qclearedSum(p, r, s,
+                                  peano.succ(peano.succ(k))) =
+                                  rational.mul(s, rational.add(
+                                  rational.add(rational.mul(
+                                  qpower(s, peano.succ(k)),
+                                  qcoeff(p, peano.ZERO)),
+                                  rational.mul(r, t)),
+                                  rational.mul(
+                                  qcoeff(p, peano.succ(k)),
+                                  qpower(r, peano.succ(k)))))
+                                [by rewrite the-sum-at-k the-next-sum]
+                              // r^{k+1} = r·r^k, so the last term carries r
+                              @the-next-power-of-r |
+                                qpower(r, peano.succ(k)) =
+                                  rational.mul(r, qpower(r, k))
+                                [using specialize qPowerSucc(r, k)]
+                              @the-next-sum-with-r-pulled |
+                                qclearedSum(p, r, s,
+                                  peano.succ(peano.succ(k))) =
+                                  rational.mul(s, rational.add(
+                                  rational.add(rational.mul(
+                                  qpower(s, peano.succ(k)),
+                                  qcoeff(p, peano.ZERO)),
+                                  rational.mul(r, t)),
+                                  rational.mul(
+                                  qcoeff(p, peano.succ(k)),
+                                  rational.mul(r, qpower(r, k)))))
+                                [by rewrite the-next-power-of-r the-next-sum-expanded]
+                              // regroup: s^{k+2}·a_0 + r·(s·(t + a_{k+1}·r^k))
+                              @the-next-power-of-s |
+                                qpower(s, peano.succ(peano.succ(k))) =
+                                  rational.mul(s,
+                                  qpower(s, peano.succ(k)))
+                                [using specialize qPowerSucc(s, peano.succ(k))]
+                              @the-regrouping |
+                                rational.mul(s, rational.add(
+                                  rational.add(rational.mul(
+                                  qpower(s, peano.succ(k)),
+                                  qcoeff(p, peano.ZERO)),
+                                  rational.mul(r, t)),
+                                  rational.mul(
+                                  qcoeff(p, peano.succ(k)),
+                                  rational.mul(r, qpower(r, k))))) =
+                                  rational.add(rational.mul(
+                                  rational.mul(s,
+                                  qpower(s, peano.succ(k))),
+                                  qcoeff(p, peano.ZERO)),
+                                  rational.mul(r,
+                                  rational.mul(s, rational.add(t,
+                                  rational.mul(
+                                  qcoeff(p, peano.succ(k)),
+                                  qpower(r, k))))))
+                                [using polynomial(rational)]
+                              @the-next-sum-regrouped |
+                                qclearedSum(p, r, s,
+                                  peano.succ(peano.succ(k))) =
+                                  rational.add(rational.mul(
+                                  rational.mul(s,
+                                  qpower(s, peano.succ(k))),
+                                  qcoeff(p, peano.ZERO)),
+                                  rational.mul(r,
+                                  rational.mul(s, rational.add(t,
+                                  rational.mul(
+                                  qcoeff(p, peano.succ(k)),
+                                  qpower(r, k))))))
+                                [by rewrite the-regrouping the-next-sum-with-r-pulled]
+                              @the-next-sum-in-the-power |
+                                qclearedSum(p, r, s,
+                                  peano.succ(peano.succ(k))) =
+                                  rational.add(rational.mul(
+                                  qpower(s,
+                                  peano.succ(peano.succ(k))),
+                                  qcoeff(p, peano.ZERO)),
+                                  rational.mul(r,
+                                  rational.mul(s, rational.add(t,
+                                  rational.mul(
+                                  qcoeff(p, peano.succ(k)),
+                                  qpower(r, k))))))
+                                [by rewrite the-next-power-of-s the-next-sum-regrouped]
+                              // the new witness is an integer
+                              @the-powers-of-r-are-integers |
+                                forall j: peano.Nat;
+                                  rational.isInteger(qpower(r, j))
+                                [using specialize everyPowerOfAnIntegerIsAnInteger(r) r-is-an-integer]
+                              @the-k-th-power-is-an-integer |
+                                rational.isInteger(qpower(r, k))
+                                [using specialize the-powers-of-r-are-integers(k)]
+                              @the-next-coefficient-is-an-integer |
+                                rational.isInteger(
+                                  qcoeff(p, peano.succ(k)))
+                                [using specialize the-coefficients-are-integers(peano.succ(k))]
+                              @the-new-term-is-an-integer |
+                                rational.isInteger(rational.mul(
+                                  qcoeff(p, peano.succ(k)),
+                                  qpower(r, k)))
+                                [using specialize the-integer-products(qcoeff(p, peano.succ(k)), qpower(r, k)) the-next-coefficient-is-an-integer the-k-th-power-is-an-integer]
+                              @the-new-sum-is-an-integer |
+                                rational.isInteger(rational.add(t,
+                                  rational.mul(
+                                  qcoeff(p, peano.succ(k)),
+                                  qpower(r, k))))
+                                [using specialize the-integer-sums(t, rational.mul(qcoeff(p, peano.succ(k)), qpower(r, k))) t-is-an-integer the-new-term-is-an-integer]
+                              @the-new-witness-is-an-integer |
+                                rational.isInteger(rational.mul(s,
+                                  rational.add(t, rational.mul(
+                                  qcoeff(p, peano.succ(k)),
+                                  qpower(r, k)))))
+                                [using specialize the-integer-products(s, rational.add(t, rational.mul(qcoeff(p, peano.succ(k)), qpower(r, k)))) s-is-an-integer the-new-sum-is-an-integer]
+                              @the-new-witness-works |
+                                rational.isInteger(rational.mul(s,
+                                  rational.add(t, rational.mul(
+                                  qcoeff(p, peano.succ(k)),
+                                  qpower(r, k))))) and
+                                  qclearedSum(p, r, s,
+                                  peano.succ(peano.succ(k))) =
+                                  rational.add(rational.mul(
+                                  qpower(s,
+                                  peano.succ(peano.succ(k))),
+                                  qcoeff(p, peano.ZERO)),
+                                  rational.mul(r,
+                                  rational.mul(s, rational.add(t,
+                                  rational.mul(
+                                  qcoeff(p, peano.succ(k)),
+                                  qpower(r, k))))))
+                                [by both the-new-witness-is-an-integer the-next-sum-in-the-power]
+                              @conclusion-extended |
+                                exists t2: Q; rational.isInteger(t2) and
+                                  qclearedSum(p, r, s,
+                                  peano.succ(peano.succ(k))) =
+                                  rational.add(rational.mul(
+                                  qpower(s,
+                                  peano.succ(peano.succ(k))),
+                                  qcoeff(p, peano.ZERO)),
+                                  rational.mul(r, t2))
+                                [by witness(rational.mul(s, rational.add(t, rational.mul(qcoeff(p, peano.succ(k)), qpower(r, k))))) the-new-witness-works]
+                            }
+                          @the-step-exported |
+                            exists t2: Q; rational.isInteger(t2) and
+                              qclearedSum(p, r, s,
+                              peano.succ(peano.succ(k))) =
+                              rational.add(rational.mul(
+                              qpower(s, peano.succ(peano.succ(k))),
+                              qcoeff(p, peano.ZERO)),
+                              rational.mul(r, t2))
+                            [by unpacked conclusion-the-step]
+                        }
+                      @induction-step-at-k |
+                        (exists t: Q; rational.isInteger(t) and
+                          qclearedSum(p, r, s, peano.succ(k)) =
+                          rational.add(rational.mul(
+                          qpower(s, peano.succ(k)),
+                          qcoeff(p, peano.ZERO)),
+                          rational.mul(r, t))) ->
+                          (exists t2: Q; rational.isInteger(t2) and
+                          qclearedSum(p, r, s,
+                          peano.succ(peano.succ(k))) =
+                          rational.add(rational.mul(
+                          qpower(s, peano.succ(peano.succ(k))),
+                          qcoeff(p, peano.ZERO)),
+                          rational.mul(r, t2)))
+                        [by discharge given-inductive-hypothesis]
+                    }
+                  @induction-step-for-all-k |
+                    forall k: peano.Nat;
+                      (exists t: Q; rational.isInteger(t) and
+                      qclearedSum(p, r, s, peano.succ(k)) =
+                      rational.add(rational.mul(
+                      qpower(s, peano.succ(k)),
+                      qcoeff(p, peano.ZERO)),
+                      rational.mul(r, t))) ->
+                      (exists t2: Q; rational.isInteger(t2) and
+                      qclearedSum(p, r, s,
+                      peano.succ(peano.succ(k))) =
+                      rational.add(rational.mul(
+                      qpower(s, peano.succ(peano.succ(k))),
+                      qcoeff(p, peano.ZERO)),
+                      rational.mul(r, t2)))
+                    [by generalize induction-step]
+                  @all-bounds |
+                    forall k: peano.Nat;
+                      exists t: Q; rational.isInteger(t) and
+                      qclearedSum(p, r, s, peano.succ(k)) =
+                      rational.add(rational.mul(
+                      qpower(s, peano.succ(k)),
+                      qcoeff(p, peano.ZERO)),
+                      rational.mul(r, t))
+                    [using instantiation peano.induction((fun z: peano.Nat => (exists t: Q; rational.isInteger(t) and qclearedSum(p, r, s, peano.succ(z)) = rational.add(rational.mul(qpower(s, peano.succ(z)), qcoeff(p, peano.ZERO)), rational.mul(r, t))))) base-case induction-step-for-all-k]
+                }
+              @the-integrality-implies |
+                (rational.isInteger(r) and rational.isInteger(s) and
+                  (forall i: peano.Nat;
+                  rational.isInteger(qcoeff(p, i)))) ->
+                  (forall k: peano.Nat;
+                  exists t: Q; rational.isInteger(t) and
+                  qclearedSum(p, r, s, peano.succ(k)) =
+                  rational.add(rational.mul(
+                  qpower(s, peano.succ(k)),
+                  qcoeff(p, peano.ZERO)),
+                  rational.mul(r, t)))
+                [by discharge given-the-integrality]
+              // move the bound binder outside the implication
+              @each-bound |
+                fix k: peano.Nat {
+                  @given-the-integrality-again |
+                    assume rational.isInteger(r) and
+                      rational.isInteger(s) and
+                      (forall i: peano.Nat;
+                      rational.isInteger(qcoeff(p, i))) {
+                      @the-integrality-again |
+                        rational.isInteger(r) and
+                          rational.isInteger(s) and
+                          (forall i: peano.Nat;
+                          rational.isInteger(qcoeff(p, i)))
+                        [by hypothesis given-the-integrality-again]
+                      @all-bounds-here |
+                        forall k2: peano.Nat;
+                          exists t: Q; rational.isInteger(t) and
+                          qclearedSum(p, r, s, peano.succ(k2)) =
+                          rational.add(rational.mul(
+                          qpower(s, peano.succ(k2)),
+                          qcoeff(p, peano.ZERO)),
+                          rational.mul(r, t))
+                        [by modus_ponens the-integrality-implies the-integrality-again]
+                      @conclusion-at-k |
+                        exists t: Q; rational.isInteger(t) and
+                          qclearedSum(p, r, s, peano.succ(k)) =
+                          rational.add(rational.mul(
+                          qpower(s, peano.succ(k)),
+                          qcoeff(p, peano.ZERO)),
+                          rational.mul(r, t))
+                        [using specialize all-bounds-here(k)]
+                    }
+                  @the-implication-at-k |
+                    (rational.isInteger(r) and rational.isInteger(s) and
+                      (forall i: peano.Nat;
+                      rational.isInteger(qcoeff(p, i)))) ->
+                      (exists t: Q; rational.isInteger(t) and
+                      qclearedSum(p, r, s, peano.succ(k)) =
+                      rational.add(rational.mul(
+                      qpower(s, peano.succ(k)),
+                      qcoeff(p, peano.ZERO)),
+                      rational.mul(r, t)))
+                    [by discharge given-the-integrality-again]
+                  @curried-at-k |
+                    rational.isInteger(r) -> rational.isInteger(s) ->
+                      (forall i: peano.Nat;
+                      rational.isInteger(qcoeff(p, i))) ->
+                      (exists t: Q; rational.isInteger(t) and
+                      qclearedSum(p, r, s, peano.succ(k)) =
+                      rational.add(rational.mul(
+                      qpower(s, peano.succ(k)),
+                      qcoeff(p, peano.ZERO)),
+                      rational.mul(r, t)))
+                    [using tautology the-implication-at-k]
+                }
+              @discharge-s |
+                forall k: peano.Nat;
+                  rational.isInteger(r) -> rational.isInteger(s) ->
+                  (forall i: peano.Nat;
+                  rational.isInteger(qcoeff(p, i))) ->
+                  (exists t: Q; rational.isInteger(t) and
+                  qclearedSum(p, r, s, peano.succ(k)) =
+                  rational.add(rational.mul(
+                  qpower(s, peano.succ(k)),
+                  qcoeff(p, peano.ZERO)),
+                  rational.mul(r, t)))
+                [by generalize each-bound]
+            }
+          @discharge-r |
+            forall s9: Q; forall k: peano.Nat;
+              rational.isInteger(r) -> rational.isInteger(s9) ->
+              (forall i: peano.Nat;
+              rational.isInteger(qcoeff(p, i))) ->
+              (exists t: Q; rational.isInteger(t) and
+              qclearedSum(p, r, s9, peano.succ(k)) =
+              rational.add(rational.mul(
+              qpower(s9, peano.succ(k)),
+              qcoeff(p, peano.ZERO)),
+              rational.mul(r, t)))
+            [by generalize generalize-s]
+        }
+      @discharge-p |
+        forall r9, s9: Q; forall k: peano.Nat;
+          rational.isInteger(r9) -> rational.isInteger(s9) ->
+          (forall i: peano.Nat; rational.isInteger(qcoeff(p, i))) ->
+          (exists t: Q; rational.isInteger(t) and
+          qclearedSum(p, r9, s9, peano.succ(k)) =
+          rational.add(rational.mul(
+          qpower(s9, peano.succ(k)),
+          qcoeff(p, peano.ZERO)),
+          rational.mul(r9, t)))
+        [by generalize generalize-r]
+    }
+  @conclusion |
+    forall p: QPoly; forall r, s: Q; forall k: peano.Nat;
+      rational.isInteger(r) -> rational.isInteger(s) ->
+      (forall i: peano.Nat; rational.isInteger(qcoeff(p, i))) ->
+      (exists t: Q; rational.isInteger(t) and
+      qclearedSum(p, r, s, peano.succ(k)) =
+      rational.add(rational.mul(qpower(s, peano.succ(k)),
+      qcoeff(p, peano.ZERO)),
+      rational.mul(r, t)))
+    [by generalize generalize-p]
+qed
+
+// The other end: the defining clause already puts every term but the last under a factor s.
+theorem theClearedSumSplitsOffTheLeadingTerm: forall p: QPoly;
+  forall r, s: Q; forall k: peano.Nat;
+  (exists u: Q;
+  qclearedSum(p, r, s, peano.succ(k)) =
+  rational.add(rational.mul(s, u),
+  rational.mul(s, rational.mul(qcoeff(p, k), qpower(r, k)))))
+proof
+  @generalize-p |
+    fix p: QPoly {
+      @generalize-r |
+        fix r: Q {
+          @generalize-s |
+            fix s: Q {
+              @generalize-k |
+                fix k: peano.Nat {
+                  @the-defining-clause |
+                    qclearedSum(p, r, s, peano.succ(k)) =
+                      rational.mul(s, rational.add(
+                      qclearedSum(p, r, s, k),
+                      rational.mul(qcoeff(p, k), qpower(r, k))))
+                    [using specialize qClearedSumSucc(p, r, s, k)]
+                  @the-distribution |
+                    rational.mul(s, rational.add(
+                      qclearedSum(p, r, s, k),
+                      rational.mul(qcoeff(p, k), qpower(r, k)))) =
+                      rational.add(rational.mul(s,
+                      qclearedSum(p, r, s, k)),
+                      rational.mul(s, rational.mul(qcoeff(p, k),
+                      qpower(r, k))))
+                    [using polynomial(rational)]
+                  @the-split |
+                    qclearedSum(p, r, s, peano.succ(k)) =
+                      rational.add(rational.mul(s,
+                      qclearedSum(p, r, s, k)),
+                      rational.mul(s, rational.mul(qcoeff(p, k),
+                      qpower(r, k))))
+                    [by rewrite the-distribution the-defining-clause]
+                  @conclusion-at-k |
+                    exists u: Q;
+                      qclearedSum(p, r, s, peano.succ(k)) =
+                      rational.add(rational.mul(s, u),
+                      rational.mul(s, rational.mul(qcoeff(p, k),
+                      qpower(r, k))))
+                    [by witness(qclearedSum(p, r, s, k)) the-split]
+                }
+              @discharge-k |
+                forall k: peano.Nat;
+                  (exists u: Q;
+                  qclearedSum(p, r, s, peano.succ(k)) =
+                  rational.add(rational.mul(s, u),
+                  rational.mul(s, rational.mul(qcoeff(p, k),
+                  qpower(r, k)))))
+                [by generalize generalize-k]
+            }
+          @discharge-s |
+            forall s9: Q; forall k: peano.Nat;
+              (exists u: Q;
+              qclearedSum(p, r, s9, peano.succ(k)) =
+              rational.add(rational.mul(s9, u),
+              rational.mul(s9, rational.mul(qcoeff(p, k),
+              qpower(r, k)))))
+            [by generalize generalize-s]
+        }
+      @discharge-r |
+        forall r9, s9: Q; forall k: peano.Nat;
+          (exists u: Q;
+          qclearedSum(p, r9, s9, peano.succ(k)) =
+          rational.add(rational.mul(s9, u),
+          rational.mul(s9, rational.mul(qcoeff(p, k),
+          qpower(r9, k)))))
+        [by generalize generalize-r]
+    }
+  @conclusion |
+    forall p: QPoly; forall r, s: Q; forall k: peano.Nat;
+      (exists u: Q;
+      qclearedSum(p, r, s, peano.succ(k)) =
+      rational.add(rational.mul(s, u),
+      rational.mul(s, rational.mul(qcoeff(p, k), qpower(r, k)))))
+    [by generalize generalize-p]
+qed
