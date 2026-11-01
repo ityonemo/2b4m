@@ -26,7 +26,6 @@
 
 import qpoly <<< "std/rational/polynomial.b4m"
 import rational <<< "std/rational.b4m"
-import qproduct <<< "std/rational/integer-product.b4m"
 import mod_n <<< "std/integer/mod-n.b4m"
 import mod_n_poly <<< "std/integer/mod-n-polynomial.b4m"
 import peano <<< "std/peano.b4m"
@@ -41,7 +40,6 @@ const ZERO = rational.ZERO
 const ONE = rational.ONE
 const NAT_ZERO = peano.ZERO
 pred isInteger = rational.isInteger
-pred dividesIntegrally = qproduct.dividesIntegrally
 
 // -- THE CUT -------------------------------------------------------------------------------
 // ℤ[x] inside ℚ[x]: every coefficient is an integer. Unbounded, unlike
@@ -589,93 +587,39 @@ qed
 // Eisenstein's modulus, as a ℚ-cut element. Keeping it on the cut rather than reusing
 // `mod_n.N` is what avoids mixing an `Int` modulus with ℚ-cut operands in one divisibility
 // statement — the link to ℤ_N[x] then runs through `qcls`'s laws alone.
-// No `isInteger(QN)` axiom: `dividesIntegrally` constrains only the QUOTIENT, never the
-// divisor, so nothing below needs the modulus to be on the cut. I had posited that axiom
-// speculatively and the `--library` gate caught it as unused — which is what that gate is for.
+// THERE IS ONLY ONE MODULUS. An earlier version of this file carried a separate cut-side
+// modulus `QN` with its own congruence axiom, and stated the reduction argument's hypotheses
+// as `dividesIntegrally(QN, …)`. That was a real defect: `QN` and `mod_n.N` were independent
+// constants, so the reduction theorem's `is_prime(mod_n.N)` hypothesis constrained one number
+// while its conclusion spoke of another. Every step type-checked, which is why it survived a
+// strict check and a `--axioms` run — both congruence axioms sat in the base, and that was
+// the tell I failed to read.
 //
-// ⚠ KNOWN GAP, recorded rather than hidden. `QN` and `mod_n.N` are INDEPENDENT constants.
-// `qcls` lands in `mod_n.Zn`, whose own `clsCongruent` is congruence by `N`, while
-// `qclsCongruent` below is congruence by `QN` — and nothing states these are the same number.
-//
-// Consequence: `theCutModulusCannotDivideEveryProductCoefficient` takes `is_prime(mod_n.N)` as a
-// hypothesis but states divisibility by `QN`. Every step of it is valid, and `--axioms` shows
-// BOTH congruence axioms in its base, which is the tell: the primality hypothesis constrains
-// one constant while the conclusion speaks of another. So the theorem is weaker than its name
-// suggests — it does not establish that the thing missing the coefficients is prime.
-//
-// This does NOT make the development unsound; it makes one theorem's hypothesis fail to
-// connect. The fix is to carry primality ON THE CUT through the reduction argument, which
-// means the Z_N[x] domain property has to be reached from a cut-side hypothesis rather than
-// from `is_prime(mod_n.N)` — the one piece of the reproof I got wrong, and it is not a
-// two-line change. Flagged here so nothing downstream reads this theorem as more than it is.
-//
-// Both halves type-check either way, which is exactly why this needed saying out loud.
-const QN: Q
+// The fix is to have no second modulus at all. "The modulus divides a" is expressed as
+// "a reduces to zero", which is what it means, and `mod_n.N` is then the only modulus in
+// play — so `is_prime(mod_n.N)` constrains exactly the thing the conclusions are about.
+// One fewer axiom and one fewer constant than the broken version.
 
-// `qcls` is the cut's reduction modulo QN, landing in the EXISTING ℤ_N[x]'s coefficient ring.
-// Its four axioms mirror `mod_n`'s `cls`: zero, the two homomorphism laws, and congruence.
+// `qcls` is the cut's reduction modulo `mod_n.N`, landing in the EXISTING ℤ_N[x]'s
+// coefficient ring. TWO axioms, the homomorphism laws. No congruence axiom — congruence is
+// what `reducesToZero` below expresses, and stating it separately is what let a second
+// modulus in. No `qcls(ZERO) = ZERO` axiom either: the definitional route never needs it, and
+// the `--library` gate caught it the moment it became redundant.
 // NO `requires` guard. A guarded func cannot appear under a quantifier whose binder is what
 // the guard is about: `forall k; … qcls(conv(p, q, i, k)) …` owes `isInteger` at a `k` that is
 // not yet fixed, and no step can discharge it there. The integrality hypotheses live on the
 // AXIOMS instead, which is how the rest of `std/` handles a partial operation — `qcls` is
 // total on ℚ and simply uninteresting off the cut.
 func qcls(a: Q) => Zn
-axiom qclsZero: qcls(ZERO) = mod_n.ZERO
 axiom qclsAdd: forall a, b: Q; isInteger(a) -> isInteger(b) ->
   mod_n.add(qcls(a), qcls(b)) = qcls(rational.add(a, b))
 axiom qclsMul: forall a, b: Q; isInteger(a) -> isInteger(b) ->
   mod_n.mul(qcls(a), qcls(b)) = qcls(rational.mul(a, b))
-axiom qclsCongruent: forall a, b: Q; isInteger(a) -> isInteger(b) ->
-  (qcls(a) = qcls(b) iff
-  dividesIntegrally(QN, rational.add(a, rational.neg(b))))
 
-// A class vanishes exactly when the modulus divides its representative — the form the
-// surviving-coefficient argument consumes.
-theorem aClassIsZeroWhenTheModulusDivides: forall a: Q;
-  isInteger(a) ->
-  (qcls(a) = mod_n.ZERO iff dividesIntegrally(QN, a))
-proof
-  @generalize-a |
-    fix a: Q {
-      @given-a-is-an-integer |
-        assume isInteger(a) {
-          @a-is-an-integer |
-            isInteger(a)
-            [by hypothesis given-a-is-an-integer]
-          @zero-is-an-integer |
-            isInteger(ZERO)
-            [using import(rational) zeroIsAnInteger]
-          @the-congruence-at-zero |
-            qcls(a) = qcls(ZERO) iff
-              dividesIntegrally(QN,
-              rational.add(a, rational.neg(ZERO)))
-            [using specialize qclsCongruent(a, ZERO) a-is-an-integer zero-is-an-integer]
-          @the-class-of-zero |
-            qcls(ZERO) = mod_n.ZERO
-            [by cite qclsZero]
-          @the-difference-collapses |
-            rational.add(a, rational.neg(ZERO)) = a
-            [using polynomial(rational)]
-          @the-congruence-with-zero-folded |
-            qcls(a) = mod_n.ZERO iff
-              dividesIntegrally(QN,
-              rational.add(a, rational.neg(ZERO)))
-            [by rewrite the-class-of-zero the-congruence-at-zero]
-          @conclusion-the-vanishing |
-            qcls(a) = mod_n.ZERO iff dividesIntegrally(QN, a)
-            [by rewrite the-difference-collapses the-congruence-with-zero-folded]
-        }
-      @the-implication |
-        isInteger(a) ->
-          (qcls(a) = mod_n.ZERO iff dividesIntegrally(QN, a))
-        [by discharge given-a-is-an-integer]
-    }
-  @conclusion |
-    forall a: Q;
-      isInteger(a) ->
-      (qcls(a) = mod_n.ZERO iff dividesIntegrally(QN, a))
-    [by generalize generalize-a]
-qed
+// "The modulus divides a" — a reduces to zero. This is the cut-side divisibility notion the
+// reduction argument uses throughout, and it is a DEFINITION rather than an axiom, so it
+// cannot drift from what `qcls` actually does.
+define reducesToZero(a) = (qcls(a) = mod_n.ZERO)
 
 // -- REDUCTION OF A CUT POLYNOMIAL ---------------------------------------------------------
 // Judson's "let α₁'(x) be the polynomial in ℤ_p[x] obtained by reducing the coefficients of
@@ -689,7 +633,7 @@ axiom qreduceCoefficientwise: forall p: QPoly; forall i: Nat;
 // "there exists a coefficient a_i such that p ∤ a_i" giving α₁'(x) ≠ 0.
 theorem aSurvivingCoefficientSurvivesReduction: forall p: QPoly; forall i: Nat;
   hasIntegerCoefficients(p) ->
-  (not dividesIntegrally(QN, qpoly.qcoeff(p, i))) ->
+  (not reducesToZero(qpoly.qcoeff(p, i))) ->
   (not (qreduce(p) = mod_n_poly.ZZEROP))
 proof
   @generalize-p |
@@ -698,36 +642,21 @@ proof
         fix i: Nat {
           @given-the-setup |
             assume hasIntegerCoefficients(p) and
-              (not dividesIntegrally(QN, qpoly.qcoeff(p, i))) {
+              (not reducesToZero(qpoly.qcoeff(p, i))) {
               @the-setup |
                 hasIntegerCoefficients(p) and
-                  (not dividesIntegrally(QN,
-                  qpoly.qcoeff(p, i)))
+                  (not reducesToZero(qpoly.qcoeff(p, i)))
                 [by hypothesis given-the-setup]
               @p-is-integral |
                 hasIntegerCoefficients(p)
                 [by and_lhs the-setup]
               @the-modulus-misses |
-                not dividesIntegrally(QN, qpoly.qcoeff(p, i))
+                not reducesToZero(qpoly.qcoeff(p, i))
                 [by and_rhs the-setup]
-              @the-p-meaning |
-                hasIntegerCoefficients(p) iff
-                  (forall j: Nat; isInteger(qpoly.qcoeff(p, j)))
-                [using specialize integerCoefficientsEverywhere(p)]
-              @p-coefficients |
-                forall j: Nat; isInteger(qpoly.qcoeff(p, j))
-                [using tautology the-p-meaning p-is-integral]
-              @the-coefficient-is-an-integer |
-                isInteger(qpoly.qcoeff(p, i))
-                [using specialize p-coefficients(i)]
-              // the class of that coefficient does NOT vanish
-              @the-vanishing-law |
-                qcls(qpoly.qcoeff(p, i)) = mod_n.ZERO iff
-                  dividesIntegrally(QN, qpoly.qcoeff(p, i))
-                [using specialize aClassIsZeroWhenTheModulusDivides(qpoly.qcoeff(p, i)) the-coefficient-is-an-integer]
+              // `reducesToZero` is a define, so the hypothesis IS the negated class
               @the-class-survives |
                 not (qcls(qpoly.qcoeff(p, i)) = mod_n.ZERO)
-                [using tautology the-vanishing-law the-modulus-misses]
+                [using tautology the-modulus-misses]
               // so the reduction has a nonzero coefficient, hence is not ZZEROP
               @the-reduced-coefficient |
                 mod_n_poly.zcoeff(qreduce(p), i) =
@@ -755,26 +684,26 @@ proof
             }
           @the-implication |
             (hasIntegerCoefficients(p) and
-              (not dividesIntegrally(QN, qpoly.qcoeff(p, i)))) ->
+              (not reducesToZero(qpoly.qcoeff(p, i)))) ->
               (not (qreduce(p) = mod_n_poly.ZZEROP))
             [by discharge given-the-setup]
           @curried |
             hasIntegerCoefficients(p) ->
-              (not dividesIntegrally(QN, qpoly.qcoeff(p, i))) ->
+              (not reducesToZero(qpoly.qcoeff(p, i))) ->
               (not (qreduce(p) = mod_n_poly.ZZEROP))
             [using tautology the-implication]
         }
       @discharge-i |
         forall i9: Nat;
           hasIntegerCoefficients(p) ->
-          (not dividesIntegrally(QN, qpoly.qcoeff(p, i9))) ->
+          (not reducesToZero(qpoly.qcoeff(p, i9))) ->
           (not (qreduce(p) = mod_n_poly.ZZEROP))
         [by generalize generalize-i]
     }
   @conclusion |
     forall p: QPoly; forall i: Nat;
       hasIntegerCoefficients(p) ->
-      (not dividesIntegrally(QN, qpoly.qcoeff(p, i))) ->
+      (not reducesToZero(qpoly.qcoeff(p, i))) ->
       (not (qreduce(p) = mod_n_poly.ZZEROP))
     [by generalize generalize-p]
 qed
@@ -1245,7 +1174,7 @@ qed
 // A polynomial every coefficient of which the modulus divides reduces to ZERO.
 theorem aPolynomialTheModulusDividesReducesToZero: forall f: QPoly;
   hasIntegerCoefficients(f) ->
-  (forall i: Nat; dividesIntegrally(QN, qpoly.qcoeff(f, i))) ->
+  (forall i: Nat; reducesToZero(qpoly.qcoeff(f, i))) ->
   qreduce(f) = mod_n_poly.ZZEROP
 proof
   @generalize-f |
@@ -1253,41 +1182,27 @@ proof
       @given-the-setup |
         assume hasIntegerCoefficients(f) and
           (forall i: Nat;
-          dividesIntegrally(QN, qpoly.qcoeff(f, i))) {
+          reducesToZero(qpoly.qcoeff(f, i))) {
           @the-setup |
             hasIntegerCoefficients(f) and
               (forall i: Nat;
-              dividesIntegrally(QN, qpoly.qcoeff(f, i)))
+              reducesToZero(qpoly.qcoeff(f, i)))
             [by hypothesis given-the-setup]
           @f-is-integral |
             hasIntegerCoefficients(f)
             [by and_lhs the-setup]
           @the-modulus-divides-everything |
             forall i: Nat;
-              dividesIntegrally(QN, qpoly.qcoeff(f, i))
+              reducesToZero(qpoly.qcoeff(f, i))
             [by and_rhs the-setup]
-          @the-f-meaning |
-            hasIntegerCoefficients(f) iff
-              (forall j: Nat; isInteger(qpoly.qcoeff(f, j)))
-            [using specialize integerCoefficientsEverywhere(f)]
-          @f-coefficients |
-            forall j: Nat; isInteger(qpoly.qcoeff(f, j))
-            [using tautology the-f-meaning f-is-integral]
           @each-index |
             fix i: Nat {
-              @the-coefficient-is-an-integer |
-                isInteger(qpoly.qcoeff(f, i))
-                [using specialize f-coefficients(i)]
               @the-modulus-divides-it |
-                dividesIntegrally(QN, qpoly.qcoeff(f, i))
+                reducesToZero(qpoly.qcoeff(f, i))
                 [using specialize the-modulus-divides-everything(i)]
-              @the-vanishing-law |
-                qcls(qpoly.qcoeff(f, i)) = mod_n.ZERO iff
-                  dividesIntegrally(QN, qpoly.qcoeff(f, i))
-                [using specialize aClassIsZeroWhenTheModulusDivides(qpoly.qcoeff(f, i)) the-coefficient-is-an-integer]
               @the-class-vanishes |
                 qcls(qpoly.qcoeff(f, i)) = mod_n.ZERO
-                [using tautology the-vanishing-law the-modulus-divides-it]
+                [using tautology the-modulus-divides-it]
               @the-reduced-coefficient |
                 mod_n_poly.zcoeff(qreduce(f), i) =
                   qcls(qpoly.qcoeff(f, i))
@@ -1322,20 +1237,20 @@ proof
       @the-implication |
         (hasIntegerCoefficients(f) and
           (forall i: Nat;
-          dividesIntegrally(QN, qpoly.qcoeff(f, i)))) ->
+          reducesToZero(qpoly.qcoeff(f, i)))) ->
           qreduce(f) = mod_n_poly.ZZEROP
         [by discharge given-the-setup]
       @curried |
         hasIntegerCoefficients(f) ->
           (forall i: Nat;
-          dividesIntegrally(QN, qpoly.qcoeff(f, i))) ->
+          reducesToZero(qpoly.qcoeff(f, i))) ->
           qreduce(f) = mod_n_poly.ZZEROP
         [using tautology the-implication]
     }
   @conclusion |
     forall f: QPoly;
       hasIntegerCoefficients(f) ->
-      (forall i: Nat; dividesIntegrally(QN, qpoly.qcoeff(f, i))) ->
+      (forall i: Nat; reducesToZero(qpoly.qcoeff(f, i))) ->
       qreduce(f) = mod_n_poly.ZZEROP
     [by generalize generalize-f]
 qed
@@ -1350,14 +1265,14 @@ qed
 //
 // `modNPolynomialsHaveNoZeroDivisors` is cited DIRECTLY — it is a fact about ℤ_N[x] with no ℚ
 // in it, so no transfer is involved. That is what made this reproof affordable.
-theorem theCutModulusCannotDivideEveryProductCoefficient: forall f, g: QPoly;
+theorem theModulusCannotDivideEveryProductCoefficient: forall f, g: QPoly;
   forall i, j: Nat;
   mod_n_poly.is_prime(mod_n.N) ->
   hasIntegerCoefficients(f) -> hasIntegerCoefficients(g) ->
-  (not dividesIntegrally(QN, qpoly.qcoeff(f, i))) ->
-  (not dividesIntegrally(QN, qpoly.qcoeff(g, j))) ->
+  (not reducesToZero(qpoly.qcoeff(f, i))) ->
+  (not reducesToZero(qpoly.qcoeff(g, j))) ->
   (not (forall t: Nat;
-  dividesIntegrally(QN, qpoly.qcoeff(qpoly.qmulP(f, g), t))))
+  reducesToZero(qpoly.qcoeff(qpoly.qmulP(f, g), t))))
 proof
   @generalize-f |
     fix f: QPoly {
@@ -1371,18 +1286,14 @@ proof
                     assume mod_n_poly.is_prime(mod_n.N) and
                       hasIntegerCoefficients(f) and
                       hasIntegerCoefficients(g) and
-                      (not dividesIntegrally(QN,
-                      qpoly.qcoeff(f, i))) and
-                      (not dividesIntegrally(QN,
-                      qpoly.qcoeff(g, j))) {
+                      (not reducesToZero(qpoly.qcoeff(f, i))) and
+                      (not reducesToZero(qpoly.qcoeff(g, j))) {
                       @the-setup |
                         mod_n_poly.is_prime(mod_n.N) and
                           hasIntegerCoefficients(f) and
                           hasIntegerCoefficients(g) and
-                          (not dividesIntegrally(QN,
-                          qpoly.qcoeff(f, i))) and
-                          (not dividesIntegrally(QN,
-                          qpoly.qcoeff(g, j)))
+                          (not reducesToZero(qpoly.qcoeff(f, i))) and
+                          (not reducesToZero(qpoly.qcoeff(g, j)))
                         [by hypothesis given-the-setup]
                       @the-modulus-is-prime |
                         mod_n_poly.is_prime(mod_n.N)
@@ -1394,12 +1305,10 @@ proof
                         hasIntegerCoefficients(g)
                         [using tautology the-setup]
                       @the-modulus-misses-f |
-                        not dividesIntegrally(QN,
-                          qpoly.qcoeff(f, i))
+                        not reducesToZero(qpoly.qcoeff(f, i))
                         [using tautology the-setup]
                       @the-modulus-misses-g |
-                        not dividesIntegrally(QN,
-                          qpoly.qcoeff(g, j))
+                        not reducesToZero(qpoly.qcoeff(g, j))
                         [using tautology the-setup]
                       // neither factor reduces to zero
                       @f-survives |
@@ -1435,12 +1344,10 @@ proof
                         [using specialize theProductIsIntegral(f, g) f-is-integral g-is-integral]
                       @given-the-modulus-divides-everything |
                         assume forall t: Nat;
-                          dividesIntegrally(QN,
-                          qpoly.qcoeff(qpoly.qmulP(f, g), t)) {
+                          reducesToZero(qpoly.qcoeff(qpoly.qmulP(f, g), t)) {
                           @the-modulus-divides-everything |
                             forall t: Nat;
-                              dividesIntegrally(QN,
-                              qpoly.qcoeff(qpoly.qmulP(f, g), t))
+                              reducesToZero(qpoly.qcoeff(qpoly.qmulP(f, g), t))
                             [by hypothesis given-the-modulus-divides-everything]
                           @the-products-reduction-vanishes |
                             qreduce(qpoly.qmulP(f, g)) =
@@ -1449,33 +1356,26 @@ proof
                         }
                       @conclusion-the-absurdity |
                         not (forall t: Nat;
-                          dividesIntegrally(QN,
-                          qpoly.qcoeff(qpoly.qmulP(f, g), t)))
+                          reducesToZero(qpoly.qcoeff(qpoly.qmulP(f, g), t)))
                         [by contradiction given-the-modulus-divides-everything the-products-reduction-vanishes the-products-reduction-survives]
                     }
                   @the-implication |
                     (mod_n_poly.is_prime(mod_n.N) and
                       hasIntegerCoefficients(f) and
                       hasIntegerCoefficients(g) and
-                      (not dividesIntegrally(QN,
-                      qpoly.qcoeff(f, i))) and
-                      (not dividesIntegrally(QN,
-                      qpoly.qcoeff(g, j)))) ->
+                      (not reducesToZero(qpoly.qcoeff(f, i))) and
+                      (not reducesToZero(qpoly.qcoeff(g, j)))) ->
                       (not (forall t: Nat;
-                      dividesIntegrally(QN,
-                      qpoly.qcoeff(qpoly.qmulP(f, g), t))))
+                      reducesToZero(qpoly.qcoeff(qpoly.qmulP(f, g), t))))
                     [by discharge given-the-setup]
                   @curried |
                     mod_n_poly.is_prime(mod_n.N) ->
                       hasIntegerCoefficients(f) ->
                       hasIntegerCoefficients(g) ->
-                      (not dividesIntegrally(QN,
-                      qpoly.qcoeff(f, i))) ->
-                      (not dividesIntegrally(QN,
-                      qpoly.qcoeff(g, j))) ->
+                      (not reducesToZero(qpoly.qcoeff(f, i))) ->
+                      (not reducesToZero(qpoly.qcoeff(g, j))) ->
                       (not (forall t: Nat;
-                      dividesIntegrally(QN,
-                      qpoly.qcoeff(qpoly.qmulP(f, g), t))))
+                      reducesToZero(qpoly.qcoeff(qpoly.qmulP(f, g), t))))
                     [using tautology the-implication]
                 }
               @discharge-j |
@@ -1483,13 +1383,10 @@ proof
                   mod_n_poly.is_prime(mod_n.N) ->
                   hasIntegerCoefficients(f) ->
                   hasIntegerCoefficients(g) ->
-                  (not dividesIntegrally(QN,
-                  qpoly.qcoeff(f, i))) ->
-                  (not dividesIntegrally(QN,
-                  qpoly.qcoeff(g, j9))) ->
+                  (not reducesToZero(qpoly.qcoeff(f, i))) ->
+                  (not reducesToZero(qpoly.qcoeff(g, j9))) ->
                   (not (forall t: Nat;
-                  dividesIntegrally(QN,
-                  qpoly.qcoeff(qpoly.qmulP(f, g), t))))
+                  reducesToZero(qpoly.qcoeff(qpoly.qmulP(f, g), t))))
                 [by generalize generalize-j]
             }
           @discharge-i |
@@ -1497,11 +1394,10 @@ proof
               mod_n_poly.is_prime(mod_n.N) ->
               hasIntegerCoefficients(f) ->
               hasIntegerCoefficients(g) ->
-              (not dividesIntegrally(QN, qpoly.qcoeff(f, i9))) ->
-              (not dividesIntegrally(QN, qpoly.qcoeff(g, j9))) ->
+              (not reducesToZero(qpoly.qcoeff(f, i9))) ->
+              (not reducesToZero(qpoly.qcoeff(g, j9))) ->
               (not (forall t: Nat;
-              dividesIntegrally(QN,
-              qpoly.qcoeff(qpoly.qmulP(f, g), t))))
+              reducesToZero(qpoly.qcoeff(qpoly.qmulP(f, g), t))))
             [by generalize generalize-i]
         }
       @discharge-g |
@@ -1509,20 +1405,19 @@ proof
           mod_n_poly.is_prime(mod_n.N) ->
           hasIntegerCoefficients(f) ->
           hasIntegerCoefficients(g9) ->
-          (not dividesIntegrally(QN, qpoly.qcoeff(f, i9))) ->
-          (not dividesIntegrally(QN, qpoly.qcoeff(g9, j9))) ->
+          (not reducesToZero(qpoly.qcoeff(f, i9))) ->
+          (not reducesToZero(qpoly.qcoeff(g9, j9))) ->
           (not (forall t: Nat;
-          dividesIntegrally(QN,
-          qpoly.qcoeff(qpoly.qmulP(f, g9), t))))
+          reducesToZero(qpoly.qcoeff(qpoly.qmulP(f, g9), t))))
         [by generalize generalize-g]
     }
   @conclusion |
     forall f, g: QPoly; forall i, j: Nat;
       mod_n_poly.is_prime(mod_n.N) ->
       hasIntegerCoefficients(f) -> hasIntegerCoefficients(g) ->
-      (not dividesIntegrally(QN, qpoly.qcoeff(f, i))) ->
-      (not dividesIntegrally(QN, qpoly.qcoeff(g, j))) ->
+      (not reducesToZero(qpoly.qcoeff(f, i))) ->
+      (not reducesToZero(qpoly.qcoeff(g, j))) ->
       (not (forall t: Nat;
-      dividesIntegrally(QN, qpoly.qcoeff(qpoly.qmulP(f, g), t))))
+      reducesToZero(qpoly.qcoeff(qpoly.qmulP(f, g), t))))
     [by generalize generalize-f]
 qed
