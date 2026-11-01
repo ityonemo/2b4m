@@ -392,6 +392,11 @@ pub fn addTests(
     // and, when the whole proof is one such cluster concluding a carrier universal,
     // weakens that conclusion to the relativized statement. All seven transfer GREEN.
     ctx.okSilent(&.{ "check", "tests/cases/model_accel_simplify.b4m" });
+    // ...and the case the above does NOT cover: the leaked guard sits on the accelerant's own
+    // ABSTRACTED PARAM, not on a composite term, so closure recursion dead-ends. `paramGuards`
+    // must emit it as an outermost antecedent — and must decide that by the param's sort UNDER
+    // THE MODEL, since the source sort is unrefined when the model introduces the refinement.
+    ctx.okSilent(&.{ "check", "tests/cases/model_accel_simplify_param_guard.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/model_accel_assoc.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/model_accel_assoc_commut.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/model_accel_tautology.b4m" });
