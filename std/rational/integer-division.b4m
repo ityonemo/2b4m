@@ -1,0 +1,900 @@
+// Division with remainder, and Bézout, on ℚ's integer cut.
+//
+// ℤ has both (`std/integer/divides.b4m`'s `divisionAlgorithmExists` and `coprimeBezout`), but
+// NEITHER transfers: each reaches `std/integer.b4m`'s `nonnegCases`, which is itself proved by
+// transferring `peano.zeroOrSucc` through ℤ's `NonNeg` cut. Re-transferring anything citing it
+// re-checks that INNER transfer, so the composed chain ℕ → ℤ's NonNeg → ℚ's isInteger wants
+// `Nat` to be both `Int` and `Q` at once:
+//   std/peano.b4m:857: expected sort 'Int', got 'Q'
+// 2b4m re-checks an inner transfer rather than composing models, so this is a structural
+// limit, not a missing mapping — see `drafts/bezout-on-the-cut/README.md`.
+//
+// So both are proved NATIVELY here, on `std/rational/natural-wellordering.b4m`'s
+// `naturalWellOrdering`. That costs nothing extra: ℚ's cut is discrete
+// (`theIntegersInRationalAreDiscrete`), which is exactly what makes a least element behave
+// like ℤ's, and it keeps the whole development off `gcd`/`div`/`mod` — none of which the cut
+// has, and all of which the de-totalization is about to remove anyway.
+//
+// Chapter 17's Corollary 17.14 and Theorem 17.15 both rest on the Bézout certificate here,
+// via `euclidFromBezoutOnTheCut`.
+
+import rational <<< "std/rational.b4m"
+import rational_integer_order <<< "std/rational/integer-order.b4m"
+import natural_wellordering <<< "std/rational/natural-wellordering.b4m"
+import field_order <<< "std/field/order.b4m"
+
+sort Q = rational.Q
+const ZERO = rational.ZERO
+const ONE = rational.ONE
+func neg = rational.neg
+pred less_than = rational.less_than
+pred isInteger = rational.isInteger
+pred isNatural = rational.isNatural
+
+// -- REACHABLE REMAINDERS ------------------------------------------------------------------
+// `isAReachableRemainder(a, b, n)`: n is what's left of a after subtracting some integer
+// multiple of b. The division algorithm is then "the LEAST natural reachable remainder is
+// below b" — if it were not, subtracting one more b would give a smaller one.
+pred isAReachableRemainder(a: Q, b: Q, n: Q)
+axiom reachableRemainderMeaning: forall a, b, n: Q;
+  isAReachableRemainder(a, b, n) iff
+  (exists q: Q; isInteger(q) and n = rational.add(a, neg(rational.mul(b, q))))
+
+// a itself is reachable, at q = ZERO.
+theorem theDividendIsReachable: forall a, b: Q;
+  isAReachableRemainder(a, b, a)
+proof
+  @generalize-a |
+    fix a: Q {
+      @generalize-b |
+        fix b: Q {
+          @zero-is-an-integer |
+            isInteger(ZERO)
+            [using import(rational) zeroIsAnInteger]
+          @a-at-zero |
+            a = rational.add(a, neg(rational.mul(b, ZERO)))
+            [using polynomial(rational)]
+          @the-zero-witness-works |
+            isInteger(ZERO) and
+              a = rational.add(a, neg(rational.mul(b, ZERO)))
+            [by both zero-is-an-integer a-at-zero]
+          @a-quotient-exists |
+            exists q: Q; isInteger(q) and
+              a = rational.add(a, neg(rational.mul(b, q)))
+            [by witness(ZERO) the-zero-witness-works]
+          @the-meaning |
+            isAReachableRemainder(a, b, a) iff
+              (exists q: Q; isInteger(q) and
+              a = rational.add(a, neg(rational.mul(b, q))))
+            [using specialize reachableRemainderMeaning(a, b, a)]
+          @conclusion-reachable |
+            isAReachableRemainder(a, b, a)
+            [using tautology the-meaning a-quotient-exists]
+        }
+      @discharge-b |
+        forall b9: Q; isAReachableRemainder(a, b9, a)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Q; isAReachableRemainder(a, b, a)
+    [by generalize generalize-a]
+qed
+
+// Subtracting one more b keeps it reachable: the quotient goes up by one.
+theorem subtractingAgainStaysReachable: forall a, b, n: Q;
+  isAReachableRemainder(a, b, n) ->
+  isAReachableRemainder(a, b, rational.add(n, neg(b)))
+proof
+  @generalize-a |
+    fix a: Q {
+      @generalize-b |
+        fix b: Q {
+          @generalize-n |
+            fix n: Q {
+              @given-reachable |
+                assume isAReachableRemainder(a, b, n) {
+                  @reachable |
+                    isAReachableRemainder(a, b, n)
+                    [by hypothesis given-reachable]
+                  @the-meaning |
+                    isAReachableRemainder(a, b, n) iff
+                      (exists q: Q; isInteger(q) and
+                      n = rational.add(a,
+                      neg(rational.mul(b, q))))
+                    [using specialize reachableRemainderMeaning(a, b, n)]
+                  @a-quotient-exists |
+                    exists q: Q; isInteger(q) and
+                      n = rational.add(a, neg(rational.mul(b, q)))
+                    [using tautology the-meaning reachable]
+                  @conclusion-still-reachable |
+                    unpack q: Q from a-quotient-exists {
+                      @the-quotient |
+                        isInteger(q) and
+                          n = rational.add(a,
+                          neg(rational.mul(b, q)))
+                        [by hypothesis conclusion-still-reachable]
+                      @q-is-an-integer |
+                        isInteger(q)
+                        [by and_lhs the-quotient]
+                      @n-factors |
+                        n = rational.add(a,
+                          neg(rational.mul(b, q)))
+                        [by and_rhs the-quotient]
+                      @one-is-an-integer |
+                        isInteger(ONE)
+                        [using import(rational) oneIsAnInteger]
+                      @the-next-quotient-is-an-integer |
+                        isInteger(rational.add(q, ONE))
+                        [using specialize rational.isIntegerAdd(q, ONE) q-is-an-integer one-is-an-integer]
+                      // (a - b·q) - b = a - b·(q+1)
+                      @the-shifted-value |
+                        rational.add(rational.add(a,
+                          neg(rational.mul(b, q))), neg(b)) =
+                          rational.add(a, neg(rational.mul(b,
+                          rational.add(q, ONE))))
+                        [using polynomial(rational)]
+                      @reflexivity-of-the-difference |
+                        rational.add(n, neg(b)) =
+                          rational.add(n, neg(b))
+                        [by reflexivity]
+                      @the-difference-at-the-factorization |
+                        rational.add(n, neg(b)) =
+                          rational.add(rational.add(a,
+                          neg(rational.mul(b, q))), neg(b))
+                        [by rewrite n-factors reflexivity-of-the-difference]
+                      @the-difference-factors |
+                        rational.add(n, neg(b)) =
+                          rational.add(a, neg(rational.mul(b,
+                          rational.add(q, ONE))))
+                        [by rewrite the-shifted-value the-difference-at-the-factorization]
+                      @the-next-witness-works |
+                        isInteger(rational.add(q, ONE)) and
+                          rational.add(n, neg(b)) =
+                          rational.add(a, neg(rational.mul(b,
+                          rational.add(q, ONE))))
+                        [by both the-next-quotient-is-an-integer the-difference-factors]
+                      @a-next-quotient-exists |
+                        exists q2: Q; isInteger(q2) and
+                          rational.add(n, neg(b)) =
+                          rational.add(a, neg(rational.mul(b, q2)))
+                        [by witness(rational.add(q, ONE)) the-next-witness-works]
+                      @the-shifted-meaning |
+                        isAReachableRemainder(a, b,
+                          rational.add(n, neg(b))) iff
+                          (exists q2: Q; isInteger(q2) and
+                          rational.add(n, neg(b)) =
+                          rational.add(a,
+                          neg(rational.mul(b, q2))))
+                        [using specialize reachableRemainderMeaning(a, b, rational.add(n, neg(b)))]
+                      @conclusion-shifted-reachable |
+                        isAReachableRemainder(a, b,
+                          rational.add(n, neg(b)))
+                        [using tautology the-shifted-meaning a-next-quotient-exists]
+                    }
+                  @the-shifted-exported |
+                    isAReachableRemainder(a, b,
+                      rational.add(n, neg(b)))
+                    [by unpacked conclusion-still-reachable]
+                }
+              @the-implication |
+                isAReachableRemainder(a, b, n) ->
+                  isAReachableRemainder(a, b,
+                  rational.add(n, neg(b)))
+                [by discharge given-reachable]
+            }
+          @discharge-n |
+            forall n9: Q;
+              isAReachableRemainder(a, b, n9) ->
+              isAReachableRemainder(a, b, rational.add(n9, neg(b)))
+            [by generalize generalize-n]
+        }
+      @discharge-b |
+        forall b9: Q; forall n9: Q;
+          isAReachableRemainder(a, b9, n9) ->
+          isAReachableRemainder(a, b9, rational.add(n9, neg(b9)))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b, n: Q;
+      isAReachableRemainder(a, b, n) ->
+      isAReachableRemainder(a, b, rational.add(n, neg(b)))
+    [by generalize generalize-a]
+qed
+
+// Subtracting a positive strictly decreases: from `0 < b`, shifting by `r - b` gives
+// `r - b < r`. Pure ℚ order, nothing about the cut.
+theorem subtractingAPositiveGoesDown: forall r, b: Q;
+  less_than(ZERO, b) -> less_than(rational.add(r, neg(b)), r)
+proof
+  @generalize-r |
+    fix r: Q {
+      @generalize-b |
+        fix b: Q {
+          @given-b-positive |
+            assume less_than(ZERO, b) {
+              @b-positive |
+                less_than(ZERO, b)
+                [by hypothesis given-b-positive]
+              @shifting-the-order |
+                forall x, y, z: Q;
+                  less_than(x, y) ->
+                  less_than(rational.add(x, z), rational.add(y, z))
+                [using import(rational) lessThanAddRight]
+              // 0 < b, shifted by (r - b): (r - b) < (r - b) + b = r
+              @shifted |
+                less_than(rational.add(ZERO,
+                  rational.add(r, neg(b))),
+                  rational.add(b, rational.add(r, neg(b))))
+                [using specialize shifting-the-order(ZERO, b, rational.add(r, neg(b))) b-positive]
+              @the-left-collapses |
+                rational.add(ZERO, rational.add(r, neg(b))) =
+                  rational.add(r, neg(b))
+                [using polynomial(rational)]
+              @the-right-collapses |
+                rational.add(b, rational.add(r, neg(b))) = r
+                [using polynomial(rational)]
+              @shifted-left |
+                less_than(rational.add(r, neg(b)),
+                  rational.add(b, rational.add(r, neg(b))))
+                [by rewrite the-left-collapses shifted]
+              @conclusion-goes-down |
+                less_than(rational.add(r, neg(b)), r)
+                [by rewrite the-right-collapses shifted-left]
+            }
+          @the-implication |
+            less_than(ZERO, b) ->
+              less_than(rational.add(r, neg(b)), r)
+            [by discharge given-b-positive]
+        }
+      @discharge-b |
+        forall b9: Q;
+          less_than(ZERO, b9) ->
+          less_than(rational.add(r, neg(b9)), r)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall r, b: Q;
+      less_than(ZERO, b) -> less_than(rational.add(r, neg(b)), r)
+    [by generalize generalize-r]
+qed
+
+// The converse shift: `x < y` makes the gap `y - x` positive.
+theorem subtractingAPositiveIsPositiveWhenBelow: forall y, x: Q;
+  less_than(x, y) -> less_than(ZERO, rational.add(y, neg(x)))
+proof
+  @generalize-y |
+    fix y: Q {
+      @generalize-x |
+        fix x: Q {
+          @given-x-below-y |
+            assume less_than(x, y) {
+              @x-below-y |
+                less_than(x, y)
+                [by hypothesis given-x-below-y]
+              @shifting-the-order |
+                forall p, q, z: Q;
+                  less_than(p, q) ->
+                  less_than(rational.add(p, z), rational.add(q, z))
+                [using import(rational) lessThanAddRight]
+              @shifted-by-minus-x |
+                less_than(rational.add(x, neg(x)),
+                  rational.add(y, neg(x)))
+                [using specialize shifting-the-order(x, y, neg(x)) x-below-y]
+              @the-left-vanishes |
+                rational.add(x, neg(x)) = ZERO
+                [using polynomial(rational)]
+              @conclusion-gap-positive |
+                less_than(ZERO, rational.add(y, neg(x)))
+                [by rewrite the-left-vanishes shifted-by-minus-x]
+            }
+          @the-implication |
+            less_than(x, y) ->
+              less_than(ZERO, rational.add(y, neg(x)))
+            [by discharge given-x-below-y]
+        }
+      @discharge-x |
+        forall x9: Q;
+          less_than(x9, y) ->
+          less_than(ZERO, rational.add(y, neg(x9)))
+        [by generalize generalize-x]
+    }
+  @conclusion |
+    forall y, x: Q;
+      less_than(x, y) -> less_than(ZERO, rational.add(y, neg(x)))
+    [by generalize generalize-y]
+qed
+
+// -- THE DIVISION ALGORITHM ON THE CUT -----------------------------------------------------
+// `0 < b -> ∃q, r; a = b·q + r ∧ 0 ≤ r < b`.
+//
+// Well-order the NATURAL reachable remainders. One exists when a is itself natural; in
+// general subtract enough copies of b, which is what `aReachableNaturalExists` below
+// supplies. The least such r must be below b: otherwise r − b is natural, reachable, and
+// strictly smaller — contradicting leastness.
+theorem theLeastNaturalRemainderIsBelowTheDivisor: forall a, b, r: Q;
+  isInteger(a) -> isInteger(b) -> less_than(ZERO, b) ->
+  isNatural(r) -> isAReachableRemainder(a, b, r) ->
+  (forall m: Q; isNatural(m) -> isAReachableRemainder(a, b, m) ->
+  (not less_than(m, r))) ->
+  less_than(r, b)
+proof
+  @generalize-a |
+    fix a: Q {
+      @generalize-b |
+        fix b: Q {
+          @generalize-r |
+            fix r: Q {
+              @given-the-setup |
+                assume isInteger(a) and isInteger(b) and
+                  less_than(ZERO, b) and isNatural(r) and
+                  isAReachableRemainder(a, b, r) and
+                  (forall m: Q; isNatural(m) ->
+                  isAReachableRemainder(a, b, m) ->
+                  (not less_than(m, r))) {
+                  @the-setup |
+                    isInteger(a) and isInteger(b) and
+                      less_than(ZERO, b) and isNatural(r) and
+                      isAReachableRemainder(a, b, r) and
+                      (forall m: Q; isNatural(m) ->
+                      isAReachableRemainder(a, b, m) ->
+                      (not less_than(m, r)))
+                    [by hypothesis given-the-setup]
+                  @b-is-positive |
+                    less_than(ZERO, b)
+                    [using tautology the-setup]
+                  @r-is-natural |
+                    isNatural(r)
+                    [using tautology the-setup]
+                  @r-is-reachable |
+                    isAReachableRemainder(a, b, r)
+                    [using tautology the-setup]
+                  @r-is-least |
+                    forall m: Q; isNatural(m) ->
+                      isAReachableRemainder(a, b, m) ->
+                      (not less_than(m, r))
+                    [using tautology the-setup]
+                  // suppose r is NOT below b
+                  @given-r-not-below-b |
+                    assume not less_than(r, b) {
+                      @r-not-below-b |
+                        not less_than(r, b)
+                        [by hypothesis given-r-not-below-b]
+                      // then b <= r, so r - b is a natural
+                      @the-trichotomy |
+                        less_than(r, b) or r = b or less_than(b, r)
+                        [using specialize rational.lessThanTrichotomy(r, b)]
+                      @b-is-at-most-r |
+                        r = b or less_than(b, r)
+                        [using tautology the-trichotomy r-not-below-b]
+                      @the-difference-is-natural |
+                        isNatural(rational.add(r, neg(b)))
+                        case b-is-at-most-r {
+                          // r = b: the difference is ZERO
+                          @when-equal |
+                            assume r = b {
+                              @r-is-b |
+                                r = b
+                                [by hypothesis when-equal]
+                              @the-difference-vanishes |
+                                rational.add(b, neg(b)) = ZERO
+                                [using polynomial(rational)]
+                              @zero-is-natural |
+                                isNatural(ZERO)
+                                [using import(rational) isNaturalZero]
+                              @the-b-difference-is-natural |
+                                isNatural(rational.add(b, neg(b)))
+                                [by rewrite the-difference-vanishes zero-is-natural]
+                              @conclusion-equal-case |
+                                isNatural(rational.add(r, neg(b)))
+                                [by rewrite r-is-b the-b-difference-is-natural]
+                            }
+                          // b < r: the difference is a positive integer
+                          @when-below |
+                            assume less_than(b, r) {
+                              @b-below-r |
+                                less_than(b, r)
+                                [by hypothesis when-below]
+                              @r-is-an-integer |
+                                isInteger(r)
+                                [using specialize rational.isNaturalIsInteger(r) r-is-natural]
+                              @b-is-an-integer-here |
+                                isInteger(b)
+                                [using tautology the-setup]
+                              @minus-b-is-an-integer |
+                                isInteger(neg(b))
+                                [using specialize rational.isIntegerNeg(b) b-is-an-integer-here]
+                              @the-difference-is-an-integer |
+                                isInteger(rational.add(r, neg(b)))
+                                [using specialize rational.isIntegerAdd(r, neg(b)) r-is-an-integer minus-b-is-an-integer]
+                              // b < r makes 0 < r - b
+                              @shifting-the-order |
+                                forall x, y, z: Q;
+                                  less_than(x, y) ->
+                                  less_than(rational.add(x, z),
+                                  rational.add(y, z))
+                                [using import(rational) lessThanAddRight]
+                              @shifted-by-minus-b |
+                                less_than(rational.add(b, neg(b)),
+                                  rational.add(r, neg(b)))
+                                [using specialize shifting-the-order(b, r, neg(b)) b-below-r]
+                              @the-b-difference-vanishes |
+                                rational.add(b, neg(b)) = ZERO
+                                [using polynomial(rational)]
+                              @the-difference-is-positive |
+                                less_than(ZERO,
+                                  rational.add(r, neg(b)))
+                                [by rewrite the-b-difference-vanishes shifted-by-minus-b]
+                              @conclusion-below-case |
+                                isNatural(rational.add(r, neg(b)))
+                                [using specialize rational_integer_order.aPositiveIntegerIsNatural(rational.add(r, neg(b))) the-difference-is-an-integer the-difference-is-positive]
+                            }
+                        }
+                      // and it is reachable, and strictly below r
+                      @the-difference-is-reachable |
+                        isAReachableRemainder(a, b,
+                          rational.add(r, neg(b)))
+                        [using specialize subtractingAgainStaysReachable(a, b, r) r-is-reachable]
+                      @the-difference-is-below-r |
+                        less_than(rational.add(r, neg(b)), r)
+                        [using specialize subtractingAPositiveGoesDown(r, b) b-is-positive]
+                      @the-difference-is-not-below-r |
+                        not less_than(rational.add(r, neg(b)), r)
+                        [using specialize r-is-least(rational.add(r, neg(b))) the-difference-is-natural the-difference-is-reachable]
+                    }
+                  @r-is-not-not-below-b |
+                    not not less_than(r, b)
+                    [by contradiction given-r-not-below-b the-difference-is-below-r the-difference-is-not-below-r]
+                  @conclusion-r-below-b |
+                    less_than(r, b)
+                    [by double_negation r-is-not-not-below-b]
+                }
+              @the-implication |
+                (isInteger(a) and isInteger(b) and
+                  less_than(ZERO, b) and isNatural(r) and
+                  isAReachableRemainder(a, b, r) and
+                  (forall m: Q; isNatural(m) ->
+                  isAReachableRemainder(a, b, m) ->
+                  (not less_than(m, r)))) ->
+                  less_than(r, b)
+                [by discharge given-the-setup]
+              @curried |
+                isInteger(a) -> isInteger(b) ->
+                  less_than(ZERO, b) -> isNatural(r) ->
+                  isAReachableRemainder(a, b, r) ->
+                  (forall m: Q; isNatural(m) ->
+                  isAReachableRemainder(a, b, m) ->
+                  (not less_than(m, r))) ->
+                  less_than(r, b)
+                [using tautology the-implication]
+            }
+          @discharge-r |
+            forall r9: Q;
+              isInteger(a) -> isInteger(b) ->
+              less_than(ZERO, b) -> isNatural(r9) ->
+              isAReachableRemainder(a, b, r9) ->
+              (forall m: Q; isNatural(m) ->
+              isAReachableRemainder(a, b, m) ->
+              (not less_than(m, r9))) ->
+              less_than(r9, b)
+            [by generalize generalize-r]
+        }
+      @discharge-b |
+        forall b9, r9: Q;
+          isInteger(a) -> isInteger(b9) ->
+          less_than(ZERO, b9) -> isNatural(r9) ->
+          isAReachableRemainder(a, b9, r9) ->
+          (forall m: Q; isNatural(m) ->
+          isAReachableRemainder(a, b9, m) ->
+          (not less_than(m, r9))) ->
+          less_than(r9, b9)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b, r: Q;
+      isInteger(a) -> isInteger(b) -> less_than(ZERO, b) ->
+      isNatural(r) -> isAReachableRemainder(a, b, r) ->
+      (forall m: Q; isNatural(m) -> isAReachableRemainder(a, b, m) ->
+      (not less_than(m, r))) ->
+      less_than(r, b)
+    [by generalize generalize-a]
+qed
+
+// A NATURAL reachable remainder exists. For a natural a, a itself serves. For a negative a,
+// subtract a sufficiently negative multiple — `b >= 1` on the cut means `a - b·a >= 0` when
+// a < 0, i.e. take q = a: then `a - b·a = a·(1 - b)`, a product of two non-positives.
+theorem aReachableNaturalExists: forall a, b: Q;
+  isInteger(a) -> isInteger(b) -> less_than(ZERO, b) ->
+  (exists n: Q; isNatural(n) and isAReachableRemainder(a, b, n))
+proof
+  @generalize-a |
+    fix a: Q {
+      @generalize-b |
+        fix b: Q {
+          @given-the-setup |
+            assume isInteger(a) and isInteger(b) and
+              less_than(ZERO, b) {
+              @the-setup |
+                isInteger(a) and isInteger(b) and
+                  less_than(ZERO, b)
+                [by hypothesis given-the-setup]
+              @a-is-an-integer |
+                isInteger(a)
+                [using tautology the-setup]
+              @b-is-an-integer |
+                isInteger(b)
+                [using tautology the-setup]
+              @b-is-positive |
+                less_than(ZERO, b)
+                [using tautology the-setup]
+              @the-sign-split |
+                less_than(ZERO, a) or ZERO = a or less_than(a, ZERO)
+                [using specialize rational.lessThanTrichotomy(ZERO, a)]
+              @conclusion-a-natural-exists |
+                exists n: Q; isNatural(n) and
+                  isAReachableRemainder(a, b, n)
+                case the-sign-split {
+                  @when-not-negative |
+                    assume less_than(ZERO, a) or ZERO = a {
+                      @the-nonneg-cases |
+                        less_than(ZERO, a) or ZERO = a
+                        [by hypothesis when-not-negative]
+                      @a-is-natural |
+                        isNatural(a)
+                        case the-nonneg-cases {
+                          @when-positive |
+                            assume less_than(ZERO, a) {
+                              @a-positive |
+                                less_than(ZERO, a)
+                                [by hypothesis when-positive]
+                              @conclusion-positive-natural |
+                                isNatural(a)
+                                [using specialize rational_integer_order.aPositiveIntegerIsNatural(a) a-is-an-integer a-positive]
+                            }
+                          @when-zero |
+                            assume ZERO = a {
+                              @zero-is-a |
+                                ZERO = a
+                                [by hypothesis when-zero]
+                              @zero-is-natural |
+                                isNatural(ZERO)
+                                [using import(rational) isNaturalZero]
+                              @conclusion-zero-natural |
+                                isNatural(a)
+                                [by rewrite zero-is-a zero-is-natural]
+                            }
+                        }
+                      @a-is-reachable |
+                        isAReachableRemainder(a, b, a)
+                        [using specialize theDividendIsReachable(a, b)]
+                      @the-dividend-works |
+                        isNatural(a) and isAReachableRemainder(a, b, a)
+                        [by both a-is-natural a-is-reachable]
+                      @conclusion-nonneg |
+                        exists n: Q; isNatural(n) and
+                          isAReachableRemainder(a, b, n)
+                        [by witness(a) the-dividend-works]
+                    }
+                  // a < 0: take q = a, giving a - b·a = a·(1 - b) >= 0 since
+                  // a <= 0 and 1 - b <= 0 (b >= 1 on the cut).
+                  @when-negative |
+                    assume less_than(a, ZERO) {
+                      @a-negative |
+                        less_than(a, ZERO)
+                        [by hypothesis when-negative]
+                      @the-remainder-at-a |
+                        rational.add(a, neg(rational.mul(b, a))) =
+                          rational.mul(neg(a),
+                          rational.add(b, neg(ONE)))
+                        [using polynomial(rational)]
+                      // -a is a positive integer
+                      @negatives-of-negatives |
+                        forall x: Q; less_than(x, ZERO) ->
+                          less_than(ZERO, neg(x))
+                        [using model(rational.RationalOrderedField) field_order.negOfNegativeIsPositive]
+                      @minus-a-is-positive |
+                        less_than(ZERO, neg(a))
+                        [using specialize negatives-of-negatives(a) a-negative]
+                      @minus-a-is-an-integer |
+                        isInteger(neg(a))
+                        [using specialize rational.isIntegerNeg(a) a-is-an-integer]
+                      @minus-a-is-natural |
+                        isNatural(neg(a))
+                        [using specialize rational_integer_order.aPositiveIntegerIsNatural(neg(a)) minus-a-is-an-integer minus-a-is-positive]
+                      // b - 1 is a natural: b >= 1 on the cut
+                      @b-is-one-or-more |
+                        b = ONE or less_than(ONE, b)
+                        [using specialize rational_integer_order.aPositiveIntegerIsAtLeastOne(b) b-is-an-integer b-is-positive]
+                      @the-gap-is-natural |
+                        isNatural(rational.add(b, neg(ONE)))
+                        case b-is-one-or-more {
+                          @when-b-is-one |
+                            assume b = ONE {
+                              @b-is-one |
+                                b = ONE
+                                [by hypothesis when-b-is-one]
+                              @the-one-gap-vanishes |
+                                rational.add(ONE, neg(ONE)) = ZERO
+                                [using polynomial(rational)]
+                              @zero-is-natural-here |
+                                isNatural(ZERO)
+                                [using import(rational) isNaturalZero]
+                              @the-one-gap-is-natural |
+                                isNatural(rational.add(ONE, neg(ONE)))
+                                [by rewrite the-one-gap-vanishes zero-is-natural-here]
+                              @conclusion-b-one |
+                                isNatural(rational.add(b, neg(ONE)))
+                                [by rewrite b-is-one the-one-gap-is-natural]
+                            }
+                          @when-b-exceeds-one |
+                            assume less_than(ONE, b) {
+                              @one-below-b |
+                                less_than(ONE, b)
+                                [by hypothesis when-b-exceeds-one]
+                              @one-is-an-integer |
+                                isInteger(ONE)
+                                [using import(rational) oneIsAnInteger]
+                              @minus-one-is-an-integer |
+                                isInteger(neg(ONE))
+                                [using specialize rational.isIntegerNeg(ONE) one-is-an-integer]
+                              @the-gap-is-an-integer |
+                                isInteger(rational.add(b, neg(ONE)))
+                                [using specialize rational.isIntegerAdd(b, neg(ONE)) b-is-an-integer minus-one-is-an-integer]
+                              @the-gap-is-positive |
+                                less_than(ZERO,
+                                  rational.add(b, neg(ONE)))
+                                [using specialize subtractingAPositiveIsPositiveWhenBelow(b, ONE) one-below-b]
+                              @conclusion-b-exceeds |
+                                isNatural(rational.add(b, neg(ONE)))
+                                [using specialize rational_integer_order.aPositiveIntegerIsNatural(rational.add(b, neg(ONE))) the-gap-is-an-integer the-gap-is-positive]
+                            }
+                        }
+                      @the-product-is-natural |
+                        isNatural(rational.mul(neg(a),
+                          rational.add(b, neg(ONE))))
+                        [using specialize rational_integer_order.isNaturalMul(neg(a), rational.add(b, neg(ONE))) minus-a-is-natural the-gap-is-natural]
+                      @the-remainder-is-natural |
+                        isNatural(rational.add(a,
+                          neg(rational.mul(b, a))))
+                        [by rewrite the-remainder-at-a the-product-is-natural]
+                      // and it IS reachable, at q = a
+                      @the-remainder-is-itself |
+                        rational.add(a, neg(rational.mul(b, a))) =
+                          rational.add(a, neg(rational.mul(b, a)))
+                        [by reflexivity]
+                      @the-a-witness-works |
+                        isInteger(a) and
+                          rational.add(a, neg(rational.mul(b, a))) =
+                          rational.add(a, neg(rational.mul(b, a)))
+                        [by both a-is-an-integer the-remainder-is-itself]
+                      @an-a-quotient-exists |
+                        exists q: Q; isInteger(q) and
+                          rational.add(a, neg(rational.mul(b, a))) =
+                          rational.add(a, neg(rational.mul(b, q)))
+                        [by witness(a) the-a-witness-works]
+                      @the-remainder-meaning |
+                        isAReachableRemainder(a, b,
+                          rational.add(a,
+                          neg(rational.mul(b, a)))) iff
+                          (exists q: Q; isInteger(q) and
+                          rational.add(a, neg(rational.mul(b, a))) =
+                          rational.add(a, neg(rational.mul(b, q))))
+                        [using specialize reachableRemainderMeaning(a, b, rational.add(a, neg(rational.mul(b, a))))]
+                      @the-remainder-is-reachable |
+                        isAReachableRemainder(a, b,
+                          rational.add(a,
+                          neg(rational.mul(b, a))))
+                        [using tautology the-remainder-meaning an-a-quotient-exists]
+                      @the-negative-witness-works |
+                        isNatural(rational.add(a,
+                          neg(rational.mul(b, a)))) and
+                          isAReachableRemainder(a, b,
+                          rational.add(a,
+                          neg(rational.mul(b, a))))
+                        [by both the-remainder-is-natural the-remainder-is-reachable]
+                      @conclusion-negative |
+                        exists n: Q; isNatural(n) and
+                          isAReachableRemainder(a, b, n)
+                        [by witness(rational.add(a, neg(rational.mul(b, a)))) the-negative-witness-works]
+                    }
+                }
+            }
+          @the-implication |
+            (isInteger(a) and isInteger(b) and
+              less_than(ZERO, b)) ->
+              (exists n: Q; isNatural(n) and
+              isAReachableRemainder(a, b, n))
+            [by discharge given-the-setup]
+          @curried |
+            isInteger(a) -> isInteger(b) -> less_than(ZERO, b) ->
+              (exists n: Q; isNatural(n) and
+              isAReachableRemainder(a, b, n))
+            [using tautology the-implication]
+        }
+      @discharge-b |
+        forall b9: Q;
+          isInteger(a) -> isInteger(b9) -> less_than(ZERO, b9) ->
+          (exists n: Q; isNatural(n) and
+          isAReachableRemainder(a, b9, n))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Q;
+      isInteger(a) -> isInteger(b) -> less_than(ZERO, b) ->
+      (exists n: Q; isNatural(n) and isAReachableRemainder(a, b, n))
+    [by generalize generalize-a]
+qed
+
+// The division algorithm. Well-order the natural reachable remainders (inhabited by
+// `aReachableNaturalExists`); the least one is below b by
+// `theLeastNaturalRemainderIsBelowTheDivisor`, and unfolding `isAReachableRemainder` turns
+// `r = a - b·q` into `a = b·q + r`.
+theorem theDivisionAlgorithmOnTheCut: forall a, b: Q;
+  isInteger(a) -> isInteger(b) -> less_than(ZERO, b) ->
+  (exists q, r: Q; isInteger(q) and isNatural(r) and
+  a = rational.add(rational.mul(b, q), r) and less_than(r, b))
+proof
+  @generalize-a |
+    fix a: Q {
+      @generalize-b |
+        fix b: Q {
+          @given-the-setup |
+            assume isInteger(a) and isInteger(b) and
+              less_than(ZERO, b) {
+              @the-setup |
+                isInteger(a) and isInteger(b) and less_than(ZERO, b)
+                [by hypothesis given-the-setup]
+              @a-is-an-integer |
+                isInteger(a)
+                [using tautology the-setup]
+              @b-is-an-integer |
+                isInteger(b)
+                [using tautology the-setup]
+              @b-is-positive |
+                less_than(ZERO, b)
+                [using tautology the-setup]
+              @inhabited |
+                exists n: Q; isNatural(n) and
+                  isAReachableRemainder(a, b, n)
+                [using specialize aReachableNaturalExists(a, b) a-is-an-integer b-is-an-integer b-is-positive]
+              @the-well-ordering |
+                (exists n: Q; isNatural(n) and
+                  isAReachableRemainder(a, b, n)) ->
+                  (exists least: Q; isNatural(least) and
+                  isAReachableRemainder(a, b, least) and
+                  (forall m: Q; isNatural(m) ->
+                  isAReachableRemainder(a, b, m) ->
+                  (not less_than(m, least))))
+                [using instantiation natural_wellordering.naturalWellOrdering(fun n: Q => isAReachableRemainder(a, b, n))]
+              @a-least-exists |
+                exists least: Q; isNatural(least) and
+                  isAReachableRemainder(a, b, least) and
+                  (forall m: Q; isNatural(m) ->
+                  isAReachableRemainder(a, b, m) ->
+                  (not less_than(m, least)))
+                [by modus_ponens the-well-ordering inhabited]
+              @conclusion-with-the-least |
+                unpack r: Q from a-least-exists {
+                  @the-least-parts |
+                    isNatural(r) and
+                      isAReachableRemainder(a, b, r) and
+                      (forall m: Q; isNatural(m) ->
+                      isAReachableRemainder(a, b, m) ->
+                      (not less_than(m, r)))
+                    [by hypothesis conclusion-with-the-least]
+                  @r-is-natural |
+                    isNatural(r)
+                    [using tautology the-least-parts]
+                  @r-is-reachable |
+                    isAReachableRemainder(a, b, r)
+                    [using tautology the-least-parts]
+                  @r-is-least |
+                    forall m: Q; isNatural(m) ->
+                      isAReachableRemainder(a, b, m) ->
+                      (not less_than(m, r))
+                    [using tautology the-least-parts]
+                  @r-is-below-b |
+                    less_than(r, b)
+                    [using specialize theLeastNaturalRemainderIsBelowTheDivisor(a, b, r) a-is-an-integer b-is-an-integer b-is-positive r-is-natural r-is-reachable r-is-least]
+                  @the-reachable-meaning |
+                    isAReachableRemainder(a, b, r) iff
+                      (exists q: Q; isInteger(q) and
+                      r = rational.add(a,
+                      neg(rational.mul(b, q))))
+                    [using specialize reachableRemainderMeaning(a, b, r)]
+                  @a-quotient-exists |
+                    exists q: Q; isInteger(q) and
+                      r = rational.add(a, neg(rational.mul(b, q)))
+                    [using tautology the-reachable-meaning r-is-reachable]
+                  @conclusion-with-the-quotient |
+                    unpack q: Q from a-quotient-exists {
+                      @the-quotient-parts |
+                        isInteger(q) and
+                          r = rational.add(a,
+                          neg(rational.mul(b, q)))
+                        [by hypothesis conclusion-with-the-quotient]
+                      @q-is-an-integer |
+                        isInteger(q)
+                        [by and_lhs the-quotient-parts]
+                      @r-factors |
+                        r = rational.add(a,
+                          neg(rational.mul(b, q)))
+                        [by and_rhs the-quotient-parts]
+                      // r = a - b·q becomes a = b·q + r
+                      @adding-back |
+                        rational.add(rational.mul(b, q),
+                          rational.add(a,
+                          neg(rational.mul(b, q)))) = a
+                        [using polynomial(rational)]
+                      @reflexivity-of-the-sum |
+                        rational.add(rational.mul(b, q), r) =
+                          rational.add(rational.mul(b, q), r)
+                        [by reflexivity]
+                      @the-sum-at-the-factorization |
+                        rational.add(rational.mul(b, q), r) =
+                          rational.add(rational.mul(b, q),
+                          rational.add(a,
+                          neg(rational.mul(b, q))))
+                        [by rewrite r-factors reflexivity-of-the-sum]
+                      @the-sum-is-a |
+                        rational.add(rational.mul(b, q), r) = a
+                        [by rewrite adding-back the-sum-at-the-factorization]
+                      @a-is-the-sum |
+                        a = rational.add(rational.mul(b, q), r)
+                        [by symmetry the-sum-is-a]
+                      @the-pair-works |
+                        isInteger(q) and isNatural(r) and
+                          a = rational.add(rational.mul(b, q), r) and
+                          less_than(r, b)
+                        [using tautology q-is-an-integer r-is-natural a-is-the-sum r-is-below-b]
+                      @the-remainder-witness |
+                        exists r2: Q; isInteger(q) and isNatural(r2) and
+                          a = rational.add(rational.mul(b, q), r2) and
+                          less_than(r2, b)
+                        [by witness(r) the-pair-works]
+                      @conclusion-both-witnesses |
+                        exists q2, r2: Q; isInteger(q2) and
+                          isNatural(r2) and
+                          a = rational.add(rational.mul(b, q2), r2) and
+                          less_than(r2, b)
+                        [by witness(q) the-remainder-witness]
+                    }
+                  @the-quotient-exported |
+                    exists q2, r2: Q; isInteger(q2) and isNatural(r2) and
+                      a = rational.add(rational.mul(b, q2), r2) and
+                      less_than(r2, b)
+                    [by unpacked conclusion-with-the-quotient]
+                }
+              @the-least-exported |
+                exists q2, r2: Q; isInteger(q2) and isNatural(r2) and
+                  a = rational.add(rational.mul(b, q2), r2) and
+                  less_than(r2, b)
+                [by unpacked conclusion-with-the-least]
+            }
+          @the-implication |
+            (isInteger(a) and isInteger(b) and less_than(ZERO, b)) ->
+              (exists q, r: Q; isInteger(q) and isNatural(r) and
+              a = rational.add(rational.mul(b, q), r) and
+              less_than(r, b))
+            [by discharge given-the-setup]
+          @curried |
+            isInteger(a) -> isInteger(b) -> less_than(ZERO, b) ->
+              (exists q, r: Q; isInteger(q) and isNatural(r) and
+              a = rational.add(rational.mul(b, q), r) and
+              less_than(r, b))
+            [using tautology the-implication]
+        }
+      @discharge-b |
+        forall b9: Q;
+          isInteger(a) -> isInteger(b9) -> less_than(ZERO, b9) ->
+          (exists q, r: Q; isInteger(q) and isNatural(r) and
+          a = rational.add(rational.mul(b9, q), r) and
+          less_than(r, b9))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Q;
+      isInteger(a) -> isInteger(b) -> less_than(ZERO, b) ->
+      (exists q, r: Q; isInteger(q) and isNatural(r) and
+      a = rational.add(rational.mul(b, q), r) and less_than(r, b))
+    [by generalize generalize-a]
+qed
