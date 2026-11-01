@@ -45,39 +45,44 @@ embedding between sorts that does not exist; the cut needs none.
   hypotheses instead of deriving it.
 - **A fixed example polynomial**, then irreducibility of it.
 
-## The reproof plan, after measuring (2026-11-01)
+## DONE 2026-11-01 — landed as `std/rational/integer-polynomial.b4m`
 
-**The reproof is about half what I first estimated**, because two of the four pieces do not
-need reproving at all:
+12 theorems, strict-green, 60 axioms, no holes. The probes that established the route are
+deleted; the file supersedes them.
 
-| piece | verdict |
-|---|---|
-| `modNPolynomialsHaveNoZeroDivisors` | **cite directly.** It is a fact about ℤ_N[x] ALONE — no ℚ anywhere in it — so no transfer is involved. Probed: `reduce-probe.b4m` cites it green. |
-| `is_prime(N)` on the cut | **not needed.** `N` is a fixed `Int` constant of `mod_n`, so Eisenstein's prime never has to live on ℚ's cut. Only the DIVISIBILITY of a ℚ-cut coefficient by N must cross. |
-| `reduce` + its 3 theorems | **must be rebuilt** against the cut (~230 lines: `reduceCommutesWithTheConvolution` is the bulk at 132). |
-| `theDenominatorCannotExceedOne` | **must be rebuilt** (~115 lines), but its shape is unchanged. |
+**What the measurement changed.** My first estimate was ~400 lines. It came out at ~230,
+because two of the four pieces needed no reproving at all:
 
-### The design decision, stated because it is load-bearing
+- `modNPolynomialsHaveNoZeroDivisors` **cites directly** — a fact about ℤ_N[x] with no ℚ in
+  it, so no transfer is involved.
+- `is_prime(N)` is **not needed on the cut**. Keeping the modulus a ℚ-cut element `QN` means
+  ℤ_N[x] is untouched and only `qcls`'s laws cross between them.
 
-The cut needs its own class map `qcls: Q → Zn requires isInteger(a)`, axiomatised DIRECTLY on
-ℚ's integers rather than by composing with a `Q → Int` conversion. That is deliberate:
+**The axiom trade, as landed.** `qcls` is a new primitive with four axioms mirroring `mod_n`'s
+`cls`. Not a new mathematical assumption, but four new axioms. Both alternatives were closed:
+a `Q → Int` embedding was dropped on purpose by the number-tower refactor, and `cls` cannot be
+re-pointed because transferring `mod_n` hits the nested-transfer wall.
 
-- the number-tower refactor **dropped the `from*` functions on purpose**
-  ([[number-tower-fromis-refactor]]), keeping `is*` as primitive-closure predicates. Adding a
-  `Q → Int` embedding to make this work would cut against a standing design decision.
-- `cls: Int → Zn` cannot be re-pointed at the cut, because `mod_n` keys it to
-  `std/integer.b4m`'s `Int` and transferring `mod_n` hits the nested-transfer wall
-  (`std/peano.b4m` is in its axiom base).
+**Two engine/discipline lessons worth carrying:**
 
-**The cost of that choice, named honestly:** `qcls` is a NEW primitive with three new axioms
-(`qclsZero`, `qclsAdd`, `qclsMul`). They are the same homomorphism laws `cls` has, so they are
-not a new mathematical assumption — but they ARE new axioms, and `--axioms` will show them.
-The alternative (an embedding) trades three axioms for a function the refactor removed.
-Recording the trade rather than making it silently.
+1. **A `requires` guard cannot sit on a func that appears under a quantifier binding what the
+   guard is about.** `forall k; … qcls(conv(p,q,i,k)) …` owes `isInteger` at a `k` not yet
+   fixed, and no proof step can discharge it there — not even inside an `assume`'s formula,
+   where the obligation lands before any step runs. The fix is to drop the guard and put the
+   integrality hypotheses on the axioms, which is how the rest of `std/` handles a partial
+   operation. The dead-step lint then located every step that existed only to feed the removed
+   guards.
+2. **`check --library` earns its keep on speculative axioms.** I posited `isInteger(QN)`
+   because it looked like something a modulus should satisfy. `dividesIntegrally` constrains
+   only the quotient, never the divisor, so it was never used — and the gate rejected the
+   commit rather than letting a dead axiom sit in the corpus looking load-bearing.
 
-### Still to settle
+## Still open for 17.15
 
-`qclsCongruent` — "qcls(a) = qcls(b) iff N divides a − b" — is what links the cut's class map
-to divisibility, and it is what `aSurvivingCoefficientSurvivesReduction` needs. Its right-hand
-side mixes an `Int` modulus with ℚ-cut operands, so the divisibility notion has to be stated
-carefully. This is the one place the design could still fail.
+The cut now has the reduction engine, so what remains is Eisenstein's own bookkeeping:
+
+- **the sign argument.** Judson's `p ∤ a_n` and `p² ∤ a_0` are what PRODUCE "p misses a
+  coefficient of each factor" — `p | a_0 = b_0 c_0` with `p² ∤ a_0` forces p to divide exactly
+  one of them, and `p ∤ a_n` forces `p ∤ b_m`. `eisensteinForcesTheFullDegree` takes that
+  conclusion as two hypotheses instead of deriving it.
+- **a fixed example polynomial**, then its irreducibility — the user's steps 3 and 4.
