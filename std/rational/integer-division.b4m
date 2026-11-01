@@ -898,3 +898,732 @@ proof
       a = rational.add(rational.mul(b, q), r) and less_than(r, b))
     [by generalize generalize-a]
 qed
+
+// -- BÉZOUT ON THE CUT ---------------------------------------------------------------------
+// `isACombination(a, b, n)`: n is an integer combination `a·r + b·s`. Bézout well-orders the
+// POSITIVE combinations: the least one divides both a and b (otherwise dividing a by it
+// leaves a strictly smaller positive combination), so under coprimality it is ONE.
+pred isACombination(a: Q, b: Q, n: Q)
+axiom combinationMeaning: forall a, b, n: Q;
+  isACombination(a, b, n) iff
+  (exists r: Q; exists s: Q; isInteger(r) and isInteger(s) and
+  n = rational.add(rational.mul(a, r), rational.mul(b, s)))
+
+// A combination's own multiples and sums are combinations — the two closure facts the
+// descent needs.
+theorem aMultipleOfACombinationIsACombination: forall a, b, n, k: Q;
+  isInteger(k) -> isACombination(a, b, n) ->
+  isACombination(a, b, rational.mul(n, k))
+proof
+  @generalize-a |
+    fix a: Q {
+      @generalize-b |
+        fix b: Q {
+          @generalize-n |
+            fix n: Q {
+              @generalize-k |
+                fix k: Q {
+                  @given-the-setup |
+                    assume isInteger(k) and isACombination(a, b, n) {
+                      @the-setup |
+                        isInteger(k) and isACombination(a, b, n)
+                        [by hypothesis given-the-setup]
+                      @k-is-an-integer |
+                        isInteger(k)
+                        [by and_lhs the-setup]
+                      @n-is-a-combination |
+                        isACombination(a, b, n)
+                        [by and_rhs the-setup]
+                      @the-meaning |
+                        isACombination(a, b, n) iff
+                          (exists r: Q; exists s: Q;
+                          isInteger(r) and isInteger(s) and
+                          n = rational.add(rational.mul(a, r),
+                          rational.mul(b, s)))
+                        [using specialize combinationMeaning(a, b, n)]
+                      @a-pair-exists |
+                        exists r: Q; exists s: Q;
+                          isInteger(r) and isInteger(s) and
+                          n = rational.add(rational.mul(a, r),
+                          rational.mul(b, s))
+                        [using tautology the-meaning n-is-a-combination]
+                      @conclusion-scaled |
+                        unpack r: Q from a-pair-exists {
+                          @the-s-exists |
+                            exists s: Q;
+                              isInteger(r) and isInteger(s) and
+                              n = rational.add(rational.mul(a, r),
+                              rational.mul(b, s))
+                            [by hypothesis conclusion-scaled]
+                          @conclusion-scaled-inner |
+                            unpack s: Q from the-s-exists {
+                              @the-pair |
+                                isInteger(r) and isInteger(s) and
+                                  n = rational.add(
+                                  rational.mul(a, r),
+                                  rational.mul(b, s))
+                                [by hypothesis conclusion-scaled-inner]
+                              @r-is-an-integer |
+                                isInteger(r)
+                                [using tautology the-pair]
+                              @s-is-an-integer |
+                                isInteger(s)
+                                [using tautology the-pair]
+                              @n-expands |
+                                n = rational.add(rational.mul(a, r),
+                                  rational.mul(b, s))
+                                [using tautology the-pair]
+                              @rk-is-an-integer |
+                                isInteger(rational.mul(r, k))
+                                [using specialize rational.isIntegerMul(r, k) r-is-an-integer k-is-an-integer]
+                              @sk-is-an-integer |
+                                isInteger(rational.mul(s, k))
+                                [using specialize rational.isIntegerMul(s, k) s-is-an-integer k-is-an-integer]
+                              @the-scaled-form |
+                                rational.mul(rational.add(
+                                  rational.mul(a, r),
+                                  rational.mul(b, s)), k) =
+                                  rational.add(rational.mul(a,
+                                  rational.mul(r, k)),
+                                  rational.mul(b,
+                                  rational.mul(s, k)))
+                                [using polynomial(rational)]
+                              @reflexivity-of-the-scaling |
+                                rational.mul(n, k) =
+                                  rational.mul(n, k)
+                                [by reflexivity]
+                              @the-scaling-at-the-expansion |
+                                rational.mul(n, k) =
+                                  rational.mul(rational.add(
+                                  rational.mul(a, r),
+                                  rational.mul(b, s)), k)
+                                [by rewrite n-expands reflexivity-of-the-scaling]
+                              @the-scaling-expands |
+                                rational.mul(n, k) =
+                                  rational.add(rational.mul(a,
+                                  rational.mul(r, k)),
+                                  rational.mul(b,
+                                  rational.mul(s, k)))
+                                [by rewrite the-scaled-form the-scaling-at-the-expansion]
+                              @the-scaled-pair-works |
+                                isInteger(rational.mul(r, k)) and
+                                  isInteger(rational.mul(s, k)) and
+                                  rational.mul(n, k) =
+                                  rational.add(rational.mul(a,
+                                  rational.mul(r, k)),
+                                  rational.mul(b,
+                                  rational.mul(s, k)))
+                                [using tautology rk-is-an-integer sk-is-an-integer the-scaling-expands]
+                              @the-scaled-s-witness |
+                                exists s2: Q;
+                                  isInteger(rational.mul(r, k)) and
+                                  isInteger(s2) and
+                                  rational.mul(n, k) =
+                                  rational.add(rational.mul(a,
+                                  rational.mul(r, k)),
+                                  rational.mul(b, s2))
+                                [by witness(rational.mul(s, k)) the-scaled-pair-works]
+                              @the-scaled-r-witness |
+                                exists r2: Q; exists s2: Q;
+                                  isInteger(r2) and isInteger(s2) and
+                                  rational.mul(n, k) =
+                                  rational.add(rational.mul(a, r2),
+                                  rational.mul(b, s2))
+                                [by witness(rational.mul(r, k)) the-scaled-s-witness]
+                              @the-scaled-meaning |
+                                isACombination(a, b,
+                                  rational.mul(n, k)) iff
+                                  (exists r2: Q; exists s2: Q;
+                                  isInteger(r2) and isInteger(s2) and
+                                  rational.mul(n, k) =
+                                  rational.add(rational.mul(a, r2),
+                                  rational.mul(b, s2)))
+                                [using specialize combinationMeaning(a, b, rational.mul(n, k))]
+                              @conclusion-scaled-combination |
+                                isACombination(a, b,
+                                  rational.mul(n, k))
+                                [using tautology the-scaled-meaning the-scaled-r-witness]
+                            }
+                          @the-inner-exported |
+                            isACombination(a, b, rational.mul(n, k))
+                            [by unpacked conclusion-scaled-inner]
+                        }
+                      @the-outer-exported |
+                        isACombination(a, b, rational.mul(n, k))
+                        [by unpacked conclusion-scaled]
+                    }
+                  @the-implication |
+                    (isInteger(k) and isACombination(a, b, n)) ->
+                      isACombination(a, b, rational.mul(n, k))
+                    [by discharge given-the-setup]
+                  @curried |
+                    isInteger(k) -> isACombination(a, b, n) ->
+                      isACombination(a, b, rational.mul(n, k))
+                    [using tautology the-implication]
+                }
+              @discharge-k |
+                forall k9: Q;
+                  isInteger(k9) -> isACombination(a, b, n) ->
+                  isACombination(a, b, rational.mul(n, k9))
+                [by generalize generalize-k]
+            }
+          @discharge-n |
+            forall n9, k9: Q;
+              isInteger(k9) -> isACombination(a, b, n9) ->
+              isACombination(a, b, rational.mul(n9, k9))
+            [by generalize generalize-n]
+        }
+      @discharge-b |
+        forall b9: Q; forall n9, k9: Q;
+          isInteger(k9) -> isACombination(a, b9, n9) ->
+          isACombination(a, b9, rational.mul(n9, k9))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b, n, k: Q;
+      isInteger(k) -> isACombination(a, b, n) ->
+      isACombination(a, b, rational.mul(n, k))
+    [by generalize generalize-a]
+qed
+
+// A difference of combinations is a combination — the other closure the descent needs.
+theorem aDifferenceOfCombinationsIsACombination: forall a, b, m, n: Q;
+  isACombination(a, b, m) -> isACombination(a, b, n) ->
+  isACombination(a, b, rational.add(m, neg(n)))
+proof
+  @generalize-a |
+    fix a: Q {
+      @generalize-b |
+        fix b: Q {
+          @generalize-m |
+            fix m: Q {
+              @generalize-n |
+                fix n: Q {
+                  @given-both |
+                    assume isACombination(a, b, m) and
+                      isACombination(a, b, n) {
+                      @both |
+                        isACombination(a, b, m) and
+                          isACombination(a, b, n)
+                        [by hypothesis given-both]
+                      @m-is-a-combination |
+                        isACombination(a, b, m)
+                        [by and_lhs both]
+                      @n-is-a-combination |
+                        isACombination(a, b, n)
+                        [by and_rhs both]
+                      @the-m-meaning |
+                        isACombination(a, b, m) iff
+                          (exists r: Q; exists s: Q;
+                          isInteger(r) and isInteger(s) and
+                          m = rational.add(rational.mul(a, r),
+                          rational.mul(b, s)))
+                        [using specialize combinationMeaning(a, b, m)]
+                      @an-m-pair-exists |
+                        exists r: Q; exists s: Q;
+                          isInteger(r) and isInteger(s) and
+                          m = rational.add(rational.mul(a, r),
+                          rational.mul(b, s))
+                        [using tautology the-m-meaning m-is-a-combination]
+                      @the-n-meaning |
+                        isACombination(a, b, n) iff
+                          (exists r: Q; exists s: Q;
+                          isInteger(r) and isInteger(s) and
+                          n = rational.add(rational.mul(a, r),
+                          rational.mul(b, s)))
+                        [using specialize combinationMeaning(a, b, n)]
+                      @an-n-pair-exists |
+                        exists r: Q; exists s: Q;
+                          isInteger(r) and isInteger(s) and
+                          n = rational.add(rational.mul(a, r),
+                          rational.mul(b, s))
+                        [using tautology the-n-meaning n-is-a-combination]
+                      @conclusion-difference |
+                        unpack rm: Q from an-m-pair-exists {
+                          @the-m-s-exists |
+                            exists s: Q;
+                              isInteger(rm) and isInteger(s) and
+                              m = rational.add(
+                              rational.mul(a, rm),
+                              rational.mul(b, s))
+                            [by hypothesis conclusion-difference]
+                          @conclusion-difference-2 |
+                            unpack sm: Q from the-m-s-exists {
+                              @the-m-pair |
+                                isInteger(rm) and isInteger(sm) and
+                                  m = rational.add(
+                                  rational.mul(a, rm),
+                                  rational.mul(b, sm))
+                                [by hypothesis conclusion-difference-2]
+                              @rm-is-an-integer |
+                                isInteger(rm)
+                                [using tautology the-m-pair]
+                              @sm-is-an-integer |
+                                isInteger(sm)
+                                [using tautology the-m-pair]
+                              @m-expands |
+                                m = rational.add(
+                                  rational.mul(a, rm),
+                                  rational.mul(b, sm))
+                                [using tautology the-m-pair]
+                              @conclusion-difference-3 |
+                                unpack rn: Q from an-n-pair-exists {
+                                  @the-n-s-exists |
+                                    exists s: Q;
+                                      isInteger(rn) and
+                                      isInteger(s) and
+                                      n = rational.add(
+                                      rational.mul(a, rn),
+                                      rational.mul(b, s))
+                                    [by hypothesis conclusion-difference-3]
+                                  @conclusion-difference-4 |
+                                    unpack sn: Q from the-n-s-exists {
+                                      @the-n-pair |
+                                        isInteger(rn) and
+                                          isInteger(sn) and
+                                          n = rational.add(
+                                          rational.mul(a, rn),
+                                          rational.mul(b, sn))
+                                        [by hypothesis conclusion-difference-4]
+                                      @rn-is-an-integer |
+                                        isInteger(rn)
+                                        [using tautology the-n-pair]
+                                      @sn-is-an-integer |
+                                        isInteger(sn)
+                                        [using tautology the-n-pair]
+                                      @n-expands |
+                                        n = rational.add(
+                                          rational.mul(a, rn),
+                                          rational.mul(b, sn))
+                                        [using tautology the-n-pair]
+                                      // the difference's coefficients
+                                      @minus-rn-is-an-integer |
+                                        isInteger(neg(rn))
+                                        [using specialize rational.isIntegerNeg(rn) rn-is-an-integer]
+                                      @minus-sn-is-an-integer |
+                                        isInteger(neg(sn))
+                                        [using specialize rational.isIntegerNeg(sn) sn-is-an-integer]
+                                      @the-r-difference-is-an-integer |
+                                        isInteger(rational.add(rm,
+                                          neg(rn)))
+                                        [using specialize rational.isIntegerAdd(rm, neg(rn)) rm-is-an-integer minus-rn-is-an-integer]
+                                      @the-s-difference-is-an-integer |
+                                        isInteger(rational.add(sm,
+                                          neg(sn)))
+                                        [using specialize rational.isIntegerAdd(sm, neg(sn)) sm-is-an-integer minus-sn-is-an-integer]
+                                      @the-difference-form |
+                                        rational.add(rational.add(
+                                          rational.mul(a, rm),
+                                          rational.mul(b, sm)),
+                                          neg(rational.add(
+                                          rational.mul(a, rn),
+                                          rational.mul(b, sn)))) =
+                                          rational.add(
+                                          rational.mul(a,
+                                          rational.add(rm,
+                                          neg(rn))),
+                                          rational.mul(b,
+                                          rational.add(sm,
+                                          neg(sn))))
+                                        [using polynomial(rational)]
+                                      @reflexivity-of-the-difference |
+                                        rational.add(m, neg(n)) =
+                                          rational.add(m, neg(n))
+                                        [by reflexivity]
+                                      @the-difference-at-m |
+                                        rational.add(m, neg(n)) =
+                                          rational.add(
+                                          rational.add(
+                                          rational.mul(a, rm),
+                                          rational.mul(b, sm)),
+                                          neg(n))
+                                        [by rewrite m-expands reflexivity-of-the-difference]
+                                      @the-difference-at-both |
+                                        rational.add(m, neg(n)) =
+                                          rational.add(
+                                          rational.add(
+                                          rational.mul(a, rm),
+                                          rational.mul(b, sm)),
+                                          neg(rational.add(
+                                          rational.mul(a, rn),
+                                          rational.mul(b, sn))))
+                                        [by rewrite n-expands the-difference-at-m]
+                                      @the-difference-expands |
+                                        rational.add(m, neg(n)) =
+                                          rational.add(
+                                          rational.mul(a,
+                                          rational.add(rm,
+                                          neg(rn))),
+                                          rational.mul(b,
+                                          rational.add(sm,
+                                          neg(sn))))
+                                        [by rewrite the-difference-form the-difference-at-both]
+                                      @the-difference-pair-works |
+                                        isInteger(rational.add(rm,
+                                          neg(rn))) and
+                                          isInteger(rational.add(sm,
+                                          neg(sn))) and
+                                          rational.add(m, neg(n)) =
+                                          rational.add(
+                                          rational.mul(a,
+                                          rational.add(rm,
+                                          neg(rn))),
+                                          rational.mul(b,
+                                          rational.add(sm,
+                                          neg(sn))))
+                                        [using tautology the-r-difference-is-an-integer the-s-difference-is-an-integer the-difference-expands]
+                                      @the-difference-s-witness |
+                                        exists s2: Q;
+                                          isInteger(rational.add(rm,
+                                          neg(rn))) and
+                                          isInteger(s2) and
+                                          rational.add(m, neg(n)) =
+                                          rational.add(
+                                          rational.mul(a,
+                                          rational.add(rm,
+                                          neg(rn))),
+                                          rational.mul(b, s2))
+                                        [by witness(rational.add(sm, neg(sn))) the-difference-pair-works]
+                                      @the-difference-r-witness |
+                                        exists r2: Q; exists s2: Q;
+                                          isInteger(r2) and
+                                          isInteger(s2) and
+                                          rational.add(m, neg(n)) =
+                                          rational.add(
+                                          rational.mul(a, r2),
+                                          rational.mul(b, s2))
+                                        [by witness(rational.add(rm, neg(rn))) the-difference-s-witness]
+                                      @the-difference-meaning |
+                                        isACombination(a, b,
+                                          rational.add(m,
+                                          neg(n))) iff
+                                          (exists r2: Q;
+                                          exists s2: Q;
+                                          isInteger(r2) and
+                                          isInteger(s2) and
+                                          rational.add(m, neg(n)) =
+                                          rational.add(
+                                          rational.mul(a, r2),
+                                          rational.mul(b, s2)))
+                                        [using specialize combinationMeaning(a, b, rational.add(m, neg(n)))]
+                                      @conclusion-difference-combination |
+                                        isACombination(a, b,
+                                          rational.add(m, neg(n)))
+                                        [using tautology the-difference-meaning the-difference-r-witness]
+                                    }
+                                  @the-4-exported |
+                                    isACombination(a, b,
+                                      rational.add(m, neg(n)))
+                                    [by unpacked conclusion-difference-4]
+                                }
+                              @the-3-exported |
+                                isACombination(a, b,
+                                  rational.add(m, neg(n)))
+                                [by unpacked conclusion-difference-3]
+                            }
+                          @the-2-exported |
+                            isACombination(a, b,
+                              rational.add(m, neg(n)))
+                            [by unpacked conclusion-difference-2]
+                        }
+                      @the-outer-exported |
+                        isACombination(a, b, rational.add(m, neg(n)))
+                        [by unpacked conclusion-difference]
+                    }
+                  @the-implication |
+                    (isACombination(a, b, m) and
+                      isACombination(a, b, n)) ->
+                      isACombination(a, b, rational.add(m, neg(n)))
+                    [by discharge given-both]
+                  @curried |
+                    isACombination(a, b, m) ->
+                      isACombination(a, b, n) ->
+                      isACombination(a, b, rational.add(m, neg(n)))
+                    [using tautology the-implication]
+                }
+              @discharge-n |
+                forall n9: Q;
+                  isACombination(a, b, m) ->
+                  isACombination(a, b, n9) ->
+                  isACombination(a, b, rational.add(m, neg(n9)))
+                [by generalize generalize-n]
+            }
+          @discharge-m |
+            forall m9, n9: Q;
+              isACombination(a, b, m9) ->
+              isACombination(a, b, n9) ->
+              isACombination(a, b, rational.add(m9, neg(n9)))
+            [by generalize generalize-m]
+        }
+      @discharge-b |
+        forall b9: Q; forall m9, n9: Q;
+          isACombination(a, b9, m9) ->
+          isACombination(a, b9, n9) ->
+          isACombination(a, b9, rational.add(m9, neg(n9)))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b, m, n: Q;
+      isACombination(a, b, m) -> isACombination(a, b, n) ->
+      isACombination(a, b, rational.add(m, neg(n)))
+    [by generalize generalize-a]
+qed
+
+// THE DESCENT. The least POSITIVE combination g divides every combination x: divide x by g,
+// and the remainder `x - g·q` is itself a combination (by the two closures) that is natural
+// and strictly below g — so by leastness it cannot be positive, hence it is ZERO.
+theorem theLeastPositiveCombinationDividesEveryCombination: forall a, b, g, x: Q;
+  isInteger(g) -> less_than(ZERO, g) -> isACombination(a, b, g) ->
+  (forall m: Q; isInteger(m) -> less_than(ZERO, m) ->
+  isACombination(a, b, m) -> (not less_than(m, g))) ->
+  isInteger(x) -> isACombination(a, b, x) ->
+  (exists k: Q; isInteger(k) and x = rational.mul(g, k))
+proof
+  @generalize-a |
+    fix a: Q {
+      @generalize-b |
+        fix b: Q {
+          @generalize-g |
+            fix g: Q {
+              @generalize-x |
+                fix x: Q {
+                  @given-the-setup |
+                    assume isInteger(g) and less_than(ZERO, g) and
+                      isACombination(a, b, g) and
+                      (forall m: Q; isInteger(m) ->
+                      less_than(ZERO, m) ->
+                      isACombination(a, b, m) ->
+                      (not less_than(m, g))) and
+                      isInteger(x) and isACombination(a, b, x) {
+                      @the-setup |
+                        isInteger(g) and less_than(ZERO, g) and
+                          isACombination(a, b, g) and
+                          (forall m: Q; isInteger(m) ->
+                          less_than(ZERO, m) ->
+                          isACombination(a, b, m) ->
+                          (not less_than(m, g))) and
+                          isInteger(x) and isACombination(a, b, x)
+                        [by hypothesis given-the-setup]
+                      @g-is-an-integer |
+                        isInteger(g)
+                        [using tautology the-setup]
+                      @g-is-positive |
+                        less_than(ZERO, g)
+                        [using tautology the-setup]
+                      @g-is-a-combination |
+                        isACombination(a, b, g)
+                        [using tautology the-setup]
+                      @g-is-least |
+                        forall m: Q; isInteger(m) ->
+                          less_than(ZERO, m) ->
+                          isACombination(a, b, m) ->
+                          (not less_than(m, g))
+                        [using tautology the-setup]
+                      @x-is-an-integer |
+                        isInteger(x)
+                        [using tautology the-setup]
+                      @x-is-a-combination |
+                        isACombination(a, b, x)
+                        [using tautology the-setup]
+                      // divide x by g
+                      @the-division |
+                        exists q, r: Q; isInteger(q) and isNatural(r) and
+                          x = rational.add(rational.mul(g, q), r) and
+                          less_than(r, g)
+                        [using specialize theDivisionAlgorithmOnTheCut(x, g) x-is-an-integer g-is-an-integer g-is-positive]
+                      @conclusion-with-the-division |
+                        unpack q: Q from the-division {
+                          @the-remainder-exists |
+                            exists r: Q; isInteger(q) and
+                              isNatural(r) and
+                              x = rational.add(
+                              rational.mul(g, q), r) and
+                              less_than(r, g)
+                            [by hypothesis conclusion-with-the-division]
+                          @conclusion-with-the-remainder |
+                            unpack r: Q from the-remainder-exists {
+                              @the-division-parts |
+                                isInteger(q) and isNatural(r) and
+                                  x = rational.add(
+                                  rational.mul(g, q), r) and
+                                  less_than(r, g)
+                                [by hypothesis conclusion-with-the-remainder]
+                              @q-is-an-integer |
+                                isInteger(q)
+                                [using tautology the-division-parts]
+                              @r-is-natural |
+                                isNatural(r)
+                                [using tautology the-division-parts]
+                              @x-splits |
+                                x = rational.add(
+                                  rational.mul(g, q), r)
+                                [using tautology the-division-parts]
+                              @r-is-below-g |
+                                less_than(r, g)
+                                [using tautology the-division-parts]
+                              // r = x - g·q is a combination
+                              @gq-is-a-combination |
+                                isACombination(a, b,
+                                  rational.mul(g, q))
+                                [using specialize aMultipleOfACombinationIsACombination(a, b, g, q) q-is-an-integer g-is-a-combination]
+                              @the-remainder-form |
+                                rational.add(rational.add(
+                                  rational.mul(g, q), r),
+                                  neg(rational.mul(g, q))) = r
+                                [using polynomial(rational)]
+                              @the-difference-is-a-combination |
+                                isACombination(a, b,
+                                  rational.add(x,
+                                  neg(rational.mul(g, q))))
+                                [using specialize aDifferenceOfCombinationsIsACombination(a, b, x, rational.mul(g, q)) x-is-a-combination gq-is-a-combination]
+                              @reflexivity-of-the-remainder |
+                                rational.add(x,
+                                  neg(rational.mul(g, q))) =
+                                  rational.add(x,
+                                  neg(rational.mul(g, q)))
+                                [by reflexivity]
+                              @the-remainder-at-the-split |
+                                rational.add(x,
+                                  neg(rational.mul(g, q))) =
+                                  rational.add(rational.add(
+                                  rational.mul(g, q), r),
+                                  neg(rational.mul(g, q)))
+                                [by rewrite x-splits reflexivity-of-the-remainder]
+                              @the-remainder-is-r |
+                                rational.add(x,
+                                  neg(rational.mul(g, q))) = r
+                                [by rewrite the-remainder-form the-remainder-at-the-split]
+                              @r-is-a-combination |
+                                isACombination(a, b, r)
+                                [by rewrite the-remainder-is-r the-difference-is-a-combination]
+                              // r is natural and below g, so leastness forces r = ZERO
+                              @r-is-zero-or-positive |
+                                r = ZERO or less_than(ZERO, r)
+                                [using specialize rational_integer_order.aNaturalIsZeroOrPositive(r) r-is-natural]
+                              @r-is-zero |
+                                r = ZERO
+                                case r-is-zero-or-positive {
+                                  @when-zero |
+                                    assume r = ZERO {
+                                      @conclusion-already-zero |
+                                        r = ZERO
+                                        [by hypothesis when-zero]
+                                    }
+                                  @when-positive |
+                                    assume less_than(ZERO, r) {
+                                      @r-is-positive |
+                                        less_than(ZERO, r)
+                                        [by hypothesis when-positive]
+                                      @r-is-an-integer |
+                                        isInteger(r)
+                                        [using specialize rational.isNaturalIsInteger(r) r-is-natural]
+                                      @r-is-not-below-g |
+                                        not less_than(r, g)
+                                        [using specialize g-is-least(r) r-is-an-integer r-is-positive r-is-a-combination]
+                                      @conclusion-impossible |
+                                        r = ZERO
+                                        [by ex_falso r-is-below-g r-is-not-below-g]
+                                    }
+                                }
+                              // so x = g·q
+                              @x-at-zero-remainder |
+                                x = rational.add(
+                                  rational.mul(g, q), ZERO)
+                                [by rewrite r-is-zero x-splits]
+                              @adding-zero |
+                                rational.add(rational.mul(g, q),
+                                  ZERO) = rational.mul(g, q)
+                                [using polynomial(rational)]
+                              @x-is-a-multiple |
+                                x = rational.mul(g, q)
+                                [by rewrite adding-zero x-at-zero-remainder]
+                              @the-quotient-works |
+                                isInteger(q) and
+                                  x = rational.mul(g, q)
+                                [by both q-is-an-integer x-is-a-multiple]
+                              @conclusion-a-quotient-exists |
+                                exists k: Q; isInteger(k) and
+                                  x = rational.mul(g, k)
+                                [by witness(q) the-quotient-works]
+                            }
+                          @the-remainder-exported |
+                            exists k: Q; isInteger(k) and
+                              x = rational.mul(g, k)
+                            [by unpacked conclusion-with-the-remainder]
+                        }
+                      @the-division-exported |
+                        exists k: Q; isInteger(k) and
+                          x = rational.mul(g, k)
+                        [by unpacked conclusion-with-the-division]
+                    }
+                  @the-implication |
+                    (isInteger(g) and less_than(ZERO, g) and
+                      isACombination(a, b, g) and
+                      (forall m: Q; isInteger(m) ->
+                      less_than(ZERO, m) ->
+                      isACombination(a, b, m) ->
+                      (not less_than(m, g))) and
+                      isInteger(x) and isACombination(a, b, x)) ->
+                      (exists k: Q; isInteger(k) and
+                      x = rational.mul(g, k))
+                    [by discharge given-the-setup]
+                  @curried |
+                    isInteger(g) -> less_than(ZERO, g) ->
+                      isACombination(a, b, g) ->
+                      (forall m: Q; isInteger(m) ->
+                      less_than(ZERO, m) ->
+                      isACombination(a, b, m) ->
+                      (not less_than(m, g))) ->
+                      isInteger(x) -> isACombination(a, b, x) ->
+                      (exists k: Q; isInteger(k) and
+                      x = rational.mul(g, k))
+                    [using tautology the-implication]
+                }
+              @discharge-x |
+                forall x9: Q;
+                  isInteger(g) -> less_than(ZERO, g) ->
+                  isACombination(a, b, g) ->
+                  (forall m: Q; isInteger(m) ->
+                  less_than(ZERO, m) ->
+                  isACombination(a, b, m) ->
+                  (not less_than(m, g))) ->
+                  isInteger(x9) -> isACombination(a, b, x9) ->
+                  (exists k: Q; isInteger(k) and
+                  x9 = rational.mul(g, k))
+                [by generalize generalize-x]
+            }
+          @discharge-g |
+            forall g9, x9: Q;
+              isInteger(g9) -> less_than(ZERO, g9) ->
+              isACombination(a, b, g9) ->
+              (forall m: Q; isInteger(m) ->
+              less_than(ZERO, m) ->
+              isACombination(a, b, m) ->
+              (not less_than(m, g9))) ->
+              isInteger(x9) -> isACombination(a, b, x9) ->
+              (exists k: Q; isInteger(k) and
+              x9 = rational.mul(g9, k))
+            [by generalize generalize-g]
+        }
+      @discharge-b |
+        forall b9: Q; forall g9, x9: Q;
+          isInteger(g9) -> less_than(ZERO, g9) ->
+          isACombination(a, b9, g9) ->
+          (forall m: Q; isInteger(m) ->
+          less_than(ZERO, m) ->
+          isACombination(a, b9, m) ->
+          (not less_than(m, g9))) ->
+          isInteger(x9) -> isACombination(a, b9, x9) ->
+          (exists k: Q; isInteger(k) and
+          x9 = rational.mul(g9, k))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b, g, x: Q;
+      isInteger(g) -> less_than(ZERO, g) -> isACombination(a, b, g) ->
+      (forall m: Q; isInteger(m) -> less_than(ZERO, m) ->
+      isACombination(a, b, m) -> (not less_than(m, g))) ->
+      isInteger(x) -> isACombination(a, b, x) ->
+      (exists k: Q; isInteger(k) and x = rational.mul(g, k))
+    [by generalize generalize-a]
+qed
