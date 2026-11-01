@@ -21,6 +21,7 @@ import qpoly <<< "std/rational/polynomial.b4m"
 import field_order <<< "std/field/order.b4m"
 import rational_integer_order <<< "std/rational/integer-order.b4m"
 import natural_wellordering <<< "std/rational/natural-wellordering.b4m"
+import rational_integer_division <<< "std/rational/integer-division.b4m"
 
 sort Q = rational.Q
 sort Nat = peano.Nat
@@ -12428,4 +12429,822 @@ proof
       dividesIntegrally(u, rational.mul(v, w)) ->
       dividesIntegrally(u, w)
     [by generalize generalize-u]
+qed
+
+// -- COPRIME TO A POWER --------------------------------------------------------------------
+// Corollary 17.14 reads `r | a_0·s^(n+1)` and needs `r | a_0`. Euclid strips ONE factor of s,
+// so stripping s^(n+1) is an induction on the exponent, re-using the SAME Bézout certificate
+// at every step — which is why the certificate travels as a parameter rather than being
+// reconstructed per step.
+//
+// The induction target quantifies over the cofactor INSIDE, so the step can apply the
+// hypothesis at a different cofactor (`v·w` rather than `w`). That shape is the whole trick:
+// at `v^(k+1)·w = v^k·(v·w)` the hypothesis fires at `v·w`, and Euclid then strips the last v.
+
+// base: v^0 = ONE, so `u | 1·w` is `u | w`.
+theorem theZeroPowerStrips: forall u, v: Q;
+  (forall w: Q; isInteger(w) ->
+  dividesIntegrally(u, rational.mul(qpoly.qpower(v, NAT_ZERO), w)) ->
+  dividesIntegrally(u, w))
+proof
+  @generalize-u |
+    fix u: Q {
+      @generalize-v |
+        fix v: Q {
+          @each-cofactor |
+            fix w: Q {
+              @given-the-divisibility |
+                assume isInteger(w) and
+                  dividesIntegrally(u,
+                  rational.mul(qpoly.qpower(v, NAT_ZERO), w)) {
+                  @the-setup |
+                    isInteger(w) and
+                      dividesIntegrally(u,
+                      rational.mul(qpoly.qpower(v, NAT_ZERO), w))
+                    [by hypothesis given-the-divisibility]
+                  @u-divides-the-scaled |
+                    dividesIntegrally(u,
+                      rational.mul(qpoly.qpower(v, NAT_ZERO), w))
+                    [by and_rhs the-setup]
+                  @the-zero-power |
+                    qpoly.qpower(v, NAT_ZERO) = ONE
+                    [using specialize qpoly.qPowerZero(v)]
+                  @the-scaled-is-w |
+                    rational.mul(ONE, w) = w
+                    [using specialize rational.mulOneLeft(w)]
+                  @u-divides-one-times-w |
+                    dividesIntegrally(u, rational.mul(ONE, w))
+                    [by rewrite the-zero-power u-divides-the-scaled]
+                  @conclusion-u-divides-w |
+                    dividesIntegrally(u, w)
+                    [by rewrite the-scaled-is-w u-divides-one-times-w]
+                }
+              @the-implication |
+                (isInteger(w) and
+                  dividesIntegrally(u,
+                  rational.mul(qpoly.qpower(v, NAT_ZERO), w))) ->
+                  dividesIntegrally(u, w)
+                [by discharge given-the-divisibility]
+              @curried |
+                isInteger(w) ->
+                  dividesIntegrally(u,
+                  rational.mul(qpoly.qpower(v, NAT_ZERO), w)) ->
+                  dividesIntegrally(u, w)
+                [using tautology the-implication]
+            }
+          @conclusion-all-cofactors |
+            forall w: Q; isInteger(w) ->
+              dividesIntegrally(u,
+              rational.mul(qpoly.qpower(v, NAT_ZERO), w)) ->
+              dividesIntegrally(u, w)
+            [by generalize each-cofactor]
+        }
+      @discharge-v |
+        forall v9: Q;
+          (forall w: Q; isInteger(w) ->
+          dividesIntegrally(u,
+          rational.mul(qpoly.qpower(v9, NAT_ZERO), w)) ->
+          dividesIntegrally(u, w))
+        [by generalize generalize-v]
+    }
+  @conclusion |
+    forall u, v: Q;
+      (forall w: Q; isInteger(w) ->
+      dividesIntegrally(u,
+      rational.mul(qpoly.qpower(v, NAT_ZERO), w)) ->
+      dividesIntegrally(u, w))
+    [by generalize generalize-u]
+qed
+
+// step: v^(k+1)·w = v^k·(v·w), so the hypothesis (at the cofactor v·w) gives `u | v·w`, and
+// Euclid strips the last v.
+theorem theSuccessorPowerStrips: forall u, v, r, s: Q; forall k: Nat;
+  isInteger(u) -> isInteger(v) -> isInteger(r) -> isInteger(s) ->
+  rational.add(rational.mul(u, r), rational.mul(v, s)) = ONE ->
+  (forall w: Q; isInteger(w) ->
+  dividesIntegrally(u, rational.mul(qpoly.qpower(v, k), w)) ->
+  dividesIntegrally(u, w)) ->
+  (forall w: Q; isInteger(w) ->
+  dividesIntegrally(u, rational.mul(qpoly.qpower(v, nat_succ(k)), w)) ->
+  dividesIntegrally(u, w))
+proof
+  @generalize-u |
+    fix u: Q {
+      @generalize-v |
+        fix v: Q {
+          @generalize-r |
+            fix r: Q {
+              @generalize-s |
+                fix s: Q {
+                  @generalize-k |
+                    fix k: Nat {
+                      @given-the-setup |
+                        assume isInteger(u) and isInteger(v) and
+                          isInteger(r) and isInteger(s) and
+                          rational.add(rational.mul(u, r),
+                          rational.mul(v, s)) = ONE and
+                          (forall w: Q; isInteger(w) ->
+                          dividesIntegrally(u,
+                          rational.mul(qpoly.qpower(v, k), w)) ->
+                          dividesIntegrally(u, w)) {
+                          @the-setup |
+                            isInteger(u) and isInteger(v) and
+                              isInteger(r) and isInteger(s) and
+                              rational.add(rational.mul(u, r),
+                              rational.mul(v, s)) = ONE and
+                              (forall w: Q; isInteger(w) ->
+                              dividesIntegrally(u,
+                              rational.mul(qpoly.qpower(v, k),
+                              w)) ->
+                              dividesIntegrally(u, w))
+                            [by hypothesis given-the-setup]
+                          @u-is-an-integer |
+                            isInteger(u)
+                            [using tautology the-setup]
+                          @v-is-an-integer |
+                            isInteger(v)
+                            [using tautology the-setup]
+                          @r-is-an-integer |
+                            isInteger(r)
+                            [using tautology the-setup]
+                          @s-is-an-integer |
+                            isInteger(s)
+                            [using tautology the-setup]
+                          @the-certificate |
+                            rational.add(rational.mul(u, r),
+                              rational.mul(v, s)) = ONE
+                            [using tautology the-setup]
+                          @the-hypothesis |
+                            forall w: Q; isInteger(w) ->
+                              dividesIntegrally(u,
+                              rational.mul(qpoly.qpower(v, k), w)) ->
+                              dividesIntegrally(u, w)
+                            [using tautology the-setup]
+                          @each-cofactor |
+                            fix w: Q {
+                              @given-the-divisibility |
+                                assume isInteger(w) and
+                                  dividesIntegrally(u,
+                                  rational.mul(qpoly.qpower(v,
+                                  nat_succ(k)), w)) {
+                                  @the-inner-setup |
+                                    isInteger(w) and
+                                      dividesIntegrally(u,
+                                      rational.mul(
+                                      qpoly.qpower(v,
+                                      nat_succ(k)), w))
+                                    [by hypothesis given-the-divisibility]
+                                  @w-is-an-integer |
+                                    isInteger(w)
+                                    [by and_lhs the-inner-setup]
+                                  @u-divides-the-scaled |
+                                    dividesIntegrally(u,
+                                      rational.mul(
+                                      qpoly.qpower(v,
+                                      nat_succ(k)), w))
+                                    [by and_rhs the-inner-setup]
+                                  // v^(k+1)·w = v^k·(v·w)
+                                  @the-next-power |
+                                    qpoly.qpower(v, nat_succ(k)) =
+                                      rational.mul(v,
+                                      qpoly.qpower(v, k))
+                                    [using specialize qpoly.qPowerSucc(v, k)]
+                                  @the-regrouping |
+                                    rational.mul(rational.mul(v,
+                                      qpoly.qpower(v, k)), w) =
+                                      rational.mul(
+                                      qpoly.qpower(v, k),
+                                      rational.mul(v, w))
+                                    [using polynomial(rational)]
+                                  @u-divides-the-expanded |
+                                    dividesIntegrally(u,
+                                      rational.mul(
+                                      rational.mul(v,
+                                      qpoly.qpower(v, k)), w))
+                                    [by rewrite the-next-power u-divides-the-scaled]
+                                  @u-divides-the-regrouped |
+                                    dividesIntegrally(u,
+                                      rational.mul(
+                                      qpoly.qpower(v, k),
+                                      rational.mul(v, w)))
+                                    [by rewrite the-regrouping u-divides-the-expanded]
+                                  // the hypothesis at the cofactor v·w
+                                  @vw-is-an-integer |
+                                    isInteger(rational.mul(v, w))
+                                    [using specialize rational.isIntegerMul(v, w) v-is-an-integer w-is-an-integer]
+                                  @u-divides-vw |
+                                    dividesIntegrally(u,
+                                      rational.mul(v, w))
+                                    [using specialize the-hypothesis(rational.mul(v, w)) vw-is-an-integer u-divides-the-regrouped]
+                                  // Euclid strips the last v
+                                  @conclusion-u-divides-w |
+                                    dividesIntegrally(u, w)
+                                    [using specialize euclidFromBezoutOnTheCut(u, v, w, r, s) u-is-an-integer v-is-an-integer w-is-an-integer r-is-an-integer s-is-an-integer the-certificate u-divides-vw]
+                                }
+                              @the-inner-implication |
+                                (isInteger(w) and
+                                  dividesIntegrally(u,
+                                  rational.mul(qpoly.qpower(v,
+                                  nat_succ(k)), w))) ->
+                                  dividesIntegrally(u, w)
+                                [by discharge given-the-divisibility]
+                              @curried-at-w |
+                                isInteger(w) ->
+                                  dividesIntegrally(u,
+                                  rational.mul(qpoly.qpower(v,
+                                  nat_succ(k)), w)) ->
+                                  dividesIntegrally(u, w)
+                                [using tautology the-inner-implication]
+                            }
+                          @conclusion-all-cofactors |
+                            forall w: Q; isInteger(w) ->
+                              dividesIntegrally(u,
+                              rational.mul(qpoly.qpower(v,
+                              nat_succ(k)), w)) ->
+                              dividesIntegrally(u, w)
+                            [by generalize each-cofactor]
+                        }
+                      @the-implication |
+                        (isInteger(u) and isInteger(v) and
+                          isInteger(r) and isInteger(s) and
+                          rational.add(rational.mul(u, r),
+                          rational.mul(v, s)) = ONE and
+                          (forall w: Q; isInteger(w) ->
+                          dividesIntegrally(u,
+                          rational.mul(qpoly.qpower(v, k), w)) ->
+                          dividesIntegrally(u, w))) ->
+                          (forall w: Q; isInteger(w) ->
+                          dividesIntegrally(u,
+                          rational.mul(qpoly.qpower(v,
+                          nat_succ(k)), w)) ->
+                          dividesIntegrally(u, w))
+                        [by discharge given-the-setup]
+                      @curried |
+                        isInteger(u) -> isInteger(v) ->
+                          isInteger(r) -> isInteger(s) ->
+                          rational.add(rational.mul(u, r),
+                          rational.mul(v, s)) = ONE ->
+                          (forall w: Q; isInteger(w) ->
+                          dividesIntegrally(u,
+                          rational.mul(qpoly.qpower(v, k), w)) ->
+                          dividesIntegrally(u, w)) ->
+                          (forall w: Q; isInteger(w) ->
+                          dividesIntegrally(u,
+                          rational.mul(qpoly.qpower(v,
+                          nat_succ(k)), w)) ->
+                          dividesIntegrally(u, w))
+                        [using tautology the-implication]
+                    }
+                  @discharge-k |
+                    forall k9: Nat;
+                      isInteger(u) -> isInteger(v) ->
+                      isInteger(r) -> isInteger(s) ->
+                      rational.add(rational.mul(u, r),
+                      rational.mul(v, s)) = ONE ->
+                      (forall w: Q; isInteger(w) ->
+                      dividesIntegrally(u,
+                      rational.mul(qpoly.qpower(v, k9), w)) ->
+                      dividesIntegrally(u, w)) ->
+                      (forall w: Q; isInteger(w) ->
+                      dividesIntegrally(u,
+                      rational.mul(qpoly.qpower(v,
+                      nat_succ(k9)), w)) ->
+                      dividesIntegrally(u, w))
+                    [by generalize generalize-k]
+                }
+              @discharge-s |
+                forall s9: Q; forall k9: Nat;
+                  isInteger(u) -> isInteger(v) ->
+                  isInteger(r) -> isInteger(s9) ->
+                  rational.add(rational.mul(u, r),
+                  rational.mul(v, s9)) = ONE ->
+                  (forall w: Q; isInteger(w) ->
+                  dividesIntegrally(u,
+                  rational.mul(qpoly.qpower(v, k9), w)) ->
+                  dividesIntegrally(u, w)) ->
+                  (forall w: Q; isInteger(w) ->
+                  dividesIntegrally(u,
+                  rational.mul(qpoly.qpower(v,
+                  nat_succ(k9)), w)) ->
+                  dividesIntegrally(u, w))
+                [by generalize generalize-s]
+            }
+          @discharge-r |
+            forall r9, s9: Q; forall k9: Nat;
+              isInteger(u) -> isInteger(v) ->
+              isInteger(r9) -> isInteger(s9) ->
+              rational.add(rational.mul(u, r9),
+              rational.mul(v, s9)) = ONE ->
+              (forall w: Q; isInteger(w) ->
+              dividesIntegrally(u,
+              rational.mul(qpoly.qpower(v, k9), w)) ->
+              dividesIntegrally(u, w)) ->
+              (forall w: Q; isInteger(w) ->
+              dividesIntegrally(u,
+              rational.mul(qpoly.qpower(v,
+              nat_succ(k9)), w)) ->
+              dividesIntegrally(u, w))
+            [by generalize generalize-r]
+        }
+      @discharge-v |
+        forall v9: Q; forall r9, s9: Q; forall k9: Nat;
+          isInteger(u) -> isInteger(v9) ->
+          isInteger(r9) -> isInteger(s9) ->
+          rational.add(rational.mul(u, r9),
+          rational.mul(v9, s9)) = ONE ->
+          (forall w: Q; isInteger(w) ->
+          dividesIntegrally(u,
+          rational.mul(qpoly.qpower(v9, k9), w)) ->
+          dividesIntegrally(u, w)) ->
+          (forall w: Q; isInteger(w) ->
+          dividesIntegrally(u,
+          rational.mul(qpoly.qpower(v9,
+          nat_succ(k9)), w)) ->
+          dividesIntegrally(u, w))
+        [by generalize generalize-v]
+    }
+  @conclusion |
+    forall u, v, r, s: Q; forall k: Nat;
+      isInteger(u) -> isInteger(v) -> isInteger(r) -> isInteger(s) ->
+      rational.add(rational.mul(u, r), rational.mul(v, s)) = ONE ->
+      (forall w: Q; isInteger(w) ->
+      dividesIntegrally(u, rational.mul(qpoly.qpower(v, k), w)) ->
+      dividesIntegrally(u, w)) ->
+      (forall w: Q; isInteger(w) ->
+      dividesIntegrally(u,
+      rational.mul(qpoly.qpower(v, nat_succ(k)), w)) ->
+      dividesIntegrally(u, w))
+    [by generalize generalize-u]
+qed
+
+// The induction. Note the certificate hypotheses sit OUTSIDE the induction (they do not vary
+// with the exponent), so the induction is over the cofactor-quantified statement only.
+theorem coprimeToAPowerDividesTheCofactor: forall u, v, r, s: Q;
+  isInteger(u) -> isInteger(v) -> isInteger(r) -> isInteger(s) ->
+  rational.add(rational.mul(u, r), rational.mul(v, s)) = ONE ->
+  (forall k: Nat; forall w: Q; isInteger(w) ->
+  dividesIntegrally(u, rational.mul(qpoly.qpower(v, k), w)) ->
+  dividesIntegrally(u, w))
+proof
+  @generalize-u |
+    fix u: Q {
+      @generalize-v |
+        fix v: Q {
+          @generalize-r |
+            fix r: Q {
+              @generalize-s |
+                fix s: Q {
+                  @given-the-certificate |
+                    assume isInteger(u) and isInteger(v) and
+                      isInteger(r) and isInteger(s) and
+                      rational.add(rational.mul(u, r),
+                      rational.mul(v, s)) = ONE {
+                      @the-setup |
+                        isInteger(u) and isInteger(v) and
+                          isInteger(r) and isInteger(s) and
+                          rational.add(rational.mul(u, r),
+                          rational.mul(v, s)) = ONE
+                        [by hypothesis given-the-certificate]
+                      @u-is-an-integer |
+                        isInteger(u)
+                        [using tautology the-setup]
+                      @v-is-an-integer |
+                        isInteger(v)
+                        [using tautology the-setup]
+                      @r-is-an-integer |
+                        isInteger(r)
+                        [using tautology the-setup]
+                      @s-is-an-integer |
+                        isInteger(s)
+                        [using tautology the-setup]
+                      @the-certificate |
+                        rational.add(rational.mul(u, r),
+                          rational.mul(v, s)) = ONE
+                        [using tautology the-setup]
+                      @base-case |
+                        forall w: Q; isInteger(w) ->
+                          dividesIntegrally(u,
+                          rational.mul(qpoly.qpower(v, NAT_ZERO),
+                          w)) ->
+                          dividesIntegrally(u, w)
+                        [using specialize theZeroPowerStrips(u, v)]
+                      @induction-step |
+                        fix k: Nat {
+                          @the-step-at-k |
+                            (forall w: Q; isInteger(w) ->
+                              dividesIntegrally(u,
+                              rational.mul(qpoly.qpower(v, k),
+                              w)) ->
+                              dividesIntegrally(u, w)) ->
+                              (forall w: Q; isInteger(w) ->
+                              dividesIntegrally(u,
+                              rational.mul(qpoly.qpower(v,
+                              nat_succ(k)), w)) ->
+                              dividesIntegrally(u, w))
+                            [using specialize theSuccessorPowerStrips(u, v, r, s, k) u-is-an-integer v-is-an-integer r-is-an-integer s-is-an-integer the-certificate]
+                        }
+                      @induction-step-for-all-k |
+                        forall k: Nat;
+                          (forall w: Q; isInteger(w) ->
+                          dividesIntegrally(u,
+                          rational.mul(qpoly.qpower(v, k), w)) ->
+                          dividesIntegrally(u, w)) ->
+                          (forall w: Q; isInteger(w) ->
+                          dividesIntegrally(u,
+                          rational.mul(qpoly.qpower(v,
+                          nat_succ(k)), w)) ->
+                          dividesIntegrally(u, w))
+                        [by generalize induction-step]
+                      @all-exponents |
+                        forall k: Nat; forall w: Q; isInteger(w) ->
+                          dividesIntegrally(u,
+                          rational.mul(qpoly.qpower(v, k), w)) ->
+                          dividesIntegrally(u, w)
+                        [using instantiation peano.induction((fun z: Nat => (forall w: Q; isInteger(w) -> dividesIntegrally(u, rational.mul(qpoly.qpower(v, z), w)) -> dividesIntegrally(u, w)))) base-case induction-step-for-all-k]
+                    }
+                  @the-implication |
+                    (isInteger(u) and isInteger(v) and
+                      isInteger(r) and isInteger(s) and
+                      rational.add(rational.mul(u, r),
+                      rational.mul(v, s)) = ONE) ->
+                      (forall k: Nat; forall w: Q; isInteger(w) ->
+                      dividesIntegrally(u,
+                      rational.mul(qpoly.qpower(v, k), w)) ->
+                      dividesIntegrally(u, w))
+                    [by discharge given-the-certificate]
+                  @curried |
+                    isInteger(u) -> isInteger(v) ->
+                      isInteger(r) -> isInteger(s) ->
+                      rational.add(rational.mul(u, r),
+                      rational.mul(v, s)) = ONE ->
+                      (forall k: Nat; forall w: Q; isInteger(w) ->
+                      dividesIntegrally(u,
+                      rational.mul(qpoly.qpower(v, k), w)) ->
+                      dividesIntegrally(u, w))
+                    [using tautology the-implication]
+                }
+              @discharge-s |
+                forall s9: Q;
+                  isInteger(u) -> isInteger(v) ->
+                  isInteger(r) -> isInteger(s9) ->
+                  rational.add(rational.mul(u, r),
+                  rational.mul(v, s9)) = ONE ->
+                  (forall k: Nat; forall w: Q; isInteger(w) ->
+                  dividesIntegrally(u,
+                  rational.mul(qpoly.qpower(v, k), w)) ->
+                  dividesIntegrally(u, w))
+                [by generalize generalize-s]
+            }
+          @discharge-r |
+            forall r9, s9: Q;
+              isInteger(u) -> isInteger(v) ->
+              isInteger(r9) -> isInteger(s9) ->
+              rational.add(rational.mul(u, r9),
+              rational.mul(v, s9)) = ONE ->
+              (forall k: Nat; forall w: Q; isInteger(w) ->
+              dividesIntegrally(u,
+              rational.mul(qpoly.qpower(v, k), w)) ->
+              dividesIntegrally(u, w))
+            [by generalize generalize-r]
+        }
+      @discharge-v |
+        forall v9: Q; forall r9, s9: Q;
+          isInteger(u) -> isInteger(v9) ->
+          isInteger(r9) -> isInteger(s9) ->
+          rational.add(rational.mul(u, r9),
+          rational.mul(v9, s9)) = ONE ->
+          (forall k: Nat; forall w: Q; isInteger(w) ->
+          dividesIntegrally(u,
+          rational.mul(qpoly.qpower(v9, k), w)) ->
+          dividesIntegrally(u, w))
+        [by generalize generalize-v]
+    }
+  @conclusion |
+    forall u, v, r, s: Q;
+      isInteger(u) -> isInteger(v) -> isInteger(r) -> isInteger(s) ->
+      rational.add(rational.mul(u, r), rational.mul(v, s)) = ONE ->
+      (forall k: Nat; forall w: Q; isInteger(w) ->
+      dividesIntegrally(u, rational.mul(qpoly.qpower(v, k), w)) ->
+      dividesIntegrally(u, w))
+    [by generalize generalize-u]
+qed
+
+// -- COROLLARY 17.14, THE NUMERATOR HALF ---------------------------------------------------
+// "If r/s is a zero of p(x) with gcd(r, s) = 1, then r | a_0."
+//
+// Clearing denominators gives `0 = s^(n+1)·a_0 + r·t` (the constant-term split), so
+// `r | s^(n+1)·a_0`; Bézout plus the coprime-power induction strips every s.
+theorem theNumeratorDividesTheConstantTerm: forall p: qpoly.QPoly;
+  forall r, s: Q; forall n: Nat;
+  isInteger(r) -> isInteger(s) -> less_than(ZERO, r) ->
+  (not (s = ZERO)) ->
+  (forall i: Nat; isInteger(qpoly.qcoeff(p, i))) ->
+  qpoly.arePairwiseRelativelyPrime(r, s) ->
+  qpoly.qclearedSum(p, r, s, nat_succ(n)) = ZERO ->
+  dividesIntegrally(r, qpoly.qcoeff(p, NAT_ZERO))
+proof
+  @generalize-p |
+    fix p: qpoly.QPoly {
+      @generalize-r |
+        fix r: Q {
+          @generalize-s |
+            fix s: Q {
+              @generalize-n |
+                fix n: Nat {
+                  @given-the-setup |
+                    assume isInteger(r) and isInteger(s) and
+                      less_than(ZERO, r) and (not (s = ZERO)) and
+                      (forall i: Nat;
+                      isInteger(qpoly.qcoeff(p, i))) and
+                      qpoly.arePairwiseRelativelyPrime(r, s) and
+                      qpoly.qclearedSum(p, r, s,
+                      nat_succ(n)) = ZERO {
+                      @the-setup |
+                        isInteger(r) and isInteger(s) and
+                          less_than(ZERO, r) and
+                          (not (s = ZERO)) and
+                          (forall i: Nat;
+                          isInteger(qpoly.qcoeff(p, i))) and
+                          qpoly.arePairwiseRelativelyPrime(r, s) and
+                          qpoly.qclearedSum(p, r, s,
+                          nat_succ(n)) = ZERO
+                        [by hypothesis given-the-setup]
+                      @r-is-an-integer |
+                        isInteger(r)
+                        [using tautology the-setup]
+                      @s-is-an-integer |
+                        isInteger(s)
+                        [using tautology the-setup]
+                      @r-is-positive |
+                        less_than(ZERO, r)
+                        [using tautology the-setup]
+                      @the-coefficients-are-integers |
+                        forall i: Nat;
+                          isInteger(qpoly.qcoeff(p, i))
+                        [using tautology the-setup]
+                      @the-coprimality |
+                        qpoly.arePairwiseRelativelyPrime(r, s)
+                        [using tautology the-setup]
+                      @the-cleared-sum-vanishes |
+                        qpoly.qclearedSum(p, r, s,
+                          nat_succ(n)) = ZERO
+                        [using tautology the-setup]
+                      // Bézout for (r, s), from the quantified coprimality
+                      @the-certificate-exists |
+                        exists r2, s2: Q; isInteger(r2) and
+                          isInteger(s2) and
+                          rational.add(rational.mul(r, r2),
+                          rational.mul(s, s2)) = ONE
+                        [using specialize rational_integer_division.bezoutOnTheCut(r, s) r-is-an-integer s-is-an-integer r-is-positive the-coprimality]
+                      // the constant-term split
+                      @the-split-exists |
+                        exists t: Q; isInteger(t) and
+                          qpoly.qclearedSum(p, r, s,
+                          nat_succ(n)) =
+                          rational.add(rational.mul(
+                          qpoly.qpower(s, nat_succ(n)),
+                          qpoly.qcoeff(p, NAT_ZERO)),
+                          rational.mul(r, t))
+                        [using specialize qpoly.theClearedSumSplitsOffTheConstantTerm(p, r, s, n) r-is-an-integer s-is-an-integer the-coefficients-are-integers]
+                      @conclusion-with-the-split |
+                        unpack t: Q from the-split-exists {
+                          @the-split |
+                            isInteger(t) and
+                              qpoly.qclearedSum(p, r, s,
+                              nat_succ(n)) =
+                              rational.add(rational.mul(
+                              qpoly.qpower(s, nat_succ(n)),
+                              qpoly.qcoeff(p, NAT_ZERO)),
+                              rational.mul(r, t))
+                            [by hypothesis conclusion-with-the-split]
+                          @t-is-an-integer |
+                            isInteger(t)
+                            [by and_lhs the-split]
+                          @the-sum-splits |
+                            qpoly.qclearedSum(p, r, s,
+                              nat_succ(n)) =
+                              rational.add(rational.mul(
+                              qpoly.qpower(s, nat_succ(n)),
+                              qpoly.qcoeff(p, NAT_ZERO)),
+                              rational.mul(r, t))
+                            [by and_rhs the-split]
+                          // 0 = s^(n+1)·a_0 + r·t, so s^(n+1)·a_0 = r·(-t)
+                          @zero-is-the-split |
+                            ZERO = rational.add(rational.mul(
+                              qpoly.qpower(s, nat_succ(n)),
+                              qpoly.qcoeff(p, NAT_ZERO)),
+                              rational.mul(r, t))
+                            [by rewrite the-cleared-sum-vanishes the-sum-splits]
+                          @minus-t-is-an-integer |
+                            isInteger(rational.neg(t))
+                            [using specialize rational.isIntegerNeg(t) t-is-an-integer]
+                          // from 0 = X + r·t, subtract r·t: X = -(r·t) = r·(-t)
+                          @the-split-flipped |
+                            rational.add(rational.mul(
+                              qpoly.qpower(s, nat_succ(n)),
+                              qpoly.qcoeff(p, NAT_ZERO)),
+                              rational.mul(r, t)) = ZERO
+                            [by symmetry zero-is-the-split]
+                          // stated over an ABSTRACT x so `polynomial` never looks
+                          // inside the power (whose exponent is a Nat, which it
+                          // cannot handle under the ℚ theory), then specialized
+                          @the-isolation-law |
+                            forall x, y: Q;
+                              rational.add(rational.add(x, y),
+                              rational.neg(y)) = x
+                            [using import(rational_integer_division) addingAndSubtractingCancels]
+                          @the-isolation |
+                            rational.add(rational.add(
+                              rational.mul(
+                              qpoly.qpower(s, nat_succ(n)),
+                              qpoly.qcoeff(p, NAT_ZERO)),
+                              rational.mul(r, t)),
+                              rational.neg(rational.mul(r, t))) =
+                              rational.mul(
+                              qpoly.qpower(s, nat_succ(n)),
+                              qpoly.qcoeff(p, NAT_ZERO))
+                            [using specialize the-isolation-law(rational.mul(qpoly.qpower(s, nat_succ(n)), qpoly.qcoeff(p, NAT_ZERO)), rational.mul(r, t))]
+                          @the-shifted-zero-law |
+                            forall x, y: Q;
+                              rational.add(ZERO,
+                              rational.neg(rational.mul(x, y))) =
+                              rational.mul(x, rational.neg(y))
+                            [using import(rational_integer_division) theNegatedProductFromZero]
+                          @the-shifted-zero |
+                            rational.add(ZERO,
+                              rational.neg(rational.mul(r, t))) =
+                              rational.mul(r, rational.neg(t))
+                            [using specialize the-shifted-zero-law(r, t)]
+                          @the-isolation-at-zero |
+                            rational.add(ZERO,
+                              rational.neg(rational.mul(r, t))) =
+                              rational.mul(
+                              qpoly.qpower(s, nat_succ(n)),
+                              qpoly.qcoeff(p, NAT_ZERO))
+                            [by rewrite the-split-flipped the-isolation]
+                          @the-rearrangement-flipped |
+                            rational.mul(r, rational.neg(t)) =
+                              rational.mul(
+                              qpoly.qpower(s, nat_succ(n)),
+                              qpoly.qcoeff(p, NAT_ZERO))
+                            [by rewrite the-shifted-zero the-isolation-at-zero]
+                          @the-rearrangement |
+                            rational.mul(
+                              qpoly.qpower(s, nat_succ(n)),
+                              qpoly.qcoeff(p, NAT_ZERO)) =
+                              rational.mul(r, rational.neg(t))
+                            [by symmetry the-rearrangement-flipped]
+                          @the-product-quotient-works |
+                            isInteger(rational.neg(t)) and
+                              rational.mul(
+                              qpoly.qpower(s, nat_succ(n)),
+                              qpoly.qcoeff(p, NAT_ZERO)) =
+                              rational.mul(r, rational.neg(t))
+                            [by both minus-t-is-an-integer the-rearrangement]
+                          @a-product-quotient-exists |
+                            exists k: Q; isInteger(k) and
+                              rational.mul(
+                              qpoly.qpower(s, nat_succ(n)),
+                              qpoly.qcoeff(p, NAT_ZERO)) =
+                              rational.mul(r, k)
+                            [by witness(rational.neg(t)) the-product-quotient-works]
+                          @the-product-divides-meaning |
+                            dividesIntegrally(r, rational.mul(
+                              qpoly.qpower(s, nat_succ(n)),
+                              qpoly.qcoeff(p, NAT_ZERO))) iff
+                              (exists k: Q; isInteger(k) and
+                              rational.mul(
+                              qpoly.qpower(s, nat_succ(n)),
+                              qpoly.qcoeff(p, NAT_ZERO)) =
+                              rational.mul(r, k))
+                            [using specialize dividesIntegrallyMeaning(r, rational.mul(qpoly.qpower(s, nat_succ(n)), qpoly.qcoeff(p, NAT_ZERO)))]
+                          @r-divides-the-product |
+                            dividesIntegrally(r, rational.mul(
+                              qpoly.qpower(s, nat_succ(n)),
+                              qpoly.qcoeff(p, NAT_ZERO)))
+                            [using tautology the-product-divides-meaning a-product-quotient-exists]
+                          // strip every s with the coprime-power induction
+                          @conclusion-with-the-certificate |
+                            unpack cr: Q from the-certificate-exists {
+                              @the-s-coefficient-exists |
+                                exists s2: Q; isInteger(cr) and
+                                  isInteger(s2) and
+                                  rational.add(
+                                  rational.mul(r, cr),
+                                  rational.mul(s, s2)) = ONE
+                                [by hypothesis conclusion-with-the-certificate]
+                              @conclusion-with-both |
+                                unpack cs: Q from the-s-coefficient-exists {
+                                  @the-certificate-parts |
+                                    isInteger(cr) and
+                                      isInteger(cs) and
+                                      rational.add(
+                                      rational.mul(r, cr),
+                                      rational.mul(s, cs)) = ONE
+                                    [by hypothesis conclusion-with-both]
+                                  @cr-is-an-integer |
+                                    isInteger(cr)
+                                    [using tautology the-certificate-parts]
+                                  @cs-is-an-integer |
+                                    isInteger(cs)
+                                    [using tautology the-certificate-parts]
+                                  @the-certificate |
+                                    rational.add(
+                                      rational.mul(r, cr),
+                                      rational.mul(s, cs)) = ONE
+                                    [using tautology the-certificate-parts]
+                                  @the-stripping |
+                                    forall k: Nat; forall w: Q;
+                                      isInteger(w) ->
+                                      dividesIntegrally(r,
+                                      rational.mul(
+                                      qpoly.qpower(s, k), w)) ->
+                                      dividesIntegrally(r, w)
+                                    [using specialize coprimeToAPowerDividesTheCofactor(r, s, cr, cs) r-is-an-integer s-is-an-integer cr-is-an-integer cs-is-an-integer the-certificate]
+                                  @the-constant-is-an-integer |
+                                    isInteger(qpoly.qcoeff(p,
+                                      NAT_ZERO))
+                                    [using specialize the-coefficients-are-integers(NAT_ZERO)]
+                                  @conclusion-r-divides-the-constant |
+                                    dividesIntegrally(r,
+                                      qpoly.qcoeff(p, NAT_ZERO))
+                                    [using specialize the-stripping(nat_succ(n), qpoly.qcoeff(p, NAT_ZERO)) the-constant-is-an-integer r-divides-the-product]
+                                }
+                              @the-both-exported |
+                                dividesIntegrally(r,
+                                  qpoly.qcoeff(p, NAT_ZERO))
+                                [by unpacked conclusion-with-both]
+                            }
+                          @the-certificate-exported |
+                            dividesIntegrally(r,
+                              qpoly.qcoeff(p, NAT_ZERO))
+                            [by unpacked conclusion-with-the-certificate]
+                        }
+                      @the-split-exported |
+                        dividesIntegrally(r,
+                          qpoly.qcoeff(p, NAT_ZERO))
+                        [by unpacked conclusion-with-the-split]
+                    }
+                  @the-implication |
+                    (isInteger(r) and isInteger(s) and
+                      less_than(ZERO, r) and (not (s = ZERO)) and
+                      (forall i: Nat;
+                      isInteger(qpoly.qcoeff(p, i))) and
+                      qpoly.arePairwiseRelativelyPrime(r, s) and
+                      qpoly.qclearedSum(p, r, s,
+                      nat_succ(n)) = ZERO) ->
+                      dividesIntegrally(r,
+                      qpoly.qcoeff(p, NAT_ZERO))
+                    [by discharge given-the-setup]
+                  @curried |
+                    isInteger(r) -> isInteger(s) ->
+                      less_than(ZERO, r) -> (not (s = ZERO)) ->
+                      (forall i: Nat;
+                      isInteger(qpoly.qcoeff(p, i))) ->
+                      qpoly.arePairwiseRelativelyPrime(r, s) ->
+                      qpoly.qclearedSum(p, r, s,
+                      nat_succ(n)) = ZERO ->
+                      dividesIntegrally(r,
+                      qpoly.qcoeff(p, NAT_ZERO))
+                    [using tautology the-implication]
+                }
+              @discharge-n |
+                forall n9: Nat;
+                  isInteger(r) -> isInteger(s) ->
+                  less_than(ZERO, r) -> (not (s = ZERO)) ->
+                  (forall i: Nat; isInteger(qpoly.qcoeff(p, i))) ->
+                  qpoly.arePairwiseRelativelyPrime(r, s) ->
+                  qpoly.qclearedSum(p, r, s, nat_succ(n9)) = ZERO ->
+                  dividesIntegrally(r, qpoly.qcoeff(p, NAT_ZERO))
+                [by generalize generalize-n]
+            }
+          @discharge-s |
+            forall s9: Q; forall n9: Nat;
+              isInteger(r) -> isInteger(s9) ->
+              less_than(ZERO, r) -> (not (s9 = ZERO)) ->
+              (forall i: Nat; isInteger(qpoly.qcoeff(p, i))) ->
+              qpoly.arePairwiseRelativelyPrime(r, s9) ->
+              qpoly.qclearedSum(p, r, s9, nat_succ(n9)) = ZERO ->
+              dividesIntegrally(r, qpoly.qcoeff(p, NAT_ZERO))
+            [by generalize generalize-s]
+        }
+      @discharge-r |
+        forall r9, s9: Q; forall n9: Nat;
+          isInteger(r9) -> isInteger(s9) ->
+          less_than(ZERO, r9) -> (not (s9 = ZERO)) ->
+          (forall i: Nat; isInteger(qpoly.qcoeff(p, i))) ->
+          qpoly.arePairwiseRelativelyPrime(r9, s9) ->
+          qpoly.qclearedSum(p, r9, s9, nat_succ(n9)) = ZERO ->
+          dividesIntegrally(r9, qpoly.qcoeff(p, NAT_ZERO))
+        [by generalize generalize-r]
+    }
+  @conclusion |
+    forall p: qpoly.QPoly; forall r, s: Q; forall n: Nat;
+      isInteger(r) -> isInteger(s) -> less_than(ZERO, r) ->
+      (not (s = ZERO)) ->
+      (forall i: Nat; isInteger(qpoly.qcoeff(p, i))) ->
+      qpoly.arePairwiseRelativelyPrime(r, s) ->
+      qpoly.qclearedSum(p, r, s, nat_succ(n)) = ZERO ->
+      dividesIntegrally(r, qpoly.qcoeff(p, NAT_ZERO))
+    [by generalize generalize-p]
 qed
