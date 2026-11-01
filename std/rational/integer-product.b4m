@@ -8281,24 +8281,385 @@ proof
     [by generalize generalize-s]
 qed
 
-// -- THE PAIR CASE: WHAT REMAINS ----------------------------------------------------------
+// -- THE PAIR CASE ------------------------------------------------------------------------
 // `isTheIntegerDecomposition` needs `arePairwiseRelativelyPrime(r, s)` for the reduced
-// fraction `r/s`. The route is settled and every ingredient is proved — but it is not
-// assembled, and the remaining step is enumerative rather than conceptual.
+// fraction. A pair is a TWO-ELEMENT SEQUENCE, so `aCoprimeDivisorOfASequenceExists` covers it
+// — no separate descent, and no need for `isAMaximalCommonDivisorOfThePair`, whose existence
+// is unproved and whose maximality is strictly stronger than anything used.
 //
-// THE ROUTE: a pair is a two-element sequence (`aTwoElementSequenceExists`), so
-// `aCoprimeDivisorOfASequenceExists` at bound 2 gives a divisor `g` with coprime quotients;
-// take `r := q_0`, `s := q_1`. The quotient relation then gives `a = g·r` and `b = g·s`.
-//
-// WHY IT IS NOT DONE: the conversion
-//
-//     isACommonDivisorUpTo(e, q, 2)  <->  (e | q_0  and  e | q_1)
-//
-// needs INDEX ENUMERATION — "below 2 means 0 or 1" — which std does not have. The pieces to
-// build it are present (`theNaturalSuccSplit` splits `i < succ k` into `i < k or i = k`, twice
-// over), but it is three or four further lemmas of pure index bookkeeping, and they belong in
-// `std/peano/order.b4m` rather than here.
-//
-// Verified before deferring: the reduction IS true and `theQuotientsAreCoprime(q, 2)` really
-// does say what `arePairwiseRelativelyPrime(q_0, q_1)` says — the two differ only in how the
-// index range is written.
+// The index range is enumerated by `peano_order.belowTwoMeansZeroOrOne`.
+
+// A two-element sequence has integer entries throughout its range, given both values are.
+theorem aTwoElementSequenceHasIntegerEntries: forall t: QSeq; forall a, b: Q;
+  qat(t, NAT_ZERO) = a -> qat(t, nat_succ(NAT_ZERO)) = b ->
+  isInteger(a) -> isInteger(b) ->
+  (forall i: Nat; nat_less_than(i, nat_succ(nat_succ(NAT_ZERO))) ->
+  isInteger(qat(t, i)))
+proof
+  @generalize-t |
+    fix t: QSeq {
+      @generalize-a |
+        fix a: Q {
+          @generalize-b |
+            fix b: Q {
+              @given-the-setup |
+                assume qat(t, NAT_ZERO) = a and
+                  qat(t, nat_succ(NAT_ZERO)) = b and
+                  isInteger(a) and isInteger(b) {
+                  @the-setup |
+                    qat(t, NAT_ZERO) = a and
+                      qat(t, nat_succ(NAT_ZERO)) = b and
+                      isInteger(a) and isInteger(b)
+                    [by hypothesis given-the-setup]
+                  @t-at-zero |
+                    qat(t, NAT_ZERO) = a
+                    [using tautology the-setup]
+                  @t-at-one |
+                    qat(t, nat_succ(NAT_ZERO)) = b
+                    [using tautology the-setup]
+                  @a-is-an-integer |
+                    isInteger(a)
+                    [using tautology the-setup]
+                  @b-is-an-integer |
+                    isInteger(b)
+                    [using tautology the-setup]
+                  @the-zeroth-is-an-integer |
+                    isInteger(qat(t, NAT_ZERO))
+                    [by rewrite t-at-zero a-is-an-integer]
+                  @the-first-is-an-integer |
+                    isInteger(qat(t, nat_succ(NAT_ZERO)))
+                    [by rewrite t-at-one b-is-an-integer]
+                  @each-index |
+                    fix i: Nat {
+                      @given-i-below-two |
+                        assume nat_less_than(i,
+                          nat_succ(nat_succ(NAT_ZERO))) {
+                          @i-below-two |
+                            nat_less_than(i, nat_succ(nat_succ(NAT_ZERO)))
+                            [by hypothesis given-i-below-two]
+                          @the-cases |
+                            i = NAT_ZERO or i = nat_succ(NAT_ZERO)
+                            [using specialize peano_order.belowTwoMeansZeroOrOne(i) i-below-two]
+                          @conclusion-integer-at-i |
+                            isInteger(qat(t, i))
+                            case the-cases {
+                              @when-zero |
+                                assume i = NAT_ZERO {
+                                  @i-is-zero |
+                                    i = NAT_ZERO
+                                    [by hypothesis when-zero]
+                                  @conclusion-at-zero |
+                                    isInteger(qat(t, i))
+                                    [by rewrite i-is-zero the-zeroth-is-an-integer]
+                                }
+                              @when-one |
+                                assume i = nat_succ(NAT_ZERO) {
+                                  @i-is-one |
+                                    i = nat_succ(NAT_ZERO)
+                                    [by hypothesis when-one]
+                                  @conclusion-at-one |
+                                    isInteger(qat(t, i))
+                                    [by rewrite i-is-one the-first-is-an-integer]
+                                }
+                            }
+                        }
+                      @below-two-implies |
+                        nat_less_than(i, nat_succ(nat_succ(NAT_ZERO))) ->
+                          isInteger(qat(t, i))
+                        [by discharge given-i-below-two]
+                    }
+                  @conclusion-all |
+                    forall i: Nat;
+                      nat_less_than(i, nat_succ(nat_succ(NAT_ZERO))) ->
+                      isInteger(qat(t, i))
+                    [by generalize each-index]
+                }
+              @the-implication |
+                (qat(t, NAT_ZERO) = a and
+                  qat(t, nat_succ(NAT_ZERO)) = b and
+                  isInteger(a) and isInteger(b)) ->
+                  (forall i: Nat;
+                  nat_less_than(i, nat_succ(nat_succ(NAT_ZERO))) ->
+                  isInteger(qat(t, i)))
+                [by discharge given-the-setup]
+              @curried |
+                qat(t, NAT_ZERO) = a -> qat(t, nat_succ(NAT_ZERO)) = b ->
+                  isInteger(a) -> isInteger(b) ->
+                  (forall i: Nat;
+                  nat_less_than(i, nat_succ(nat_succ(NAT_ZERO))) ->
+                  isInteger(qat(t, i)))
+                [using tautology the-implication]
+            }
+          @discharge-b |
+            forall b9: Q;
+              qat(t, NAT_ZERO) = a -> qat(t, nat_succ(NAT_ZERO)) = b9 ->
+              isInteger(a) -> isInteger(b9) ->
+              (forall i: Nat;
+              nat_less_than(i, nat_succ(nat_succ(NAT_ZERO))) ->
+              isInteger(qat(t, i)))
+            [by generalize generalize-b]
+        }
+      @discharge-a |
+        forall a9: Q; forall b9: Q;
+          qat(t, NAT_ZERO) = a9 -> qat(t, nat_succ(NAT_ZERO)) = b9 ->
+          isInteger(a9) -> isInteger(b9) ->
+          (forall i: Nat;
+          nat_less_than(i, nat_succ(nat_succ(NAT_ZERO))) ->
+          isInteger(qat(t, i)))
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall t: QSeq; forall a, b: Q;
+      qat(t, NAT_ZERO) = a -> qat(t, nat_succ(NAT_ZERO)) = b ->
+      isInteger(a) -> isInteger(b) ->
+      (forall i: Nat; nat_less_than(i, nat_succ(nat_succ(NAT_ZERO))) ->
+      isInteger(qat(t, i)))
+    [by generalize generalize-t]
+qed
+
+// Two entries cover a two-element range: dividing q_0 and q_1 is dividing every entry below
+// TWO, by `belowTwoMeansZeroOrOne`.
+theorem theTwoEntriesCoverTheRange: forall q: QSeq; forall e: Q;
+  dividesIntegrally(e, qat(q, NAT_ZERO)) ->
+  dividesIntegrally(e, qat(q, nat_succ(NAT_ZERO))) ->
+  (forall i: Nat; nat_less_than(i, nat_succ(nat_succ(NAT_ZERO))) ->
+  dividesIntegrally(e, qat(q, i)))
+proof
+  @generalize-q |
+    fix q: QSeq {
+      @generalize-e |
+        fix e: Q {
+          @given-divides-zeroth |
+            assume dividesIntegrally(e, qat(q, NAT_ZERO)) {
+              @divides-zeroth |
+                dividesIntegrally(e, qat(q, NAT_ZERO))
+                [by hypothesis given-divides-zeroth]
+              @given-divides-first |
+                assume dividesIntegrally(e, qat(q, nat_succ(NAT_ZERO))) {
+                  @divides-first |
+                    dividesIntegrally(e, qat(q, nat_succ(NAT_ZERO)))
+                    [by hypothesis given-divides-first]
+                  @each-index |
+                    fix i: Nat {
+                      @given-i-below-two |
+                        assume nat_less_than(i,
+                          nat_succ(nat_succ(NAT_ZERO))) {
+                          @i-below-two |
+                            nat_less_than(i, nat_succ(nat_succ(NAT_ZERO)))
+                            [by hypothesis given-i-below-two]
+                          @the-cases |
+                            i = NAT_ZERO or i = nat_succ(NAT_ZERO)
+                            [using specialize peano_order.belowTwoMeansZeroOrOne(i) i-below-two]
+                          @conclusion-divides-at-i |
+                            dividesIntegrally(e, qat(q, i))
+                            case the-cases {
+                              @when-zero |
+                                assume i = NAT_ZERO {
+                                  @i-is-zero |
+                                    i = NAT_ZERO
+                                    [by hypothesis when-zero]
+                                  @conclusion-at-zero |
+                                    dividesIntegrally(e, qat(q, i))
+                                    [by rewrite i-is-zero divides-zeroth]
+                                }
+                              @when-one |
+                                assume i = nat_succ(NAT_ZERO) {
+                                  @i-is-one |
+                                    i = nat_succ(NAT_ZERO)
+                                    [by hypothesis when-one]
+                                  @conclusion-at-one |
+                                    dividesIntegrally(e, qat(q, i))
+                                    [by rewrite i-is-one divides-first]
+                                }
+                            }
+                        }
+                      @below-two-implies |
+                        nat_less_than(i, nat_succ(nat_succ(NAT_ZERO))) ->
+                          dividesIntegrally(e, qat(q, i))
+                        [by discharge given-i-below-two]
+                    }
+                  @conclusion-all |
+                    forall i: Nat;
+                      nat_less_than(i, nat_succ(nat_succ(NAT_ZERO))) ->
+                      dividesIntegrally(e, qat(q, i))
+                    [by generalize each-index]
+                }
+              @first-implies |
+                dividesIntegrally(e, qat(q, nat_succ(NAT_ZERO))) ->
+                  (forall i: Nat;
+                  nat_less_than(i, nat_succ(nat_succ(NAT_ZERO))) ->
+                  dividesIntegrally(e, qat(q, i)))
+                [by discharge given-divides-first]
+            }
+          @zeroth-implies |
+            dividesIntegrally(e, qat(q, NAT_ZERO)) ->
+              dividesIntegrally(e, qat(q, nat_succ(NAT_ZERO))) ->
+              (forall i: Nat;
+              nat_less_than(i, nat_succ(nat_succ(NAT_ZERO))) ->
+              dividesIntegrally(e, qat(q, i)))
+            [by discharge given-divides-zeroth]
+        }
+      @discharge-e |
+        forall e9: Q;
+          dividesIntegrally(e9, qat(q, NAT_ZERO)) ->
+          dividesIntegrally(e9, qat(q, nat_succ(NAT_ZERO))) ->
+          (forall i: Nat;
+          nat_less_than(i, nat_succ(nat_succ(NAT_ZERO))) ->
+          dividesIntegrally(e9, qat(q, i)))
+        [by generalize generalize-e]
+    }
+  @conclusion |
+    forall q: QSeq; forall e: Q;
+      dividesIntegrally(e, qat(q, NAT_ZERO)) ->
+      dividesIntegrally(e, qat(q, nat_succ(NAT_ZERO))) ->
+      (forall i: Nat; nat_less_than(i, nat_succ(nat_succ(NAT_ZERO))) ->
+      dividesIntegrally(e, qat(q, i)))
+    [by generalize generalize-q]
+qed
+
+// Coprimality of the two quotient entries, from coprimality over the two-element range. The
+// two statements differ only in how the index range is written: `isACommonDivisorUpTo(e, q, 2)`
+// unfolds, by `belowTwoMeansZeroOrOne`, to "e divides q_0 and e divides q_1".
+theorem theTwoQuotientsAreCoprime: forall q: QSeq;
+  theQuotientsAreCoprime(q, nat_succ(nat_succ(NAT_ZERO))) ->
+  qpoly.arePairwiseRelativelyPrime(qat(q, NAT_ZERO),
+  qat(q, nat_succ(NAT_ZERO)))
+proof
+  @generalize-q |
+    fix q: QSeq {
+      @given-coprime |
+        assume theQuotientsAreCoprime(q, nat_succ(nat_succ(NAT_ZERO))) {
+          @coprime |
+            theQuotientsAreCoprime(q, nat_succ(nat_succ(NAT_ZERO)))
+            [by hypothesis given-coprime]
+          @the-coprime-meaning |
+            theQuotientsAreCoprime(q, nat_succ(nat_succ(NAT_ZERO))) iff
+              (forall e: Q; isInteger(e) ->
+              isACommonDivisorUpTo(e, q,
+              nat_succ(nat_succ(NAT_ZERO))) ->
+              dividesIntegrally(e, ONE))
+            [using specialize quotientsCoprimeMeaning(q, nat_succ(nat_succ(NAT_ZERO)))]
+          @every-divisor-is-a-unit |
+            forall e: Q; isInteger(e) ->
+              isACommonDivisorUpTo(e, q,
+              nat_succ(nat_succ(NAT_ZERO))) ->
+              dividesIntegrally(e, ONE)
+            [using tautology the-coprime-meaning coprime]
+          @each-candidate |
+            fix e: Q {
+              @given-e-is-an-integer |
+                assume isInteger(e) {
+                  @e-is-an-integer |
+                    isInteger(e)
+                    [by hypothesis given-e-is-an-integer]
+                  @given-e-divides-zeroth |
+                    assume exists k: Q; isInteger(k) and
+                      qat(q, NAT_ZERO) = rational.mul(e, k) {
+                      @the-zeroth-quotient |
+                        exists k: Q; isInteger(k) and
+                          qat(q, NAT_ZERO) = rational.mul(e, k)
+                        [by hypothesis given-e-divides-zeroth]
+                      @the-zeroth-meaning |
+                        dividesIntegrally(e, qat(q, NAT_ZERO)) iff
+                          (exists k: Q; isInteger(k) and
+                          qat(q, NAT_ZERO) = rational.mul(e, k))
+                        [using specialize dividesIntegrallyMeaning(e, qat(q, NAT_ZERO))]
+                      @e-divides-zeroth |
+                        dividesIntegrally(e, qat(q, NAT_ZERO))
+                        [using tautology the-zeroth-meaning the-zeroth-quotient]
+                      @given-e-divides-first |
+                        assume exists k: Q; isInteger(k) and
+                          qat(q, nat_succ(NAT_ZERO)) =
+                          rational.mul(e, k) {
+                          @the-first-quotient |
+                            exists k: Q; isInteger(k) and
+                              qat(q, nat_succ(NAT_ZERO)) =
+                              rational.mul(e, k)
+                            [by hypothesis given-e-divides-first]
+                          @the-first-meaning |
+                            dividesIntegrally(e,
+                              qat(q, nat_succ(NAT_ZERO))) iff
+                              (exists k: Q; isInteger(k) and
+                              qat(q, nat_succ(NAT_ZERO)) =
+                              rational.mul(e, k))
+                            [using specialize dividesIntegrallyMeaning(e, qat(q, nat_succ(NAT_ZERO)))]
+                          @e-divides-first |
+                            dividesIntegrally(e,
+                              qat(q, nat_succ(NAT_ZERO)))
+                            [using tautology the-first-meaning the-first-quotient]
+                          // e divides every entry below TWO, by enumeration
+                          @e-divides-below-two |
+                            forall i: Nat;
+                              nat_less_than(i,
+                              nat_succ(nat_succ(NAT_ZERO))) ->
+                              dividesIntegrally(e, qat(q, i))
+                            [using specialize theTwoEntriesCoverTheRange(q, e) e-divides-zeroth e-divides-first]
+                          @the-divisor-meaning |
+                            isACommonDivisorUpTo(e, q,
+                              nat_succ(nat_succ(NAT_ZERO))) iff
+                              (forall i: Nat;
+                              nat_less_than(i,
+                              nat_succ(nat_succ(NAT_ZERO))) ->
+                              dividesIntegrally(e, qat(q, i)))
+                            [using specialize commonDivisorMeaning(e, q, nat_succ(nat_succ(NAT_ZERO)))]
+                          @e-is-a-common-divisor |
+                            isACommonDivisorUpTo(e, q,
+                              nat_succ(nat_succ(NAT_ZERO)))
+                            [using tautology the-divisor-meaning e-divides-below-two]
+                          @e-divides-one |
+                            dividesIntegrally(e, ONE)
+                            [using specialize every-divisor-is-a-unit(e) e-is-an-integer e-is-a-common-divisor]
+                          @the-unit-meaning |
+                            dividesIntegrally(e, ONE) iff
+                              (exists k: Q; isInteger(k) and
+                              ONE = rational.mul(e, k))
+                            [using specialize dividesIntegrallyMeaning(e, ONE)]
+                          @conclusion-e-is-a-unit |
+                            exists k: Q; isInteger(k) and
+                              ONE = rational.mul(e, k)
+                            [using tautology the-unit-meaning e-divides-one]
+                        }
+                      @first-implies |
+                        (exists k: Q; isInteger(k) and
+                          qat(q, nat_succ(NAT_ZERO)) = rational.mul(e, k)) ->
+                          (exists k: Q; isInteger(k) and
+                          ONE = rational.mul(e, k))
+                        [by discharge given-e-divides-first]
+                    }
+                  @zeroth-implies |
+                    (exists k: Q; isInteger(k) and
+                      qat(q, NAT_ZERO) = rational.mul(e, k)) ->
+                      (exists k: Q; isInteger(k) and
+                      qat(q, nat_succ(NAT_ZERO)) = rational.mul(e, k)) ->
+                      (exists k: Q; isInteger(k) and
+                      ONE = rational.mul(e, k))
+                    [by discharge given-e-divides-zeroth]
+                }
+              @integer-implies |
+                isInteger(e) ->
+                  (exists k: Q; isInteger(k) and
+                  qat(q, NAT_ZERO) = rational.mul(e, k)) ->
+                  (exists k: Q; isInteger(k) and
+                  qat(q, nat_succ(NAT_ZERO)) = rational.mul(e, k)) ->
+                  (exists k: Q; isInteger(k) and
+                  ONE = rational.mul(e, k))
+                [by discharge given-e-is-an-integer]
+            }
+          @conclusion-pairwise |
+            qpoly.arePairwiseRelativelyPrime(qat(q, NAT_ZERO),
+              qat(q, nat_succ(NAT_ZERO)))
+            [by generalize each-candidate]
+        }
+      @coprime-implies |
+        theQuotientsAreCoprime(q, nat_succ(nat_succ(NAT_ZERO))) ->
+          qpoly.arePairwiseRelativelyPrime(qat(q, NAT_ZERO),
+          qat(q, nat_succ(NAT_ZERO)))
+        [by discharge given-coprime]
+    }
+  @conclusion |
+    forall q: QSeq;
+      theQuotientsAreCoprime(q, nat_succ(nat_succ(NAT_ZERO))) ->
+      qpoly.arePairwiseRelativelyPrime(qat(q, NAT_ZERO),
+      qat(q, nat_succ(NAT_ZERO)))
+    [by generalize generalize-q]
+qed
