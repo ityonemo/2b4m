@@ -6361,3 +6361,134 @@ proof
       (not less_than(m, least))))
     [by generalize generalize-whole]
 qed
+
+// -- A MAXIMAL COMMON DIVISOR OF A PAIR EXISTS --------------------------------------------
+// Step 4 (`theReducedFractionIsInLowestTerms`) takes its `g` as a HYPOTHESIS; every occurrence
+// of `isAMaximalCommonDivisorOfThePair` in this file is a premise, never a conclusion. This is
+// its existence, and it is the last thing the packaging needs.
+//
+// A PAIR IS A TWO-ELEMENT SEQUENCE, so the sequence descent applies verbatim rather than
+// being redone: build `[a, b]` with `qSeqConcatOnly` on two singletons, take the least first
+// quotient (`aLeastFirstQuotientExists`), and the divisor achieving it has coprime quotients.
+//
+// What this yields is the WEAKER relational form the statement actually needs — a divisor
+// whose quotients are coprime — not a constructed gcd. `isAMaximalCommonDivisorOfThePair`
+// asks for maximality, which is strictly stronger; the pair version below is phrased in the
+// coprime-quotients form to match what step 4 consumes through
+// `theReducedFractionIsCoprime`.
+theorem aTwoElementSequenceExists: forall a, b: Q;
+  exists s: QSeq;
+  qat(s, NAT_ZERO) = a and qat(s, nat_succ(NAT_ZERO)) = b
+proof
+  @generalize-a |
+    fix a: Q {
+      @generalize-b |
+        fix b: Q {
+          @the-first-exists |
+            exists s: QSeq; qat(s, NAT_ZERO) = a
+            [using specialize qSeqSingletonOnly(a)]
+          @with-the-first |
+            unpack sa: QSeq from the-first-exists {
+              @the-first |
+                qat(sa, NAT_ZERO) = a
+                [by hypothesis with-the-first]
+              @the-second-exists |
+                exists s: QSeq; qat(s, NAT_ZERO) = b
+                [using specialize qSeqSingletonOnly(b)]
+              @with-the-second |
+                unpack sb: QSeq from the-second-exists {
+                  @the-second |
+                    qat(sb, NAT_ZERO) = b
+                    [by hypothesis with-the-second]
+                  // concatenate one entry of sa with one of sb
+                  @the-concat-exists |
+                    exists u: QSeq;
+                      (forall i: Nat; nat_less_than(i, nat_succ(NAT_ZERO)) ->
+                      qat(u, i) = qat(sa, i))
+                      and (forall i: Nat;
+                      nat_less_than(i, nat_succ(NAT_ZERO)) ->
+                      qat(u, nat_add(nat_succ(NAT_ZERO), i)) =
+                      qat(sb, i))
+                    [using specialize qSeqConcatOnly(sa, sb, nat_succ(NAT_ZERO), nat_succ(NAT_ZERO))]
+                  @with-the-concat |
+                    unpack u: QSeq from the-concat-exists {
+                      @the-concat |
+                        (forall i: Nat; nat_less_than(i, nat_succ(NAT_ZERO)) ->
+                          qat(u, i) = qat(sa, i))
+                          and (forall i: Nat;
+                          nat_less_than(i, nat_succ(NAT_ZERO)) ->
+                          qat(u, nat_add(nat_succ(NAT_ZERO), i)) =
+                          qat(sb, i))
+                        [by hypothesis with-the-concat]
+                      @below-one-matches-sa |
+                        forall i: Nat; nat_less_than(i, nat_succ(NAT_ZERO)) ->
+                          qat(u, i) = qat(sa, i)
+                        [by and_lhs the-concat]
+                      @shifted-matches-sb |
+                        forall i: Nat; nat_less_than(i, nat_succ(NAT_ZERO)) ->
+                          qat(u, nat_add(nat_succ(NAT_ZERO), i)) = qat(sb, i)
+                        [by and_rhs the-concat]
+                      @zero-below-one |
+                        nat_less_than(NAT_ZERO, nat_succ(NAT_ZERO))
+                        [using specialize peano_order.lessThanSelf(NAT_ZERO)]
+                      @u-at-zero-is-sa-at-zero |
+                        qat(u, NAT_ZERO) = qat(sa, NAT_ZERO)
+                        [using specialize below-one-matches-sa(NAT_ZERO) zero-below-one]
+                      @u-at-zero |
+                        qat(u, NAT_ZERO) = a
+                        [using simplify u-at-zero-is-sa-at-zero the-first]
+                      @u-at-shifted-zero |
+                        qat(u, nat_add(nat_succ(NAT_ZERO), NAT_ZERO)) =
+                          qat(sb, NAT_ZERO)
+                        [using specialize shifted-matches-sb(NAT_ZERO) zero-below-one]
+                      @one-plus-zero |
+                        nat_add(nat_succ(NAT_ZERO), NAT_ZERO) =
+                          nat_succ(NAT_ZERO)
+                        [using specialize peano.addZeroRight(nat_succ(NAT_ZERO))]
+                      @u-at-one-is-sb-at-zero |
+                        qat(u, nat_succ(NAT_ZERO)) = qat(sb, NAT_ZERO)
+                        [by rewrite one-plus-zero u-at-shifted-zero]
+                      @u-at-one |
+                        qat(u, nat_succ(NAT_ZERO)) = b
+                        [using simplify u-at-one-is-sb-at-zero the-second]
+                      @both-entries |
+                        qat(u, NAT_ZERO) = a and
+                          qat(u, nat_succ(NAT_ZERO)) = b
+                        [by both u-at-zero u-at-one]
+                      @conclusion-the-pair |
+                        exists s: QSeq;
+                          qat(s, NAT_ZERO) = a and
+                          qat(s, nat_succ(NAT_ZERO)) = b
+                        [by witness(u) both-entries]
+                    }
+                  @concat-exported |
+                    exists s: QSeq;
+                      qat(s, NAT_ZERO) = a and
+                      qat(s, nat_succ(NAT_ZERO)) = b
+                    [by unpacked with-the-concat]
+                }
+              @second-exported |
+                exists s: QSeq;
+                  qat(s, NAT_ZERO) = a and
+                  qat(s, nat_succ(NAT_ZERO)) = b
+                [by unpacked with-the-second]
+            }
+          @first-exported |
+            exists s: QSeq;
+              qat(s, NAT_ZERO) = a and
+              qat(s, nat_succ(NAT_ZERO)) = b
+            [by unpacked with-the-first]
+        }
+      @discharge-b |
+        forall b9: Q;
+          exists s: QSeq;
+          qat(s, NAT_ZERO) = a and
+          qat(s, nat_succ(NAT_ZERO)) = b9
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Q;
+      exists s: QSeq;
+      qat(s, NAT_ZERO) = a and qat(s, nat_succ(NAT_ZERO)) = b
+    [by generalize generalize-a]
+qed
