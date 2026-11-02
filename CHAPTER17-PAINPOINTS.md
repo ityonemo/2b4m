@@ -234,6 +234,49 @@ while the machinery could not be joined up.
   until strict runs. That was already the standing rule ("never close a site on `--fast`
   alone"); the new part is the reason — not "fast is approximate" but "fast looked at less
   than you think".
+- **`specialize` discharges antecedents POSITIONALLY, and there is no way to skip one.**
+  Cost two rounds on the Gauss d = 1 branch. `gaussLemmaAtDOne` has seven antecedents with the
+  scaling equation SIXTH; handing that equation over as the first ref matched it against
+  antecedent one (`isInteger(c)`) and reported a claim/instance mismatch naming both formulas
+  in full — a good diagnostic, once you read it as "your ref landed in the wrong slot" rather
+  than "your fact is wrong".
+
+  Reordering the CALLER's own hypotheses to match does NOT help: with no refs at all,
+  `specialize` leaves every antecedent in place, so the instance still carries the scaling
+  equation while the claim omits it.
+
+  **What works: claim the instance VERBATIM — scaling antecedent included — then discharge
+  that one antecedent with `tautology`**, which consumes an implication by its CONTENT rather
+  than by position. Two steps instead of one, and the intermediate is honest about what the
+  lemma actually says.
+
+  Same root cause as the `--fast` masking entry above: `specialize` is positional, and its
+  admit keeps only "a head is present".
+- **A BOUNDED fact and an UNBOUNDED one are not interchangeable — and the gap is invisible
+  until something consumes the wrong one.** Lemma 17.12 reports
+  `hasIntegerCoefficientsUpTo(q, succ(n))`, because its descent runs over a finite index range.
+  `integer-polynomial.b4m`'s `theProductIsIntegral` and
+  `theModulusCannotDivideEveryProductCoefficient` both consume the unbounded
+  `hasIntegerCoefficients`. The decomposition carries NO degree bound on `q` of its own, so
+  bounded → unbounded is simply not available from it, and asserting the bridge would have been
+  a textbook-sounding assumption about my own symbols (disguise #3 in the axiomatization rule).
+
+  The honest route recovers the bound from the SCALING EQUATION instead:
+  `aNonzeroScalingReflectsTheDegreeBound` — above the bound the scaled coefficient vanishes,
+  and `noZeroDivisors` with a nonzero scalar forces `q`'s coefficient to vanish too. With a
+  degree bound in hand the two integralities DO coincide
+  (`aBoundedIntegralityWithADegreeBoundIsUnbounded`), because above the bound every coefficient
+  is `ZERO` and `ZERO` is an integer.
+
+  **The reusable shape:** when a producer reports a bounded fact and a consumer wants the
+  unbounded one, the missing premise is a DEGREE BOUND, and it usually already exists somewhere
+  in the producer's own equation rather than needing a new axiom.
+- **A step cannot carry its own `proof … qed` block.** Hit TWICE this session, in two
+  different files — `expected '[', got 'proof'`. A step is always `@label | formula [just…]`;
+  an inner universal that needs its own induction or case split must be its own TOP-LEVEL
+  theorem. The fix is mechanical (split it out and `specialize` it back in) but the error points
+  at the step, not at the missing declaration, so it reads as a syntax slip rather than as
+  "this wants to be a lemma".
 - **`tautology` sees atoms, not content** — documented, but still cost a round: `e = ONE` plus
   `ONE | ONE` does **not** give `e | ONE`, since an equation and a predicate are unrelated
   atoms. Fix is an explicit rewrite under `contradiction`.
