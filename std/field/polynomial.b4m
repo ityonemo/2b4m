@@ -1480,6 +1480,50 @@ qed
 // (both files index by ℕ, but the model must say so), and the POLYNOMIAL layer itself —
 // including the two summation helpers, because a transfer re-checks the source PROOF and
 // `polyMulIsCommutative` goes through them.
+// The unit polynomial as a named constant. A model target must be a SYMBOL, not an
+// expression, so `ring_poly.ONEP` cannot map onto `monomial(oneF, ZERO)` directly.
+func monomialOne() => Poly
+axiom monomialOneIsTheUnitMonomial: monomialOne = monomial(oneF, ZERO)
+
+// The unit polynomial, as `ring_poly` wants it: F[x] writes it `monomial(oneF, ZERO)`, and
+// these are the two coefficient facts the model owes for mapping `ring_poly.ONEP` onto it.
+theorem theUnitPolynomialCoeffAtZero: coeff(monomialOne, ZERO) = oneF
+proof
+  @the-monomial-form |
+    monomialOne = monomial(oneF, ZERO)
+    [by cite monomialOneIsTheUnitMonomial]
+  @the-monomial-coefficient |
+    coeff(monomial(oneF, ZERO), ZERO) = oneF
+    [using specialize monomialCoeffAtItsIndex(oneF, ZERO)]
+  @conclusion |
+    coeff(monomialOne, ZERO) = oneF
+    [by rewrite the-monomial-form the-monomial-coefficient]
+qed
+
+theorem theUnitPolynomialCoeffHigher: forall i: Nat;
+  coeff(monomialOne, succ(i)) = zeroF
+proof
+  @the-monomial-form |
+    monomialOne = monomial(oneF, ZERO)
+    [by cite monomialOneIsTheUnitMonomial]
+  @generalize-i |
+    fix i: Nat {
+      @the-index-is-not-zero |
+        not (succ(i) = ZERO)
+        [using specialize peano.succNotZero(i)]
+      @the-monomial-coefficient |
+        coeff(monomial(oneF, ZERO), succ(i)) = zeroF
+        [using specialize monomialCoeffElsewhere(oneF, ZERO, succ(i))
+          the-index-is-not-zero]
+      @conclusion-the-higher-coefficient |
+        coeff(monomialOne, succ(i)) = zeroF
+        [by rewrite the-monomial-form the-monomial-coefficient]
+    }
+  @conclusion |
+    forall i: Nat; coeff(monomialOne, succ(i)) = zeroF
+    [by generalize generalize-i]
+qed
+
 model FieldPolyModelsRingPoly {
   // the coefficient ring: a field, viewed as the commutative ring §17.1 assumed
   ring_poly.R: F
@@ -1507,6 +1551,9 @@ model FieldPolyModelsRingPoly {
   ring_poly.Poly: Poly
   ring_poly.coeff: coeff
   ring_poly.ZEROP: ZEROP
+  ring_poly.ONEP: monomialOne
+  ring_poly.onePolyCoeffZero <- theUnitPolynomialCoeffAtZero
+  ring_poly.onePolyCoeffHigher <- theUnitPolynomialCoeffHigher
   ring_poly.addP: addP
   ring_poly.negP: negP
   ring_poly.mulP: mulP
@@ -7244,6 +7291,29 @@ proof
   @conclusion |
     forall p, q: Poly; mulP(negP(p), negP(q)) = mulP(p, q)
     [using model(FieldPolyModelsRingPoly) ring_poly.twoNegationsCancelInAProduct]
+qed
+
+theorem polyMulOneLeft: forall p: Poly; mulP(monomialOne, p) = p
+proof
+  @conclusion |
+    forall p: Poly; mulP(monomialOne, p) = p
+    [using model(FieldPolyModelsRingPoly) ring_poly.polyMulOneLeft]
+qed
+
+theorem polyMulAddDistribRight: forall p, q, r: Poly;
+  mulP(addP(p, q), r) = addP(mulP(p, r), mulP(q, r))
+proof
+  @conclusion |
+    forall p, q, r: Poly; mulP(addP(p, q), r) = addP(mulP(p, r), mulP(q, r))
+    [using model(FieldPolyModelsRingPoly) ring_poly.polyMulAddDistribRight]
+qed
+
+theorem polyASumCancelsItsRightSummand: forall p, r: Poly;
+  addP(addP(p, r), negP(r)) = p
+proof
+  @conclusion |
+    forall p, r: Poly; addP(addP(p, r), negP(r)) = p
+    [using model(FieldPolyModelsRingPoly) ring_poly.aSumCancelsItsRightSummand]
 qed
 
 theorem polyAddCancelRight: forall p, q, r: Poly;
