@@ -735,93 +735,9 @@ proof
     [by generalize generalize-p]
 qed
 
-// If a bound is below n and t is NOT below n, the bound is below t. Pure order plumbing, but
-// `tautology` cannot see it (a `less_than` atom carries no arithmetic).
-theorem theBoundIsBelowAnythingNotBelowIt: forall b, n, t: Nat;
-  peano.less_than(b, n) -> (not peano.less_than(t, n)) ->
-  peano.less_than(b, t)
-proof
-  @generalize-b |
-    fix b: Nat {
-      @generalize-n |
-        fix n: Nat {
-          @generalize-t |
-            fix t: Nat {
-              @given-the-setup |
-                assume peano.less_than(b, n) and
-                  (not peano.less_than(t, n)) {
-                  @the-setup |
-                    peano.less_than(b, n) and
-                      (not peano.less_than(t, n))
-                    [by hypothesis given-the-setup]
-                  @b-below-n |
-                    peano.less_than(b, n)
-                    [by and_lhs the-setup]
-                  @t-not-below-n |
-                    not peano.less_than(t, n)
-                    [by and_rhs the-setup]
-                  // n <= t, since t is not below n
-                  @the-trichotomy |
-                    peano.less_than(n, t) or n = t or
-                      peano.less_than(t, n)
-                    [using specialize peano_order.trichotomy(n, t)]
-                  @n-is-at-most-t |
-                    peano.less_than(n, t) or n = t
-                    [using tautology the-trichotomy t-not-below-n]
-                  @conclusion-b-below-t |
-                    peano.less_than(b, t)
-                    case n-is-at-most-t {
-                      @when-n-below-t |
-                        assume peano.less_than(n, t) {
-                          @n-below-t |
-                            peano.less_than(n, t)
-                            [by hypothesis when-n-below-t]
-                          @conclusion-transitive |
-                            peano.less_than(b, t)
-                            [using specialize peano_order.lessThanTransitive(b, n, t) b-below-n n-below-t]
-                        }
-                      @when-n-is-t |
-                        assume n = t {
-                          @n-is-t |
-                            n = t
-                            [by hypothesis when-n-is-t]
-                          @conclusion-rewritten |
-                            peano.less_than(b, t)
-                            [by rewrite n-is-t b-below-n]
-                        }
-                    }
-                }
-              @the-implication |
-                (peano.less_than(b, n) and
-                  (not peano.less_than(t, n))) ->
-                  peano.less_than(b, t)
-                [by discharge given-the-setup]
-              @curried |
-                peano.less_than(b, n) ->
-                  (not peano.less_than(t, n)) ->
-                  peano.less_than(b, t)
-                [using tautology the-implication]
-            }
-          @discharge-t |
-            forall t9: Nat;
-              peano.less_than(b, n) ->
-              (not peano.less_than(t9, n)) ->
-              peano.less_than(b, t9)
-            [by generalize generalize-t]
-        }
-      @discharge-n |
-        forall n9, t9: Nat;
-          peano.less_than(b, n9) ->
-          (not peano.less_than(t9, n9)) ->
-          peano.less_than(b, t9)
-        [by generalize generalize-n]
-    }
-  @conclusion |
-    forall b, n, t: Nat;
-      peano.less_than(b, n) -> (not peano.less_than(t, n)) ->
-      peano.less_than(b, t)
-    [by generalize generalize-b]
-qed
+// Moved to `std/peano/order.b4m` — it is a pure `Nat` order fact with nothing polynomial in
+// it, and the ℚ[x] Eisenstein argument needs the same lemma.
+fact theBoundIsBelowAnythingNotBelowIt = peano_order.theBoundIsBelowAnythingNotBelowIt
 
 // Stated as the positive fact rather than an absurdity: under Eisenstein's divisibility
 // hypotheses, the two factors' degree bound CANNOT stay below n. That is the form Gauss's
