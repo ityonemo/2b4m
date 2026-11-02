@@ -1,0 +1,210 @@
+// std/rational/gauss-reduction.b4m — APPLYING LEMMA 17.12 TO BOTH FACTORS OF A PRODUCT.
+//
+// Gauss's Lemma takes a monic p(x) in ℚ[x] that factors as α(x)β(x) and produces a monic
+// factorization in ℤ[x]. The reduction has three moves:
+//
+//   1. Apply Lemma 17.12 to EACH factor, getting α = (r1/s1)·a and β = (r2/s2)·b with a, b
+//      integral and primitive.
+//   2. Combine the scalars: α·β = (r1 r2)/(s1 s2) · (a·b), which is where ℚ[x]'s
+//      associativity and commutativity earn their keep.
+//   3. Split on whether that combined scalar is a unit. d = 1 lands in
+//      `gauss.gaussLemmaAtDOne`; d != 1 lands in the mod-p argument.
+//
+// THE MODEL POINT. Lemma 17.12 is stated about `theSubject`, an uninterpreted nullary func
+// with NO defining axiom — i.e. a model PARAMETER. So "apply it to both factors" is two
+// models over the one theorem, each pinning `theSubject` to its own factor. Of 17.12's 54
+// axioms exactly ONE mentions `theSubject` (`denominatorMeaning`), so each model owes exactly
+// one local discharge; the other 53 are `theSubject`-free and the universe-clone keeps them
+// meaning what they already mean.
+
+import rational <<< "std/rational.b4m"
+import peano <<< "std/peano.b4m"
+import qpoly <<< "std/rational/polynomial.b4m"
+import integer_product <<< "std/rational/integer-product.b4m"
+
+sort Q = rational.Q
+sort Nat = peano.Nat
+sort QPoly = qpoly.QPoly
+const ZERO = rational.ZERO
+const NAT_ZERO = peano.ZERO
+func recip = rational.recip
+pred less_than = rational.less_than
+pred isInteger = rational.isInteger
+func qmulP = qpoly.qmulP
+func qmonomial = qpoly.qmonomial
+
+// -- THE TWO FACTORS, FIXED ------------------------------------------------------------------
+// Gauss's Lemma is proved for an arbitrary but fixed factorization, so the two factors are
+// consts here exactly as 17.12's subject is. A theorem proved about these holds of every
+// factorization, by the same fixed-but-arbitrary reading that `mod_n.N` carries.
+const THE_LEFT_FACTOR: QPoly
+const THE_RIGHT_FACTOR: QPoly
+
+// Each factor needs its own denominator-spec predicate, because the spec's DEFINING axiom
+// reads a coefficient through the subject — that is the one per-model cost.
+pred isADenominatorForTheLeftFactor(i: Nat, v: Q)
+axiom leftDenominatorMeaning: forall i: Nat; forall v: Q;
+  isADenominatorForTheLeftFactor(i, v) iff
+  (isInteger(v) and less_than(ZERO, v) and (not (v = rational.ZERO)) and
+  (exists b: Q; isInteger(b) and
+  qpoly.qcoeff(THE_LEFT_FACTOR, i) = rational.mul(b, recip(v))))
+
+pred isADenominatorForTheRightFactor(i: Nat, v: Q)
+axiom rightDenominatorMeaning: forall i: Nat; forall v: Q;
+  isADenominatorForTheRightFactor(i, v) iff
+  (isInteger(v) and less_than(ZERO, v) and (not (v = rational.ZERO)) and
+  (exists b: Q; isInteger(b) and
+  qpoly.qcoeff(THE_RIGHT_FACTOR, i) = rational.mul(b, recip(v))))
+
+// -- THE TWO MODELS --------------------------------------------------------------------------
+model LemmaAtTheLeftFactor {
+  integer_product.theSubject: THE_LEFT_FACTOR
+  integer_product.isADenominatorFor: isADenominatorForTheLeftFactor
+  integer_product.denominatorMeaning <- leftDenominatorMeaning
+}
+
+model LemmaAtTheRightFactor {
+  integer_product.theSubject: THE_RIGHT_FACTOR
+  integer_product.isADenominatorFor: isADenominatorForTheRightFactor
+  integer_product.denominatorMeaning <- rightDenominatorMeaning
+}
+
+// -- 17.12 AT EACH FACTOR --------------------------------------------------------------------
+theorem theLeftFactorDecomposes: forall n: Nat;
+  qpoly.qdegreeAtMost(THE_LEFT_FACTOR, n) ->
+  less_than(ZERO, qpoly.qcoeff(THE_LEFT_FACTOR, NAT_ZERO)) ->
+  (exists q: QPoly; exists r, s: Q;
+  qpoly.isTheIntegerDecomposition(THE_LEFT_FACTOR, q, r, s, peano.succ(n)))
+proof
+  @conclusion |
+    forall n: Nat;
+      qpoly.qdegreeAtMost(THE_LEFT_FACTOR, n) ->
+      less_than(ZERO, qpoly.qcoeff(THE_LEFT_FACTOR, NAT_ZERO)) ->
+      (exists q: QPoly; exists r, s: Q;
+      qpoly.isTheIntegerDecomposition(THE_LEFT_FACTOR, q, r, s, peano.succ(n)))
+    [using model(LemmaAtTheLeftFactor) integer_product.theIntegerDecompositionExists]
+qed
+
+theorem theRightFactorDecomposes: forall n: Nat;
+  qpoly.qdegreeAtMost(THE_RIGHT_FACTOR, n) ->
+  less_than(ZERO, qpoly.qcoeff(THE_RIGHT_FACTOR, NAT_ZERO)) ->
+  (exists q: QPoly; exists r, s: Q;
+  qpoly.isTheIntegerDecomposition(THE_RIGHT_FACTOR, q, r, s, peano.succ(n)))
+proof
+  @conclusion |
+    forall n: Nat;
+      qpoly.qdegreeAtMost(THE_RIGHT_FACTOR, n) ->
+      less_than(ZERO, qpoly.qcoeff(THE_RIGHT_FACTOR, NAT_ZERO)) ->
+      (exists q: QPoly; exists r, s: Q;
+      qpoly.isTheIntegerDecomposition(THE_RIGHT_FACTOR, q, r, s, peano.succ(n)))
+    [using model(LemmaAtTheRightFactor) integer_product.theIntegerDecompositionExists]
+qed
+
+// -- COMBINING THE TWO SCALARS ---------------------------------------------------------------
+// The regrouping (c1·A)(c2·B) = (c1 c2)(A·B). ℚ[x] has associativity and commutativity but no
+// multiplicative LEFT-SWAP lemma, which is what `assoc_commut`'s custom-operator form wants as
+// its third argument — so this is written as the explicit chain instead:
+//
+//   (c1 A)(c2 B) = c1(A(c2 B)) = c1((c2 B)A) = c1(c2(B A)) = (c1 c2)(B A) = (c1 c2)(A B)
+//
+// Each line is one `rewrite` with a named intermediate, per the standing rule that a
+// multi-equation rearrangement is not a `simplify` goal.
+theorem theScalingsCombine: forall c1, c2: Q; forall a, b: QPoly;
+  qmulP(qmulP(qmonomial(c1, NAT_ZERO), a), qmulP(qmonomial(c2, NAT_ZERO), b)) =
+  qmulP(qmonomial(rational.mul(c1, c2), NAT_ZERO), qmulP(a, b))
+proof
+  @generalize-c1 |
+    fix c1: Q {
+      @generalize-c2 |
+        fix c2: Q {
+          @generalize-a |
+            fix a: QPoly {
+              @generalize-b |
+                fix b: QPoly {
+                  // (c1 A)(c2 B) = c1(A(c2 B))
+                  @the-left-scalar-floats-out |
+                    qmulP(qmulP(qmonomial(c1, NAT_ZERO), a), qmulP(qmonomial(c2, NAT_ZERO), b)) =
+                      qmulP(qmonomial(c1, NAT_ZERO), qmulP(a, qmulP(qmonomial(c2, NAT_ZERO), b)))
+                    [using specialize qpoly.qMulIsAssociative(
+                      qmonomial(c1, NAT_ZERO), a, qmulP(qmonomial(c2, NAT_ZERO), b))]
+                  // A(c2 B) = (c2 B)A
+                  @the-inner-product-commutes |
+                    qmulP(a, qmulP(qmonomial(c2, NAT_ZERO), b)) =
+                      qmulP(qmulP(qmonomial(c2, NAT_ZERO), b), a)
+                    [using specialize qpoly.qMulIsCommutative(
+                      a, qmulP(qmonomial(c2, NAT_ZERO), b))]
+                  // (c2 B)A = c2(B A)
+                  @the-right-scalar-floats-out |
+                    qmulP(qmulP(qmonomial(c2, NAT_ZERO), b), a) =
+                      qmulP(qmonomial(c2, NAT_ZERO), qmulP(b, a))
+                    [using specialize qpoly.qMulIsAssociative(
+                      qmonomial(c2, NAT_ZERO), b, a)]
+                  // B A = A B
+                  @the-factors-commute |
+                    qmulP(b, a) = qmulP(a, b)
+                    [using specialize qpoly.qMulIsCommutative(b, a)]
+                  // c1(c2 X) = (c1 c2)X
+                  @the-scalars-associate |
+                    qmulP(qmonomial(c1, NAT_ZERO), qmulP(qmonomial(c2, NAT_ZERO), qmulP(a, b))) =
+                      qmulP(qmulP(qmonomial(c1, NAT_ZERO), qmonomial(c2, NAT_ZERO)), qmulP(a, b))
+                    [by symmetry the-scalars-associate-forward]
+                  @the-scalars-associate-forward |
+                    qmulP(qmulP(qmonomial(c1, NAT_ZERO), qmonomial(c2, NAT_ZERO)), qmulP(a, b)) =
+                      qmulP(qmonomial(c1, NAT_ZERO), qmulP(qmonomial(c2, NAT_ZERO), qmulP(a, b)))
+                    [using specialize qpoly.qMulIsAssociative(
+                      qmonomial(c1, NAT_ZERO), qmonomial(c2, NAT_ZERO), qmulP(a, b))]
+                  @the-monomials-collapse |
+                    qmulP(qmonomial(c1, NAT_ZERO), qmonomial(c2, NAT_ZERO)) =
+                      qmonomial(rational.mul(c1, c2), NAT_ZERO)
+                    [using specialize qpoly.theProductOfConstantMonomials(c1, c2)]
+
+                  // now chain them
+                  @through-the-commuted-inner |
+                    qmulP(qmulP(qmonomial(c1, NAT_ZERO), a), qmulP(qmonomial(c2, NAT_ZERO), b)) =
+                      qmulP(qmonomial(c1, NAT_ZERO),
+                      qmulP(qmulP(qmonomial(c2, NAT_ZERO), b), a))
+                    [by rewrite the-inner-product-commutes the-left-scalar-floats-out]
+                  @through-the-floated-right-scalar |
+                    qmulP(qmulP(qmonomial(c1, NAT_ZERO), a), qmulP(qmonomial(c2, NAT_ZERO), b)) =
+                      qmulP(qmonomial(c1, NAT_ZERO),
+                      qmulP(qmonomial(c2, NAT_ZERO), qmulP(b, a)))
+                    [by rewrite the-right-scalar-floats-out through-the-commuted-inner]
+                  @through-the-commuted-factors |
+                    qmulP(qmulP(qmonomial(c1, NAT_ZERO), a), qmulP(qmonomial(c2, NAT_ZERO), b)) =
+                      qmulP(qmonomial(c1, NAT_ZERO),
+                      qmulP(qmonomial(c2, NAT_ZERO), qmulP(a, b)))
+                    [by rewrite the-factors-commute through-the-floated-right-scalar]
+                  @through-the-associated-scalars |
+                    qmulP(qmulP(qmonomial(c1, NAT_ZERO), a), qmulP(qmonomial(c2, NAT_ZERO), b)) =
+                      qmulP(qmulP(qmonomial(c1, NAT_ZERO), qmonomial(c2, NAT_ZERO)),
+                      qmulP(a, b))
+                    [by rewrite the-scalars-associate through-the-commuted-factors]
+                  @conclusion-the-scalings-combine |
+                    qmulP(qmulP(qmonomial(c1, NAT_ZERO), a), qmulP(qmonomial(c2, NAT_ZERO), b)) =
+                      qmulP(qmonomial(rational.mul(c1, c2), NAT_ZERO), qmulP(a, b))
+                    [by rewrite the-monomials-collapse through-the-associated-scalars]
+                }
+              @conclusion-for-all-b |
+                forall b: QPoly;
+                  qmulP(qmulP(qmonomial(c1, NAT_ZERO), a), qmulP(qmonomial(c2, NAT_ZERO), b)) =
+                  qmulP(qmonomial(rational.mul(c1, c2), NAT_ZERO), qmulP(a, b))
+                [by generalize generalize-b]
+            }
+          @conclusion-for-all-a |
+            forall a, b: QPoly;
+              qmulP(qmulP(qmonomial(c1, NAT_ZERO), a), qmulP(qmonomial(c2, NAT_ZERO), b)) =
+              qmulP(qmonomial(rational.mul(c1, c2), NAT_ZERO), qmulP(a, b))
+            [by generalize generalize-a]
+        }
+      @conclusion-for-all-c2 |
+        forall c2: Q; forall a, b: QPoly;
+          qmulP(qmulP(qmonomial(c1, NAT_ZERO), a), qmulP(qmonomial(c2, NAT_ZERO), b)) =
+          qmulP(qmonomial(rational.mul(c1, c2), NAT_ZERO), qmulP(a, b))
+        [by generalize generalize-c2]
+    }
+  @conclusion |
+    forall c1, c2: Q; forall a, b: QPoly;
+      qmulP(qmulP(qmonomial(c1, NAT_ZERO), a), qmulP(qmonomial(c2, NAT_ZERO), b)) =
+      qmulP(qmonomial(rational.mul(c1, c2), NAT_ZERO), qmulP(a, b))
+    [by generalize generalize-c1]
+qed
