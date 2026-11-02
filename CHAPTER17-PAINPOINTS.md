@@ -369,6 +369,36 @@ uninterpreted `func` is as good as a parameter, because `model` is exactly the m
 fixing parameters. Before concluding that a `theSubject`-style encoding has painted you into a
 corner, write the two-model probe; it takes minutes.
 
+## 16. `polynomial-associativity.b4m` is RING algebra filed under `field/` (LIVE, blocks Gauss)
+
+**Measured 2026-11-02, tracing the Gauss reduction setup.**
+
+The Gauss reduction needs the scalars of two integer decompositions combined:
+`(c₁·A)·(c₂·B) = (c₁c₂)·(A·B)`. Regrouping that needs `mulP` ASSOCIATIVITY on ℚ[x].
+
+`polyMulIsAssociative` exists — 1352 lines in `std/field/polynomial-associativity.b4m`, the
+double-sum exchange re-proved at the coefficient level. But it is stated over `fieldpoly.Poly`
+and is itself a model transfer, so it will not reach ℚ[x]: the probe fails with
+`std/field/polynomial-associativity.b4m:836: expected sort 'Poly', got 'QPoly'` — pain point 2
+again. And unlike the leading-coefficient law, there is NO ring-level version to transfer from
+instead, so the "go down a layer" fix (which worked twice today) is unavailable.
+
+**The finding: the file uses nothing field-specific.** `--axioms` on `polyMulIsAssociative`
+shows exactly six `std/field.b4m` axioms — `addIsAssociative`, `addZeroLeft`,
+`addIsCommutative`, `mulIsAssociative`, and both distributivities — every one of which is a
+RING axiom. Zero uses of `recipF` or `fieldInverse` in 1352 lines. So the whole development
+belongs in `std/ring/polynomial*.b4m`, and moving it would give ℚ[x] associativity by the
+one-transfer route that already works.
+
+**Why it is not a quick fix:** three `std/field/` files import it (`ideal.b4m`, `gcd.b4m`,
+`poly-units.b4m`) plus two aata references. It is a real refactor with consumers — queue item
+5's territory, not a rename.
+
+**Until then the Gauss reduction setup is blocked**, and with it Judson's actual 17.15
+conclusion ("f is irreducible over ℚ"). Everything else for 17.15 is proved: the degree
+argument (`eisensteinForcesTheFullDegreeOnTheCut`), the reduction argument, the closure, the
+sign argument, and both Gauss branches.
+
 ## 15. A conclusion that is TRUE but harmless is the hardest defect to see
 
 Three times in this chapter I wrote a theorem whose conclusion followed from fewer hypotheses
