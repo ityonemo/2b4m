@@ -22,6 +22,9 @@ import peano <<< "std/peano.b4m"
 import qpoly <<< "std/rational/polynomial.b4m"
 import integer_product <<< "std/rational/integer-product.b4m"
 import gauss <<< "std/rational/gauss.b4m"
+import integer_polynomial <<< "std/rational/integer-polynomial.b4m"
+import mod_n <<< "std/integer/mod-n.b4m"
+import mod_n_poly <<< "std/integer/mod-n-polynomial.b4m"
 
 sort Q = rational.Q
 sort Nat = peano.Nat
@@ -736,5 +739,162 @@ proof
       qpoly.qdegreeAtMost(a, n1) and qpoly.qdegreeAtMost(b, n2) and
       qpoly.qcoeff(a, n1) = rational.ONE and qpoly.qcoeff(b, n2) = rational.ONE and
       qmulP(THE_LEFT_FACTOR, THE_RIGHT_FACTOR) = qmulP(a, b))
+    [by generalize generalize-a1]
+qed
+
+// -- THE d != 1 BRANCH IS IMPOSSIBLE ---------------------------------------------------------
+// Judson: "Now suppose that d != 1. Since gcd(c, d) = 1, there exists a prime p such that
+// p | d and p ∤ c. ... Since p | d, α1'(x)β1'(x) = 0 in ℤ_p[x]. However, this is impossible
+// since neither α1'(x) nor β1'(x) is the zero polynomial and ℤ_p[x] is an integral domain."
+//
+// Stated as the impossibility it is: if the modulus misses a coefficient of each primitive
+// part, it cannot divide every coefficient of their product. `p | d` is what makes the product
+// reduce to zero everywhere, so that conjunction is contradictory and d != 1 cannot happen.
+//
+// The two primitive parts' integrality is UNBOUNDED here, which is why
+// `aBoundedIntegralityWithADegreeBoundIsUnbounded` had to be built: Lemma 17.12 reports a
+// BOUNDED integrality and `theModulusCannotDivideEveryProductCoefficient` consumes the
+// unbounded one.
+theorem theFusedScalarCannotHaveASurvivingDenominator:
+  forall a1, a2: QPoly; forall n1, n2: Nat; forall i, j: Nat;
+  mod_n_poly.is_prime(mod_n.N) ->
+  qpoly.qdegreeAtMost(a1, n1) ->
+  qpoly.hasIntegerCoefficientsUpTo(a1, peano.succ(n1)) ->
+  qpoly.qdegreeAtMost(a2, n2) ->
+  qpoly.hasIntegerCoefficientsUpTo(a2, peano.succ(n2)) ->
+  (not integer_polynomial.reducesToZero(qpoly.qcoeff(a1, i))) ->
+  (not integer_polynomial.reducesToZero(qpoly.qcoeff(a2, j))) ->
+  (not (forall t: Nat;
+  integer_polynomial.reducesToZero(qpoly.qcoeff(qmulP(a1, a2), t))))
+proof
+  @generalize-a1 |
+    fix a1: QPoly {
+      @generalize-a2 |
+        fix a2: QPoly {
+          @generalize-n1 |
+            fix n1: Nat {
+              @generalize-n2 |
+                fix n2: Nat {
+                  @generalize-i |
+                    fix i: Nat {
+                      @generalize-j |
+                        fix j: Nat {
+                          @the-left-integrality-is-unbounded |
+                            qpoly.qdegreeAtMost(a1, n1) ->
+                              qpoly.hasIntegerCoefficientsUpTo(a1, peano.succ(n1)) ->
+                              integer_polynomial.hasIntegerCoefficients(a1)
+                            [using specialize
+                              integer_polynomial.aBoundedIntegralityWithADegreeBoundIsUnbounded(
+                              a1, n1)]
+                          @the-right-integrality-is-unbounded |
+                            qpoly.qdegreeAtMost(a2, n2) ->
+                              qpoly.hasIntegerCoefficientsUpTo(a2, peano.succ(n2)) ->
+                              integer_polynomial.hasIntegerCoefficients(a2)
+                            [using specialize
+                              integer_polynomial.aBoundedIntegralityWithADegreeBoundIsUnbounded(
+                              a2, n2)]
+                          @the-modulus-cannot-divide-everything |
+                            mod_n_poly.is_prime(mod_n.N) ->
+                              integer_polynomial.hasIntegerCoefficients(a1) ->
+                              integer_polynomial.hasIntegerCoefficients(a2) ->
+                              (not integer_polynomial.reducesToZero(qpoly.qcoeff(a1, i))) ->
+                              (not integer_polynomial.reducesToZero(qpoly.qcoeff(a2, j))) ->
+                              (not (forall t: Nat;
+                              integer_polynomial.reducesToZero(
+                              qpoly.qcoeff(qmulP(a1, a2), t))))
+                            [using specialize
+                              integer_polynomial.theModulusCannotDivideEveryProductCoefficient(
+                              a1, a2, i, j)]
+                          @conclusion-at-the-binders |
+                            mod_n_poly.is_prime(mod_n.N) ->
+                              qpoly.qdegreeAtMost(a1, n1) ->
+                              qpoly.hasIntegerCoefficientsUpTo(a1, peano.succ(n1)) ->
+                              qpoly.qdegreeAtMost(a2, n2) ->
+                              qpoly.hasIntegerCoefficientsUpTo(a2, peano.succ(n2)) ->
+                              (not integer_polynomial.reducesToZero(qpoly.qcoeff(a1, i))) ->
+                              (not integer_polynomial.reducesToZero(qpoly.qcoeff(a2, j))) ->
+                              (not (forall t: Nat;
+                              integer_polynomial.reducesToZero(
+                              qpoly.qcoeff(qmulP(a1, a2), t))))
+                            [using tautology the-modulus-cannot-divide-everything
+                              the-left-integrality-is-unbounded
+                              the-right-integrality-is-unbounded]
+                        }
+                      @conclusion-for-all-j |
+                        forall j: Nat;
+                          mod_n_poly.is_prime(mod_n.N) ->
+                          qpoly.qdegreeAtMost(a1, n1) ->
+                          qpoly.hasIntegerCoefficientsUpTo(a1, peano.succ(n1)) ->
+                          qpoly.qdegreeAtMost(a2, n2) ->
+                          qpoly.hasIntegerCoefficientsUpTo(a2, peano.succ(n2)) ->
+                          (not integer_polynomial.reducesToZero(qpoly.qcoeff(a1, i))) ->
+                          (not integer_polynomial.reducesToZero(qpoly.qcoeff(a2, j))) ->
+                          (not (forall t: Nat;
+                          integer_polynomial.reducesToZero(qpoly.qcoeff(qmulP(a1, a2), t))))
+                        [by generalize generalize-j]
+                    }
+                  @conclusion-for-all-i |
+                    forall i, j: Nat;
+                      mod_n_poly.is_prime(mod_n.N) ->
+                      qpoly.qdegreeAtMost(a1, n1) ->
+                      qpoly.hasIntegerCoefficientsUpTo(a1, peano.succ(n1)) ->
+                      qpoly.qdegreeAtMost(a2, n2) ->
+                      qpoly.hasIntegerCoefficientsUpTo(a2, peano.succ(n2)) ->
+                      (not integer_polynomial.reducesToZero(qpoly.qcoeff(a1, i))) ->
+                      (not integer_polynomial.reducesToZero(qpoly.qcoeff(a2, j))) ->
+                      (not (forall t: Nat;
+                      integer_polynomial.reducesToZero(qpoly.qcoeff(qmulP(a1, a2), t))))
+                    [by generalize generalize-i]
+                }
+              @conclusion-for-all-n2 |
+                forall n2: Nat; forall i, j: Nat;
+                  mod_n_poly.is_prime(mod_n.N) ->
+                  qpoly.qdegreeAtMost(a1, n1) ->
+                  qpoly.hasIntegerCoefficientsUpTo(a1, peano.succ(n1)) ->
+                  qpoly.qdegreeAtMost(a2, n2) ->
+                  qpoly.hasIntegerCoefficientsUpTo(a2, peano.succ(n2)) ->
+                  (not integer_polynomial.reducesToZero(qpoly.qcoeff(a1, i))) ->
+                  (not integer_polynomial.reducesToZero(qpoly.qcoeff(a2, j))) ->
+                  (not (forall t: Nat;
+                  integer_polynomial.reducesToZero(qpoly.qcoeff(qmulP(a1, a2), t))))
+                [by generalize generalize-n2]
+            }
+          @conclusion-for-all-n1 |
+            forall n1, n2: Nat; forall i, j: Nat;
+              mod_n_poly.is_prime(mod_n.N) ->
+              qpoly.qdegreeAtMost(a1, n1) ->
+              qpoly.hasIntegerCoefficientsUpTo(a1, peano.succ(n1)) ->
+              qpoly.qdegreeAtMost(a2, n2) ->
+              qpoly.hasIntegerCoefficientsUpTo(a2, peano.succ(n2)) ->
+              (not integer_polynomial.reducesToZero(qpoly.qcoeff(a1, i))) ->
+              (not integer_polynomial.reducesToZero(qpoly.qcoeff(a2, j))) ->
+              (not (forall t: Nat;
+              integer_polynomial.reducesToZero(qpoly.qcoeff(qmulP(a1, a2), t))))
+            [by generalize generalize-n1]
+        }
+      @conclusion-for-all-a2 |
+        forall a2: QPoly; forall n1, n2: Nat; forall i, j: Nat;
+          mod_n_poly.is_prime(mod_n.N) ->
+          qpoly.qdegreeAtMost(a1, n1) ->
+          qpoly.hasIntegerCoefficientsUpTo(a1, peano.succ(n1)) ->
+          qpoly.qdegreeAtMost(a2, n2) ->
+          qpoly.hasIntegerCoefficientsUpTo(a2, peano.succ(n2)) ->
+          (not integer_polynomial.reducesToZero(qpoly.qcoeff(a1, i))) ->
+          (not integer_polynomial.reducesToZero(qpoly.qcoeff(a2, j))) ->
+          (not (forall t: Nat;
+          integer_polynomial.reducesToZero(qpoly.qcoeff(qmulP(a1, a2), t))))
+        [by generalize generalize-a2]
+    }
+  @conclusion |
+    forall a1, a2: QPoly; forall n1, n2: Nat; forall i, j: Nat;
+      mod_n_poly.is_prime(mod_n.N) ->
+      qpoly.qdegreeAtMost(a1, n1) ->
+      qpoly.hasIntegerCoefficientsUpTo(a1, peano.succ(n1)) ->
+      qpoly.qdegreeAtMost(a2, n2) ->
+      qpoly.hasIntegerCoefficientsUpTo(a2, peano.succ(n2)) ->
+      (not integer_polynomial.reducesToZero(qpoly.qcoeff(a1, i))) ->
+      (not integer_polynomial.reducesToZero(qpoly.qcoeff(a2, j))) ->
+      (not (forall t: Nat;
+      integer_polynomial.reducesToZero(qpoly.qcoeff(qmulP(a1, a2), t))))
     [by generalize generalize-a1]
 qed

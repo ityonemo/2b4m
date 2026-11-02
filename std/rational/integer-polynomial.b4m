@@ -2831,3 +2831,203 @@ proof
       (not peano.less_than(peano.add(m, k), n))
     [by generalize generalize-f]
 qed
+
+// -- FROM A BOUNDED INTEGRALITY TO AN UNBOUNDED ONE ------------------------------------------
+// The index split: every index is either within the bound (integrality is given) or above it
+// (the coefficient is ZERO, which is an integer). `theBoundIsBelowAnythingNotBelowIt` turns
+// "not below succ(n)" into "above n", using `n < succ(n)`.
+theorem everyCoefficientIsAnIntegerGivenBothHalves: forall q: QPoly; forall n: Nat;
+  (forall i: Nat; peano_order.less_than(n, i) -> qpoly.qcoeff(q, i) = ZERO) ->
+  (forall i: Nat; peano_order.less_than(i, peano.succ(n)) ->
+  isInteger(qpoly.qcoeff(q, i))) ->
+  (forall i: Nat; isInteger(qpoly.qcoeff(q, i)))
+proof
+  @generalize-q |
+    fix q: QPoly {
+      @generalize-n |
+        fix n: Nat {
+          @given-the-high-half |
+            assume forall i: Nat; peano_order.less_than(n, i) -> qpoly.qcoeff(q, i) = ZERO {
+              @the-high-half |
+                forall i: Nat; peano_order.less_than(n, i) -> qpoly.qcoeff(q, i) = ZERO
+                [by hypothesis given-the-high-half]
+              @given-the-low-half |
+                assume forall i: Nat; peano_order.less_than(i, peano.succ(n)) ->
+                  isInteger(qpoly.qcoeff(q, i)) {
+                  @the-low-half |
+                    forall i: Nat; peano_order.less_than(i, peano.succ(n)) ->
+                      isInteger(qpoly.qcoeff(q, i))
+                    [by hypothesis given-the-low-half]
+                  @generalize-i |
+                    fix i: Nat {
+                      @the-index-is-low-or-not |
+                        peano_order.less_than(i, peano.succ(n)) or
+                          (not peano_order.less_than(i, peano.succ(n)))
+                        [using tautology]
+                      @the-coefficient-is-an-integer |
+                        isInteger(qpoly.qcoeff(q, i))
+                        [by common_conclusion the-index-is-low-or-not
+                          when-the-index-is-low when-the-index-is-high]
+                      @when-the-index-is-low |
+                        assume peano_order.less_than(i, peano.succ(n)) {
+                          @the-index-is-low |
+                            peano_order.less_than(i, peano.succ(n))
+                            [by hypothesis when-the-index-is-low]
+                          @conclusion-integral-from-the-low-half |
+                            isInteger(qpoly.qcoeff(q, i))
+                            [using specialize the-low-half(i) the-index-is-low]
+                        }
+                      @when-the-index-is-high |
+                        assume not peano_order.less_than(i, peano.succ(n)) {
+                          @the-index-is-not-low |
+                            not peano_order.less_than(i, peano.succ(n))
+                            [by hypothesis when-the-index-is-high]
+                          @the-bound-is-below-its-successor |
+                            peano_order.less_than(n, peano.succ(n))
+                            [using specialize peano_order.lessThanSelf(n)]
+                          @the-index-is-above-the-bound |
+                            peano_order.less_than(n, i)
+                            [using specialize peano_order.theBoundIsBelowAnythingNotBelowIt(
+                              n, peano.succ(n), i)
+                              the-bound-is-below-its-successor the-index-is-not-low]
+                          @the-coefficient-vanishes |
+                            qpoly.qcoeff(q, i) = ZERO
+                            [using specialize the-high-half(i) the-index-is-above-the-bound]
+                          @zero-is-an-integer |
+                            isInteger(ZERO)
+                            [using import(rational) zeroIsAnInteger]
+                          @conclusion-integral-because-it-vanishes |
+                            isInteger(qpoly.qcoeff(q, i))
+                            [by rewrite the-coefficient-vanishes zero-is-an-integer]
+                        }
+                    }
+                  @conclusion-every-coefficient |
+                    forall i: Nat; isInteger(qpoly.qcoeff(q, i))
+                    [by generalize generalize-i]
+                }
+              @conclusion-the-low-half-gives-it |
+                (forall i: Nat; peano_order.less_than(i, peano.succ(n)) ->
+                  isInteger(qpoly.qcoeff(q, i))) ->
+                  (forall i: Nat; isInteger(qpoly.qcoeff(q, i)))
+                [by discharge given-the-low-half]
+            }
+          @conclusion-both-halves-give-it |
+            (forall i: Nat; peano_order.less_than(n, i) -> qpoly.qcoeff(q, i) = ZERO) ->
+              (forall i: Nat; peano_order.less_than(i, peano.succ(n)) ->
+              isInteger(qpoly.qcoeff(q, i))) ->
+              (forall i: Nat; isInteger(qpoly.qcoeff(q, i)))
+            [by discharge given-the-high-half]
+        }
+      @conclusion-for-all-n |
+        forall n: Nat;
+          (forall i: Nat; peano_order.less_than(n, i) -> qpoly.qcoeff(q, i) = ZERO) ->
+          (forall i: Nat; peano_order.less_than(i, peano.succ(n)) ->
+          isInteger(qpoly.qcoeff(q, i))) ->
+          (forall i: Nat; isInteger(qpoly.qcoeff(q, i)))
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall q: QPoly; forall n: Nat;
+      (forall i: Nat; peano_order.less_than(n, i) -> qpoly.qcoeff(q, i) = ZERO) ->
+      (forall i: Nat; peano_order.less_than(i, peano.succ(n)) ->
+      isInteger(qpoly.qcoeff(q, i))) ->
+      (forall i: Nat; isInteger(qpoly.qcoeff(q, i)))
+    [by generalize generalize-q]
+qed
+
+// Hence the bridge itself.
+// A degree-bounded polynomial whose coefficients are integers UP TO the bound has integer
+// coefficients EVERYWHERE: above the bound every coefficient is ZERO, which is an integer.
+//
+// This is the bridge Lemma 17.12's output needs. 17.12 reports
+// `qpoly.hasIntegerCoefficientsUpTo(q, succ(n))` — bounded, because the descent runs over a
+// finite index range — while this file's `hasIntegerCoefficients` is unbounded, as a
+// factorization argument quantifies over all indices. The two are NOT interchangeable without
+// a degree bound, and `aNonzeroScalingReflectsTheDegreeBound` is what supplies one.
+theorem aBoundedIntegralityWithADegreeBoundIsUnbounded: forall q: QPoly; forall n: Nat;
+  qpoly.qdegreeAtMost(q, n) ->
+  qpoly.hasIntegerCoefficientsUpTo(q, peano.succ(n)) ->
+  hasIntegerCoefficients(q)
+proof
+  @generalize-q |
+    fix q: QPoly {
+      @generalize-n |
+        fix n: Nat {
+          @given-the-degree-bound |
+            assume qpoly.qdegreeAtMost(q, n) {
+              @the-degree-bound |
+                qpoly.qdegreeAtMost(q, n)
+                [by hypothesis given-the-degree-bound]
+              @the-degree-bound-unfolds |
+                qpoly.qdegreeAtMost(q, n) iff
+                  (forall i: Nat; peano_order.less_than(n, i) ->
+                  qpoly.qcoeff(q, i) = ZERO)
+                [using specialize qpoly.qDegreeAtMostMeaning(q, n)]
+              @the-degree-bound-forward |
+                qpoly.qdegreeAtMost(q, n) ->
+                  (forall i: Nat; peano_order.less_than(n, i) ->
+                  qpoly.qcoeff(q, i) = ZERO)
+                [by equiv_forward the-degree-bound-unfolds]
+              @the-high-coefficients-vanish |
+                forall i: Nat; peano_order.less_than(n, i) -> qpoly.qcoeff(q, i) = ZERO
+                [by modus_ponens the-degree-bound-forward the-degree-bound]
+              @given-the-bounded-integrality |
+                assume qpoly.hasIntegerCoefficientsUpTo(q, peano.succ(n)) {
+                  @the-bounded-integrality |
+                    qpoly.hasIntegerCoefficientsUpTo(q, peano.succ(n))
+                    [by hypothesis given-the-bounded-integrality]
+                  @the-bounded-integrality-unfolds |
+                    qpoly.hasIntegerCoefficientsUpTo(q, peano.succ(n)) iff
+                      (forall i: Nat; peano_order.less_than(i, peano.succ(n)) ->
+                      isInteger(qpoly.qcoeff(q, i)))
+                    [using specialize qpoly.integerCoefficientsMeaning(q, peano.succ(n))]
+                  @the-bounded-integrality-forward |
+                    qpoly.hasIntegerCoefficientsUpTo(q, peano.succ(n)) ->
+                      (forall i: Nat; peano_order.less_than(i, peano.succ(n)) ->
+                      isInteger(qpoly.qcoeff(q, i)))
+                    [by equiv_forward the-bounded-integrality-unfolds]
+                  @the-low-coefficients-are-integers |
+                    forall i: Nat; peano_order.less_than(i, peano.succ(n)) ->
+                      isInteger(qpoly.qcoeff(q, i))
+                    [by modus_ponens the-bounded-integrality-forward the-bounded-integrality]
+                  @every-coefficient-is-an-integer |
+                    forall i: Nat; isInteger(qpoly.qcoeff(q, i))
+                    [using specialize everyCoefficientIsAnIntegerGivenBothHalves(q, n)
+                      the-high-coefficients-vanish the-low-coefficients-are-integers]
+                  @the-unbounded-meaning |
+                    hasIntegerCoefficients(q) iff
+                      (forall i: Nat; isInteger(qpoly.qcoeff(q, i)))
+                    [using specialize integerCoefficientsEverywhere(q)]
+                  @the-unbounded-backward |
+                    (forall i: Nat; isInteger(qpoly.qcoeff(q, i))) ->
+                      hasIntegerCoefficients(q)
+                    [by equiv_converse the-unbounded-meaning]
+                  @conclusion-the-integrality-is-unbounded |
+                    hasIntegerCoefficients(q)
+                    [by modus_ponens the-unbounded-backward every-coefficient-is-an-integer]
+                }
+              @conclusion-the-bounded-integrality-gives-it |
+                qpoly.hasIntegerCoefficientsUpTo(q, peano.succ(n)) ->
+                  hasIntegerCoefficients(q)
+                [by discharge given-the-bounded-integrality]
+            }
+          @conclusion-the-degree-bound-gives-it |
+            qpoly.qdegreeAtMost(q, n) ->
+              qpoly.hasIntegerCoefficientsUpTo(q, peano.succ(n)) ->
+              hasIntegerCoefficients(q)
+            [by discharge given-the-degree-bound]
+        }
+      @conclusion-for-all-n |
+        forall n: Nat;
+          qpoly.qdegreeAtMost(q, n) ->
+          qpoly.hasIntegerCoefficientsUpTo(q, peano.succ(n)) ->
+          hasIntegerCoefficients(q)
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall q: QPoly; forall n: Nat;
+      qpoly.qdegreeAtMost(q, n) ->
+      qpoly.hasIntegerCoefficientsUpTo(q, peano.succ(n)) ->
+      hasIntegerCoefficients(q)
+    [by generalize generalize-q]
+qed
