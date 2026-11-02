@@ -16,10 +16,9 @@ import polyassoc <<< "std/field/polynomial-associativity.b4m"
 import peano_order <<< "std/peano/order.b4m"
 
 sort Poly = fieldpoly.Poly
-const ZERO = peano.ZERO
-const oneF = fieldpoly.oneF
 func addP = fieldpoly.addP
 func mulP = fieldpoly.mulP
+func negP = fieldpoly.negP
 
 // `d` divides `p`: some cofactor multiplies it to p.
 pred dividesP(d: Poly, p: Poly)
@@ -27,7 +26,7 @@ axiom dividesMeansACofactorExists: forall d, p: Poly;
   dividesP(d, p) iff (exists u: Poly; p = mulP(u, d))
 
 // the constant polynomial 1, which a monic gcd of coprime polynomials equals
-define ONEP = fieldpoly.monomial(oneF, ZERO)
+func ONEP = fieldpoly.monomialOne
 
 // Judson's definition: d is a greatest common divisor of p and q when it divides both,
 // and every other common divisor divides it.
@@ -916,5 +915,473 @@ proof
       (exists d: Poly; isACombination(d, p, q) and (not (d = fieldpoly.ZEROP)) and
       (forall g: Poly; isACombination(g, p, q) -> (not (g = fieldpoly.ZEROP)) ->
       peano_order.less_or_equal(fieldpoly.degree(d), fieldpoly.degree(g))))
+    [by generalize generalize-p]
+qed
+
+// The algebra, with d's coefficients in hand. Given d = r p + s q and p = a d + b,
+//   b = p + -(a d) = p + -(a (r p + s q)) = p (1 + -(a r)) + q (-(a s)),
+// so b's own coefficients are (1 - ar) and (-as). `polynomial(fieldpoly)` does the
+// rearrangement in one step — it is a ring identity in the polynomial operations, with the
+// negation lemmas now available for it to cancel against.
+theorem theRemainderCombinationFromTheCoefficients: forall p, q, d, a, b: Poly;
+  (exists r: Poly; exists s: Poly; d = addP(mulP(r, p), mulP(s, q))) ->
+  p = addP(mulP(a, d), b) ->
+  isACombination(b, p, q)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-d |
+            fix d: Poly {
+              @generalize-a |
+                fix a: Poly {
+                  @generalize-b |
+                    fix b: Poly {
+                      @given-the-coefficients |
+                        assume exists r: Poly; exists s: Poly;
+                          d = addP(mulP(r, p), mulP(s, q)) {
+                          @the-coefficients |
+                            exists r: Poly; exists s: Poly;
+                              d = addP(mulP(r, p), mulP(s, q))
+                            [by hypothesis given-the-coefficients]
+                          @given-the-division |
+                            assume p = addP(mulP(a, d), b) {
+                              @the-division |
+                                p = addP(mulP(a, d), b)
+                                [by hypothesis given-the-division]
+                              @with-r |
+                                unpack r: Poly from the-coefficients {
+                                  @s-exists |
+                                    exists s: Poly;
+                                      d = addP(mulP(r, p), mulP(s, q))
+                                    [by hypothesis with-r]
+                                  @with-s |
+                                    unpack s: Poly from s-exists {
+                                      @d-expanded |
+                                        d = addP(mulP(r, p), mulP(s, q))
+                                        [by hypothesis with-s]
+                                      // b = p + -(a d), from the division equation
+                                      @b-is-the-difference |
+                                        b = addP(p, negP(mulP(a, d)))
+                                        [using specialize
+                                          theRemainderIsTheDifference(p, mulP(a, d), b)
+                                          the-division]
+                                      // substitute d's combination form
+                                      @b-with-d-expanded |
+                                        b = addP(p, negP(mulP(a,
+                                          addP(mulP(r, p), mulP(s, q)))))
+                                        [by rewrite d-expanded b-is-the-difference]
+                                      // `polynomial` is a SCALAR-layer tactic: it binds
+                                      // `add`/`mul` by well-known name and does not see
+                                      // `addP`/`mulP`, so the regrouping is written out.
+                                      //
+                                      //   -(a(rp + sq)) = -(a(rp)) + -(a(sq))
+                                      //                 = (-(ar))p  + (-(as))q
+                                      @distribute-a |
+                                        mulP(a, addP(mulP(r, p), mulP(s, q))) =
+                                          addP(mulP(a, mulP(r, p)), mulP(a, mulP(s, q)))
+                                        [using specialize fieldpoly.polyMulAddDistribLeft(
+                                          a, mulP(r, p), mulP(s, q))]
+                                      @b-with-a-distributed |
+                                        b = addP(p, negP(addP(
+                                          mulP(a, mulP(r, p)),
+                                          mulP(a, mulP(s, q)))))
+                                        [by rewrite distribute-a b-with-d-expanded]
+                                      @split-the-negation |
+                                        addP(negP(mulP(a, mulP(r, p))),
+                                          negP(mulP(a, mulP(s, q)))) =
+                                          negP(addP(mulP(a, mulP(r, p)),
+                                          mulP(a, mulP(s, q))))
+                                        [using specialize fieldpoly.polyNegationOfASum(
+                                          mulP(a, mulP(r, p)), mulP(a, mulP(s, q)))]
+                                      @b-with-the-negation-split |
+                                        b = addP(p, addP(
+                                          negP(mulP(a, mulP(r, p))),
+                                          negP(mulP(a, mulP(s, q)))))
+                                        [by rewrite split-the-negation b-with-a-distributed]
+                                      // each negated summand becomes a coefficient times p (or q)
+                                      @reassociate-the-p-term |
+                                        mulP(mulP(a, r), p) = mulP(a, mulP(r, p))
+                                        [using specialize polyassoc.polyMulIsAssociative(
+                                          a, r, p)]
+                                      @the-p-coefficient |
+                                        mulP(negP(mulP(a, r)), p) =
+                                          negP(mulP(mulP(a, r), p))
+                                        [using specialize
+                                          fieldpoly.polyNegationPullsOutOfTheProduct(
+                                          mulP(a, r), p)]
+                                      @the-p-term-is-a-coefficient |
+                                        mulP(negP(mulP(a, r)), p) =
+                                          negP(mulP(a, mulP(r, p)))
+                                        [using simplify the-p-coefficient
+                                          reassociate-the-p-term]
+                                      @reassociate-the-q-term |
+                                        mulP(mulP(a, s), q) = mulP(a, mulP(s, q))
+                                        [using specialize polyassoc.polyMulIsAssociative(
+                                          a, s, q)]
+                                      @the-q-coefficient |
+                                        mulP(negP(mulP(a, s)), q) =
+                                          negP(mulP(mulP(a, s), q))
+                                        [using specialize
+                                          fieldpoly.polyNegationPullsOutOfTheProduct(
+                                          mulP(a, s), q)]
+                                      @the-q-term-is-a-coefficient |
+                                        mulP(negP(mulP(a, s)), q) =
+                                          negP(mulP(a, mulP(s, q)))
+                                        [using simplify the-q-coefficient
+                                          reassociate-the-q-term]
+                                      @b-with-the-p-term |
+                                        b = addP(p, addP(
+                                          mulP(negP(mulP(a, r)), p),
+                                          negP(mulP(a, mulP(s, q)))))
+                                        [by rewrite the-p-term-is-a-coefficient
+                                          b-with-the-negation-split]
+                                      @b-is-a-combination-shape |
+                                        b = addP(p, addP(
+                                          mulP(negP(mulP(a, r)), p),
+                                          mulP(negP(mulP(a, s)), q)))
+                                        [by rewrite the-q-term-is-a-coefficient
+                                          b-with-the-p-term]
+                                      @the-combination-meaning |
+                                        isACombination(b, p, q) iff
+                                          (exists u: Poly; exists v: Poly;
+                                          b = addP(mulP(u, p), mulP(v, q)))
+                                        [using specialize
+                                          combinationMeansRPPlusSQ(b, p, q)]
+                                      @the-combination-backward |
+                                        (exists u: Poly; exists v: Poly;
+                                          b = addP(mulP(u, p), mulP(v, q))) ->
+                                          isACombination(b, p, q)
+                                        [by equiv_converse the-combination-meaning]
+                                      // fold the leading p into the p-coefficient:
+                                      // p + ((-(ar))p + X) = (1 + -(ar))p + X
+                                      @b-in-coefficient-form |
+                                        addP(p, addP(
+                                          mulP(negP(mulP(a, r)), p),
+                                          mulP(negP(mulP(a, s)), q))) =
+                                          addP(
+                                          mulP(addP(ONEP, negP(mulP(a, r))), p),
+                                          mulP(negP(mulP(a, s)), q))
+                                        [using specialize theLeadingTermFolds(
+                                          p, mulP(negP(mulP(a, r)), p),
+                                          negP(mulP(a, r)),
+                                          mulP(negP(mulP(a, s)), q))
+                                          the-p-term-is-its-own-coefficient]
+                                      @the-p-term-is-its-own-coefficient |
+                                        mulP(negP(mulP(a, r)), p) =
+                                          mulP(negP(mulP(a, r)), p)
+                                        [by reflexivity]
+                                      @b-in-the-combination-form |
+                                        b = addP(
+                                          mulP(addP(ONEP, negP(mulP(a, r))), p),
+                                          mulP(negP(mulP(a, s)), q))
+                                        [using simplify b-is-a-combination-shape
+                                          b-in-coefficient-form]
+                                      @the-inner-witness |
+                                        exists v: Poly;
+                                          b = addP(
+                                          mulP(addP(ONEP, negP(mulP(a, r))), p),
+                                          mulP(v, q))
+                                        [by witness(negP(mulP(a, s)))
+                                          b-in-the-combination-form]
+                                      @the-witnesses-exist |
+                                        exists u: Poly; exists v: Poly;
+                                          b = addP(mulP(u, p), mulP(v, q))
+                                        [by witness(addP(ONEP, negP(mulP(a, r))))
+                                          the-inner-witness]
+                                      @conclusion-b-is-a-combination |
+                                        isACombination(b, p, q)
+                                        [by modus_ponens the-combination-backward
+                                          the-witnesses-exist]
+                                    }
+                                  @conclusion-from-s |
+                                    isACombination(b, p, q)
+                                    [by unpacked with-s]
+                                }
+                              @conclusion-from-r |
+                                isACombination(b, p, q)
+                                [by unpacked with-r]
+                            }
+                          @conclusion-the-division-gives-it |
+                            p = addP(mulP(a, d), b) -> isACombination(b, p, q)
+                            [by discharge given-the-division]
+                        }
+                      @conclusion-both-give-it |
+                        (exists r: Poly; exists s: Poly;
+                          d = addP(mulP(r, p), mulP(s, q))) ->
+                          p = addP(mulP(a, d), b) ->
+                          isACombination(b, p, q)
+                        [by discharge given-the-coefficients]
+                    }
+                  @conclusion-for-all-b |
+                    forall b: Poly;
+                      (exists r: Poly; exists s: Poly;
+                      d = addP(mulP(r, p), mulP(s, q))) ->
+                      p = addP(mulP(a, d), b) ->
+                      isACombination(b, p, q)
+                    [by generalize generalize-b]
+                }
+              @conclusion-for-all-a |
+                forall a, b: Poly;
+                  (exists r: Poly; exists s: Poly;
+                  d = addP(mulP(r, p), mulP(s, q))) ->
+                  p = addP(mulP(a, d), b) ->
+                  isACombination(b, p, q)
+                [by generalize generalize-a]
+            }
+          @conclusion-for-all-d |
+            forall d, a, b: Poly;
+              (exists r: Poly; exists s: Poly;
+              d = addP(mulP(r, p), mulP(s, q))) ->
+              p = addP(mulP(a, d), b) ->
+              isACombination(b, p, q)
+            [by generalize generalize-d]
+        }
+      @conclusion-for-all-q |
+        forall q, d, a, b: Poly;
+          (exists r: Poly; exists s: Poly;
+          d = addP(mulP(r, p), mulP(s, q))) ->
+          p = addP(mulP(a, d), b) ->
+          isACombination(b, p, q)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, d, a, b: Poly;
+      (exists r: Poly; exists s: Poly;
+      d = addP(mulP(r, p), mulP(s, q))) ->
+      p = addP(mulP(a, d), b) ->
+      isACombination(b, p, q)
+    [by generalize generalize-p]
+qed
+
+// p + (c·p + X) = (1 + c)·p + X. Right-distributivity on the coefficient, after regrouping
+// the sum so the two p-terms meet. `mulP(ONEP, p) = p` supplies the leading 1.
+theorem theLeadingTermFolds: forall p, cp, c, x: Poly;
+  cp = mulP(c, p) ->
+  addP(p, addP(cp, x)) = addP(mulP(addP(ONEP, c), p), x)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-cp |
+        fix cp: Poly {
+          @generalize-c |
+            fix c: Poly {
+              @generalize-x |
+                fix x: Poly {
+                  @given-cp |
+                    assume cp = mulP(c, p) {
+                      @cp-is-c-times-p |
+                        cp = mulP(c, p)
+                        [by hypothesis given-cp]
+                      // p + (c p + x) = (p + c p) + x
+                      @regroup |
+                        addP(p, addP(mulP(c, p), x)) =
+                          addP(addP(p, mulP(c, p)), x)
+                        [by symmetry associate]
+                      @associate |
+                        addP(addP(p, mulP(c, p)), x) =
+                          addP(p, addP(mulP(c, p), x))
+                        [using specialize fieldpoly.polyAddIsAssociative(
+                          p, mulP(c, p), x)]
+                      // p + c p = 1·p + c·p = (1 + c)·p
+                      @one-times-p |
+                        mulP(ONEP, p) = p
+                        [using specialize fieldpoly.polyMulOneLeft(p)]
+                      @distribute-on-the-right |
+                        mulP(addP(ONEP, c), p) =
+                          addP(mulP(ONEP, p), mulP(c, p))
+                        [using specialize fieldpoly.polyMulAddDistribRight(
+                          ONEP, c, p)]
+                      @the-coefficient-sum |
+                        mulP(addP(ONEP, c), p) = addP(p, mulP(c, p))
+                        [using simplify distribute-on-the-right one-times-p]
+                      @the-regrouped-sum |
+                        addP(p, addP(mulP(c, p), x)) =
+                          addP(mulP(addP(ONEP, c), p), x)
+                        [by rewrite the-coefficient-sum regroup]
+                      @conclusion-the-leading-term-folds |
+                        addP(p, addP(cp, x)) = addP(mulP(addP(ONEP, c), p), x)
+                        [by rewrite cp-is-c-times-p the-regrouped-sum]
+                    }
+                  @conclusion-given-cp |
+                    cp = mulP(c, p) ->
+                      addP(p, addP(cp, x)) = addP(mulP(addP(ONEP, c), p), x)
+                    [by discharge given-cp]
+                }
+              @conclusion-for-all-x |
+                forall x: Poly;
+                  cp = mulP(c, p) ->
+                  addP(p, addP(cp, x)) = addP(mulP(addP(ONEP, c), p), x)
+                [by generalize generalize-x]
+            }
+          @conclusion-for-all-c |
+            forall c, x: Poly;
+              cp = mulP(c, p) ->
+              addP(p, addP(cp, x)) = addP(mulP(addP(ONEP, c), p), x)
+            [by generalize generalize-c]
+        }
+      @conclusion-for-all-cp |
+        forall cp, c, x: Poly;
+          cp = mulP(c, p) ->
+          addP(p, addP(cp, x)) = addP(mulP(addP(ONEP, c), p), x)
+        [by generalize generalize-cp]
+    }
+  @conclusion |
+    forall p, cp, c, x: Poly;
+      cp = mulP(c, p) ->
+      addP(p, addP(cp, x)) = addP(mulP(addP(ONEP, c), p), x)
+    [by generalize generalize-p]
+qed
+// b = p + -(a d), read off p = a d + b by additive cancellation.
+theorem theRemainderIsTheDifference: forall p, m, b: Poly;
+  p = addP(m, b) -> b = addP(p, negP(m))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-m |
+        fix m: Poly {
+          @generalize-b |
+            fix b: Poly {
+              @given-the-division |
+                assume p = addP(m, b) {
+                  @the-division |
+                    p = addP(m, b)
+                    [by hypothesis given-the-division]
+                  // p + -m = (m + b) + -m = b, by commuting then cancelling
+                  @the-sum-commutes |
+                    addP(m, b) = addP(b, m)
+                    [using specialize fieldpoly.polyAddIsCommutative(m, b)]
+                  @p-is-b-plus-m |
+                    p = addP(b, m)
+                    [using simplify the-division the-sum-commutes]
+                  @reflexive |
+                    addP(p, negP(m)) = addP(p, negP(m))
+                    [by reflexivity]
+                  @substitute |
+                    addP(p, negP(m)) = addP(addP(b, m), negP(m))
+                    [by rewrite p-is-b-plus-m reflexive]
+                  @the-cancellation |
+                    addP(addP(b, m), negP(m)) = b
+                    [using specialize fieldpoly.polyASumCancelsItsRightSummand(b, m)]
+                  @the-difference-is-b |
+                    addP(p, negP(m)) = b
+                    [using simplify substitute the-cancellation]
+                  @conclusion-b-is-the-difference |
+                    b = addP(p, negP(m))
+                    [by symmetry the-difference-is-b]
+                }
+              @conclusion-the-division-gives-it |
+                p = addP(m, b) -> b = addP(p, negP(m))
+                [by discharge given-the-division]
+            }
+          @conclusion-for-all-b |
+            forall b: Poly; p = addP(m, b) -> b = addP(p, negP(m))
+            [by generalize generalize-b]
+        }
+      @conclusion-for-all-m |
+        forall m, b: Poly; p = addP(m, b) -> b = addP(p, negP(m))
+        [by generalize generalize-m]
+    }
+  @conclusion |
+    forall p, m, b: Poly; p = addP(m, b) -> b = addP(p, negP(m))
+    [by generalize generalize-p]
+qed
+// -- HIS SECOND MOVE: THE DIVISION REMAINDER IS ITSELF A COMBINATION -------------------------
+// "By the division algorithm, there are polynomials a(x) and b(x) such that
+// p(x) = a(x)d(x) + b(x) ... Therefore
+//   b = p - a d = p - a(r p + s q) = p(1 - a r) + q(-a s).
+// This is a linear combination of p(x) and q(x), so it belongs to S."
+//
+// The combination form is what makes minimality bite. Writing it needs negation to move
+// through a product and additive cancellation — the algebra now proved generically in
+// `std/ring/polynomial.b4m` and transferred into F[x].
+theorem theDivisionRemainderIsACombination: forall p, q, d, a, b: Poly;
+  isACombination(d, p, q) ->
+  p = addP(mulP(a, d), b) ->
+  isACombination(b, p, q)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-d |
+            fix d: Poly {
+              @generalize-a |
+                fix a: Poly {
+                  @generalize-b |
+                    fix b: Poly {
+                      @given-d-is-a-combination |
+                        assume isACombination(d, p, q) {
+                          @d-is-a-combination |
+                            isACombination(d, p, q)
+                            [by hypothesis given-d-is-a-combination]
+                          @the-combination-meaning |
+                            isACombination(d, p, q) iff
+                              (exists r: Poly; exists s: Poly;
+                              d = addP(mulP(r, p), mulP(s, q)))
+                            [using specialize combinationMeansRPPlusSQ(d, p, q)]
+                          @the-combination-forward |
+                            isACombination(d, p, q) ->
+                              (exists r: Poly; exists s: Poly;
+                              d = addP(mulP(r, p), mulP(s, q)))
+                            [by equiv_forward the-combination-meaning]
+                          @d-has-coefficients |
+                            exists r: Poly; exists s: Poly;
+                              d = addP(mulP(r, p), mulP(s, q))
+                            [by modus_ponens the-combination-forward d-is-a-combination]
+                          @given-the-division |
+                            assume p = addP(mulP(a, d), b) {
+                              @the-division |
+                                p = addP(mulP(a, d), b)
+                                [by hypothesis given-the-division]
+                              @conclusion-b-is-a-combination |
+                                isACombination(b, p, q)
+                                [using specialize theRemainderCombinationFromTheCoefficients(
+                                  p, q, d, a, b) d-has-coefficients the-division]
+                            }
+                          @conclusion-the-division-gives-it |
+                            p = addP(mulP(a, d), b) -> isACombination(b, p, q)
+                            [by discharge given-the-division]
+                        }
+                      @conclusion-both-give-it |
+                        isACombination(d, p, q) ->
+                          p = addP(mulP(a, d), b) ->
+                          isACombination(b, p, q)
+                        [by discharge given-d-is-a-combination]
+                    }
+                  @conclusion-for-all-b |
+                    forall b: Poly;
+                      isACombination(d, p, q) ->
+                      p = addP(mulP(a, d), b) ->
+                      isACombination(b, p, q)
+                    [by generalize generalize-b]
+                }
+              @conclusion-for-all-a |
+                forall a, b: Poly;
+                  isACombination(d, p, q) ->
+                  p = addP(mulP(a, d), b) ->
+                  isACombination(b, p, q)
+                [by generalize generalize-a]
+            }
+          @conclusion-for-all-d |
+            forall d, a, b: Poly;
+              isACombination(d, p, q) ->
+              p = addP(mulP(a, d), b) ->
+              isACombination(b, p, q)
+            [by generalize generalize-d]
+        }
+      @conclusion-for-all-q |
+        forall q, d, a, b: Poly;
+          isACombination(d, p, q) ->
+          p = addP(mulP(a, d), b) ->
+          isACombination(b, p, q)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, d, a, b: Poly;
+      isACombination(d, p, q) ->
+      p = addP(mulP(a, d), b) ->
+      isACombination(b, p, q)
     [by generalize generalize-p]
 qed
