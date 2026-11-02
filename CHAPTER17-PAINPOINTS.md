@@ -277,6 +277,33 @@ while the machinery could not be joined up.
   theorem. The fix is mechanical (split it out and `specialize` it back in) but the error points
   at the step, not at the missing declaration, so it reads as a syntax slip rather than as
   "this wants to be a lemma".
+- **`polynomial` is a SCALAR-layer tactic — it cannot do polynomial algebra.** It binds
+  `add`/`mul`/`ZERO`/`succ` by WELL-KNOWN NAME, so over a polynomial carrier whose operations
+  are `addP`/`mulP` it reports `the goal has no add/mul structure`. Confirmed across the
+  corpus: every `using polynomial(...)` sits over `field` or `rational`, i.e. the COEFFICIENT
+  ring, and not one is over polynomial operations.
+
+  This is easy to misread as "the tactic is broken here", because the goal plainly *is* a ring
+  identity. What it means is that a polynomial ring identity must be written as an explicit
+  chain over named lemmas — distribute, split the negation, reassociate, fold — and the names
+  must exist. Judson's one-line `b = p(1 - ar) + q(-as)` cost four lemmas and a dozen steps.
+
+  **Corollary worth planning around:** a new polynomial layer should expect to state its own
+  distributivity/identity/negation lemmas, since no tactic will supply them.
+- **A model target must be a SYMBOL, not an expression.** `ring_poly.ONEP` could not map onto
+  `monomial(oneF, ZERO)`; it needed a declared `func monomialOne()` with a defining axiom, and
+  then the two coefficient obligations discharged from the monomial axioms. Cheap once seen,
+  but the error does not say "write a symbol" — it says the name is not found.
+- **Right-hand companions go missing in pairs.** Closing §17.2 needed `polyAddNegRight`,
+  `polyAddZeroRight`, `polyMulAddDistribRight` and `aSumCancelsItsRightSummand`, none of which
+  existed at the ring layer even though every LEFT form did. Each is two lines from its left
+  twin plus commutativity. When a layer is built to satisfy one consumer's left-handed proofs,
+  the right forms simply never get written — worth adding both while the file is open.
+- **Prove algebra at the layer that owns it, then transfer.** The ℚ[x] negation algebra built
+  during §17.3 was rebuilt generically at `ring_poly` here; F[x] then paid SEVEN one-line
+  transfers instead of seven inductions, because `FieldPolyModelsRingPoly` already mapped every
+  symbol (`--axioms` on `polyAddCancelRight`: 8 axioms, all mapped). The rule: if a second
+  carrier is about to need the same induction, the induction belongs one layer down.
 - **`tautology` sees atoms, not content** — documented, but still cost a round: `e = ONE` plus
   `ONE | ONE` does **not** give `e | ONE`, since an equation and a predicate are unrelated
   atoms. Fix is an explicit rewrite under `contradiction`.
