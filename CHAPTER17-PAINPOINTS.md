@@ -185,10 +185,29 @@ while the machinery could not be joined up.
 
 ## 8. Smaller things that each cost a round or more
 
-- **`simplify` loops or stalls** where an explicit `rewrite` works. Three separate sites:
-  a rewrite-limit loop (`theDenominatorCancels`'s precursor), `'ZERO' vs 'qcoeff(p, qdegree(p))'`
-  normal-form mismatch, and `'b' vs 'c'`. Rule of thumb that emerged: when both sides need a
-  *different* equation applied, chain `rewrite`s; `simplify` is for one shared normal form.
+- **`simplify` WILL NOT CHAIN TWO SUBSTITUTIONS** — easily the most frequent single friction in
+  the whole chapter, hit at a dozen-plus sites across `integer-product.b4m`,
+  `integer-division.b4m`, `polynomial.b4m` and `integer-polynomial.b4m`.
+  The failure is always the same shape: a step wants "substitute equation A, then collapse with
+  equation B", and `simplify` reports the two sides it could not reconcile
+  (`normal forms differ: 'X' vs 'Y'`) or hits the rewrite limit.
+
+  **Rule, now firm: `simplify` is for ONE shared normal form. The moment two different
+  equations have to be applied in sequence, write the explicit `rewrite` chain.** Each
+  `rewrite EQ TARGET` is bidirectional and does exactly one substitution, so an N-step
+  rearrangement is N `rewrite`s with a named intermediate at each stage. Writing those
+  intermediates out is not verbosity — it is the only form the tactic accepts, and the labels
+  document the algebra.
+
+  Representative instances: a rewrite-limit loop (`theDenominatorCancels`'s precursor);
+  `'ZERO' vs 'qcoeff(p, qdegree(p))'`; `'b' vs 'c'`;
+  `'mul(g, mul(s, coefficient))' vs 'mul(g, mul(r, entry))'` (three-equation chain);
+  `'coefficient' vs 'mul(mul(r, recip(s)), entry)'`; `'add(ZERO, ZERO)' vs 'qcls(add(…))'`
+  (needed the two vanishing classes substituted one at a time).
+
+  **Related, same tactic, different cause:** `simplify` also cannot CONSUME a cited equation as
+  a premise — it proves identities, not consequences. A rearrangement like
+  `0 = X + r·t ⟹ X = r·(−t)` is not a `simplify` goal at all, however simple it looks.
 - **`tautology` sees atoms, not content** — documented, but still cost a round: `e = ONE` plus
   `ONE | ONE` does **not** give `e | ONE`, since an equation and a predicate are unrelated
   atoms. Fix is an explicit rewrite under `contradiction`.
@@ -327,3 +346,56 @@ while the resolved theorem is relativized. Different mechanism — a citation, n
 **Process note:** I mis-diagnosed the fixed half twice (wrong refinement lookup, then wrong
 accelerant path) by reasoning from the code's own comments, which described the mechanism as
 if it were already wired everywhere. One `std.debug.print` settled it. Instrument first.
+
+## 14. `theSubject` blocks Lemma 17.12 from ever being applied twice (LIVE, structural)
+
+**Measured 2026-11-02, tracing what "f is irreducible over ℚ" needs.**
+
+`theIntegerDecompositionExists` (Lemma 17.12) is stated about `theSubject` — an uninterpreted
+`func` the file's specs read coefficients through. That was the workaround for pain point 4: a
+schema-argument lambda carries ONE sort annotation for all its binders, so `fun i: Nat, v: Q
+=> …` is a parse error and there is no way to close over a polynomial. Reading the coefficient
+through a fixed `func` sidesteps it, and for proving 17.12 about "an arbitrary but fixed p"
+that is exactly right.
+
+**But the Gauss reduction needs 17.12 applied to BOTH factors of a ℚ[x] factorisation** —
+`α = (r₁/s₁)α₁` and `β = (r₂/s₂)β₁` — and a fixed `func` cannot be instantiated at two
+different polynomials in one proof. So irreducibility over ℚ, which quantifies over *all*
+ℚ[x] factorisations, is not reachable from 17.12 as stated.
+
+Generalising means giving `isADenominatorFor` and everything built on it a polynomial
+parameter, i.e. redoing 17.12's whole spec layer. Not a rename — the spec reads
+`theSubject`'s coefficients in its defining axiom.
+
+**Why this matters beyond ch17:** the `theSubject` trick looks free when you prove a theorem
+about one fixed object. It silently costs you every later use that needs TWO. Worth asking, at
+the point of reaching for it, whether any consumer will need two instances.
+
+## 15. A conclusion that is TRUE but harmless is the hardest defect to see
+
+Three times in this chapter I wrote a theorem whose conclusion followed from fewer hypotheses
+than it listed, and twice the name claimed more than the statement.
+
+- `eisensteinOnTheCut` (deleted): concluded "not every coefficient is divisible", which under
+  Eisenstein's own hypotheses is *immediate* from `N ∤ a_n`. The dead-step lint caught it —
+  four unused hypotheses including the factorization itself.
+- `eisensteinRulesOutAnIntegerFactorization` (committed, then found wanting): same conclusion,
+  same problem. It does not rule out a factorization; the contradiction needs the DEGREE
+  bookkeeping (both factors' degree bounds summing below n, so `N | a_i` for `i < n` plus
+  vanishing above the degree sum forces `N` to divide *every* coefficient). The strict check
+  and the dead-step lint both passed, because every step was valid — the statement was just
+  weaker than its name.
+- `theModulusCannotDivideEveryProductCoefficient` (fixed in `8bf3251`): hypothesis constrained
+  `mod_n.N` while the conclusion spoke of an independent `QN`. `--axioms` showed BOTH
+  congruence axioms in the base, which was the tell, in output I had already run.
+
+**The pattern:** the checker verifies that the steps prove the stated formula. It cannot tell
+you the formula is weaker than what you meant, or that the name oversells it. Three tools do:
+the **dead-step lint** (unused hypotheses are the loudest signal), **`--axioms`** (two
+independent constants where one was intended shows up as two axioms), and **asking what the
+conclusion rules out** before naming it. I used the first two only after being surprised.
+
+## Numbering
+
+There is no §10 — the list grew by insertion and the gap is left rather than renumber
+references in commit messages that cite these by number.
