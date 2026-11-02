@@ -2724,3 +2724,88 @@ proof
       less_or_equal(a, b) -> less_or_equal(mul(c, a), mul(c, b))
     [by generalize generalize-a]
 qed
+
+// `aSummandIsAtMostTheSum` with the binders the other way round. A guard obligation inside a
+// `fix n` block needs `n` peeled FIRST, and `apply_at` peels in declaration order, so the
+// reordered form is what such a site can actually apply.
+theorem theSummandBoundReordered: forall n, a: Nat;
+  less_or_equal(n, add(a, n))
+proof
+  @generalize-n |
+    fix n: Nat {
+      @generalize-a |
+        fix a: Nat {
+          @conclusion-the-bound |
+            less_or_equal(n, add(a, n))
+            [using specialize aSummandIsAtMostTheSum(a, n)]
+        }
+      @conclusion-for-all-a |
+        forall a: Nat; less_or_equal(n, add(a, n))
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall n, a: Nat; less_or_equal(n, add(a, n))
+    [by generalize generalize-n]
+qed
+
+// a <= b implies succ(a) <= succ(b) — the at-most companion to `succPreservesOrder`, and the
+// last of the monotonicity family the guarded `sub` needs: `subSuccSucc`'s left-hand side
+// applies `sub` at two successors, so it owes the successor form of the guard it is given.
+theorem succPreservesAtMost: forall a, b: Nat;
+  less_or_equal(a, b) -> less_or_equal(succ(a), succ(b))
+proof
+  @generalize-a |
+    fix a: Nat {
+      @generalize-b |
+        fix b: Nat {
+          @given-a-at-most-b |
+            assume less_or_equal(a, b) {
+              @the-cases |
+                less_than(a, b) or a = b
+                [using tautology a-at-most-b]
+              @a-at-most-b |
+                less_or_equal(a, b)
+                [by hypothesis given-a-at-most-b]
+              @the-successors-compare |
+                less_or_equal(succ(a), succ(b))
+                [by common_conclusion the-cases when-strict when-equal]
+              @when-strict |
+                assume less_than(a, b) {
+                  @strictly-below |
+                    less_than(a, b)
+                    [by hypothesis when-strict]
+                  @the-successors-are-strictly-below |
+                    less_than(succ(a), succ(b))
+                    [using specialize succPreservesOrder(a, b) strictly-below]
+                  @conclusion-strict-case |
+                    less_or_equal(succ(a), succ(b))
+                    [using tautology the-successors-are-strictly-below]
+                }
+              @when-equal |
+                assume a = b {
+                  @they-are-equal |
+                    a = b
+                    [by hypothesis when-equal]
+                  @reflexive-successor |
+                    succ(a) = succ(a)
+                    [by reflexivity]
+                  @the-successors-are-equal |
+                    succ(a) = succ(b)
+                    [by rewrite they-are-equal reflexive-successor]
+                  @conclusion-equal-case |
+                    less_or_equal(succ(a), succ(b))
+                    [using tautology the-successors-are-equal]
+                }
+            }
+          @conclusion-at-most-is-preserved |
+            less_or_equal(a, b) -> less_or_equal(succ(a), succ(b))
+            [by discharge given-a-at-most-b]
+        }
+      @conclusion-for-all-b |
+        forall b: Nat; less_or_equal(a, b) -> less_or_equal(succ(a), succ(b))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Nat; less_or_equal(a, b) -> less_or_equal(succ(a), succ(b))
+    [by generalize generalize-a]
+qed
