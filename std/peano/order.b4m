@@ -2312,3 +2312,83 @@ proof
     forall k: Nat; less_than(ZERO, succ(k))
     [by generalize generalize-k]
 qed
+
+// If a bound is below n and t is NOT below n, the bound is below t. Pure order plumbing, but
+// `tautology` cannot see it — a `less_than` atom carries no arithmetic — so it needs the
+// trichotomy split written out. Used by the degree arguments in Eisenstein's Criterion, where
+// "below n" and "above the degree sum" have to be shown to cover every index.
+theorem theBoundIsBelowAnythingNotBelowIt: forall b, n, t: Nat;
+  less_than(b, n) -> (not less_than(t, n)) -> less_than(b, t)
+proof
+  @generalize-b |
+    fix b: Nat {
+      @generalize-n |
+        fix n: Nat {
+          @generalize-t |
+            fix t: Nat {
+              @given-the-setup |
+                assume less_than(b, n) and (not less_than(t, n)) {
+                  @the-setup |
+                    less_than(b, n) and (not less_than(t, n))
+                    [by hypothesis given-the-setup]
+                  @b-below-n |
+                    less_than(b, n)
+                    [by and_lhs the-setup]
+                  @t-not-below-n |
+                    not less_than(t, n)
+                    [by and_rhs the-setup]
+                  @the-trichotomy |
+                    less_than(n, t) or n = t or less_than(t, n)
+                    [using specialize trichotomy(n, t)]
+                  @n-is-at-most-t |
+                    less_than(n, t) or n = t
+                    [using tautology the-trichotomy t-not-below-n]
+                  @conclusion-b-below-t |
+                    less_than(b, t)
+                    case n-is-at-most-t {
+                      @when-n-below-t |
+                        assume less_than(n, t) {
+                          @n-below-t |
+                            less_than(n, t)
+                            [by hypothesis when-n-below-t]
+                          @conclusion-transitive |
+                            less_than(b, t)
+                            [using specialize lessThanTransitive(b, n, t) b-below-n n-below-t]
+                        }
+                      @when-n-is-t |
+                        assume n = t {
+                          @n-is-t |
+                            n = t
+                            [by hypothesis when-n-is-t]
+                          @conclusion-rewritten |
+                            less_than(b, t)
+                            [by rewrite n-is-t b-below-n]
+                        }
+                    }
+                }
+              @the-implication |
+                (less_than(b, n) and (not less_than(t, n))) ->
+                  less_than(b, t)
+                [by discharge given-the-setup]
+              @curried |
+                less_than(b, n) -> (not less_than(t, n)) ->
+                  less_than(b, t)
+                [using tautology the-implication]
+            }
+          @discharge-t |
+            forall t9: Nat;
+              less_than(b, n) -> (not less_than(t9, n)) ->
+              less_than(b, t9)
+            [by generalize generalize-t]
+        }
+      @discharge-n |
+        forall n9, t9: Nat;
+          less_than(b, n9) -> (not less_than(t9, n9)) ->
+          less_than(b, t9)
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall b, n, t: Nat;
+      less_than(b, n) -> (not less_than(t, n)) -> less_than(b, t)
+    [by generalize generalize-b]
+qed

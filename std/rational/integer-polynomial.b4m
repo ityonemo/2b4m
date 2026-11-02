@@ -27,10 +27,12 @@
 import qpoly <<< "std/rational/polynomial.b4m"
 import rational <<< "std/rational.b4m"
 import integer <<< "std/integer.b4m"
+import ring_leading <<< "std/ring/polynomial-leading.b4m"
 import mod_n <<< "std/integer/mod-n.b4m"
 import mod_n_poly <<< "std/integer/mod-n-polynomial.b4m"
 import mod_n_domain <<< "std/integer/mod-n-domain.b4m"
 import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
 import subtraction <<< "std/peano/subtraction.b4m"
 
 sort Q = rational.Q
@@ -622,6 +624,41 @@ axiom qclsMul: forall a, b: Q; isInteger(a) -> isInteger(b) ->
 // reduction argument uses throughout, and it is a DEFINITION rather than an axiom, so it
 // cannot drift from what `qcls` actually does.
 define reducesToZero(a) = (qcls(a) = mod_n.ZERO)
+
+// ZERO reduces to zero. `qcls` has no zero axiom (the definitional route made it redundant),
+// so this comes from the congruence-free direction: ZERO's class is whatever it is, and
+// `qclsAdd` at (ZERO, ZERO) pins it.
+theorem qclsZeroReduces: reducesToZero(ZERO)
+proof
+  @zero-is-an-integer |
+    isInteger(ZERO)
+    [using import(rational) zeroIsAnInteger]
+  @the-sum-of-classes |
+    mod_n.add(qcls(ZERO), qcls(ZERO)) =
+      qcls(rational.add(ZERO, ZERO))
+    [using specialize qclsAdd(ZERO, ZERO) zero-is-an-integer zero-is-an-integer]
+  @zero-plus-zero |
+    rational.add(ZERO, ZERO) = ZERO
+    [using polynomial(rational)]
+  @the-class-is-idempotent |
+    mod_n.add(qcls(ZERO), qcls(ZERO)) = qcls(ZERO)
+    [by rewrite zero-plus-zero the-sum-of-classes]
+  // x + x = x in a group forces x = identity
+  @the-cancellation |
+    forall x, y, z: Zn;
+      mod_n.add(x, y) = mod_n.add(x, z) -> y = z
+    [using import(mod_n) addCancelLeft]
+  @the-identity-on-the-right |
+    mod_n.add(qcls(ZERO), mod_n.ZERO) = qcls(ZERO)
+    [using specialize mod_n.addIdentityRight(qcls(ZERO))]
+  @the-two-sums-agree |
+    mod_n.add(qcls(ZERO), qcls(ZERO)) =
+      mod_n.add(qcls(ZERO), mod_n.ZERO)
+    [by rewrite the-identity-on-the-right the-class-is-idempotent]
+  @conclusion |
+    reducesToZero(ZERO)
+    [using specialize the-cancellation(qcls(ZERO), qcls(ZERO), mod_n.ZERO) the-two-sums-agree]
+qed
 
 // -- REDUCTION OF A CUT POLYNOMIAL ---------------------------------------------------------
 // Judson's "let α₁'(x) be the polynomial in ℤ_p[x] obtained by reducing the coefficients of
@@ -2319,31 +2356,161 @@ proof
     [by generalize generalize-g]
 qed
 
+// The product vanishes above the degree sum — transferred from `ring_poly`, which the cut's
+// model already maps. Needed because Eisenstein's contradiction is a DEGREE argument.
+theorem qProductVanishesAboveTheDegreeSum: forall p, q: QPoly;
+  forall m, n, i: Nat;
+  qpoly.qdegreeAtMost(p, m) -> qpoly.qdegreeAtMost(q, n) ->
+  peano.less_than(peano.add(m, n), i) ->
+  (forall k: Nat; qpoly.qconvolution(p, q, i, k) = ZERO)
+proof
+  @conclusion |
+    forall p, q: QPoly; forall m, n, i: Nat;
+      qpoly.qdegreeAtMost(p, m) -> qpoly.qdegreeAtMost(q, n) ->
+      peano.less_than(peano.add(m, n), i) ->
+      (forall k: Nat; qpoly.qconvolution(p, q, i, k) = ZERO)
+    [using model(qpoly.RationalPolynomialsOverARing) ring_leading.theProductVanishesAboveTheDegreeSum]
+qed
+
+// Above the degree sum the product's COEFFICIENTS vanish, hence reduce to zero.
+theorem theProductReducesToZeroAboveTheDegreeSum: forall p, q: QPoly;
+  forall m, n, t: Nat;
+  qpoly.qdegreeAtMost(p, m) -> qpoly.qdegreeAtMost(q, n) ->
+  peano.less_than(peano.add(m, n), t) ->
+  reducesToZero(qpoly.qcoeff(qpoly.qmulP(p, q), t))
+proof
+  @generalize-p |
+    fix p: QPoly {
+      @generalize-q |
+        fix q: QPoly {
+          @generalize-m |
+            fix m: Nat {
+              @generalize-n |
+                fix n: Nat {
+                  @generalize-t |
+                    fix t: Nat {
+                      @given-the-setup |
+                        assume qpoly.qdegreeAtMost(p, m) and
+                          qpoly.qdegreeAtMost(q, n) and
+                          peano.less_than(peano.add(m, n), t) {
+                          @the-setup |
+                            qpoly.qdegreeAtMost(p, m) and
+                              qpoly.qdegreeAtMost(q, n) and
+                              peano.less_than(peano.add(m, n), t)
+                            [by hypothesis given-the-setup]
+                          @p-is-bounded |
+                            qpoly.qdegreeAtMost(p, m)
+                            [using tautology the-setup]
+                          @q-is-bounded |
+                            qpoly.qdegreeAtMost(q, n)
+                            [using tautology the-setup]
+                          @t-is-above |
+                            peano.less_than(peano.add(m, n), t)
+                            [using tautology the-setup]
+                          @the-convolutions-vanish |
+                            forall k: Nat;
+                              qpoly.qconvolution(p, q, t, k) = ZERO
+                            [using specialize qProductVanishesAboveTheDegreeSum(p, q, m, n, t) p-is-bounded q-is-bounded t-is-above]
+                          @the-diagonal-vanishes |
+                            qpoly.qconvolution(p, q, t, t) = ZERO
+                            [using specialize the-convolutions-vanish(t)]
+                          @the-coefficient-is-the-convolution |
+                            qpoly.qcoeff(qpoly.qmulP(p, q), t) =
+                              qpoly.qconvolution(p, q, t, t)
+                            [using specialize qpoly.qMulPolyCoeff(p, q, t)]
+                          @the-coefficient-vanishes |
+                            qpoly.qcoeff(qpoly.qmulP(p, q), t) =
+                              ZERO
+                            [by rewrite the-diagonal-vanishes the-coefficient-is-the-convolution]
+                          @zero-reduces-to-zero |
+                            reducesToZero(ZERO)
+                            [by cite qclsZeroReduces]
+                          @conclusion-reduces |
+                            reducesToZero(
+                              qpoly.qcoeff(qpoly.qmulP(p, q), t))
+                            [by rewrite the-coefficient-vanishes zero-reduces-to-zero]
+                        }
+                      @the-implication |
+                        (qpoly.qdegreeAtMost(p, m) and
+                          qpoly.qdegreeAtMost(q, n) and
+                          peano.less_than(peano.add(m, n), t)) ->
+                          reducesToZero(
+                          qpoly.qcoeff(qpoly.qmulP(p, q), t))
+                        [by discharge given-the-setup]
+                      @curried |
+                        qpoly.qdegreeAtMost(p, m) ->
+                          qpoly.qdegreeAtMost(q, n) ->
+                          peano.less_than(peano.add(m, n), t) ->
+                          reducesToZero(
+                          qpoly.qcoeff(qpoly.qmulP(p, q), t))
+                        [using tautology the-implication]
+                    }
+                  @discharge-t |
+                    forall t9: Nat;
+                      qpoly.qdegreeAtMost(p, m) ->
+                      qpoly.qdegreeAtMost(q, n) ->
+                      peano.less_than(peano.add(m, n), t9) ->
+                      reducesToZero(
+                      qpoly.qcoeff(qpoly.qmulP(p, q), t9))
+                    [by generalize generalize-t]
+                }
+              @discharge-n |
+                forall n9, t9: Nat;
+                  qpoly.qdegreeAtMost(p, m) ->
+                  qpoly.qdegreeAtMost(q, n9) ->
+                  peano.less_than(peano.add(m, n9), t9) ->
+                  reducesToZero(
+                  qpoly.qcoeff(qpoly.qmulP(p, q), t9))
+                [by generalize generalize-n]
+            }
+          @discharge-m |
+            forall m9, n9, t9: Nat;
+              qpoly.qdegreeAtMost(p, m9) ->
+              qpoly.qdegreeAtMost(q, n9) ->
+              peano.less_than(peano.add(m9, n9), t9) ->
+              reducesToZero(qpoly.qcoeff(qpoly.qmulP(p, q), t9))
+            [by generalize generalize-m]
+        }
+      @discharge-q |
+        forall q9: QPoly; forall m9, n9, t9: Nat;
+          qpoly.qdegreeAtMost(p, m9) ->
+          qpoly.qdegreeAtMost(q9, n9) ->
+          peano.less_than(peano.add(m9, n9), t9) ->
+          reducesToZero(qpoly.qcoeff(qpoly.qmulP(p, q9), t9))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: QPoly; forall m, n, t: Nat;
+      qpoly.qdegreeAtMost(p, m) -> qpoly.qdegreeAtMost(q, n) ->
+      peano.less_than(peano.add(m, n), t) ->
+      reducesToZero(qpoly.qcoeff(qpoly.qmulP(p, q), t))
+    [by generalize generalize-p]
+qed
+
 // -- EISENSTEIN'S CRITERION, ON THE CUT ----------------------------------------------------
-// AATA Theorem 17.15. Gauss reduces irreducibility over ℚ to the absence of a factorization
-// in ℤ[x] — and here ℤ[x] IS the cut, so what has to be ruled out is `f = g·h` outright.
+// AATA Theorem 17.15, as the DEGREE argument it is. A previous version of this theorem
+// concluded "not every coefficient of f is divisible by N" — which under Eisenstein's own
+// hypotheses follows from `N ∤ a_n` alone and refutes nothing. The contradiction needs the
+// degree bookkeeping, and that is what this states.
 //
-// Judson: "If p | a_i for i = 0, …, n-1, but p ∤ a_n and p² ∤ a_0, then f(x) is irreducible."
-// The two hypotheses beyond the divisibility pattern are his, read as the argument uses them:
-// `p ∤ a_n` as a surviving top coefficient, and `p² ∤ a_0` as "p does not divide both constant
-// factors" (which is what it buys, given `a_0 = g_0·h_0`).
+// Given `f = g·h` with the two degree bounds summing BELOW n:
+//   - below n, `N | a_i` by hypothesis;
+//   - above the degree sum, the product's coefficients VANISH, so `N` divides them;
+//   - and the degree sum is below n, so those two ranges COVER every index.
+// Hence `N` divides every coefficient of `f` — which the reduction argument forbids, given a
+// surviving coefficient in each factor (supplied by the closure from `N ∤ a_n`).
 //
-// The argument, now that every piece exists:
-//   `p ∤ a_n` and the CLOSURE give a surviving coefficient of g, and another of h — because
-//   `a_n` is a coefficient of g·h, so if p killed all of either factor it would kill `a_n`.
-//   The reduction argument then says p cannot divide every coefficient of g·h = f. But
-//   `p | a_i` below n and `p ∤ a_n` is consistent with that, so the contradiction comes from
-//   the DEGREE: a factorization forces the surviving index up past n.
-//
-// So the conclusion is stated as the absurdity the reduction argument delivers: there is NO
-// factorization of f into two integer-coefficient factors with f's divisibility pattern.
-theorem eisensteinRulesOutAnIntegerFactorization: forall f, g, h: QPoly;
-  forall n: Nat;
+// So no such factorization exists: the degree bounds cannot both stay below n.
+theorem eisensteinForcesTheFullDegreeOnTheCut: forall f, g, h: QPoly;
+  forall n, m, k: Nat;
   mod_n_poly.is_prime(mod_n.N) ->
   hasIntegerCoefficients(g) -> hasIntegerCoefficients(h) ->
   f = qpoly.qmulP(g, h) ->
+  qpoly.qdegreeAtMost(g, m) -> qpoly.qdegreeAtMost(h, k) ->
+  (forall i: Nat; peano.less_than(i, n) ->
+  reducesToZero(qpoly.qcoeff(f, i))) ->
   (not reducesToZero(qpoly.qcoeff(f, n))) ->
-  (not (forall t: Nat; reducesToZero(qpoly.qcoeff(f, t))))
+  (not peano.less_than(peano.add(m, k), n))
 proof
   @generalize-f |
     fix f: QPoly {
@@ -2353,159 +2520,314 @@ proof
             fix h: QPoly {
               @generalize-n |
                 fix n: Nat {
-                  @given-the-setup |
-                    assume mod_n_poly.is_prime(mod_n.N) and
-                      hasIntegerCoefficients(g) and
-                      hasIntegerCoefficients(h) and
-                      f = qpoly.qmulP(g, h) and
-                      (not reducesToZero(
-                      qpoly.qcoeff(f, n))) {
-                      @the-setup |
-                        mod_n_poly.is_prime(mod_n.N) and
-                          hasIntegerCoefficients(g) and
-                          hasIntegerCoefficients(h) and
-                          f = qpoly.qmulP(g, h) and
-                          (not reducesToZero(
-                          qpoly.qcoeff(f, n)))
-                        [by hypothesis given-the-setup]
-                      @the-modulus-is-prime |
-                        mod_n_poly.is_prime(mod_n.N)
-                        [using tautology the-setup]
-                      @g-is-integral |
-                        hasIntegerCoefficients(g)
-                        [using tautology the-setup]
-                      @h-is-integral |
-                        hasIntegerCoefficients(h)
-                        [using tautology the-setup]
-                      @f-factors |
-                        f = qpoly.qmulP(g, h)
-                        [using tautology the-setup]
-                      @the-top-survives |
-                        not reducesToZero(qpoly.qcoeff(f, n))
-                        [using tautology the-setup]
-                      @the-product-top-survives |
-                        not reducesToZero(
-                          qpoly.qcoeff(qpoly.qmulP(g, h), n))
-                        [by rewrite f-factors the-top-survives]
-                      // a surviving coefficient in EACH factor, by the closure
-                      @some-g-coefficient-survives |
-                        not (forall j: Nat;
-                          reducesToZero(qpoly.qcoeff(g, j)))
-                        [using specialize aSurvivingProductCoefficientGivesASurvivingFactorCoefficient(g, h, n) g-is-integral h-is-integral the-product-top-survives]
-                      @the-commuted-product |
-                        qpoly.qmulP(g, h) = qpoly.qmulP(h, g)
-                        [using specialize qpoly.qMulIsCommutative(g, h)]
-                      @the-commuted-top-survives |
-                        not reducesToZero(
-                          qpoly.qcoeff(qpoly.qmulP(h, g), n))
-                        [by rewrite the-commuted-product the-product-top-survives]
-                      @some-h-coefficient-survives |
-                        not (forall j: Nat;
-                          reducesToZero(qpoly.qcoeff(h, j)))
-                        [using specialize aSurvivingProductCoefficientGivesASurvivingFactorCoefficient(h, g, n) h-is-integral g-is-integral the-commuted-top-survives]
-                      // name the surviving indices
-                      @a-g-survivor-exists |
-                        exists j: Nat;
-                          not reducesToZero(qpoly.qcoeff(g, j))
-                        [using specialize someCoefficientSurvives(g) some-g-coefficient-survives]
-                      @a-h-survivor-exists |
-                        exists j: Nat;
-                          not reducesToZero(qpoly.qcoeff(h, j))
-                        [using specialize someCoefficientSurvives(h) some-h-coefficient-survives]
-                      @with-the-g-survivor |
-                        unpack jg: Nat from a-g-survivor-exists {
-                          @the-g-survivor |
-                            not reducesToZero(
-                              qpoly.qcoeff(g, jg))
-                            [by hypothesis with-the-g-survivor]
-                          @with-the-h-survivor |
-                            unpack jh: Nat from a-h-survivor-exists {
-                              @the-h-survivor |
-                                not reducesToZero(
-                                  qpoly.qcoeff(h, jh))
-                                [by hypothesis with-the-h-survivor]
-                              // the reduction argument delivers the absurdity
-                              @the-product-is-not-all-divisible |
-                                not (forall t: Nat;
-                                  reducesToZero(qpoly.qcoeff(
-                                  qpoly.qmulP(g, h), t)))
-                                [using specialize theModulusCannotDivideEveryProductCoefficient(g, h, jg, jh) the-modulus-is-prime g-is-integral h-is-integral the-g-survivor the-h-survivor]
-                              @conclusion-f-is-not-all-divisible |
-                                not (forall t: Nat;
+                  @generalize-m |
+                    fix m: Nat {
+                      @generalize-k |
+                        fix k: Nat {
+                          @given-the-setup |
+                            assume mod_n_poly.is_prime(mod_n.N) and
+                              hasIntegerCoefficients(g) and
+                              hasIntegerCoefficients(h) and
+                              f = qpoly.qmulP(g, h) and
+                              qpoly.qdegreeAtMost(g, m) and
+                              qpoly.qdegreeAtMost(h, k) and
+                              (forall i: Nat;
+                              peano.less_than(i, n) ->
+                              reducesToZero(
+                              qpoly.qcoeff(f, i))) and
+                              (not reducesToZero(
+                              qpoly.qcoeff(f, n))) {
+                              @the-setup |
+                                mod_n_poly.is_prime(mod_n.N) and
+                                  hasIntegerCoefficients(g) and
+                                  hasIntegerCoefficients(h) and
+                                  f = qpoly.qmulP(g, h) and
+                                  qpoly.qdegreeAtMost(g, m) and
+                                  qpoly.qdegreeAtMost(h, k) and
+                                  (forall i: Nat;
+                                  peano.less_than(i, n) ->
                                   reducesToZero(
-                                  qpoly.qcoeff(f, t)))
-                                [by rewrite f-factors the-product-is-not-all-divisible]
+                                  qpoly.qcoeff(f, i))) and
+                                  (not reducesToZero(
+                                  qpoly.qcoeff(f, n)))
+                                [by hypothesis given-the-setup]
+                              @the-modulus-is-prime |
+                                mod_n_poly.is_prime(mod_n.N)
+                                [using tautology the-setup]
+                              @g-is-integral |
+                                hasIntegerCoefficients(g)
+                                [using tautology the-setup]
+                              @h-is-integral |
+                                hasIntegerCoefficients(h)
+                                [using tautology the-setup]
+                              @f-factors |
+                                f = qpoly.qmulP(g, h)
+                                [using tautology the-setup]
+                              @g-is-bounded |
+                                qpoly.qdegreeAtMost(g, m)
+                                [using tautology the-setup]
+                              @h-is-bounded |
+                                qpoly.qdegreeAtMost(h, k)
+                                [using tautology the-setup]
+                              @the-low-coefficients-vanish |
+                                forall i: Nat;
+                                  peano.less_than(i, n) ->
+                                  reducesToZero(
+                                  qpoly.qcoeff(f, i))
+                                [using tautology the-setup]
+                              @the-top-survives |
+                                not reducesToZero(
+                                  qpoly.qcoeff(f, n))
+                                [using tautology the-setup]
+                              // a surviving coefficient in each factor
+                              @the-product-top-survives |
+                                not reducesToZero(
+                                  qpoly.qcoeff(
+                                  qpoly.qmulP(g, h), n))
+                                [by rewrite f-factors the-top-survives]
+                              @some-g-coefficient-survives |
+                                not (forall j: Nat;
+                                  reducesToZero(
+                                  qpoly.qcoeff(g, j)))
+                                [using specialize aSurvivingProductCoefficientGivesASurvivingFactorCoefficient(g, h, n) g-is-integral h-is-integral the-product-top-survives]
+                              @the-commuted-product |
+                                qpoly.qmulP(g, h) =
+                                  qpoly.qmulP(h, g)
+                                [using specialize qpoly.qMulIsCommutative(g, h)]
+                              @the-commuted-top-survives |
+                                not reducesToZero(
+                                  qpoly.qcoeff(
+                                  qpoly.qmulP(h, g), n))
+                                [by rewrite the-commuted-product the-product-top-survives]
+                              @some-h-coefficient-survives |
+                                not (forall j: Nat;
+                                  reducesToZero(
+                                  qpoly.qcoeff(h, j)))
+                                [using specialize aSurvivingProductCoefficientGivesASurvivingFactorCoefficient(h, g, n) h-is-integral g-is-integral the-commuted-top-survives]
+                              @a-g-survivor-exists |
+                                exists j: Nat;
+                                  not reducesToZero(
+                                  qpoly.qcoeff(g, j))
+                                [using specialize someCoefficientSurvives(g) some-g-coefficient-survives]
+                              @a-h-survivor-exists |
+                                exists j: Nat;
+                                  not reducesToZero(
+                                  qpoly.qcoeff(h, j))
+                                [using specialize someCoefficientSurvives(h) some-h-coefficient-survives]
+                              // suppose the degree sum stayed below n
+                              @given-the-sum-is-below |
+                                assume peano.less_than(
+                                  peano.add(m, k), n) {
+                                  @the-sum-is-below |
+                                    peano.less_than(
+                                      peano.add(m, k), n)
+                                    [by hypothesis given-the-sum-is-below]
+                                  // then EVERY coefficient of f vanishes
+                                  @each-index |
+                                    fix t: Nat {
+                                      @the-position-split |
+                                        peano.less_than(t, n) or
+                                          (not peano.less_than(t, n))
+                                        [using tautology]
+                                      @conclusion-vanishes-at-t |
+                                        reducesToZero(
+                                          qpoly.qcoeff(f, t))
+                                        case the-position-split {
+                                          @when-below |
+                                            assume peano.less_than(t, n) {
+                                              @t-below-n |
+                                                peano.less_than(t, n)
+                                                [by hypothesis when-below]
+                                              @conclusion-below |
+                                                reducesToZero(
+                                                  qpoly.qcoeff(f, t))
+                                                [using specialize the-low-coefficients-vanish(t) t-below-n]
+                                            }
+                                          @when-not-below |
+                                            assume not peano.less_than(t, n) {
+                                              @t-not-below-n |
+                                                not peano.less_than(t, n)
+                                                [by hypothesis when-not-below]
+                                              @the-sum-is-below-t |
+                                                peano.less_than(
+                                                  peano.add(m, k), t)
+                                                [using specialize peano_order.theBoundIsBelowAnythingNotBelowIt(peano.add(m, k), n, t) the-sum-is-below t-not-below-n]
+                                              @the-product-vanishes-at-t |
+                                                reducesToZero(
+                                                  qpoly.qcoeff(
+                                                  qpoly.qmulP(g, h), t))
+                                                [using specialize theProductReducesToZeroAboveTheDegreeSum(g, h, m, k, t) g-is-bounded h-is-bounded the-sum-is-below-t]
+                                              @conclusion-not-below |
+                                                reducesToZero(
+                                                  qpoly.qcoeff(f, t))
+                                                [by rewrite f-factors the-product-vanishes-at-t]
+                                            }
+                                        }
+                                    }
+                                  @everything-vanishes |
+                                    forall t: Nat;
+                                      reducesToZero(
+                                      qpoly.qcoeff(f, t))
+                                    [by generalize each-index]
+                                  @the-product-everything-vanishes |
+                                    forall t: Nat;
+                                      reducesToZero(
+                                      qpoly.qcoeff(
+                                      qpoly.qmulP(g, h), t))
+                                    [by rewrite f-factors everything-vanishes]
+                                  // which the reduction argument forbids
+                                  @with-the-g-survivor |
+                                    unpack jg: Nat from a-g-survivor-exists {
+                                      @the-g-survivor |
+                                        not reducesToZero(
+                                          qpoly.qcoeff(g, jg))
+                                        [by hypothesis with-the-g-survivor]
+                                      @with-the-h-survivor |
+                                        unpack jh: Nat from a-h-survivor-exists {
+                                          @the-h-survivor |
+                                            not reducesToZero(
+                                              qpoly.qcoeff(h, jh))
+                                            [by hypothesis with-the-h-survivor]
+                                          @conclusion-the-contradiction |
+                                            not (forall t: Nat;
+                                              reducesToZero(
+                                              qpoly.qcoeff(
+                                              qpoly.qmulP(g, h), t)))
+                                            [using specialize theModulusCannotDivideEveryProductCoefficient(g, h, jg, jh) the-modulus-is-prime g-is-integral h-is-integral the-g-survivor the-h-survivor]
+                                        }
+                                      @the-h-exported |
+                                        not (forall t: Nat;
+                                          reducesToZero(
+                                          qpoly.qcoeff(
+                                          qpoly.qmulP(g, h), t)))
+                                        [by unpacked with-the-h-survivor]
+                                    }
+                                  @the-reduction-forbids-it |
+                                    not (forall t: Nat;
+                                      reducesToZero(
+                                      qpoly.qcoeff(
+                                      qpoly.qmulP(g, h), t)))
+                                    [by unpacked with-the-g-survivor]
+                                }
+                              @conclusion-the-degree-is-forced |
+                                not peano.less_than(
+                                  peano.add(m, k), n)
+                                [by contradiction given-the-sum-is-below the-product-everything-vanishes the-reduction-forbids-it]
                             }
-                          @the-h-exported |
-                            not (forall t: Nat;
-                              reducesToZero(qpoly.qcoeff(f, t)))
-                            [by unpacked with-the-h-survivor]
+                          @the-implication |
+                            (mod_n_poly.is_prime(mod_n.N) and
+                              hasIntegerCoefficients(g) and
+                              hasIntegerCoefficients(h) and
+                              f = qpoly.qmulP(g, h) and
+                              qpoly.qdegreeAtMost(g, m) and
+                              qpoly.qdegreeAtMost(h, k) and
+                              (forall i: Nat;
+                              peano.less_than(i, n) ->
+                              reducesToZero(
+                              qpoly.qcoeff(f, i))) and
+                              (not reducesToZero(
+                              qpoly.qcoeff(f, n)))) ->
+                              (not peano.less_than(
+                              peano.add(m, k), n))
+                            [by discharge given-the-setup]
+                          @curried |
+                            mod_n_poly.is_prime(mod_n.N) ->
+                              hasIntegerCoefficients(g) ->
+                              hasIntegerCoefficients(h) ->
+                              f = qpoly.qmulP(g, h) ->
+                              qpoly.qdegreeAtMost(g, m) ->
+                              qpoly.qdegreeAtMost(h, k) ->
+                              (forall i: Nat;
+                              peano.less_than(i, n) ->
+                              reducesToZero(
+                              qpoly.qcoeff(f, i))) ->
+                              (not reducesToZero(
+                              qpoly.qcoeff(f, n))) ->
+                              (not peano.less_than(
+                              peano.add(m, k), n))
+                            [using tautology the-implication]
                         }
-                      @the-g-exported |
-                        not (forall t: Nat;
-                          reducesToZero(qpoly.qcoeff(f, t)))
-                        [by unpacked with-the-g-survivor]
+                      @discharge-k |
+                        forall k9: Nat;
+                          mod_n_poly.is_prime(mod_n.N) ->
+                          hasIntegerCoefficients(g) ->
+                          hasIntegerCoefficients(h) ->
+                          f = qpoly.qmulP(g, h) ->
+                          qpoly.qdegreeAtMost(g, m) ->
+                          qpoly.qdegreeAtMost(h, k9) ->
+                          (forall i: Nat; peano.less_than(i, n) ->
+                          reducesToZero(qpoly.qcoeff(f, i))) ->
+                          (not reducesToZero(
+                          qpoly.qcoeff(f, n))) ->
+                          (not peano.less_than(
+                          peano.add(m, k9), n))
+                        [by generalize generalize-k]
                     }
-                  @the-implication |
-                    (mod_n_poly.is_prime(mod_n.N) and
-                      hasIntegerCoefficients(g) and
-                      hasIntegerCoefficients(h) and
-                      f = qpoly.qmulP(g, h) and
-                      (not reducesToZero(
-                      qpoly.qcoeff(f, n)))) ->
-                      (not (forall t: Nat;
-                      reducesToZero(qpoly.qcoeff(f, t))))
-                    [by discharge given-the-setup]
-                  @curried |
-                    mod_n_poly.is_prime(mod_n.N) ->
+                  @discharge-m |
+                    forall m9, k9: Nat;
+                      mod_n_poly.is_prime(mod_n.N) ->
                       hasIntegerCoefficients(g) ->
                       hasIntegerCoefficients(h) ->
                       f = qpoly.qmulP(g, h) ->
-                      (not reducesToZero(
-                      qpoly.qcoeff(f, n))) ->
-                      (not (forall t: Nat;
-                      reducesToZero(qpoly.qcoeff(f, t))))
-                    [using tautology the-implication]
+                      qpoly.qdegreeAtMost(g, m9) ->
+                      qpoly.qdegreeAtMost(h, k9) ->
+                      (forall i: Nat; peano.less_than(i, n) ->
+                      reducesToZero(qpoly.qcoeff(f, i))) ->
+                      (not reducesToZero(qpoly.qcoeff(f, n))) ->
+                      (not peano.less_than(peano.add(m9, k9), n))
+                    [by generalize generalize-m]
                 }
               @discharge-n |
-                forall n9: Nat;
+                forall n9: Nat; forall m9, k9: Nat;
                   mod_n_poly.is_prime(mod_n.N) ->
                   hasIntegerCoefficients(g) ->
                   hasIntegerCoefficients(h) ->
                   f = qpoly.qmulP(g, h) ->
+                  qpoly.qdegreeAtMost(g, m9) ->
+                  qpoly.qdegreeAtMost(h, k9) ->
+                  (forall i: Nat; peano.less_than(i, n9) ->
+                  reducesToZero(qpoly.qcoeff(f, i))) ->
                   (not reducesToZero(qpoly.qcoeff(f, n9))) ->
-                  (not (forall t: Nat;
-                  reducesToZero(qpoly.qcoeff(f, t))))
+                  (not peano.less_than(peano.add(m9, k9), n9))
                 [by generalize generalize-n]
             }
           @discharge-h |
-            forall h9: QPoly; forall n9: Nat;
+            forall h9: QPoly; forall n9, m9, k9: Nat;
               mod_n_poly.is_prime(mod_n.N) ->
               hasIntegerCoefficients(g) ->
               hasIntegerCoefficients(h9) ->
               f = qpoly.qmulP(g, h9) ->
+              qpoly.qdegreeAtMost(g, m9) ->
+              qpoly.qdegreeAtMost(h9, k9) ->
+              (forall i: Nat; peano.less_than(i, n9) ->
+              reducesToZero(qpoly.qcoeff(f, i))) ->
               (not reducesToZero(qpoly.qcoeff(f, n9))) ->
-              (not (forall t: Nat;
-              reducesToZero(qpoly.qcoeff(f, t))))
+              (not peano.less_than(peano.add(m9, k9), n9))
             [by generalize generalize-h]
         }
       @discharge-g |
-        forall g9, h9: QPoly; forall n9: Nat;
+        forall g9, h9: QPoly; forall n9, m9, k9: Nat;
           mod_n_poly.is_prime(mod_n.N) ->
           hasIntegerCoefficients(g9) ->
           hasIntegerCoefficients(h9) ->
           f = qpoly.qmulP(g9, h9) ->
+          qpoly.qdegreeAtMost(g9, m9) ->
+          qpoly.qdegreeAtMost(h9, k9) ->
+          (forall i: Nat; peano.less_than(i, n9) ->
+          reducesToZero(qpoly.qcoeff(f, i))) ->
           (not reducesToZero(qpoly.qcoeff(f, n9))) ->
-          (not (forall t: Nat;
-          reducesToZero(qpoly.qcoeff(f, t))))
+          (not peano.less_than(peano.add(m9, k9), n9))
         [by generalize generalize-g]
     }
   @conclusion |
-    forall f, g, h: QPoly; forall n: Nat;
+    forall f, g, h: QPoly; forall n, m, k: Nat;
       mod_n_poly.is_prime(mod_n.N) ->
       hasIntegerCoefficients(g) -> hasIntegerCoefficients(h) ->
       f = qpoly.qmulP(g, h) ->
+      qpoly.qdegreeAtMost(g, m) -> qpoly.qdegreeAtMost(h, k) ->
+      (forall i: Nat; peano.less_than(i, n) ->
+      reducesToZero(qpoly.qcoeff(f, i))) ->
       (not reducesToZero(qpoly.qcoeff(f, n))) ->
-      (not (forall t: Nat; reducesToZero(qpoly.qcoeff(f, t))))
+      (not peano.less_than(peano.add(m, k), n))
     [by generalize generalize-f]
 qed
