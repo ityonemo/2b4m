@@ -1645,3 +1645,497 @@ qed
 // identity, distributivity, and commutativity via `convolutionIsReversible`), which is all
 // of Judson's Theorem 17.1 except his associativity display, plus the degree bound for sums
 // and the leading-product step of Proposition 17.4.
+
+// -- NEGATION ALGEBRA ------------------------------------------------------------------------
+// R[x]'s negation interacts with multiplication exactly as R's does, and for the same reason:
+// a product's coefficient is a CONVOLUTION, so the pull-out rides the convolution's recursion.
+// The scalar facts are already in `std/ring.b4m` (`mulNegLeft`, `mulNegRight`, `negMulNeg`,
+// `additiveInverseUnique`); what follows lifts them to polynomials.
+//
+// This is the layer §17.2's gcd argument needs — Judson writes the division remainder as
+// `b = p(1 - ar) + q(-as)`, which is a negation moving through a product and an additive
+// cancellation. `std/rational/polynomial.b4m` built the same thing for ℚ[x] directly; doing it
+// here means ℚ[x], F[x] and every other R[x] get it from one proof.
+
+// Negating the left factor negates each convolution summand, hence the whole sum. Induction on
+// the convolution index: the base is one product, and the step gathers `-(A) + (-B)·C`.
+theorem negationPullsOutOfTheConvolution: forall p, q: Poly; forall i, k: Nat;
+  convolution(negP(p), q, i, k) = negR(convolution(p, q, i, k))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-i |
+            fix i: Nat {
+              // base: one summand, and neg pulls out of a product
+              @the-negated-base |
+                convolution(negP(p), q, i, ZERO) =
+                  mulR(coeff(negP(p), ZERO), coeff(q, i))
+                [using specialize convolutionZero(negP(p), q, i)]
+              @the-base |
+                convolution(p, q, i, ZERO) = mulR(coeff(p, ZERO), coeff(q, i))
+                [using specialize convolutionZero(p, q, i)]
+              @the-negated-coefficient-at-zero |
+                coeff(negP(p), ZERO) = negR(coeff(p, ZERO))
+                [using specialize negPolyCoeff(p, ZERO)]
+              @the-negated-base-expanded |
+                convolution(negP(p), q, i, ZERO) =
+                  mulR(negR(coeff(p, ZERO)), coeff(q, i))
+                [by rewrite the-negated-coefficient-at-zero the-negated-base]
+              @the-negation-distributes-at-zero |
+                mulR(negR(coeff(p, ZERO)), coeff(q, i)) =
+                  negR(mulR(coeff(p, ZERO), coeff(q, i)))
+                [using specialize ring.mulNegLeft(coeff(p, ZERO), coeff(q, i))]
+              @the-negated-base-is-the-negation |
+                convolution(negP(p), q, i, ZERO) =
+                  negR(mulR(coeff(p, ZERO), coeff(q, i)))
+                [using simplify the-negated-base-expanded the-negation-distributes-at-zero]
+              @base-case |
+                convolution(negP(p), q, i, ZERO) = negR(convolution(p, q, i, ZERO))
+                [by rewrite the-base the-negated-base-is-the-negation]
+
+              @induction-step |
+                fix k: Nat {
+                  @given-inductive-hypothesis |
+                    assume convolution(negP(p), q, i, k) = negR(convolution(p, q, i, k)) {
+                      @inductive-hypothesis |
+                        convolution(negP(p), q, i, k) = negR(convolution(p, q, i, k))
+                        [by hypothesis given-inductive-hypothesis]
+                      @the-negated-step |
+                        convolution(negP(p), q, i, succ(k)) =
+                          addR(convolution(negP(p), q, i, k),
+                          mulR(coeff(negP(p), succ(k)),
+                          coeff(q, subtraction.sub(i, succ(k)))))
+                        [using specialize convolutionSucc(negP(p), q, i, k)]
+                      @the-step |
+                        convolution(p, q, i, succ(k)) =
+                          addR(convolution(p, q, i, k),
+                          mulR(coeff(p, succ(k)),
+                          coeff(q, subtraction.sub(i, succ(k)))))
+                        [using specialize convolutionSucc(p, q, i, k)]
+                      @the-negated-coefficient |
+                        coeff(negP(p), succ(k)) = negR(coeff(p, succ(k)))
+                        [using specialize negPolyCoeff(p, succ(k))]
+                      @the-negated-step-with-the-hypothesis |
+                        convolution(negP(p), q, i, succ(k)) =
+                          addR(negR(convolution(p, q, i, k)),
+                          mulR(coeff(negP(p), succ(k)),
+                          coeff(q, subtraction.sub(i, succ(k)))))
+                        [by rewrite inductive-hypothesis the-negated-step]
+                      @the-negated-step-expanded |
+                        convolution(negP(p), q, i, succ(k)) =
+                          addR(negR(convolution(p, q, i, k)),
+                          mulR(negR(coeff(p, succ(k))),
+                          coeff(q, subtraction.sub(i, succ(k)))))
+                        [by rewrite the-negated-coefficient
+                          the-negated-step-with-the-hypothesis]
+                      // the summand's own negation pulls out
+                      @the-summand-negation-pulls-out |
+                        mulR(negR(coeff(p, succ(k))),
+                          coeff(q, subtraction.sub(i, succ(k)))) =
+                          negR(mulR(coeff(p, succ(k)),
+                          coeff(q, subtraction.sub(i, succ(k)))))
+                        [using specialize ring.mulNegLeft(
+                          coeff(p, succ(k)), coeff(q, subtraction.sub(i, succ(k))))]
+                      @the-negated-step-with-both-negations |
+                        convolution(negP(p), q, i, succ(k)) =
+                          addR(negR(convolution(p, q, i, k)),
+                          negR(mulR(coeff(p, succ(k)),
+                          coeff(q, subtraction.sub(i, succ(k))))))
+                        [by rewrite the-summand-negation-pulls-out
+                          the-negated-step-expanded]
+                      // -(A) + -(B) = -(A + B)
+                      @the-negations-gather |
+                        addR(negR(convolution(p, q, i, k)),
+                          negR(mulR(coeff(p, succ(k)),
+                          coeff(q, subtraction.sub(i, succ(k)))))) =
+                          negR(addR(convolution(p, q, i, k),
+                          mulR(coeff(p, succ(k)),
+                          coeff(q, subtraction.sub(i, succ(k))))))
+                        [using specialize ring.negationOfASum(
+                          convolution(p, q, i, k),
+                          mulR(coeff(p, succ(k)),
+                          coeff(q, subtraction.sub(i, succ(k)))))]
+                      @the-negated-step-gathered |
+                        convolution(negP(p), q, i, succ(k)) =
+                          negR(addR(convolution(p, q, i, k),
+                          mulR(coeff(p, succ(k)),
+                          coeff(q, subtraction.sub(i, succ(k))))))
+                        [using simplify the-negated-step-with-both-negations
+                          the-negations-gather]
+                      @conclusion-the-step |
+                        convolution(negP(p), q, i, succ(k)) =
+                          negR(convolution(p, q, i, succ(k)))
+                        [by rewrite the-step the-negated-step-gathered]
+                    }
+                  @induction-step-at-k |
+                    (convolution(negP(p), q, i, k) = negR(convolution(p, q, i, k))) ->
+                      (convolution(negP(p), q, i, succ(k)) =
+                      negR(convolution(p, q, i, succ(k))))
+                    [by discharge given-inductive-hypothesis]
+                }
+              @induction-step-for-all-k |
+                forall k: Nat;
+                  (convolution(negP(p), q, i, k) = negR(convolution(p, q, i, k))) ->
+                  (convolution(negP(p), q, i, succ(k)) =
+                  negR(convolution(p, q, i, succ(k))))
+                [by generalize induction-step]
+              @all-convolution-indices |
+                forall k: Nat;
+                  convolution(negP(p), q, i, k) = negR(convolution(p, q, i, k))
+                [using instantiation peano.induction((fun z: Nat => (convolution(negP(p), q, i, z) = negR(convolution(p, q, i, z))))) base-case induction-step-for-all-k]
+            }
+          @discharge-i |
+            forall i2: Nat; forall k: Nat;
+              convolution(negP(p), q, i2, k) = negR(convolution(p, q, i2, k))
+            [by generalize generalize-i]
+        }
+      @discharge-q |
+        forall q2: Poly; forall i2, k: Nat;
+          convolution(negP(p), q2, i2, k) = negR(convolution(p, q2, i2, k))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; forall i, k: Nat;
+      convolution(negP(p), q, i, k) = negR(convolution(p, q, i, k))
+    [by generalize generalize-p]
+qed
+
+// Negation is an involution on polynomials, coefficientwise from R's.
+theorem negationIsAnInvolution: forall p: Poly; negP(negP(p)) = p
+proof
+  @generalize-p |
+    fix p: Poly {
+      @each-index |
+        fix i: Nat {
+          @the-outer-coefficient |
+            coeff(negP(negP(p)), i) = negR(coeff(negP(p), i))
+            [using specialize negPolyCoeff(negP(p), i)]
+          @the-inner-coefficient |
+            coeff(negP(p), i) = negR(coeff(p, i))
+            [using specialize negPolyCoeff(p, i)]
+          @the-double-negated-coefficient |
+            coeff(negP(negP(p)), i) = negR(negR(coeff(p, i)))
+            [by rewrite the-inner-coefficient the-outer-coefficient]
+          @the-scalar-negations-cancel |
+            negR(negR(coeff(p, i))) = coeff(p, i)
+            [using specialize ring.negationIsAnInvolution(coeff(p, i))]
+          @conclusion-the-coefficients-agree |
+            coeff(negP(negP(p)), i) = coeff(p, i)
+            [using simplify the-double-negated-coefficient the-scalar-negations-cancel]
+        }
+      @all-coefficients-agree |
+        forall i: Nat; coeff(negP(negP(p)), i) = coeff(p, i)
+        [by generalize each-index]
+      @conclusion-the-involution |
+        negP(negP(p)) = p
+        [using specialize polyExtensionality(negP(negP(p)), p) all-coefficients-agree]
+    }
+  @conclusion |
+    forall p: Poly; negP(negP(p)) = p
+    [by generalize generalize-p]
+qed
+// Hence negation pulls out of a product: coefficientwise, each is a convolution.
+theorem negationPullsOutOfTheProduct: forall p, q: Poly;
+  mulP(negP(p), q) = negP(mulP(p, q))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @each-index |
+            fix i: Nat {
+              @the-negated-product-coefficient |
+                coeff(mulP(negP(p), q), i) = convolution(negP(p), q, i, i)
+                [using specialize mulPolyCoeff(negP(p), q, i)]
+              @the-product-coefficient |
+                coeff(mulP(p, q), i) = convolution(p, q, i, i)
+                [using specialize mulPolyCoeff(p, q, i)]
+              @the-convolution-negates |
+                convolution(negP(p), q, i, i) = negR(convolution(p, q, i, i))
+                [using specialize negationPullsOutOfTheConvolution(p, q, i, i)]
+              @the-negated-polys-coefficient |
+                coeff(negP(mulP(p, q)), i) = negR(coeff(mulP(p, q), i))
+                [using specialize negPolyCoeff(mulP(p, q), i)]
+              @the-right-side-is-the-negated-convolution |
+                coeff(negP(mulP(p, q)), i) = negR(convolution(p, q, i, i))
+                [using simplify the-negated-polys-coefficient the-product-coefficient]
+              @the-left-side-is-the-negated-convolution |
+                coeff(mulP(negP(p), q), i) = negR(convolution(p, q, i, i))
+                [using simplify the-negated-product-coefficient the-convolution-negates]
+              @conclusion-the-coefficients-agree |
+                coeff(mulP(negP(p), q), i) = coeff(negP(mulP(p, q)), i)
+                [using simplify the-left-side-is-the-negated-convolution
+                  the-right-side-is-the-negated-convolution]
+            }
+          @all-coefficients-agree |
+            forall i: Nat; coeff(mulP(negP(p), q), i) = coeff(negP(mulP(p, q)), i)
+            [by generalize each-index]
+          @conclusion-the-products-are-equal |
+            mulP(negP(p), q) = negP(mulP(p, q))
+            [using specialize polyExtensionality(
+              mulP(negP(p), q), negP(mulP(p, q))) all-coefficients-agree]
+        }
+      @conclusion-for-all-q |
+        forall q: Poly; mulP(negP(p), q) = negP(mulP(p, q))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; mulP(negP(p), q) = negP(mulP(p, q))
+    [by generalize generalize-p]
+qed
+
+// The right-hand form, by commutativity rather than a second induction.
+theorem negationPullsOutOfTheProductOnTheRight: forall p, q: Poly;
+  mulP(p, negP(q)) = negP(mulP(p, q))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @commute-the-negated-product |
+            mulP(p, negP(q)) = mulP(negP(q), p)
+            [using specialize polyMulIsCommutative(p, negP(q))]
+          @pull-the-negation-out |
+            mulP(negP(q), p) = negP(mulP(q, p))
+            [using specialize negationPullsOutOfTheProduct(q, p)]
+          @commute-back |
+            mulP(q, p) = mulP(p, q)
+            [using specialize polyMulIsCommutative(q, p)]
+          @the-negated-product-commuted |
+            mulP(p, negP(q)) = negP(mulP(q, p))
+            [using simplify commute-the-negated-product pull-the-negation-out]
+          @conclusion-the-right-hand-form |
+            mulP(p, negP(q)) = negP(mulP(p, q))
+            [by rewrite commute-back the-negated-product-commuted]
+        }
+      @conclusion-for-all-q |
+        forall q: Poly; mulP(p, negP(q)) = negP(mulP(p, q))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; mulP(p, negP(q)) = negP(mulP(p, q))
+    [by generalize generalize-p]
+qed
+
+// Two negations cancel in a product — the step Judson's `(-a)(-b) = ab` rewriting needs.
+theorem twoNegationsCancelInAProduct: forall p, q: Poly;
+  mulP(negP(p), negP(q)) = mulP(p, q)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @pull-the-left-negation-out |
+            mulP(negP(p), negP(q)) = negP(mulP(p, negP(q)))
+            [using specialize negationPullsOutOfTheProduct(p, negP(q))]
+          @pull-the-right-negation-out |
+            mulP(p, negP(q)) = negP(mulP(p, q))
+            [using specialize negationPullsOutOfTheProductOnTheRight(p, q)]
+          @the-double-negation |
+            mulP(negP(p), negP(q)) = negP(negP(mulP(p, q)))
+            [by rewrite pull-the-right-negation-out pull-the-left-negation-out]
+          @the-negations-cancel |
+            negP(negP(mulP(p, q))) = mulP(p, q)
+            [using specialize negationIsAnInvolution(mulP(p, q))]
+          @conclusion-two-negations-cancel |
+            mulP(negP(p), negP(q)) = mulP(p, q)
+            [using simplify the-double-negation the-negations-cancel]
+        }
+      @conclusion-for-all-q |
+        forall q: Poly; mulP(negP(p), negP(q)) = mulP(p, q)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; mulP(negP(p), negP(q)) = mulP(p, q)
+    [by generalize generalize-p]
+qed
+
+// -(p + q) = -p + -q, coefficientwise from R's `negationOfASum`.
+theorem negationOfASum: forall p, q: Poly;
+  addP(negP(p), negP(q)) = negP(addP(p, q))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @each-index |
+            fix i: Nat {
+              @the-left-coefficient |
+                coeff(addP(negP(p), negP(q)), i) =
+                  addR(coeff(negP(p), i), coeff(negP(q), i))
+                [using specialize addPolyCoeff(negP(p), negP(q), i)]
+              @the-left-negation |
+                coeff(negP(p), i) = negR(coeff(p, i))
+                [using specialize negPolyCoeff(p, i)]
+              @the-right-negation |
+                coeff(negP(q), i) = negR(coeff(q, i))
+                [using specialize negPolyCoeff(q, i)]
+              @the-left-coefficient-expanded |
+                coeff(addP(negP(p), negP(q)), i) =
+                  addR(negR(coeff(p, i)), negR(coeff(q, i)))
+                [using simplify the-left-coefficient
+                  the-left-negation the-right-negation]
+              @the-scalar-negations-gather |
+                addR(negR(coeff(p, i)), negR(coeff(q, i))) =
+                  negR(addR(coeff(p, i), coeff(q, i)))
+                [using specialize ring.negationOfASum(coeff(p, i), coeff(q, i))]
+              @the-left-is-the-negated-sum |
+                coeff(addP(negP(p), negP(q)), i) =
+                  negR(addR(coeff(p, i), coeff(q, i)))
+                [using simplify the-left-coefficient-expanded the-scalar-negations-gather]
+              @the-right-coefficient |
+                coeff(negP(addP(p, q)), i) = negR(coeff(addP(p, q), i))
+                [using specialize negPolyCoeff(addP(p, q), i)]
+              @the-inner-sum-coefficient |
+                coeff(addP(p, q), i) = addR(coeff(p, i), coeff(q, i))
+                [using specialize addPolyCoeff(p, q, i)]
+              @the-right-is-the-negated-sum |
+                coeff(negP(addP(p, q)), i) = negR(addR(coeff(p, i), coeff(q, i)))
+                [using simplify the-right-coefficient the-inner-sum-coefficient]
+              @conclusion-the-coefficients-agree |
+                coeff(addP(negP(p), negP(q)), i) = coeff(negP(addP(p, q)), i)
+                [using simplify the-left-is-the-negated-sum the-right-is-the-negated-sum]
+            }
+          @all-coefficients-agree |
+            forall i: Nat;
+              coeff(addP(negP(p), negP(q)), i) = coeff(negP(addP(p, q)), i)
+            [by generalize each-index]
+          @conclusion-the-negations-gather |
+            addP(negP(p), negP(q)) = negP(addP(p, q))
+            [using specialize polyExtensionality(
+              addP(negP(p), negP(q)), negP(addP(p, q))) all-coefficients-agree]
+        }
+      @conclusion-for-all-q |
+        forall q: Poly; addP(negP(p), negP(q)) = negP(addP(p, q))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; addP(negP(p), negP(q)) = negP(addP(p, q))
+    [by generalize generalize-p]
+qed
+
+// p + 0 = p, the right-hand companion to `polyAddZeroLeft`.
+theorem polyAddZeroRight: forall p: Poly; addP(p, ZEROP) = p
+proof
+  @generalize-p |
+    fix p: Poly {
+      @commute |
+        addP(p, ZEROP) = addP(ZEROP, p)
+        [using specialize polyAddIsCommutative(p, ZEROP)]
+      @the-left-form-collapses |
+        addP(ZEROP, p) = p
+        [using specialize polyAddZeroLeft(p)]
+      @conclusion-the-right-form-collapses |
+        addP(p, ZEROP) = p
+        [using simplify commute the-left-form-collapses]
+    }
+  @conclusion |
+    forall p: Poly; addP(p, ZEROP) = p
+    [by generalize generalize-p]
+qed
+// p + -p = 0, the right-hand companion to `polyAddNegLeft`.
+theorem polyAddNegRight: forall p: Poly; addP(p, negP(p)) = ZEROP
+proof
+  @generalize-p |
+    fix p: Poly {
+      @commute |
+        addP(p, negP(p)) = addP(negP(p), p)
+        [using specialize polyAddIsCommutative(p, negP(p))]
+      @the-left-form-vanishes |
+        addP(negP(p), p) = ZEROP
+        [using specialize polyAddNegLeft(p)]
+      @conclusion-the-right-form-vanishes |
+        addP(p, negP(p)) = ZEROP
+        [using simplify commute the-left-form-vanishes]
+    }
+  @conclusion |
+    forall p: Poly; addP(p, negP(p)) = ZEROP
+    [by generalize generalize-p]
+qed
+// (p + r) + -r = p, the polynomial form of `aSumCancelsItsRightSummand`.
+theorem aSumCancelsItsRightSummand: forall p, r: Poly;
+  addP(addP(p, r), negP(r)) = p
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-r |
+        fix r: Poly {
+          @associate |
+            addP(addP(p, r), negP(r)) = addP(p, addP(r, negP(r)))
+            [using specialize polyAddIsAssociative(p, r, negP(r))]
+          @r-cancels |
+            addP(r, negP(r)) = ZEROP
+            [using specialize polyAddNegRight(r)]
+          @the-inner-sum-vanishes |
+            addP(addP(p, r), negP(r)) = addP(p, ZEROP)
+            [using simplify associate r-cancels]
+          @adding-zero-changes-nothing |
+            addP(p, ZEROP) = p
+            [using specialize polyAddZeroRight(p)]
+          @conclusion-the-summand-cancels |
+            addP(addP(p, r), negP(r)) = p
+            [using simplify the-inner-sum-vanishes adding-zero-changes-nothing]
+        }
+      @conclusion-for-all-r |
+        forall r: Poly; addP(addP(p, r), negP(r)) = p
+        [by generalize generalize-r]
+    }
+  @conclusion |
+    forall p, r: Poly; addP(addP(p, r), negP(r)) = p
+    [by generalize generalize-p]
+qed
+
+// Additive cancellation on polynomials: p + r = q + r implies p = q. This is the step a
+// division-remainder argument needs to read `rem = f - mulP(g, quo)` off
+// `f = addP(mulP(g, quo), rem)`.
+theorem polyAddCancelRight: forall p, q, r: Poly;
+  addP(p, r) = addP(q, r) -> p = q
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @given-the-sums-agree |
+                assume addP(p, r) = addP(q, r) {
+                  @the-sums-agree |
+                    addP(p, r) = addP(q, r)
+                    [by hypothesis given-the-sums-agree]
+                  @reflexive-on-the-left |
+                    addP(addP(p, r), negP(r)) = addP(addP(p, r), negP(r))
+                    [by reflexivity]
+                  @add-the-inverse-on-the-right |
+                    addP(addP(p, r), negP(r)) = addP(addP(q, r), negP(r))
+                    [by rewrite the-sums-agree reflexive-on-the-left]
+                  @the-left-collapses |
+                    addP(addP(p, r), negP(r)) = p
+                    [using specialize aSumCancelsItsRightSummand(p, r)]
+                  @the-right-collapses |
+                    addP(addP(q, r), negP(r)) = q
+                    [using specialize aSumCancelsItsRightSummand(q, r)]
+                  @the-left-is-the-right-side |
+                    p = addP(addP(q, r), negP(r))
+                    [by rewrite the-left-collapses add-the-inverse-on-the-right]
+                  @conclusion-the-summands-agree |
+                    p = q
+                    [by rewrite the-right-collapses the-left-is-the-right-side]
+                }
+              @conclusion-cancellation |
+                addP(p, r) = addP(q, r) -> p = q
+                [by discharge given-the-sums-agree]
+            }
+          @conclusion-for-all-r |
+            forall r: Poly; addP(p, r) = addP(q, r) -> p = q
+            [by generalize generalize-r]
+        }
+      @conclusion-for-all-q |
+        forall q, r: Poly; addP(p, r) = addP(q, r) -> p = q
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; addP(p, r) = addP(q, r) -> p = q
+    [by generalize generalize-p]
+qed

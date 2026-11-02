@@ -300,3 +300,183 @@ proof
     forall a, b: Ring; mul(neg(a), neg(b)) = mul(a, b)
     [by generalize generalize-a]
 qed
+
+// -(a + b) = -a + -b. By `additiveInverseUnique`: show (a+b) + (-a + -b) = 0, which is pure
+// A/C rearrangement plus the two cancellations, and then -a + -b IS the additive inverse of
+// a + b. Needed wherever a negation has to be gathered out of a sum — polynomial convolutions
+// in particular, where each summand's negation pulls out separately.
+theorem negationOfASum: forall a, b: Ring;
+  add(neg(a), neg(b)) = neg(add(a, b))
+proof
+  @generalize-a |
+    fix a: Ring {
+      @generalize-b |
+        fix b: Ring {
+          // (a+b) + (-a + -b) = (a + -a) + (b + -b) = 0 + 0 = 0
+          @the-summands-regroup |
+            add(add(a, b), add(neg(a), neg(b))) =
+              add(add(a, neg(a)), add(b, neg(b)))
+            [using assoc_commut(addIsAssociative, addIsCommutative, addLeftSwapLocal)]
+          @a-cancels |
+            add(a, neg(a)) = ZERO
+            [using specialize addNegRight(a)]
+          @b-cancels |
+            add(b, neg(b)) = ZERO
+            [using specialize addNegRight(b)]
+          @the-regrouped-sum-is-zero-plus-zero |
+            add(add(a, b), add(neg(a), neg(b))) = add(ZERO, ZERO)
+            [using simplify the-summands-regroup a-cancels b-cancels]
+          @zero-plus-zero |
+            add(ZERO, ZERO) = ZERO
+            [using specialize addZeroLeft(ZERO)]
+          @the-sum-cancels |
+            add(add(a, b), add(neg(a), neg(b))) = ZERO
+            [by rewrite zero-plus-zero the-regrouped-sum-is-zero-plus-zero]
+          @conclusion-the-negation-of-the-sum |
+            add(neg(a), neg(b)) = neg(add(a, b))
+            [using specialize additiveInverseUnique(
+              add(a, b), add(neg(a), neg(b))) the-sum-cancels]
+        }
+      @conclusion-for-all-b |
+        forall b: Ring; add(neg(a), neg(b)) = neg(add(a, b))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Ring; add(neg(a), neg(b)) = neg(add(a, b))
+    [by generalize generalize-a]
+qed
+
+// The additive left-swap, the third member of the AC triple `assoc_commut` wants when it is
+// given the operator explicitly. Follows from associativity and commutativity.
+theorem addLeftSwapLocal: forall a, b, c: Ring;
+  add(a, add(b, c)) = add(b, add(a, c))
+proof
+  @generalize-a |
+    fix a: Ring {
+      @generalize-b |
+        fix b: Ring {
+          @generalize-c |
+            fix c: Ring {
+              @regroup-left |
+                add(a, add(b, c)) = add(add(a, b), c)
+                [by symmetry associate-left]
+              @associate-left |
+                add(add(a, b), c) = add(a, add(b, c))
+                [using specialize addIsAssociative(a, b, c)]
+              @swap-the-pair |
+                add(a, b) = add(b, a)
+                [using specialize addIsCommutative(a, b)]
+              @regrouped-swapped |
+                add(a, add(b, c)) = add(add(b, a), c)
+                [by rewrite swap-the-pair regroup-left]
+              @associate-right |
+                add(add(b, a), c) = add(b, add(a, c))
+                [using specialize addIsAssociative(b, a, c)]
+              @conclusion-the-swap |
+                add(a, add(b, c)) = add(b, add(a, c))
+                [using simplify regrouped-swapped associate-right]
+            }
+          @conclusion-for-all-c |
+            forall c: Ring; add(a, add(b, c)) = add(b, add(a, c))
+            [by generalize generalize-c]
+        }
+      @conclusion-for-all-b |
+        forall b, c: Ring; add(a, add(b, c)) = add(b, add(a, c))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: Ring; add(a, add(b, c)) = add(b, add(a, c))
+    [by generalize generalize-a]
+qed
+
+// (a + c) + -c = a — associativity then the right cancellation.
+theorem aSumCancelsItsRightSummand: forall a, c: Ring;
+  add(add(a, c), neg(c)) = a
+proof
+  @generalize-a |
+    fix a: Ring {
+      @generalize-c |
+        fix c: Ring {
+          @associate |
+            add(add(a, c), neg(c)) = add(a, add(c, neg(c)))
+            [using specialize addIsAssociative(a, c, neg(c))]
+          @c-cancels |
+            add(c, neg(c)) = ZERO
+            [using specialize addNegRight(c)]
+          @the-inner-sum-vanishes |
+            add(add(a, c), neg(c)) = add(a, ZERO)
+            [using simplify associate c-cancels]
+          @adding-zero-changes-nothing |
+            add(a, ZERO) = a
+            [using specialize addZeroRight(a)]
+          @conclusion-the-summand-cancels |
+            add(add(a, c), neg(c)) = a
+            [using simplify the-inner-sum-vanishes adding-zero-changes-nothing]
+        }
+      @conclusion-for-all-c |
+        forall c: Ring; add(add(a, c), neg(c)) = a
+        [by generalize generalize-c]
+    }
+  @conclusion |
+    forall a, c: Ring; add(add(a, c), neg(c)) = a
+    [by generalize generalize-a]
+qed
+// Negation is an involution, named so consumers need not re-derive it from the group model.
+theorem negationIsAnInvolution: forall a: Ring; neg(neg(a)) = a
+proof
+  @conclusion |
+    forall a: Ring; neg(neg(a)) = a
+    [using model(AdditiveGroup) group.invInvolution]
+qed
+
+// Additive cancellation: a + c = b + c implies a = b. The step a division-remainder argument
+// needs when it reads off `b = p - a·d` from `p = a·d + b`.
+theorem addCancelRight: forall a, b, c: Ring;
+  add(a, c) = add(b, c) -> a = b
+proof
+  @generalize-a |
+    fix a: Ring {
+      @generalize-b |
+        fix b: Ring {
+          @generalize-c |
+            fix c: Ring {
+              @given-the-sums-agree |
+                assume add(a, c) = add(b, c) {
+                  @the-sums-agree |
+                    add(a, c) = add(b, c)
+                    [by hypothesis given-the-sums-agree]
+                  @add-the-inverse-on-the-right |
+                    add(add(a, c), neg(c)) = add(add(b, c), neg(c))
+                    [by rewrite the-sums-agree reflexive-on-the-left]
+                  @reflexive-on-the-left |
+                    add(add(a, c), neg(c)) = add(add(a, c), neg(c))
+                    [by reflexivity]
+                  @the-left-collapses |
+                    add(add(a, c), neg(c)) = a
+                    [using specialize aSumCancelsItsRightSummand(a, c)]
+                  @the-right-collapses |
+                    add(add(b, c), neg(c)) = b
+                    [using specialize aSumCancelsItsRightSummand(b, c)]
+                  @the-left-is-the-right-side |
+                    a = add(add(b, c), neg(c))
+                    [by rewrite the-left-collapses add-the-inverse-on-the-right]
+                  @conclusion-the-summands-agree |
+                    a = b
+                    [by rewrite the-right-collapses the-left-is-the-right-side]
+                }
+              @conclusion-cancellation |
+                add(a, c) = add(b, c) -> a = b
+                [by discharge given-the-sums-agree]
+            }
+          @conclusion-for-all-c |
+            forall c: Ring; add(a, c) = add(b, c) -> a = b
+            [by generalize generalize-c]
+        }
+      @conclusion-for-all-b |
+        forall b, c: Ring; add(a, c) = add(b, c) -> a = b
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: Ring; add(a, c) = add(b, c) -> a = b
+    [by generalize generalize-a]
+qed
