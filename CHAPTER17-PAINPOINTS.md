@@ -304,6 +304,31 @@ while the machinery could not be joined up.
   transfers instead of seven inductions, because `FieldPolyModelsRingPoly` already mapped every
   symbol (`--axioms` on `polyAddCancelRight`: 8 axioms, all mapped). The rule: if a second
   carrier is about to need the same induction, the induction belongs one layer down.
+- **Judson's route is not always the cheapest route — but prove that before diverging.**
+  §17.2's uniqueness step gets equal degrees from `deg d = deg d' + deg[ru + sv]`, i.e. degree
+  ADDITIVITY, which needs the product-degree law in a form tracking the cofactor's own degree.
+  Mutual divisibility turned out to be the cheaper premise, and `twoGcdsDivideEachOther` already
+  supplied it — each divides the other, so neither degree is strictly below, and ℕ antisymmetry
+  closes it.
+
+  The discipline that makes this legitimate rather than a shortcut: the aata rule allows a
+  divergent proof structure, noted in a `>` aside. So the divergence gets WRITTEN DOWN with its
+  reason, not silently substituted. (Recorded in 17.2's aside.)
+- **Check the layer below before inducting.** Measured: ℚ[x] hand-proved four negation theorems
+  (305 lines) that `RationalPolynomialsOverARing` could have transferred — I verified the
+  counterfactual transfer checks strict. The model was ALREADY complete; `ring_poly` simply did
+  not carry the theorems yet.
+
+  So the cost of a missing generic theorem is not "it gets proved twice" — it is that the second
+  proof lands at the WRONG LAYER, by induction, and the next carrier faces the same choice. The
+  check is one `--axioms` call plus a grep of the layer below. Full analysis in
+  `POLYNOMIAL-GENERICIZATION.md`.
+- **Generic-vs-specific is decided by what a proof CITES, not what its statement mentions.**
+  Five ℚ[x] theorems whose statements are full of `rational.mul` and `qcoeff` turn out to rest
+  on zero field axioms, zero domain axioms and zero ℚ-cut axioms — they are ring theorems wearing
+  ℚ's vocabulary. Conversely `aNonzeroMultipleHasAtLeastTheDegree` STATES a domain fact but rests
+  on `fieldInverse`, so relocating it to a domain layer would be a re-proof, not a move. Naming
+  reveals neither direction; `--axioms` reveals both.
 - **`tautology` sees atoms, not content** — documented, but still cost a round: `e = ONE` plus
   `ONE | ONE` does **not** give `e | ONE`, since an equation and a predicate are unrelated
   atoms. Fix is an explicit rewrite under `contradiction`.
