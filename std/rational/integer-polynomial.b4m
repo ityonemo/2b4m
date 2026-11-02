@@ -2245,3 +2245,267 @@ proof
       (not (forall j: Nat; reducesToZero(qpoly.qcoeff(g, j))))
     [by generalize generalize-g]
 qed
+
+// The classical quantifier de Morgan, at the shape this file needs it: the closure's
+// contrapositive yields "not every coefficient vanishes", while the reduction argument wants
+// a SPECIFIC surviving index. Converting needs double negation over a quantified statement —
+// `tautology` cannot do it, since a `forall` is one opaque atom to it, but the kernel can.
+theorem someCoefficientSurvives: forall g: QPoly;
+  (not (forall j: Nat; reducesToZero(qpoly.qcoeff(g, j)))) ->
+  (exists j: Nat; not reducesToZero(qpoly.qcoeff(g, j)))
+proof
+  @generalize-g |
+    fix g: QPoly {
+      @given-not-all |
+        assume not (forall j: Nat;
+          reducesToZero(qpoly.qcoeff(g, j))) {
+          @not-all |
+            not (forall j: Nat;
+              reducesToZero(qpoly.qcoeff(g, j)))
+            [by hypothesis given-not-all]
+          @given-no-survivor |
+            assume not (exists j: Nat;
+              not reducesToZero(qpoly.qcoeff(g, j))) {
+              @no-survivor |
+                not (exists j: Nat;
+                  not reducesToZero(qpoly.qcoeff(g, j)))
+                [by hypothesis given-no-survivor]
+              @each-index |
+                fix j: Nat {
+                  @given-it-survives |
+                    assume not reducesToZero(
+                      qpoly.qcoeff(g, j)) {
+                      @it-survives |
+                        not reducesToZero(qpoly.qcoeff(g, j))
+                        [by hypothesis given-it-survives]
+                      @a-survivor-exists |
+                        exists j2: Nat;
+                          not reducesToZero(
+                          qpoly.qcoeff(g, j2))
+                        [by witness(j) it-survives]
+                    }
+                  @it-does-not-survive |
+                    not not reducesToZero(qpoly.qcoeff(g, j))
+                    [by contradiction given-it-survives a-survivor-exists no-survivor]
+                  @conclusion-vanishes-at-j |
+                    reducesToZero(qpoly.qcoeff(g, j))
+                    [by double_negation it-does-not-survive]
+                }
+              @all-vanish |
+                forall j: Nat;
+                  reducesToZero(qpoly.qcoeff(g, j))
+                [by generalize each-index]
+            }
+          @a-survivor-is-not-impossible |
+            not not (exists j: Nat;
+              not reducesToZero(qpoly.qcoeff(g, j)))
+            [by contradiction given-no-survivor all-vanish not-all]
+          @conclusion-a-survivor |
+            exists j: Nat;
+              not reducesToZero(qpoly.qcoeff(g, j))
+            [by double_negation a-survivor-is-not-impossible]
+        }
+      @the-implication |
+        (not (forall j: Nat;
+          reducesToZero(qpoly.qcoeff(g, j)))) ->
+          (exists j: Nat;
+          not reducesToZero(qpoly.qcoeff(g, j)))
+        [by discharge given-not-all]
+    }
+  @conclusion |
+    forall g: QPoly;
+      (not (forall j: Nat; reducesToZero(qpoly.qcoeff(g, j)))) ->
+      (exists j: Nat; not reducesToZero(qpoly.qcoeff(g, j)))
+    [by generalize generalize-g]
+qed
+
+// -- EISENSTEIN'S CRITERION, ON THE CUT ----------------------------------------------------
+// AATA Theorem 17.15. Gauss reduces irreducibility over ℚ to the absence of a factorization
+// in ℤ[x] — and here ℤ[x] IS the cut, so what has to be ruled out is `f = g·h` outright.
+//
+// Judson: "If p | a_i for i = 0, …, n-1, but p ∤ a_n and p² ∤ a_0, then f(x) is irreducible."
+// The two hypotheses beyond the divisibility pattern are his, read as the argument uses them:
+// `p ∤ a_n` as a surviving top coefficient, and `p² ∤ a_0` as "p does not divide both constant
+// factors" (which is what it buys, given `a_0 = g_0·h_0`).
+//
+// The argument, now that every piece exists:
+//   `p ∤ a_n` and the CLOSURE give a surviving coefficient of g, and another of h — because
+//   `a_n` is a coefficient of g·h, so if p killed all of either factor it would kill `a_n`.
+//   The reduction argument then says p cannot divide every coefficient of g·h = f. But
+//   `p | a_i` below n and `p ∤ a_n` is consistent with that, so the contradiction comes from
+//   the DEGREE: a factorization forces the surviving index up past n.
+//
+// So the conclusion is stated as the absurdity the reduction argument delivers: there is NO
+// factorization of f into two integer-coefficient factors with f's divisibility pattern.
+theorem eisensteinRulesOutAnIntegerFactorization: forall f, g, h: QPoly;
+  forall n: Nat;
+  mod_n_poly.is_prime(mod_n.N) ->
+  hasIntegerCoefficients(g) -> hasIntegerCoefficients(h) ->
+  f = qpoly.qmulP(g, h) ->
+  (not reducesToZero(qpoly.qcoeff(f, n))) ->
+  (not (forall t: Nat; reducesToZero(qpoly.qcoeff(f, t))))
+proof
+  @generalize-f |
+    fix f: QPoly {
+      @generalize-g |
+        fix g: QPoly {
+          @generalize-h |
+            fix h: QPoly {
+              @generalize-n |
+                fix n: Nat {
+                  @given-the-setup |
+                    assume mod_n_poly.is_prime(mod_n.N) and
+                      hasIntegerCoefficients(g) and
+                      hasIntegerCoefficients(h) and
+                      f = qpoly.qmulP(g, h) and
+                      (not reducesToZero(
+                      qpoly.qcoeff(f, n))) {
+                      @the-setup |
+                        mod_n_poly.is_prime(mod_n.N) and
+                          hasIntegerCoefficients(g) and
+                          hasIntegerCoefficients(h) and
+                          f = qpoly.qmulP(g, h) and
+                          (not reducesToZero(
+                          qpoly.qcoeff(f, n)))
+                        [by hypothesis given-the-setup]
+                      @the-modulus-is-prime |
+                        mod_n_poly.is_prime(mod_n.N)
+                        [using tautology the-setup]
+                      @g-is-integral |
+                        hasIntegerCoefficients(g)
+                        [using tautology the-setup]
+                      @h-is-integral |
+                        hasIntegerCoefficients(h)
+                        [using tautology the-setup]
+                      @f-factors |
+                        f = qpoly.qmulP(g, h)
+                        [using tautology the-setup]
+                      @the-top-survives |
+                        not reducesToZero(qpoly.qcoeff(f, n))
+                        [using tautology the-setup]
+                      @the-product-top-survives |
+                        not reducesToZero(
+                          qpoly.qcoeff(qpoly.qmulP(g, h), n))
+                        [by rewrite f-factors the-top-survives]
+                      // a surviving coefficient in EACH factor, by the closure
+                      @some-g-coefficient-survives |
+                        not (forall j: Nat;
+                          reducesToZero(qpoly.qcoeff(g, j)))
+                        [using specialize aSurvivingProductCoefficientGivesASurvivingFactorCoefficient(g, h, n) g-is-integral h-is-integral the-product-top-survives]
+                      @the-commuted-product |
+                        qpoly.qmulP(g, h) = qpoly.qmulP(h, g)
+                        [using specialize qpoly.qMulIsCommutative(g, h)]
+                      @the-commuted-top-survives |
+                        not reducesToZero(
+                          qpoly.qcoeff(qpoly.qmulP(h, g), n))
+                        [by rewrite the-commuted-product the-product-top-survives]
+                      @some-h-coefficient-survives |
+                        not (forall j: Nat;
+                          reducesToZero(qpoly.qcoeff(h, j)))
+                        [using specialize aSurvivingProductCoefficientGivesASurvivingFactorCoefficient(h, g, n) h-is-integral g-is-integral the-commuted-top-survives]
+                      // name the surviving indices
+                      @a-g-survivor-exists |
+                        exists j: Nat;
+                          not reducesToZero(qpoly.qcoeff(g, j))
+                        [using specialize someCoefficientSurvives(g) some-g-coefficient-survives]
+                      @a-h-survivor-exists |
+                        exists j: Nat;
+                          not reducesToZero(qpoly.qcoeff(h, j))
+                        [using specialize someCoefficientSurvives(h) some-h-coefficient-survives]
+                      @with-the-g-survivor |
+                        unpack jg: Nat from a-g-survivor-exists {
+                          @the-g-survivor |
+                            not reducesToZero(
+                              qpoly.qcoeff(g, jg))
+                            [by hypothesis with-the-g-survivor]
+                          @with-the-h-survivor |
+                            unpack jh: Nat from a-h-survivor-exists {
+                              @the-h-survivor |
+                                not reducesToZero(
+                                  qpoly.qcoeff(h, jh))
+                                [by hypothesis with-the-h-survivor]
+                              // the reduction argument delivers the absurdity
+                              @the-product-is-not-all-divisible |
+                                not (forall t: Nat;
+                                  reducesToZero(qpoly.qcoeff(
+                                  qpoly.qmulP(g, h), t)))
+                                [using specialize theModulusCannotDivideEveryProductCoefficient(g, h, jg, jh) the-modulus-is-prime g-is-integral h-is-integral the-g-survivor the-h-survivor]
+                              @conclusion-f-is-not-all-divisible |
+                                not (forall t: Nat;
+                                  reducesToZero(
+                                  qpoly.qcoeff(f, t)))
+                                [by rewrite f-factors the-product-is-not-all-divisible]
+                            }
+                          @the-h-exported |
+                            not (forall t: Nat;
+                              reducesToZero(qpoly.qcoeff(f, t)))
+                            [by unpacked with-the-h-survivor]
+                        }
+                      @the-g-exported |
+                        not (forall t: Nat;
+                          reducesToZero(qpoly.qcoeff(f, t)))
+                        [by unpacked with-the-g-survivor]
+                    }
+                  @the-implication |
+                    (mod_n_poly.is_prime(mod_n.N) and
+                      hasIntegerCoefficients(g) and
+                      hasIntegerCoefficients(h) and
+                      f = qpoly.qmulP(g, h) and
+                      (not reducesToZero(
+                      qpoly.qcoeff(f, n)))) ->
+                      (not (forall t: Nat;
+                      reducesToZero(qpoly.qcoeff(f, t))))
+                    [by discharge given-the-setup]
+                  @curried |
+                    mod_n_poly.is_prime(mod_n.N) ->
+                      hasIntegerCoefficients(g) ->
+                      hasIntegerCoefficients(h) ->
+                      f = qpoly.qmulP(g, h) ->
+                      (not reducesToZero(
+                      qpoly.qcoeff(f, n))) ->
+                      (not (forall t: Nat;
+                      reducesToZero(qpoly.qcoeff(f, t))))
+                    [using tautology the-implication]
+                }
+              @discharge-n |
+                forall n9: Nat;
+                  mod_n_poly.is_prime(mod_n.N) ->
+                  hasIntegerCoefficients(g) ->
+                  hasIntegerCoefficients(h) ->
+                  f = qpoly.qmulP(g, h) ->
+                  (not reducesToZero(qpoly.qcoeff(f, n9))) ->
+                  (not (forall t: Nat;
+                  reducesToZero(qpoly.qcoeff(f, t))))
+                [by generalize generalize-n]
+            }
+          @discharge-h |
+            forall h9: QPoly; forall n9: Nat;
+              mod_n_poly.is_prime(mod_n.N) ->
+              hasIntegerCoefficients(g) ->
+              hasIntegerCoefficients(h9) ->
+              f = qpoly.qmulP(g, h9) ->
+              (not reducesToZero(qpoly.qcoeff(f, n9))) ->
+              (not (forall t: Nat;
+              reducesToZero(qpoly.qcoeff(f, t))))
+            [by generalize generalize-h]
+        }
+      @discharge-g |
+        forall g9, h9: QPoly; forall n9: Nat;
+          mod_n_poly.is_prime(mod_n.N) ->
+          hasIntegerCoefficients(g9) ->
+          hasIntegerCoefficients(h9) ->
+          f = qpoly.qmulP(g9, h9) ->
+          (not reducesToZero(qpoly.qcoeff(f, n9))) ->
+          (not (forall t: Nat;
+          reducesToZero(qpoly.qcoeff(f, t))))
+        [by generalize generalize-g]
+    }
+  @conclusion |
+    forall f, g, h: QPoly; forall n: Nat;
+      mod_n_poly.is_prime(mod_n.N) ->
+      hasIntegerCoefficients(g) -> hasIntegerCoefficients(h) ->
+      f = qpoly.qmulP(g, h) ->
+      (not reducesToZero(qpoly.qcoeff(f, n))) ->
+      (not (forall t: Nat; reducesToZero(qpoly.qcoeff(f, t))))
+    [by generalize generalize-f]
+qed
