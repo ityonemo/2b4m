@@ -208,6 +208,32 @@ while the machinery could not be joined up.
   **Related, same tactic, different cause:** `simplify` also cannot CONSUME a cited equation as
   a premise — it proves identities, not consequences. A rearrangement like
   `0 = X + r·t ⟹ X = r·(−t)` is not a `simplify` goal at all, however simple it looks.
+- **An admitted `specialize` SHRINKS the proof `--fast` examines, masking sibling steps.**
+  Hit on `theConstantMonomialProductAgreesCoefficientwise` (2026-11-02). `--fast` passed the
+  lemma; strict rejected it with `simplify: normal forms differ`. But `simplify` KEEPS its
+  decision under `--fast` (`ACCELERATION.md`'s per-word table: "both sides normalized to a
+  shared normal form"), so the step should have failed in both modes.
+
+  It didn't because `--fast` never REACHED it: the enclosing `specialize` is admitted on
+  literally "a head is present", everything else dropped, so the steps underneath were never
+  demanded. The banner — `accelerated (admitted, not proved): specialize` — was the whole
+  story and named the right word.
+
+  **The general rule I got wrong twice in one turn.** It is NOT that `specialize` is uniquely
+  able to admit what strict refutes; per the table, every word can, and the shared mechanism
+  is WHAT A NAME DENOTES (a misbound operator, an alias colliding with a sibling theory's, a
+  decision binding `add`/`mul`/`ZERO` by well-known name without checking the symbol obeys
+  those laws). What IS special about `specialize` is narrower: it is the one word whose admit
+  drops the claim-vs-instance match itself, and therefore the one whose admit reduces the
+  amount of proof under examination. So **a `--fast` green over a proof containing a
+  `specialize` says strictly less than a `--fast` green elsewhere** — the admitted subtree may
+  hold failures that are not `specialize`'s kind of failure at all.
+
+  Practical consequence for this chapter's cadence: `--fast` for the write loop is still
+  right, but a lemma whose top-level justification is `specialize` is not evidence of anything
+  until strict runs. That was already the standing rule ("never close a site on `--fast`
+  alone"); the new part is the reason — not "fast is approximate" but "fast looked at less
+  than you think".
 - **`tautology` sees atoms, not content** — documented, but still cost a round: `e = ONE` plus
   `ONE | ONE` does **not** give `e | ONE`, since an equation and a predicate are unrelated
   atoms. Fix is an explicit rewrite under `contradiction`.

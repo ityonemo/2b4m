@@ -2936,3 +2936,127 @@ proof
       qmulP(qmulP(p, q), r) = qmulP(p, qmulP(q, r))
     [using model(RationalPolynomialAssociativity) fieldassoc.polyMulIsAssociative]
 qed
+
+// -- COMBINING TWO CONSTANT SCALINGS -------------------------------------------------------
+// Two constant monomials multiply to the constant monomial of the product. Coefficientwise
+// via the scaling law: the left scaling pulls `c` out, and what remains is `d`'s own
+// monomial coefficient, so both sides read `mul(c, qcoeff(qmonomial(d, 0), i))`.
+theorem theConstantMonomialProductAgreesCoefficientwise: forall c, d: Q; forall i: Nat;
+  qcoeff(qmulP(qmonomial(c, NAT_ZERO), qmonomial(d, NAT_ZERO)), i) =
+  qcoeff(qmonomial(rational.mul(c, d), NAT_ZERO), i)
+proof
+  @generalize-c |
+    fix c: Q {
+      @generalize-d |
+        fix d: Q {
+          @generalize-i |
+            fix i: Nat {
+              @the-left-scaling |
+                qcoeff(qmulP(qmonomial(c, NAT_ZERO), qmonomial(d, NAT_ZERO)), i) =
+                  rational.mul(c, qcoeff(qmonomial(d, NAT_ZERO), i))
+                [using specialize
+                  scalingByAConstantScalesTheCoefficients(qmonomial(d, NAT_ZERO), c, i)]
+              @the-index-is-zero-or-not |
+                i = NAT_ZERO or (not (i = NAT_ZERO))
+                [using tautology]
+              @the-coefficients-agree |
+                qcoeff(qmulP(qmonomial(c, NAT_ZERO), qmonomial(d, NAT_ZERO)), i) =
+                  qcoeff(qmonomial(rational.mul(c, d), NAT_ZERO), i)
+                [by common_conclusion the-index-is-zero-or-not
+                  when-the-index-is-zero when-the-index-is-elsewhere]
+              @when-the-index-is-zero |
+                assume i = NAT_ZERO {
+                  @the-index |
+                    i = NAT_ZERO
+                    [by hypothesis when-the-index-is-zero]
+                  @the-inner-coefficient-is-d |
+                    qcoeff(qmonomial(d, NAT_ZERO), NAT_ZERO) = d
+                    [using specialize qMonomialCoeffAtItsIndex(d, NAT_ZERO)]
+                  @the-outer-coefficient-is-the-product |
+                    qcoeff(qmonomial(rational.mul(c, d), NAT_ZERO), NAT_ZERO) =
+                      rational.mul(c, d)
+                    [using specialize qMonomialCoeffAtItsIndex(rational.mul(c, d), NAT_ZERO)]
+                  @the-scaling-at-zero |
+                    qcoeff(qmulP(qmonomial(c, NAT_ZERO), qmonomial(d, NAT_ZERO)), NAT_ZERO) =
+                      rational.mul(c, qcoeff(qmonomial(d, NAT_ZERO), NAT_ZERO))
+                    [by rewrite the-index the-left-scaling]
+                  @conclusion-the-coefficients-agree-at-zero |
+                    qcoeff(qmulP(qmonomial(c, NAT_ZERO), qmonomial(d, NAT_ZERO)), i) =
+                      qcoeff(qmonomial(rational.mul(c, d), NAT_ZERO), i)
+                    [using simplify the-index the-scaling-at-zero
+                      the-inner-coefficient-is-d the-outer-coefficient-is-the-product]
+                }
+              @when-the-index-is-elsewhere |
+                assume not (i = NAT_ZERO) {
+                  @the-index-misses |
+                    not (i = NAT_ZERO)
+                    [by hypothesis when-the-index-is-elsewhere]
+                  @the-inner-coefficient-vanishes |
+                    qcoeff(qmonomial(d, NAT_ZERO), i) = ZERO
+                    [using specialize qMonomialCoeffElsewhere(d, NAT_ZERO, i) the-index-misses]
+                  @the-outer-coefficient-vanishes |
+                    qcoeff(qmonomial(rational.mul(c, d), NAT_ZERO), i) = ZERO
+                    [using specialize
+                      qMonomialCoeffElsewhere(rational.mul(c, d), NAT_ZERO, i) the-index-misses]
+                  @the-scaled-zero-is-zero |
+                    rational.mul(c, ZERO) = ZERO
+                    [using specialize rational.mulZeroRight(c)]
+                  @conclusion-the-coefficients-agree-elsewhere |
+                    qcoeff(qmulP(qmonomial(c, NAT_ZERO), qmonomial(d, NAT_ZERO)), i) =
+                      qcoeff(qmonomial(rational.mul(c, d), NAT_ZERO), i)
+                    [using simplify the-left-scaling the-inner-coefficient-vanishes
+                      the-scaled-zero-is-zero the-outer-coefficient-vanishes]
+                }
+            }
+          @conclusion-for-all-i |
+            forall i: Nat;
+              qcoeff(qmulP(qmonomial(c, NAT_ZERO), qmonomial(d, NAT_ZERO)), i) =
+              qcoeff(qmonomial(rational.mul(c, d), NAT_ZERO), i)
+            [by generalize generalize-i]
+        }
+      @conclusion-for-all-d |
+        forall d: Q; forall i: Nat;
+          qcoeff(qmulP(qmonomial(c, NAT_ZERO), qmonomial(d, NAT_ZERO)), i) =
+          qcoeff(qmonomial(rational.mul(c, d), NAT_ZERO), i)
+        [by generalize generalize-d]
+    }
+  @conclusion |
+    forall c, d: Q; forall i: Nat;
+      qcoeff(qmulP(qmonomial(c, NAT_ZERO), qmonomial(d, NAT_ZERO)), i) =
+      qcoeff(qmonomial(rational.mul(c, d), NAT_ZERO), i)
+    [by generalize generalize-c]
+qed
+
+// Hence the monomials themselves are equal, by extensionality.
+theorem theProductOfConstantMonomials: forall c, d: Q;
+  qmulP(qmonomial(c, NAT_ZERO), qmonomial(d, NAT_ZERO)) =
+  qmonomial(rational.mul(c, d), NAT_ZERO)
+proof
+  @generalize-c |
+    fix c: Q {
+      @generalize-d |
+        fix d: Q {
+          @the-coefficients-agree |
+            forall i: Nat;
+              qcoeff(qmulP(qmonomial(c, NAT_ZERO), qmonomial(d, NAT_ZERO)), i) =
+              qcoeff(qmonomial(rational.mul(c, d), NAT_ZERO), i)
+            [using specialize theConstantMonomialProductAgreesCoefficientwise(c, d)]
+          @conclusion-the-monomials-are-equal |
+            qmulP(qmonomial(c, NAT_ZERO), qmonomial(d, NAT_ZERO)) =
+              qmonomial(rational.mul(c, d), NAT_ZERO)
+            [using specialize qPolyExtensionality(
+              qmulP(qmonomial(c, NAT_ZERO), qmonomial(d, NAT_ZERO)),
+              qmonomial(rational.mul(c, d), NAT_ZERO)) the-coefficients-agree]
+        }
+      @conclusion-for-all-d |
+        forall d: Q;
+          qmulP(qmonomial(c, NAT_ZERO), qmonomial(d, NAT_ZERO)) =
+          qmonomial(rational.mul(c, d), NAT_ZERO)
+        [by generalize generalize-d]
+    }
+  @conclusion |
+    forall c, d: Q;
+      qmulP(qmonomial(c, NAT_ZERO), qmonomial(d, NAT_ZERO)) =
+      qmonomial(rational.mul(c, d), NAT_ZERO)
+    [by generalize generalize-c]
+qed
