@@ -14,11 +14,14 @@ import fieldpoly <<< "std/field/polynomial.b4m"
 import peano <<< "std/peano.b4m"
 import polyassoc <<< "std/field/polynomial-associativity.b4m"
 import peano_order <<< "std/peano/order.b4m"
+import monic <<< "std/field/monic.b4m"
 
 sort Poly = fieldpoly.Poly
 func addP = fieldpoly.addP
 func mulP = fieldpoly.mulP
 func negP = fieldpoly.negP
+const ZEROP = fieldpoly.ZEROP
+func degree = fieldpoly.degree
 
 // `d` divides `p`: some cofactor multiplies it to p.
 pred dividesP(d: Poly, p: Poly)
@@ -1384,4 +1387,716 @@ proof
       p = addP(mulP(a, d), b) ->
       isACombination(b, p, q)
     [by generalize generalize-p]
+qed
+
+// -- STEP ONE: MINIMALITY FORCES THE REMAINDER TO VANISH, SO d DIVIDES ------------------------
+// "Since d(x) was chosen to have the smallest degree in S, b(x) must be the zero polynomial.
+// Consequently, d(x) divides p(x)."
+//
+// The remainder of dividing p by d is a combination (`theDivisionRemainderIsACombination`) and
+// its degree is BELOW deg d (the division algorithm). If it were nonzero, minimality would put
+// deg d at or below it — contradicting that it is strictly below. So it vanishes, and
+// p = a·d exhibits the cofactor divisibility asks for.
+theorem minimalityForcesTheRemainderToVanish: forall p, q, d, a, b: Poly;
+  isACombination(d, p, q) ->
+  (forall g: Poly; isACombination(g, p, q) -> (not (g = ZEROP)) ->
+  peano_order.less_or_equal(degree(d), degree(g))) ->
+  p = addP(mulP(a, d), b) ->
+  peano_order.less_than(degree(b), degree(d)) ->
+  b = ZEROP
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-d |
+            fix d: Poly {
+              @generalize-a |
+                fix a: Poly {
+                  @generalize-b |
+                    fix b: Poly {
+                      @given-d-is-a-combination |
+                        assume isACombination(d, p, q) {
+                          @d-is-a-combination |
+                            isACombination(d, p, q)
+                            [by hypothesis given-d-is-a-combination]
+                          @given-minimality |
+                            assume forall g: Poly; isACombination(g, p, q) ->
+                              (not (g = ZEROP)) ->
+                              peano_order.less_or_equal(degree(d), degree(g)) {
+                              @minimality |
+                                forall g: Poly; isACombination(g, p, q) ->
+                                  (not (g = ZEROP)) ->
+                                  peano_order.less_or_equal(degree(d), degree(g))
+                                [by hypothesis given-minimality]
+                              @given-the-division |
+                                assume p = addP(mulP(a, d), b) {
+                                  @the-division |
+                                    p = addP(mulP(a, d), b)
+                                    [by hypothesis given-the-division]
+                                  @b-is-a-combination |
+                                    isACombination(b, p, q)
+                                    [using specialize theDivisionRemainderIsACombination(
+                                      p, q, d, a, b) d-is-a-combination the-division]
+                                  @given-the-remainder-is-small |
+                                    assume peano_order.less_than(degree(b), degree(d)) {
+                                      @the-remainder-is-small |
+                                        peano_order.less_than(degree(b), degree(d))
+                                        [by hypothesis given-the-remainder-is-small]
+                                      // suppose it were nonzero
+                                      @suppose-nonzero |
+                                        assume not (b = ZEROP) {
+                                          @b-is-nonzero |
+                                            not (b = ZEROP)
+                                            [by hypothesis suppose-nonzero]
+                                          @minimality-applies |
+                                            peano_order.less_or_equal(degree(d), degree(b))
+                                            [using specialize minimality(b)
+                                              b-is-a-combination b-is-nonzero]
+                                          @the-degrees-contradict |
+                                            not peano_order.less_than(degree(b), degree(d))
+                                            [using specialize
+                                              peano_order.lessOrEqualBlocksTheConverse(
+                                              degree(d), degree(b)) minimality-applies]
+                                          @conclusion-absurd |
+                                            b = ZEROP
+                                            [by ex_falso the-remainder-is-small
+                                              the-degrees-contradict]
+                                        }
+                                      @conclusion-the-remainder-vanishes |
+                                        b = ZEROP
+                                        [using tautology nonzero-is-absurd]
+                                      @nonzero-is-absurd |
+                                        (not (b = ZEROP)) -> b = ZEROP
+                                        [by discharge suppose-nonzero]
+                                    }
+                                  @conclusion-the-small-remainder-vanishes |
+                                    peano_order.less_than(degree(b), degree(d)) -> b = ZEROP
+                                    [by discharge given-the-remainder-is-small]
+                                }
+                              @conclusion-the-division-gives-it |
+                                p = addP(mulP(a, d), b) ->
+                                  peano_order.less_than(degree(b), degree(d)) -> b = ZEROP
+                                [by discharge given-the-division]
+                            }
+                          @conclusion-minimality-gives-it |
+                            (forall g: Poly; isACombination(g, p, q) ->
+                              (not (g = ZEROP)) ->
+                              peano_order.less_or_equal(degree(d), degree(g))) ->
+                              p = addP(mulP(a, d), b) ->
+                              peano_order.less_than(degree(b), degree(d)) -> b = ZEROP
+                            [by discharge given-minimality]
+                        }
+                      @conclusion-all-give-it |
+                        isACombination(d, p, q) ->
+                          (forall g: Poly; isACombination(g, p, q) ->
+                          (not (g = ZEROP)) ->
+                          peano_order.less_or_equal(degree(d), degree(g))) ->
+                          p = addP(mulP(a, d), b) ->
+                          peano_order.less_than(degree(b), degree(d)) -> b = ZEROP
+                        [by discharge given-d-is-a-combination]
+                    }
+                  @conclusion-for-all-b |
+                    forall b: Poly;
+                      isACombination(d, p, q) ->
+                      (forall g: Poly; isACombination(g, p, q) ->
+                      (not (g = ZEROP)) ->
+                      peano_order.less_or_equal(degree(d), degree(g))) ->
+                      p = addP(mulP(a, d), b) ->
+                      peano_order.less_than(degree(b), degree(d)) -> b = ZEROP
+                    [by generalize generalize-b]
+                }
+              @conclusion-for-all-a |
+                forall a, b: Poly;
+                  isACombination(d, p, q) ->
+                  (forall g: Poly; isACombination(g, p, q) ->
+                  (not (g = ZEROP)) ->
+                  peano_order.less_or_equal(degree(d), degree(g))) ->
+                  p = addP(mulP(a, d), b) ->
+                  peano_order.less_than(degree(b), degree(d)) -> b = ZEROP
+                [by generalize generalize-a]
+            }
+          @conclusion-for-all-d |
+            forall d, a, b: Poly;
+              isACombination(d, p, q) ->
+              (forall g: Poly; isACombination(g, p, q) ->
+              (not (g = ZEROP)) ->
+              peano_order.less_or_equal(degree(d), degree(g))) ->
+              p = addP(mulP(a, d), b) ->
+              peano_order.less_than(degree(b), degree(d)) -> b = ZEROP
+            [by generalize generalize-d]
+        }
+      @conclusion-for-all-q |
+        forall q, d, a, b: Poly;
+          isACombination(d, p, q) ->
+          (forall g: Poly; isACombination(g, p, q) ->
+          (not (g = ZEROP)) ->
+          peano_order.less_or_equal(degree(d), degree(g))) ->
+          p = addP(mulP(a, d), b) ->
+          peano_order.less_than(degree(b), degree(d)) -> b = ZEROP
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, d, a, b: Poly;
+      isACombination(d, p, q) ->
+      (forall g: Poly; isACombination(g, p, q) ->
+      (not (g = ZEROP)) ->
+      peano_order.less_or_equal(degree(d), degree(g))) ->
+      p = addP(mulP(a, d), b) ->
+      peano_order.less_than(degree(b), degree(d)) -> b = ZEROP
+    [by generalize generalize-p]
+qed
+
+// Hence d divides p: the division equation collapses to p = a·d once the remainder vanishes,
+// which is exactly the cofactor `dividesP` asks for.
+theorem theMinimalCombinationDividesIt: forall p, q, d, a, b: Poly;
+  isACombination(d, p, q) ->
+  (forall g: Poly; isACombination(g, p, q) -> (not (g = ZEROP)) ->
+  peano_order.less_or_equal(degree(d), degree(g))) ->
+  p = addP(mulP(a, d), b) ->
+  peano_order.less_than(degree(b), degree(d)) ->
+  dividesP(d, p)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-d |
+            fix d: Poly {
+              @generalize-a |
+                fix a: Poly {
+                  @generalize-b |
+                    fix b: Poly {
+                      @given-everything |
+                        assume isACombination(d, p, q) {
+                          @d-is-a-combination |
+                            isACombination(d, p, q)
+                            [by hypothesis given-everything]
+                          @given-minimality |
+                            assume forall g: Poly; isACombination(g, p, q) ->
+                              (not (g = ZEROP)) ->
+                              peano_order.less_or_equal(degree(d), degree(g)) {
+                              @minimality |
+                                forall g: Poly; isACombination(g, p, q) ->
+                                  (not (g = ZEROP)) ->
+                                  peano_order.less_or_equal(degree(d), degree(g))
+                                [by hypothesis given-minimality]
+                              @given-the-division |
+                                assume p = addP(mulP(a, d), b) {
+                                  @the-division |
+                                    p = addP(mulP(a, d), b)
+                                    [by hypothesis given-the-division]
+                                  @given-the-remainder-is-small |
+                                    assume peano_order.less_than(degree(b), degree(d)) {
+                                      @the-remainder-is-small |
+                                        peano_order.less_than(degree(b), degree(d))
+                                        [by hypothesis given-the-remainder-is-small]
+                                      @the-remainder-vanishes |
+                                        b = ZEROP
+                                        [using specialize
+                                          minimalityForcesTheRemainderToVanish(
+                                          p, q, d, a, b) d-is-a-combination minimality
+                                          the-division the-remainder-is-small]
+                                      @the-division-collapses |
+                                        p = addP(mulP(a, d), ZEROP)
+                                        [by rewrite the-remainder-vanishes the-division]
+                                      @adding-zero-changes-nothing |
+                                        addP(mulP(a, d), ZEROP) = mulP(a, d)
+                                        [using specialize fieldpoly.polyAddZeroRight(
+                                          mulP(a, d))]
+                                      @p-is-the-multiple |
+                                        p = mulP(a, d)
+                                        [using simplify the-division-collapses
+                                          adding-zero-changes-nothing]
+                                      @the-cofactor-exists |
+                                        exists u: Poly; p = mulP(u, d)
+                                        [by witness(a) p-is-the-multiple]
+                                      @the-divides-meaning |
+                                        dividesP(d, p) iff
+                                          (exists u: Poly; p = mulP(u, d))
+                                        [using specialize
+                                          dividesMeansACofactorExists(d, p)]
+                                      @the-divides-backward |
+                                        (exists u: Poly; p = mulP(u, d)) -> dividesP(d, p)
+                                        [by equiv_converse the-divides-meaning]
+                                      @conclusion-d-divides-p |
+                                        dividesP(d, p)
+                                        [by modus_ponens the-divides-backward
+                                          the-cofactor-exists]
+                                    }
+                                  @conclusion-the-small-remainder-gives-it |
+                                    peano_order.less_than(degree(b), degree(d)) ->
+                                      dividesP(d, p)
+                                    [by discharge given-the-remainder-is-small]
+                                }
+                              @conclusion-the-division-gives-it |
+                                p = addP(mulP(a, d), b) ->
+                                  peano_order.less_than(degree(b), degree(d)) ->
+                                  dividesP(d, p)
+                                [by discharge given-the-division]
+                            }
+                          @conclusion-minimality-gives-it |
+                            (forall g: Poly; isACombination(g, p, q) ->
+                              (not (g = ZEROP)) ->
+                              peano_order.less_or_equal(degree(d), degree(g))) ->
+                              p = addP(mulP(a, d), b) ->
+                              peano_order.less_than(degree(b), degree(d)) ->
+                              dividesP(d, p)
+                            [by discharge given-minimality]
+                        }
+                      @conclusion-all-give-it |
+                        isACombination(d, p, q) ->
+                          (forall g: Poly; isACombination(g, p, q) ->
+                          (not (g = ZEROP)) ->
+                          peano_order.less_or_equal(degree(d), degree(g))) ->
+                          p = addP(mulP(a, d), b) ->
+                          peano_order.less_than(degree(b), degree(d)) ->
+                          dividesP(d, p)
+                        [by discharge given-everything]
+                    }
+                  @conclusion-for-all-b |
+                    forall b: Poly;
+                      isACombination(d, p, q) ->
+                      (forall g: Poly; isACombination(g, p, q) ->
+                      (not (g = ZEROP)) ->
+                      peano_order.less_or_equal(degree(d), degree(g))) ->
+                      p = addP(mulP(a, d), b) ->
+                      peano_order.less_than(degree(b), degree(d)) ->
+                      dividesP(d, p)
+                    [by generalize generalize-b]
+                }
+              @conclusion-for-all-a |
+                forall a, b: Poly;
+                  isACombination(d, p, q) ->
+                  (forall g: Poly; isACombination(g, p, q) ->
+                  (not (g = ZEROP)) ->
+                  peano_order.less_or_equal(degree(d), degree(g))) ->
+                  p = addP(mulP(a, d), b) ->
+                  peano_order.less_than(degree(b), degree(d)) ->
+                  dividesP(d, p)
+                [by generalize generalize-a]
+            }
+          @conclusion-for-all-d |
+            forall d, a, b: Poly;
+              isACombination(d, p, q) ->
+              (forall g: Poly; isACombination(g, p, q) ->
+              (not (g = ZEROP)) ->
+              peano_order.less_or_equal(degree(d), degree(g))) ->
+              p = addP(mulP(a, d), b) ->
+              peano_order.less_than(degree(b), degree(d)) ->
+              dividesP(d, p)
+            [by generalize generalize-d]
+        }
+      @conclusion-for-all-q |
+        forall q, d, a, b: Poly;
+          isACombination(d, p, q) ->
+          (forall g: Poly; isACombination(g, p, q) ->
+          (not (g = ZEROP)) ->
+          peano_order.less_or_equal(degree(d), degree(g))) ->
+          p = addP(mulP(a, d), b) ->
+          peano_order.less_than(degree(b), degree(d)) ->
+          dividesP(d, p)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, d, a, b: Poly;
+      isACombination(d, p, q) ->
+      (forall g: Poly; isACombination(g, p, q) -> (not (g = ZEROP)) ->
+      peano_order.less_or_equal(degree(d), degree(g))) ->
+      p = addP(mulP(a, d), b) ->
+      peano_order.less_than(degree(b), degree(d)) ->
+      dividesP(d, p)
+    [by generalize generalize-p]
+qed
+
+// A nonzero divisor's degree is at most its multiple's: e = u·d with both nonzero puts
+// deg e at or above deg d, by `aNonzeroMultipleHasAtLeastTheDegree` read through the cofactor.
+theorem aDivisorsDegreeIsAtMost: forall d, e: Poly;
+  (not (d = ZEROP)) -> (not (e = ZEROP)) ->
+  dividesP(d, e) ->
+  peano_order.less_or_equal(degree(d), degree(e))
+proof
+  @generalize-d |
+    fix d: Poly {
+      @generalize-e |
+        fix e: Poly {
+          @given-d-nonzero |
+            assume not (d = ZEROP) {
+              @d-is-nonzero |
+                not (d = ZEROP)
+                [by hypothesis given-d-nonzero]
+              @given-e-nonzero |
+                assume not (e = ZEROP) {
+                  @e-is-nonzero |
+                    not (e = ZEROP)
+                    [by hypothesis given-e-nonzero]
+                  @given-d-divides-e |
+                    assume dividesP(d, e) {
+                      @d-divides-e |
+                        dividesP(d, e)
+                        [by hypothesis given-d-divides-e]
+                      @the-divides-meaning |
+                        dividesP(d, e) iff (exists u: Poly; e = mulP(u, d))
+                        [using specialize dividesMeansACofactorExists(d, e)]
+                      @the-divides-forward |
+                        dividesP(d, e) -> (exists u: Poly; e = mulP(u, d))
+                        [by equiv_forward the-divides-meaning]
+                      @the-cofactor-exists |
+                        exists u: Poly; e = mulP(u, d)
+                        [by modus_ponens the-divides-forward d-divides-e]
+                      @with-the-cofactor |
+                        unpack u: Poly from the-cofactor-exists {
+                          @e-is-the-multiple |
+                            e = mulP(u, d)
+                            [by hypothesis with-the-cofactor]
+                          // the cofactor cannot be zero, else e would be
+                          @suppose-the-cofactor-vanishes |
+                            assume u = ZEROP {
+                              @the-cofactor-vanishes |
+                                u = ZEROP
+                                [by hypothesis suppose-the-cofactor-vanishes]
+                              @e-is-zero-times-d |
+                                e = mulP(ZEROP, d)
+                                [by rewrite the-cofactor-vanishes e-is-the-multiple]
+                              @the-zero-product-commutes |
+                                mulP(ZEROP, d) = mulP(d, ZEROP)
+                                [using specialize fieldpoly.polyMulIsCommutative(
+                                  ZEROP, d)]
+                              @anything-times-zero |
+                                mulP(d, ZEROP) = ZEROP
+                                [using specialize fieldpoly.polyMulZeroRight(d)]
+                              @e-is-the-commuted-zero-product |
+                                e = mulP(d, ZEROP)
+                                [using simplify e-is-zero-times-d
+                                  the-zero-product-commutes]
+                              @e-would-be-zero |
+                                e = ZEROP
+                                [using simplify e-is-the-commuted-zero-product
+                                  anything-times-zero]
+                            }
+                          @the-cofactor-is-nonzero |
+                            not (u = ZEROP)
+                            [by contradiction suppose-the-cofactor-vanishes
+                              e-would-be-zero e-is-nonzero]
+                          // deg(u·d) is not below deg d, and e IS u·d
+                          @the-multiple-is-not-below |
+                            not peano_order.less_than(
+                              degree(mulP(d, u)), degree(d))
+                            [using specialize
+                              fieldpoly.aNonzeroMultipleHasAtLeastTheDegree(d, u)
+                              d-is-nonzero the-cofactor-is-nonzero]
+                          @the-product-commutes |
+                            mulP(u, d) = mulP(d, u)
+                            [using specialize fieldpoly.polyMulIsCommutative(u, d)]
+                          @e-is-the-commuted-multiple |
+                            e = mulP(d, u)
+                            [using simplify e-is-the-multiple the-product-commutes]
+                          @e-is-not-below |
+                            not peano_order.less_than(degree(e), degree(d))
+                            [by rewrite e-is-the-commuted-multiple
+                              the-multiple-is-not-below]
+                          @conclusion-d-is-at-most-e |
+                            peano_order.less_or_equal(degree(d), degree(e))
+                            [using specialize peano_order.notBelowGivesAtMost(
+                              degree(d), degree(e)) e-is-not-below]
+                        }
+                      @conclusion-from-the-cofactor |
+                        peano_order.less_or_equal(degree(d), degree(e))
+                        [by unpacked with-the-cofactor]
+                    }
+                  @conclusion-d-divides-e-gives-it |
+                    dividesP(d, e) ->
+                      peano_order.less_or_equal(degree(d), degree(e))
+                    [by discharge given-d-divides-e]
+                }
+              @conclusion-e-nonzero-gives-it |
+                (not (e = ZEROP)) -> dividesP(d, e) ->
+                  peano_order.less_or_equal(degree(d), degree(e))
+                [by discharge given-e-nonzero]
+            }
+          @conclusion-all-give-it |
+            (not (d = ZEROP)) -> (not (e = ZEROP)) -> dividesP(d, e) ->
+              peano_order.less_or_equal(degree(d), degree(e))
+            [by discharge given-d-nonzero]
+        }
+      @conclusion-for-all-e |
+        forall e: Poly;
+          (not (d = ZEROP)) -> (not (e = ZEROP)) -> dividesP(d, e) ->
+          peano_order.less_or_equal(degree(d), degree(e))
+        [by generalize generalize-e]
+    }
+  @conclusion |
+    forall d, e: Poly;
+      (not (d = ZEROP)) -> (not (e = ZEROP)) -> dividesP(d, e) ->
+      peano_order.less_or_equal(degree(d), degree(e))
+    [by generalize generalize-d]
+qed
+// -- STEP TWO: UNIQUENESS -- TWO MONIC GREATEST COMMON DIVISORS ARE EQUAL --------------------
+// "Since d(x) and d'(x) are both greatest common divisors, they have the same degree. They are
+// also both monic, so d(x) = d'(x)."
+//
+// Judson reads the equal degrees off `deg d = deg d' + deg[ru + sv]`. Here they come from
+// MUTUAL divisibility, which `twoGcdsDivideEachOther` already supplies: each divides the other,
+// so neither degree is strictly below the other (`aNonzeroMultipleHasAtLeastTheDegree` both
+// ways), and antisymmetry on ℕ closes it. That avoids needing the degree-of-a-product law in a
+// form that tracks the cofactor's own degree.
+theorem mutualDivisibilityGivesEqualDegrees: forall d, e: Poly;
+  (not (d = ZEROP)) -> (not (e = ZEROP)) ->
+  dividesP(d, e) -> dividesP(e, d) ->
+  degree(d) = degree(e)
+proof
+  @generalize-d |
+    fix d: Poly {
+      @generalize-e |
+        fix e: Poly {
+          @given-d-nonzero |
+            assume not (d = ZEROP) {
+              @d-is-nonzero |
+                not (d = ZEROP)
+                [by hypothesis given-d-nonzero]
+              @given-e-nonzero |
+                assume not (e = ZEROP) {
+                  @e-is-nonzero |
+                    not (e = ZEROP)
+                    [by hypothesis given-e-nonzero]
+                  @given-d-divides-e |
+                    assume dividesP(d, e) {
+                      @d-divides-e |
+                        dividesP(d, e)
+                        [by hypothesis given-d-divides-e]
+                      @given-e-divides-d |
+                        assume dividesP(e, d) {
+                          @e-divides-d |
+                            dividesP(e, d)
+                            [by hypothesis given-e-divides-d]
+                          @d-is-at-most-e |
+                            peano_order.less_or_equal(degree(d), degree(e))
+                            [using specialize aDivisorsDegreeIsAtMost(d, e)
+                              d-is-nonzero e-is-nonzero d-divides-e]
+                          @e-is-at-most-d |
+                            peano_order.less_or_equal(degree(e), degree(d))
+                            [using specialize aDivisorsDegreeIsAtMost(e, d)
+                              e-is-nonzero d-is-nonzero e-divides-d]
+                          @conclusion-the-degrees-agree |
+                            degree(d) = degree(e)
+                            [using specialize peano_order.lessOrEqualAntisymmetric(
+                              degree(d), degree(e)) d-is-at-most-e e-is-at-most-d]
+                        }
+                      @conclusion-e-divides-d-gives-it |
+                        dividesP(e, d) -> degree(d) = degree(e)
+                        [by discharge given-e-divides-d]
+                    }
+                  @conclusion-d-divides-e-gives-it |
+                    dividesP(d, e) -> dividesP(e, d) -> degree(d) = degree(e)
+                    [by discharge given-d-divides-e]
+                }
+              @conclusion-e-nonzero-gives-it |
+                (not (e = ZEROP)) ->
+                  dividesP(d, e) -> dividesP(e, d) -> degree(d) = degree(e)
+                [by discharge given-e-nonzero]
+            }
+          @conclusion-all-give-it |
+            (not (d = ZEROP)) -> (not (e = ZEROP)) ->
+              dividesP(d, e) -> dividesP(e, d) -> degree(d) = degree(e)
+            [by discharge given-d-nonzero]
+        }
+      @conclusion-for-all-e |
+        forall e: Poly;
+          (not (d = ZEROP)) -> (not (e = ZEROP)) ->
+          dividesP(d, e) -> dividesP(e, d) -> degree(d) = degree(e)
+        [by generalize generalize-e]
+    }
+  @conclusion |
+    forall d, e: Poly;
+      (not (d = ZEROP)) -> (not (e = ZEROP)) ->
+      dividesP(d, e) -> dividesP(e, d) -> degree(d) = degree(e)
+    [by generalize generalize-d]
+qed
+
+// Uniqueness. Two monic greatest common divisors of the same pair are EQUAL — Judson's final
+// paragraph. `twoGcdsDivideEachOther` gives mutual divisibility, which gives equal degrees,
+// and `monic.twoMonicPolynomialsOfEqualDegreeThatDivideAreEqual` closes it on the cofactor.
+theorem aMonicGreatestCommonDivisorIsUnique: forall d, e, p, q: Poly;
+  (not (d = ZEROP)) -> (not (e = ZEROP)) ->
+  monic.isMonic(d) -> monic.isMonic(e) ->
+  isAGcd(d, p, q) -> isAGcd(e, p, q) ->
+  d = e
+proof
+  @generalize-d |
+    fix d: Poly {
+      @generalize-e |
+        fix e: Poly {
+          @generalize-p |
+            fix p: Poly {
+              @generalize-q |
+                fix q: Poly {
+                  @given-d-nonzero |
+                    assume not (d = ZEROP) {
+                      @d-is-nonzero |
+                        not (d = ZEROP)
+                        [by hypothesis given-d-nonzero]
+                      @given-e-nonzero |
+                        assume not (e = ZEROP) {
+                          @e-is-nonzero |
+                            not (e = ZEROP)
+                            [by hypothesis given-e-nonzero]
+                          @given-d-monic |
+                            assume monic.isMonic(d) {
+                              @d-is-monic |
+                                monic.isMonic(d)
+                                [by hypothesis given-d-monic]
+                              @given-e-monic |
+                                assume monic.isMonic(e) {
+                                  @e-is-monic |
+                                    monic.isMonic(e)
+                                    [by hypothesis given-e-monic]
+                                  @given-d-is-a-gcd |
+                                    assume isAGcd(d, p, q) {
+                                      @d-is-a-gcd |
+                                        isAGcd(d, p, q)
+                                        [by hypothesis given-d-is-a-gcd]
+                                      @given-e-is-a-gcd |
+                                        assume isAGcd(e, p, q) {
+                                          @e-is-a-gcd |
+                                            isAGcd(e, p, q)
+                                            [by hypothesis given-e-is-a-gcd]
+                                          @they-divide-each-other |
+                                            dividesP(d, e) and dividesP(e, d)
+                                            [using specialize twoGcdsDivideEachOther(
+                                              d, e, p, q) d-is-a-gcd e-is-a-gcd]
+                                          @d-divides-e |
+                                            dividesP(d, e)
+                                            [by and_lhs they-divide-each-other]
+                                          @e-divides-d |
+                                            dividesP(e, d)
+                                            [by and_rhs they-divide-each-other]
+                                          @the-degrees-agree |
+                                            degree(d) = degree(e)
+                                            [using specialize
+                                              mutualDivisibilityGivesEqualDegrees(d, e)
+                                              d-is-nonzero e-is-nonzero
+                                              d-divides-e e-divides-d]
+                                          // d = u·e for some u, from e | d
+                                          @the-divides-meaning |
+                                            dividesP(e, d) iff
+                                              (exists u: Poly; d = mulP(u, e))
+                                            [using specialize
+                                              dividesMeansACofactorExists(e, d)]
+                                          @the-divides-forward |
+                                            dividesP(e, d) ->
+                                              (exists u: Poly; d = mulP(u, e))
+                                            [by equiv_forward the-divides-meaning]
+                                          @the-cofactor-exists |
+                                            exists u: Poly; d = mulP(u, e)
+                                            [by modus_ponens the-divides-forward
+                                              e-divides-d]
+                                          @with-the-cofactor |
+                                            unpack u: Poly from the-cofactor-exists {
+                                              @d-is-the-multiple |
+                                                d = mulP(u, e)
+                                                [by hypothesis with-the-cofactor]
+                                              @suppose-the-cofactor-vanishes |
+                                                assume u = ZEROP {
+                                                  @the-cofactor-vanishes |
+                                                    u = ZEROP
+                                                    [by hypothesis
+                                                      suppose-the-cofactor-vanishes]
+                                                  @d-is-zero-times-e |
+                                                    d = mulP(ZEROP, e)
+                                                    [by rewrite the-cofactor-vanishes
+                                                      d-is-the-multiple]
+                                                  @the-zero-product-commutes |
+                                                    mulP(ZEROP, e) = mulP(e, ZEROP)
+                                                    [using specialize
+                                                      fieldpoly.polyMulIsCommutative(
+                                                      ZEROP, e)]
+                                                  @anything-times-zero |
+                                                    mulP(e, ZEROP) = ZEROP
+                                                    [using specialize
+                                                      fieldpoly.polyMulZeroRight(e)]
+                                                  @d-is-the-commuted-zero-product |
+                                                    d = mulP(e, ZEROP)
+                                                    [using simplify d-is-zero-times-e
+                                                      the-zero-product-commutes]
+                                                  @d-would-be-zero |
+                                                    d = ZEROP
+                                                    [using simplify
+                                                      d-is-the-commuted-zero-product
+                                                      anything-times-zero]
+                                                }
+                                              @the-cofactor-is-nonzero |
+                                                not (u = ZEROP)
+                                                [by contradiction
+                                                  suppose-the-cofactor-vanishes
+                                                  d-would-be-zero d-is-nonzero]
+                                              @conclusion-they-are-equal |
+                                                d = e
+                                                [using specialize
+                                                  monic.twoMonicPolynomialsOfEqualDegreeThatDivideAreEqual(
+                                                  d, e, u) e-is-nonzero
+                                                  the-cofactor-is-nonzero
+                                                  d-is-monic e-is-monic
+                                                  d-is-the-multiple the-degrees-agree]
+                                            }
+                                          @conclusion-from-the-cofactor |
+                                            d = e
+                                            [by unpacked with-the-cofactor]
+                                        }
+                                      @conclusion-e-gcd-gives-it |
+                                        isAGcd(e, p, q) -> d = e
+                                        [by discharge given-e-is-a-gcd]
+                                    }
+                                  @conclusion-d-gcd-gives-it |
+                                    isAGcd(d, p, q) -> isAGcd(e, p, q) -> d = e
+                                    [by discharge given-d-is-a-gcd]
+                                }
+                              @conclusion-e-monic-gives-it |
+                                monic.isMonic(e) ->
+                                  isAGcd(d, p, q) -> isAGcd(e, p, q) -> d = e
+                                [by discharge given-e-monic]
+                            }
+                          @conclusion-d-monic-gives-it |
+                            monic.isMonic(d) -> monic.isMonic(e) ->
+                              isAGcd(d, p, q) -> isAGcd(e, p, q) -> d = e
+                            [by discharge given-d-monic]
+                        }
+                      @conclusion-e-nonzero-gives-it |
+                        (not (e = ZEROP)) ->
+                          monic.isMonic(d) -> monic.isMonic(e) ->
+                          isAGcd(d, p, q) -> isAGcd(e, p, q) -> d = e
+                        [by discharge given-e-nonzero]
+                    }
+                  @conclusion-all-give-it |
+                    (not (d = ZEROP)) -> (not (e = ZEROP)) ->
+                      monic.isMonic(d) -> monic.isMonic(e) ->
+                      isAGcd(d, p, q) -> isAGcd(e, p, q) -> d = e
+                    [by discharge given-d-nonzero]
+                }
+              @conclusion-for-all-q |
+                forall q: Poly;
+                  (not (d = ZEROP)) -> (not (e = ZEROP)) ->
+                  monic.isMonic(d) -> monic.isMonic(e) ->
+                  isAGcd(d, p, q) -> isAGcd(e, p, q) -> d = e
+                [by generalize generalize-q]
+            }
+          @conclusion-for-all-p |
+            forall p, q: Poly;
+              (not (d = ZEROP)) -> (not (e = ZEROP)) ->
+              monic.isMonic(d) -> monic.isMonic(e) ->
+              isAGcd(d, p, q) -> isAGcd(e, p, q) -> d = e
+            [by generalize generalize-p]
+        }
+      @conclusion-for-all-e |
+        forall e, p, q: Poly;
+          (not (d = ZEROP)) -> (not (e = ZEROP)) ->
+          monic.isMonic(d) -> monic.isMonic(e) ->
+          isAGcd(d, p, q) -> isAGcd(e, p, q) -> d = e
+        [by generalize generalize-e]
+    }
+  @conclusion |
+    forall d, e, p, q: Poly;
+      (not (d = ZEROP)) -> (not (e = ZEROP)) ->
+      monic.isMonic(d) -> monic.isMonic(e) ->
+      isAGcd(d, p, q) -> isAGcd(e, p, q) -> d = e
+    [by generalize generalize-d]
 qed
