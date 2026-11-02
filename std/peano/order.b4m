@@ -2392,3 +2392,106 @@ proof
       less_than(b, n) -> (not less_than(t, n)) -> less_than(b, t)
     [by generalize generalize-b]
 qed
+
+// a <= b rules out b < a: were b < a, transitivity through a <= b would give a < a (or b < b
+// in the equality case), contradicting irreflexivity. The asymmetry companion to
+// `lessOrEqualAntisymmetric`, which a minimality argument needs to refute a strictly-smaller
+// witness.
+theorem lessOrEqualBlocksTheConverse: forall a, b: Nat;
+  less_or_equal(a, b) -> (not less_than(b, a))
+proof
+  @generalize-a |
+    fix a: Nat {
+      @generalize-b |
+        fix b: Nat {
+          @given-a-at-most-b |
+            assume less_or_equal(a, b) {
+              @a-at-most-b |
+                less_or_equal(a, b)
+                [by hypothesis given-a-at-most-b]
+              @suppose-b-below-a |
+                assume less_than(b, a) {
+                  @b-below-a |
+                    less_than(b, a)
+                    [by hypothesis suppose-b-below-a]
+                  @the-cases |
+                    less_than(a, b) or a = b
+                    [using tautology a-at-most-b]
+                  @b-is-below-itself |
+                    less_than(b, b)
+                    [by common_conclusion the-cases
+                      when-strictly-below when-equal]
+                  @when-strictly-below |
+                    assume less_than(a, b) {
+                      @a-below-b |
+                        less_than(a, b)
+                        [by hypothesis when-strictly-below]
+                      @conclusion-b-below-itself |
+                        less_than(b, b)
+                        [using specialize lessThanTransitive(b, a, b)
+                          b-below-a a-below-b]
+                    }
+                  @when-equal |
+                    assume a = b {
+                      @they-are-equal |
+                        a = b
+                        [by hypothesis when-equal]
+                      @conclusion-b-below-itself-by-equality |
+                        less_than(b, b)
+                        [by rewrite they-are-equal b-below-a]
+                    }
+                  @nothing-is-below-itself |
+                    not less_than(b, b)
+                    [using specialize lessThanIrreflexive(b)]
+                }
+              @conclusion-the-converse-is-blocked |
+                not less_than(b, a)
+                [by contradiction suppose-b-below-a
+                  b-is-below-itself nothing-is-below-itself]
+            }
+          @conclusion-at-most-blocks-it |
+            less_or_equal(a, b) -> (not less_than(b, a))
+            [by discharge given-a-at-most-b]
+        }
+      @conclusion-for-all-b |
+        forall b: Nat; less_or_equal(a, b) -> (not less_than(b, a))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Nat; less_or_equal(a, b) -> (not less_than(b, a))
+    [by generalize generalize-a]
+qed
+
+// The converse direction: if b is not below a then a <= b. Trichotomy supplies the three
+// cases and the third is the one excluded, so the remaining two ARE `less_or_equal`.
+theorem notBelowGivesAtMost: forall a, b: Nat;
+  (not less_than(b, a)) -> less_or_equal(a, b)
+proof
+  @generalize-a |
+    fix a: Nat {
+      @generalize-b |
+        fix b: Nat {
+          @given-b-not-below-a |
+            assume not less_than(b, a) {
+              @b-not-below-a |
+                not less_than(b, a)
+                [by hypothesis given-b-not-below-a]
+              @the-three-cases |
+                less_than(a, b) or a = b or less_than(b, a)
+                [using specialize trichotomy(a, b)]
+              @conclusion-a-is-at-most-b |
+                less_or_equal(a, b)
+                [using tautology the-three-cases b-not-below-a]
+            }
+          @conclusion-not-below-gives-at-most |
+            (not less_than(b, a)) -> less_or_equal(a, b)
+            [by discharge given-b-not-below-a]
+        }
+      @conclusion-for-all-b |
+        forall b: Nat; (not less_than(b, a)) -> less_or_equal(a, b)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Nat; (not less_than(b, a)) -> less_or_equal(a, b)
+    [by generalize generalize-a]
+qed
