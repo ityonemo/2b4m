@@ -208,3 +208,237 @@ proof
       qmulP(qmonomial(rational.mul(c1, c2), NAT_ZERO), qmulP(a, b))
     [by generalize generalize-c1]
 qed
+
+// -- THE PRODUCT OF THE TWO FACTORS IS A SINGLE SCALING --------------------------------------
+// Given each factor's decomposition, the product is ONE constant scaling of an integral
+// product. This is the whole content of Gauss's reduction setup: the two scalars r1/s1 and
+// r2/s2 fuse into a single ℚ, and the two integral primitive parts fuse into a single ℚ[x].
+//
+// What the split on d then asks about is that fused scalar.
+theorem theProductIsASingleScaling: forall a1, a2: QPoly; forall r1, s1, r2, s2: Q;
+  forall n1, n2: Nat;
+  qpoly.isTheIntegerDecomposition(THE_LEFT_FACTOR, a1, r1, s1, n1) ->
+  qpoly.isTheIntegerDecomposition(THE_RIGHT_FACTOR, a2, r2, s2, n2) ->
+  qmulP(THE_LEFT_FACTOR, THE_RIGHT_FACTOR) =
+  qmulP(
+  qmonomial(
+  rational.mul(
+  rational.mul(r1, recip(s1)),
+  rational.mul(r2, recip(s2))), NAT_ZERO),
+  qmulP(a1, a2))
+proof
+  @generalize-a1 |
+    fix a1: QPoly {
+      @generalize-a2 |
+        fix a2: QPoly {
+          @generalize-r1 |
+            fix r1: Q {
+              @generalize-s1 |
+                fix s1: Q {
+                  @generalize-r2 |
+                    fix r2: Q {
+                      @generalize-s2 |
+                        fix s2: Q {
+                          @generalize-n1 |
+                            fix n1: Nat {
+                              @generalize-n2 |
+                                fix n2: Nat {
+                                  @given-both-decompositions |
+                                    assume qpoly.isTheIntegerDecomposition(
+                                      THE_LEFT_FACTOR, a1, r1, s1, n1) {
+                                      @the-left-decomposition |
+                                        qpoly.isTheIntegerDecomposition(
+                                          THE_LEFT_FACTOR, a1, r1, s1, n1)
+                                        [by hypothesis given-both-decompositions]
+                                      @the-left-is-a-scaling |
+                                        THE_LEFT_FACTOR =
+                                          qmulP(qmonomial(
+                                          rational.mul(r1, recip(s1)), NAT_ZERO), a1)
+                                        [using specialize
+                                          qpoly.aScaledIntegerPolynomialIsRational(
+                                          THE_LEFT_FACTOR, a1, r1, s1, n1)
+                                          the-left-decomposition]
+                                      @the-right-case |
+                                        assume qpoly.isTheIntegerDecomposition(
+                                          THE_RIGHT_FACTOR, a2, r2, s2, n2) {
+                                          @the-right-decomposition |
+                                            qpoly.isTheIntegerDecomposition(
+                                              THE_RIGHT_FACTOR, a2, r2, s2, n2)
+                                            [by hypothesis the-right-case]
+                                          @the-right-is-a-scaling |
+                                            THE_RIGHT_FACTOR =
+                                              qmulP(qmonomial(
+                                              rational.mul(r2, recip(s2)), NAT_ZERO), a2)
+                                            [using specialize
+                                              qpoly.aScaledIntegerPolynomialIsRational(
+                                              THE_RIGHT_FACTOR, a2, r2, s2, n2)
+                                              the-right-decomposition]
+                                          @the-scalings-fuse |
+                                            qmulP(
+                                              qmulP(qmonomial(
+                                              rational.mul(r1, recip(s1)), NAT_ZERO), a1),
+                                              qmulP(qmonomial(
+                                              rational.mul(r2, recip(s2)), NAT_ZERO), a2)) =
+                                              qmulP(qmonomial(
+                                              rational.mul(
+                                              rational.mul(r1, recip(s1)),
+                                              rational.mul(r2, recip(s2))), NAT_ZERO),
+                                              qmulP(a1, a2))
+                                            [using specialize theScalingsCombine(
+                                              rational.mul(r1, recip(s1)),
+                                              rational.mul(r2, recip(s2)), a1, a2)]
+                                          @the-product-in-scaled-form |
+                                            qmulP(THE_LEFT_FACTOR, THE_RIGHT_FACTOR) =
+                                              qmulP(
+                                              qmulP(qmonomial(
+                                              rational.mul(r1, recip(s1)), NAT_ZERO), a1),
+                                              qmulP(qmonomial(
+                                              rational.mul(r2, recip(s2)), NAT_ZERO), a2))
+                                            [using simplify the-left-is-a-scaling
+                                              the-right-is-a-scaling]
+                                          @conclusion-the-product-is-a-single-scaling |
+                                            qmulP(THE_LEFT_FACTOR, THE_RIGHT_FACTOR) =
+                                              qmulP(qmonomial(
+                                              rational.mul(
+                                              rational.mul(r1, recip(s1)),
+                                              rational.mul(r2, recip(s2))), NAT_ZERO),
+                                              qmulP(a1, a2))
+                                            [by rewrite the-scalings-fuse
+                                              the-product-in-scaled-form]
+                                        }
+                                      @conclusion-given-the-right |
+                                        qpoly.isTheIntegerDecomposition(
+                                          THE_RIGHT_FACTOR, a2, r2, s2, n2) ->
+                                          qmulP(THE_LEFT_FACTOR, THE_RIGHT_FACTOR) =
+                                          qmulP(qmonomial(
+                                          rational.mul(
+                                          rational.mul(r1, recip(s1)),
+                                          rational.mul(r2, recip(s2))), NAT_ZERO),
+                                          qmulP(a1, a2))
+                                        [by discharge the-right-case]
+                                    }
+                                  @conclusion-both-decompositions-give-it |
+                                    qpoly.isTheIntegerDecomposition(
+                                      THE_LEFT_FACTOR, a1, r1, s1, n1) ->
+                                      qpoly.isTheIntegerDecomposition(
+                                      THE_RIGHT_FACTOR, a2, r2, s2, n2) ->
+                                      qmulP(THE_LEFT_FACTOR, THE_RIGHT_FACTOR) =
+                                      qmulP(qmonomial(
+                                      rational.mul(
+                                      rational.mul(r1, recip(s1)),
+                                      rational.mul(r2, recip(s2))), NAT_ZERO),
+                                      qmulP(a1, a2))
+                                    [by discharge given-both-decompositions]
+                                }
+                              @conclusion-for-all-n2 |
+                                forall n2: Nat;
+                                  qpoly.isTheIntegerDecomposition(
+                                  THE_LEFT_FACTOR, a1, r1, s1, n1) ->
+                                  qpoly.isTheIntegerDecomposition(
+                                  THE_RIGHT_FACTOR, a2, r2, s2, n2) ->
+                                  qmulP(THE_LEFT_FACTOR, THE_RIGHT_FACTOR) =
+                                  qmulP(qmonomial(
+                                  rational.mul(
+                                  rational.mul(r1, recip(s1)),
+                                  rational.mul(r2, recip(s2))), NAT_ZERO),
+                                  qmulP(a1, a2))
+                                [by generalize generalize-n2]
+                            }
+                          @conclusion-for-all-n1 |
+                            forall n1, n2: Nat;
+                              qpoly.isTheIntegerDecomposition(
+                              THE_LEFT_FACTOR, a1, r1, s1, n1) ->
+                              qpoly.isTheIntegerDecomposition(
+                              THE_RIGHT_FACTOR, a2, r2, s2, n2) ->
+                              qmulP(THE_LEFT_FACTOR, THE_RIGHT_FACTOR) =
+                              qmulP(qmonomial(
+                              rational.mul(
+                              rational.mul(r1, recip(s1)),
+                              rational.mul(r2, recip(s2))), NAT_ZERO),
+                              qmulP(a1, a2))
+                            [by generalize generalize-n1]
+                        }
+                      @conclusion-for-all-s2 |
+                        forall s2: Q; forall n1, n2: Nat;
+                          qpoly.isTheIntegerDecomposition(
+                          THE_LEFT_FACTOR, a1, r1, s1, n1) ->
+                          qpoly.isTheIntegerDecomposition(
+                          THE_RIGHT_FACTOR, a2, r2, s2, n2) ->
+                          qmulP(THE_LEFT_FACTOR, THE_RIGHT_FACTOR) =
+                          qmulP(qmonomial(
+                          rational.mul(
+                          rational.mul(r1, recip(s1)),
+                          rational.mul(r2, recip(s2))), NAT_ZERO),
+                          qmulP(a1, a2))
+                        [by generalize generalize-s2]
+                    }
+                  @conclusion-for-all-r2 |
+                    forall r2, s2: Q; forall n1, n2: Nat;
+                      qpoly.isTheIntegerDecomposition(
+                      THE_LEFT_FACTOR, a1, r1, s1, n1) ->
+                      qpoly.isTheIntegerDecomposition(
+                      THE_RIGHT_FACTOR, a2, r2, s2, n2) ->
+                      qmulP(THE_LEFT_FACTOR, THE_RIGHT_FACTOR) =
+                      qmulP(qmonomial(
+                      rational.mul(
+                      rational.mul(r1, recip(s1)),
+                      rational.mul(r2, recip(s2))), NAT_ZERO),
+                      qmulP(a1, a2))
+                    [by generalize generalize-r2]
+                }
+              @conclusion-for-all-s1 |
+                forall s1, r2, s2: Q; forall n1, n2: Nat;
+                  qpoly.isTheIntegerDecomposition(
+                  THE_LEFT_FACTOR, a1, r1, s1, n1) ->
+                  qpoly.isTheIntegerDecomposition(
+                  THE_RIGHT_FACTOR, a2, r2, s2, n2) ->
+                  qmulP(THE_LEFT_FACTOR, THE_RIGHT_FACTOR) =
+                  qmulP(qmonomial(
+                  rational.mul(
+                  rational.mul(r1, recip(s1)),
+                  rational.mul(r2, recip(s2))), NAT_ZERO),
+                  qmulP(a1, a2))
+                [by generalize generalize-s1]
+            }
+          @conclusion-for-all-r1 |
+            forall r1, s1, r2, s2: Q; forall n1, n2: Nat;
+              qpoly.isTheIntegerDecomposition(
+              THE_LEFT_FACTOR, a1, r1, s1, n1) ->
+              qpoly.isTheIntegerDecomposition(
+              THE_RIGHT_FACTOR, a2, r2, s2, n2) ->
+              qmulP(THE_LEFT_FACTOR, THE_RIGHT_FACTOR) =
+              qmulP(qmonomial(
+              rational.mul(
+              rational.mul(r1, recip(s1)),
+              rational.mul(r2, recip(s2))), NAT_ZERO),
+              qmulP(a1, a2))
+            [by generalize generalize-r1]
+        }
+      @conclusion-for-all-a2 |
+        forall a2: QPoly; forall r1, s1, r2, s2: Q; forall n1, n2: Nat;
+          qpoly.isTheIntegerDecomposition(
+          THE_LEFT_FACTOR, a1, r1, s1, n1) ->
+          qpoly.isTheIntegerDecomposition(
+          THE_RIGHT_FACTOR, a2, r2, s2, n2) ->
+          qmulP(THE_LEFT_FACTOR, THE_RIGHT_FACTOR) =
+          qmulP(qmonomial(
+          rational.mul(
+          rational.mul(r1, recip(s1)),
+          rational.mul(r2, recip(s2))), NAT_ZERO),
+          qmulP(a1, a2))
+        [by generalize generalize-a2]
+    }
+  @conclusion |
+    forall a1, a2: QPoly; forall r1, s1, r2, s2: Q; forall n1, n2: Nat;
+      qpoly.isTheIntegerDecomposition(
+      THE_LEFT_FACTOR, a1, r1, s1, n1) ->
+      qpoly.isTheIntegerDecomposition(
+      THE_RIGHT_FACTOR, a2, r2, s2, n2) ->
+      qmulP(THE_LEFT_FACTOR, THE_RIGHT_FACTOR) =
+      qmulP(qmonomial(
+      rational.mul(
+      rational.mul(r1, recip(s1)),
+      rational.mul(r2, recip(s2))), NAT_ZERO),
+      qmulP(a1, a2))
+    [by generalize generalize-a1]
+qed

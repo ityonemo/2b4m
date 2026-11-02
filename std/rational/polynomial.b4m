@@ -3060,3 +3060,194 @@ proof
       qmonomial(rational.mul(c, d), NAT_ZERO)
     [by generalize generalize-c]
 qed
+
+// -- A NONZERO SCALING REFLECTS A DEGREE BOUND ----------------------------------------------
+// Coefficientwise first: above the bound the scaled coefficient is ZERO, and
+// `mul(c, qcoeff(q, i)) = ZERO` with `c != ZERO` forces `qcoeff(q, i) = ZERO` by
+// `noZeroDivisors`.
+theorem aNonzeroScalingReflectsTheVanishing: forall q: QPoly; forall c: Q; forall n: Nat;
+  (not (c = ZERO)) ->
+  (forall i: Nat; peano.less_than(n, i) ->
+  qcoeff(qmulP(qmonomial(c, NAT_ZERO), q), i) = ZERO) ->
+  (forall i: Nat; peano.less_than(n, i) -> qcoeff(q, i) = ZERO)
+proof
+  @generalize-q |
+    fix q: QPoly {
+      @generalize-c |
+        fix c: Q {
+          @generalize-n |
+            fix n: Nat {
+              @given-the-scalar-is-nonzero |
+                assume not (c = ZERO) {
+                  @the-scalar-is-nonzero |
+                    not (c = ZERO)
+                    [by hypothesis given-the-scalar-is-nonzero]
+                  @given-the-scaled-vanishing |
+                    assume forall i: Nat; peano.less_than(n, i) ->
+                      qcoeff(qmulP(qmonomial(c, NAT_ZERO), q), i) = ZERO {
+                      @the-scaled-coefficients-vanish |
+                        forall i: Nat; peano.less_than(n, i) ->
+                          qcoeff(qmulP(qmonomial(c, NAT_ZERO), q), i) = ZERO
+                        [by hypothesis given-the-scaled-vanishing]
+                      @generalize-i |
+                        fix i: Nat {
+                          @given-above-the-bound |
+                            assume peano.less_than(n, i) {
+                              @above-the-bound |
+                                peano.less_than(n, i)
+                                [by hypothesis given-above-the-bound]
+                              @the-scaled-coefficient-vanishes |
+                                qcoeff(qmulP(qmonomial(c, NAT_ZERO), q), i) = ZERO
+                                [using specialize
+                                  the-scaled-coefficients-vanish(i) above-the-bound]
+                              @the-scaling-law |
+                                qcoeff(qmulP(qmonomial(c, NAT_ZERO), q), i) =
+                                  rational.mul(c, qcoeff(q, i))
+                                [using specialize
+                                  scalingByAConstantScalesTheCoefficients(q, c, i)]
+                              @the-product-vanishes |
+                                rational.mul(c, qcoeff(q, i)) = ZERO
+                                [by rewrite the-scaling-law the-scaled-coefficient-vanishes]
+                              @one-factor-vanishes |
+                                c = ZERO or qcoeff(q, i) = ZERO
+                                [using specialize rational.noZeroDivisors(
+                                  c, qcoeff(q, i)) the-product-vanishes]
+                              @conclusion-the-coefficient-vanishes |
+                                qcoeff(q, i) = ZERO
+                                [using tautology one-factor-vanishes the-scalar-is-nonzero]
+                            }
+                          @conclusion-above-the-bound-it-vanishes |
+                            peano.less_than(n, i) -> qcoeff(q, i) = ZERO
+                            [by discharge given-above-the-bound]
+                        }
+                      @conclusion-the-coefficients-vanish |
+                        forall i: Nat; peano.less_than(n, i) -> qcoeff(q, i) = ZERO
+                        [by generalize generalize-i]
+                    }
+                  @conclusion-the-scaled-vanishing-gives-it |
+                    (forall i: Nat; peano.less_than(n, i) ->
+                      qcoeff(qmulP(qmonomial(c, NAT_ZERO), q), i) = ZERO) ->
+                      (forall i: Nat; peano.less_than(n, i) -> qcoeff(q, i) = ZERO)
+                    [by discharge given-the-scaled-vanishing]
+                }
+              @conclusion-nonzero-gives-it |
+                (not (c = ZERO)) ->
+                  (forall i: Nat; peano.less_than(n, i) ->
+                  qcoeff(qmulP(qmonomial(c, NAT_ZERO), q), i) = ZERO) ->
+                  (forall i: Nat; peano.less_than(n, i) -> qcoeff(q, i) = ZERO)
+                [by discharge given-the-scalar-is-nonzero]
+            }
+          @conclusion-for-all-n |
+            forall n: Nat;
+              (not (c = ZERO)) ->
+              (forall i: Nat; peano.less_than(n, i) ->
+              qcoeff(qmulP(qmonomial(c, NAT_ZERO), q), i) = ZERO) ->
+              (forall i: Nat; peano.less_than(n, i) -> qcoeff(q, i) = ZERO)
+            [by generalize generalize-n]
+        }
+      @conclusion-for-all-c |
+        forall c: Q; forall n: Nat;
+          (not (c = ZERO)) ->
+          (forall i: Nat; peano.less_than(n, i) ->
+          qcoeff(qmulP(qmonomial(c, NAT_ZERO), q), i) = ZERO) ->
+          (forall i: Nat; peano.less_than(n, i) -> qcoeff(q, i) = ZERO)
+        [by generalize generalize-c]
+    }
+  @conclusion |
+    forall q: QPoly; forall c: Q; forall n: Nat;
+      (not (c = ZERO)) ->
+      (forall i: Nat; peano.less_than(n, i) ->
+      qcoeff(qmulP(qmonomial(c, NAT_ZERO), q), i) = ZERO) ->
+      (forall i: Nat; peano.less_than(n, i) -> qcoeff(q, i) = ZERO)
+    [by generalize generalize-q]
+qed
+
+// Hence the degree bound itself transfers, unfolding `qdegreeAtMost` on both sides.
+//
+// This is the converse direction a factorization argument needs: Lemma 17.12 hands back a
+// primitive part with INTEGER COEFFICIENTS UP TO A BOUND but no degree bound of its own, and
+// the bound has to be recovered from the scaling equation.
+theorem aNonzeroScalingReflectsTheDegreeBound: forall q: QPoly; forall c: Q; forall n: Nat;
+  (not (c = ZERO)) ->
+  qdegreeAtMost(qmulP(qmonomial(c, NAT_ZERO), q), n) ->
+  qdegreeAtMost(q, n)
+proof
+  @generalize-q |
+    fix q: QPoly {
+      @generalize-c |
+        fix c: Q {
+          @generalize-n |
+            fix n: Nat {
+              @given-the-scalar-is-nonzero |
+                assume not (c = ZERO) {
+                  @the-scalar-is-nonzero |
+                    not (c = ZERO)
+                    [by hypothesis given-the-scalar-is-nonzero]
+                  @given-the-scaled-bound |
+                    assume qdegreeAtMost(qmulP(qmonomial(c, NAT_ZERO), q), n) {
+                      @the-scaled-bound |
+                        qdegreeAtMost(qmulP(qmonomial(c, NAT_ZERO), q), n)
+                        [by hypothesis given-the-scaled-bound]
+                      @the-scaled-bound-unfolds |
+                        qdegreeAtMost(qmulP(qmonomial(c, NAT_ZERO), q), n) iff
+                          (forall i: Nat; peano.less_than(n, i) ->
+                          qcoeff(qmulP(qmonomial(c, NAT_ZERO), q), i) = ZERO)
+                        [using specialize qDegreeAtMostMeaning(
+                          qmulP(qmonomial(c, NAT_ZERO), q), n)]
+                      @the-scaled-bound-forward |
+                        qdegreeAtMost(qmulP(qmonomial(c, NAT_ZERO), q), n) ->
+                          (forall i: Nat; peano.less_than(n, i) ->
+                          qcoeff(qmulP(qmonomial(c, NAT_ZERO), q), i) = ZERO)
+                        [by equiv_forward the-scaled-bound-unfolds]
+                      @the-scaled-coefficients-vanish |
+                        forall i: Nat; peano.less_than(n, i) ->
+                          qcoeff(qmulP(qmonomial(c, NAT_ZERO), q), i) = ZERO
+                        [by modus_ponens the-scaled-bound-forward the-scaled-bound]
+                      @the-coefficients-vanish |
+                        forall i: Nat; peano.less_than(n, i) -> qcoeff(q, i) = ZERO
+                        [using specialize aNonzeroScalingReflectsTheVanishing(q, c, n)
+                          the-scalar-is-nonzero the-scaled-coefficients-vanish]
+                      @the-bound-unfolds |
+                        qdegreeAtMost(q, n) iff
+                          (forall i: Nat; peano.less_than(n, i) -> qcoeff(q, i) = ZERO)
+                        [using specialize qDegreeAtMostMeaning(q, n)]
+                      @the-bound-backward |
+                        (forall i: Nat; peano.less_than(n, i) -> qcoeff(q, i) = ZERO) ->
+                          qdegreeAtMost(q, n)
+                        [by equiv_converse the-bound-unfolds]
+                      @conclusion-the-bound-holds |
+                        qdegreeAtMost(q, n)
+                        [by modus_ponens the-bound-backward the-coefficients-vanish]
+                    }
+                  @conclusion-the-scaled-bound-gives-it |
+                    qdegreeAtMost(qmulP(qmonomial(c, NAT_ZERO), q), n) ->
+                      qdegreeAtMost(q, n)
+                    [by discharge given-the-scaled-bound]
+                }
+              @conclusion-nonzero-gives-it |
+                (not (c = ZERO)) ->
+                  qdegreeAtMost(qmulP(qmonomial(c, NAT_ZERO), q), n) ->
+                  qdegreeAtMost(q, n)
+                [by discharge given-the-scalar-is-nonzero]
+            }
+          @conclusion-for-all-n |
+            forall n: Nat;
+              (not (c = ZERO)) ->
+              qdegreeAtMost(qmulP(qmonomial(c, NAT_ZERO), q), n) ->
+              qdegreeAtMost(q, n)
+            [by generalize generalize-n]
+        }
+      @conclusion-for-all-c |
+        forall c: Q; forall n: Nat;
+          (not (c = ZERO)) ->
+          qdegreeAtMost(qmulP(qmonomial(c, NAT_ZERO), q), n) ->
+          qdegreeAtMost(q, n)
+        [by generalize generalize-c]
+    }
+  @conclusion |
+    forall q: QPoly; forall c: Q; forall n: Nat;
+      (not (c = ZERO)) ->
+      qdegreeAtMost(qmulP(qmonomial(c, NAT_ZERO), q), n) ->
+      qdegreeAtMost(q, n)
+    [by generalize generalize-q]
+qed
