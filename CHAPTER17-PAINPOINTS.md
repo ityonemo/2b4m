@@ -369,35 +369,39 @@ uninterpreted `func` is as good as a parameter, because `model` is exactly the m
 fixing parameters. Before concluding that a `theSubject`-style encoding has painted you into a
 corner, write the two-model probe; it takes minutes.
 
-## 16. `polynomial-associativity.b4m` is RING algebra filed under `field/` (LIVE, blocks Gauss)
+## 16. A MODEL CAN TRANSFER A THEOREM REMOTE FROM ITS ROOT — I did not know this
 
-**Measured 2026-11-02, tracing the Gauss reduction setup.**
+**The single most useful thing I learned in this chapter, and I learned it by being corrected
+(user, 2026-11-02).**
 
-The Gauss reduction needs the scalars of two integer decompositions combined:
-`(c₁·A)·(c₂·B) = (c₁c₂)·(A·B)`. Regrouping that needs `mulP` ASSOCIATIVITY on ℚ[x].
+I had assumed a `model(M) X.thm` transfer required `X` to be the model's own source namespace.
+It does not. The only requirement is that **every symbol the SOURCE PROOF touches is mapped** —
+the theorem may live arbitrarily far downstream of the mapped theories.
 
-`polyMulIsAssociative` exists — 1352 lines in `std/field/polynomial-associativity.b4m`, the
-double-sum exchange re-proved at the coefficient level. But it is stated over `fieldpoly.Poly`
-and is itself a model transfer, so it will not reach ℚ[x]: the probe fails with
-`std/field/polynomial-associativity.b4m:836: expected sort 'Poly', got 'QPoly'` — pain point 2
-again. And unlike the leading-coefficient law, there is NO ring-level version to transfer from
-instead, so the "go down a layer" fix (which worked twice today) is unavailable.
+**What this cost me before I knew it.** The Gauss reduction needs `mulP` associativity on ℚ[x].
+`polyMulIsAssociative` is 1352 lines in `std/field/polynomial-associativity.b4m`, and my first
+probe failed, so I concluded the no-composition wall (pain point 2) applied and that the fix
+was to RELOCATE the whole file to `std/ring/polynomial*.b4m` — a refactor with five consumers.
+I wrote that up here as a live blocker.
 
-**The finding: the file uses nothing field-specific.** `--axioms` on `polyMulIsAssociative`
-shows exactly six `std/field.b4m` axioms — `addIsAssociative`, `addZeroLeft`,
-`addIsCommutative`, `mulIsAssociative`, and both distributivities — every one of which is a
-RING axiom. Zero uses of `recipF` or `fieldInverse` in 1352 lines. So the whole development
-belongs in `std/ring/polynomial*.b4m`, and moving it would give ℚ[x] associativity by the
-one-transfer route that already works.
+It was none of those things. `qMulIsAssociative` transfers in one theorem, once the model maps:
 
-**Why it is not a quick fix:** three `std/field/` files import it (`ideal.b4m`, `gcd.b4m`,
-`poly-units.b4m`) plus two aata references. It is a real refactor with consumers — queue item
-5's territory, not a rename.
+- the five triple-family helper funcs the proof inducts on, with their eleven clauses, declared
+  on ℚ[x] as `qtriple*` — the pattern already used for `qtailConvolution` and `qsegment`;
+- the `field` namespace itself, which the proof cites directly as `field.*`, discharged from
+  ℚ's own field axioms.
 
-**Until then the Gauss reduction setup is blocked**, and with it Judson's actual 17.15
-conclusion ("f is irreducible over ℚ"). Everything else for 17.15 is proved: the degree
-argument (`eisensteinForcesTheFullDegreeOnTheCut`), the reduction argument, the closure, the
-sign argument, and both Gauss branches.
+**How to read a failing transfer**, which is the reusable part: the error names the exact
+missing mapping and the line that needs it. Mine failed twice — line 836 (unmapped
+`tripleTri`), then line 290 (unmapped `field.*`) — and each was a mapping to add, not a wall.
+**A sort mismatch deep inside a source file means "you have not mapped this symbol", not
+"this cannot transfer".** I read the first one as the latter and spent the next stretch costing
+a refactor.
+
+**Still true, now just a cleanup note:** the file uses nothing field-specific (`--axioms` shows
+six `std/field.b4m` axioms, all of them RING axioms; zero uses of `recipF`/`fieldInverse` in
+1352 lines), so it would sit more honestly in the ring layer. Queue item 5, and no longer
+blocking anything.
 
 ## 15. A conclusion that is TRUE but harmless is the hardest defect to see
 
