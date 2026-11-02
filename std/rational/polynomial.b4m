@@ -21,7 +21,9 @@
 // `model(FieldPolyModelsRingPoly)` re-checks that inner transfer when carried here, and so
 // demands std/ring/polynomial.b4m's layer too. Theorems proved DIRECTLY in F[x] travel with
 // only what is mapped below.
+import field <<< "std/field.b4m"
 import fieldpoly <<< "std/field/polynomial.b4m"
+import fieldassoc <<< "std/field/polynomial-associativity.b4m"
 import rational <<< "std/rational.b4m"
 import peano <<< "std/peano.b4m"
 import subtraction <<< "std/peano/subtraction.b4m"
@@ -2797,4 +2799,140 @@ proof
       rational.add(rational.mul(s, u),
       rational.mul(s, rational.mul(qcoeff(p, k), qpower(r, k)))))
     [by generalize generalize-p]
+qed
+
+// -- THE TRIPLE-PRODUCT HELPERS, FOR THE ASSOCIATIVITY TRANSFER ----------------------------
+// `std/field/polynomial-associativity.b4m` proves `polyMulIsAssociative` by re-proving
+// Judson's double-sum exchange at the concrete triple family, and it inducts on five helper
+// funcs of its own. A transfer RE-CHECKS the source proof, so ℚ[x] must declare each of them
+// with its defining clauses, exactly as it already does for `qtailConvolution` and `qsegment`.
+//
+// That file uses nothing field-specific — `--axioms` on `polyMulIsAssociative` shows six
+// `std/field.b4m` axioms and every one is a RING axiom — so the development would sit more
+// honestly in `std/ring/polynomial*.b4m`. Moving it is queue item 5's territory; declaring the
+// helpers here is the cheap route to the same result, and it is the route the corpus already
+// takes for the convolution helpers.
+func qtripleTerm(p: QPoly, q: QPoly, r: QPoly, i: Nat, j: Nat, k: Nat) => Q
+axiom qTripleTermMeaning: forall p, q, r: QPoly; forall i, j, k: Nat;
+  qtripleTerm(p, q, r, i, j, k) =
+  rational.mul(rational.mul(qcoeff(p, j), qcoeff(q, k)),
+  qcoeff(r, subtraction.sub(subtraction.sub(i, j), k)))
+
+func qtripleRow(p: QPoly, q: QPoly, r: QPoly, i: Nat, j: Nat, n: Nat) => Q
+axiom qTripleRowZero: forall p, q, r: QPoly; forall i, j: Nat;
+  qtripleRow(p, q, r, i, j, NAT_ZERO) = ZERO
+axiom qTripleRowSucc: forall p, q, r: QPoly; forall i, j, n: Nat;
+  qtripleRow(p, q, r, i, j, peano.succ(n)) =
+  rational.add(qtripleRow(p, q, r, i, j, n),
+  qtripleTerm(p, q, r, i, j, n))
+
+func qtripleDiag(p: QPoly, q: QPoly, r: QPoly, i: Nat, m: Nat, c: Nat) => Q
+axiom qTripleDiagZero: forall p, q, r: QPoly; forall i, m: Nat;
+  qtripleDiag(p, q, r, i, m, NAT_ZERO) = ZERO
+axiom qTripleDiagSucc: forall p, q, r: QPoly; forall i, m, c: Nat;
+  qtripleDiag(p, q, r, i, m, peano.succ(c)) =
+  rational.add(qtripleDiag(p, q, r, i, m, c),
+  qtripleTerm(p, q, r, i, c, subtraction.sub(m, c)))
+
+func qtripleTri(p: QPoly, q: QPoly, r: QPoly, i: Nat, n: Nat) => Q
+axiom qTripleTriZero: forall p, q, r: QPoly; forall i: Nat;
+  qtripleTri(p, q, r, i, NAT_ZERO) = ZERO
+axiom qTripleTriSucc: forall p, q, r: QPoly; forall i, n: Nat;
+  qtripleTri(p, q, r, i, peano.succ(n)) =
+  rational.add(qtripleTri(p, q, r, i, n),
+  qtripleDiag(p, q, r, i, n, peano.succ(n)))
+
+func qtripleRows(p: QPoly, q: QPoly, r: QPoly, i: Nat, m: Nat, n: Nat) => Q
+axiom qTripleRowsZero: forall p, q, r: QPoly; forall i, n: Nat;
+  qtripleRows(p, q, r, i, NAT_ZERO, n) = ZERO
+axiom qTripleRowsSucc: forall p, q, r: QPoly; forall i, m, n: Nat;
+  qtripleRows(p, q, r, i, peano.succ(m), n) =
+  rational.add(qtripleRows(p, q, r, i, m, n),
+  qtripleRow(p, q, r, i, m, subtraction.sub(n, m)))
+
+// ℚ[x]'s associativity, by transferring `fieldassoc.polyMulIsAssociative`. The model extends
+// `RationalPolynomials` with the triple-family helpers the source proof inducts on — a
+// transfer re-checks that proof, so each helper needs a mapping and each of its clauses a
+// discharge.
+model RationalPolynomialAssociativity {
+  fieldpoly.F: Q
+  fieldpoly.zeroF: ZERO
+  fieldpoly.oneF: rational.ONE
+  fieldpoly.addF: rational.add
+  fieldpoly.mulF: rational.mul
+  fieldpoly.negF: rational.neg
+  fieldpoly.recipF: rational.recip
+  fieldpoly.Poly: QPoly
+  fieldpoly.coeff: qcoeff
+  fieldpoly.ZEROP: QZEROP
+  fieldpoly.addP: qaddP
+  fieldpoly.negP: qnegP
+  fieldpoly.mulP: qmulP
+  fieldpoly.monomial: qmonomial
+  fieldpoly.degreeAtMost: qdegreeAtMost
+  fieldpoly.degree: qdegree
+  fieldpoly.convolution: qconvolution
+  fieldpoly.power: qpower
+  fieldpoly.evalUpTo: qevalUpTo
+  fieldpoly.isZeroOf: qIsZeroOf
+  fieldpoly.polyExtensionality <- qPolyExtensionality
+  fieldpoly.zeroPolyCoeff <- qZeroPolyCoeff
+  fieldpoly.addPolyCoeff <- qAddPolyCoeff
+  fieldpoly.negPolyCoeff <- qNegPolyCoeff
+  fieldpoly.monomialCoeffAtItsIndex <- qMonomialCoeffAtItsIndex
+  fieldpoly.monomialCoeffElsewhere <- qMonomialCoeffElsewhere
+  fieldpoly.degreeAtMostMeaning <- qDegreeAtMostMeaning
+  fieldpoly.degreeIsALeadingIndex <- qDegreeIsALeadingIndex
+  fieldpoly.degreeBoundsTheCoefficients <- qDegreeBoundsTheCoefficients
+  fieldpoly.convolutionZero <- qConvolutionZero
+  fieldpoly.convolutionSucc <- qConvolutionSucc
+  fieldpoly.mulPolyCoeff <- qMulPolyCoeff
+  fieldpoly.powerZero <- qPowerZero
+  fieldpoly.powerSucc <- qPowerSucc
+  fieldpoly.evalZero <- qEvalZero
+  fieldpoly.evalSucc <- qEvalSucc
+  fieldpoly.isZeroOfMeaning <- qIsZeroOfMeaning
+
+  // the coefficient FIELD's own laws, which the source proof cites directly as `field.*`
+  field.Field: Q
+  field.ZERO: ZERO
+  field.ONE: rational.ONE
+  field.add: rational.add
+  field.mul: rational.mul
+  field.neg: rational.neg
+  field.recip: rational.recip
+  field.addIsAssociative <- rational.addIsAssociative
+  field.addZeroLeft <- rational.addZeroLeft
+  field.addNegLeft <- rational.addNegLeft
+  field.addIsCommutative <- rational.addIsCommutative
+  field.mulIsAssociative <- rational.mulIsAssociative
+  field.mulAddDistribLeft <- rational.mulAddDistribLeft
+  field.mulAddDistribRight <- rational.mulAddDistribRight
+  field.mulIsCommutative <- rational.mulIsCommutative
+  field.mulOneLeft <- rational.mulOneLeft
+  field.fieldInverse <- rational.fieldInverse
+  field.oneNotZero <- rational.oneNotZero
+  fieldassoc.tripleTerm: qtripleTerm
+  fieldassoc.tripleRow: qtripleRow
+  fieldassoc.tripleDiag: qtripleDiag
+  fieldassoc.tripleTri: qtripleTri
+  fieldassoc.tripleRows: qtripleRows
+  fieldassoc.tripleTermMeaning <- qTripleTermMeaning
+  fieldassoc.tripleRowZero <- qTripleRowZero
+  fieldassoc.tripleRowSucc <- qTripleRowSucc
+  fieldassoc.tripleDiagZero <- qTripleDiagZero
+  fieldassoc.tripleDiagSucc <- qTripleDiagSucc
+  fieldassoc.tripleTriZero <- qTripleTriZero
+  fieldassoc.tripleTriSucc <- qTripleTriSucc
+  fieldassoc.tripleRowsZero <- qTripleRowsZero
+  fieldassoc.tripleRowsSucc <- qTripleRowsSucc
+}
+
+theorem qMulIsAssociative: forall p, q, r: QPoly;
+  qmulP(qmulP(p, q), r) = qmulP(p, qmulP(q, r))
+proof
+  @conclusion |
+    forall p, q, r: QPoly;
+      qmulP(qmulP(p, q), r) = qmulP(p, qmulP(q, r))
+    [using model(RationalPolynomialAssociativity) fieldassoc.polyMulIsAssociative]
 qed
