@@ -13,6 +13,7 @@
 import fieldpoly <<< "std/field/polynomial.b4m"
 import peano <<< "std/peano.b4m"
 import polyassoc <<< "std/field/polynomial-associativity.b4m"
+import peano_order <<< "std/peano/order.b4m"
 
 sort Poly = fieldpoly.Poly
 const ZERO = peano.ZERO
@@ -535,4 +536,385 @@ proof
     forall d, e, p, q: Poly;
       isAGcd(d, p, q) -> isAGcd(e, p, q) -> (dividesP(d, e) and dividesP(e, d))
     [by generalize generalize-d]
+qed
+
+// -- HIS FIRST PARAGRAPH: THE MINIMAL COMBINATION EXISTS -------------------------------------
+// "Let $d(x)$ be the monic polynomial of smallest degree in the set
+// $S = \{f(x)p(x) + g(x)q(x)\}$."
+//
+// The note on this theorem used to say minimality needed a least element of a SET of
+// polynomials — the comprehension limit — and so had to be assumed. That is NOT so: what the
+// argument well-orders is the DEGREES, which are naturals, and ℕ is well-ordered with no
+// comprehension at all. `peano_order.wellOrdering` is a schema over a predicate on `Nat`, and
+// its `prop` may close over `p` and `q` the way `permutation/period.b4m` closes over its own
+// context.
+
+// Step one: if a nonzero combination exists, some natural is the degree of one.
+theorem someCombinationDegreeIsAttained: forall p, q: Poly;
+  (exists f: Poly; isACombination(f, p, q) and (not (f = fieldpoly.ZEROP))) ->
+  (exists n: peano.Nat; exists f: Poly;
+  isACombination(f, p, q) and (not (f = fieldpoly.ZEROP)) and
+  fieldpoly.degree(f) = n)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @given-a-nonzero-combination |
+            assume exists f: Poly;
+              isACombination(f, p, q) and (not (f = fieldpoly.ZEROP)) {
+              @a-nonzero-combination |
+                exists f: Poly; isACombination(f, p, q) and (not (f = fieldpoly.ZEROP))
+                [by hypothesis given-a-nonzero-combination]
+              @with-a-combination-f |
+                unpack f: Poly from a-nonzero-combination {
+                  @the-combination-properties |
+                    isACombination(f, p, q) and (not (f = fieldpoly.ZEROP))
+                    [by hypothesis with-a-combination-f]
+                  @its-degree-is-its-degree |
+                    fieldpoly.degree(f) = fieldpoly.degree(f)
+                    [by reflexivity]
+                  @f-attains-its-degree |
+                    isACombination(f, p, q) and (not (f = fieldpoly.ZEROP)) and
+                      fieldpoly.degree(f) = fieldpoly.degree(f)
+                    [by both the-combination-properties its-degree-is-its-degree]
+                  @some-combination-attains-it |
+                    exists g: Poly; isACombination(g, p, q) and
+                      (not (g = fieldpoly.ZEROP)) and
+                      fieldpoly.degree(g) = fieldpoly.degree(f)
+                    [by witness(f) f-attains-its-degree]
+                  @conclusion-some-degree-is-attained |
+                    exists n: peano.Nat; exists g: Poly;
+                      isACombination(g, p, q) and (not (g = fieldpoly.ZEROP)) and
+                      fieldpoly.degree(g) = n
+                    [by witness(fieldpoly.degree(f)) some-combination-attains-it]
+                }
+              @the-degree-is-attained |
+                exists n: peano.Nat; exists f: Poly;
+                  isACombination(f, p, q) and (not (f = fieldpoly.ZEROP)) and
+                  fieldpoly.degree(f) = n
+                [by unpacked with-a-combination-f]
+            }
+          @conclusion-a-nonzero-combination-gives-it |
+            (exists f: Poly; isACombination(f, p, q) and (not (f = fieldpoly.ZEROP))) ->
+              (exists n: peano.Nat; exists f: Poly;
+              isACombination(f, p, q) and (not (f = fieldpoly.ZEROP)) and
+              fieldpoly.degree(f) = n)
+            [by discharge given-a-nonzero-combination]
+        }
+      @conclusion-for-all-q |
+        forall q: Poly;
+          (exists f: Poly; isACombination(f, p, q) and (not (f = fieldpoly.ZEROP))) ->
+          (exists n: peano.Nat; exists f: Poly;
+          isACombination(f, p, q) and (not (f = fieldpoly.ZEROP)) and
+          fieldpoly.degree(f) = n)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly;
+      (exists f: Poly; isACombination(f, p, q) and (not (f = fieldpoly.ZEROP))) ->
+      (exists n: peano.Nat; exists f: Poly;
+      isACombination(f, p, q) and (not (f = fieldpoly.ZEROP)) and
+      fieldpoly.degree(f) = n)
+    [by generalize generalize-p]
+qed
+
+// The bridge from "least among the ATTAINED degrees" to "at most every other nonzero
+// combination's degree": any such `g` attains its own degree, so leastness applies at it.
+theorem everyOtherCombinationIsAtLeastAsBig: forall p, q, d: Poly; forall least: peano.Nat;
+  fieldpoly.degree(d) = least ->
+  (forall m: peano.Nat;
+  (exists f: Poly; isACombination(f, p, q) and (not (f = fieldpoly.ZEROP)) and
+  fieldpoly.degree(f) = m) ->
+  peano_order.less_or_equal(least, m)) ->
+  (forall g: Poly; isACombination(g, p, q) -> (not (g = fieldpoly.ZEROP)) ->
+  peano_order.less_or_equal(fieldpoly.degree(d), fieldpoly.degree(g)))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-d |
+            fix d: Poly {
+              @generalize-least |
+                fix least: peano.Nat {
+                  @given-the-degree |
+                    assume fieldpoly.degree(d) = least {
+                      @the-degree |
+                        fieldpoly.degree(d) = least
+                        [by hypothesis given-the-degree]
+                      @given-leastness |
+                        assume forall m: peano.Nat;
+                          (exists f: Poly; isACombination(f, p, q) and
+                          (not (f = fieldpoly.ZEROP)) and fieldpoly.degree(f) = m) ->
+                          peano_order.less_or_equal(least, m) {
+                          @leastness |
+                            forall m: peano.Nat;
+                              (exists f: Poly; isACombination(f, p, q) and
+                              (not (f = fieldpoly.ZEROP)) and fieldpoly.degree(f) = m) ->
+                              peano_order.less_or_equal(least, m)
+                            [by hypothesis given-leastness]
+                          @generalize-g |
+                            fix g: Poly {
+                              @given-g-is-a-nonzero-combination |
+                                assume isACombination(g, p, q) {
+                                  @g-is-a-combination |
+                                    isACombination(g, p, q)
+                                    [by hypothesis given-g-is-a-nonzero-combination]
+                                  @given-g-nonzero |
+                                    assume not (g = fieldpoly.ZEROP) {
+                                      @g-is-nonzero |
+                                        not (g = fieldpoly.ZEROP)
+                                        [by hypothesis given-g-nonzero]
+                                      @g-degree-is-itself |
+                                        fieldpoly.degree(g) = fieldpoly.degree(g)
+                                        [by reflexivity]
+                                      @g-attains-its-degree |
+                                        isACombination(g, p, q) and
+                                          (not (g = fieldpoly.ZEROP)) and
+                                          fieldpoly.degree(g) = fieldpoly.degree(g)
+                                        [using tautology g-is-a-combination g-is-nonzero
+                                          g-degree-is-itself]
+                                      @g-degree-is-attained |
+                                        exists f: Poly; isACombination(f, p, q) and
+                                          (not (f = fieldpoly.ZEROP)) and
+                                          fieldpoly.degree(f) = fieldpoly.degree(g)
+                                        [by witness(g) g-attains-its-degree]
+                                      @least-is-below-g |
+                                        peano_order.less_or_equal(
+                                          least, fieldpoly.degree(g))
+                                        [using specialize leastness(fieldpoly.degree(g))
+                                          g-degree-is-attained]
+                                      @conclusion-d-is-below-g |
+                                        peano_order.less_or_equal(
+                                          fieldpoly.degree(d), fieldpoly.degree(g))
+                                        [by rewrite the-degree least-is-below-g]
+                                    }
+                                  @conclusion-g-nonzero-gives-it |
+                                    (not (g = fieldpoly.ZEROP)) ->
+                                      peano_order.less_or_equal(
+                                      fieldpoly.degree(d), fieldpoly.degree(g))
+                                    [by discharge given-g-nonzero]
+                                }
+                              @conclusion-g-combination-gives-it |
+                                isACombination(g, p, q) ->
+                                  (not (g = fieldpoly.ZEROP)) ->
+                                  peano_order.less_or_equal(
+                                  fieldpoly.degree(d), fieldpoly.degree(g))
+                                [by discharge given-g-is-a-nonzero-combination]
+                            }
+                          @conclusion-for-all-g |
+                            forall g: Poly; isACombination(g, p, q) ->
+                              (not (g = fieldpoly.ZEROP)) ->
+                              peano_order.less_or_equal(
+                              fieldpoly.degree(d), fieldpoly.degree(g))
+                            [by generalize generalize-g]
+                        }
+                      @conclusion-leastness-gives-it |
+                        (forall m: peano.Nat;
+                          (exists f: Poly; isACombination(f, p, q) and
+                          (not (f = fieldpoly.ZEROP)) and fieldpoly.degree(f) = m) ->
+                          peano_order.less_or_equal(least, m)) ->
+                          (forall g: Poly; isACombination(g, p, q) ->
+                          (not (g = fieldpoly.ZEROP)) ->
+                          peano_order.less_or_equal(
+                          fieldpoly.degree(d), fieldpoly.degree(g)))
+                        [by discharge given-leastness]
+                    }
+                  @conclusion-the-degree-gives-it |
+                    fieldpoly.degree(d) = least ->
+                      (forall m: peano.Nat;
+                      (exists f: Poly; isACombination(f, p, q) and
+                      (not (f = fieldpoly.ZEROP)) and fieldpoly.degree(f) = m) ->
+                      peano_order.less_or_equal(least, m)) ->
+                      (forall g: Poly; isACombination(g, p, q) ->
+                      (not (g = fieldpoly.ZEROP)) ->
+                      peano_order.less_or_equal(
+                      fieldpoly.degree(d), fieldpoly.degree(g)))
+                    [by discharge given-the-degree]
+                }
+              @conclusion-for-all-least |
+                forall least: peano.Nat;
+                  fieldpoly.degree(d) = least ->
+                  (forall m: peano.Nat;
+                  (exists f: Poly; isACombination(f, p, q) and
+                  (not (f = fieldpoly.ZEROP)) and fieldpoly.degree(f) = m) ->
+                  peano_order.less_or_equal(least, m)) ->
+                  (forall g: Poly; isACombination(g, p, q) ->
+                  (not (g = fieldpoly.ZEROP)) ->
+                  peano_order.less_or_equal(fieldpoly.degree(d), fieldpoly.degree(g)))
+                [by generalize generalize-least]
+            }
+          @conclusion-for-all-d |
+            forall d: Poly; forall least: peano.Nat;
+              fieldpoly.degree(d) = least ->
+              (forall m: peano.Nat;
+              (exists f: Poly; isACombination(f, p, q) and
+              (not (f = fieldpoly.ZEROP)) and fieldpoly.degree(f) = m) ->
+              peano_order.less_or_equal(least, m)) ->
+              (forall g: Poly; isACombination(g, p, q) ->
+              (not (g = fieldpoly.ZEROP)) ->
+              peano_order.less_or_equal(fieldpoly.degree(d), fieldpoly.degree(g)))
+            [by generalize generalize-d]
+        }
+      @conclusion-for-all-q |
+        forall q, d: Poly; forall least: peano.Nat;
+          fieldpoly.degree(d) = least ->
+          (forall m: peano.Nat;
+          (exists f: Poly; isACombination(f, p, q) and
+          (not (f = fieldpoly.ZEROP)) and fieldpoly.degree(f) = m) ->
+          peano_order.less_or_equal(least, m)) ->
+          (forall g: Poly; isACombination(g, p, q) ->
+          (not (g = fieldpoly.ZEROP)) ->
+          peano_order.less_or_equal(fieldpoly.degree(d), fieldpoly.degree(g)))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, d: Poly; forall least: peano.Nat;
+      fieldpoly.degree(d) = least ->
+      (forall m: peano.Nat;
+      (exists f: Poly; isACombination(f, p, q) and
+      (not (f = fieldpoly.ZEROP)) and fieldpoly.degree(f) = m) ->
+      peano_order.less_or_equal(least, m)) ->
+      (forall g: Poly; isACombination(g, p, q) ->
+      (not (g = fieldpoly.ZEROP)) ->
+      peano_order.less_or_equal(fieldpoly.degree(d), fieldpoly.degree(g)))
+    [by generalize generalize-p]
+qed
+
+// Step two: well-order those degrees. `prop(n)` is "some nonzero combination of p and q has
+// degree n", closing over `p` and `q`; the least such `n` is realized by a combination, and
+// every other nonzero combination's degree is at least it.
+theorem aMinimalDegreeCombinationExists: forall p, q: Poly;
+  (exists f: Poly; isACombination(f, p, q) and (not (f = fieldpoly.ZEROP))) ->
+  (exists d: Poly; isACombination(d, p, q) and (not (d = fieldpoly.ZEROP)) and
+  (forall g: Poly; isACombination(g, p, q) -> (not (g = fieldpoly.ZEROP)) ->
+  peano_order.less_or_equal(fieldpoly.degree(d), fieldpoly.degree(g))))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @given-a-nonzero-combination |
+            assume exists f: Poly;
+              isACombination(f, p, q) and (not (f = fieldpoly.ZEROP)) {
+              @a-nonzero-combination |
+                exists f: Poly; isACombination(f, p, q) and (not (f = fieldpoly.ZEROP))
+                [by hypothesis given-a-nonzero-combination]
+              @some-degree-is-attained |
+                exists n: peano.Nat; exists f: Poly;
+                  isACombination(f, p, q) and (not (f = fieldpoly.ZEROP)) and
+                  fieldpoly.degree(f) = n
+                [using specialize someCombinationDegreeIsAttained(p, q)
+                  a-nonzero-combination]
+              @the-least-attained-degree |
+                exists least: peano.Nat;
+                  (exists f: Poly; isACombination(f, p, q) and
+                  (not (f = fieldpoly.ZEROP)) and fieldpoly.degree(f) = least) and
+                  (forall m: peano.Nat;
+                  (exists f: Poly; isACombination(f, p, q) and
+                  (not (f = fieldpoly.ZEROP)) and fieldpoly.degree(f) = m) ->
+                  peano_order.less_or_equal(least, m))
+                [using instantiation peano_order.wellOrdering((fun n: peano.Nat =>
+                  (exists f: Poly; isACombination(f, p, q) and
+                  (not (f = fieldpoly.ZEROP)) and fieldpoly.degree(f) = n)))
+                  some-degree-is-attained]
+              @with-the-least-degree |
+                unpack least: peano.Nat from the-least-attained-degree {
+                  @the-least-properties |
+                    (exists f: Poly; isACombination(f, p, q) and
+                      (not (f = fieldpoly.ZEROP)) and fieldpoly.degree(f) = least) and
+                      (forall m: peano.Nat;
+                      (exists f: Poly; isACombination(f, p, q) and
+                      (not (f = fieldpoly.ZEROP)) and fieldpoly.degree(f) = m) ->
+                      peano_order.less_or_equal(least, m))
+                    [by hypothesis with-the-least-degree]
+                  @the-least-is-realized |
+                    exists f: Poly; isACombination(f, p, q) and
+                      (not (f = fieldpoly.ZEROP)) and fieldpoly.degree(f) = least
+                    [by and_lhs the-least-properties]
+                  @the-least-is-least |
+                    forall m: peano.Nat;
+                      (exists f: Poly; isACombination(f, p, q) and
+                      (not (f = fieldpoly.ZEROP)) and fieldpoly.degree(f) = m) ->
+                      peano_order.less_or_equal(least, m)
+                    [by and_rhs the-least-properties]
+                  @with-the-minimal-combination |
+                    unpack d: Poly from the-least-is-realized {
+                      @its-properties |
+                        isACombination(d, p, q) and (not (d = fieldpoly.ZEROP)) and
+                          fieldpoly.degree(d) = least
+                        [by hypothesis with-the-minimal-combination]
+                      @it-is-a-combination |
+                        isACombination(d, p, q)
+                        [using tautology its-properties]
+                      @it-is-nonzero |
+                        not (d = fieldpoly.ZEROP)
+                        [using tautology its-properties]
+                      @its-degree-is-least |
+                        fieldpoly.degree(d) = least
+                        [using tautology its-properties]
+                      @it-is-minimal |
+                        forall g: Poly; isACombination(g, p, q) ->
+                          (not (g = fieldpoly.ZEROP)) ->
+                          peano_order.less_or_equal(
+                          fieldpoly.degree(d), fieldpoly.degree(g))
+                        [using specialize everyOtherCombinationIsAtLeastAsBig(
+                          p, q, d, least) its-degree-is-least the-least-is-least]
+                      @the-conjunction |
+                        isACombination(d, p, q) and (not (d = fieldpoly.ZEROP)) and
+                          (forall g: Poly; isACombination(g, p, q) ->
+                          (not (g = fieldpoly.ZEROP)) ->
+                          peano_order.less_or_equal(
+                          fieldpoly.degree(d), fieldpoly.degree(g)))
+                        [using tautology it-is-a-combination it-is-nonzero it-is-minimal]
+                      @conclusion-the-minimal-combination-exists |
+                        exists e: Poly; isACombination(e, p, q) and
+                          (not (e = fieldpoly.ZEROP)) and
+                          (forall g: Poly; isACombination(g, p, q) ->
+                          (not (g = fieldpoly.ZEROP)) ->
+                          peano_order.less_or_equal(
+                          fieldpoly.degree(e), fieldpoly.degree(g)))
+                        [by witness(d) the-conjunction]
+                    }
+                  @conclusion-from-the-realization |
+                    exists e: Poly; isACombination(e, p, q) and
+                      (not (e = fieldpoly.ZEROP)) and
+                      (forall g: Poly; isACombination(g, p, q) ->
+                      (not (g = fieldpoly.ZEROP)) ->
+                      peano_order.less_or_equal(
+                      fieldpoly.degree(e), fieldpoly.degree(g)))
+                    [by unpacked with-the-minimal-combination]
+                }
+              @the-minimal-combination-exists |
+                exists d: Poly; isACombination(d, p, q) and (not (d = fieldpoly.ZEROP)) and
+                  (forall g: Poly; isACombination(g, p, q) ->
+                  (not (g = fieldpoly.ZEROP)) ->
+                  peano_order.less_or_equal(fieldpoly.degree(d), fieldpoly.degree(g)))
+                [by unpacked with-the-least-degree]
+            }
+          @conclusion-a-nonzero-combination-gives-it |
+            (exists f: Poly; isACombination(f, p, q) and (not (f = fieldpoly.ZEROP))) ->
+              (exists d: Poly; isACombination(d, p, q) and
+              (not (d = fieldpoly.ZEROP)) and
+              (forall g: Poly; isACombination(g, p, q) ->
+              (not (g = fieldpoly.ZEROP)) ->
+              peano_order.less_or_equal(fieldpoly.degree(d), fieldpoly.degree(g))))
+            [by discharge given-a-nonzero-combination]
+        }
+      @conclusion-for-all-q |
+        forall q: Poly;
+          (exists f: Poly; isACombination(f, p, q) and (not (f = fieldpoly.ZEROP))) ->
+          (exists d: Poly; isACombination(d, p, q) and (not (d = fieldpoly.ZEROP)) and
+          (forall g: Poly; isACombination(g, p, q) -> (not (g = fieldpoly.ZEROP)) ->
+          peano_order.less_or_equal(fieldpoly.degree(d), fieldpoly.degree(g))))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly;
+      (exists f: Poly; isACombination(f, p, q) and (not (f = fieldpoly.ZEROP))) ->
+      (exists d: Poly; isACombination(d, p, q) and (not (d = fieldpoly.ZEROP)) and
+      (forall g: Poly; isACombination(g, p, q) -> (not (g = fieldpoly.ZEROP)) ->
+      peano_order.less_or_equal(fieldpoly.degree(d), fieldpoly.degree(g))))
+    [by generalize generalize-p]
 qed
