@@ -347,29 +347,27 @@ while the resolved theorem is relativized. Different mechanism — a citation, n
 accelerant path) by reasoning from the code's own comments, which described the mechanism as
 if it were already wired everywhere. One `std.debug.print` settled it. Instrument first.
 
-## 14. `theSubject` blocks Lemma 17.12 from ever being applied twice (LIVE, structural)
+## 14. `theSubject` is a PARAMETER, not a fixed value — and I got this backwards
 
-**Measured 2026-11-02, tracing what "f is irreducible over ℚ" needs.**
+**I claimed (2026-11-02) that `theSubject` blocked Lemma 17.12 from ever being applied to two
+polynomials, making irreducibility over ℚ structurally unreachable. That was WRONG, and the
+user corrected it.**
 
-`theIntegerDecompositionExists` (Lemma 17.12) is stated about `theSubject` — an uninterpreted
-`func` the file's specs read coefficients through. That was the workaround for pain point 4: a
-schema-argument lambda carries ONE sort annotation for all its binders, so `fun i: Nat, v: Q
-=> …` is a parse error and there is no way to close over a polynomial. Reading the coefficient
-through a fixed `func` sidesteps it, and for proving 17.12 about "an arbitrary but fixed p"
-that is exactly right.
+`theSubject` is declared `func theSubject() => QPoly` with **no defining axiom** — nothing in
+the file says which polynomial it is. So it is a model PARAMETER, and a model maps parameters.
+Two models in one file, each mapping `theSubject` to a different constant, both transfer
+`theIntegerDecompositionExists` strict-green (`drafts/two-subjects/probe.b4m`).
 
-**But the Gauss reduction needs 17.12 applied to BOTH factors of a ℚ[x] factorisation** —
-`α = (r₁/s₁)α₁` and `β = (r₂/s₂)β₁` — and a fixed `func` cannot be instantiated at two
-different polynomials in one proof. So irreducibility over ℚ, which quantifies over *all*
-ℚ[x] factorisations, is not reachable from 17.12 as stated.
+The one real cost, and it is small: `isADenominatorFor` is an uninterpreted pred whose
+*defining axiom* mentions `theSubject`, so remapping the func alone leaves the pred pointing at
+the old term. Each model needs its own instance of the pred plus its axiom as the discharge —
+three lines per model.
 
-Generalising means giving `isADenominatorFor` and everything built on it a polynomial
-parameter, i.e. redoing 17.12's whole spec layer. Not a rename — the spec reads
-`theSubject`'s coefficients in its defining axiom.
-
-**Why this matters beyond ch17:** the `theSubject` trick looks free when you prove a theorem
-about one fixed object. It silently costs you every later use that needs TWO. Worth asking, at
-the point of reaching for it, whether any consumer will need two instances.
+**The actual lesson, which is the opposite of what I first wrote:** the fixed-`func` workaround
+for the schema-arg-lambda limit (pain point 4) costs *far less* than it appears to. An
+uninterpreted `func` is as good as a parameter, because `model` is exactly the mechanism for
+fixing parameters. Before concluding that a `theSubject`-style encoding has painted you into a
+corner, write the two-model probe; it takes minutes.
 
 ## 15. A conclusion that is TRUE but harmless is the hardest defect to see
 
@@ -394,6 +392,12 @@ you the formula is weaker than what you meant, or that the name oversells it. Th
 the **dead-step lint** (unused hypotheses are the loudest signal), **`--axioms`** (two
 independent constants where one was intended shows up as two axioms), and **asking what the
 conclusion rules out** before naming it. I used the first two only after being surprised.
+
+**The same root cause runs through §14 and the costing errors in §11: reasoning from the SHAPE
+of a declaration or a statement instead of probing it.** Every one of these was settled in
+minutes by a scratch file, a `--axioms` run, or a `std.debug.print` — and in each case I
+produced a confident wrong answer first. The corpus has cheap instruments; the failure is not
+reaching for them before forming a view.
 
 ## Numbering
 
