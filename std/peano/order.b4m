@@ -2495,3 +2495,232 @@ proof
     forall a, b: Nat; (not less_than(b, a)) -> less_or_equal(a, b)
     [by generalize generalize-a]
 qed
+
+// ZERO is at most anything — `notLessThanZero` read through `notBelowGivesAtMost`. Needed
+// wherever a `sub(a, ZERO)` guard has to be discharged, which is every site that subtracts
+// nothing.
+theorem zeroIsAtMostAnything: forall a: Nat; less_or_equal(ZERO, a)
+proof
+  @generalize-a |
+    fix a: Nat {
+      @nothing-is-below-zero |
+        not less_than(a, ZERO)
+        [using specialize notLessThanZero(a)]
+      @conclusion-zero-is-least |
+        less_or_equal(ZERO, a)
+        [using specialize notBelowGivesAtMost(ZERO, a) nothing-is-below-zero]
+    }
+  @conclusion |
+    forall a: Nat; less_or_equal(ZERO, a)
+    [by generalize generalize-a]
+qed
+
+// -- MONOTONICITY AT less_or_equal -----------------------------------------------------------
+// The strict-order versions (`additionPreservesOrder`, `multiplicationPreservesOrder`) have
+// been here all along; these are their `less_or_equal` companions, which the guarded `sub`
+// needs at nearly every site — a `sub(f(a), f(b))` application owes `f(b) <= f(a)`, and what
+// is in hand is `b <= a`.
+
+// a <= b implies c + a <= c + b. Case split on the disjunction: strict goes through
+// `additionPreservesOrder`, equality through congruence.
+theorem additionPreservesAtMost: forall a, b, c: Nat;
+  less_or_equal(a, b) -> less_or_equal(add(c, a), add(c, b))
+proof
+  @generalize-a |
+    fix a: Nat {
+      @generalize-b |
+        fix b: Nat {
+          @generalize-c |
+            fix c: Nat {
+              @given-a-at-most-b |
+                assume less_or_equal(a, b) {
+                  @the-cases |
+                    less_than(a, b) or a = b
+                    [using tautology given-a-at-most-b-restated]
+                  @given-a-at-most-b-restated |
+                    less_or_equal(a, b)
+                    [by hypothesis given-a-at-most-b]
+                  @the-sums-compare |
+                    less_or_equal(add(c, a), add(c, b))
+                    [by common_conclusion the-cases when-strict when-equal]
+                  @when-strict |
+                    assume less_than(a, b) {
+                      @strictly-below |
+                        less_than(a, b)
+                        [by hypothesis when-strict]
+                      @the-sums-are-strictly-below |
+                        less_than(add(c, a), add(c, b))
+                        [using specialize additionPreservesOrder(a, b, c) strictly-below]
+                      @conclusion-strict-case |
+                        less_or_equal(add(c, a), add(c, b))
+                        [using tautology the-sums-are-strictly-below]
+                    }
+                  @when-equal |
+                    assume a = b {
+                      @they-are-equal |
+                        a = b
+                        [by hypothesis when-equal]
+                      @the-sums-are-equal |
+                        add(c, a) = add(c, b)
+                        [by rewrite they-are-equal reflexive-sum]
+                      @reflexive-sum |
+                        add(c, a) = add(c, a)
+                        [by reflexivity]
+                      @conclusion-equal-case |
+                        less_or_equal(add(c, a), add(c, b))
+                        [using tautology the-sums-are-equal]
+                    }
+                }
+              @conclusion-at-most-is-preserved |
+                less_or_equal(a, b) -> less_or_equal(add(c, a), add(c, b))
+                [by discharge given-a-at-most-b]
+            }
+          @conclusion-for-all-c |
+            forall c: Nat;
+              less_or_equal(a, b) -> less_or_equal(add(c, a), add(c, b))
+            [by generalize generalize-c]
+        }
+      @conclusion-for-all-b |
+        forall b, c: Nat;
+          less_or_equal(a, b) -> less_or_equal(add(c, a), add(c, b))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: Nat;
+      less_or_equal(a, b) -> less_or_equal(add(c, a), add(c, b))
+    [by generalize generalize-a]
+qed
+
+// The right-handed form, by commutativity — the spelling a `sub(add(a,c), add(b,c))` site
+// actually needs.
+theorem additionPreservesAtMostOnTheRight: forall a, b, c: Nat;
+  less_or_equal(a, b) -> less_or_equal(add(a, c), add(b, c))
+proof
+  @generalize-a |
+    fix a: Nat {
+      @generalize-b |
+        fix b: Nat {
+          @generalize-c |
+            fix c: Nat {
+              @given-a-at-most-b |
+                assume less_or_equal(a, b) {
+                  @a-at-most-b |
+                    less_or_equal(a, b)
+                    [by hypothesis given-a-at-most-b]
+                  @the-left-sums-compare |
+                    less_or_equal(add(c, a), add(c, b))
+                    [using specialize additionPreservesAtMost(a, b, c) a-at-most-b]
+                  @commute-the-first |
+                    add(c, a) = add(a, c)
+                    [using specialize peano.addIsCommutative(c, a)]
+                  @commute-the-second |
+                    add(c, b) = add(b, c)
+                    [using specialize peano.addIsCommutative(c, b)]
+                  @with-the-first-commuted |
+                    less_or_equal(add(a, c), add(c, b))
+                    [by rewrite commute-the-first the-left-sums-compare]
+                  @conclusion-the-right-sums-compare |
+                    less_or_equal(add(a, c), add(b, c))
+                    [by rewrite commute-the-second with-the-first-commuted]
+                }
+              @conclusion-at-most-is-preserved |
+                less_or_equal(a, b) -> less_or_equal(add(a, c), add(b, c))
+                [by discharge given-a-at-most-b]
+            }
+          @conclusion-for-all-c |
+            forall c: Nat;
+              less_or_equal(a, b) -> less_or_equal(add(a, c), add(b, c))
+            [by generalize generalize-c]
+        }
+      @conclusion-for-all-b |
+        forall b, c: Nat;
+          less_or_equal(a, b) -> less_or_equal(add(a, c), add(b, c))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: Nat;
+      less_or_equal(a, b) -> less_or_equal(add(a, c), add(b, c))
+    [by generalize generalize-a]
+qed
+
+// a <= b implies c·a <= c·b, for EVERY c including ZERO — unlike the strict version, which
+// needs `succ(c)` because multiplying by zero collapses a strict inequality to an equality.
+// That is exactly why the at-most form is the one a `sub(mul(d,a), mul(d,b))` site wants.
+theorem multiplicationPreservesAtMost: forall a, b, c: Nat;
+  less_or_equal(a, b) -> less_or_equal(mul(c, a), mul(c, b))
+proof
+  @generalize-a |
+    fix a: Nat {
+      @generalize-b |
+        fix b: Nat {
+          @generalize-c |
+            fix c: Nat {
+              @given-a-at-most-b |
+                assume less_or_equal(a, b) {
+                  @a-at-most-b |
+                    less_or_equal(a, b)
+                    [by hypothesis given-a-at-most-b]
+                  // the gap form: b = a + d, so c·b = c·a + c·d, which is at least c·a
+                  @the-gap-form |
+                    less_or_equal(a, b) iff (exists d: Nat; add(a, d) = b)
+                    [using specialize lessOrEqualIsGapExistential(a, b)]
+                  @the-gap-forward |
+                    less_or_equal(a, b) -> (exists d: Nat; add(a, d) = b)
+                    [by equiv_forward the-gap-form]
+                  @the-gap-exists |
+                    exists d: Nat; add(a, d) = b
+                    [by modus_ponens the-gap-forward a-at-most-b]
+                  @with-the-gap |
+                    unpack d: Nat from the-gap-exists {
+                      @the-gap |
+                        add(a, d) = b
+                        [by hypothesis with-the-gap]
+                      @distribute |
+                        mul(c, add(a, d)) = add(mul(c, a), mul(c, d))
+                        [using specialize peano.mulAddDistribLeft(c, a, d)]
+                      @the-scaled-gap |
+                        mul(c, b) = add(mul(c, a), mul(c, d))
+                        [by rewrite the-gap distribute]
+                      @the-scaled-gap-form |
+                        less_or_equal(mul(c, a), mul(c, b)) iff
+                          (exists e: Nat; add(mul(c, a), e) = mul(c, b))
+                        [using specialize lessOrEqualIsGapExistential(
+                          mul(c, a), mul(c, b))]
+                      @the-scaled-gap-backward |
+                        (exists e: Nat; add(mul(c, a), e) = mul(c, b)) ->
+                          less_or_equal(mul(c, a), mul(c, b))
+                        [by equiv_converse the-scaled-gap-form]
+                      @the-scaled-gap-flipped |
+                        add(mul(c, a), mul(c, d)) = mul(c, b)
+                        [by symmetry the-scaled-gap]
+                      @the-scaled-gap-witness |
+                        exists e: Nat; add(mul(c, a), e) = mul(c, b)
+                        [by witness(mul(c, d)) the-scaled-gap-flipped]
+                      @conclusion-the-products-compare |
+                        less_or_equal(mul(c, a), mul(c, b))
+                        [by modus_ponens the-scaled-gap-backward
+                          the-scaled-gap-witness]
+                    }
+                  @the-products-compare |
+                    less_or_equal(mul(c, a), mul(c, b))
+                    [by unpacked with-the-gap]
+                }
+              @conclusion-at-most-is-preserved |
+                less_or_equal(a, b) -> less_or_equal(mul(c, a), mul(c, b))
+                [by discharge given-a-at-most-b]
+            }
+          @conclusion-for-all-c |
+            forall c: Nat;
+              less_or_equal(a, b) -> less_or_equal(mul(c, a), mul(c, b))
+            [by generalize generalize-c]
+        }
+      @conclusion-for-all-b |
+        forall b, c: Nat;
+          less_or_equal(a, b) -> less_or_equal(mul(c, a), mul(c, b))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: Nat;
+      less_or_equal(a, b) -> less_or_equal(mul(c, a), mul(c, b))
+    [by generalize generalize-a]
+qed
