@@ -7701,3 +7701,647 @@ proof
       mulR(cappedRun(p, q, m, succ(c)), coeff(r, theGapTo(i, m))))
     [by generalize generalize-p]
 qed
+
+// Lowering the amount taken raises the gap by one: `succ(gapTo(g, succ n)) = gapTo(g, n)`
+// whenever `succ(n) <= g`. The bound is genuine — past it both gaps floor at ZERO and the
+// successor on the left makes the two differ.
+theorem theGapRisesWhenLessIsTaken: forall n, g: Nat;
+  peano_order.less_or_equal(succ(n), g) ->
+  succ(theGapTo(g, succ(n))) = theGapTo(g, n)
+proof
+  @base-case |
+    forall g: Nat;
+      peano_order.less_or_equal(succ(ZERO), g) ->
+      succ(theGapTo(g, succ(ZERO))) = theGapTo(g, ZERO)
+    [using specialize theGapRiseBase]
+  @induction-step-for-all-n |
+    forall n: Nat;
+      (forall g: Nat;
+      peano_order.less_or_equal(succ(n), g) ->
+      succ(theGapTo(g, succ(n))) = theGapTo(g, n)) ->
+      (forall g: Nat;
+      peano_order.less_or_equal(succ(succ(n)), g) ->
+      succ(theGapTo(g, succ(succ(n)))) = theGapTo(g, succ(n)))
+    [using specialize theGapRiseStep]
+  @conclusion |
+    forall n: Nat; forall g: Nat;
+      peano_order.less_or_equal(succ(n), g) ->
+      succ(theGapTo(g, succ(n))) = theGapTo(g, n)
+    [using instantiation peano.induction((fun z: Nat => forall g: Nat; peano_order.less_or_equal(succ(z), g) -> succ(theGapTo(g, succ(z))) = theGapTo(g, z))) base-case induction-step-for-all-n]
+qed
+
+// The base: g is a successor by the bound, and both sides read it directly.
+theorem theGapRiseBase: forall g: Nat;
+  peano_order.less_or_equal(succ(ZERO), g) ->
+  succ(theGapTo(g, succ(ZERO))) = theGapTo(g, ZERO)
+proof
+  @generalize-g |
+    fix g: Nat {
+      @given-the-bound |
+        assume peano_order.less_or_equal(succ(ZERO), g) {
+          @the-bound |
+            peano_order.less_or_equal(succ(ZERO), g)
+            [by hypothesis given-the-bound]
+          @g-is-positive |
+            g = ZERO or (exists w: Nat; g = succ(w))
+            [using specialize peano.zeroOrSucc(g)]
+          @when-g-is-zero |
+            assume g = ZERO {
+              @g-is-zero |
+                g = ZERO
+                [by hypothesis when-g-is-zero]
+              @the-bound-at-zero |
+                peano_order.less_or_equal(succ(ZERO), ZERO)
+                [by rewrite g-is-zero the-bound]
+              @nothing-is-at-most-zero |
+                not peano_order.less_or_equal(succ(ZERO), ZERO)
+                [using specialize
+                  peano_order.noSuccessorIsAtMostZero(ZERO)]
+              @conclusion-vacuous |
+                succ(theGapTo(g, succ(ZERO))) = theGapTo(g, ZERO)
+                [by ex_falso the-bound-at-zero nothing-is-at-most-zero]
+            }
+          @when-g-is-positive |
+            assume exists w: Nat; g = succ(w) {
+              @the-predecessor-exists |
+                exists w: Nat; g = succ(w)
+                [by hypothesis when-g-is-positive]
+              @with-the-predecessor |
+                unpack w: Nat from the-predecessor-exists {
+                  @g-steps |
+                    g = succ(w)
+                    [by hypothesis with-the-predecessor]
+                  @the-taken-gap |
+                    theGapTo(succ(w), succ(ZERO)) = theGapTo(w, ZERO)
+                    [using specialize theGapToSteps(w, ZERO)]
+                  @the-gap-at-w |
+                    theGapTo(w, ZERO) = w
+                    [using specialize theGapToAtZero(w)]
+                  @the-full-gap |
+                    theGapTo(succ(w), ZERO) = succ(w)
+                    [using specialize theGapToAtZero(succ(w))]
+                  @the-equality-at-w |
+                    succ(theGapTo(succ(w), succ(ZERO))) =
+                      theGapTo(succ(w), ZERO)
+                    [using simplify the-taken-gap the-gap-at-w
+                      the-full-gap]
+                  @conclusion-positive |
+                    succ(theGapTo(g, succ(ZERO))) = theGapTo(g, ZERO)
+                    [by rewrite g-steps the-equality-at-w]
+                }
+              @conclusion-the-positive-case |
+                succ(theGapTo(g, succ(ZERO))) = theGapTo(g, ZERO)
+                [by unpacked with-the-predecessor]
+            }
+          @conclusion-either-way |
+            succ(theGapTo(g, succ(ZERO))) = theGapTo(g, ZERO)
+            [by common_conclusion g-is-positive
+              when-g-is-zero when-g-is-positive]
+        }
+      @the-bound-gives-it |
+        peano_order.less_or_equal(succ(ZERO), g) ->
+          succ(theGapTo(g, succ(ZERO))) = theGapTo(g, ZERO)
+        [by discharge given-the-bound]
+    }
+  @conclusion |
+    forall g: Nat;
+      peano_order.less_or_equal(succ(ZERO), g) ->
+      succ(theGapTo(g, succ(ZERO))) = theGapTo(g, ZERO)
+    [by generalize generalize-g]
+qed
+
+// The step: the bound forces g to be a successor, and all three gaps step down onto the
+// hypothesis by their succ/succ clause.
+theorem theGapRiseStep: forall n: Nat;
+  (forall g: Nat;
+  peano_order.less_or_equal(succ(n), g) ->
+  succ(theGapTo(g, succ(n))) = theGapTo(g, n)) ->
+  (forall g: Nat;
+  peano_order.less_or_equal(succ(succ(n)), g) ->
+  succ(theGapTo(g, succ(succ(n)))) = theGapTo(g, succ(n)))
+proof
+  @generalize-n |
+    fix n: Nat {
+      @given-the-hypothesis |
+        assume forall g: Nat;
+          peano_order.less_or_equal(succ(n), g) ->
+          succ(theGapTo(g, succ(n))) = theGapTo(g, n) {
+          @the-hypothesis |
+            forall g: Nat;
+              peano_order.less_or_equal(succ(n), g) ->
+              succ(theGapTo(g, succ(n))) = theGapTo(g, n)
+            [by hypothesis given-the-hypothesis]
+          @generalize-g |
+            fix g: Nat {
+              @given-the-bound |
+                assume peano_order.less_or_equal(succ(succ(n)), g) {
+                  @the-bound |
+                    peano_order.less_or_equal(succ(succ(n)), g)
+                    [by hypothesis given-the-bound]
+                  @g-is-positive |
+                    g = ZERO or (exists w: Nat; g = succ(w))
+                    [using specialize peano.zeroOrSucc(g)]
+                  @when-g-is-zero |
+                    assume g = ZERO {
+                      @g-is-zero |
+                        g = ZERO
+                        [by hypothesis when-g-is-zero]
+                      @the-bound-at-zero |
+                        peano_order.less_or_equal(succ(succ(n)), ZERO)
+                        [by rewrite g-is-zero the-bound]
+                      @nothing-is-at-most-zero |
+                        not peano_order.less_or_equal(succ(succ(n)), ZERO)
+                        [using specialize
+                          peano_order.noSuccessorIsAtMostZero(succ(n))]
+                      @conclusion-vacuous |
+                        succ(theGapTo(g, succ(succ(n)))) =
+                          theGapTo(g, succ(n))
+                        [by ex_falso the-bound-at-zero
+                          nothing-is-at-most-zero]
+                    }
+                  @when-g-is-positive |
+                    assume exists w: Nat; g = succ(w) {
+                      @the-predecessor-exists |
+                        exists w: Nat; g = succ(w)
+                        [by hypothesis when-g-is-positive]
+                      @with-the-predecessor |
+                        unpack w: Nat from the-predecessor-exists {
+                          @g-steps |
+                            g = succ(w)
+                            [by hypothesis with-the-predecessor]
+                          @the-bound-steps |
+                            peano_order.less_or_equal(succ(succ(n)),
+                              succ(w))
+                            [by rewrite g-steps the-bound]
+                          @the-lower-bound |
+                            peano_order.less_or_equal(succ(n), w)
+                            [using specialize
+                              peano_order.succReflectsAtMost(succ(n), w)
+                              the-bound-steps]
+                          @the-hypothesis-applies |
+                            succ(theGapTo(w, succ(n))) = theGapTo(w, n)
+                            [using specialize the-hypothesis(w)
+                              the-lower-bound]
+                          @the-taken-gap-steps |
+                            theGapTo(succ(w), succ(succ(n))) =
+                              theGapTo(w, succ(n))
+                            [using specialize
+                              theGapToSteps(w, succ(n))]
+                          @the-target-gap-steps |
+                            theGapTo(succ(w), succ(n)) = theGapTo(w, n)
+                            [using specialize theGapToSteps(w, n)]
+                          @the-equality-at-w |
+                            succ(theGapTo(succ(w), succ(succ(n)))) =
+                              theGapTo(succ(w), succ(n))
+                            [using simplify the-taken-gap-steps
+                              the-hypothesis-applies
+                              the-target-gap-steps]
+                          @conclusion-positive |
+                            succ(theGapTo(g, succ(succ(n)))) =
+                              theGapTo(g, succ(n))
+                            [by rewrite g-steps the-equality-at-w]
+                        }
+                      @conclusion-the-positive-case |
+                        succ(theGapTo(g, succ(succ(n)))) =
+                          theGapTo(g, succ(n))
+                        [by unpacked with-the-predecessor]
+                    }
+                  @conclusion-either-way |
+                    succ(theGapTo(g, succ(succ(n)))) =
+                      theGapTo(g, succ(n))
+                    [by common_conclusion g-is-positive
+                      when-g-is-zero when-g-is-positive]
+                }
+              @the-bound-gives-it |
+                peano_order.less_or_equal(succ(succ(n)), g) ->
+                  succ(theGapTo(g, succ(succ(n)))) = theGapTo(g, succ(n))
+                [by discharge given-the-bound]
+            }
+          @all-gaps |
+            forall g: Nat;
+              peano_order.less_or_equal(succ(succ(n)), g) ->
+              succ(theGapTo(g, succ(succ(n)))) = theGapTo(g, succ(n))
+            [by generalize generalize-g]
+        }
+      @the-hypothesis-gives-it |
+        (forall g: Nat;
+          peano_order.less_or_equal(succ(n), g) ->
+          succ(theGapTo(g, succ(n))) = theGapTo(g, n)) ->
+          (forall g: Nat;
+          peano_order.less_or_equal(succ(succ(n)), g) ->
+          succ(theGapTo(g, succ(succ(n)))) = theGapTo(g, succ(n)))
+        [by discharge given-the-hypothesis]
+    }
+  @conclusion |
+    forall n: Nat;
+      (forall g: Nat;
+      peano_order.less_or_equal(succ(n), g) ->
+      succ(theGapTo(g, succ(n))) = theGapTo(g, n)) ->
+      (forall g: Nat;
+      peano_order.less_or_equal(succ(succ(n)), g) ->
+      succ(theGapTo(g, succ(succ(n)))) = theGapTo(g, succ(n)))
+    [by generalize generalize-n]
+qed
+
+// -- THE CAPPED RUN READS AS A SEGMENT ------------------------------------------------------
+// `cappedRun` walks its count at the back with p ASCENDING; `segment` peels at the front with
+// p DESCENDING. They read the same terms in opposite order, so relating them is a sum
+// reversal — and once related, `aFullSegmentReadsForwards` carries a full capped run to the
+// convolution, which is what both associativity bridges need.
+//
+// Stated with the count free of the gap (`segment(p, q, n, theGapTo(g, n), n)`), so the
+// induction can run on the count while the gap stays put; `theGapRisesWhenLessIsTaken` is what
+// lets the segment's second exponent step.
+theorem aCappedRunReadsAsASegment: forall p, q: Poly; forall n, g: Nat;
+  peano_order.less_or_equal(n, g) ->
+  cappedRun(p, q, g, succ(n)) = segment(p, q, n, theGapTo(g, n), n)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @base-case |
+            forall g: Nat;
+              peano_order.less_or_equal(ZERO, g) ->
+              cappedRun(p, q, g, succ(ZERO)) =
+              segment(p, q, ZERO, theGapTo(g, ZERO), ZERO)
+            [using specialize theReadsAsBase(p, q)]
+          @induction-step-for-all-n |
+            forall n: Nat;
+              (forall g: Nat;
+              peano_order.less_or_equal(n, g) ->
+              cappedRun(p, q, g, succ(n)) =
+              segment(p, q, n, theGapTo(g, n), n)) ->
+              (forall g: Nat;
+              peano_order.less_or_equal(succ(n), g) ->
+              cappedRun(p, q, g, succ(succ(n))) =
+              segment(p, q, succ(n), theGapTo(g, succ(n)), succ(n)))
+            [using specialize theReadsAsStep(p, q)]
+          @all-counts |
+            forall n: Nat; forall g: Nat;
+              peano_order.less_or_equal(n, g) ->
+              cappedRun(p, q, g, succ(n)) =
+              segment(p, q, n, theGapTo(g, n), n)
+            [using instantiation peano.induction((fun z: Nat => forall g: Nat; peano_order.less_or_equal(z, g) -> cappedRun(p, q, g, succ(z)) = segment(p, q, z, theGapTo(g, z), z))) base-case induction-step-for-all-n]
+        }
+      @discharge-q |
+        forall q: Poly; forall n, g: Nat;
+          peano_order.less_or_equal(n, g) ->
+          cappedRun(p, q, g, succ(n)) = segment(p, q, n, theGapTo(g, n), n)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; forall n, g: Nat;
+      peano_order.less_or_equal(n, g) ->
+      cappedRun(p, q, g, succ(n)) = segment(p, q, n, theGapTo(g, n), n)
+    [by generalize generalize-p]
+qed
+
+// The base: one term on each side, p_0 times q at the full gap.
+theorem theReadsAsBase: forall p, q: Poly;
+  forall g: Nat;
+  peano_order.less_or_equal(ZERO, g) ->
+  cappedRun(p, q, g, succ(ZERO)) =
+  segment(p, q, ZERO, theGapTo(g, ZERO), ZERO)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-g |
+            fix g: Nat {
+              @the-run-at-one |
+                cappedRun(p, q, g, succ(ZERO)) =
+                  addR(cappedRun(p, q, g, ZERO),
+                  mulR(coeff(p, ZERO), coeff(q, theGapTo(g, ZERO))))
+                [using specialize cappedRunSucc(p, q, g, ZERO)]
+              @the-empty-run |
+                cappedRun(p, q, g, ZERO) = zeroR
+                [using specialize cappedRunZero(p, q, g)]
+              @adding-nothing |
+                addR(zeroR,
+                  mulR(coeff(p, ZERO), coeff(q, theGapTo(g, ZERO)))) =
+                  mulR(coeff(p, ZERO), coeff(q, theGapTo(g, ZERO)))
+                [using specialize addZeroLeftR(mulR(coeff(p, ZERO),
+                  coeff(q, theGapTo(g, ZERO))))]
+              @the-segment-at-zero |
+                segment(p, q, ZERO, theGapTo(g, ZERO), ZERO) =
+                  mulR(coeff(p, ZERO), coeff(q, theGapTo(g, ZERO)))
+                [using specialize
+                  segmentZero(p, q, ZERO, theGapTo(g, ZERO))]
+              @the-equality |
+                cappedRun(p, q, g, succ(ZERO)) =
+                  segment(p, q, ZERO, theGapTo(g, ZERO), ZERO)
+                [using simplify the-run-at-one the-empty-run
+                  adding-nothing the-segment-at-zero]
+              @conclusion-the-base |
+                peano_order.less_or_equal(ZERO, g) ->
+                  cappedRun(p, q, g, succ(ZERO)) =
+                  segment(p, q, ZERO, theGapTo(g, ZERO), ZERO)
+                [using tautology the-equality]
+            }
+          @discharge-g |
+            forall g: Nat;
+              peano_order.less_or_equal(ZERO, g) ->
+              cappedRun(p, q, g, succ(ZERO)) =
+              segment(p, q, ZERO, theGapTo(g, ZERO), ZERO)
+            [by generalize generalize-g]
+        }
+      @discharge-q |
+        forall q: Poly; forall g: Nat;
+          peano_order.less_or_equal(ZERO, g) ->
+          cappedRun(p, q, g, succ(ZERO)) =
+          segment(p, q, ZERO, theGapTo(g, ZERO), ZERO)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; forall g: Nat;
+      peano_order.less_or_equal(ZERO, g) ->
+      cappedRun(p, q, g, succ(ZERO)) =
+      segment(p, q, ZERO, theGapTo(g, ZERO), ZERO)
+    [by generalize generalize-p]
+qed
+
+// The step: the run gains its term at count succ(n); the segment peels the SAME term at its
+// front and leaves the segment one shorter with its second exponent raised — which
+// `theGapRisesWhenLessIsTaken` identifies with the hypothesis's gap. The two summands then
+// swap by commutativity.
+theorem theReadsAsStep: forall p, q: Poly; forall n: Nat;
+  (forall g: Nat;
+  peano_order.less_or_equal(n, g) ->
+  cappedRun(p, q, g, succ(n)) = segment(p, q, n, theGapTo(g, n), n)) ->
+  (forall g: Nat;
+  peano_order.less_or_equal(succ(n), g) ->
+  cappedRun(p, q, g, succ(succ(n))) =
+  segment(p, q, succ(n), theGapTo(g, succ(n)), succ(n)))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-n |
+            fix n: Nat {
+              @given-the-hypothesis |
+                assume forall g: Nat;
+                  peano_order.less_or_equal(n, g) ->
+                  cappedRun(p, q, g, succ(n)) =
+                  segment(p, q, n, theGapTo(g, n), n) {
+                  @the-hypothesis |
+                    forall g: Nat;
+                      peano_order.less_or_equal(n, g) ->
+                      cappedRun(p, q, g, succ(n)) =
+                      segment(p, q, n, theGapTo(g, n), n)
+                    [by hypothesis given-the-hypothesis]
+                  @generalize-g |
+                    fix g: Nat {
+                      @given-the-bound |
+                        assume peano_order.less_or_equal(succ(n), g) {
+                          @the-bound |
+                            peano_order.less_or_equal(succ(n), g)
+                            [by hypothesis given-the-bound]
+                          @n-is-below-its-successor |
+                            peano_order.less_or_equal(n, succ(n))
+                            [using specialize
+                              peano_order.aNatIsAtMostItsSuccessor(n)]
+                          @the-lower-bound |
+                            peano_order.less_or_equal(n, g)
+                            [using specialize
+                              peano_order.lessOrEqualTransitive(n,
+                              succ(n), g) n-is-below-its-successor
+                              the-bound]
+                          @the-hypothesis-applies |
+                            cappedRun(p, q, g, succ(n)) =
+                              segment(p, q, n, theGapTo(g, n), n)
+                            [using specialize the-hypothesis(g)
+                              the-lower-bound]
+                          @the-run-grows |
+                            cappedRun(p, q, g, succ(succ(n))) =
+                              addR(cappedRun(p, q, g, succ(n)),
+                              mulR(coeff(p, succ(n)),
+                              coeff(q, theGapTo(g, succ(n)))))
+                            [using specialize
+                              cappedRunSucc(p, q, g, succ(n))]
+                          @the-segment-peels |
+                            segment(p, q, succ(n),
+                              theGapTo(g, succ(n)), succ(n)) =
+                              addR(mulR(coeff(p, succ(n)),
+                              coeff(q, theGapTo(g, succ(n)))),
+                              segment(p, q, n,
+                              succ(theGapTo(g, succ(n))), n))
+                            [using specialize segmentSucc(p, q, n,
+                              theGapTo(g, succ(n)), n)]
+                          @the-gap-rises |
+                            succ(theGapTo(g, succ(n))) = theGapTo(g, n)
+                            [using specialize
+                              theGapRisesWhenLessIsTaken(n, g) the-bound]
+                          @the-segment-tail-matches |
+                            segment(p, q, n,
+                              succ(theGapTo(g, succ(n))), n) =
+                              segment(p, q, n, theGapTo(g, n), n)
+                            [by rewrite the-gap-rises
+                              the-tail-reflexivity]
+                          @the-tail-reflexivity |
+                            segment(p, q, n, theGapTo(g, n), n) =
+                              segment(p, q, n, theGapTo(g, n), n)
+                            [by reflexivity]
+                          @the-segment-expanded |
+                            segment(p, q, succ(n),
+                              theGapTo(g, succ(n)), succ(n)) =
+                              addR(mulR(coeff(p, succ(n)),
+                              coeff(q, theGapTo(g, succ(n)))),
+                              segment(p, q, n, theGapTo(g, n), n))
+                            [using simplify the-segment-peels
+                              the-segment-tail-matches]
+                          @the-run-expanded |
+                            cappedRun(p, q, g, succ(succ(n))) =
+                              addR(segment(p, q, n, theGapTo(g, n), n),
+                              mulR(coeff(p, succ(n)),
+                              coeff(q, theGapTo(g, succ(n)))))
+                            [using simplify the-run-grows
+                              the-hypothesis-applies]
+                          @the-summands-swap |
+                            addR(segment(p, q, n, theGapTo(g, n), n),
+                              mulR(coeff(p, succ(n)),
+                              coeff(q, theGapTo(g, succ(n))))) =
+                              addR(mulR(coeff(p, succ(n)),
+                              coeff(q, theGapTo(g, succ(n)))),
+                              segment(p, q, n, theGapTo(g, n), n))
+                            [using specialize addIsCommutativeR(
+                              segment(p, q, n, theGapTo(g, n), n),
+                              mulR(coeff(p, succ(n)),
+                              coeff(q, theGapTo(g, succ(n)))))]
+                          @the-segment-flipped |
+                            addR(mulR(coeff(p, succ(n)),
+                              coeff(q, theGapTo(g, succ(n)))),
+                              segment(p, q, n, theGapTo(g, n), n)) =
+                              segment(p, q, succ(n),
+                              theGapTo(g, succ(n)), succ(n))
+                            [by symmetry the-segment-expanded]
+                          @conclusion-the-step |
+                            cappedRun(p, q, g, succ(succ(n))) =
+                              segment(p, q, succ(n),
+                              theGapTo(g, succ(n)), succ(n))
+                            [using chain the-run-expanded
+                              the-summands-swap the-segment-flipped]
+                        }
+                      @the-bound-gives-it |
+                        peano_order.less_or_equal(succ(n), g) ->
+                          cappedRun(p, q, g, succ(succ(n))) =
+                          segment(p, q, succ(n),
+                          theGapTo(g, succ(n)), succ(n))
+                        [by discharge given-the-bound]
+                    }
+                  @all-gaps |
+                    forall g: Nat;
+                      peano_order.less_or_equal(succ(n), g) ->
+                      cappedRun(p, q, g, succ(succ(n))) =
+                      segment(p, q, succ(n),
+                      theGapTo(g, succ(n)), succ(n))
+                    [by generalize generalize-g]
+                }
+              @the-hypothesis-gives-it |
+                (forall g: Nat;
+                  peano_order.less_or_equal(n, g) ->
+                  cappedRun(p, q, g, succ(n)) =
+                  segment(p, q, n, theGapTo(g, n), n)) ->
+                  (forall g: Nat;
+                  peano_order.less_or_equal(succ(n), g) ->
+                  cappedRun(p, q, g, succ(succ(n))) =
+                  segment(p, q, succ(n),
+                  theGapTo(g, succ(n)), succ(n)))
+                [by discharge given-the-hypothesis]
+            }
+          @discharge-n |
+            forall n: Nat;
+              (forall g: Nat;
+              peano_order.less_or_equal(n, g) ->
+              cappedRun(p, q, g, succ(n)) =
+              segment(p, q, n, theGapTo(g, n), n)) ->
+              (forall g: Nat;
+              peano_order.less_or_equal(succ(n), g) ->
+              cappedRun(p, q, g, succ(succ(n))) =
+              segment(p, q, succ(n), theGapTo(g, succ(n)), succ(n)))
+            [by generalize generalize-n]
+        }
+      @discharge-q |
+        forall q: Poly; forall n: Nat;
+          (forall g: Nat;
+          peano_order.less_or_equal(n, g) ->
+          cappedRun(p, q, g, succ(n)) =
+          segment(p, q, n, theGapTo(g, n), n)) ->
+          (forall g: Nat;
+          peano_order.less_or_equal(succ(n), g) ->
+          cappedRun(p, q, g, succ(succ(n))) =
+          segment(p, q, succ(n), theGapTo(g, succ(n)), succ(n)))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; forall n: Nat;
+      (forall g: Nat;
+      peano_order.less_or_equal(n, g) ->
+      cappedRun(p, q, g, succ(n)) =
+      segment(p, q, n, theGapTo(g, n), n)) ->
+      (forall g: Nat;
+      peano_order.less_or_equal(succ(n), g) ->
+      cappedRun(p, q, g, succ(succ(n))) =
+      segment(p, q, succ(n), theGapTo(g, succ(n)), succ(n)))
+    [by generalize generalize-p]
+qed
+
+// -- A FULL CAPPED RUN IS THE CONVOLUTION ---------------------------------------------------
+// At its full length the capped run reads every pair summing to `g`, which is what
+// `convolution(p, q, ZERO, g)` reads. Composed: the run reads as a segment
+// (`aCappedRunReadsAsASegment` at n = g, where the gap closes to ZERO), and a full segment
+// reads forwards as the convolution (`aFullSegmentReadsForwards`, already proved for
+// commutativity). With `mulPolyCoeff` this makes a full run a product COEFFICIENT, which is
+// what both associativity bridges turn on.
+theorem aFullCappedRunIsTheConvolution: forall p, q: Poly; forall g: Nat;
+  cappedRun(p, q, g, succ(g)) = convolution(p, q, ZERO, g)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-g |
+            fix g: Nat {
+              @g-is-at-most-itself |
+                peano_order.less_or_equal(g, g)
+                [using specialize peano_order.lessOrEqualRefl(g)]
+              @the-run-reads-as-a-segment |
+                cappedRun(p, q, g, succ(g)) =
+                  segment(p, q, g, theGapTo(g, g), g)
+                [using specialize aCappedRunReadsAsASegment(p, q, g, g)
+                  g-is-at-most-itself]
+              @the-gap-closes |
+                theGapTo(g, g) = ZERO
+                [using specialize theGapToSelfVanishes(g)]
+              @the-segment-reflexivity |
+                segment(p, q, g, ZERO, g) = segment(p, q, g, ZERO, g)
+                [by reflexivity]
+              @the-segment-at-zero |
+                segment(p, q, g, theGapTo(g, g), g) =
+                  segment(p, q, g, ZERO, g)
+                [by rewrite the-gap-closes the-segment-reflexivity]
+              @the-segment-reads-forwards |
+                segment(p, q, g, ZERO, g) = convolution(p, q, ZERO, g)
+                [using specialize aFullSegmentReadsForwards(p, q, g)]
+              @conclusion-the-full-run |
+                cappedRun(p, q, g, succ(g)) = convolution(p, q, ZERO, g)
+                [using chain the-run-reads-as-a-segment
+                  the-segment-at-zero the-segment-reads-forwards]
+            }
+          @discharge-g |
+            forall g: Nat;
+              cappedRun(p, q, g, succ(g)) = convolution(p, q, ZERO, g)
+            [by generalize generalize-g]
+        }
+      @discharge-q |
+        forall q: Poly; forall g: Nat;
+          cappedRun(p, q, g, succ(g)) = convolution(p, q, ZERO, g)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; forall g: Nat;
+      cappedRun(p, q, g, succ(g)) = convolution(p, q, ZERO, g)
+    [by generalize generalize-p]
+qed
+
+// A full capped run IS a product coefficient — the form the bridges consume.
+theorem aFullCappedRunIsTheProductCoefficient: forall p, q: Poly;
+  forall g: Nat;
+  cappedRun(p, q, g, succ(g)) = coeff(mulP(p, q), g)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-g |
+            fix g: Nat {
+              @the-full-run |
+                cappedRun(p, q, g, succ(g)) = convolution(p, q, ZERO, g)
+                [using specialize aFullCappedRunIsTheConvolution(p, q, g)]
+              @the-coefficient-is-the-run |
+                coeff(mulP(p, q), g) = convolution(p, q, ZERO, g)
+                [using specialize mulPolyCoeff(p, q, g)]
+              @the-run-is-the-coefficient |
+                convolution(p, q, ZERO, g) = coeff(mulP(p, q), g)
+                [by symmetry the-coefficient-is-the-run]
+              @conclusion-the-run-is-a-coefficient |
+                cappedRun(p, q, g, succ(g)) = coeff(mulP(p, q), g)
+                [using chain the-full-run the-run-is-the-coefficient]
+            }
+          @discharge-g |
+            forall g: Nat;
+              cappedRun(p, q, g, succ(g)) = coeff(mulP(p, q), g)
+            [by generalize generalize-g]
+        }
+      @discharge-q |
+        forall q: Poly; forall g: Nat;
+          cappedRun(p, q, g, succ(g)) = coeff(mulP(p, q), g)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; forall g: Nat;
+      cappedRun(p, q, g, succ(g)) = coeff(mulP(p, q), g)
+    [by generalize generalize-p]
+qed
