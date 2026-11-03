@@ -6294,3 +6294,271 @@ proof
       tripleDiag(p, q, r, i, n, succ(k))))
     [by generalize generalize-p]
 qed
+
+// theGapTo(n, n) = ZERO: no slack remains when the index reaches the total. This is what
+// makes the (n+1)-st row empty at bound n, so the shortened rows stop growing exactly where
+// the triangle does.
+theorem theGapToSelfVanishes: forall n: Nat; theGapTo(n, n) = ZERO
+proof
+  @base-case |
+    theGapTo(ZERO, ZERO) = ZERO
+    [using specialize theGapToAtZero(ZERO)]
+  @induction-step |
+    fix k: Nat {
+      @given-the-hypothesis |
+        assume theGapTo(k, k) = ZERO {
+          @the-hypothesis |
+            theGapTo(k, k) = ZERO
+            [by hypothesis given-the-hypothesis]
+          @the-gap-steps-down |
+            theGapTo(succ(k), succ(k)) = theGapTo(k, k)
+            [using specialize theGapToSteps(k, k)]
+          @conclusion-at-succ-k |
+            theGapTo(succ(k), succ(k)) = ZERO
+            [using chain the-gap-steps-down the-hypothesis]
+        }
+      @induction-step-at-k |
+        (theGapTo(k, k) = ZERO) -> (theGapTo(succ(k), succ(k)) = ZERO)
+        [by discharge given-the-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: Nat;
+      (theGapTo(k, k) = ZERO) -> (theGapTo(succ(k), succ(k)) = ZERO)
+    [by generalize induction-step]
+  @conclusion |
+    forall n: Nat; theGapTo(n, n) = ZERO
+    [using instantiation peano.induction((fun z: Nat => theGapTo(z, z) = ZERO)) base-case induction-step-for-all-k]
+qed
+
+// -- THE TRIANGLE IS THE SHORTENED ROWS ----------------------------------------------------
+// The outer induction, three lines on top of the pivot: the triangle gains its n-th
+// anti-diagonal (`tripleTriSucc`), the rows gain exactly that anti-diagonal
+// (`raisingTheBoundAddsTheDiagonal` at m = succ n), and the shorter row collection at bound n
+// IS the triangle at n — because the (n+1)-st row is empty there, `theGapTo(n, n)` being ZERO.
+theorem theTriangleIsTheShortenedRows: forall p, q, r: Poly; forall i, n: Nat;
+  tripleTri(p, q, r, i, n) = tripleRows(p, q, r, i, n, n)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-i |
+                fix i: Nat {
+                  @base-case |
+                    tripleTri(p, q, r, i, ZERO) =
+                      tripleRows(p, q, r, i, ZERO, ZERO)
+                    [using specialize theTriangleRowsBase(p, q, r, i)]
+                  @induction-step-for-all-k |
+                    forall k: Nat;
+                      (tripleTri(p, q, r, i, k) =
+                      tripleRows(p, q, r, i, k, k)) ->
+                      (tripleTri(p, q, r, i, succ(k)) =
+                      tripleRows(p, q, r, i, succ(k), succ(k)))
+                    [using specialize theTriangleRowsStep(p, q, r, i)]
+                  @all-bounds |
+                    forall n: Nat;
+                      tripleTri(p, q, r, i, n) =
+                      tripleRows(p, q, r, i, n, n)
+                    [using instantiation peano.induction((fun z: Nat => tripleTri(p, q, r, i, z) = tripleRows(p, q, r, i, z, z))) base-case induction-step-for-all-k]
+                }
+              @discharge-i |
+                forall i, n: Nat;
+                  tripleTri(p, q, r, i, n) = tripleRows(p, q, r, i, n, n)
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r: Poly; forall i, n: Nat;
+              tripleTri(p, q, r, i, n) = tripleRows(p, q, r, i, n, n)
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; forall i, n: Nat;
+          tripleTri(p, q, r, i, n) = tripleRows(p, q, r, i, n, n)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall i, n: Nat;
+      tripleTri(p, q, r, i, n) = tripleRows(p, q, r, i, n, n)
+    [by generalize generalize-p]
+qed
+
+// The base: both are empty at bound ZERO.
+theorem theTriangleRowsBase: forall p, q, r: Poly; forall i: Nat;
+  tripleTri(p, q, r, i, ZERO) = tripleRows(p, q, r, i, ZERO, ZERO)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-i |
+                fix i: Nat {
+                  @the-empty-triangle |
+                    tripleTri(p, q, r, i, ZERO) = zeroR
+                    [using specialize tripleTriZero(p, q, r, i)]
+                  @the-empty-rows |
+                    tripleRows(p, q, r, i, ZERO, ZERO) = zeroR
+                    [using specialize tripleRowsZero(p, q, r, i, ZERO)]
+                  @conclusion-the-base |
+                    tripleTri(p, q, r, i, ZERO) =
+                      tripleRows(p, q, r, i, ZERO, ZERO)
+                    [using simplify the-empty-triangle the-empty-rows]
+                }
+              @discharge-i |
+                forall i: Nat;
+                  tripleTri(p, q, r, i, ZERO) =
+                  tripleRows(p, q, r, i, ZERO, ZERO)
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r: Poly; forall i: Nat;
+              tripleTri(p, q, r, i, ZERO) =
+              tripleRows(p, q, r, i, ZERO, ZERO)
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; forall i: Nat;
+          tripleTri(p, q, r, i, ZERO) =
+          tripleRows(p, q, r, i, ZERO, ZERO)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall i: Nat;
+      tripleTri(p, q, r, i, ZERO) = tripleRows(p, q, r, i, ZERO, ZERO)
+    [by generalize generalize-p]
+qed
+
+// The step: the triangle gains its k-th anti-diagonal; the rows gain exactly that
+// anti-diagonal by the pivot at m = succ(k); and the shorter row collection at bound k is the
+// triangle at k, because its extra row has length `theGapTo(k, k)` = ZERO and so contributes
+// nothing.
+theorem theTriangleRowsStep: forall p, q, r: Poly; forall i: Nat;
+  forall k: Nat;
+  (tripleTri(p, q, r, i, k) = tripleRows(p, q, r, i, k, k)) ->
+  (tripleTri(p, q, r, i, succ(k)) =
+  tripleRows(p, q, r, i, succ(k), succ(k)))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-i |
+                fix i: Nat {
+                  @generalize-k |
+                    fix k: Nat {
+                      @given-the-hypothesis |
+                        assume tripleTri(p, q, r, i, k) =
+                          tripleRows(p, q, r, i, k, k) {
+                          @the-hypothesis |
+                            tripleTri(p, q, r, i, k) =
+                              tripleRows(p, q, r, i, k, k)
+                            [by hypothesis given-the-hypothesis]
+                          @the-triangle-grows |
+                            tripleTri(p, q, r, i, succ(k)) =
+                              addR(tripleTri(p, q, r, i, k),
+                              tripleDiag(p, q, r, i, k, succ(k)))
+                            [using specialize tripleTriSucc(p, q, r, i, k)]
+                          @succ-k-is-at-most-itself |
+                            peano_order.less_or_equal(succ(k), succ(k))
+                            [using specialize
+                              peano_order.lessOrEqualRefl(succ(k))]
+                          @the-rows-grow |
+                            tripleRows(p, q, r, i, succ(k), succ(k)) =
+                              addR(tripleRows(p, q, r, i, succ(k), k),
+                              tripleDiag(p, q, r, i, k, succ(k)))
+                            [using specialize
+                              raisingTheBoundAddsTheDiagonal(p, q, r, i, k,
+                              succ(k)) succ-k-is-at-most-itself]
+                          // the extra row at bound k is empty
+                          @the-extra-row-peels |
+                            tripleRows(p, q, r, i, succ(k), k) =
+                              addR(tripleRows(p, q, r, i, k, k),
+                              tripleRow(p, q, r, i, k, theGapTo(k, k)))
+                            [using specialize
+                              tripleRowsSucc(p, q, r, i, k, k)]
+                          @the-last-row-has-no-length |
+                            theGapTo(k, k) = ZERO
+                            [using specialize theGapToSelfVanishes(k)]
+                          @the-empty-row |
+                            tripleRow(p, q, r, i, k, ZERO) = zeroR
+                            [using specialize tripleRowZero(p, q, r, i, k)]
+                          @adding-nothing |
+                            addR(tripleRows(p, q, r, i, k, k), zeroR) =
+                              tripleRows(p, q, r, i, k, k)
+                            [using specialize addZeroRightR(
+                              tripleRows(p, q, r, i, k, k))]
+                          @the-extra-row-contributes-nothing |
+                            tripleRows(p, q, r, i, succ(k), k) =
+                              tripleRows(p, q, r, i, k, k)
+                            [using simplify the-extra-row-peels
+                              the-last-row-has-no-length the-empty-row
+                              adding-nothing]
+                          @the-rows-grow-from-the-triangle |
+                            tripleRows(p, q, r, i, succ(k), succ(k)) =
+                              addR(tripleTri(p, q, r, i, k),
+                              tripleDiag(p, q, r, i, k, succ(k)))
+                            [using simplify the-rows-grow
+                              the-extra-row-contributes-nothing
+                              the-hypothesis]
+                          @the-rows-grow-flipped |
+                            addR(tripleTri(p, q, r, i, k),
+                              tripleDiag(p, q, r, i, k, succ(k))) =
+                              tripleRows(p, q, r, i, succ(k), succ(k))
+                            [by symmetry the-rows-grow-from-the-triangle]
+                          @conclusion-at-succ-k |
+                            tripleTri(p, q, r, i, succ(k)) =
+                              tripleRows(p, q, r, i, succ(k), succ(k))
+                            [using chain the-triangle-grows
+                              the-rows-grow-flipped]
+                        }
+                      @the-hypothesis-gives-it |
+                        (tripleTri(p, q, r, i, k) =
+                          tripleRows(p, q, r, i, k, k)) ->
+                          (tripleTri(p, q, r, i, succ(k)) =
+                          tripleRows(p, q, r, i, succ(k), succ(k)))
+                        [by discharge given-the-hypothesis]
+                    }
+                  @all-bounds |
+                    forall k: Nat;
+                      (tripleTri(p, q, r, i, k) =
+                      tripleRows(p, q, r, i, k, k)) ->
+                      (tripleTri(p, q, r, i, succ(k)) =
+                      tripleRows(p, q, r, i, succ(k), succ(k)))
+                    [by generalize generalize-k]
+                }
+              @discharge-i |
+                forall i: Nat; forall k: Nat;
+                  (tripleTri(p, q, r, i, k) =
+                  tripleRows(p, q, r, i, k, k)) ->
+                  (tripleTri(p, q, r, i, succ(k)) =
+                  tripleRows(p, q, r, i, succ(k), succ(k)))
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r: Poly; forall i: Nat; forall k: Nat;
+              (tripleTri(p, q, r, i, k) =
+              tripleRows(p, q, r, i, k, k)) ->
+              (tripleTri(p, q, r, i, succ(k)) =
+              tripleRows(p, q, r, i, succ(k), succ(k)))
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; forall i: Nat; forall k: Nat;
+          (tripleTri(p, q, r, i, k) =
+          tripleRows(p, q, r, i, k, k)) ->
+          (tripleTri(p, q, r, i, succ(k)) =
+          tripleRows(p, q, r, i, succ(k), succ(k)))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall i: Nat; forall k: Nat;
+      (tripleTri(p, q, r, i, k) = tripleRows(p, q, r, i, k, k)) ->
+      (tripleTri(p, q, r, i, succ(k)) =
+      tripleRows(p, q, r, i, succ(k), succ(k)))
+    [by generalize generalize-p]
+qed
