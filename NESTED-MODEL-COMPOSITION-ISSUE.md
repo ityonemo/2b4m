@@ -5,9 +5,55 @@
 
 ## The one-line statement
 
-Two models that each transfer correctly cannot be CHAINED. 2b4m re-checks an inner transfer
-in the outer model's sort space instead of composing the two interpretations, so a transfer
-whose source theory was itself reached by transfer is inexpressible.
+**A theorem whose proof is itself a model transfer cannot be re-transferred.** Two models do
+not compose: the engine re-elaborates the inner proof, and the inner model's TARGET sorts
+collide with the outer model's.
+
+## The minimal repro (verified 2026-11-03)
+
+`std/field/polynomial.b4m` has
+
+```2b4m
+theorem polyMulIsCommutative: forall p, q: Poly; mulP(p, q) = mulP(q, p)
+proof
+  @conclusion | …  [using model(FieldPolyModelsRingPoly) ring_poly.polyMulIsCommutative]
+qed
+```
+
+— a one-line transfer. Re-transferring THAT into ℚ[x] fails:
+
+```
+[using model(qpoly.RationalPolynomials) fieldpoly.polyMulIsCommutative]
+  -> std/ring/polynomial.b4m:1430: error: expected sort 'Poly', got 'QPoly'
+```
+
+The two mappings are individually right and should compose:
+
+| model | says |
+|---|---|
+| `FieldPolyModelsRingPoly` | `ring_poly.R → F` |
+| `RationalPolynomials` | `fieldpoly.F → Q` |
+
+Composed, that is `ring_poly.R → Q`, which is exactly what ℚ[x] wants. But the engine
+re-checks F[x]'s proof body with the INNER model intact, so `R → F` is still asserted while
+the outer context has already renamed everything to `Q`. They meet inside `ring_poly`'s own
+proof and the sorts clash.
+
+**Adding the missing mappings to the outer model does NOT help** — tried `ring.Ring: Q` plus
+the full `ring` axiom discharge in `RationalPolynomials`; the re-elaboration happens in F[x]'s
+namespace, not ℚ[x]'s, so the outer model is never consulted for it.
+
+**What DOES work is avoiding the second hop.** A theorem with a REAL proof re-transfers fine,
+because only one model is in play:
+
+- `qMulIsAssociative` ← `ring_poly.polyMulIsAssociative` (real proof) — works
+- `theMonomialShift` ← `ring_mono.aMonomialShiftsEveryCoefficient` (real proof) — works
+- `theMonomialShift` ← `fieldpoly.theMonomialShiftsEveryCoefficient` (a transfer) — FAILS
+
+So today every concrete polynomial layer must cite the RING layer directly and may not reuse
+F[x]'s transferred corpus. That is a real cost: it is why `std/rational/polynomial.b4m` maps
+`ring_mono` and `ring_poly` itself rather than inheriting F[x]'s work, and the same reason
+`gauss-cut.b4m` duplicates ℤ[x] instead of transferring it.
 
 ## The concrete case that surfaced it
 
