@@ -15,7 +15,7 @@
 // error for omitting it surfaces inside `std/ring.b4m`, not here.
 import ring <<< "std/ring.b4m"
 import ring_poly <<< "std/ring/polynomial.b4m"
-import ring_leading <<< "std/ring/polynomial-leading.b4m"
+import ring_leading <<< "std/ring/polynomial/leading.b4m"
 import integer <<< "std/integer.b4m"
 import int_divides <<< "std/integer/divides.b4m"
 import mod_n <<< "std/integer/mod-n.b4m"
@@ -23,7 +23,6 @@ import mod_n_domain <<< "std/integer/mod-n-domain.b4m"
 import mod_n_poly <<< "std/integer/mod-n-polynomial.b4m"
 import peano <<< "std/peano.b4m"
 import peano_order <<< "std/peano/order.b4m"
-import subtraction <<< "std/peano/subtraction.b4m"
 
 sort Int = integer.Int
 sort ZnPoly = mod_n_poly.ZnPoly
@@ -60,16 +59,15 @@ axiom iAddPolyCoeff: forall p, q: IntPoly; forall i: Nat;
   icoeff(iaddP(p, q), i) = integer.add(icoeff(p, i), icoeff(q, i))
 axiom iNegPolyCoeff: forall p: IntPoly; forall i: Nat;
   icoeff(inegP(p), i) = integer.neg(icoeff(p, i))
-axiom iConvolutionZero: forall p, q: IntPoly; forall i: Nat;
-  iconvolution(p, q, i, ZERO) =
-  integer.mul(icoeff(p, ZERO), icoeff(q, i))
-axiom iConvolutionSucc: forall p, q: IntPoly; forall i, k: Nat;
-  iconvolution(p, q, i, peano.succ(k)) =
-  integer.add(iconvolution(p, q, i, k),
-  integer.mul(icoeff(p, peano.succ(k)),
-  icoeff(q, subtraction.sub(i, peano.succ(k)))))
+axiom iConvolutionZero: forall p, q: IntPoly; forall j: Nat;
+  iconvolution(p, q, j, ZERO) =
+  integer.mul(icoeff(p, j), icoeff(q, ZERO))
+axiom iConvolutionSucc: forall p, q: IntPoly; forall j, m: Nat;
+  iconvolution(p, q, j, peano.succ(m)) =
+  integer.add(integer.mul(icoeff(p, j), icoeff(q, peano.succ(m))),
+  iconvolution(p, q, peano.succ(j), m))
 axiom iMulPolyCoeff: forall p, q: IntPoly; forall i: Nat;
-  icoeff(imulP(p, q), i) = iconvolution(p, q, i, i)
+  icoeff(imulP(p, q), i) = iconvolution(p, q, ZERO, i)
 axiom iDegreeIsALeadingIndex: forall p: IntPoly;
   (not (p = IZEROP)) -> (not (icoeff(p, idegree(p)) = IZERO))
 axiom iDegreeBoundsTheCoefficients: forall p: IntPoly;
@@ -227,13 +225,13 @@ theorem theIntegerProductVanishesAboveTheDegreeSum: forall p, q: IntPoly;
   forall m, n, i: Nat;
   idegreeAtMost(p, m) -> idegreeAtMost(q, n) ->
   peano.less_than(add(m, n), i) ->
-  forall k: Nat; iconvolution(p, q, i, k) = IZERO
+  icoeff(imulP(p, q), i) = IZERO
 proof
   @conclusion |
     forall p, q: IntPoly; forall m, n, i: Nat;
       idegreeAtMost(p, m) -> idegreeAtMost(q, n) ->
       peano.less_than(add(m, n), i) ->
-      forall k: Nat; iconvolution(p, q, i, k) = IZERO
+      icoeff(imulP(p, q), i) = IZERO
     [using model(IntegerPolynomials) ring_leading.theProductVanishesAboveTheDegreeSum]
 qed
 
@@ -245,139 +243,239 @@ qed
 // recursion, and `cls` is an add- and mul-homomorphism at every step, so induct on the
 // convolution's second index.
 
-// Strategy: induction on k. Base: both clauses give a product of coefficients, bridged by
-// mulHom. Step: both clauses add a product onto the previous convolution, bridged by addHom
-// and mulHom with the inductive hypothesis rewriting the left summand.
-theorem reduceCommutesWithTheConvolution: forall p, q: IntPoly; forall i, k: Nat;
-  mod_n_poly.zconvolution(reduce(p), reduce(q), i, k) =
-  mod_n.cls(iconvolution(p, q, i, k))
+// Strategy: induction on the LENGTH, with the BASE index quantified inside the hypothesis so
+// the step can fire it one higher — the reindexed recursion moves the base, where the old one
+// kept it fixed and moved a subtraction.
+theorem reduceCommutesWithTheConvolution: forall p, q: IntPoly; forall m, j: Nat;
+  mod_n_poly.zconvolution(reduce(p), reduce(q), j, m) =
+  mod_n.cls(iconvolution(p, q, j, m))
 proof
   @generalize-p |
     fix p: IntPoly {
       @generalize-q |
         fix q: IntPoly {
-          @generalize-i |
-            fix i: Nat {
-              // base case: convolution at ZERO is a single coefficient product
-              @the-reduced-convolution-at-zero |
-                mod_n_poly.zconvolution(reduce(p), reduce(q), i, ZERO) =
-                  mod_n.mul(mod_n_poly.zcoeff(reduce(p), ZERO),
-                  mod_n_poly.zcoeff(reduce(q), i))
-                [using specialize mod_n_poly.zConvolutionZero(reduce(p), reduce(q), i)]
-              @the-integer-convolution-at-zero |
-                iconvolution(p, q, i, ZERO) =
-                  integer.mul(icoeff(p, ZERO), icoeff(q, i))
-                [using specialize iConvolutionZero(p, q, i)]
-              @the-reduced-coefficient-at-zero |
-                mod_n_poly.zcoeff(reduce(p), ZERO) = mod_n.cls(icoeff(p, ZERO))
-                [using specialize reduceCoefficientwise(p, ZERO)]
-              @the-reduced-coefficient-at-i |
-                mod_n_poly.zcoeff(reduce(q), i) = mod_n.cls(icoeff(q, i))
-                [using specialize reduceCoefficientwise(q, i)]
-              @the-product-of-classes-at-zero |
-                mod_n.mul(mod_n.cls(icoeff(p, ZERO)), mod_n.cls(icoeff(q, i))) =
-                  mod_n.cls(integer.mul(icoeff(p, ZERO), icoeff(q, i)))
-                [using specialize mod_n.mulHom(icoeff(p, ZERO), icoeff(q, i))]
-              @base-case |
-                mod_n_poly.zconvolution(reduce(p), reduce(q), i, ZERO) =
-                  mod_n.cls(iconvolution(p, q, i, ZERO))
-                [using simplify the-reduced-convolution-at-zero
-                  the-reduced-coefficient-at-zero
-                  the-reduced-coefficient-at-i
-                  the-product-of-classes-at-zero
-                  the-integer-convolution-at-zero]
-
-              // inductive step: peel one term off each recursion and match them up
-              @induction-step |
-                fix k: Nat {
-                  @given-inductive-hypothesis |
-                    assume mod_n_poly.zconvolution(reduce(p), reduce(q), i, k) =
-                      mod_n.cls(iconvolution(p, q, i, k)) {
-                      @inductive-hypothesis |
-                        mod_n_poly.zconvolution(reduce(p), reduce(q), i, k) =
-                          mod_n.cls(iconvolution(p, q, i, k))
-                        [by hypothesis given-inductive-hypothesis]
-                      @the-reduced-convolution-at-succ |
-                        mod_n_poly.zconvolution(reduce(p), reduce(q), i, peano.succ(k)) =
-                          mod_n.add(mod_n_poly.zconvolution(reduce(p), reduce(q), i, k),
-                          mod_n.mul(mod_n_poly.zcoeff(reduce(p), peano.succ(k)),
-                          mod_n_poly.zcoeff(reduce(q), subtraction.sub(i, peano.succ(k)))))
-                        [using specialize mod_n_poly.zConvolutionSucc(reduce(p), reduce(q), i, k)]
-                      @the-integer-convolution-at-succ |
-                        iconvolution(p, q, i, peano.succ(k)) =
-                          integer.add(iconvolution(p, q, i, k),
-                          integer.mul(icoeff(p, peano.succ(k)),
-                          icoeff(q, subtraction.sub(i, peano.succ(k)))))
-                        [using specialize iConvolutionSucc(p, q, i, k)]
-                      @the-reduced-coefficient-at-succ |
-                        mod_n_poly.zcoeff(reduce(p), peano.succ(k)) =
-                          mod_n.cls(icoeff(p, peano.succ(k)))
-                        [using specialize reduceCoefficientwise(p, peano.succ(k))]
-                      @the-reduced-coefficient-at-the-complement |
-                        mod_n_poly.zcoeff(reduce(q), subtraction.sub(i, peano.succ(k))) =
-                          mod_n.cls(icoeff(q, subtraction.sub(i, peano.succ(k))))
-                        [using specialize reduceCoefficientwise(q, subtraction.sub(i, peano.succ(k)))]
-                      @the-product-of-classes-at-succ |
-                        mod_n.mul(mod_n.cls(icoeff(p, peano.succ(k))),
-                          mod_n.cls(icoeff(q, subtraction.sub(i, peano.succ(k))))) =
-                          mod_n.cls(integer.mul(icoeff(p, peano.succ(k)),
-                          icoeff(q, subtraction.sub(i, peano.succ(k)))))
-                        [using specialize mod_n.mulHom(icoeff(p, peano.succ(k)), icoeff(q, subtraction.sub(i, peano.succ(k))))]
-                      @the-sum-of-classes |
-                        mod_n.add(mod_n.cls(iconvolution(p, q, i, k)),
-                          mod_n.cls(integer.mul(icoeff(p, peano.succ(k)),
-                          icoeff(q, subtraction.sub(i, peano.succ(k)))))) =
-                          mod_n.cls(integer.add(iconvolution(p, q, i, k),
-                          integer.mul(icoeff(p, peano.succ(k)),
-                          icoeff(q, subtraction.sub(i, peano.succ(k))))))
-                        [using specialize mod_n.addHom(iconvolution(p, q, i, k), integer.mul(icoeff(p, peano.succ(k)), icoeff(q, subtraction.sub(i, peano.succ(k)))))]
-                      @conclusion-the-reduction-commutes-at-succ |
-                        mod_n_poly.zconvolution(reduce(p), reduce(q), i, peano.succ(k)) =
-                          mod_n.cls(iconvolution(p, q, i, peano.succ(k)))
-                        [using simplify the-reduced-convolution-at-succ
-                          inductive-hypothesis
-                          the-reduced-coefficient-at-succ
-                          the-reduced-coefficient-at-the-complement
-                          the-product-of-classes-at-succ
-                          the-sum-of-classes
-                          the-integer-convolution-at-succ]
-                    }
-                  @induction-step-at-k |
-                    (mod_n_poly.zconvolution(reduce(p), reduce(q), i, k) =
-                      mod_n.cls(iconvolution(p, q, i, k))) ->
-                      (mod_n_poly.zconvolution(reduce(p), reduce(q), i, peano.succ(k)) =
-                      mod_n.cls(iconvolution(p, q, i, peano.succ(k))))
-                    [by discharge given-inductive-hypothesis]
-                }
-              @induction-step-for-all-k |
-                forall k: Nat;
-                  (mod_n_poly.zconvolution(reduce(p), reduce(q), i, k) =
-                  mod_n.cls(iconvolution(p, q, i, k))) ->
-                  (mod_n_poly.zconvolution(reduce(p), reduce(q), i, peano.succ(k)) =
-                  mod_n.cls(iconvolution(p, q, i, peano.succ(k))))
-                [by generalize induction-step]
-              @the-reduction-commutes-for-all-k |
-                forall k: Nat;
-                  mod_n_poly.zconvolution(reduce(p), reduce(q), i, k) =
-                  mod_n.cls(iconvolution(p, q, i, k))
-                [using instantiation peano.induction((fun t: Nat => mod_n_poly.zconvolution(reduce(p), reduce(q), i, t) = mod_n.cls(iconvolution(p, q, i, t)))) base-case induction-step-for-all-k]
-            }
-          @discharge-i |
-            forall i9: Nat; forall k: Nat;
-              mod_n_poly.zconvolution(reduce(p), reduce(q), i9, k) =
-              mod_n.cls(iconvolution(p, q, i9, k))
-            [by generalize generalize-i]
+          @base-case |
+            forall j: Nat;
+              mod_n_poly.zconvolution(reduce(p), reduce(q), j, ZERO) =
+              mod_n.cls(iconvolution(p, q, j, ZERO))
+            [using specialize theReductionBase(p, q)]
+          @induction-step-for-all-m |
+            forall m: Nat;
+              (forall j: Nat;
+              mod_n_poly.zconvolution(reduce(p), reduce(q), j, m) =
+              mod_n.cls(iconvolution(p, q, j, m))) ->
+              (forall j: Nat;
+              mod_n_poly.zconvolution(reduce(p), reduce(q), j, peano.succ(m)) =
+              mod_n.cls(iconvolution(p, q, j, peano.succ(m))))
+            [using specialize theReductionStep(p, q)]
+          @all-lengths |
+            forall m: Nat; forall j: Nat;
+              mod_n_poly.zconvolution(reduce(p), reduce(q), j, m) =
+              mod_n.cls(iconvolution(p, q, j, m))
+            [using instantiation peano.induction((fun t: Nat => forall j: Nat; mod_n_poly.zconvolution(reduce(p), reduce(q), j, t) = mod_n.cls(iconvolution(p, q, j, t)))) base-case induction-step-for-all-m]
         }
       @discharge-q |
-        forall q9: IntPoly; forall i, k: Nat;
-          mod_n_poly.zconvolution(reduce(p), reduce(q9), i, k) =
-          mod_n.cls(iconvolution(p, q9, i, k))
+        forall q: IntPoly; forall m, j: Nat;
+          mod_n_poly.zconvolution(reduce(p), reduce(q), j, m) =
+          mod_n.cls(iconvolution(p, q, j, m))
         [by generalize generalize-q]
     }
   @conclusion |
-    forall p, q: IntPoly; forall i, k: Nat;
-      mod_n_poly.zconvolution(reduce(p), reduce(q), i, k) =
-      mod_n.cls(iconvolution(p, q, i, k))
+    forall p, q: IntPoly; forall m, j: Nat;
+      mod_n_poly.zconvolution(reduce(p), reduce(q), j, m) =
+      mod_n.cls(iconvolution(p, q, j, m))
+    [by generalize generalize-p]
+qed
+
+// The base: a single coefficient product on each side, bridged by `mulHom`.
+theorem theReductionBase: forall p, q: IntPoly; forall j: Nat;
+  mod_n_poly.zconvolution(reduce(p), reduce(q), j, ZERO) =
+  mod_n.cls(iconvolution(p, q, j, ZERO))
+proof
+  @generalize-p |
+    fix p: IntPoly {
+      @generalize-q |
+        fix q: IntPoly {
+          @generalize-j |
+            fix j: Nat {
+              @the-reduced-convolution |
+                mod_n_poly.zconvolution(reduce(p), reduce(q), j, ZERO) =
+                  mod_n.mul(mod_n_poly.zcoeff(reduce(p), j),
+                  mod_n_poly.zcoeff(reduce(q), ZERO))
+                [using specialize mod_n_poly.zConvolutionZero(reduce(p), reduce(q), j)]
+              @the-integer-convolution |
+                iconvolution(p, q, j, ZERO) =
+                  integer.mul(icoeff(p, j), icoeff(q, ZERO))
+                [using specialize iConvolutionZero(p, q, j)]
+              @the-reduced-coefficient-at-j |
+                mod_n_poly.zcoeff(reduce(p), j) = mod_n.cls(icoeff(p, j))
+                [using specialize reduceCoefficientwise(p, j)]
+              @the-reduced-coefficient-at-zero |
+                mod_n_poly.zcoeff(reduce(q), ZERO) = mod_n.cls(icoeff(q, ZERO))
+                [using specialize reduceCoefficientwise(q, ZERO)]
+              @the-product-of-classes |
+                mod_n.mul(mod_n.cls(icoeff(p, j)), mod_n.cls(icoeff(q, ZERO))) =
+                  mod_n.cls(integer.mul(icoeff(p, j), icoeff(q, ZERO)))
+                [using specialize mod_n.mulHom(icoeff(p, j), icoeff(q, ZERO))]
+              @conclusion-the-base-agrees |
+                mod_n_poly.zconvolution(reduce(p), reduce(q), j, ZERO) =
+                  mod_n.cls(iconvolution(p, q, j, ZERO))
+                [using simplify the-reduced-convolution
+                  the-reduced-coefficient-at-j
+                  the-reduced-coefficient-at-zero
+                  the-product-of-classes
+                  the-integer-convolution]
+            }
+          @discharge-j |
+            forall j: Nat;
+              mod_n_poly.zconvolution(reduce(p), reduce(q), j, ZERO) =
+              mod_n.cls(iconvolution(p, q, j, ZERO))
+            [by generalize generalize-j]
+        }
+      @discharge-q |
+        forall q: IntPoly; forall j: Nat;
+          mod_n_poly.zconvolution(reduce(p), reduce(q), j, ZERO) =
+          mod_n.cls(iconvolution(p, q, j, ZERO))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: IntPoly; forall j: Nat;
+      mod_n_poly.zconvolution(reduce(p), reduce(q), j, ZERO) =
+      mod_n.cls(iconvolution(p, q, j, ZERO))
+    [by generalize generalize-p]
+qed
+
+// The step: each recursion peels its top term, the two peeled terms correspond by `mulHom`,
+// the two tails by the hypothesis at base succ(j), and the two sums by `addHom`.
+theorem theReductionStep: forall p, q: IntPoly; forall m: Nat;
+  (forall j: Nat;
+  mod_n_poly.zconvolution(reduce(p), reduce(q), j, m) =
+  mod_n.cls(iconvolution(p, q, j, m))) ->
+  (forall j: Nat;
+  mod_n_poly.zconvolution(reduce(p), reduce(q), j, peano.succ(m)) =
+  mod_n.cls(iconvolution(p, q, j, peano.succ(m))))
+proof
+  @generalize-p |
+    fix p: IntPoly {
+      @generalize-q |
+        fix q: IntPoly {
+          @generalize-m |
+            fix m: Nat {
+              @given-inductive-hypothesis |
+                assume forall j: Nat;
+                  mod_n_poly.zconvolution(reduce(p), reduce(q), j, m) =
+                  mod_n.cls(iconvolution(p, q, j, m)) {
+                  @inductive-hypothesis |
+                    forall j: Nat;
+                      mod_n_poly.zconvolution(reduce(p), reduce(q), j, m) =
+                      mod_n.cls(iconvolution(p, q, j, m))
+                    [by hypothesis given-inductive-hypothesis]
+                  @generalize-j |
+                    fix j: Nat {
+                      @the-reduced-convolution-peels |
+                        mod_n_poly.zconvolution(reduce(p), reduce(q), j,
+                          peano.succ(m)) =
+                          mod_n.add(
+                          mod_n.mul(mod_n_poly.zcoeff(reduce(p), j),
+                          mod_n_poly.zcoeff(reduce(q), peano.succ(m))),
+                          mod_n_poly.zconvolution(reduce(p), reduce(q),
+                          peano.succ(j), m))
+                        [using specialize
+                          mod_n_poly.zConvolutionSucc(reduce(p), reduce(q), j, m)]
+                      @the-integer-convolution-peels |
+                        iconvolution(p, q, j, peano.succ(m)) =
+                          integer.add(
+                          integer.mul(icoeff(p, j), icoeff(q, peano.succ(m))),
+                          iconvolution(p, q, peano.succ(j), m))
+                        [using specialize iConvolutionSucc(p, q, j, m)]
+                      @the-reduced-coefficient-at-j |
+                        mod_n_poly.zcoeff(reduce(p), j) = mod_n.cls(icoeff(p, j))
+                        [using specialize reduceCoefficientwise(p, j)]
+                      @the-reduced-coefficient-at-the-top |
+                        mod_n_poly.zcoeff(reduce(q), peano.succ(m)) =
+                          mod_n.cls(icoeff(q, peano.succ(m)))
+                        [using specialize reduceCoefficientwise(q, peano.succ(m))]
+                      @the-peeled-product-of-classes |
+                        mod_n.mul(mod_n.cls(icoeff(p, j)),
+                          mod_n.cls(icoeff(q, peano.succ(m)))) =
+                          mod_n.cls(integer.mul(icoeff(p, j),
+                          icoeff(q, peano.succ(m))))
+                        [using specialize mod_n.mulHom(icoeff(p, j),
+                          icoeff(q, peano.succ(m)))]
+                      @the-tails-agree |
+                        mod_n_poly.zconvolution(reduce(p), reduce(q),
+                          peano.succ(j), m) =
+                          mod_n.cls(iconvolution(p, q, peano.succ(j), m))
+                        [using specialize inductive-hypothesis(peano.succ(j))]
+                      @the-sum-of-classes |
+                        mod_n.add(
+                          mod_n.cls(integer.mul(icoeff(p, j),
+                          icoeff(q, peano.succ(m)))),
+                          mod_n.cls(iconvolution(p, q, peano.succ(j), m))) =
+                          mod_n.cls(integer.add(
+                          integer.mul(icoeff(p, j), icoeff(q, peano.succ(m))),
+                          iconvolution(p, q, peano.succ(j), m)))
+                        [using specialize mod_n.addHom(
+                          integer.mul(icoeff(p, j), icoeff(q, peano.succ(m))),
+                          iconvolution(p, q, peano.succ(j), m))]
+                      @conclusion-the-step-agrees |
+                        mod_n_poly.zconvolution(reduce(p), reduce(q), j,
+                          peano.succ(m)) =
+                          mod_n.cls(iconvolution(p, q, j, peano.succ(m)))
+                        [using simplify the-reduced-convolution-peels
+                          the-reduced-coefficient-at-j
+                          the-reduced-coefficient-at-the-top
+                          the-peeled-product-of-classes
+                          the-tails-agree
+                          the-sum-of-classes
+                          the-integer-convolution-peels]
+                    }
+                  @all-bases |
+                    forall j: Nat;
+                      mod_n_poly.zconvolution(reduce(p), reduce(q), j,
+                      peano.succ(m)) =
+                      mod_n.cls(iconvolution(p, q, j, peano.succ(m)))
+                    [by generalize generalize-j]
+                }
+              @the-hypothesis-gives-it |
+                (forall j: Nat;
+                  mod_n_poly.zconvolution(reduce(p), reduce(q), j, m) =
+                  mod_n.cls(iconvolution(p, q, j, m))) ->
+                  (forall j: Nat;
+                  mod_n_poly.zconvolution(reduce(p), reduce(q), j,
+                  peano.succ(m)) =
+                  mod_n.cls(iconvolution(p, q, j, peano.succ(m))))
+                [by discharge given-inductive-hypothesis]
+            }
+          @discharge-m |
+            forall m: Nat;
+              (forall j: Nat;
+              mod_n_poly.zconvolution(reduce(p), reduce(q), j, m) =
+              mod_n.cls(iconvolution(p, q, j, m))) ->
+              (forall j: Nat;
+              mod_n_poly.zconvolution(reduce(p), reduce(q), j,
+              peano.succ(m)) =
+              mod_n.cls(iconvolution(p, q, j, peano.succ(m))))
+            [by generalize generalize-m]
+        }
+      @discharge-q |
+        forall q: IntPoly; forall m: Nat;
+          (forall j: Nat;
+          mod_n_poly.zconvolution(reduce(p), reduce(q), j, m) =
+          mod_n.cls(iconvolution(p, q, j, m))) ->
+          (forall j: Nat;
+          mod_n_poly.zconvolution(reduce(p), reduce(q), j, peano.succ(m)) =
+          mod_n.cls(iconvolution(p, q, j, peano.succ(m))))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: IntPoly; forall m: Nat;
+      (forall j: Nat;
+      mod_n_poly.zconvolution(reduce(p), reduce(q), j, m) =
+      mod_n.cls(iconvolution(p, q, j, m))) ->
+      (forall j: Nat;
+      mod_n_poly.zconvolution(reduce(p), reduce(q), j, peano.succ(m)) =
+      mod_n.cls(iconvolution(p, q, j, peano.succ(m))))
     [by generalize generalize-p]
 qed
 
@@ -394,14 +492,14 @@ proof
             fix i: Nat {
               @the-reduced-product-coefficient |
                 mod_n_poly.zcoeff(mod_n_poly.zmulP(reduce(p), reduce(q)), i) =
-                  mod_n_poly.zconvolution(reduce(p), reduce(q), i, i)
+                  mod_n_poly.zconvolution(reduce(p), reduce(q), ZERO, i)
                 [using specialize mod_n_poly.zMulPolyCoeff(reduce(p), reduce(q), i)]
               @the-convolutions-agree |
-                mod_n_poly.zconvolution(reduce(p), reduce(q), i, i) =
-                  mod_n.cls(iconvolution(p, q, i, i))
-                [using specialize reduceCommutesWithTheConvolution(p, q, i, i)]
+                mod_n_poly.zconvolution(reduce(p), reduce(q), ZERO, i) =
+                  mod_n.cls(iconvolution(p, q, ZERO, i))
+                [using specialize reduceCommutesWithTheConvolution(p, q, i, ZERO)]
               @the-integer-product-coefficient |
-                icoeff(imulP(p, q), i) = iconvolution(p, q, i, i)
+                icoeff(imulP(p, q), i) = iconvolution(p, q, ZERO, i)
                 [using specialize iMulPolyCoeff(p, q, i)]
               @the-reduction-of-the-product |
                 mod_n_poly.zcoeff(reduce(imulP(p, q)), i) =
@@ -638,13 +736,17 @@ qed
 //
 // What is stated here is that core step. The reduction FROM irreducibility over ℚ is Gauss's
 // Lemma, already proved (`std/rational/gauss.b4m`).
-// `theIntegerProductVanishesAboveTheDegreeSum` under its own name, so the Eisenstein proof
-// reads the quantifier order it needs.
+//
+// This wrapper restates `theIntegerProductVanishesAboveTheDegreeSum` with the degree bounds
+// pulled OUT of the index quantifier, which is the order the Eisenstein proof reads: it fixes
+// the two factors once, then walks every index above the sum. The name still says
+// "convolution" for continuity with the citing proof, but both now conclude about the
+// COEFFICIENT — reindexing removed the convolution's own appearance here.
 theorem theConvolutionVanishesAboveTheSum: forall p, q: IntPoly;
   forall m, n: Nat;
   idegreeAtMost(p, m) -> idegreeAtMost(q, n) ->
-  (forall i: Nat; peano.less_than(add(m, n), i) ->
-  (forall k: Nat; iconvolution(p, q, i, k) = IZERO))
+  (forall i: Nat;
+  peano.less_than(add(m, n), i) -> icoeff(imulP(p, q), i) = IZERO)
 proof
   @generalize-p |
     fix p: IntPoly {
@@ -654,84 +756,84 @@ proof
             fix m: Nat {
               @generalize-n |
                 fix n: Nat {
-                  @given-both-bounded |
-                    assume idegreeAtMost(p, m) and
-                      idegreeAtMost(q, n) {
-                      @both-bounded |
-                        idegreeAtMost(p, m) and idegreeAtMost(q, n)
-                        [by hypothesis given-both-bounded]
+                  @given-p-bounded |
+                    assume idegreeAtMost(p, m) {
                       @p-is-bounded |
                         idegreeAtMost(p, m)
-                        [by and_lhs both-bounded]
-                      @q-is-bounded |
-                        idegreeAtMost(q, n)
-                        [by and_rhs both-bounded]
-                      @each-index |
-                        fix i: Nat {
-                          @given-above |
-                            assume peano.less_than(add(m, n), i) {
-                              @above |
-                                peano.less_than(add(m, n), i)
-                                [by hypothesis given-above]
-                              @conclusion-vanishes |
-                                forall k: Nat;
-                                  iconvolution(p, q, i, k) = IZERO
-                                [using specialize theIntegerProductVanishesAboveTheDegreeSum(p, q, m, n, i) p-is-bounded q-is-bounded above]
+                        [by hypothesis given-p-bounded]
+                      @given-q-bounded |
+                        assume idegreeAtMost(q, n) {
+                          @q-is-bounded |
+                            idegreeAtMost(q, n)
+                            [by hypothesis given-q-bounded]
+                          @each-index |
+                            fix i: Nat {
+                              @given-above |
+                                assume peano.less_than(add(m, n), i) {
+                                  @above |
+                                    peano.less_than(add(m, n), i)
+                                    [by hypothesis given-above]
+                                  @conclusion-vanishes |
+                                    icoeff(imulP(p, q), i) = IZERO
+                                    [using specialize
+                                      theIntegerProductVanishesAboveTheDegreeSum(
+                                      p, q, m, n, i)
+                                      p-is-bounded q-is-bounded above]
+                                }
+                              @above-implies |
+                                peano.less_than(add(m, n), i) ->
+                                  icoeff(imulP(p, q), i) = IZERO
+                                [by discharge given-above]
                             }
-                          @above-implies |
-                            peano.less_than(add(m, n), i) ->
-                              (forall k: Nat;
-                              iconvolution(p, q, i, k) = IZERO)
-                            [by discharge given-above]
+                          @all-indices |
+                            forall i: Nat;
+                              peano.less_than(add(m, n), i) ->
+                              icoeff(imulP(p, q), i) = IZERO
+                            [by generalize each-index]
                         }
-                      @conclusion-all |
-                        forall i: Nat;
+                      @q-bounded-gives-it |
+                        idegreeAtMost(q, n) ->
+                          (forall i: Nat;
                           peano.less_than(add(m, n), i) ->
-                          (forall k: Nat;
-                          iconvolution(p, q, i, k) = IZERO)
-                        [by generalize each-index]
+                          icoeff(imulP(p, q), i) = IZERO)
+                        [by discharge given-q-bounded]
                     }
-                  @the-implication |
-                    (idegreeAtMost(p, m) and idegreeAtMost(q, n)) ->
-                      (forall i: Nat;
-                      peano.less_than(add(m, n), i) ->
-                      (forall k: Nat;
-                      iconvolution(p, q, i, k) = IZERO))
-                    [by discharge given-both-bounded]
-                  @curried |
+                  @p-bounded-gives-it |
                     idegreeAtMost(p, m) -> idegreeAtMost(q, n) ->
                       (forall i: Nat;
                       peano.less_than(add(m, n), i) ->
-                      (forall k: Nat;
-                      iconvolution(p, q, i, k) = IZERO))
-                    [using tautology the-implication]
+                      icoeff(imulP(p, q), i) = IZERO)
+                    [by discharge given-p-bounded]
                 }
               @discharge-n |
-                forall n9: Nat;
-                  idegreeAtMost(p, m) -> idegreeAtMost(q, n9) ->
-                  (forall i: Nat; peano.less_than(add(m, n9), i) ->
-                  (forall k: Nat; iconvolution(p, q, i, k) = IZERO))
+                forall n: Nat;
+                  idegreeAtMost(p, m) -> idegreeAtMost(q, n) ->
+                  (forall i: Nat;
+                  peano.less_than(add(m, n), i) ->
+                  icoeff(imulP(p, q), i) = IZERO)
                 [by generalize generalize-n]
             }
           @discharge-m |
-            forall m9, n9: Nat;
-              idegreeAtMost(p, m9) -> idegreeAtMost(q, n9) ->
-              (forall i: Nat; peano.less_than(add(m9, n9), i) ->
-              (forall k: Nat; iconvolution(p, q, i, k) = IZERO))
+            forall m, n: Nat;
+              idegreeAtMost(p, m) -> idegreeAtMost(q, n) ->
+              (forall i: Nat;
+              peano.less_than(add(m, n), i) ->
+              icoeff(imulP(p, q), i) = IZERO)
             [by generalize generalize-m]
         }
       @discharge-q |
-        forall q9: IntPoly; forall m9, n9: Nat;
-          idegreeAtMost(p, m9) -> idegreeAtMost(q9, n9) ->
-          (forall i: Nat; peano.less_than(add(m9, n9), i) ->
-          (forall k: Nat; iconvolution(p, q9, i, k) = IZERO))
+        forall q: IntPoly; forall m, n: Nat;
+          idegreeAtMost(p, m) -> idegreeAtMost(q, n) ->
+          (forall i: Nat;
+          peano.less_than(add(m, n), i) ->
+          icoeff(imulP(p, q), i) = IZERO)
         [by generalize generalize-q]
     }
   @conclusion |
     forall p, q: IntPoly; forall m, n: Nat;
       idegreeAtMost(p, m) -> idegreeAtMost(q, n) ->
-      (forall i: Nat; peano.less_than(add(m, n), i) ->
-      (forall k: Nat; iconvolution(p, q, i, k) = IZERO))
+      (forall i: Nat;
+      peano.less_than(add(m, n), i) -> icoeff(imulP(p, q), i) = IZERO)
     [by generalize generalize-p]
 qed
 
@@ -827,16 +929,12 @@ proof
                                     [by hypothesis given-the-sum-is-below]
                                   // then EVERY coefficient of f is divisible:
                                   // below n by hypothesis, above the degree sum
-                                  // because it vanishes
-                                  // the existing theorem concludes about the
-                                  // CONVOLUTION; `iMulPolyCoeff` turns that into
-                                  // the coefficient at the same index
-                                  @the-convolution-vanishes-above |
+                                  // because it vanishes: the reindexed theorem
+                                  // concludes about the COEFFICIENT directly
+                                  @the-coefficients-vanish-above |
                                     forall t: Nat;
                                       peano.less_than(add(m, k), t) ->
-                                      (forall j: Nat;
-                                      iconvolution(g, h, t, j) =
-                                      IZERO)
+                                      icoeff(imulP(g, h), t) = IZERO
                                     [using specialize theConvolutionVanishesAboveTheSum(g, h, m, k) g-is-bounded h-is-bounded]
                                   @each-index |
                                     fix t: Nat {
@@ -868,23 +966,10 @@ proof
                                               @the-sum-is-below-t |
                                                 peano.less_than(add(m, k), t)
                                                 [using specialize theBoundIsBelowAnythingNotBelowIt(add(m, k), n, t) the-sum-is-below t-not-below-n]
-                                              @the-convolutions-vanish-at-t |
-                                                forall j: Nat;
-                                                  iconvolution(g, h, t, j) =
-                                                  IZERO
-                                                [using specialize the-convolution-vanishes-above(t) the-sum-is-below-t]
-                                              @the-diagonal-convolution-vanishes |
-                                                iconvolution(g, h, t, t) =
-                                                  IZERO
-                                                [using specialize the-convolutions-vanish-at-t(t)]
-                                              @the-coefficient-is-the-convolution |
-                                                icoeff(imulP(g, h), t) =
-                                                  iconvolution(g, h, t, t)
-                                                [using specialize iMulPolyCoeff(g, h, t)]
                                               @the-product-vanishes-at-t |
                                                 icoeff(imulP(g, h), t) =
                                                   IZERO
-                                                [using simplify the-coefficient-is-the-convolution the-diagonal-convolution-vanishes]
+                                                [using specialize the-coefficients-vanish-above(t) the-sum-is-below-t]
                                               @f-vanishes-at-t |
                                                 icoeff(f, t) =
                                                   IZERO

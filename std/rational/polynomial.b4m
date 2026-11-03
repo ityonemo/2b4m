@@ -29,7 +29,7 @@ import peano <<< "std/peano.b4m"
 import subtraction <<< "std/peano/subtraction.b4m"
 import ring <<< "std/ring.b4m"
 import ring_poly <<< "std/ring/polynomial.b4m"
-import ring_leading <<< "std/ring/polynomial-leading.b4m"
+import ring_leading <<< "std/ring/polynomial/leading.b4m"
 
 sort Q = rational.Q
 sort Nat = peano.Nat
@@ -76,42 +76,46 @@ axiom qDegreeIsALeadingIndex: forall p: QPoly;
   (not (p = QZEROP)) -> (not (qcoeff(p, qdegree(p)) = ZERO))
 axiom qDegreeBoundsTheCoefficients: forall p: QPoly;
   (not (p = QZEROP)) -> qdegreeAtMost(p, qdegree(p))
-axiom qConvolutionZero: forall p, q: QPoly; forall i: Nat;
-  qconvolution(p, q, i, NAT_ZERO) =
-  rational.mul(qcoeff(p, NAT_ZERO), qcoeff(q, i))
-axiom qConvolutionSucc: forall p, q: QPoly; forall i, k: Nat;
-  qconvolution(p, q, i, peano.succ(k)) =
-  rational.add(qconvolution(p, q, i, k),
-  rational.mul(qcoeff(p, peano.succ(k)),
-  qcoeff(q, subtraction.sub(i, peano.succ(k)))))
+axiom qConvolutionZero: forall p, q: QPoly; forall j: Nat;
+  qconvolution(p, q, j, NAT_ZERO) =
+  rational.mul(qcoeff(p, j), qcoeff(q, NAT_ZERO))
+axiom qConvolutionSucc: forall p, q: QPoly; forall j, m: Nat;
+  qconvolution(p, q, j, peano.succ(m)) =
+  rational.add(rational.mul(qcoeff(p, j), qcoeff(q, peano.succ(m))),
+  qconvolution(p, q, peano.succ(j), m))
 axiom qMulPolyCoeff: forall p, q: QPoly; forall i: Nat;
-  qcoeff(qmulP(p, q), i) = qconvolution(p, q, i, i)
+  qcoeff(qmulP(p, q), i) = qconvolution(p, q, NAT_ZERO, i)
 
 // The same partial sum grown at the BASE rather than the top. `ring_poly` needs it to prove
 // `polyMulIsCommutative` — the reversed product's partial sum IS this segment — and a model
 // must map every symbol the transferred proof mentions, so ℚ[x] declares it too.
 func qtailConvolution(p: QPoly, q: QPoly, i: Nat, k: Nat) => Q
-axiom qTailConvolutionZero: forall p, q: QPoly; forall i: Nat;
-  qtailConvolution(p, q, i, NAT_ZERO) =
-  rational.mul(qcoeff(p, i), qcoeff(q, NAT_ZERO))
-axiom qTailConvolutionSucc: forall p, q: QPoly; forall i, k: Nat;
-  qtailConvolution(p, q, i, peano.succ(k)) =
-  rational.add(rational.mul(
-  qcoeff(p, subtraction.sub(i, peano.succ(k))),
-  qcoeff(q, peano.succ(k))),
-  qtailConvolution(p, q, i, k))
+axiom qTailConvolutionZero: forall p, q: QPoly; forall m: Nat;
+  qtailConvolution(p, q, NAT_ZERO, m) =
+  rational.mul(qcoeff(p, NAT_ZERO), qcoeff(q, m))
+axiom qTailConvolutionSucc: forall p, q: QPoly; forall j, m: Nat;
+  qtailConvolution(p, q, peano.succ(j), m) =
+  rational.add(rational.mul(qcoeff(p, peano.succ(j)), qcoeff(q, m)),
+  qtailConvolution(p, q, j, peano.succ(m)))
 
 // And the two-bound generalization `ring_poly` inducts on: the n+1 terms starting at index m,
 // grown at the top. Same reason it is here — a transferred proof mentions it.
-func qsegment(p: QPoly, q: QPoly, i: Nat, m: Nat, n: Nat) => Q
-axiom qSegmentZero: forall p, q: QPoly; forall i, m: Nat;
-  qsegment(p, q, i, m, NAT_ZERO) =
-  rational.mul(qcoeff(p, m), qcoeff(q, subtraction.sub(i, m)))
-axiom qSegmentSucc: forall p, q: QPoly; forall i, m, n: Nat;
-  qsegment(p, q, i, m, peano.succ(n)) =
-  rational.add(qsegment(p, q, i, m, n),
-  rational.mul(qcoeff(p, peano.add(m, peano.succ(n))),
-  qcoeff(q, subtraction.sub(i, peano.add(m, peano.succ(n))))))
+func qsegment(p: QPoly, q: QPoly, j: Nat, c: Nat, n: Nat) => Q
+axiom qSegmentZero: forall p, q: QPoly; forall j, c: Nat;
+  qsegment(p, q, j, c, NAT_ZERO) = rational.mul(qcoeff(p, j), qcoeff(q, c))
+axiom qSegmentSucc: forall p, q: QPoly; forall j, c, n: Nat;
+  qsegment(p, q, peano.succ(j), c, peano.succ(n)) =
+  rational.add(rational.mul(qcoeff(p, peano.succ(j)), qcoeff(q, c)),
+  qsegment(p, q, j, peano.succ(c), n))
+
+// the bottom-up capped run, mirror of `qsegment`
+func qrsegment(p: QPoly, q: QPoly, j: Nat, c: Nat, n: Nat) => Q
+axiom qRsegmentZero: forall p, q: QPoly; forall j, c: Nat;
+  qrsegment(p, q, j, c, NAT_ZERO) = rational.mul(qcoeff(p, j), qcoeff(q, c))
+axiom qRsegmentSucc: forall p, q: QPoly; forall j, c, n: Nat;
+  qrsegment(p, q, j, peano.succ(c), peano.succ(n)) =
+  rational.add(rational.mul(qcoeff(p, j), qcoeff(q, peano.succ(c))),
+  qrsegment(p, q, peano.succ(j), c, n))
 
 // F[x]'s corpus, transferred. The coefficient field AND the polynomial layer both travel.
 model RationalPolynomials {
@@ -899,132 +903,19 @@ qed
 // The convolution at a constant left factor collapses: `monomial(c, 0)` has coefficient `c`
 // at index ZERO and ZERO above, so every term of the convolution past the first vanishes.
 
-// The convolution of a constant monomial with q, at any bound, is c·q_i — induction on the
-// bound k, since each added term carries a vanishing coefficient of the monomial.
-theorem theConstantConvolutionCollapses: forall q: QPoly; forall c: Q; forall i: Nat;
-  forall k: Nat;
-  qconvolution(qmonomial(c, NAT_ZERO), q, i, k) =
-  rational.mul(c, qcoeff(q, i))
+// Multiplying by a monomial shifts every coefficient. TRANSFERRED from F[x], which has it
+// from the generic monomial theory — subtraction-free, since the statement names `k + t`
+// rather than reading `qcoeff(q, sub(i, k))`.
+theorem theMonomialShift: forall g: QPoly; forall c: Q; forall k, t: Nat;
+  qcoeff(qmulP(qmonomial(c, k), g), peano.add(k, t)) = rational.mul(c, qcoeff(g, t))
 proof
-  @generalize-q |
-    fix q: QPoly {
-      @generalize-c |
-        fix c: Q {
-          @generalize-i |
-            fix i: Nat {
-              // base: the convolution at ZERO is monomial_0 * q_i = c * q_i
-              @the-base-convolution |
-                qconvolution(qmonomial(c, NAT_ZERO), q, i, NAT_ZERO) =
-                  rational.mul(qcoeff(qmonomial(c, NAT_ZERO), NAT_ZERO),
-                  qcoeff(q, i))
-                [using specialize qConvolutionZero(qmonomial(c, NAT_ZERO), q, i)]
-              @the-monomial-at-zero |
-                qcoeff(qmonomial(c, NAT_ZERO), NAT_ZERO) = c
-                [using specialize qMonomialCoeffAtItsIndex(c, NAT_ZERO)]
-              @base-case |
-                qconvolution(qmonomial(c, NAT_ZERO), q, i, NAT_ZERO) =
-                  rational.mul(c, qcoeff(q, i))
-                [by rewrite the-monomial-at-zero the-base-convolution]
-
-              @induction-step |
-                fix k: Nat {
-                  @given-inductive-hypothesis |
-                    assume qconvolution(qmonomial(c, NAT_ZERO), q, i, k) =
-                      rational.mul(c, qcoeff(q, i)) {
-                      @inductive-hypothesis |
-                        qconvolution(qmonomial(c, NAT_ZERO), q, i, k) =
-                          rational.mul(c, qcoeff(q, i))
-                        [by hypothesis given-inductive-hypothesis]
-                      @the-next-convolution |
-                        qconvolution(qmonomial(c, NAT_ZERO), q, i,
-                          peano.succ(k)) =
-                          rational.add(
-                          qconvolution(qmonomial(c, NAT_ZERO), q, i, k),
-                          rational.mul(
-                          qcoeff(qmonomial(c, NAT_ZERO), peano.succ(k)),
-                          qcoeff(q, subtraction.sub(i, peano.succ(k)))))
-                        [using specialize qConvolutionSucc(qmonomial(c, NAT_ZERO), q, i, k)]
-                      // the monomial vanishes above its index, so the added term is ZERO
-                      @succ-k-is-not-zero |
-                        not (peano.succ(k) = NAT_ZERO)
-                        [using specialize peano.succNotZero(k)]
-                      @the-monomial-above |
-                        qcoeff(qmonomial(c, NAT_ZERO), peano.succ(k)) = ZERO
-                        [using specialize qMonomialCoeffElsewhere(c, NAT_ZERO, peano.succ(k)) succ-k-is-not-zero]
-                      @the-added-term |
-                        rational.mul(ZERO,
-                          qcoeff(q, subtraction.sub(i, peano.succ(k)))) = ZERO
-                        [using specialize rational.mulZeroLeft(qcoeff(q, subtraction.sub(i, peano.succ(k))))]
-                      @the-next-with-zero |
-                        qconvolution(qmonomial(c, NAT_ZERO), q, i,
-                          peano.succ(k)) =
-                          rational.add(
-                          qconvolution(qmonomial(c, NAT_ZERO), q, i, k),
-                          rational.mul(ZERO,
-                          qcoeff(q, subtraction.sub(i, peano.succ(k)))))
-                        [by rewrite the-monomial-above the-next-convolution]
-                      @the-next-collapsed |
-                        qconvolution(qmonomial(c, NAT_ZERO), q, i,
-                          peano.succ(k)) =
-                          rational.add(
-                          qconvolution(qmonomial(c, NAT_ZERO), q, i, k), ZERO)
-                        [by rewrite the-added-term the-next-with-zero]
-                      @adding-zero |
-                        rational.add(
-                          qconvolution(qmonomial(c, NAT_ZERO), q, i, k), ZERO) =
-                          qconvolution(qmonomial(c, NAT_ZERO), q, i, k)
-                        [using specialize rational.addZeroRight(qconvolution(qmonomial(c, NAT_ZERO), q, i, k))]
-                      @the-next-is-the-previous |
-                        qconvolution(qmonomial(c, NAT_ZERO), q, i,
-                          peano.succ(k)) =
-                          qconvolution(qmonomial(c, NAT_ZERO), q, i, k)
-                        [by rewrite adding-zero the-next-collapsed]
-                      @conclusion-the-step |
-                        qconvolution(qmonomial(c, NAT_ZERO), q, i,
-                          peano.succ(k)) =
-                          rational.mul(c, qcoeff(q, i))
-                        [by rewrite the-next-is-the-previous inductive-hypothesis]
-                    }
-                  @induction-step-at-k |
-                    (qconvolution(qmonomial(c, NAT_ZERO), q, i, k) =
-                      rational.mul(c, qcoeff(q, i))) ->
-                      (qconvolution(qmonomial(c, NAT_ZERO), q, i,
-                      peano.succ(k)) =
-                      rational.mul(c, qcoeff(q, i)))
-                    [by discharge given-inductive-hypothesis]
-                }
-              @induction-step-for-all-k |
-                forall k: Nat;
-                  (qconvolution(qmonomial(c, NAT_ZERO), q, i, k) =
-                  rational.mul(c, qcoeff(q, i))) ->
-                  (qconvolution(qmonomial(c, NAT_ZERO), q, i,
-                  peano.succ(k)) =
-                  rational.mul(c, qcoeff(q, i)))
-                [by generalize induction-step]
-              @all-bounds |
-                forall k: Nat;
-                  qconvolution(qmonomial(c, NAT_ZERO), q, i, k) =
-                  rational.mul(c, qcoeff(q, i))
-                [using instantiation peano.induction((fun z: Nat => (qconvolution(qmonomial(c, NAT_ZERO), q, i, z) = rational.mul(c, qcoeff(q, i))))) base-case induction-step-for-all-k]
-            }
-          @discharge-i |
-            forall i9: Nat; forall k: Nat;
-              qconvolution(qmonomial(c, NAT_ZERO), q, i9, k) =
-              rational.mul(c, qcoeff(q, i9))
-            [by generalize generalize-i]
-        }
-      @discharge-c |
-        forall c9: Q; forall i9: Nat; forall k: Nat;
-          qconvolution(qmonomial(c9, NAT_ZERO), q, i9, k) =
-          rational.mul(c9, qcoeff(q, i9))
-        [by generalize generalize-c]
-    }
   @conclusion |
-    forall q: QPoly; forall c: Q; forall i: Nat; forall k: Nat;
-      qconvolution(qmonomial(c, NAT_ZERO), q, i, k) =
-      rational.mul(c, qcoeff(q, i))
-    [by generalize generalize-q]
+    forall g: QPoly; forall c: Q; forall k, t: Nat;
+      qcoeff(qmulP(qmonomial(c, k), g), peano.add(k, t)) =
+      rational.mul(c, qcoeff(g, t))
+    [using model(RationalPolynomials) fieldpoly.theMonomialShiftsEveryCoefficient]
 qed
+
 
 // Hence the scaling law: every coefficient of c·q is c times q's.
 theorem scalingByAConstantScalesTheCoefficients:
@@ -1038,18 +929,17 @@ proof
         fix c: Q {
           @generalize-i |
             fix i: Nat {
-              @the-product-coefficient |
-                qcoeff(qmulP(qmonomial(c, NAT_ZERO), q), i) =
-                  qconvolution(qmonomial(c, NAT_ZERO), q, i, i)
-                [using specialize qMulPolyCoeff(qmonomial(c, NAT_ZERO), q, i)]
-              @the-convolution-collapses |
-                qconvolution(qmonomial(c, NAT_ZERO), q, i, i) =
-                  rational.mul(c, qcoeff(q, i))
-                [using specialize theConstantConvolutionCollapses(q, c, i, i)]
+              @the-monomial-shifts |
+                qcoeff(qmulP(qmonomial(c, NAT_ZERO), q),
+                  peano.add(NAT_ZERO, i)) = rational.mul(c, qcoeff(q, i))
+                [using specialize theMonomialShift(q, c, NAT_ZERO, i)]
+              @the-index-collapses |
+                peano.add(NAT_ZERO, i) = i
+                [using specialize peano.addZeroLeft(i)]
               @conclusion-scaled |
                 qcoeff(qmulP(qmonomial(c, NAT_ZERO), q), i) =
                   rational.mul(c, qcoeff(q, i))
-                [using simplify the-product-coefficient the-convolution-collapses]
+                [by rewrite the-index-collapses the-monomial-shifts]
             }
           @discharge-i |
             forall i9: Nat;
@@ -1074,7 +964,7 @@ qed
 // Gauss's d = 1 branch reads `c·a_m·b_n = 1` off the monic hypothesis, which needs the
 // product's leading coefficient to be the product of the leading coefficients.
 //
-// It is proved in `std/ring/polynomial-leading.b4m` over a commutative ring, and restated in
+// It is proved in `std/ring/polynomial/leading.b4m` over a commutative ring, and restated in
 // `std/field/polynomial.b4m` for F[x] — but F[x]'s version is NOT transferable here, because
 // it is itself a model-transfer through `FieldPolyModelsRingPoly`, and 2b4m RE-CHECKS an
 // inner transfer rather than composing models. Going through F[x] would therefore demand ℚ
@@ -1125,6 +1015,7 @@ model RationalPolynomialsOverARing {
   ring_poly.convolution: qconvolution
   ring_poly.tailConvolution: qtailConvolution
   ring_poly.segment: qsegment
+  ring_poly.rsegment: qrsegment
   ring_poly.degreeAtMost: qdegreeAtMost
   ring_poly.degree: qdegree
   ring_poly.polyExtensionality <- qPolyExtensionality
@@ -1142,8 +1033,11 @@ model RationalPolynomialsOverARing {
   ring_poly.tailConvolutionSucc <- qTailConvolutionSucc
   ring_poly.segmentZero <- qSegmentZero
   ring_poly.segmentSucc <- qSegmentSucc
+  ring_poly.rsegmentZero <- qRsegmentZero
+  ring_poly.rsegmentSucc <- qRsegmentSucc
   ring_poly.mulPolyCoeff <- qMulPolyCoeff
 }
+
 
 theorem qTheProductsLeadingCoefficient: forall p, q: QPoly; forall m, n: peano.Nat;
   qdegreeAtMost(p, m) -> qdegreeAtMost(q, n) ->
@@ -1212,174 +1106,6 @@ proof
     [by generalize generalize-p]
 qed
 
-// -- NEGATION PULLS OUT OF A PRODUCT --------------------------------------------------------
-// Judson's d = 1 branch writes p(x) = (-α₁(x))(-β₁(x)), so the two negations must cancel. The
-// step that makes it work is that negation pulls out of ONE factor: the convolution is linear
-// in the first argument's coefficients, so negating them negates every summand.
-//
-// Induction on the CONVOLUTION INDEX k, with the output index i fixed — the same shape the
-// §17.1 reindexing lemma uses.
-theorem theNegationPullsOutOfTheConvolution: forall p, q: QPoly;
-  forall i, k: peano.Nat;
-  qconvolution(qnegP(p), q, i, k) =
-  rational.neg(qconvolution(p, q, i, k))
-proof
-  @generalize-p |
-    fix p: QPoly {
-      @generalize-q |
-        fix q: QPoly {
-          @generalize-i |
-            fix i: peano.Nat {
-              // base: one summand, and neg distributes over a product
-              @the-negated-base |
-                qconvolution(qnegP(p), q, i, peano.ZERO) =
-                  rational.mul(qcoeff(qnegP(p), peano.ZERO),
-                  qcoeff(q, i))
-                [using specialize qConvolutionZero(qnegP(p), q, i)]
-              @the-base |
-                qconvolution(p, q, i, peano.ZERO) =
-                  rational.mul(qcoeff(p, peano.ZERO), qcoeff(q, i))
-                [using specialize qConvolutionZero(p, q, i)]
-              @the-negated-coefficient-at-zero |
-                qcoeff(qnegP(p), peano.ZERO) =
-                  rational.neg(qcoeff(p, peano.ZERO))
-                [using specialize qNegPolyCoeff(p, peano.ZERO)]
-              @the-negated-base-expanded |
-                qconvolution(qnegP(p), q, i, peano.ZERO) =
-                  rational.mul(rational.neg(qcoeff(p, peano.ZERO)),
-                  qcoeff(q, i))
-                [by rewrite the-negated-coefficient-at-zero the-negated-base]
-              @the-negation-distributes-at-zero |
-                rational.mul(rational.neg(qcoeff(p, peano.ZERO)),
-                  qcoeff(q, i)) =
-                  rational.neg(rational.mul(qcoeff(p, peano.ZERO),
-                  qcoeff(q, i)))
-                [using polynomial(rational)]
-              @the-negated-base-is-the-negation |
-                qconvolution(qnegP(p), q, i, peano.ZERO) =
-                  rational.neg(rational.mul(qcoeff(p, peano.ZERO),
-                  qcoeff(q, i)))
-                [using simplify the-negated-base-expanded the-negation-distributes-at-zero]
-              @base-case |
-                qconvolution(qnegP(p), q, i, peano.ZERO) =
-                  rational.neg(qconvolution(p, q, i, peano.ZERO))
-                [by rewrite the-base the-negated-base-is-the-negation]
-
-              @induction-step |
-                fix k: peano.Nat {
-                  @given-inductive-hypothesis |
-                    assume qconvolution(qnegP(p), q, i, k) =
-                      rational.neg(qconvolution(p, q, i, k)) {
-                      @inductive-hypothesis |
-                        qconvolution(qnegP(p), q, i, k) =
-                          rational.neg(qconvolution(p, q, i, k))
-                        [by hypothesis given-inductive-hypothesis]
-                      @the-negated-step |
-                        qconvolution(qnegP(p), q, i, peano.succ(k)) =
-                          rational.add(
-                          qconvolution(qnegP(p), q, i, k),
-                          rational.mul(
-                          qcoeff(qnegP(p), peano.succ(k)),
-                          qcoeff(q, subtraction.sub(i,
-                          peano.succ(k)))))
-                        [using specialize qConvolutionSucc(qnegP(p), q, i, k)]
-                      @the-step |
-                        qconvolution(p, q, i, peano.succ(k)) =
-                          rational.add(qconvolution(p, q, i, k),
-                          rational.mul(qcoeff(p, peano.succ(k)),
-                          qcoeff(q, subtraction.sub(i,
-                          peano.succ(k)))))
-                        [using specialize qConvolutionSucc(p, q, i, k)]
-                      @the-negated-coefficient |
-                        qcoeff(qnegP(p), peano.succ(k)) =
-                          rational.neg(qcoeff(p, peano.succ(k)))
-                        [using specialize qNegPolyCoeff(p, peano.succ(k))]
-                      // substitute both the hypothesis and the coefficient flip
-                      @the-negated-step-with-the-hypothesis |
-                        qconvolution(qnegP(p), q, i, peano.succ(k)) =
-                          rational.add(
-                          rational.neg(qconvolution(p, q, i, k)),
-                          rational.mul(
-                          qcoeff(qnegP(p), peano.succ(k)),
-                          qcoeff(q, subtraction.sub(i,
-                          peano.succ(k)))))
-                        [by rewrite inductive-hypothesis the-negated-step]
-                      @the-negated-step-expanded |
-                        qconvolution(qnegP(p), q, i, peano.succ(k)) =
-                          rational.add(
-                          rational.neg(qconvolution(p, q, i, k)),
-                          rational.mul(
-                          rational.neg(qcoeff(p, peano.succ(k))),
-                          qcoeff(q, subtraction.sub(i,
-                          peano.succ(k)))))
-                        [by rewrite the-negated-coefficient the-negated-step-with-the-hypothesis]
-                      // -(A) + (-B)·C = -(A + B·C)
-                      @the-negations-gather |
-                        rational.add(
-                          rational.neg(qconvolution(p, q, i, k)),
-                          rational.mul(
-                          rational.neg(qcoeff(p, peano.succ(k))),
-                          qcoeff(q, subtraction.sub(i,
-                          peano.succ(k))))) =
-                          rational.neg(rational.add(
-                          qconvolution(p, q, i, k),
-                          rational.mul(qcoeff(p, peano.succ(k)),
-                          qcoeff(q, subtraction.sub(i,
-                          peano.succ(k))))))
-                        [using polynomial(rational)]
-                      @the-negated-step-gathered |
-                        qconvolution(qnegP(p), q, i, peano.succ(k)) =
-                          rational.neg(rational.add(
-                          qconvolution(p, q, i, k),
-                          rational.mul(qcoeff(p, peano.succ(k)),
-                          qcoeff(q, subtraction.sub(i,
-                          peano.succ(k))))))
-                        [using simplify the-negated-step-expanded the-negations-gather]
-                      @conclusion-the-step |
-                        qconvolution(qnegP(p), q, i, peano.succ(k)) =
-                          rational.neg(
-                          qconvolution(p, q, i, peano.succ(k)))
-                        [by rewrite the-step the-negated-step-gathered]
-                    }
-                  @induction-step-at-k |
-                    (qconvolution(qnegP(p), q, i, k) =
-                      rational.neg(qconvolution(p, q, i, k))) ->
-                      (qconvolution(qnegP(p), q, i, peano.succ(k)) =
-                      rational.neg(
-                      qconvolution(p, q, i, peano.succ(k))))
-                    [by discharge given-inductive-hypothesis]
-                }
-              @induction-step-for-all-k |
-                forall k: peano.Nat;
-                  (qconvolution(qnegP(p), q, i, k) =
-                  rational.neg(qconvolution(p, q, i, k))) ->
-                  (qconvolution(qnegP(p), q, i, peano.succ(k)) =
-                  rational.neg(qconvolution(p, q, i, peano.succ(k))))
-                [by generalize induction-step]
-              @all-convolution-indices |
-                forall k: peano.Nat;
-                  qconvolution(qnegP(p), q, i, k) =
-                  rational.neg(qconvolution(p, q, i, k))
-                [using instantiation peano.induction((fun z: peano.Nat => (qconvolution(qnegP(p), q, i, z) = rational.neg(qconvolution(p, q, i, z))))) base-case induction-step-for-all-k]
-            }
-          @discharge-i |
-            forall i2: peano.Nat; forall k: peano.Nat;
-              qconvolution(qnegP(p), q, i2, k) =
-              rational.neg(qconvolution(p, q, i2, k))
-            [by generalize generalize-i]
-        }
-      @discharge-q |
-        forall q2: QPoly; forall i2, k: peano.Nat;
-          qconvolution(qnegP(p), q2, i2, k) =
-          rational.neg(qconvolution(p, q2, i2, k))
-        [by generalize generalize-q]
-    }
-  @conclusion |
-    forall p, q: QPoly; forall i, k: peano.Nat;
-      qconvolution(qnegP(p), q, i, k) =
-      rational.neg(qconvolution(p, q, i, k))
-    [by generalize generalize-p]
-qed
 
 // -- EVALUATION ----------------------------------------------------------------------------
 // Corollary 17.14 (the Rational Root Theorem) is about a ZERO of a polynomial, so ℚ[x] needs
@@ -1416,63 +1142,17 @@ proof
 qed
 
 // At the polynomial level: negating the first factor negates the product.
+// -- NEGATION PULLS OUT OF A PRODUCT --------------------------------------------------------
+// Judson's d = 1 branch writes p(x) = (-a1(x))(-b1(x)), so the two negations must cancel. The
+// step that makes it work is that negation pulls out of ONE factor. TRANSFERRED: the generic
+// R[x] proof inducts on the convolution's length, which ℚ[x] once restated locally — 190
+// lines that the reindexed convolution made redundant.
 theorem theNegationPullsOutOfTheProduct: forall p, q: QPoly;
   qmulP(qnegP(p), q) = qnegP(qmulP(p, q))
 proof
-  @generalize-p |
-    fix p: QPoly {
-      @generalize-q |
-        fix q: QPoly {
-          @each-index |
-            fix i: peano.Nat {
-              @the-negated-product |
-                qcoeff(qmulP(qnegP(p), q), i) =
-                  qconvolution(qnegP(p), q, i, i)
-                [using specialize qMulPolyCoeff(qnegP(p), q, i)]
-              @the-product |
-                qcoeff(qmulP(p, q), i) = qconvolution(p, q, i, i)
-                [using specialize qMulPolyCoeff(p, q, i)]
-              @the-pull-out |
-                qconvolution(qnegP(p), q, i, i) =
-                  rational.neg(qconvolution(p, q, i, i))
-                [using specialize theNegationPullsOutOfTheConvolution(p, q, i, i)]
-              @the-negated-products-coefficient |
-                qcoeff(qnegP(qmulP(p, q)), i) =
-                  rational.neg(qcoeff(qmulP(p, q), i))
-                [using specialize qNegPolyCoeff(qmulP(p, q), i)]
-              @the-right-side-is-the-negated-convolution |
-                qcoeff(qnegP(qmulP(p, q)), i) =
-                  rational.neg(qconvolution(p, q, i, i))
-                [by rewrite the-product the-negated-products-coefficient]
-              @the-left-side-is-the-negated-convolution |
-                qcoeff(qmulP(qnegP(p), q), i) =
-                  rational.neg(qconvolution(p, q, i, i))
-                [by rewrite the-pull-out the-negated-product]
-              @conclusion-agree-at-i |
-                qcoeff(qmulP(qnegP(p), q), i) =
-                  qcoeff(qnegP(qmulP(p, q)), i)
-                [using simplify the-left-side-is-the-negated-convolution the-right-side-is-the-negated-convolution]
-            }
-          @all-coefficients-agree |
-            forall i: peano.Nat;
-              qcoeff(qmulP(qnegP(p), q), i) =
-              qcoeff(qnegP(qmulP(p, q)), i)
-            [by generalize each-index]
-          @the-extensionality |
-            forall a, b: QPoly;
-              (forall i: peano.Nat; qcoeff(a, i) = qcoeff(b, i)) -> a = b
-            [by cite qPolyExtensionality]
-          @conclusion-equal |
-            qmulP(qnegP(p), q) = qnegP(qmulP(p, q))
-            [using specialize the-extensionality(qmulP(qnegP(p), q), qnegP(qmulP(p, q))) all-coefficients-agree]
-        }
-      @discharge-q |
-        forall q2: QPoly; qmulP(qnegP(p), q2) = qnegP(qmulP(p, q2))
-        [by generalize generalize-q]
-    }
   @conclusion |
     forall p, q: QPoly; qmulP(qnegP(p), q) = qnegP(qmulP(p, q))
-    [by generalize generalize-p]
+    [using model(RationalPolynomialsOverARing) ring_poly.negationPullsOutOfTheProduct]
 qed
 
 // Judson's `p(x) = (-α₁(x))(-β₁(x))`: both negations cancel. Pull the first out, commute to

@@ -18,10 +18,10 @@
 
 import field <<< "std/field.b4m"
 import ring_poly <<< "std/ring/polynomial.b4m"
-import ring_leading <<< "std/ring/polynomial-leading.b4m"
+import ring_mono <<< "std/ring/polynomial/monomial.b4m"
+import ring_leading <<< "std/ring/polynomial/leading.b4m"
 import peano <<< "std/peano.b4m"
 import peano_order <<< "std/peano/order.b4m"
-import subtraction <<< "std/peano/subtraction.b4m"
 
 // -- the coefficient field F --------------------------------------------------------------
 
@@ -49,7 +49,6 @@ fact oneNotZero = field.oneNotZero
 sort Nat = peano.Nat
 const ZERO = peano.ZERO
 func succ = peano.succ
-func subN = subtraction.sub
 pred less_than = peano.less_than
 
 // -- the carrier: F[x] --------------------------------------------------------------------
@@ -90,21 +89,24 @@ axiom degreeBoundsTheCoefficients: forall p: Poly;
 // ring. Carried here rather than left opaque because §17.2's existence half BUILDS
 // polynomials and then reasons about their coefficients: an opaque `mulP` would force every
 // such fact to be a fresh assumption about an undefined function.
-func convolution(p: Poly, q: Poly, i: Nat, k: Nat) => F
-axiom convolutionZero: forall p, q: Poly; forall i: Nat;
-  convolution(p, q, i, ZERO) = mulF(coeff(p, ZERO), coeff(q, i))
-axiom convolutionSucc: forall p, q: Poly; forall i, k: Nat;
-  convolution(p, q, i, succ(k)) =
-  addF(convolution(p, q, i, k),
-  mulF(coeff(p, succ(k)), coeff(q, subN(i, succ(k)))))
+// REINDEXED to match `ring_poly` (the no-totalizing-`sub` sweep): the second argument is the
+// COMPLEMENTARY exponent and counts down while the first counts up, so no subtraction
+// appears. See `std/ring/polynomial.b4m` for the rationale.
+func convolution(p: Poly, q: Poly, j: Nat, m: Nat) => F
+axiom convolutionZero: forall p, q: Poly; forall j: Nat;
+  convolution(p, q, j, ZERO) = mulF(coeff(p, j), coeff(q, ZERO))
+axiom convolutionSucc: forall p, q: Poly; forall j, m: Nat;
+  convolution(p, q, j, succ(m)) =
+  addF(mulF(coeff(p, j), coeff(q, succ(m))),
+  convolution(p, q, succ(j), m))
 
 func mulP(p: Poly, q: Poly) => Poly
 axiom mulPolyCoeff: forall p, q: Poly; forall i: Nat;
-  coeff(mulP(p, q), i) = convolution(p, q, i, i)
+  coeff(mulP(p, q), i) = convolution(p, q, ZERO, i)
 
 // Judson's Proposition 17.4 over a field: a product of nonzeros is nonzero, and the degree
 // of a product is the sum of the degrees. BOTH ARE THEOREMS, proved near the end of this
-// file from `std/ring/polynomial-leading.b4m`'s two convolution facts transferred through
+// file from `std/ring/polynomial/leading.b4m`'s two convolution facts transferred through
 // `FieldPolyModelsRingPoly`:
 //
 //   theProductsLeadingCoefficient       coeff(p·q, m+n) = p_m · q_n
@@ -220,21 +222,30 @@ qed
 //
 // They are pure reification: nothing below proves anything ABOUT them directly. Their whole
 // job is to let `polyMulIsCommutative` land over `F`.
-func tailConvolution(p: Poly, q: Poly, i: Nat, k: Nat) => F
-axiom tailConvolutionZero: forall p, q: Poly; forall i: Nat;
-  tailConvolution(p, q, i, ZERO) = mulF(coeff(p, i), coeff(q, ZERO))
-axiom tailConvolutionSucc: forall p, q: Poly; forall i, k: Nat;
-  tailConvolution(p, q, i, succ(k)) =
-  addF(mulF(coeff(p, subN(i, succ(k))), coeff(q, succ(k))),
-  tailConvolution(p, q, i, k))
+func tailConvolution(p: Poly, q: Poly, j: Nat, m: Nat) => F
+axiom tailConvolutionZero: forall p, q: Poly; forall m: Nat;
+  tailConvolution(p, q, ZERO, m) = mulF(coeff(p, ZERO), coeff(q, m))
+axiom tailConvolutionSucc: forall p, q: Poly; forall j, m: Nat;
+  tailConvolution(p, q, succ(j), m) =
+  addF(mulF(coeff(p, succ(j)), coeff(q, m)),
+  tailConvolution(p, q, j, succ(m)))
 
-func segment(p: Poly, q: Poly, i: Nat, m: Nat, n: Nat) => F
-axiom segmentZero: forall p, q: Poly; forall i, m: Nat;
-  segment(p, q, i, m, ZERO) = mulF(coeff(p, m), coeff(q, subN(i, m)))
-axiom segmentSucc: forall p, q: Poly; forall i, m, n: Nat;
-  segment(p, q, i, m, succ(n)) =
-  addF(segment(p, q, i, m, n),
-  mulF(coeff(p, peano.add(m, succ(n))), coeff(q, subN(i, peano.add(m, succ(n))))))
+func segment(p: Poly, q: Poly, j: Nat, c: Nat, n: Nat) => F
+axiom segmentZero: forall p, q: Poly; forall j, c: Nat;
+  segment(p, q, j, c, ZERO) = mulF(coeff(p, j), coeff(q, c))
+axiom segmentSucc: forall p, q: Poly; forall j, c, n: Nat;
+  segment(p, q, succ(j), c, succ(n)) =
+  addF(mulF(coeff(p, succ(j)), coeff(q, c)),
+  segment(p, q, j, succ(c), n))
+
+// the bottom-up capped run, mirror of `segment`
+func rsegment(p: Poly, q: Poly, j: Nat, c: Nat, n: Nat) => F
+axiom rsegmentZero: forall p, q: Poly; forall j, c: Nat;
+  rsegment(p, q, j, c, ZERO) = mulF(coeff(p, j), coeff(q, c))
+axiom rsegmentSucc: forall p, q: Poly; forall j, c, n: Nat;
+  rsegment(p, q, j, succ(c), succ(n)) =
+  addF(mulF(coeff(p, j), coeff(q, succ(c))),
+  rsegment(p, q, succ(j), c, n))
 
 // -- addition, negation, and the difference the construction subtracts --------------------
 //
@@ -296,587 +307,28 @@ func monomial(a: F, k: Nat) => Poly
 axiom monomialCoeffAtItsIndex: forall a: F; forall k: Nat; coeff(monomial(a, k), k) = a
 axiom monomialCoeffElsewhere: forall a: F; forall k, i: Nat;
   (not (i = k)) -> coeff(monomial(a, k), i) = zeroF
-
-// A nonzero coefficient makes the monomial's degree exactly its index. This is the first
-// thing the construction needs: `(a_n/b_m) x^{n-m}` has degree n - m, which is what makes
-// the assembled quotient have the right degree.
+// Transferred: generic in the coefficient ring, so it lives in
+// `std/ring/polynomial/monomial.b4m`.
 theorem aNonzeroMonomialHasItsIndexAsDegree: forall a: F; forall k: Nat;
   (not (a = zeroF)) -> (not (monomial(a, k) = ZEROP)) -> degree(monomial(a, k)) = k
 proof
-  @generalize-a |
-    fix a: F {
-      @generalize-k |
-        fix k: Nat {
-          @given-the-coefficient-is-nonzero |
-            assume not (a = zeroF) {
-              @given-the-monomial-is-nonzero |
-                assume not (monomial(a, k) = ZEROP) {
-                  @the-coefficient-is-nonzero |
-                    not (a = zeroF)
-                    [by hypothesis given-the-coefficient-is-nonzero]
-                  @the-monomial-is-nonzero |
-                    not (monomial(a, k) = ZEROP)
-                    [by hypothesis given-the-monomial-is-nonzero]
-
-                  // its k-th coefficient is a, which is nonzero
-                  @the-coefficient-at-k |
-                    coeff(monomial(a, k), k) = a
-                    [using specialize monomialCoeffAtItsIndex(a, k)]
-                  @the-coefficient-at-k-is-nonzero |
-                    not (coeff(monomial(a, k), k) = zeroF)
-                    [by rewrite the-coefficient-at-k the-coefficient-is-nonzero]
-
-                  // and everything above k vanishes, since those indices differ from k
-                  @generalize-index |
-                    fix i: Nat {
-                      @given-the-index-is-above |
-                        assume less_than(k, i) {
-                          @the-index-is-above |
-                            less_than(k, i)
-                            [by hypothesis given-the-index-is-above]
-                          @being-above-makes-it-different |
-                            k != i
-                            [using specialize peano_order.lessThanIsStrict(k, i) the-index-is-above]
-                          @the-index-differs-from-k |
-                            i != k
-                            [using specialize peano_order.natDisequalityIsSymmetric(k, i) being-above-makes-it-different]
-                          @the-coefficient-vanishes |
-                            coeff(monomial(a, k), i) = zeroF
-                            [using specialize monomialCoeffElsewhere(a, k, i) the-index-differs-from-k]
-                        }
-                      @above-implies-vanishing |
-                        less_than(k, i) -> coeff(monomial(a, k), i) = zeroF
-                        [by discharge given-the-index-is-above]
-                    }
-                  @everything-above-k-vanishes |
-                    forall i: Nat; less_than(k, i) -> coeff(monomial(a, k), i) = zeroF
-                    [by generalize generalize-index]
-                  @what-bounding-means |
-                    degreeAtMost(monomial(a, k), k) iff
-                      (forall i: Nat; less_than(k, i) -> coeff(monomial(a, k), i) = zeroF)
-                    [using specialize degreeAtMostMeaning(monomial(a, k), k)]
-                  @k-bounds-the-monomial |
-                    degreeAtMost(monomial(a, k), k)
-                    [using tautology everything-above-k-vanishes what-bounding-means]
-
-                  // nonzero at k and bounded by k: by uniqueness, k IS the degree
-                  @k-is-the-degree |
-                    k = degree(monomial(a, k))
-                    [using specialize degreeIsUnique(monomial(a, k), k) the-monomial-is-nonzero the-coefficient-at-k-is-nonzero k-bounds-the-monomial]
-                  @conclusion-the-degree-is-k |
-                    degree(monomial(a, k)) = k
-                    [by symmetry k-is-the-degree]
-                }
-              @the-monomial-being-nonzero-gives-the-degree |
-                (not (monomial(a, k) = ZEROP)) -> degree(monomial(a, k)) = k
-                [by discharge given-the-monomial-is-nonzero]
-            }
-          @a-nonzero-coefficient-gives-the-degree |
-            (not (a = zeroF)) -> (not (monomial(a, k) = ZEROP)) ->
-              degree(monomial(a, k)) = k
-            [by discharge given-the-coefficient-is-nonzero]
-        }
-      @discharge-k |
-        forall k: Nat;
-          (not (a = zeroF)) -> (not (monomial(a, k) = ZEROP)) ->
-          degree(monomial(a, k)) = k
-        [by generalize generalize-k]
-    }
   @conclusion |
     forall a: F; forall k: Nat;
-      (not (a = zeroF)) -> (not (monomial(a, k) = ZEROP)) ->
-      degree(monomial(a, k)) = k
-    [by generalize generalize-a]
+      (not (a = zeroF)) -> (not (monomial(a, k) = ZEROP)) -> degree(monomial(a, k)) = k
+    [using model(FieldPolyModelsRingPoly) ring_mono.aNonzeroMonomialHasItsIndexAsDegree]
 qed
-
-// -- THE MONOMIAL-SHIFT LAW ---------------------------------------------------------------
-//
-// Multiplying by `a x^k` shifts the coefficient family: the i-th coefficient of
-// `monomial(c,k) * g` is `c * g_{i-k}`. This is the law Judson's construction needs, because
-// his `f(x) - (a_n/b_m) x^{n-m} g(x)` only cancels the leading term if the product's n-th
-// coefficient is exactly `(a_n/b_m) * b_m`.
-//
-// The convolution sum has exactly ONE surviving term — every `j != k` contributes
-// `0 * g_{i-j}` — so the proof is two inductions on the fold's limit: below k the sum is
-// still empty, and at k the single term appears and nothing after changes it.
-
-// PHASE ONE: summing to any limit strictly below k contributes nothing, since every index
-// reached so far misses k.
-theorem theMonomialConvolutionIsEmptyBelowItsIndex: forall g: Poly; forall c: F;
-  forall k, i, t: Nat;
-  less_than(t, k) -> convolution(monomial(c, k), g, i, t) = zeroF
-proof
-  @generalize-g |
-    fix g: Poly {
-      @generalize-c |
-        fix c: F {
-          @generalize-k |
-            fix k: Nat {
-              @generalize-i |
-                fix i: Nat {
-                  // base: the t = 0 term is m_0 * g_i, and 0 != k because 0 < k.
-                  @given-zero-below-k |
-                    assume less_than(ZERO, k) {
-                      @zero-below-k |
-                        less_than(ZERO, k)
-                        [by hypothesis given-zero-below-k]
-                      @the-base-term |
-                        convolution(monomial(c, k), g, i, ZERO) =
-                          mulF(coeff(monomial(c, k), ZERO), coeff(g, i))
-                        [using specialize convolutionZero(monomial(c, k), g, i)]
-                      @zero-differs-from-k |
-                        ZERO != k
-                        [using specialize peano_order.lessThanIsStrict(ZERO, k) zero-below-k]
-                      @the-monomial-vanishes-at-zero |
-                        coeff(monomial(c, k), ZERO) = zeroF
-                        [using specialize monomialCoeffElsewhere(c, k, ZERO) zero-differs-from-k]
-                      @zero-times-anything |
-                        mulF(zeroF, coeff(g, i)) = zeroF
-                        [using specialize field.mulZeroLeft(coeff(g, i))]
-                      @base-case-value |
-                        convolution(monomial(c, k), g, i, ZERO) = zeroF
-                        [using simplify the-base-term the-monomial-vanishes-at-zero zero-times-anything]
-                    }
-                  @base-case |
-                    less_than(ZERO, k) -> convolution(monomial(c, k), g, i, ZERO) = zeroF
-                    [by discharge given-zero-below-k]
-
-                  // step: one more term, whose index succ(t) is still below k, so it misses k.
-                  @induction-step |
-                    fix t: Nat {
-                      @given-inductive-hypothesis |
-                        assume less_than(t, k) ->
-                          convolution(monomial(c, k), g, i, t) = zeroF {
-                          @inductive-hypothesis |
-                            less_than(t, k) -> convolution(monomial(c, k), g, i, t) = zeroF
-                            [by hypothesis given-inductive-hypothesis]
-                          @given-successor-below-k |
-                            assume less_than(succ(t), k) {
-                              @successor-below-k |
-                                less_than(succ(t), k)
-                                [by hypothesis given-successor-below-k]
-                              @t-below-k |
-                                less_than(t, k)
-                                [using specialize peano_order.lessThanTransitive(t, succ(t), k) t-below-its-successor successor-below-k]
-                              @t-below-its-successor |
-                                less_than(t, succ(t))
-                                [using specialize peano_order.lessThanSelf(t)]
-                              @the-sum-so-far-vanishes |
-                                convolution(monomial(c, k), g, i, t) = zeroF
-                                [using tautology inductive-hypothesis t-below-k]
-                              @one-more-term |
-                                convolution(monomial(c, k), g, i, succ(t)) =
-                                  addF(convolution(monomial(c, k), g, i, t),
-                                  mulF(coeff(monomial(c, k), succ(t)),
-                                  coeff(g, subN(i, succ(t)))))
-                                [using specialize convolutionSucc(monomial(c, k), g, i, t)]
-                              @the-successor-differs-from-k |
-                                succ(t) != k
-                                [using specialize peano_order.lessThanIsStrict(succ(t), k) successor-below-k]
-                              @the-monomial-vanishes-here |
-                                coeff(monomial(c, k), succ(t)) = zeroF
-                                [using specialize monomialCoeffElsewhere(c, k, succ(t)) the-successor-differs-from-k]
-                              @the-new-term-is-zero |
-                                mulF(zeroF, coeff(g, subN(i, succ(t)))) = zeroF
-                                [using specialize field.mulZeroLeft(coeff(g, subN(i, succ(t))))]
-                              @the-sum-is-zero-plus-zero |
-                                convolution(monomial(c, k), g, i, succ(t)) = addF(zeroF, zeroF)
-                                [using simplify one-more-term the-sum-so-far-vanishes the-monomial-vanishes-here the-new-term-is-zero]
-                              @zero-plus-zero |
-                                addF(zeroF, zeroF) = zeroF
-                                [using specialize addZeroLeftF(zeroF)]
-                              @conclusion-successor |
-                                convolution(monomial(c, k), g, i, succ(t)) = zeroF
-                                [using chain the-sum-is-zero-plus-zero zero-plus-zero]
-                            }
-                          @successor-below-k-implies-vanishing |
-                            less_than(succ(t), k) ->
-                              convolution(monomial(c, k), g, i, succ(t)) = zeroF
-                            [by discharge given-successor-below-k]
-                        }
-                      @induction-step-at-t |
-                        (less_than(t, k) -> convolution(monomial(c, k), g, i, t) = zeroF) ->
-                          (less_than(succ(t), k) ->
-                          convolution(monomial(c, k), g, i, succ(t)) = zeroF)
-                        [by discharge given-inductive-hypothesis]
-                    }
-                  @induction-step-for-all-t |
-                    forall t: Nat;
-                      (less_than(t, k) -> convolution(monomial(c, k), g, i, t) = zeroF) ->
-                      (less_than(succ(t), k) ->
-                      convolution(monomial(c, k), g, i, succ(t)) = zeroF)
-                    [by generalize induction-step]
-                  @conclusion-for-all-t |
-                    forall t: Nat;
-                      less_than(t, k) -> convolution(monomial(c, k), g, i, t) = zeroF
-                    [using instantiation peano.induction((fun t: Nat => less_than(t, k) -> convolution(monomial(c, k), g, i, t) = zeroF)) base-case induction-step-for-all-t]
-                }
-              @discharge-i |
-                forall i: Nat; forall t: Nat;
-                  less_than(t, k) -> convolution(monomial(c, k), g, i, t) = zeroF
-                [by generalize generalize-i]
-            }
-          @discharge-k |
-            forall k: Nat; forall i, t: Nat;
-              less_than(t, k) -> convolution(monomial(c, k), g, i, t) = zeroF
-            [by generalize generalize-k]
-        }
-      @discharge-c |
-        forall c: F; forall k, i, t: Nat;
-          less_than(t, k) -> convolution(monomial(c, k), g, i, t) = zeroF
-        [by generalize generalize-c]
-    }
-  @conclusion |
-    forall g: Poly; forall c: F; forall k, i, t: Nat;
-      less_than(t, k) -> convolution(monomial(c, k), g, i, t) = zeroF
-    [by generalize generalize-g]
-qed
-
-// PHASE TWO: at the limit k the single surviving term appears, and the sum from there is
-// `c * g_{i-k}` for good. The pivot is the step from k-1 to k, where phase one's "still
-// empty" meets the one index that does not miss.
-theorem theMonomialConvolutionIsTheShiftedTerm: forall g: Poly; forall c: F;
-  forall k, i: Nat;
-  convolution(monomial(c, k), g, i, k) = mulF(c, coeff(g, subN(i, k)))
-proof
-  @generalize-g |
-    fix g: Poly {
-      @generalize-c |
-        fix c: F {
-          @generalize-k |
-            fix k: Nat {
-              @generalize-i |
-                fix i: Nat {
-                  // Two cases on k, because the k = 0 sum has no predecessor to be empty.
-                  @k-is-zero-or-a-successor |
-                    k = ZERO or (exists t: Nat; k = succ(t))
-                    [using specialize peano.zeroOrSucc(k)]
-
-                  @when-k-is-zero |
-                    assume k = ZERO {
-                      @k-is-zero |
-                        k = ZERO
-                        [by hypothesis when-k-is-zero]
-                      // the whole sum IS the base term, c * g_i, and i - 0 = i
-                      @the-base-term |
-                        convolution(monomial(c, ZERO), g, i, ZERO) =
-                          mulF(coeff(monomial(c, ZERO), ZERO), coeff(g, i))
-                        [using specialize convolutionZero(monomial(c, ZERO), g, i)]
-                      @the-monomial-at-its-own-index |
-                        coeff(monomial(c, ZERO), ZERO) = c
-                        [using specialize monomialCoeffAtItsIndex(c, ZERO)]
-                      @subtracting-zero |
-                        subN(i, ZERO) = i
-                        [using specialize subtraction.subZeroRight(i)]
-                      @the-value-at-zero |
-                        convolution(monomial(c, ZERO), g, i, ZERO) =
-                          mulF(c, coeff(g, subN(i, ZERO)))
-                        [using simplify the-base-term the-monomial-at-its-own-index subtracting-zero]
-                      @conclusion-when-zero |
-                        convolution(monomial(c, k), g, i, k) = mulF(c, coeff(g, subN(i, k)))
-                        [by rewrite k-is-zero-flipped the-value-at-zero]
-                      @k-is-zero-flipped |
-                        ZERO = k
-                        [by symmetry k-is-zero]
-                    }
-
-                  @when-k-is-a-successor |
-                    assume exists t: Nat; k = succ(t) {
-                      @the-predecessor-exists |
-                        exists t: Nat; k = succ(t)
-                        [by hypothesis when-k-is-a-successor]
-                      @with-predecessor-t |
-                        unpack t: Nat from the-predecessor-exists {
-                          @k-is-the-successor |
-                            k = succ(t)
-                            [by hypothesis with-predecessor-t]
-                          // the sum to t is empty (t < k), and the k-th term is c * g_{i-k}
-                          @t-is-below-k |
-                            less_than(t, succ(t))
-                            [using specialize peano_order.lessThanSelf(t)]
-                          @t-is-below-k-itself |
-                            less_than(t, k)
-                            [by rewrite k-is-the-successor-flipped t-is-below-k]
-                          @k-is-the-successor-flipped |
-                            succ(t) = k
-                            [by symmetry k-is-the-successor]
-                          @the-sum-to-t-is-empty |
-                            convolution(monomial(c, k), g, i, t) = zeroF
-                            [using specialize theMonomialConvolutionIsEmptyBelowItsIndex(g, c, k, i, t) t-is-below-k-itself]
-                          @one-more-term |
-                            convolution(monomial(c, k), g, i, succ(t)) =
-                              addF(convolution(monomial(c, k), g, i, t),
-                              mulF(coeff(monomial(c, k), succ(t)),
-                              coeff(g, subN(i, succ(t)))))
-                            [using specialize convolutionSucc(monomial(c, k), g, i, t)]
-                          @the-monomial-at-its-own-index |
-                            coeff(monomial(c, k), k) = c
-                            [using specialize monomialCoeffAtItsIndex(c, k)]
-                          @the-surviving-term |
-                            coeff(monomial(c, k), succ(t)) = c
-                            [by rewrite k-is-the-successor-flipped the-monomial-at-its-own-index]
-                          @the-sum-is-zero-plus-the-term |
-                            convolution(monomial(c, k), g, i, succ(t)) =
-                              addF(zeroF, mulF(c, coeff(g, subN(i, succ(t)))))
-                            [using simplify one-more-term the-sum-to-t-is-empty the-surviving-term]
-                          @zero-plus-the-term |
-                            addF(zeroF, mulF(c, coeff(g, subN(i, succ(t))))) =
-                              mulF(c, coeff(g, subN(i, succ(t))))
-                            [using specialize addZeroLeftF(mulF(c, coeff(g, subN(i, succ(t)))))]
-                          @the-value-at-the-successor |
-                            convolution(monomial(c, k), g, i, succ(t)) =
-                              mulF(c, coeff(g, subN(i, succ(t))))
-                            [using chain the-sum-is-zero-plus-the-term zero-plus-the-term]
-                          @conclusion-when-a-successor |
-                            convolution(monomial(c, k), g, i, k) =
-                              mulF(c, coeff(g, subN(i, k)))
-                            [by rewrite k-is-the-successor the-value-at-the-successor]
-                        }
-                      @the-value-when-a-successor |
-                        convolution(monomial(c, k), g, i, k) =
-                          mulF(c, coeff(g, subN(i, k)))
-                        [by unpacked with-predecessor-t]
-                    }
-
-                  @conclusion-either-way |
-                    convolution(monomial(c, k), g, i, k) = mulF(c, coeff(g, subN(i, k)))
-                    [by common_conclusion k-is-zero-or-a-successor when-k-is-zero when-k-is-a-successor]
-                }
-              @discharge-i |
-                forall i: Nat;
-                  convolution(monomial(c, k), g, i, k) = mulF(c, coeff(g, subN(i, k)))
-                [by generalize generalize-i]
-            }
-          @discharge-k |
-            forall k: Nat; forall i: Nat;
-              convolution(monomial(c, k), g, i, k) = mulF(c, coeff(g, subN(i, k)))
-            [by generalize generalize-k]
-        }
-      @discharge-c |
-        forall c: F; forall k, i: Nat;
-          convolution(monomial(c, k), g, i, k) = mulF(c, coeff(g, subN(i, k)))
-        [by generalize generalize-c]
-    }
-  @conclusion |
-    forall g: Poly; forall c: F; forall k, i: Nat;
-      convolution(monomial(c, k), g, i, k) = mulF(c, coeff(g, subN(i, k)))
-    [by generalize generalize-g]
-qed
-
-// PHASE THREE: above k the sum STABILIZES — every further term is `0 * g`, so extending the
-// limit past k changes nothing. This is what carries the shift law from the special index k
-// to a general index, which is what the cancellation needs: it reads the product's n-th
-// coefficient, and that sum runs to n, not to k.
-theorem theMonomialConvolutionStabilizesAboveItsIndex: forall g: Poly; forall c: F;
-  forall k, i, t: Nat;
-  convolution(monomial(c, k), g, i, peano.add(k, t)) =
-  convolution(monomial(c, k), g, i, k)
-proof
-  @generalize-g |
-    fix g: Poly {
-      @generalize-c |
-        fix c: F {
-          @generalize-k |
-            fix k: Nat {
-              @generalize-i |
-                fix i: Nat {
-                  // base: adding nothing to the limit.
-                  @adding-zero |
-                    peano.add(k, ZERO) = k
-                    [using specialize peano.addZeroRight(k)]
-                  @base-case |
-                    convolution(monomial(c, k), g, i, peano.add(k, ZERO)) =
-                      convolution(monomial(c, k), g, i, k)
-                    [by rewrite adding-zero the-sum-at-k-is-itself]
-                  @the-sum-at-k-is-itself |
-                    convolution(monomial(c, k), g, i, k) =
-                      convolution(monomial(c, k), g, i, k)
-                    [by reflexivity]
-
-                  // step: the next index is k + succ(t), which is strictly above k, so the
-                  // monomial vanishes there and the term adds nothing.
-                  @induction-step |
-                    fix t: Nat {
-                      @given-inductive-hypothesis |
-                        assume convolution(monomial(c, k), g, i, peano.add(k, t)) =
-                          convolution(monomial(c, k), g, i, k) {
-                          @inductive-hypothesis |
-                            convolution(monomial(c, k), g, i, peano.add(k, t)) =
-                              convolution(monomial(c, k), g, i, k)
-                            [by hypothesis given-inductive-hypothesis]
-                          @the-next-limit |
-                            peano.add(k, succ(t)) = succ(peano.add(k, t))
-                            [using specialize peano.addSuccRight(k, t)]
-                          @one-more-term |
-                            convolution(monomial(c, k), g, i, succ(peano.add(k, t))) =
-                              addF(convolution(monomial(c, k), g, i, peano.add(k, t)),
-                              mulF(coeff(monomial(c, k), succ(peano.add(k, t))),
-                              coeff(g, subN(i, succ(peano.add(k, t))))))
-                            [using specialize convolutionSucc(monomial(c, k), g, i, peano.add(k, t))]
-                          // succ(k+t) is strictly above k, hence differs from it
-                          // k <= k + t (t is the gap), so k < succ(k + t).
-                          //
-                          // NOT `[using arithmetic(peano)]`: that decision is SORT-AGNOSTIC
-                          // and pure-ℤ unless a `nonneg` predicate is in scope, so it reads
-                          // `t` as possibly negative and reports the statement FALSE. Strict
-                          // certified it anyway, so this was a `--fast`/strict divergence
-                          // until it was proved from ℕ's own order instead.
-                          @the-gap-exists |
-                            exists d: Nat; peano.add(k, d) = peano.add(k, t)
-                            [by witness(t) the-sum-is-itself]
-                          @the-sum-is-itself |
-                            peano.add(k, t) = peano.add(k, t)
-                            [by reflexivity]
-                          @what-a-bound-means |
-                            peano_order.less_or_equal(k, peano.add(k, t)) iff
-                              (exists d: Nat; peano.add(k, d) = peano.add(k, t))
-                            [using specialize peano_order.lessOrEqualIsGapExistential(k, peano.add(k, t))]
-                          @k-is-bounded-by-the-sum |
-                            peano_order.less_or_equal(k, peano.add(k, t))
-                            [using tautology the-gap-exists what-a-bound-means]
-                          @k-is-below-the-next-index |
-                            less_than(k, succ(peano.add(k, t)))
-                            [using specialize peano_order.lessOrEqualToLessThanSucc(k, peano.add(k, t)) k-is-bounded-by-the-sum]
-                          @k-differs-from-the-next-index |
-                            k != succ(peano.add(k, t))
-                            [using specialize peano_order.lessThanIsStrict(k, succ(peano.add(k, t))) k-is-below-the-next-index]
-                          @the-next-index-differs-from-k |
-                            succ(peano.add(k, t)) != k
-                            [using specialize peano_order.natDisequalityIsSymmetric(k, succ(peano.add(k, t))) k-differs-from-the-next-index]
-                          @the-monomial-vanishes-there |
-                            coeff(monomial(c, k), succ(peano.add(k, t))) = zeroF
-                            [using specialize monomialCoeffElsewhere(c, k, succ(peano.add(k, t))) the-next-index-differs-from-k]
-                          @the-new-term-is-zero |
-                            mulF(zeroF, coeff(g, subN(i, succ(peano.add(k, t))))) = zeroF
-                            [using specialize field.mulZeroLeft(coeff(g, subN(i, succ(peano.add(k, t)))))]
-                          @the-sum-gains-zero |
-                            convolution(monomial(c, k), g, i, succ(peano.add(k, t))) =
-                              addF(convolution(monomial(c, k), g, i, k), zeroF)
-                            [using simplify one-more-term the-monomial-vanishes-there the-new-term-is-zero inductive-hypothesis]
-                          @adding-zero-changes-nothing |
-                            addF(convolution(monomial(c, k), g, i, k), zeroF) =
-                              convolution(monomial(c, k), g, i, k)
-                            [using specialize field.addZeroRight(convolution(monomial(c, k), g, i, k))]
-                          @the-value-at-the-next-index |
-                            convolution(monomial(c, k), g, i, succ(peano.add(k, t))) =
-                              convolution(monomial(c, k), g, i, k)
-                            [using chain the-sum-gains-zero adding-zero-changes-nothing]
-                          @conclusion-successor |
-                            convolution(monomial(c, k), g, i, peano.add(k, succ(t))) =
-                              convolution(monomial(c, k), g, i, k)
-                            [by rewrite the-next-limit the-value-at-the-next-index]
-                        }
-                      @induction-step-at-t |
-                        (convolution(monomial(c, k), g, i, peano.add(k, t)) =
-                          convolution(monomial(c, k), g, i, k)) ->
-                          (convolution(monomial(c, k), g, i, peano.add(k, succ(t))) =
-                          convolution(monomial(c, k), g, i, k))
-                        [by discharge given-inductive-hypothesis]
-                    }
-                  @induction-step-for-all-t |
-                    forall t: Nat;
-                      (convolution(monomial(c, k), g, i, peano.add(k, t)) =
-                      convolution(monomial(c, k), g, i, k)) ->
-                      (convolution(monomial(c, k), g, i, peano.add(k, succ(t))) =
-                      convolution(monomial(c, k), g, i, k))
-                    [by generalize induction-step]
-                  @conclusion-for-all-t |
-                    forall t: Nat;
-                      convolution(monomial(c, k), g, i, peano.add(k, t)) =
-                      convolution(monomial(c, k), g, i, k)
-                    [using instantiation peano.induction((fun t: Nat => convolution(monomial(c, k), g, i, peano.add(k, t)) = convolution(monomial(c, k), g, i, k))) base-case induction-step-for-all-t]
-                }
-              @discharge-i |
-                forall i: Nat; forall t: Nat;
-                  convolution(monomial(c, k), g, i, peano.add(k, t)) =
-                  convolution(monomial(c, k), g, i, k)
-                [by generalize generalize-i]
-            }
-          @discharge-k |
-            forall k: Nat; forall i, t: Nat;
-              convolution(monomial(c, k), g, i, peano.add(k, t)) =
-              convolution(monomial(c, k), g, i, k)
-            [by generalize generalize-k]
-        }
-      @discharge-c |
-        forall c: F; forall k, i, t: Nat;
-          convolution(monomial(c, k), g, i, peano.add(k, t)) =
-          convolution(monomial(c, k), g, i, k)
-        [by generalize generalize-c]
-    }
-  @conclusion |
-    forall g: Poly; forall c: F; forall k, i, t: Nat;
-      convolution(monomial(c, k), g, i, peano.add(k, t)) =
-      convolution(monomial(c, k), g, i, k)
-    [by generalize generalize-g]
-qed
-
-// THE SHIFT LAW, in the general form the cancellation reads: at index k + t, the product's
-// coefficient is `c * g_t`. The sum there runs to k + t, which stabilization collapses back
-// to k, where phase two names the single surviving term.
+// Multiplying by a monomial shifts every coefficient. TRANSFERRED: generic in the
+// coefficient ring, and now free of subtraction — the old form read `coeff(g, sub(i, k))`
+// and needed the index in range, while the generic statement names `k + t` directly.
 theorem theMonomialShiftsEveryCoefficient: forall g: Poly; forall c: F; forall k, t: Nat;
   coeff(mulP(monomial(c, k), g), peano.add(k, t)) = mulF(c, coeff(g, t))
 proof
-  @generalize-g |
-    fix g: Poly {
-      @generalize-c |
-        fix c: F {
-          @generalize-k |
-            fix k: Nat {
-              @generalize-t |
-                fix t: Nat {
-                  @the-coefficient-is-the-convolution |
-                    coeff(mulP(monomial(c, k), g), peano.add(k, t)) =
-                      convolution(monomial(c, k), g, peano.add(k, t), peano.add(k, t))
-                    [using specialize mulPolyCoeff(monomial(c, k), g, peano.add(k, t))]
-                  @the-sum-stabilizes |
-                    convolution(monomial(c, k), g, peano.add(k, t), peano.add(k, t)) =
-                      convolution(monomial(c, k), g, peano.add(k, t), k)
-                    [using specialize theMonomialConvolutionStabilizesAboveItsIndex(g, c, k, peano.add(k, t), t)]
-                  @the-surviving-term |
-                    convolution(monomial(c, k), g, peano.add(k, t), k) =
-                      mulF(c, coeff(g, subN(peano.add(k, t), k)))
-                    [using specialize theMonomialConvolutionIsTheShiftedTerm(g, c, k, peano.add(k, t))]
-                  // sub(k+t, k) = t: commute the sum, then subAddCancel cancels the k.
-                  @the-sum-commutes |
-                    peano.add(k, t) = peano.add(t, k)
-                    [using specialize peano.addIsCommutative(k, t)]
-                  @cancelling-the-k |
-                    subN(peano.add(t, k), k) = t
-                    [using specialize subtraction.subAddCancel(t, k)]
-                  @the-shift-recovers-t |
-                    subN(peano.add(k, t), k) = t
-                    [using simplify the-sum-commutes cancelling-the-k]
-                  @the-term-at-t |
-                    convolution(monomial(c, k), g, peano.add(k, t), k) = mulF(c, coeff(g, t))
-                    [using simplify the-surviving-term the-shift-recovers-t]
-                  @conclusion-the-general-shift |
-                    coeff(mulP(monomial(c, k), g), peano.add(k, t)) = mulF(c, coeff(g, t))
-                    [using chain the-coefficient-is-the-convolution the-sum-stabilizes the-term-at-t]
-                }
-              @discharge-t |
-                forall t: Nat;
-                  coeff(mulP(monomial(c, k), g), peano.add(k, t)) = mulF(c, coeff(g, t))
-                [by generalize generalize-t]
-            }
-          @discharge-k |
-            forall k: Nat; forall t: Nat;
-              coeff(mulP(monomial(c, k), g), peano.add(k, t)) = mulF(c, coeff(g, t))
-            [by generalize generalize-k]
-        }
-      @discharge-c |
-        forall c: F; forall k, t: Nat;
-          coeff(mulP(monomial(c, k), g), peano.add(k, t)) = mulF(c, coeff(g, t))
-        [by generalize generalize-c]
-    }
   @conclusion |
     forall g: Poly; forall c: F; forall k, t: Nat;
       coeff(mulP(monomial(c, k), g), peano.add(k, t)) = mulF(c, coeff(g, t))
-    [by generalize generalize-g]
+    [using model(FieldPolyModelsRingPoly) ring_mono.aMonomialShiftsEveryCoefficient]
 qed
-
-// THE SHIFT LAW at the index that matters: the k-th coefficient of `monomial(c,k) * g` is
-// `c * g_0`, which is the leading coefficient Judson's cancellation needs.
+// The constant-term case of the shift: at t = ZERO the index k + ZERO is k itself.
 theorem theMonomialShiftsTheCoefficients: forall g: Poly; forall c: F; forall k: Nat;
   coeff(mulP(monomial(c, k), g), k) = mulF(c, coeff(g, ZERO))
 proof
@@ -886,24 +338,20 @@ proof
         fix c: F {
           @generalize-k |
             fix k: Nat {
-              @the-coefficient-is-the-convolution |
-                coeff(mulP(monomial(c, k), g), k) = convolution(monomial(c, k), g, k, k)
-                [using specialize mulPolyCoeff(monomial(c, k), g, k)]
-              @the-convolution-is-the-shifted-term |
-                convolution(monomial(c, k), g, k, k) = mulF(c, coeff(g, subN(k, k)))
-                [using specialize theMonomialConvolutionIsTheShiftedTerm(g, c, k, k)]
-              @the-shift-vanishes |
-                subN(k, k) = ZERO
-                [using specialize subtraction.subSelf(k)]
-              @the-shifted-term-at-zero |
-                convolution(monomial(c, k), g, k, k) = mulF(c, coeff(g, ZERO))
-                [using simplify the-convolution-is-the-shifted-term the-shift-vanishes]
-              @conclusion-the-shift |
+              @the-shift-at-zero |
+                coeff(mulP(monomial(c, k), g), peano.add(k, ZERO)) =
+                  mulF(c, coeff(g, ZERO))
+                [using specialize theMonomialShiftsEveryCoefficient(g, c, k, ZERO)]
+              @the-index-collapses |
+                peano.add(k, ZERO) = k
+                [using specialize peano.addZeroRight(k)]
+              @conclusion-the-constant-term |
                 coeff(mulP(monomial(c, k), g), k) = mulF(c, coeff(g, ZERO))
-                [using chain the-coefficient-is-the-convolution the-shifted-term-at-zero]
+                [by rewrite the-index-collapses the-shift-at-zero]
             }
           @discharge-k |
-            forall k: Nat; coeff(mulP(monomial(c, k), g), k) = mulF(c, coeff(g, ZERO))
+            forall k: Nat;
+              coeff(mulP(monomial(c, k), g), k) = mulF(c, coeff(g, ZERO))
             [by generalize generalize-k]
         }
       @discharge-c |
@@ -1561,6 +1009,9 @@ model FieldPolyModelsRingPoly {
   ring_poly.tailConvolution: tailConvolution
   ring_poly.segment: segment
   ring_poly.degreeAtMost: degreeAtMost
+  ring_poly.degree: degree
+  ring_poly.degreeIsALeadingIndex <- degreeIsALeadingIndex
+  ring_poly.degreeBoundsTheCoefficients <- degreeBoundsTheCoefficients
   ring_poly.degreeAtMostMeaning <- degreeAtMostMeaning
   ring_poly.zeroPolyCoeff <- zeroPolyCoeff
   ring_poly.polyExtensionality <- polyExtensionality
@@ -1573,6 +1024,12 @@ model FieldPolyModelsRingPoly {
   ring_poly.tailConvolutionSucc <- tailConvolutionSucc
   ring_poly.segmentZero <- segmentZero
   ring_poly.segmentSucc <- segmentSucc
+  ring_poly.rsegment: rsegment
+  ring_poly.rsegmentZero <- rsegmentZero
+  ring_poly.rsegmentSucc <- rsegmentSucc
+  ring_mono.monomial: monomial
+  ring_mono.monomialCoeffAtItsIndex <- monomialCoeffAtItsIndex
+  ring_mono.monomialCoeffElsewhere <- monomialCoeffElsewhere
 }
 
 // The four laws the division algorithm's assembly step needs, transferred.
@@ -1845,98 +1302,13 @@ proof
       f = addP(mulP(g, addP(quotient, mono)), remainder)
     [by generalize generalize-f]
 qed
-
-// Multiplying by the zero polynomial gives the zero polynomial. Needed for the trivial
-// division `f = g·0 + f`, which is Judson's "if m > n, then we can let q(x) = 0 and
-// r(x) = f(x)". Proved coefficientwise, since the product's coefficient is a convolution
-// whose every term carries a factor of `zeroF`.
+// p · 0 = 0, transferred: generic in the coefficient ring, so it lives in `ring_poly` and
+// F[x] pays a one-line transfer instead of its own convolution induction.
 theorem polyMulZeroRight: forall p: Poly; mulP(p, ZEROP) = ZEROP
 proof
-  @generalize-p |
-    fix p: Poly {
-      @generalize-index |
-        fix i: Nat {
-          // the convolution against ZEROP vanishes at every limit: induction on the limit.
-          @base-term |
-            convolution(p, ZEROP, i, ZERO) = mulF(coeff(p, ZERO), coeff(ZEROP, i))
-            [using specialize convolutionZero(p, ZEROP, i)]
-          @the-zero-polynomial-vanishes |
-            coeff(ZEROP, i) = zeroF
-            [using specialize zeroPolyCoeff(i)]
-          @times-zero |
-            mulF(coeff(p, ZERO), zeroF) = zeroF
-            [using specialize field.mulZeroRight(coeff(p, ZERO))]
-          @base-case |
-            convolution(p, ZEROP, i, ZERO) = zeroF
-            [using simplify base-term the-zero-polynomial-vanishes times-zero]
-
-          @induction-step |
-            fix k: Nat {
-              @given-inductive-hypothesis |
-                assume convolution(p, ZEROP, i, k) = zeroF {
-                  @inductive-hypothesis |
-                    convolution(p, ZEROP, i, k) = zeroF
-                    [by hypothesis given-inductive-hypothesis]
-                  @one-more-term |
-                    convolution(p, ZEROP, i, succ(k)) =
-                      addF(convolution(p, ZEROP, i, k),
-                      mulF(coeff(p, succ(k)), coeff(ZEROP, subN(i, succ(k)))))
-                    [using specialize convolutionSucc(p, ZEROP, i, k)]
-                  @the-zero-polynomial-vanishes-here |
-                    coeff(ZEROP, subN(i, succ(k))) = zeroF
-                    [using specialize zeroPolyCoeff(subN(i, succ(k)))]
-                  @the-new-term-is-zero |
-                    mulF(coeff(p, succ(k)), zeroF) = zeroF
-                    [using specialize field.mulZeroRight(coeff(p, succ(k)))]
-                  @the-sum-is-zero-plus-zero |
-                    convolution(p, ZEROP, i, succ(k)) = addF(zeroF, zeroF)
-                    [using simplify one-more-term the-zero-polynomial-vanishes-here the-new-term-is-zero inductive-hypothesis]
-                  @zero-plus-zero |
-                    addF(zeroF, zeroF) = zeroF
-                    [using specialize addZeroLeftF(zeroF)]
-                  @conclusion-successor |
-                    convolution(p, ZEROP, i, succ(k)) = zeroF
-                    [using chain the-sum-is-zero-plus-zero zero-plus-zero]
-                }
-              @induction-step-at-k |
-                convolution(p, ZEROP, i, k) = zeroF ->
-                  convolution(p, ZEROP, i, succ(k)) = zeroF
-                [by discharge given-inductive-hypothesis]
-            }
-          @induction-step-for-all-k |
-            forall k: Nat;
-              convolution(p, ZEROP, i, k) = zeroF ->
-              convolution(p, ZEROP, i, succ(k)) = zeroF
-            [by generalize induction-step]
-          @the-convolution-vanishes |
-            forall k: Nat; convolution(p, ZEROP, i, k) = zeroF
-            [using instantiation peano.induction((fun k: Nat => convolution(p, ZEROP, i, k) = zeroF)) base-case induction-step-for-all-k]
-          @the-product-coefficient |
-            coeff(mulP(p, ZEROP), i) = convolution(p, ZEROP, i, i)
-            [using specialize mulPolyCoeff(p, ZEROP, i)]
-          @the-convolution-at-i |
-            convolution(p, ZEROP, i, i) = zeroF
-            [using specialize the-convolution-vanishes(i)]
-          @the-zero-coefficient |
-            coeff(ZEROP, i) = zeroF
-            [using specialize zeroPolyCoeff(i)]
-          @the-zero-coefficient-flipped |
-            zeroF = coeff(ZEROP, i)
-            [by symmetry the-zero-coefficient]
-          @coefficients-agree-at-index |
-            coeff(mulP(p, ZEROP), i) = coeff(ZEROP, i)
-            [using chain the-product-coefficient the-convolution-at-i the-zero-coefficient-flipped]
-        }
-      @corresponding-coefficients-are-equal |
-        forall i: Nat; coeff(mulP(p, ZEROP), i) = coeff(ZEROP, i)
-        [by generalize generalize-index]
-      @conclusion-the-product-vanishes |
-        mulP(p, ZEROP) = ZEROP
-        [using specialize polyExtensionality(mulP(p, ZEROP), ZEROP) corresponding-coefficients-are-equal]
-    }
   @conclusion |
     forall p: Poly; mulP(p, ZEROP) = ZEROP
-    [by generalize generalize-p]
+    [using model(FieldPolyModelsRingPoly) ring_poly.polyMulZeroRight]
 qed
 
 // THE TRIVIAL DIVISION, Judson's "If m > n, then we can let q(x) = 0 and r(x) = f(x)":
@@ -2161,65 +1533,15 @@ proof
       (remainder = ZEROP or less_than(degree(remainder), degree(g)))
     [by generalize generalize-f]
 qed
-
-// Two small facts the construction arm needs, both about its chosen coefficient.
-
-// A monomial with a nonzero coefficient is not the zero polynomial: they differ at index k.
+// Transferred: generic in the coefficient ring, so it lives in
+// `std/ring/polynomial/monomial.b4m`.
 theorem aNonzeroMonomialIsNonzero: forall a: F; forall k: Nat;
   (not (a = zeroF)) -> (not (monomial(a, k) = ZEROP))
 proof
-  @generalize-a |
-    fix a: F {
-      @generalize-k |
-        fix k: Nat {
-          @given-the-coefficient-is-nonzero |
-            assume not (a = zeroF) {
-              @the-coefficient-is-nonzero |
-                a != zeroF
-                [by hypothesis given-the-coefficient-is-nonzero]
-              @the-monomial-at-its-index |
-                coeff(monomial(a, k), k) = a
-                [using specialize monomialCoeffAtItsIndex(a, k)]
-              @given-the-monomial-is-zero |
-                assume monomial(a, k) = ZEROP {
-                  @the-monomial-is-zero |
-                    monomial(a, k) = ZEROP
-                    [by hypothesis given-the-monomial-is-zero]
-                  @the-zero-coefficient |
-                    coeff(ZEROP, k) = zeroF
-                    [using specialize zeroPolyCoeff(k)]
-                  @the-monomial-coefficient-is-zero |
-                    coeff(monomial(a, k), k) = zeroF
-                    [by rewrite the-monomial-is-zero the-zero-coefficient]
-                  @the-coefficient-is-zero |
-                    a = zeroF
-                    [using chain the-monomial-at-its-index-flipped the-monomial-coefficient-is-zero]
-                  @the-monomial-at-its-index-flipped |
-                    a = coeff(monomial(a, k), k)
-                    [by symmetry the-monomial-at-its-index]
-                  @contradiction |
-                    not (monomial(a, k) = ZEROP)
-                    [by ex_falso the-coefficient-is-zero the-coefficient-is-nonzero]
-                }
-              @being-zero-is-absurd |
-                monomial(a, k) = ZEROP -> (not (monomial(a, k) = ZEROP))
-                [by discharge given-the-monomial-is-zero]
-              @conclusion-the-monomial-is-nonzero |
-                not (monomial(a, k) = ZEROP)
-                [using tautology being-zero-is-absurd]
-            }
-          @nonzero-coefficient-implies-nonzero-monomial |
-            (not (a = zeroF)) -> (not (monomial(a, k) = ZEROP))
-            [by discharge given-the-coefficient-is-nonzero]
-        }
-      @discharge-k |
-        forall k: Nat; (not (a = zeroF)) -> (not (monomial(a, k) = ZEROP))
-        [by generalize generalize-k]
-    }
   @conclusion |
     forall a: F; forall k: Nat;
       (not (a = zeroF)) -> (not (monomial(a, k) = ZEROP))
-    [by generalize generalize-a]
+    [using model(FieldPolyModelsRingPoly) ring_mono.aNonzeroMonomialIsNonzero]
 qed
 
 // The chosen coefficient `a_n · recip(b_m)` is nonzero when both factors are: a field has no
@@ -3803,210 +3125,6 @@ proof
     [by generalize generalize-alpha]
 qed
 
-// -- THE PRODUCT WITH x - alpha, COEFFICIENTWISE ------------------------------------------
-//
-// The factor theorem's forward direction needs `(x - alpha)·q` evaluated AT alpha. The
-// general evaluation homomorphism would give it, but its multiplicative half rests on the
-// double-sum reindexing that also blocks associativity. This specific case does NOT need
-// that: `x - alpha` has only TWO nonzero coefficients, so its convolution collapses to two
-// terms, and the resulting sum telescopes.
-//
-// STEP 1: the convolution against linear(al) at index succ(i), summed to the full limit,
-// collapses to two terms. Build it from the convolution's own recursion.
-// convolution(linear, q, i, k) for k >= 1 is:
-//   base j=0:  coeff(linear,0) * q_i       = neg(al) * q_i
-//   j=1:       coeff(linear,1) * q_{i-1}   = oneF * q_{i-1}
-//   j>=2:      coeff(linear,j) = 0         -> contributes nothing
-theorem theLinearConvolutionAtOne: forall q: Poly; forall al: F; forall i: Nat;
-  convolution(linear(al), q, i, succ(ZERO)) =
-  addF(mulF(negF(al), coeff(q, i)), coeff(q, subN(i, succ(ZERO))))
-proof
-  @generalize-q |
-    fix q: Poly {
-      @generalize-al |
-        fix al: F {
-          @generalize-i |
-            fix i: Nat {
-              @the-step |
-                convolution(linear(al), q, i, succ(ZERO)) =
-                  addF(convolution(linear(al), q, i, ZERO),
-                  mulF(coeff(linear(al), succ(ZERO)), coeff(q, subN(i, succ(ZERO)))))
-                [using specialize convolutionSucc(linear(al), q, i, ZERO)]
-              @the-base |
-                convolution(linear(al), q, i, ZERO) =
-                  mulF(coeff(linear(al), ZERO), coeff(q, i))
-                [using specialize convolutionZero(linear(al), q, i)]
-              @the-constant-term |
-                coeff(linear(al), ZERO) = negF(al)
-                [using specialize theLinearPolynomialHasNegatedConstantTerm(al)]
-              @the-leading-term |
-                coeff(linear(al), succ(ZERO)) = oneF
-                [using specialize theLinearPolynomialLeadsWithOne(al)]
-              @one-times |
-                mulF(oneF, coeff(q, subN(i, succ(ZERO)))) = coeff(q, subN(i, succ(ZERO)))
-                [using specialize mulOneLeftF(coeff(q, subN(i, succ(ZERO))))]
-              @conclusion-two-terms |
-                convolution(linear(al), q, i, succ(ZERO)) =
-                  addF(mulF(negF(al), coeff(q, i)), coeff(q, subN(i, succ(ZERO))))
-                [using simplify the-step the-base the-constant-term the-leading-term one-times]
-            }
-          @discharge-i |
-            forall i: Nat;
-              convolution(linear(al), q, i, succ(ZERO)) =
-              addF(mulF(negF(al), coeff(q, i)), coeff(q, subN(i, succ(ZERO))))
-            [by generalize generalize-i]
-        }
-      @discharge-al |
-        forall al: F; forall i: Nat;
-          convolution(linear(al), q, i, succ(ZERO)) =
-          addF(mulF(negF(al), coeff(q, i)), coeff(q, subN(i, succ(ZERO))))
-        [by generalize generalize-al]
-    }
-  @conclusion |
-    forall q: Poly; forall al: F; forall i: Nat;
-      convolution(linear(al), q, i, succ(ZERO)) =
-      addF(mulF(negF(al), coeff(q, i)), coeff(q, subN(i, succ(ZERO))))
-    [by generalize generalize-q]
-qed
-
-// STEP 2: above limit 1 the convolution against linear(al) stabilizes — every further term
-// carries a vanishing coefficient of linear(al).
-theorem theLinearConvolutionStabilizes: forall q: Poly; forall al: F; forall i, t: Nat;
-  convolution(linear(al), q, i, peano.add(succ(ZERO), t)) =
-  convolution(linear(al), q, i, succ(ZERO))
-proof
-  @generalize-q |
-    fix q: Poly {
-      @generalize-al |
-        fix al: F {
-          @generalize-i |
-            fix i: Nat {
-              @adding-zero |
-                peano.add(succ(ZERO), ZERO) = succ(ZERO)
-                [using specialize peano.addZeroRight(succ(ZERO))]
-              @the-sum-is-itself |
-                convolution(linear(al), q, i, succ(ZERO)) =
-                  convolution(linear(al), q, i, succ(ZERO))
-                [by reflexivity]
-              @base-case |
-                convolution(linear(al), q, i, peano.add(succ(ZERO), ZERO)) =
-                  convolution(linear(al), q, i, succ(ZERO))
-                [by rewrite adding-zero the-sum-is-itself]
-              @induction-step |
-                fix t: Nat {
-                  @given-inductive-hypothesis |
-                    assume convolution(linear(al), q, i, peano.add(succ(ZERO), t)) =
-                      convolution(linear(al), q, i, succ(ZERO)) {
-                      @inductive-hypothesis |
-                        convolution(linear(al), q, i, peano.add(succ(ZERO), t)) =
-                          convolution(linear(al), q, i, succ(ZERO))
-                        [by hypothesis given-inductive-hypothesis]
-                      @the-next-limit |
-                        peano.add(succ(ZERO), succ(t)) = succ(peano.add(succ(ZERO), t))
-                        [using specialize peano.addSuccRight(succ(ZERO), t)]
-                      @one-more-term |
-                        convolution(linear(al), q, i, succ(peano.add(succ(ZERO), t))) =
-                          addF(convolution(linear(al), q, i, peano.add(succ(ZERO), t)),
-                          mulF(coeff(linear(al), succ(peano.add(succ(ZERO), t))),
-                          coeff(q, subN(i, succ(peano.add(succ(ZERO), t))))))
-                        [using specialize convolutionSucc(linear(al), q, i, peano.add(succ(ZERO), t))]
-                      // succ(1+t) is above 1, so linear's coefficient there vanishes
-                      // 1 <= 1+t (t is the gap), so 1 < succ(1+t). NOT `arithmetic`: that
-                      // decision is sort-agnostic and reads t as possibly negative.
-                      @the-gap-exists |
-                        exists dd: Nat; peano.add(succ(ZERO), dd) = peano.add(succ(ZERO), t)
-                        [by witness(t) the-sum-is-reflexive]
-                      @the-sum-is-reflexive |
-                        peano.add(succ(ZERO), t) = peano.add(succ(ZERO), t)
-                        [by reflexivity]
-                      @what-a-bound-means |
-                        peano_order.less_or_equal(succ(ZERO), peano.add(succ(ZERO), t)) iff
-                          (exists dd: Nat; peano.add(succ(ZERO), dd) = peano.add(succ(ZERO), t))
-                        [using specialize peano_order.lessOrEqualIsGapExistential(succ(ZERO), peano.add(succ(ZERO), t))]
-                      @one-is-bounded-by-the-sum |
-                        peano_order.less_or_equal(succ(ZERO), peano.add(succ(ZERO), t))
-                        [using tautology the-gap-exists what-a-bound-means]
-                      @one-is-below-the-next |
-                        less_than(succ(ZERO), succ(peano.add(succ(ZERO), t)))
-                        [using specialize peano_order.lessOrEqualToLessThanSucc(succ(ZERO), peano.add(succ(ZERO), t)) one-is-bounded-by-the-sum]
-                      @the-coefficient-vanishes |
-                        coeff(linear(al), succ(peano.add(succ(ZERO), t))) = zeroF
-                        [using tautology the-bound-gives-vanishing one-is-below-the-next]
-                      @the-bound |
-                        degreeAtMost(linear(al), succ(ZERO))
-                        [using specialize theLinearPolynomialVanishesAboveOne(al)]
-                      @what-the-bound-means |
-                        degreeAtMost(linear(al), succ(ZERO)) iff
-                          (forall j: Nat; less_than(succ(ZERO), j) ->
-                          coeff(linear(al), j) = zeroF)
-                        [using specialize degreeAtMostMeaning(linear(al), succ(ZERO))]
-                      @vanishes-above-one |
-                        forall j: Nat; less_than(succ(ZERO), j) ->
-                          coeff(linear(al), j) = zeroF
-                        [using tautology the-bound what-the-bound-means]
-                      @the-bound-gives-vanishing |
-                        less_than(succ(ZERO), succ(peano.add(succ(ZERO), t))) ->
-                          coeff(linear(al), succ(peano.add(succ(ZERO), t))) = zeroF
-                        [using specialize vanishes-above-one(succ(peano.add(succ(ZERO), t)))]
-                      @the-new-term-is-zero |
-                        mulF(zeroF, coeff(q, subN(i, succ(peano.add(succ(ZERO), t))))) = zeroF
-                        [using specialize field.mulZeroLeft(coeff(q, subN(i, succ(peano.add(succ(ZERO), t)))))]
-                      @the-sum-gains-zero |
-                        convolution(linear(al), q, i, succ(peano.add(succ(ZERO), t))) =
-                          addF(convolution(linear(al), q, i, succ(ZERO)), zeroF)
-                        [using simplify one-more-term the-coefficient-vanishes the-new-term-is-zero inductive-hypothesis]
-                      @adding-zero-changes-nothing |
-                        addF(convolution(linear(al), q, i, succ(ZERO)), zeroF) =
-                          convolution(linear(al), q, i, succ(ZERO))
-                        [using specialize field.addZeroRight(convolution(linear(al), q, i, succ(ZERO)))]
-                      @the-value-at-the-next |
-                        convolution(linear(al), q, i, succ(peano.add(succ(ZERO), t))) =
-                          convolution(linear(al), q, i, succ(ZERO))
-                        [using chain the-sum-gains-zero adding-zero-changes-nothing]
-                      @conclusion-successor |
-                        convolution(linear(al), q, i, peano.add(succ(ZERO), succ(t))) =
-                          convolution(linear(al), q, i, succ(ZERO))
-                        [by rewrite the-next-limit the-value-at-the-next]
-                    }
-                  @induction-step-at-t |
-                    (convolution(linear(al), q, i, peano.add(succ(ZERO), t)) =
-                      convolution(linear(al), q, i, succ(ZERO))) ->
-                      (convolution(linear(al), q, i, peano.add(succ(ZERO), succ(t))) =
-                      convolution(linear(al), q, i, succ(ZERO)))
-                    [by discharge given-inductive-hypothesis]
-                }
-              @induction-step-for-all-t |
-                forall t: Nat;
-                  (convolution(linear(al), q, i, peano.add(succ(ZERO), t)) =
-                  convolution(linear(al), q, i, succ(ZERO))) ->
-                  (convolution(linear(al), q, i, peano.add(succ(ZERO), succ(t))) =
-                  convolution(linear(al), q, i, succ(ZERO)))
-                [by generalize induction-step]
-              @conclusion-for-all-t |
-                forall t: Nat;
-                  convolution(linear(al), q, i, peano.add(succ(ZERO), t)) =
-                  convolution(linear(al), q, i, succ(ZERO))
-                [using instantiation peano.induction((fun t: Nat => convolution(linear(al), q, i, peano.add(succ(ZERO), t)) = convolution(linear(al), q, i, succ(ZERO)))) base-case induction-step-for-all-t]
-            }
-          @discharge-i |
-            forall i, t: Nat;
-              convolution(linear(al), q, i, peano.add(succ(ZERO), t)) =
-              convolution(linear(al), q, i, succ(ZERO))
-            [by generalize generalize-i]
-        }
-      @discharge-al |
-        forall al: F; forall i, t: Nat;
-          convolution(linear(al), q, i, peano.add(succ(ZERO), t)) =
-          convolution(linear(al), q, i, succ(ZERO))
-        [by generalize generalize-al]
-    }
-  @conclusion |
-    forall q: Poly; forall al: F; forall i, t: Nat;
-      convolution(linear(al), q, i, peano.add(succ(ZERO), t)) =
-      convolution(linear(al), q, i, succ(ZERO))
-    [by generalize generalize-q]
-qed
-
 // one plus m is succ(m) -- the index bridge the stabilization needs
 theorem onePlusIsSucc: forall m: Nat; peano.add(succ(ZERO), m) = succ(m)
 proof
@@ -4026,8 +3144,246 @@ proof
     forall m: Nat; peano.add(succ(ZERO), m) = succ(m)
     [by generalize generalize-m]
 qed
+// The run-congruence, transferred: two left factors agreeing on every coefficient a run
+// reads give that run the same value. Generic, so it is proved once in `ring_poly`.
+theorem runsAgreeWhenTheCoefficientsDo: forall p, p2, q: Poly; forall m, b: Nat;
+  (forall d: Nat;
+  coeff(p, succ(peano.add(b, d))) = coeff(p2, succ(peano.add(b, d)))) ->
+  convolution(p, q, succ(b), m) = convolution(p2, q, succ(b), m)
+proof
+  @conclusion |
+    forall p, p2, q: Poly; forall m, b: Nat;
+      (forall d: Nat;
+      coeff(p, succ(peano.add(b, d))) = coeff(p2, succ(peano.add(b, d)))) ->
+      convolution(p, q, succ(b), m) = convolution(p2, q, succ(b), m)
+    [using model(FieldPolyModelsRingPoly) ring_poly.runsAgreeWhenTheCoefficientsDo]
+qed
 
-// THE PRODUCT'S COEFFICIENT at a successor index: -al*q_{succ m} + q_m.
+// `linear(al)` = x - al and the monomial x agree at every index STRICTLY ABOVE ZERO: at
+// index 1 both are one, and above 1 both vanish. Stated over `succ(add(ZERO, d))` — the shape
+// `runsAgreeWhenTheCoefficientsDo` consumes — so the two cases are d = ZERO and d = succ(_).
+theorem theLinearAgreesWithTheMonomialAboveZero: forall al: F;
+  forall d: Nat;
+  coeff(linear(al), succ(peano.add(ZERO, d))) =
+  coeff(monomial(oneF, succ(ZERO)), succ(peano.add(ZERO, d)))
+proof
+  @generalize-al |
+    fix al: F {
+      @generalize-d |
+        fix d: Nat {
+          @the-base-collapses |
+            peano.add(ZERO, d) = d
+            [using specialize peano.addZeroLeft(d)]
+          @d-is-zero-or-successor |
+            d = ZERO or (exists e: Nat; d = succ(e))
+            [using specialize peano.zeroOrSucc(d)]
+          @they-agree-at-d |
+            coeff(linear(al), succ(d)) =
+              coeff(monomial(oneF, succ(ZERO)), succ(d))
+            [by common_conclusion d-is-zero-or-successor
+              when-d-is-zero when-d-is-a-successor]
+          @when-d-is-zero |
+            assume d = ZERO {
+              @d-is-zero |
+                d = ZERO
+                [by hypothesis when-d-is-zero]
+              // at index 1 both are one
+              @the-linear-leads-with-one |
+                coeff(linear(al), succ(ZERO)) = oneF
+                [using specialize theLinearPolynomialLeadsWithOne(al)]
+              @the-monomial-at-its-index |
+                coeff(monomial(oneF, succ(ZERO)), succ(ZERO)) = oneF
+                [using specialize monomialCoeffAtItsIndex(oneF, succ(ZERO))]
+              @they-agree-at-one |
+                coeff(linear(al), succ(ZERO)) =
+                  coeff(monomial(oneF, succ(ZERO)), succ(ZERO))
+                [using simplify the-linear-leads-with-one
+                  the-monomial-at-its-index]
+              @conclusion-at-zero |
+                coeff(linear(al), succ(d)) =
+                  coeff(monomial(oneF, succ(ZERO)), succ(d))
+                [by rewrite d-is-zero they-agree-at-one]
+            }
+          @when-d-is-a-successor |
+            assume exists e: Nat; d = succ(e) {
+              @the-predecessor-exists |
+                exists e: Nat; d = succ(e)
+                [by hypothesis when-d-is-a-successor]
+              @with-the-predecessor |
+                unpack de: Nat from the-predecessor-exists {
+                  @d-is-succ-de |
+                    d = succ(de)
+                    [by hypothesis with-the-predecessor]
+                  // index succ(succ(de)) is strictly above one, so both vanish
+                  @one-is-below-the-index |
+                    less_than(succ(ZERO), succ(succ(de)))
+                    [using specialize peano_order.succPreservesOrder(ZERO, succ(de))
+                      zero-is-below-the-successor]
+                  @zero-is-below-the-successor |
+                    less_than(ZERO, succ(de))
+                    [using specialize peano_order.zeroBelowSucc(de)]
+                  @the-linear-vanishes-above-one |
+                    degreeAtMost(linear(al), succ(ZERO))
+                    [using specialize theLinearPolynomialVanishesAboveOne(al)]
+                  @the-bound-unfolds |
+                    degreeAtMost(linear(al), succ(ZERO)) iff
+                      (forall i: Nat; less_than(succ(ZERO), i) ->
+                      coeff(linear(al), i) = zeroF)
+                    [using specialize degreeAtMostMeaning(linear(al), succ(ZERO))]
+                  @the-bound-forward |
+                    degreeAtMost(linear(al), succ(ZERO)) ->
+                      (forall i: Nat; less_than(succ(ZERO), i) ->
+                      coeff(linear(al), i) = zeroF)
+                    [by equiv_forward the-bound-unfolds]
+                  @the-linear-coefficients-vanish |
+                    forall i: Nat; less_than(succ(ZERO), i) ->
+                      coeff(linear(al), i) = zeroF
+                    [by modus_ponens the-bound-forward the-linear-vanishes-above-one]
+                  @the-linear-vanishes-here |
+                    coeff(linear(al), succ(succ(de))) = zeroF
+                    [using specialize the-linear-coefficients-vanish(succ(succ(de)))
+                      one-is-below-the-index]
+                  // the monomial vanishes off its index
+                  // succ(succ(de)) = succ(ZERO) would make succ(de) = ZERO
+                  @the-index-differs |
+                    not (succ(succ(de)) = succ(ZERO))
+                    [using specialize peano_order.aStrictBoundGivesADisequality(
+                      succ(ZERO), succ(succ(de))) one-is-below-the-index]
+                  @the-monomial-vanishes-here |
+                    coeff(monomial(oneF, succ(ZERO)), succ(succ(de))) = zeroF
+                    [using specialize monomialCoeffElsewhere(
+                      oneF, succ(ZERO), succ(succ(de))) the-index-differs]
+                  @they-agree-above-one |
+                    coeff(linear(al), succ(succ(de))) =
+                      coeff(monomial(oneF, succ(ZERO)), succ(succ(de)))
+                    [using simplify the-linear-vanishes-here
+                      the-monomial-vanishes-here]
+                  @conclusion-at-the-successor |
+                    coeff(linear(al), succ(d)) =
+                      coeff(monomial(oneF, succ(ZERO)), succ(d))
+                    [by rewrite d-is-succ-de they-agree-above-one]
+                }
+              @conclusion-from-the-predecessor |
+                coeff(linear(al), succ(d)) =
+                  coeff(monomial(oneF, succ(ZERO)), succ(d))
+                [by unpacked with-the-predecessor]
+            }
+          @conclusion-they-agree |
+            coeff(linear(al), succ(peano.add(ZERO, d))) =
+              coeff(monomial(oneF, succ(ZERO)), succ(peano.add(ZERO, d)))
+            [by rewrite the-base-collapses they-agree-at-d]
+        }
+      @discharge-d |
+        forall d: Nat;
+          coeff(linear(al), succ(peano.add(ZERO, d))) =
+          coeff(monomial(oneF, succ(ZERO)), succ(peano.add(ZERO, d)))
+        [by generalize generalize-d]
+    }
+  @conclusion |
+    forall al: F; forall d: Nat;
+      coeff(linear(al), succ(peano.add(ZERO, d))) =
+      coeff(monomial(oneF, succ(ZERO)), succ(peano.add(ZERO, d)))
+    [by generalize generalize-al]
+qed
+
+// `linear(al)` and the monomial x have the SAME coefficients from index 1 upward: both are
+// one at index 1 and zero above. So any convolution run that starts at exponent 1 reads
+// identical coefficients from each, hence gives the same sum.
+theorem theLinearRunMatchesTheMonomialRun: forall q: Poly; forall al: F; forall m: Nat;
+  convolution(linear(al), q, succ(ZERO), m) =
+  convolution(monomial(oneF, succ(ZERO)), q, succ(ZERO), m)
+proof
+  @generalize-q |
+    fix q: Poly {
+      @generalize-al |
+        fix al: F {
+          @the-coefficients-agree-above-zero |
+            forall d: Nat;
+              coeff(linear(al), succ(peano.add(ZERO, d))) =
+              coeff(monomial(oneF, succ(ZERO)), succ(peano.add(ZERO, d)))
+            [using specialize theLinearAgreesWithTheMonomialAboveZero(al)]
+          @generalize-m |
+            fix m: Nat {
+              @the-runs-agree-at-m |
+                convolution(linear(al), q, succ(ZERO), m) =
+                  convolution(monomial(oneF, succ(ZERO)), q, succ(ZERO), m)
+                [using specialize runsAgreeWhenTheCoefficientsDo(
+                  linear(al), monomial(oneF, succ(ZERO)), q, m, ZERO)
+                  the-coefficients-agree-above-zero]
+            }
+          @conclusion-the-runs-agree |
+            forall m: Nat;
+              convolution(linear(al), q, succ(ZERO), m) =
+              convolution(monomial(oneF, succ(ZERO)), q, succ(ZERO), m)
+            [by generalize generalize-m]
+        }
+      @discharge-al |
+        forall al: F; forall m: Nat;
+          convolution(linear(al), q, succ(ZERO), m) =
+          convolution(monomial(oneF, succ(ZERO)), q, succ(ZERO), m)
+        [by generalize generalize-al]
+    }
+  @conclusion |
+    forall q: Poly; forall al: F; forall m: Nat;
+      convolution(linear(al), q, succ(ZERO), m) =
+      convolution(monomial(oneF, succ(ZERO)), q, succ(ZERO), m)
+    [by generalize generalize-q]
+qed
+
+// Above its constant term, `linear(al)` is the monomial x — its coefficient is one at index
+// 1 and zero above — so the convolution run started at exponent 1 collapses to q_m.
+theorem theLinearTailIsTheCoefficient: forall q: Poly; forall al: F; forall m: Nat;
+  convolution(linear(al), q, succ(ZERO), m) = coeff(q, m)
+proof
+  @generalize-q |
+    fix q: Poly {
+      @generalize-al |
+        fix al: F {
+          @generalize-m |
+            fix m: Nat {
+              // linear agrees with the monomial x at every index, so their runs agree
+              @the-runs-agree |
+                convolution(linear(al), q, succ(ZERO), m) =
+                  convolution(monomial(oneF, succ(ZERO)), q, succ(ZERO), m)
+                [using specialize theLinearRunMatchesTheMonomialRun(q, al, m)]
+              @the-monomial-run-collapses |
+                forall g: Poly; forall c: F; forall k, n: Nat;
+                  convolution(monomial(c, k), g, k, n) = mulF(c, coeff(g, n))
+                [using model(FieldPolyModelsRingPoly)
+                  ring_mono.aMonomialRunAtItsIndexIsOneTerm]
+              @the-monomial-run-is-one-term |
+                convolution(monomial(oneF, succ(ZERO)), q, succ(ZERO), m) =
+                  mulF(oneF, coeff(q, m))
+                [using specialize the-monomial-run-collapses(
+                  q, oneF, succ(ZERO), m)]
+              @one-is-the-identity |
+                mulF(oneF, coeff(q, m)) = coeff(q, m)
+                [using specialize mulOneLeftF(coeff(q, m))]
+              @conclusion-the-tail |
+                convolution(linear(al), q, succ(ZERO), m) = coeff(q, m)
+                [using chain the-runs-agree the-monomial-run-is-one-term
+                  one-is-the-identity]
+            }
+          @discharge-m |
+            forall m: Nat;
+              convolution(linear(al), q, succ(ZERO), m) = coeff(q, m)
+            [by generalize generalize-m]
+        }
+      @discharge-al |
+        forall al: F; forall m: Nat;
+          convolution(linear(al), q, succ(ZERO), m) = coeff(q, m)
+        [by generalize generalize-al]
+    }
+  @conclusion |
+    forall q: Poly; forall al: F; forall m: Nat;
+      convolution(linear(al), q, succ(ZERO), m) = coeff(q, m)
+    [by generalize generalize-q]
+qed
+
+// (x - α)·q at index succ(m) is (-α)·q_{m+1} + q_m. Under the reindexed convolution this is
+// a DIRECT two-step unfold: the run from exponent ZERO picks up linear's constant term, then
+// its leading term, and everything above index 1 vanishes. The old proof needed a
+// stabilization lemma and `sub(succ(m), succ(ZERO))`; neither is required now.
 theorem theProductCoefficientAtSucc: forall q: Poly; forall al: F; forall m: Nat;
   coeff(mulP(linear(al), q), succ(m)) =
   addF(mulF(negF(al), coeff(q, succ(m))), coeff(q, m))
@@ -4038,43 +3394,32 @@ proof
         fix al: F {
           @generalize-m |
             fix m: Nat {
-              @the-coefficient-is-the-convolution |
+              @the-coefficient-is-the-run |
                 coeff(mulP(linear(al), q), succ(m)) =
-                  convolution(linear(al), q, succ(m), succ(m))
+                  convolution(linear(al), q, ZERO, succ(m))
                 [using specialize mulPolyCoeff(linear(al), q, succ(m))]
-              @the-index-bridge |
-                peano.add(succ(ZERO), m) = succ(m)
-                [using specialize onePlusIsSucc(m)]
-              @stabilizes-from-the-sum |
-                convolution(linear(al), q, succ(m), peano.add(succ(ZERO), m)) =
-                  convolution(linear(al), q, succ(m), succ(ZERO))
-                [using specialize theLinearConvolutionStabilizes(q, al, succ(m), m)]
-              @stabilizes-at-succ |
-                convolution(linear(al), q, succ(m), succ(m)) =
-                  convolution(linear(al), q, succ(m), succ(ZERO))
-                [by rewrite the-index-bridge stabilizes-from-the-sum]
-              @the-two-terms |
-                convolution(linear(al), q, succ(m), succ(ZERO)) =
-                  addF(mulF(negF(al), coeff(q, succ(m))),
-                  coeff(q, subN(succ(m), succ(ZERO))))
-                [using specialize theLinearConvolutionAtOne(q, al, succ(m))]
-              @the-shift-strips |
-                subN(succ(m), succ(ZERO)) = subN(m, ZERO)
-                [using specialize subtraction.subSuccSucc(m, ZERO)]
-              @the-shift-at-zero |
-                subN(m, ZERO) = m
-                [using specialize subtraction.subZeroRight(m)]
-              @the-shift |
-                subN(succ(m), succ(ZERO)) = m
-                [using chain the-shift-strips the-shift-at-zero]
-              @the-two-terms-shifted |
-                convolution(linear(al), q, succ(m), succ(ZERO)) =
+              // first step: linear's constant term
+              @the-first-step |
+                convolution(linear(al), q, ZERO, succ(m)) =
+                  addF(mulF(coeff(linear(al), ZERO), coeff(q, succ(m))),
+                  convolution(linear(al), q, succ(ZERO), m))
+                [using specialize convolutionSucc(linear(al), q, ZERO, m)]
+              @the-constant-term |
+                coeff(linear(al), ZERO) = negF(al)
+                [using specialize theLinearPolynomialHasNegatedConstantTerm(al)]
+              // the tail, starting at exponent 1, is just q_m
+              @the-tail-is-the-shifted-coefficient |
+                convolution(linear(al), q, succ(ZERO), m) = coeff(q, m)
+                [using specialize theLinearTailIsTheCoefficient(q, al, m)]
+              @the-run-in-two-terms |
+                convolution(linear(al), q, ZERO, succ(m)) =
                   addF(mulF(negF(al), coeff(q, succ(m))), coeff(q, m))
-                [using simplify the-two-terms the-shift the-shift-at-zero]
+                [using simplify the-first-step the-constant-term
+                  the-tail-is-the-shifted-coefficient]
               @conclusion-the-coefficient |
                 coeff(mulP(linear(al), q), succ(m)) =
                   addF(mulF(negF(al), coeff(q, succ(m))), coeff(q, m))
-                [using chain the-coefficient-is-the-convolution stabilizes-at-succ the-two-terms-shifted]
+                [using chain the-coefficient-is-the-run the-run-in-two-terms]
             }
           @discharge-m |
             forall m: Nat;
@@ -6904,7 +6249,7 @@ qed
 
 // -- Proposition 17.4, discharged ----------------------------------------------------------
 // The two facts forward-declared near the top. Both follow from the convolution picture in
-// `std/ring/polynomial-leading.b4m`, transferred here, plus the field having no zero
+// `std/ring/polynomial/leading.b4m`, transferred here, plus the field having no zero
 // divisors.
 
 // The product's coefficient at m+n is the product of the leading coefficients.
@@ -6922,12 +6267,12 @@ qed
 // Above m+n the product's coefficients vanish.
 theorem theProductVanishesAboveTheDegreeSum: forall p, q: Poly; forall m, n, i: Nat;
   degreeAtMost(p, m) -> degreeAtMost(q, n) -> less_than(peano.add(m, n), i) ->
-  forall k: Nat; convolution(p, q, i, k) = zeroF
+  coeff(mulP(p, q), i) = zeroF
 proof
   @conclusion |
     forall p, q: Poly; forall m, n, i: Nat;
       degreeAtMost(p, m) -> degreeAtMost(q, n) -> less_than(peano.add(m, n), i) ->
-      forall k: Nat; convolution(p, q, i, k) = zeroF
+      coeff(mulP(p, q), i) = zeroF
     [using model(FieldPolyModelsRingPoly) ring_leading.theProductVanishesAboveTheDegreeSum]
 qed
 
@@ -7171,18 +6516,9 @@ proof
                                   @i-is-high |
                                     less_than(peano.add(m, n), i)
                                     [by hypothesis given-i-is-high]
-                                  @the-convolution-vanishes |
-                                    forall k: Nat; convolution(p, q, i, k) = zeroF
-                                    [using specialize theProductVanishesAboveTheDegreeSum(p, q, m, n, i) p-bounded q-bounded i-is-high]
-                                  @the-convolution-at-i |
-                                    convolution(p, q, i, i) = zeroF
-                                    [using specialize the-convolution-vanishes(i)]
-                                  @the-coefficient-is-the-convolution |
-                                    coeff(mulP(p, q), i) = convolution(p, q, i, i)
-                                    [using specialize mulPolyCoeff(p, q, i)]
                                   @conclusion-the-coefficient-vanishes |
                                     coeff(mulP(p, q), i) = zeroF
-                                    [using chain the-coefficient-is-the-convolution the-convolution-at-i]
+                                    [using specialize theProductVanishesAboveTheDegreeSum(p, q, m, n, i) p-bounded q-bounded i-is-high]
                                 }
                               @conclusion-high-implies-vanishing |
                                 less_than(peano.add(m, n), i) ->

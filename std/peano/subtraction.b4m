@@ -35,13 +35,30 @@ fact zeroOrSucc = peano.zeroOrSucc
 fact notLessThanZero = ordering.notLessThanZero
 fact lessThanSuccSplit = ordering.lessThanSuccSplit
 fact succReflectsOrder = ordering.succReflectsOrder
+pred less_or_equal = ordering.less_or_equal
+fact lessOrEqualRefl = ordering.lessOrEqualRefl
+fact zeroIsAtMostAnything = ordering.zeroIsAtMostAnything
+fact succPreservesOrder = ordering.succPreservesOrder
+fact aSummandIsAtMostTheSum = ordering.aSummandIsAtMostTheSum
+fact theSummandBoundReordered = ordering.theSummandBoundReordered
+fact succPreservesAtMost = ordering.succPreservesAtMost
+fact succReflectsAtMost = ordering.succReflectsAtMost
 
 // -- the subtraction function -----------------------------------------------
 
-func sub(a: Nat, b: Nat) => Nat
+// GUARDED, per the no-totalizing-operations invariant: `sub(a, b)` is only writable when
+// `b <= a`. The old totalized form carried `subZeroLeft: sub(ZERO, b) = ZERO`, which ASSERTED
+// a value for the out-of-range case and so let a proof derive `sub(ZERO, succ(ZERO)) = ZERO`
+// — 0 - 1 = 0, as a theorem. That is the difference between this library's deliberate
+// junk-value idiom (`recip(ZERO)` exists but every axiom about it is guarded, so nothing is
+// derivable) and a genuine lie.
+//
+// `subSuccSucc` keeps no guard of its own: `succ(b) <= succ(a)` and `b <= a` are equivalent,
+// so the guard on each side's `sub` application is the same obligation.
+func sub(a: Nat, b: Nat) => Nat requires ordering.less_or_equal(b, a)
 axiom subZeroRight: forall a: Nat; sub(a, ZERO) = a
-axiom subSuccSucc: forall a, b: Nat; sub(succ(a), succ(b)) = sub(a, b)
-axiom subZeroLeft: forall b: Nat; sub(ZERO, b) = ZERO
+axiom subSuccSucc: forall a, b: Nat;
+  ordering.less_or_equal(b, a) -> sub(succ(a), succ(b)) = sub(a, b)
 
 // -- forwarded theorems -----------------------------------------------------
 
@@ -59,19 +76,34 @@ intheory succOfSubSucc
 // sub(a, a) = ZERO, by induction on a.
 theorem subSelf: forall a: Nat; sub(a, a) = ZERO
 proof
+  @zero-is-at-most-zero |
+    less_or_equal(ZERO, ZERO)
+    [using specialize lessOrEqualRefl(ZERO)]
   @base-case |
     sub(ZERO, ZERO) = ZERO
     [using simplify subZeroRight]
+  @everything-is-at-most-itself |
+    forall n: Nat; less_or_equal(n, n)
+    [by cite lessOrEqualRefl]
   @induction-step |
     fix k: Nat {
+      @k-is-at-most-itself |
+        less_or_equal(k, k)
+        [by apply_at(k) everything-is-at-most-itself]
+      @successor-is-at-most-itself |
+        less_or_equal(succ(k), succ(k))
+        [by apply_at(succ(k)) everything-is-at-most-itself]
       @given-inductive-hypothesis |
         assume sub(k, k) = ZERO {
           @inductive-hypothesis |
             sub(k, k) = ZERO
             [by hypothesis given-inductive-hypothesis]
+          @the-successors-peel |
+            sub(succ(k), succ(k)) = sub(k, k)
+            [using specialize subSuccSucc(k, k) k-is-at-most-itself]
           @sub-succ-succ-is-zero |
             sub(succ(k), succ(k)) = ZERO
-            [using simplify subSuccSucc inductive-hypothesis]
+            [using simplify the-successors-peel inductive-hypothesis]
         }
       @induction-step-at-k |
         sub(k, k) = ZERO -> sub(succ(k), succ(k)) = ZERO
@@ -88,8 +120,17 @@ qed
 // sub(add(a, b), b) = a — the left inverse of adding b. Induction on b.
 theorem subAddCancel: forall a, b: Nat; sub(add(a, b), b) = a
 proof
+  @zero-is-at-most-anything |
+    forall n: Nat; less_or_equal(ZERO, n)
+    [by cite zeroIsAtMostAnything]
   @generalize-a |
     fix a: Nat {
+      @zero-is-below-the-sum |
+        less_or_equal(ZERO, add(a, ZERO))
+        [by apply_at(add(a, ZERO)) zero-is-at-most-anything]
+      @zero-is-below-a |
+        less_or_equal(ZERO, a)
+        [by apply_at(a) zero-is-at-most-anything]
       @base-case-at-a |
         sub(add(a, ZERO), ZERO) = a
         [using simplify subZeroRight addZeroRight]
@@ -99,6 +140,12 @@ proof
     [by generalize generalize-a]
   @induction-step |
     fix k: Nat {
+      @the-summand-bound-at-k |
+        forall a: Nat; less_or_equal(k, add(a, k))
+        [by apply_at(k) the-reordered-summand-bound]
+      @the-reordered-summand-bound |
+        forall n, a: Nat; less_or_equal(n, add(a, n))
+        [by cite theSummandBoundReordered]
       @given-inductive-hypothesis |
         assume forall a: Nat; sub(add(a, k), k) = a {
           @inductive-hypothesis |
@@ -106,12 +153,33 @@ proof
             [by hypothesis given-inductive-hypothesis]
           @generalize-a2 |
             fix a2: Nat {
+              @the-summand-bound-at-a2 |
+                less_or_equal(k, add(a2, k))
+                [by apply_at(a2) the-summand-bound-at-k]
+              @the-summand-bound-at-the-successor |
+                less_or_equal(succ(k), add(a2, succ(k)))
+                [using specialize theSummandBoundReordered(succ(k), a2)]
               @inductive-hypothesis-at-a2 |
                 sub(add(a2, k), k) = a2
                 [by apply_at(a2) inductive-hypothesis]
+              // add(a2, succ(k)) is succ(add(a2, k)), so the two successors peel together
+              @the-sum-raises |
+                add(a2, succ(k)) = succ(add(a2, k))
+                [using specialize addSuccRight(a2, k)]
+              @the-raised-bound |
+                less_or_equal(succ(k), succ(add(a2, k)))
+                [using specialize succPreservesAtMost(k, add(a2, k))
+                  the-summand-bound-at-a2]
+              @the-raised-subtraction |
+                sub(succ(add(a2, k)), succ(k)) = sub(add(a2, k), k)
+                [using specialize subSuccSucc(add(a2, k), k) the-summand-bound-at-a2]
+              @the-subtraction-at-the-raised-sum |
+                sub(add(a2, succ(k)), succ(k)) = sub(add(a2, k), k)
+                [by rewrite the-sum-raises the-raised-subtraction]
               @sub-succ-cancels-at-a2 |
                 sub(add(a2, succ(k)), succ(k)) = a2
-                [using simplify addSuccRight subSuccSucc inductive-hypothesis-at-a2]
+                [using simplify the-subtraction-at-the-raised-sum
+                  inductive-hypothesis-at-a2]
             }
           @sub-succ-cancels-discharge-a |
             forall a: Nat; sub(add(a, succ(k)), succ(k)) = a
@@ -131,6 +199,9 @@ proof
     fix a: Nat {
       @reorder-b |
         fix b: Nat {
+          @the-summand-bound-here |
+            less_or_equal(b, add(a, b))
+            [using specialize theSummandBoundReordered(b, a)]
           @cancel-at-a-b |
             sub(add(a, b), b) = a
             [by apply_at(b, a) cancel-holds-swapped]
@@ -146,18 +217,23 @@ qed
 
 // b <= a  ->  add(sub(a, b), b) = a  (recovering a from a - b). Here b <= a is
 // spelled less_than(b, succ(a)). Induction on a; inner case-split on b.
-theorem addSubCancel: forall b, a: Nat; less_than(b, succ(a)) -> add(sub(a, b), b) = a
+// Hypothesis spelled `less_or_equal(b, a)` rather than Judson-style `less_than(b, succ(a))`:
+// they are interchangeable (`lessThanSuccToLessOrEqual` / `lessOrEqualToLessThanSucc`), but the
+// conclusion applies `sub(a, b)`, whose guard IS `less_or_equal(b, a)` — and a guard in the
+// conclusion is discharged from the antecedent, so the antecedent must be written in that shape.
+theorem addSubCancel: forall b, a: Nat; less_or_equal(b, a) -> add(sub(a, b), b) = a
 proof
   @generalize-b |
     fix bb: Nat {
       @given-b-below-one |
-        assume less_than(bb, succ(ZERO)) {
+        assume less_or_equal(bb, ZERO) {
           @b-below-one |
-            less_than(bb, succ(ZERO))
+            less_or_equal(bb, ZERO)
             [by hypothesis given-b-below-one]
+          // `less_or_equal` is a define: the hypothesis already IS the disjunction
           @b-below-zero-or-zero |
             less_than(bb, ZERO) or bb = ZERO
-            [using specialize lessThanSuccSplit(bb, ZERO) b-below-one]
+            [using tautology b-below-one]
           @when-b-below-zero |
             assume less_than(bb, ZERO) {
               @b-below-zero |
@@ -175,6 +251,9 @@ proof
               @b-is-zero |
                 bb = ZERO
                 [by hypothesis when-b-is-zero]
+              @zero-is-below-zero |
+                less_or_equal(ZERO, ZERO)
+                [using specialize lessOrEqualRefl(ZERO)]
               @cancel-both-b |
                 add(sub(ZERO, bb), bb) = ZERO
                 [using simplify b-is-zero subZeroRight addZeroRight]
@@ -184,26 +263,26 @@ proof
             [by common_conclusion b-below-zero-or-zero when-b-below-zero when-b-is-zero]
         }
       @base-case-at-b |
-        less_than(bb, succ(ZERO)) -> add(sub(ZERO, bb), bb) = ZERO
+        less_or_equal(bb, ZERO) -> add(sub(ZERO, bb), bb) = ZERO
         [by discharge given-b-below-one]
     }
   @base-case |
-    forall b: Nat; less_than(b, succ(ZERO)) -> add(sub(ZERO, b), b) = ZERO
+    forall b: Nat; less_or_equal(b, ZERO) -> add(sub(ZERO, b), b) = ZERO
     [by generalize generalize-b]
 
   @induction-step |
     fix k: Nat {
       @given-inductive-hypothesis |
-        assume forall b: Nat; less_than(b, succ(k)) -> add(sub(k, b), b) = k {
+        assume forall b: Nat; less_or_equal(b, k) -> add(sub(k, b), b) = k {
           @inductive-hypothesis |
-            forall b: Nat; less_than(b, succ(k)) -> add(sub(k, b), b) = k
+            forall b: Nat; less_or_equal(b, k) -> add(sub(k, b), b) = k
             [by hypothesis given-inductive-hypothesis]
           @generalize-b2 |
             fix cc: Nat {
               @given-b-below-succ-succ-k |
-                assume less_than(cc, succ(succ(k))) {
+                assume less_or_equal(cc, succ(k)) {
                   @b-below-succ-succ-k |
-                    less_than(cc, succ(succ(k)))
+                    less_or_equal(cc, succ(k))
                     [by hypothesis given-b-below-succ-succ-k]
                   @b-is-zero-or-successor |
                     cc = ZERO or (exists m: Nat; cc = succ(m))
@@ -213,6 +292,9 @@ proof
                       @b-is-zero |
                         cc = ZERO
                         [by hypothesis when-b-is-zero]
+                      @zero-is-below-the-successor |
+                        less_or_equal(ZERO, succ(k))
+                        [using specialize ordering.zeroIsAtMostAnything(succ(k))]
                       @cancel-both-when-zero |
                         add(sub(succ(k), cc), cc) = succ(k)
                         [using simplify b-is-zero subZeroRight addZeroRight]
@@ -228,17 +310,24 @@ proof
                             cc = succ(cp)
                             [by hypothesis with-predecessor-cp]
                           @succ-cp-below-succ-succ-k |
-                            less_than(succ(cp), succ(succ(k)))
+                            less_or_equal(succ(cp), succ(k))
                             [by rewrite b-is-succ-cp b-below-succ-succ-k]
                           @cp-below-succ-k |
-                            less_than(cp, succ(k))
-                            [using specialize succReflectsOrder(cp, succ(k)) succ-cp-below-succ-succ-k]
+                            less_or_equal(cp, k)
+                            [using specialize succReflectsAtMost(cp, k) succ-cp-below-succ-succ-k]
                           @cancel-at-cp |
                             add(sub(k, cp), cp) = k
                             [using specialize inductive-hypothesis(cp) cp-below-succ-k]
+                          @the-raised-bound |
+                            less_or_equal(succ(cp), succ(k))
+                            [using specialize succPreservesAtMost(cp, k) cp-below-succ-k]
+                          @the-successors-peel |
+                            sub(succ(k), succ(cp)) = sub(k, cp)
+                            [using specialize subSuccSucc(k, cp) cp-below-succ-k]
                           @cancel-both-when-successor |
                             add(sub(succ(k), cc), cc) = succ(k)
-                            [using simplify b-is-succ-cp subSuccSucc addSuccRight cancel-at-cp]
+                            [using simplify b-is-succ-cp the-successors-peel addSuccRight
+                              cancel-at-cp]
                         }
                       @cancel-both-when-successor-exported |
                         add(sub(succ(k), cc), cc) = succ(k)
@@ -249,43 +338,43 @@ proof
                     [by common_conclusion b-is-zero-or-successor when-b-is-zero when-b-is-successor]
                 }
               @cancel-at-succ-k-if-below |
-                less_than(cc, succ(succ(k))) -> add(sub(succ(k), cc), cc) = succ(k)
+                less_or_equal(cc, succ(k)) -> add(sub(succ(k), cc), cc) = succ(k)
                 [by discharge given-b-below-succ-succ-k]
             }
           @cancel-holds-at-succ-k-discharge-b |
-            forall b: Nat; less_than(b, succ(succ(k))) -> add(sub(succ(k), b), b) = succ(k)
+            forall b: Nat; less_or_equal(b, succ(k)) -> add(sub(succ(k), b), b) = succ(k)
             [by generalize generalize-b2]
         }
       @induction-step-at-k |
-        (forall b: Nat; less_than(b, succ(k)) -> add(sub(k, b), b) = k) -> forall b: Nat; less_than(b, succ(succ(k))) -> add(sub(succ(k), b), b) = succ(k)
+        (forall b: Nat; less_or_equal(b, k) -> add(sub(k, b), b) = k) -> forall b: Nat; less_or_equal(b, succ(k)) -> add(sub(succ(k), b), b) = succ(k)
         [by discharge given-inductive-hypothesis]
     }
   @induction-step-for-all-k |
-    forall k: Nat; (forall b: Nat; less_than(b, succ(k)) -> add(sub(k, b), b) = k) -> forall b: Nat; less_than(b, succ(succ(k))) -> add(sub(succ(k), b), b) = succ(k)
+    forall k: Nat; (forall b: Nat; less_or_equal(b, k) -> add(sub(k, b), b) = k) -> forall b: Nat; less_or_equal(b, succ(k)) -> add(sub(succ(k), b), b) = succ(k)
     [by generalize induction-step]
   @cancel-holds-swapped |
-    forall a, b: Nat; less_than(b, succ(a)) -> add(sub(a, b), b) = a
-    [using instantiation induction((fun j: Nat => forall b: Nat; less_than(b, succ(j)) -> add(sub(j, b), b) = j)) base-case induction-step-for-all-k]
+    forall a, b: Nat; less_or_equal(b, a) -> add(sub(a, b), b) = a
+    [using instantiation induction((fun j: Nat => forall b: Nat; less_or_equal(b, j) -> add(sub(j, b), b) = j)) base-case induction-step-for-all-k]
   @reorder-b |
     fix b: Nat {
       @reorder-a |
         fix a: Nat {
           @cancel-at-b-a |
-            less_than(b, succ(a)) -> add(sub(a, b), b) = a
+            less_or_equal(b, a) -> add(sub(a, b), b) = a
             [by apply_at(a, b) cancel-holds-swapped]
         }
       @reorder-discharge-a |
-        forall a: Nat; less_than(b, succ(a)) -> add(sub(a, b), b) = a
+        forall a: Nat; less_or_equal(b, a) -> add(sub(a, b), b) = a
         [by generalize reorder-a]
     }
   @conclusion |
-    forall b, a: Nat; less_than(b, succ(a)) -> add(sub(a, b), b) = a
+    forall b, a: Nat; less_or_equal(b, a) -> add(sub(a, b), b) = a
     [by generalize reorder-b]
 qed
 
 // THE MEASURE LEMMA: 0 < b and b <= a  ->  a - b < a. This is what makes
 // subtractive gcd terminate (each step's first argument strictly drops).
-theorem subStrictlyDecreases: forall b, a: Nat; less_than(ZERO, b) -> less_than(b, succ(a)) -> less_than(sub(a, b), a)
+theorem subStrictlyDecreases: forall b, a: Nat; less_than(ZERO, b) -> less_or_equal(b, a) -> less_than(sub(a, b), a)
 proof
   @generalize-b |
     fix b: Nat {
@@ -294,12 +383,12 @@ proof
           @given-b-positive |
             assume less_than(ZERO, b) {
               @given-b-below-succ-a |
-                assume less_than(b, succ(a)) {
+                assume less_or_equal(b, a) {
                   @b-positive |
                     less_than(ZERO, b)
                     [by hypothesis given-b-positive]
                   @b-below-succ-a |
-                    less_than(b, succ(a))
+                    less_or_equal(b, a)
                     [by hypothesis given-b-below-succ-a]
                   @cancel-recovers-a |
                     add(sub(a, b), b) = a
@@ -330,78 +419,236 @@ proof
                     [by unpacked with-gap-d]
                 }
               @below-implies-sub-decreases |
-                less_than(b, succ(a)) -> less_than(sub(a, b), a)
+                less_or_equal(b, a) -> less_than(sub(a, b), a)
                 [by discharge given-b-below-succ-a]
             }
           @positive-implies-sub-decreases |
-            less_than(ZERO, b) -> less_than(b, succ(a)) -> less_than(sub(a, b), a)
+            less_than(ZERO, b) -> less_or_equal(b, a) -> less_than(sub(a, b), a)
             [by discharge given-b-positive]
         }
       @sub-decreases-discharge-a |
-        forall a: Nat; less_than(ZERO, b) -> less_than(b, succ(a)) -> less_than(sub(a, b), a)
+        forall a: Nat; less_than(ZERO, b) -> less_or_equal(b, a) -> less_than(sub(a, b), a)
         [by generalize generalize-a]
     }
   @conclusion |
-    forall b, a: Nat; less_than(ZERO, b) -> less_than(b, succ(a)) -> less_than(sub(a, b), a)
+    forall b, a: Nat; less_than(ZERO, b) -> less_or_equal(b, a) -> less_than(sub(a, b), a)
     [by generalize generalize-b]
 qed
 
-// sub(add(x, d), add(y, d)) = sub(x, y): a common right addend cancels under
-// subtraction. By induction on d.
-theorem subAddSameRight: forall x, d, y: Nat; sub(add(x, d), add(y, d)) = sub(x, y)
+// The base case of `subAddSameRight`: at d = ZERO both addends are unchanged.
+//
+// The hypothesis is the PADDED bound `add(y,ZERO) <= add(x,ZERO)`, not the plain `y <= x`:
+// the conclusion's own `sub` application is at the padded terms, so that is the shape whose
+// guard it owes. A guard in an implication's conclusion is discharged from the ANTECEDENT, so
+// the antecedent has to be written in the terms the application actually uses.
+theorem subAddSameRightAtZero: forall x, y: Nat;
+  less_or_equal(add(y, ZERO), add(x, ZERO)) ->
+  less_or_equal(y, x) ->
+  sub(add(x, ZERO), add(y, ZERO)) = sub(x, y)
 proof
   @generalize-x |
     fix bx: Nat {
       @generalize-y |
         fix by2: Nat {
-          @base-case-at-x-y |
-            sub(add(bx, ZERO), add(by2, ZERO)) = sub(bx, by2)
-            [using simplify addZeroRight]
+          @given-the-padded-bound |
+            assume less_or_equal(add(by2, ZERO), add(bx, ZERO)) {
+              @given-the-plain-bound |
+                assume less_or_equal(by2, bx) {
+                  @the-plain-bound |
+                    less_or_equal(by2, bx)
+                    [by hypothesis given-the-plain-bound]
+                  // `simplify` normalizes the LEFT `add(bx, ZERO)` to `bx` partway, so the
+                  // half-collapsed shape owes a guard of its own
+                  @the-left-addend-collapses |
+                    add(by2, ZERO) = by2
+                    [using specialize addZeroRight(by2)]
+                  @the-half-collapsed-bound |
+                    less_or_equal(add(by2, ZERO), bx)
+                    [by rewrite the-left-addend-collapses the-plain-bound]
+                  @conclusion-base-at-x-y |
+                    sub(add(bx, ZERO), add(by2, ZERO)) = sub(bx, by2)
+                    [using simplify addZeroRight]
+                }
+              @the-plain-bound-gives-it |
+                less_or_equal(by2, bx) ->
+                  sub(add(bx, ZERO), add(by2, ZERO)) = sub(bx, by2)
+                [by discharge given-the-plain-bound]
+            }
+          @base-at-x-y |
+            less_or_equal(add(by2, ZERO), add(bx, ZERO)) ->
+              less_or_equal(by2, bx) ->
+              sub(add(bx, ZERO), add(by2, ZERO)) = sub(bx, by2)
+            [by discharge given-the-padded-bound]
         }
-      @base-case-discharge-y |
-        forall y: Nat; sub(add(bx, ZERO), add(y, ZERO)) = sub(bx, y)
+      @base-discharge-y |
+        forall y: Nat;
+          less_or_equal(add(y, ZERO), add(bx, ZERO)) ->
+          less_or_equal(y, bx) ->
+          sub(add(bx, ZERO), add(y, ZERO)) = sub(bx, y)
         [by generalize generalize-y]
     }
-  @base-case |
-    forall x, y: Nat; sub(add(x, ZERO), add(y, ZERO)) = sub(x, y)
+  @conclusion |
+    forall x, y: Nat;
+      less_or_equal(add(y, ZERO), add(x, ZERO)) ->
+      less_or_equal(y, x) ->
+      sub(add(x, ZERO), add(y, ZERO)) = sub(x, y)
     [by generalize generalize-x]
+qed
+
+// sub(add(x, d), add(y, d)) = sub(x, y): a common right addend cancels under subtraction.
+//
+// WEAKENED by the guard (was unconditional), and note the SHAPE of the hypothesis: it is the
+// PADDED bound `add(y,d) <= add(x,d)`, not the plain `y <= x`. The rule is that a theorem whose
+// CONCLUSION applies `sub` must state its guard in the terms of that application — the
+// conclusion's formula lives outside any `assume` block, so a guard derived inside the proof
+// is not in scope for it. The plain bound would be the wrong shape and is not usable here.
+//
+// (`subAddSameRightAtZero` takes both shapes because its proof needs the plain one too, for
+// the collapsed right-hand side.)
+//
+// Its one consumer, `std/ring/polynomial/leading.b4m:246`, instantiates y = ZERO, where the
+// padded bound follows from `zeroIsAtMostAnything`.
+theorem subAddSameRight: forall x, d, y: Nat;
+  less_or_equal(add(y, d), add(x, d)) ->
+  less_or_equal(y, x) ->
+  sub(add(x, d), add(y, d)) = sub(x, y)
+proof
+  @base-case |
+    forall x, y: Nat;
+      less_or_equal(add(y, ZERO), add(x, ZERO)) ->
+      less_or_equal(y, x) ->
+      sub(add(x, ZERO), add(y, ZERO)) = sub(x, y)
+    [by cite subAddSameRightAtZero]
   @induction-step |
     fix k: Nat {
       @given-inductive-hypothesis |
-        assume forall x, y: Nat; sub(add(x, k), add(y, k)) = sub(x, y) {
+        assume forall x, y: Nat;
+          less_or_equal(add(y, k), add(x, k)) ->
+          less_or_equal(y, x) ->
+          sub(add(x, k), add(y, k)) = sub(x, y) {
           @inductive-hypothesis |
-            forall x, y: Nat; sub(add(x, k), add(y, k)) = sub(x, y)
+            forall x, y: Nat;
+              less_or_equal(add(y, k), add(x, k)) ->
+              less_or_equal(y, x) ->
+              sub(add(x, k), add(y, k)) = sub(x, y)
             [by hypothesis given-inductive-hypothesis]
           @generalize-x2 |
             fix x: Nat {
               @generalize-y2 |
                 fix y: Nat {
-                  // both addends unfold via addSuccRight, subSuccSucc peels, IH closes
-                  @inductive-hypothesis-at-x-y |
-                    sub(add(x, k), add(y, k)) = sub(x, y)
-                    [by apply_at(x, y) inductive-hypothesis]
-                  @same-right-cancels-at-x-y |
-                    sub(add(x, succ(k)), add(y, succ(k))) = sub(x, y)
-                    [using simplify addSuccRight subSuccSucc inductive-hypothesis-at-x-y]
+                  @given-the-raised-bound |
+                    assume less_or_equal(add(y, succ(k)), add(x, succ(k))) {
+                      @given-the-plain-bound |
+                        assume less_or_equal(y, x) {
+                          @the-plain-bound |
+                            less_or_equal(y, x)
+                            [by hypothesis given-the-plain-bound]
+                          @the-padded-bound-at-k |
+                            less_or_equal(add(y, k), add(x, k))
+                            [using specialize
+                              ordering.additionPreservesAtMostOnTheRight(y, x, k)
+                              the-plain-bound]
+                          @inductive-hypothesis-at-x-y |
+                            sub(add(x, k), add(y, k)) = sub(x, y)
+                            [using specialize inductive-hypothesis(x, y)
+                              the-padded-bound-at-k the-plain-bound]
+                          // both addends raise, and the two successors peel together
+                          @the-left-raises |
+                            add(x, succ(k)) = succ(add(x, k))
+                            [using specialize addSuccRight(x, k)]
+                          @the-right-raises |
+                            add(y, succ(k)) = succ(add(y, k))
+                            [using specialize addSuccRight(y, k)]
+                          @the-raised-bound |
+                            less_or_equal(succ(add(y, k)), succ(add(x, k)))
+                            [using specialize succPreservesAtMost(
+                              add(y, k), add(x, k)) the-padded-bound-at-k]
+                          @the-successors-peel |
+                            sub(succ(add(x, k)), succ(add(y, k))) =
+                              sub(add(x, k), add(y, k))
+                            [using specialize subSuccSucc(add(x, k), add(y, k))
+                              the-padded-bound-at-k]
+                          @reflexive-left |
+                            sub(add(x, succ(k)), add(y, succ(k))) =
+                              sub(add(x, succ(k)), add(y, succ(k)))
+                            [by reflexivity]
+                          // the intermediate term is half-raised, so it owes that shape too
+                          @the-raised-bound-on-the-left-only |
+                            less_or_equal(add(y, succ(k)), succ(add(x, k)))
+                            [by rewrite the-left-raises the-given-raised-bound]
+                          @the-given-raised-bound |
+                            less_or_equal(add(y, succ(k)), add(x, succ(k)))
+                            [by hypothesis given-the-raised-bound]
+                          @the-left-in-raised-form |
+                            sub(add(x, succ(k)), add(y, succ(k))) =
+                              sub(succ(add(x, k)), add(y, succ(k)))
+                            [by rewrite the-left-raises reflexive-left]
+                          @both-in-raised-form |
+                            sub(add(x, succ(k)), add(y, succ(k))) =
+                              sub(succ(add(x, k)), succ(add(y, k)))
+                            [by rewrite the-right-raises the-left-in-raised-form]
+                          @the-peeled-form |
+                            sub(add(x, succ(k)), add(y, succ(k))) =
+                              sub(add(x, k), add(y, k))
+                            [using simplify both-in-raised-form the-successors-peel]
+                          @conclusion-step-at-x-y |
+                            sub(add(x, succ(k)), add(y, succ(k))) = sub(x, y)
+                            [using simplify the-peeled-form
+                              inductive-hypothesis-at-x-y]
+                        }
+                      @the-plain-bound-gives-it |
+                        less_or_equal(y, x) ->
+                          sub(add(x, succ(k)), add(y, succ(k))) = sub(x, y)
+                        [by discharge given-the-plain-bound]
+                    }
+                  @step-at-x-y |
+                    less_or_equal(add(y, succ(k)), add(x, succ(k))) ->
+                      less_or_equal(y, x) ->
+                      sub(add(x, succ(k)), add(y, succ(k))) = sub(x, y)
+                    [by discharge given-the-raised-bound]
                 }
-              @same-right-cancels-discharge-y |
-                forall y: Nat; sub(add(x, succ(k)), add(y, succ(k))) = sub(x, y)
+              @step-discharge-y |
+                forall y: Nat;
+                  less_or_equal(add(y, succ(k)), add(x, succ(k))) ->
+                  less_or_equal(y, x) ->
+                  sub(add(x, succ(k)), add(y, succ(k))) = sub(x, y)
                 [by generalize generalize-y2]
             }
-          @same-right-cancels-discharge-x-y |
-            forall x, y: Nat; sub(add(x, succ(k)), add(y, succ(k))) = sub(x, y)
+          @step-discharge-x-y |
+            forall x, y: Nat;
+              less_or_equal(add(y, succ(k)), add(x, succ(k))) ->
+              less_or_equal(y, x) ->
+              sub(add(x, succ(k)), add(y, succ(k))) = sub(x, y)
             [by generalize generalize-x2]
         }
       @induction-step-at-k |
-        (forall x, y: Nat; sub(add(x, k), add(y, k)) = sub(x, y)) -> forall x, y: Nat; sub(add(x, succ(k)), add(y, succ(k))) = sub(x, y)
+        (forall x, y: Nat;
+          less_or_equal(add(y, k), add(x, k)) ->
+          less_or_equal(y, x) ->
+          sub(add(x, k), add(y, k)) = sub(x, y)) ->
+          (forall x, y: Nat;
+          less_or_equal(add(y, succ(k)), add(x, succ(k))) ->
+          less_or_equal(y, x) ->
+          sub(add(x, succ(k)), add(y, succ(k))) = sub(x, y))
         [by discharge given-inductive-hypothesis]
     }
   @induction-step-for-all-k |
-    forall k: Nat; (forall x, y: Nat; sub(add(x, k), add(y, k)) = sub(x, y)) -> forall x, y: Nat; sub(add(x, succ(k)), add(y, succ(k))) = sub(x, y)
+    forall k: Nat;
+      (forall x, y: Nat;
+      less_or_equal(add(y, k), add(x, k)) ->
+      less_or_equal(y, x) ->
+      sub(add(x, k), add(y, k)) = sub(x, y)) ->
+      (forall x, y: Nat;
+      less_or_equal(add(y, succ(k)), add(x, succ(k))) ->
+      less_or_equal(y, x) ->
+      sub(add(x, succ(k)), add(y, succ(k))) = sub(x, y))
     [by generalize induction-step]
   @same-right-cancels-swapped |
-    forall d, x, y: Nat; sub(add(x, d), add(y, d)) = sub(x, y)
-    [using instantiation induction((fun j: Nat => forall x, y: Nat; sub(add(x, j), add(y, j)) = sub(x, y))) base-case induction-step-for-all-k]
+    forall d: Nat; forall x, y: Nat;
+      less_or_equal(add(y, d), add(x, d)) ->
+      less_or_equal(y, x) ->
+      sub(add(x, d), add(y, d)) = sub(x, y)
+    [using instantiation induction((fun j: Nat => forall x, y: Nat; less_or_equal(add(y, j), add(x, j)) -> less_or_equal(y, x) -> sub(add(x, j), add(y, j)) = sub(x, y))) base-case induction-step-for-all-k]
   @reorder-x |
     fix x: Nat {
       @reorder-d |
@@ -409,121 +656,396 @@ proof
           @reorder-y |
             fix y: Nat {
               @same-right-cancels-at-x-d-y |
-                sub(add(x, d), add(y, d)) = sub(x, y)
+                less_or_equal(add(y, d), add(x, d)) ->
+                  less_or_equal(y, x) ->
+                  sub(add(x, d), add(y, d)) = sub(x, y)
                 [by apply_at(d, x, y) same-right-cancels-swapped]
             }
           @reorder-discharge-y |
-            forall y: Nat; sub(add(x, d), add(y, d)) = sub(x, y)
+            forall y: Nat;
+              less_or_equal(add(y, d), add(x, d)) ->
+              less_or_equal(y, x) ->
+              sub(add(x, d), add(y, d)) = sub(x, y)
             [by generalize reorder-y]
         }
       @reorder-discharge-d |
-        forall d, y: Nat; sub(add(x, d), add(y, d)) = sub(x, y)
+        forall d, y: Nat;
+          less_or_equal(add(y, d), add(x, d)) ->
+          less_or_equal(y, x) ->
+          sub(add(x, d), add(y, d)) = sub(x, y)
         [by generalize reorder-d]
     }
   @conclusion |
-    forall x, d, y: Nat; sub(add(x, d), add(y, d)) = sub(x, y)
+    forall x, d, y: Nat;
+      less_or_equal(add(y, d), add(x, d)) ->
+      less_or_equal(y, x) ->
+      sub(add(x, d), add(y, d)) = sub(x, y)
     [by generalize reorder-x]
 qed
 
-// mul(d, sub(a, b)) = sub(mul(d, a), mul(d, b)): multiplication distributes over
-// truncated subtraction. Induction on b with an inner case-split on a.
-theorem mulSubDistribLeft: forall d, a, b: Nat; mul(d, sub(a, b)) = sub(mul(d, a), mul(d, b))
+// The base case of `mulSubDistribLeft`: at b = ZERO nothing is taken away.
+theorem mulSubDistribAtZero: forall a, d: Nat;
+  less_or_equal(ZERO, a) ->
+  less_or_equal(mul(d, ZERO), mul(d, a)) ->
+  mul(d, sub(a, ZERO)) = sub(mul(d, a), mul(d, ZERO))
 proof
   @generalize-a |
-    fix ba: Nat {
+    fix a: Nat {
       @generalize-d |
-        fix bd: Nat {
-          @base-case-at-a-d |
-            mul(bd, sub(ba, ZERO)) = sub(mul(bd, ba), mul(bd, ZERO))
-            [using simplify subZeroRight mulZeroRight]
+        fix d: Nat {
+          @given-the-plain-bound |
+            assume less_or_equal(ZERO, a) {
+              @given-the-scaled-bound |
+                assume less_or_equal(mul(d, ZERO), mul(d, a)) {
+                  @the-scaled-bound |
+                    less_or_equal(mul(d, ZERO), mul(d, a))
+                    [by hypothesis given-the-scaled-bound]
+                  // `mulZeroRight` collapses mul(d, ZERO) to ZERO, so the collapsed shape
+                  // owes its own guard
+                  @the-scaling-collapses |
+                    mul(d, ZERO) = ZERO
+                    [using specialize mulZeroRight(d)]
+                  @the-collapsed-bound |
+                    less_or_equal(ZERO, mul(d, a))
+                    [by rewrite the-scaling-collapses the-scaled-bound]
+                  @conclusion-at-zero |
+                    mul(d, sub(a, ZERO)) = sub(mul(d, a), mul(d, ZERO))
+                    [using simplify subZeroRight mulZeroRight]
+                }
+              @the-scaled-bound-gives-it |
+                less_or_equal(mul(d, ZERO), mul(d, a)) ->
+                  mul(d, sub(a, ZERO)) = sub(mul(d, a), mul(d, ZERO))
+                [by discharge given-the-scaled-bound]
+            }
+          @both-bounds-give-it |
+            less_or_equal(ZERO, a) ->
+              less_or_equal(mul(d, ZERO), mul(d, a)) ->
+              mul(d, sub(a, ZERO)) = sub(mul(d, a), mul(d, ZERO))
+            [by discharge given-the-plain-bound]
         }
-      @base-case-discharge-d |
-        forall d: Nat; mul(d, sub(ba, ZERO)) = sub(mul(d, ba), mul(d, ZERO))
+      @discharge-d |
+        forall d: Nat;
+          less_or_equal(ZERO, a) ->
+          less_or_equal(mul(d, ZERO), mul(d, a)) ->
+          mul(d, sub(a, ZERO)) = sub(mul(d, a), mul(d, ZERO))
         [by generalize generalize-d]
     }
-  @base-case |
-    forall a, d: Nat; mul(d, sub(a, ZERO)) = sub(mul(d, a), mul(d, ZERO))
+  @conclusion |
+    forall a, d: Nat;
+      less_or_equal(ZERO, a) ->
+      less_or_equal(mul(d, ZERO), mul(d, a)) ->
+      mul(d, sub(a, ZERO)) = sub(mul(d, a), mul(d, ZERO))
     [by generalize generalize-a]
+qed
+
+// The successor step of `mulSubDistribLeft`, at a fixed k, a, d.
+//
+// This is where the guard EARNS the weakening. The old proof split on `a = ZERO or a = succ(_)`
+// and closed the zero arm with `subZeroLeft`. Now `succ(k) <= a` rules the zero case out
+// outright — nothing is at most ZERO but ZERO, and `succ(k)` is not ZERO — so only the
+// successor arm survives, and it is the arm that was always honest.
+theorem theSuccessorStep: forall k, a, d: Nat;
+  (forall a2, d2: Nat;
+  less_or_equal(k, a2) ->
+  less_or_equal(mul(d2, k), mul(d2, a2)) ->
+  mul(d2, sub(a2, k)) = sub(mul(d2, a2), mul(d2, k))) ->
+  less_or_equal(succ(k), a) ->
+  less_or_equal(mul(d, succ(k)), mul(d, a)) ->
+  mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k)))
+proof
+  @generalize-k |
+    fix k: Nat {
+      @generalize-a |
+        fix a: Nat {
+          @generalize-d |
+            fix d: Nat {
+              @given-the-hypothesis |
+                assume forall a2, d2: Nat;
+                  less_or_equal(k, a2) ->
+                  less_or_equal(mul(d2, k), mul(d2, a2)) ->
+                  mul(d2, sub(a2, k)) = sub(mul(d2, a2), mul(d2, k)) {
+                  @the-hypothesis |
+                    forall a2, d2: Nat;
+                      less_or_equal(k, a2) ->
+                      less_or_equal(mul(d2, k), mul(d2, a2)) ->
+                      mul(d2, sub(a2, k)) = sub(mul(d2, a2), mul(d2, k))
+                    [by hypothesis given-the-hypothesis]
+                  @given-the-plain-bound |
+                    assume less_or_equal(succ(k), a) {
+                      @the-plain-bound |
+                        less_or_equal(succ(k), a)
+                        [by hypothesis given-the-plain-bound]
+                      @given-the-scaled-bound |
+                        assume less_or_equal(mul(d, succ(k)), mul(d, a)) {
+                          @the-scaled-bound |
+                            less_or_equal(mul(d, succ(k)), mul(d, a))
+                            [by hypothesis given-the-scaled-bound]
+                          // a cannot be ZERO: succ(k) <= a and nothing but ZERO is <= ZERO
+                          @a-is-zero-or-successor |
+                            a = ZERO or (exists m: Nat; a = succ(m))
+                            [using specialize zeroOrSucc(a)]
+                          @a-is-a-successor |
+                            exists m: Nat; a = succ(m)
+                            [by common_conclusion a-is-zero-or-successor
+                              when-a-would-be-zero when-a-is-a-successor]
+                          @when-a-would-be-zero |
+                            assume a = ZERO {
+                              // succ(k) <= ZERO is impossible, so this case is vacuous
+                              @a-would-be-zero |
+                                a = ZERO
+                                [by hypothesis when-a-would-be-zero]
+                              @the-bound-at-zero |
+                                less_or_equal(succ(k), ZERO)
+                                [by rewrite a-would-be-zero the-plain-bound]
+                              @the-disjuncts |
+                                less_than(succ(k), ZERO) or succ(k) = ZERO
+                                [using tautology the-bound-at-zero]
+                              @nothing-is-below-zero |
+                                not less_than(succ(k), ZERO)
+                                [using specialize notLessThanZero(succ(k))]
+                              @the-successor-is-zero |
+                                succ(k) = ZERO
+                                [using tautology the-disjuncts nothing-is-below-zero]
+                              @zero-is-not-a-successor |
+                                not (ZERO = succ(k))
+                                [using specialize ordering.zeroIsNotSucc(k)]
+                              @the-successor-is-zero-flipped |
+                                ZERO = succ(k)
+                                [by symmetry the-successor-is-zero]
+                              @conclusion-vacuous |
+                                exists m: Nat; a = succ(m)
+                                [by ex_falso the-successor-is-zero-flipped
+                                  zero-is-not-a-successor]
+                            }
+                          @when-a-is-a-successor |
+                            assume exists m: Nat; a = succ(m) {
+                              @conclusion-already-a-successor |
+                                exists m: Nat; a = succ(m)
+                                [by hypothesis when-a-is-a-successor]
+                            }
+                          @with-predecessor |
+                            unpack ap: Nat from a-is-a-successor {
+                              @a-is-succ-ap |
+                                a = succ(ap)
+                                [by hypothesis with-predecessor]
+                              // k <= ap, by reflecting succ(k) <= succ(ap)
+                              @the-bound-at-successors |
+                                less_or_equal(succ(k), succ(ap))
+                                [by rewrite a-is-succ-ap the-plain-bound]
+                              @the-reflected-bound |
+                                less_or_equal(k, ap)
+                                [using specialize
+                                  ordering.succReflectsAtMost(k, ap)
+                                  the-bound-at-successors]
+                              @the-scaled-reflected-bound |
+                                less_or_equal(mul(d, k), mul(d, ap))
+                                [using specialize
+                                  ordering.multiplicationPreservesAtMost(k, ap, d)
+                                  the-reflected-bound]
+                              @the-hypothesis-at-ap-d |
+                                mul(d, sub(ap, k)) = sub(mul(d, ap), mul(d, k))
+                                [using specialize the-hypothesis(ap, d)
+                                  the-reflected-bound the-scaled-reflected-bound]
+                              // the left side peels: sub(succ(ap), succ(k)) = sub(ap, k)
+                              @the-successors-peel |
+                                sub(succ(ap), succ(k)) = sub(ap, k)
+                                [using specialize subSuccSucc(ap, k) the-reflected-bound]
+                              // the right side: both products unfold by mulSuccRight
+                              @mul-d-succ-ap-unfolds |
+                                mul(d, succ(ap)) = add(mul(d, ap), d)
+                                [using specialize mulSuccRight(d, ap)]
+                              @mul-d-succ-k-unfolds |
+                                mul(d, succ(k)) = add(mul(d, k), d)
+                                [using specialize mulSuccRight(d, k)]
+                              // and the common right addend d cancels
+                              @the-padded-scaled-bound |
+                                less_or_equal(add(mul(d, k), d), add(mul(d, ap), d))
+                                [using specialize
+                                  ordering.additionPreservesAtMostOnTheRight(
+                                  mul(d, k), mul(d, ap), d) the-scaled-reflected-bound]
+                              @same-right-cancels-here |
+                                sub(add(mul(d, ap), d), add(mul(d, k), d)) =
+                                  sub(mul(d, ap), mul(d, k))
+                                [using specialize subAddSameRight(
+                                  mul(d, ap), d, mul(d, k))
+                                  the-padded-scaled-bound the-scaled-reflected-bound]
+                              @the-left-side |
+                                mul(d, sub(a, succ(k))) = sub(mul(d, ap), mul(d, k))
+                                [using simplify a-is-succ-ap the-successors-peel
+                                  the-hypothesis-at-ap-d]
+                              // the right side is read at succ(ap), so the scaled bound is
+                              // owed in that shape too
+                              @the-scaled-bound-at-the-successor |
+                                less_or_equal(mul(d, succ(k)), mul(d, succ(ap)))
+                                [by rewrite a-is-succ-ap the-scaled-bound]
+                              @the-scaled-bound-half-unfolded |
+                                less_or_equal(mul(d, succ(k)), add(mul(d, ap), d))
+                                [by rewrite mul-d-succ-ap-unfolds
+                                  the-scaled-bound-at-the-successor]
+                              @the-scaled-bound-fully-unfolded |
+                                less_or_equal(add(mul(d, k), d), add(mul(d, ap), d))
+                                [by rewrite mul-d-succ-k-unfolds
+                                  the-scaled-bound-half-unfolded]
+                              @the-right-side |
+                                sub(mul(d, a), mul(d, succ(k))) =
+                                  sub(mul(d, ap), mul(d, k))
+                                [using simplify a-is-succ-ap mul-d-succ-ap-unfolds
+                                  mul-d-succ-k-unfolds same-right-cancels-here]
+                              @conclusion-the-step-holds |
+                                mul(d, sub(a, succ(k))) =
+                                  sub(mul(d, a), mul(d, succ(k)))
+                                [using simplify the-left-side the-right-side]
+                            }
+                          @the-step-from-the-predecessor |
+                            mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k)))
+                            [by unpacked with-predecessor]
+                        }
+                      @the-scaled-bound-gives-it |
+                        less_or_equal(mul(d, succ(k)), mul(d, a)) ->
+                          mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k)))
+                        [by discharge given-the-scaled-bound]
+                    }
+                  @both-bounds-give-it |
+                    less_or_equal(succ(k), a) ->
+                      less_or_equal(mul(d, succ(k)), mul(d, a)) ->
+                      mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k)))
+                    [by discharge given-the-plain-bound]
+                }
+              @the-hypothesis-gives-it |
+                (forall a2, d2: Nat;
+                  less_or_equal(k, a2) ->
+                  less_or_equal(mul(d2, k), mul(d2, a2)) ->
+                  mul(d2, sub(a2, k)) = sub(mul(d2, a2), mul(d2, k))) ->
+                  less_or_equal(succ(k), a) ->
+                  less_or_equal(mul(d, succ(k)), mul(d, a)) ->
+                  mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k)))
+                [by discharge given-the-hypothesis]
+            }
+          @discharge-d |
+            forall d: Nat;
+              (forall a2, d2: Nat;
+              less_or_equal(k, a2) ->
+              less_or_equal(mul(d2, k), mul(d2, a2)) ->
+              mul(d2, sub(a2, k)) = sub(mul(d2, a2), mul(d2, k))) ->
+              less_or_equal(succ(k), a) ->
+              less_or_equal(mul(d, succ(k)), mul(d, a)) ->
+              mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k)))
+            [by generalize generalize-d]
+        }
+      @discharge-a |
+        forall a, d: Nat;
+          (forall a2, d2: Nat;
+          less_or_equal(k, a2) ->
+          less_or_equal(mul(d2, k), mul(d2, a2)) ->
+          mul(d2, sub(a2, k)) = sub(mul(d2, a2), mul(d2, k))) ->
+          less_or_equal(succ(k), a) ->
+          less_or_equal(mul(d, succ(k)), mul(d, a)) ->
+          mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k)))
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall k, a, d: Nat;
+      (forall a2, d2: Nat;
+      less_or_equal(k, a2) ->
+      less_or_equal(mul(d2, k), mul(d2, a2)) ->
+      mul(d2, sub(a2, k)) = sub(mul(d2, a2), mul(d2, k))) ->
+      less_or_equal(succ(k), a) ->
+      less_or_equal(mul(d, succ(k)), mul(d, a)) ->
+      mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k)))
+    [by generalize generalize-k]
+qed
+
+// mul(d, sub(a, b)) = sub(mul(d, a), mul(d, b)): multiplication distributes over subtraction.
+//
+// WEAKENED by the guard, and this is THE casualty the de-totalization survey predicted. The old
+// unconditional form was true only BY the truncation: at a = ZERO, b = succ(k) both sides are
+// junk, and the proof's zero-arm closed them only because `subZeroLeft` asserted both were
+// ZERO. With `sub` guarded, `sub(ZERO, succ(k))` is not merely unprovable — it is UNWRITABLE,
+// so that arm cannot be stated, let alone proved. There is no weaker-hypothesis version that
+// keeps the unconditional form.
+//
+// It now carries `b <= a` plus the SCALED bound `mul(d,b) <= mul(d,a)` that its own conclusion
+// applies. The scaled form follows from the plain one by `multiplicationPreservesAtMost`, but
+// it has to be stated: a guard in the conclusion is discharged from the antecedent, so the
+// antecedent must be written in the terms the application uses.
+//
+// The a = ZERO case now does not arise: with b = succ(k) and b <= a, a cannot be ZERO.
+theorem mulSubDistribLeft: forall d, a, b: Nat;
+  less_or_equal(b, a) ->
+  less_or_equal(mul(d, b), mul(d, a)) ->
+  mul(d, sub(a, b)) = sub(mul(d, a), mul(d, b))
+proof
+  @base-case |
+    forall a, d: Nat;
+      less_or_equal(ZERO, a) ->
+      less_or_equal(mul(d, ZERO), mul(d, a)) ->
+      mul(d, sub(a, ZERO)) = sub(mul(d, a), mul(d, ZERO))
+    [by cite mulSubDistribAtZero]
   @induction-step |
     fix k: Nat {
       @given-inductive-hypothesis |
-        assume forall a, d: Nat; mul(d, sub(a, k)) = sub(mul(d, a), mul(d, k)) {
+        assume forall a, d: Nat;
+          less_or_equal(k, a) ->
+          less_or_equal(mul(d, k), mul(d, a)) ->
+          mul(d, sub(a, k)) = sub(mul(d, a), mul(d, k)) {
           @inductive-hypothesis |
-            forall a, d: Nat; mul(d, sub(a, k)) = sub(mul(d, a), mul(d, k))
+            forall a, d: Nat;
+              less_or_equal(k, a) ->
+              less_or_equal(mul(d, k), mul(d, a)) ->
+              mul(d, sub(a, k)) = sub(mul(d, a), mul(d, k))
             [by hypothesis given-inductive-hypothesis]
           @generalize-a2 |
             fix a: Nat {
               @generalize-d2 |
                 fix d: Nat {
-                  @a-is-zero-or-successor |
-                    a = ZERO or (exists m: Nat; a = succ(m))
-                    [using specialize zeroOrSucc(a)]
-                  @when-a-is-zero |
-                    assume a = ZERO {
-                      @a-is-zero |
-                        a = ZERO
-                        [by hypothesis when-a-is-zero]
-                      // both sides collapse to ZERO via subZeroLeft, mulZeroRight
-                      @distributes-when-a-zero |
-                        mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k)))
-                        [using simplify a-is-zero subZeroLeft mulZeroRight]
-                    }
-                  @when-a-is-successor |
-                    assume exists m: Nat; a = succ(m) {
-                      @predecessor-exists |
-                        exists m: Nat; a = succ(m)
-                        [by hypothesis when-a-is-successor]
-                      @with-predecessor-ap |
-                        unpack ap: Nat from predecessor-exists {
-                          @a-is-succ-ap |
-                            a = succ(ap)
-                            [by hypothesis with-predecessor-ap]
-                          // LHS peels via subSuccSucc to mul(d, sub(ap, k)), then the IH
-                          @inductive-hypothesis-at-ap-d |
-                            mul(d, sub(ap, k)) = sub(mul(d, ap), mul(d, k))
-                            [by apply_at(ap, d) inductive-hypothesis]
-                          // RHS: both multiplications unfold via mulSuccRight to add(_, d)
-                          @mul-d-succ-ap-unfolds |
-                            mul(d, succ(ap)) = add(mul(d, ap), d)
-                            [using specialize mulSuccRight(d, ap)]
-                          @mul-d-succ-k-unfolds |
-                            mul(d, succ(k)) = add(mul(d, k), d)
-                            [using specialize mulSuccRight(d, k)]
-                          // and the common right addend d cancels via subAddSameRight
-                          @same-right-cancels-here |
-                            sub(add(mul(d, ap), d), add(mul(d, k), d)) = sub(mul(d, ap), mul(d, k))
-                            [using specialize subAddSameRight(mul(d, ap), d, mul(d, k))]
-                          // both sides normalize to sub(mul(d,ap), mul(d,k))
-                          @distributes-when-a-successor |
-                            mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k)))
-                            [using simplify a-is-succ-ap subSuccSucc inductive-hypothesis-at-ap-d mul-d-succ-ap-unfolds mul-d-succ-k-unfolds same-right-cancels-here]
-                        }
-                      @distributes-when-a-successor-exported |
-                        mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k)))
-                        [by unpacked with-predecessor-ap]
-                    }
-                  @distributes-at-succ-k |
-                    mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k)))
-                    [by common_conclusion a-is-zero-or-successor when-a-is-zero when-a-is-successor]
+                  @step-at-a-d |
+                    less_or_equal(succ(k), a) ->
+                      less_or_equal(mul(d, succ(k)), mul(d, a)) ->
+                      mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k)))
+                    [using specialize theSuccessorStep(k, a, d) inductive-hypothesis]
                 }
-              @distributes-discharge-d |
-                forall d: Nat; mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k)))
+              @step-discharge-d |
+                forall d: Nat;
+                  less_or_equal(succ(k), a) ->
+                  less_or_equal(mul(d, succ(k)), mul(d, a)) ->
+                  mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k)))
                 [by generalize generalize-d2]
             }
-          @distributes-discharge-a-d |
-            forall a, d: Nat; mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k)))
+          @step-discharge-a-d |
+            forall a, d: Nat;
+              less_or_equal(succ(k), a) ->
+              less_or_equal(mul(d, succ(k)), mul(d, a)) ->
+              mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k)))
             [by generalize generalize-a2]
         }
       @induction-step-at-k |
-        (forall a, d: Nat; mul(d, sub(a, k)) = sub(mul(d, a), mul(d, k))) -> forall a, d: Nat; mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k)))
+        (forall a, d: Nat;
+          less_or_equal(k, a) ->
+          less_or_equal(mul(d, k), mul(d, a)) ->
+          mul(d, sub(a, k)) = sub(mul(d, a), mul(d, k))) ->
+          (forall a, d: Nat;
+          less_or_equal(succ(k), a) ->
+          less_or_equal(mul(d, succ(k)), mul(d, a)) ->
+          mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k))))
         [by discharge given-inductive-hypothesis]
     }
   @induction-step-for-all-k |
-    forall k: Nat; (forall a, d: Nat; mul(d, sub(a, k)) = sub(mul(d, a), mul(d, k))) -> forall a, d: Nat; mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k)))
+    forall k: Nat;
+      (forall a, d: Nat;
+      less_or_equal(k, a) ->
+      less_or_equal(mul(d, k), mul(d, a)) ->
+      mul(d, sub(a, k)) = sub(mul(d, a), mul(d, k))) ->
+      (forall a, d: Nat;
+      less_or_equal(succ(k), a) ->
+      less_or_equal(mul(d, succ(k)), mul(d, a)) ->
+      mul(d, sub(a, succ(k))) = sub(mul(d, a), mul(d, succ(k))))
     [by generalize induction-step]
   @distributes-swapped |
-    forall b, a, d: Nat; mul(d, sub(a, b)) = sub(mul(d, a), mul(d, b))
-    [using instantiation induction((fun j: Nat => forall a, d: Nat; mul(d, sub(a, j)) = sub(mul(d, a), mul(d, j)))) base-case induction-step-for-all-k]
+    forall b: Nat; forall a, d: Nat;
+      less_or_equal(b, a) ->
+      less_or_equal(mul(d, b), mul(d, a)) ->
+      mul(d, sub(a, b)) = sub(mul(d, a), mul(d, b))
+    [using instantiation induction((fun j: Nat => forall a, d: Nat; less_or_equal(j, a) -> less_or_equal(mul(d, j), mul(d, a)) -> mul(d, sub(a, j)) = sub(mul(d, a), mul(d, j)))) base-case induction-step-for-all-k]
   @reorder-d |
     fix d: Nat {
       @reorder-a |
@@ -531,19 +1053,30 @@ proof
           @reorder-b |
             fix b: Nat {
               @distributes-at-d-a-b |
-                mul(d, sub(a, b)) = sub(mul(d, a), mul(d, b))
+                less_or_equal(b, a) ->
+                  less_or_equal(mul(d, b), mul(d, a)) ->
+                  mul(d, sub(a, b)) = sub(mul(d, a), mul(d, b))
                 [by apply_at(b, a, d) distributes-swapped]
             }
           @reorder-discharge-b |
-            forall b: Nat; mul(d, sub(a, b)) = sub(mul(d, a), mul(d, b))
+            forall b: Nat;
+              less_or_equal(b, a) ->
+              less_or_equal(mul(d, b), mul(d, a)) ->
+              mul(d, sub(a, b)) = sub(mul(d, a), mul(d, b))
             [by generalize reorder-b]
         }
       @reorder-discharge-a |
-        forall a, b: Nat; mul(d, sub(a, b)) = sub(mul(d, a), mul(d, b))
+        forall a, b: Nat;
+          less_or_equal(b, a) ->
+          less_or_equal(mul(d, b), mul(d, a)) ->
+          mul(d, sub(a, b)) = sub(mul(d, a), mul(d, b))
         [by generalize reorder-a]
     }
   @conclusion |
-    forall d, a, b: Nat; mul(d, sub(a, b)) = sub(mul(d, a), mul(d, b))
+    forall d, a, b: Nat;
+      less_or_equal(b, a) ->
+      less_or_equal(mul(d, b), mul(d, a)) ->
+      mul(d, sub(a, b)) = sub(mul(d, a), mul(d, b))
     [by generalize reorder-d]
 qed
 
@@ -556,52 +1089,159 @@ qed
 //
 // Proof: (a - b) + b = a by `addSubCancel`, so a - (a - b) = ((a-b) + b) - (a-b) = b by
 // `subAddCancel`, which cancels an added term on the right.
-theorem subInvolution: forall b, a: Nat; less_than(b, succ(a)) -> sub(a, sub(a, b)) = b
+// A difference is at most its minuend. Needed by any NESTED subtraction: `sub(a, sub(a,b))`
+// owes `sub(a,b) <= a` for its outer application, and that is not the inner guard.
+//
+// Case split on b: at ZERO the difference IS a, so reflexivity; at succ(_) the difference is
+// STRICTLY below by `subStrictlyDecreases`.
+theorem aDifferenceIsAtMostItsMinuend: forall b, a: Nat;
+  less_or_equal(b, a) -> less_or_equal(sub(a, b), a)
+proof
+  @generalize-b |
+    fix b: Nat {
+      @generalize-a |
+        fix a: Nat {
+          @given-the-bound |
+            assume less_or_equal(b, a) {
+              @the-bound |
+                less_or_equal(b, a)
+                [by hypothesis given-the-bound]
+              @b-is-zero-or-successor |
+                b = ZERO or (exists m: Nat; b = succ(m))
+                [using specialize zeroOrSucc(b)]
+              @the-difference-is-at-most-a |
+                less_or_equal(sub(a, b), a)
+                [by common_conclusion b-is-zero-or-successor
+                  when-b-is-zero when-b-is-positive]
+              @when-b-is-zero |
+                assume b = ZERO {
+                  @b-is-zero |
+                    b = ZERO
+                    [by hypothesis when-b-is-zero]
+                  @zero-is-at-most-a |
+                    less_or_equal(ZERO, a)
+                    [using specialize ordering.zeroIsAtMostAnything(a)]
+                  @the-difference-is-a |
+                    sub(a, ZERO) = a
+                    [using specialize subZeroRight(a)]
+                  @a-is-at-most-itself |
+                    less_or_equal(a, a)
+                    [using specialize lessOrEqualRefl(a)]
+                  @the-difference-at-zero-is-at-most-a |
+                    less_or_equal(sub(a, ZERO), a)
+                    [by rewrite the-difference-is-a a-is-at-most-itself]
+                  @conclusion-zero-case |
+                    less_or_equal(sub(a, b), a)
+                    [by rewrite b-is-zero the-difference-at-zero-is-at-most-a]
+                }
+              @when-b-is-positive |
+                assume exists m: Nat; b = succ(m) {
+                  @the-predecessor-exists |
+                    exists m: Nat; b = succ(m)
+                    [by hypothesis when-b-is-positive]
+                  @with-the-predecessor |
+                    unpack bp: Nat from the-predecessor-exists {
+                      @b-is-succ-bp |
+                        b = succ(bp)
+                        [by hypothesis with-the-predecessor]
+                      @b-is-positive |
+                        less_than(ZERO, b)
+                        [by rewrite b-is-succ-bp zero-is-below-the-successor]
+                      @zero-is-below-the-successor |
+                        less_than(ZERO, succ(bp))
+                        [using specialize ordering.zeroBelowSucc(bp)]
+                      @the-difference-strictly-drops |
+                        less_than(sub(a, b), a)
+                        [using specialize subStrictlyDecreases(b, a)
+                          b-is-positive the-bound]
+                      @conclusion-positive-case |
+                        less_or_equal(sub(a, b), a)
+                        [using tautology the-difference-strictly-drops]
+                    }
+                  @conclusion-from-the-predecessor |
+                    less_or_equal(sub(a, b), a)
+                    [by unpacked with-the-predecessor]
+                }
+            }
+          @the-bound-gives-it |
+            less_or_equal(b, a) -> less_or_equal(sub(a, b), a)
+            [by discharge given-the-bound]
+        }
+      @discharge-a |
+        forall a: Nat; less_or_equal(b, a) -> less_or_equal(sub(a, b), a)
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall b, a: Nat; less_or_equal(b, a) -> less_or_equal(sub(a, b), a)
+    [by generalize generalize-b]
+qed
+
+theorem subInvolution: forall b, a: Nat;
+  less_or_equal(b, a) ->
+  less_or_equal(sub(a, b), a) ->
+  sub(a, sub(a, b)) = b
 proof
   @generalize-b |
     fix b: Nat {
       @generalize-a |
         fix a: Nat {
           @given-b-at-most-a |
-            assume less_than(b, succ(a)) {
+            assume less_or_equal(b, a) {
               @b-at-most-a |
-                less_than(b, succ(a))
+                less_or_equal(b, a)
                 [by hypothesis given-b-at-most-a]
-              @the-difference-adds-back |
-                add(sub(a, b), b) = a
-                [using specialize addSubCancel(b, a) b-at-most-a]
-              // rewrite the outer a as (a-b)+b, so the outer subtraction cancels it.
-              @a-as-the-sum |
-                a = add(sub(a, b), b)
-                [by symmetry the-difference-adds-back]
-              @cancel-the-added-term |
-                sub(add(b, sub(a, b)), sub(a, b)) = b
-                [using specialize subAddCancel(b, sub(a, b))]
-              @the-sum-commutes |
-                add(sub(a, b), b) = add(b, sub(a, b))
-                [using specialize addIsCommutative(sub(a, b), b)]
-              @a-as-the-flipped-sum |
-                a = add(b, sub(a, b))
-                [using chain a-as-the-sum the-sum-commutes]
-              // oriented so `rewrite` replaces the SUM by `a`, not the other way.
-              @the-difference-adds-back-flipped |
-                add(b, sub(a, b)) = a
-                [by symmetry a-as-the-flipped-sum]
-              // substitute a = b + (a-b) into the cancellation's left side.
-              @conclusion-the-involution |
-                sub(a, sub(a, b)) = b
-                [by rewrite the-difference-adds-back-flipped cancel-the-added-term]
+              @given-the-nested-bound |
+                assume less_or_equal(sub(a, b), a) {
+                  @the-difference-adds-back |
+                    add(sub(a, b), b) = a
+                    [using specialize addSubCancel(b, a) b-at-most-a]
+                  // rewrite the outer a as (a-b)+b, so the outer subtraction cancels it.
+                  @a-as-the-sum |
+                    a = add(sub(a, b), b)
+                    [by symmetry the-difference-adds-back]
+                  @the-summand-bound-here |
+                    less_or_equal(sub(a, b), add(b, sub(a, b)))
+                    [using specialize theSummandBoundReordered(sub(a, b), b)]
+                  @cancel-the-added-term |
+                    sub(add(b, sub(a, b)), sub(a, b)) = b
+                    [using specialize subAddCancel(b, sub(a, b))]
+                  @the-sum-commutes |
+                    add(sub(a, b), b) = add(b, sub(a, b))
+                    [using specialize addIsCommutative(sub(a, b), b)]
+                  @a-as-the-flipped-sum |
+                    a = add(b, sub(a, b))
+                    [using chain a-as-the-sum the-sum-commutes]
+                  // oriented so `rewrite` replaces the SUM by `a`, not the other way.
+                  @the-difference-adds-back-flipped |
+                    add(b, sub(a, b)) = a
+                    [by symmetry a-as-the-flipped-sum]
+                  // substitute a = b + (a-b) into the cancellation's left side.
+                  @conclusion-the-involution |
+                    sub(a, sub(a, b)) = b
+                    [by rewrite the-difference-adds-back-flipped cancel-the-added-term]
+                }
+              @the-nested-bound-gives-it |
+                less_or_equal(sub(a, b), a) -> sub(a, sub(a, b)) = b
+                [by discharge given-the-nested-bound]
             }
           @b-at-most-a-implies-the-involution |
-            less_than(b, succ(a)) -> sub(a, sub(a, b)) = b
+            less_or_equal(b, a) ->
+              less_or_equal(sub(a, b), a) ->
+              sub(a, sub(a, b)) = b
             [by discharge given-b-at-most-a]
         }
       @discharge-a |
-        forall a: Nat; less_than(b, succ(a)) -> sub(a, sub(a, b)) = b
+        forall a: Nat;
+          less_or_equal(b, a) ->
+          less_or_equal(sub(a, b), a) ->
+          sub(a, sub(a, b)) = b
         [by generalize generalize-a]
     }
   @conclusion |
-    forall b, a: Nat; less_than(b, succ(a)) -> sub(a, sub(a, b)) = b
+    forall b, a: Nat;
+      less_or_equal(b, a) ->
+      less_or_equal(sub(a, b), a) ->
+      sub(a, sub(a, b)) = b
     [by generalize generalize-b]
 qed
 
@@ -615,7 +1255,16 @@ qed
 // Proof by induction on b, with a generalized. At b = 0 it is succ(a - 1) = a, which is
 // `addSubCancel` read through `subZeroRight`; the step strips a successor from both
 // arguments via `subSuccSucc`.
-theorem succOfSubSucc: forall b, a: Nat; less_than(b, a) -> succ(sub(a, succ(b))) = sub(a, b)
+// Hypotheses: `b < a` is what the argument needs; the other two are the GUARDS the
+// conclusion's two `sub` applications owe — `sub(a, succ(b))` owes `succ(b) <= a` and
+// `sub(a, b)` owes `b <= a`. Both follow from `b < a`, but a guard in an implication's
+// conclusion is discharged from the ANTECEDENT, so each must be stated in its own shape.
+// This is the clearest illustration in the file of what the guard costs a statement.
+theorem succOfSubSucc: forall b, a: Nat;
+  less_than(b, a) ->
+  less_or_equal(succ(b), a) ->
+  less_or_equal(b, a) ->
+  succ(sub(a, succ(b))) = sub(a, b)
 proof
   @generalize-b |
     fix b: Nat {
@@ -626,44 +1275,80 @@ proof
               @b-below-a |
                 less_than(b, a)
                 [by hypothesis given-b-below-a]
-              // b < a gives a = (a - succ b) + succ b, so a - b = succ(a - succ b).
-              @succ-b-at-most-a |
-                less_than(succ(b), succ(a))
-                [using specialize ordering.succPreservesOrder(b, a) b-below-a]
-              @the-difference-adds-back |
-                add(sub(a, succ(b)), succ(b)) = a
-                [using specialize addSubCancel(succ(b), a) succ-b-at-most-a]
-              @regroup-the-successor |
-                add(sub(a, succ(b)), succ(b)) = add(succ(sub(a, succ(b))), b)
-                [using arithmetic(peano)]
-              @a-as-the-stepped-sum |
-                add(succ(sub(a, succ(b))), b) = a
-                [using chain regroup-the-successor-flipped the-difference-adds-back]
-              @regroup-the-successor-flipped |
-                add(succ(sub(a, succ(b))), b) = add(sub(a, succ(b)), succ(b))
-                [by symmetry regroup-the-successor]
-              // cancel b on the right: (x + b) - b = x with x = succ(a - succ b).
-              @cancel-the-added-term |
-                sub(add(succ(sub(a, succ(b))), b), b) = succ(sub(a, succ(b)))
-                [using specialize subAddCancel(succ(sub(a, succ(b))), b)]
-              // substituting a for the sum turns the cancellation into (a - b) = succ(...).
-              @the-cancellation-at-a |
-                sub(a, b) = succ(sub(a, succ(b)))
-                [by rewrite a-as-the-stepped-sum cancel-the-added-term]
-              @conclusion-the-step |
-                succ(sub(a, succ(b))) = sub(a, b)
-                [by symmetry the-cancellation-at-a]
+              @given-the-at-most-bound |
+                assume less_or_equal(succ(b), a) {
+                  @the-successor-is-at-most-a |
+                    less_or_equal(succ(b), a)
+                    [by hypothesis given-the-at-most-bound]
+                  @given-the-plain-bound |
+                    assume less_or_equal(b, a) {
+                      // b < a gives a = (a - succ b) + succ b, so a - b = succ(a - succ b).
+                      @succ-b-at-most-a |
+                        less_than(succ(b), succ(a))
+                        [using specialize ordering.succPreservesOrder(b, a) b-below-a]
+                      @succ-b-is-at-most-a |
+                        less_or_equal(succ(b), a)
+                        [using specialize ordering.lessThanSuccToLessOrEqual(succ(b), a)
+                          succ-b-at-most-a]
+                      @the-difference-adds-back |
+                        add(sub(a, succ(b)), succ(b)) = a
+                        [using specialize addSubCancel(succ(b), a) succ-b-is-at-most-a]
+                      @regroup-the-successor |
+                        add(sub(a, succ(b)), succ(b)) = add(succ(sub(a, succ(b))), b)
+                        [using arithmetic(peano)]
+                      @a-as-the-stepped-sum |
+                        add(succ(sub(a, succ(b))), b) = a
+                        [using chain regroup-the-successor-flipped the-difference-adds-back]
+                      @regroup-the-successor-flipped |
+                        add(succ(sub(a, succ(b))), b) = add(sub(a, succ(b)), succ(b))
+                        [by symmetry regroup-the-successor]
+                      // cancel b on the right: (x + b) - b = x with x = succ(a - succ b).
+                      @the-summand-bound-here |
+                        less_or_equal(b, add(succ(sub(a, succ(b))), b))
+                        [using specialize theSummandBoundReordered(
+                          b, succ(sub(a, succ(b))))]
+                      @cancel-the-added-term |
+                        sub(add(succ(sub(a, succ(b))), b), b) = succ(sub(a, succ(b)))
+                        [using specialize subAddCancel(succ(sub(a, succ(b))), b)]
+                      // substituting a for the sum turns the cancellation into (a - b) = succ(...).
+                      @the-cancellation-at-a |
+                        sub(a, b) = succ(sub(a, succ(b)))
+                        [by rewrite a-as-the-stepped-sum cancel-the-added-term]
+                      @conclusion-the-step |
+                        succ(sub(a, succ(b))) = sub(a, b)
+                        [by symmetry the-cancellation-at-a]
+                    }
+                  @the-plain-bound-gives-it |
+                    less_or_equal(b, a) -> succ(sub(a, succ(b))) = sub(a, b)
+                    [by discharge given-the-plain-bound]
+                }
+              @the-at-most-bound-gives-it |
+                less_or_equal(succ(b), a) ->
+                  less_or_equal(b, a) ->
+                  succ(sub(a, succ(b))) = sub(a, b)
+                [by discharge given-the-at-most-bound]
             }
           @b-below-a-implies-the-step |
-            less_than(b, a) -> succ(sub(a, succ(b))) = sub(a, b)
+            less_than(b, a) ->
+              less_or_equal(succ(b), a) ->
+              less_or_equal(b, a) ->
+              succ(sub(a, succ(b))) = sub(a, b)
             [by discharge given-b-below-a]
         }
       @discharge-a |
-        forall a: Nat; less_than(b, a) -> succ(sub(a, succ(b))) = sub(a, b)
+        forall a: Nat;
+          less_than(b, a) ->
+          less_or_equal(succ(b), a) ->
+          less_or_equal(b, a) ->
+          succ(sub(a, succ(b))) = sub(a, b)
         [by generalize generalize-a]
     }
   @conclusion |
-    forall b, a: Nat; less_than(b, a) -> succ(sub(a, succ(b))) = sub(a, b)
+    forall b, a: Nat;
+      less_than(b, a) ->
+      less_or_equal(succ(b), a) ->
+      less_or_equal(b, a) ->
+      succ(sub(a, succ(b))) = sub(a, b)
     [by generalize generalize-b]
 qed
 
@@ -675,37 +1360,51 @@ qed
 
 // Subtracting ZERO changes neither side: the base of succOfSubLeft.
 theorem subtractingZeroRaisesWithTheMinuend:
-  forall a: Nat; less_than(ZERO, succ(a)) -> sub(succ(a), ZERO) = succ(sub(a, ZERO))
+  forall a: Nat;
+  less_or_equal(ZERO, succ(a)) ->
+  less_or_equal(ZERO, a) ->
+  sub(succ(a), ZERO) = succ(sub(a, ZERO))
 proof
   @generalize-a |
     fix a: Nat {
       @given-zero-is-below |
-        assume less_than(ZERO, succ(a)) {
-          @the-raised-minuend |
-            sub(succ(a), ZERO) = succ(a)
-            [using specialize subZeroRight(succ(a))]
-          @the-plain-minuend |
-            sub(a, ZERO) = a
-            [using specialize subZeroRight(a)]
-          @the-successor-of-the-plain |
-            succ(sub(a, ZERO)) = succ(a)
-            [by rewrite the-plain-minuend reflexivity-of-the-successor]
-          @reflexivity-of-the-successor |
-            succ(a) = succ(a)
-            [by reflexivity]
-          @the-plain-flipped |
-            succ(a) = succ(sub(a, ZERO))
-            [by symmetry the-successor-of-the-plain]
-          @conclusion-at-a |
-            sub(succ(a), ZERO) = succ(sub(a, ZERO))
-            [using chain the-raised-minuend the-plain-flipped]
+        assume less_or_equal(ZERO, succ(a)) {
+          @given-zero-is-below-a |
+            assume less_or_equal(ZERO, a) {
+              @the-raised-minuend |
+                sub(succ(a), ZERO) = succ(a)
+                [using specialize subZeroRight(succ(a))]
+              @the-plain-minuend |
+                sub(a, ZERO) = a
+                [using specialize subZeroRight(a)]
+              @the-successor-of-the-plain |
+                succ(sub(a, ZERO)) = succ(a)
+                [by rewrite the-plain-minuend reflexivity-of-the-successor]
+              @reflexivity-of-the-successor |
+                succ(a) = succ(a)
+                [by reflexivity]
+              @the-plain-flipped |
+                succ(a) = succ(sub(a, ZERO))
+                [by symmetry the-successor-of-the-plain]
+              @conclusion-at-a |
+                sub(succ(a), ZERO) = succ(sub(a, ZERO))
+                [using chain the-raised-minuend the-plain-flipped]
+            }
+          @the-second-bound-gives-it |
+            less_or_equal(ZERO, a) -> sub(succ(a), ZERO) = succ(sub(a, ZERO))
+            [by discharge given-zero-is-below-a]
         }
       @below-implies |
-        less_than(ZERO, succ(a)) -> sub(succ(a), ZERO) = succ(sub(a, ZERO))
+        less_or_equal(ZERO, succ(a)) ->
+          less_or_equal(ZERO, a) ->
+          sub(succ(a), ZERO) = succ(sub(a, ZERO))
         [by discharge given-zero-is-below]
     }
   @conclusion |
-    forall a: Nat; less_than(ZERO, succ(a)) -> sub(succ(a), ZERO) = succ(sub(a, ZERO))
+    forall a: Nat;
+      less_or_equal(ZERO, succ(a)) ->
+      less_or_equal(ZERO, a) ->
+      sub(succ(a), ZERO) = succ(sub(a, ZERO))
     [by generalize generalize-a]
 qed
 
@@ -713,116 +1412,175 @@ qed
 // less_than(succ k, succ a) forces a to be a successor, and then subSuccSucc strips the
 // successor from BOTH sides, leaving exactly the hypothesis at the predecessor.
 theorem theSubtrahendStepRaisesWithTheMinuend: forall k: Nat;
-  (forall a: Nat; less_than(k, succ(a)) -> sub(succ(a), k) = succ(sub(a, k))) ->
-  (forall a: Nat; less_than(succ(k), succ(a)) -> sub(succ(a), succ(k)) = succ(sub(a, succ(k))))
+  (forall a: Nat;
+  less_or_equal(k, succ(a)) ->
+  less_or_equal(k, a) ->
+  sub(succ(a), k) = succ(sub(a, k))) ->
+  (forall a: Nat;
+  less_or_equal(succ(k), succ(a)) ->
+  less_or_equal(succ(k), a) ->
+  sub(succ(a), succ(k)) = succ(sub(a, succ(k))))
 proof
   @generalize-k |
     fix k: Nat {
       @given-inductive-hypothesis |
-        assume forall a: Nat; less_than(k, succ(a)) -> sub(succ(a), k) = succ(sub(a, k)) {
+        assume forall a: Nat;
+          less_or_equal(k, succ(a)) ->
+          less_or_equal(k, a) ->
+          sub(succ(a), k) = succ(sub(a, k)) {
           @inductive-hypothesis |
-            forall a: Nat; less_than(k, succ(a)) -> sub(succ(a), k) = succ(sub(a, k))
+            forall a: Nat;
+              less_or_equal(k, succ(a)) ->
+              less_or_equal(k, a) ->
+              sub(succ(a), k) = succ(sub(a, k))
             [by hypothesis given-inductive-hypothesis]
           @generalize-a |
             fix a: Nat {
-              @given-succ-k-is-below |
-                assume less_than(succ(k), succ(a)) {
-                  @succ-k-is-below |
-                    less_than(succ(k), succ(a))
-                    [by hypothesis given-succ-k-is-below]
-                  // a is not ZERO, since succ(k) < succ(a) gives k < a
-                  @k-is-below-a |
-                    less_than(k, a)
-                    [using specialize ordering.succReflectsOrder(k, a) succ-k-is-below]
-                  @a-splits |
-                    a = ZERO or (exists m: Nat; a = succ(m))
-                    [using specialize peano.zeroOrSucc(a)]
-                  @when-a-is-zero |
-                    assume a = ZERO {
-                      @a-is-zero |
-                        a = ZERO
-                        [by hypothesis when-a-is-zero]
-                      @k-is-below-zero |
-                        less_than(k, ZERO)
-                        [by rewrite a-is-zero k-is-below-a]
-                      @nothing-is-below-zero |
-                        not less_than(k, ZERO)
-                        [using specialize ordering.notLessThanZero(k)]
-                      @conclusion-absurd |
-                        sub(succ(a), succ(k)) = succ(sub(a, succ(k)))
-                        [by ex_falso k-is-below-zero nothing-is-below-zero]
-                    }
-                  @when-a-is-a-successor |
-                    assume exists m: Nat; a = succ(m) {
-                      @a-is-a-successor |
-                        exists m: Nat; a = succ(m)
-                        [by hypothesis when-a-is-a-successor]
-                      @with-the-predecessor-m |
-                        unpack m: Nat from a-is-a-successor {
-                          @a-is-succ-m |
-                            a = succ(m)
-                            [by hypothesis with-the-predecessor-m]
-                          @k-is-below-succ-m |
-                            less_than(k, succ(m))
-                            [by rewrite a-is-succ-m k-is-below-a]
-                          // the hypothesis at the predecessor
-                          @the-hypothesis-at-m |
-                            less_than(k, succ(m)) -> sub(succ(m), k) = succ(sub(m, k))
-                            [using specialize inductive-hypothesis(m)]
-                          @the-difference-at-m |
-                            sub(succ(m), k) = succ(sub(m, k))
-                            [using tautology the-hypothesis-at-m k-is-below-succ-m]
-                          // strip one successor from each side
-                          @the-raised-side-strips |
-                            sub(succ(succ(m)), succ(k)) = sub(succ(m), k)
-                            [using specialize subSuccSucc(succ(m), k)]
-                          @the-plain-side-strips |
-                            sub(succ(m), succ(k)) = sub(m, k)
-                            [using specialize subSuccSucc(m, k)]
-                          @the-successor-of-the-plain |
-                            succ(sub(succ(m), succ(k))) = succ(sub(m, k))
-                            [by rewrite the-plain-side-strips reflexivity-of-the-successor]
-                          @reflexivity-of-the-successor |
-                            succ(sub(m, k)) = succ(sub(m, k))
-                            [by reflexivity]
-                          @the-successor-flipped |
-                            succ(sub(m, k)) = succ(sub(succ(m), succ(k)))
-                            [by symmetry the-successor-of-the-plain]
-                          @the-chain-at-m |
-                            sub(succ(succ(m)), succ(k)) = succ(sub(succ(m), succ(k)))
-                            [using chain the-raised-side-strips the-difference-at-m the-successor-flipped]
-                          @conclusion-at-succ-m |
+              @given-the-raised-bound |
+                assume less_or_equal(succ(k), succ(a)) {
+                  @given-succ-k-is-below |
+                    assume less_or_equal(succ(k), a) {
+                      @succ-k-is-below |
+                        less_or_equal(succ(k), a)
+                        [by hypothesis given-succ-k-is-below]
+                      // a is not ZERO, since succ(k) <= a gives k < a
+                      @k-is-below-a |
+                        less_than(k, a)
+                        [using specialize ordering.anAtMostSuccessorBoundIsStrict(k, a)
+                          succ-k-is-below]
+                      // the guards the conclusion's two applications owe
+                      @succ-k-is-at-most-succ-a |
+                        less_or_equal(succ(k), succ(a))
+                        [using specialize succPreservesAtMost(k, a) k-is-at-most-a]
+                      @k-is-at-most-a |
+                        less_or_equal(k, a)
+                        [using tautology k-is-below-a]
+                      @a-splits |
+                        a = ZERO or (exists m: Nat; a = succ(m))
+                        [using specialize peano.zeroOrSucc(a)]
+                      @when-a-is-zero |
+                        assume a = ZERO {
+                          @a-is-zero |
+                            a = ZERO
+                            [by hypothesis when-a-is-zero]
+                          @k-is-below-zero |
+                            less_than(k, ZERO)
+                            [by rewrite a-is-zero k-is-below-a]
+                          @nothing-is-below-zero |
+                            not less_than(k, ZERO)
+                            [using specialize ordering.notLessThanZero(k)]
+                          @conclusion-absurd |
                             sub(succ(a), succ(k)) = succ(sub(a, succ(k)))
-                            [by rewrite a-is-succ-m the-chain-at-m]
+                            [by ex_falso k-is-below-zero nothing-is-below-zero]
                         }
-                      @conclusion-from-the-successor |
+                      @when-a-is-a-successor |
+                        assume exists m: Nat; a = succ(m) {
+                          @a-is-a-successor |
+                            exists m: Nat; a = succ(m)
+                            [by hypothesis when-a-is-a-successor]
+                          @with-the-predecessor-m |
+                            unpack m: Nat from a-is-a-successor {
+                              @a-is-succ-m |
+                                a = succ(m)
+                                [by hypothesis with-the-predecessor-m]
+                              @k-is-at-most-succ-m |
+                                less_or_equal(k, succ(m))
+                                [by rewrite a-is-succ-m k-is-at-most-a]
+                              @k-is-below-succ-m |
+                                less_or_equal(k, m)
+                                [using specialize ordering.lessThanSuccToLessOrEqual(k, m)
+                                  k-is-strictly-below-succ-m]
+                              @k-is-strictly-below-succ-m |
+                                less_than(k, succ(m))
+                                [by rewrite a-is-succ-m k-is-below-a]
+                              // the hypothesis at the predecessor
+                              @the-hypothesis-at-m |
+                                less_or_equal(k, succ(m)) ->
+                                  less_or_equal(k, m) ->
+                                  sub(succ(m), k) = succ(sub(m, k))
+                                [using specialize inductive-hypothesis(m)]
+                              @the-difference-at-m |
+                                sub(succ(m), k) = succ(sub(m, k))
+                                [using tautology the-hypothesis-at-m k-is-at-most-succ-m
+                                  k-is-below-succ-m]
+                              // strip one successor from each side
+                              @succ-k-is-at-most-succ-succ-m |
+                                less_or_equal(succ(k), succ(succ(m)))
+                                [using specialize succPreservesAtMost(k, succ(m))
+                                  k-is-at-most-succ-m]
+                              @succ-k-is-at-most-succ-m |
+                                less_or_equal(succ(k), succ(m))
+                                [using specialize succPreservesAtMost(k, m)
+                                  k-is-below-succ-m]
+                              @the-raised-side-strips |
+                                sub(succ(succ(m)), succ(k)) = sub(succ(m), k)
+                                [using specialize subSuccSucc(succ(m), k)
+                                  k-is-at-most-succ-m]
+                              @the-plain-side-strips |
+                                sub(succ(m), succ(k)) = sub(m, k)
+                                [using specialize subSuccSucc(m, k) k-is-below-succ-m]
+                              @the-successor-of-the-plain |
+                                succ(sub(succ(m), succ(k))) = succ(sub(m, k))
+                                [by rewrite the-plain-side-strips reflexivity-of-the-successor]
+                              @reflexivity-of-the-successor |
+                                succ(sub(m, k)) = succ(sub(m, k))
+                                [by reflexivity]
+                              @the-successor-flipped |
+                                succ(sub(m, k)) = succ(sub(succ(m), succ(k)))
+                                [by symmetry the-successor-of-the-plain]
+                              @the-chain-at-m |
+                                sub(succ(succ(m)), succ(k)) = succ(sub(succ(m), succ(k)))
+                                [using chain the-raised-side-strips the-difference-at-m the-successor-flipped]
+                              @conclusion-at-succ-m |
+                                sub(succ(a), succ(k)) = succ(sub(a, succ(k)))
+                                [by rewrite a-is-succ-m the-chain-at-m]
+                            }
+                          @conclusion-from-the-successor |
+                            sub(succ(a), succ(k)) = succ(sub(a, succ(k)))
+                            [by unpacked with-the-predecessor-m]
+                        }
+                      @conclusion-at-a |
                         sub(succ(a), succ(k)) = succ(sub(a, succ(k)))
-                        [by unpacked with-the-predecessor-m]
+                        [by common_conclusion a-splits when-a-is-zero when-a-is-a-successor]
                     }
-                  @conclusion-at-a |
-                    sub(succ(a), succ(k)) = succ(sub(a, succ(k)))
-                    [by common_conclusion a-splits when-a-is-zero when-a-is-a-successor]
+                  @the-plain-bound-gives-it |
+                    less_or_equal(succ(k), a) ->
+                      sub(succ(a), succ(k)) = succ(sub(a, succ(k)))
+                    [by discharge given-succ-k-is-below]
                 }
-              @below-implies |
-                less_than(succ(k), succ(a)) ->
+              @the-raised-bound-gives-it |
+                less_or_equal(succ(k), succ(a)) ->
+                  less_or_equal(succ(k), a) ->
                   sub(succ(a), succ(k)) = succ(sub(a, succ(k)))
-                [by discharge given-succ-k-is-below]
+                [by discharge given-the-raised-bound]
             }
           @conclusion-for-all-a |
-            forall a: Nat; less_than(succ(k), succ(a)) ->
+            forall a: Nat;
+              less_or_equal(succ(k), succ(a)) ->
+              less_or_equal(succ(k), a) ->
               sub(succ(a), succ(k)) = succ(sub(a, succ(k)))
             [by generalize generalize-a]
         }
       @hypothesis-implies |
-        (forall a: Nat; less_than(k, succ(a)) -> sub(succ(a), k) = succ(sub(a, k))) ->
-          (forall a: Nat; less_than(succ(k), succ(a)) ->
+        (forall a: Nat;
+          less_or_equal(k, succ(a)) ->
+          less_or_equal(k, a) ->
+          sub(succ(a), k) = succ(sub(a, k))) ->
+          (forall a: Nat;
+          less_or_equal(succ(k), succ(a)) ->
+          less_or_equal(succ(k), a) ->
           sub(succ(a), succ(k)) = succ(sub(a, succ(k))))
         [by discharge given-inductive-hypothesis]
     }
   @conclusion |
     forall k: Nat;
-      (forall a: Nat; less_than(k, succ(a)) -> sub(succ(a), k) = succ(sub(a, k))) ->
-      (forall a: Nat; less_than(succ(k), succ(a)) ->
+      (forall a: Nat;
+      less_or_equal(k, succ(a)) ->
+      less_or_equal(k, a) ->
+      sub(succ(a), k) = succ(sub(a, k))) ->
+      (forall a: Nat;
+      less_or_equal(succ(k), succ(a)) ->
+      less_or_equal(succ(k), a) ->
       sub(succ(a), succ(k)) = succ(sub(a, succ(k))))
     [by generalize generalize-k]
 qed
@@ -831,26 +1589,128 @@ qed
 // not exceed the minuend. Induction on the subtrahend b, with a universally quantified
 // inside so the successor case can apply the hypothesis at the predecessor of a.
 theorem succOfSubLeft: forall b, a: Nat;
-  less_than(b, succ(a)) -> sub(succ(a), b) = succ(sub(a, b))
+  less_or_equal(b, succ(a)) ->
+  less_or_equal(b, a) ->
+  sub(succ(a), b) = succ(sub(a, b))
 proof
   @base-case |
-    forall a: Nat; less_than(ZERO, succ(a)) -> sub(succ(a), ZERO) = succ(sub(a, ZERO))
+    forall a: Nat;
+      less_or_equal(ZERO, succ(a)) ->
+      less_or_equal(ZERO, a) ->
+      sub(succ(a), ZERO) = succ(sub(a, ZERO))
     [by cite subtractingZeroRaisesWithTheMinuend]
   @induction-step-for-all-k |
     forall k: Nat;
-      (forall a: Nat; less_than(k, succ(a)) -> sub(succ(a), k) = succ(sub(a, k))) ->
-      (forall a: Nat; less_than(succ(k), succ(a)) -> sub(succ(a), succ(k)) = succ(sub(a, succ(k))))
+      (forall a: Nat;
+      less_or_equal(k, succ(a)) ->
+      less_or_equal(k, a) ->
+      sub(succ(a), k) = succ(sub(a, k))) ->
+      (forall a: Nat;
+      less_or_equal(succ(k), succ(a)) ->
+      less_or_equal(succ(k), a) ->
+      sub(succ(a), succ(k)) = succ(sub(a, succ(k))))
     [by cite theSubtrahendStepRaisesWithTheMinuend]
   @conclusion |
-    forall b, a: Nat; less_than(b, succ(a)) -> sub(succ(a), b) = succ(sub(a, b))
-    [using instantiation peano.induction((fun b: Nat => forall a: Nat; less_than(b, succ(a)) -> sub(succ(a), b) = succ(sub(a, b)))) base-case induction-step-for-all-k]
+    forall b, a: Nat;
+      less_or_equal(b, succ(a)) ->
+      less_or_equal(b, a) ->
+      sub(succ(a), b) = succ(sub(a, b))
+    [using instantiation peano.induction((fun b: Nat => forall a: Nat; less_or_equal(b, succ(a)) -> less_or_equal(b, a) -> sub(succ(a), b) = succ(sub(a, b)))) base-case induction-step-for-all-k]
 qed
 
 // Subtracting the same amount from both sides of a difference: for x <= m <= i,
 // (i - x) - (m - x) = i - m. Both differences recover their minuends by addSubCancel,
 // then the common addend x cancels by subAddSameRight.
+// Subtraction is monotone in its MINUEND: x <= m <= i gives (m - x) <= (i - x). Proved by
+// recovering each minuend (`addSubCancel`) and cancelling the common addend x off the
+// comparison (`additionPreservesAtMostOnTheRight` is the wrong direction here, so this goes
+// through the gap form instead: m - x and i - x differ by exactly i - m).
+theorem subtractionIsMonotoneInTheMinuend: forall i, m, x: Nat;
+  less_or_equal(x, m) -> less_or_equal(m, i) -> less_or_equal(x, i) ->
+  less_or_equal(sub(m, x), sub(i, x))
+proof
+  @generalize-i |
+    fix i: Nat {
+      @generalize-m |
+        fix m: Nat {
+          @generalize-x |
+            fix x: Nat {
+              @given-x-at-most-m |
+                assume less_or_equal(x, m) {
+                  @x-at-most-m |
+                    less_or_equal(x, m)
+                    [by hypothesis given-x-at-most-m]
+                  @given-m-at-most-i |
+                    assume less_or_equal(m, i) {
+                      @m-at-most-i |
+                        less_or_equal(m, i)
+                        [by hypothesis given-m-at-most-i]
+                      @given-x-at-most-i |
+                        assume less_or_equal(x, i) {
+                          @x-at-most-i |
+                            less_or_equal(x, i)
+                            [by hypothesis given-x-at-most-i]
+                          // (m-x) + x = m <= i = (i-x) + x, and adding x on the right
+                          // reflects the comparison
+                          @m-recovers |
+                            add(sub(m, x), x) = m
+                            [using specialize addSubCancel(x, m) x-at-most-m]
+                          @i-recovers |
+                            add(sub(i, x), x) = i
+                            [using specialize addSubCancel(x, i) x-at-most-i]
+                          @the-padded-comparison |
+                            less_or_equal(add(sub(m, x), x), i)
+                            [by rewrite m-recovers m-at-most-i]
+                          @the-fully-padded-comparison |
+                            less_or_equal(add(sub(m, x), x), add(sub(i, x), x))
+                            [by rewrite i-recovers the-padded-comparison]
+                          @conclusion-the-differences-compare |
+                            less_or_equal(sub(m, x), sub(i, x))
+                            [using specialize
+                              ordering.additionReflectsAtMostOnTheRight(
+                              sub(m, x), sub(i, x), x) the-fully-padded-comparison]
+                        }
+                      @x-at-most-i-gives-it |
+                        less_or_equal(x, i) ->
+                          less_or_equal(sub(m, x), sub(i, x))
+                        [by discharge given-x-at-most-i]
+                    }
+                  @m-at-most-i-gives-it |
+                    less_or_equal(m, i) ->
+                      less_or_equal(x, i) ->
+                      less_or_equal(sub(m, x), sub(i, x))
+                    [by discharge given-m-at-most-i]
+                }
+              @all-bounds-give-it |
+                less_or_equal(x, m) ->
+                  less_or_equal(m, i) ->
+                  less_or_equal(x, i) ->
+                  less_or_equal(sub(m, x), sub(i, x))
+                [by discharge given-x-at-most-m]
+            }
+          @discharge-x |
+            forall x: Nat;
+              less_or_equal(x, m) -> less_or_equal(m, i) -> less_or_equal(x, i) ->
+              less_or_equal(sub(m, x), sub(i, x))
+            [by generalize generalize-x]
+        }
+      @discharge-m |
+        forall m, x: Nat;
+          less_or_equal(x, m) -> less_or_equal(m, i) -> less_or_equal(x, i) ->
+          less_or_equal(sub(m, x), sub(i, x))
+        [by generalize generalize-m]
+    }
+  @conclusion |
+    forall i, m, x: Nat;
+      less_or_equal(x, m) -> less_or_equal(m, i) -> less_or_equal(x, i) ->
+      less_or_equal(sub(m, x), sub(i, x))
+    [by generalize generalize-i]
+qed
+
 theorem aCommonAmountCancelsUnderNestedSubtraction: forall i, m, x: Nat;
-  less_than(x, succ(m)) -> less_than(m, succ(i)) ->
+  less_or_equal(x, m) -> less_or_equal(m, i) ->
+  less_or_equal(x, i) ->
+  less_or_equal(sub(m, x), sub(i, x)) ->
   sub(sub(i, x), sub(m, x)) = sub(i, m)
 proof
   @generalize-i |
@@ -860,75 +1720,105 @@ proof
           @generalize-x |
             fix x: Nat {
               @given-x-at-most-m |
-                assume less_than(x, succ(m)) {
+                assume less_or_equal(x, m) {
                   @x-at-most-m |
-                    less_than(x, succ(m))
+                    less_or_equal(x, m)
                     [by hypothesis given-x-at-most-m]
                   @given-m-at-most-i |
-                    assume less_than(m, succ(i)) {
+                    assume less_or_equal(m, i) {
                       @m-at-most-i |
-                        less_than(m, succ(i))
+                        less_or_equal(m, i)
                         [by hypothesis given-m-at-most-i]
-                      // x <= m and m <= i, so x <= i, by less_or_equal transitivity
-                      @x-is-at-most-m |
-                        ordering.less_or_equal(x, m)
-                        [using specialize ordering.lessThanSuccToLessOrEqual(x, m) x-at-most-m]
-                      @m-is-at-most-i |
-                        ordering.less_or_equal(m, i)
-                        [using specialize ordering.lessThanSuccToLessOrEqual(m, i) m-at-most-i]
-                      @x-is-at-most-i |
-                        ordering.less_or_equal(x, i)
-                        [using specialize ordering.lessOrEqualTransitive(x, m, i) x-is-at-most-m m-is-at-most-i]
-                      @x-at-most-i |
-                        less_than(x, succ(i))
-                        [using specialize ordering.lessOrEqualToLessThanSucc(x, i) x-is-at-most-i]
-                      // each difference recovers its minuend
-                      @i-recovers |
-                        add(sub(i, x), x) = i
-                        [using specialize addSubCancel(x, i) x-at-most-i]
-                      @m-recovers |
-                        add(sub(m, x), x) = m
-                        [using specialize addSubCancel(x, m) x-at-most-m]
-                      // cancel the common addend
-                      @the-common-addend-cancels |
-                        sub(add(sub(i, x), x), add(sub(m, x), x)) =
-                          sub(sub(i, x), sub(m, x))
-                        [using specialize subAddSameRight(sub(i, x), x, sub(m, x))]
-                      // rewrite the recovered minuends into the cancellation
-                      @the-cancellation-at-i |
-                        sub(i, add(sub(m, x), x)) = sub(sub(i, x), sub(m, x))
-                        [by rewrite i-recovers the-common-addend-cancels]
-                      @conclusion-the-amounts-cancel |
-                        sub(sub(i, x), sub(m, x)) = sub(i, m)
-                        [by rewrite m-recovers the-cancellation-at-i-flipped]
-                      @the-cancellation-at-i-flipped |
-                        sub(sub(i, x), sub(m, x)) = sub(i, add(sub(m, x), x))
-                        [by symmetry the-cancellation-at-i]
+                      @given-x-at-most-i-hyp |
+                        assume less_or_equal(x, i) {
+                          @given-the-nested-guard |
+                            assume less_or_equal(sub(m, x), sub(i, x)) {
+                              // the hypotheses already ARE the at-most forms the guards need
+                              @x-at-most-i |
+                                less_or_equal(x, i)
+                                [by hypothesis given-x-at-most-i-hyp]
+                              // each difference recovers its minuend
+                              @i-recovers |
+                                add(sub(i, x), x) = i
+                                [using specialize addSubCancel(x, i) x-at-most-i]
+                              @m-recovers |
+                                add(sub(m, x), x) = m
+                                [using specialize addSubCancel(x, m) x-at-most-m]
+                              // cancel the common addend
+                              @the-differences-compare |
+                                ordering.less_or_equal(sub(m, x), sub(i, x))
+                                [using specialize subtractionIsMonotoneInTheMinuend(i, m, x)
+                                  x-at-most-m m-at-most-i x-at-most-i]
+                              @the-padded-differences-compare |
+                                ordering.less_or_equal(add(sub(m, x), x), add(sub(i, x), x))
+                                [using specialize
+                                  ordering.additionPreservesAtMostOnTheRight(
+                                  sub(m, x), sub(i, x), x) the-differences-compare]
+                              @the-half-rewritten-bound |
+                                ordering.less_or_equal(add(sub(m, x), x), i)
+                                [by rewrite i-recovers the-padded-differences-compare]
+                              @the-common-addend-cancels |
+                                sub(add(sub(i, x), x), add(sub(m, x), x)) =
+                                  sub(sub(i, x), sub(m, x))
+                                [using specialize subAddSameRight(sub(i, x), x, sub(m, x))
+                                  the-padded-differences-compare the-differences-compare]
+                              // rewrite the recovered minuends into the cancellation
+                              @the-cancellation-at-i |
+                                sub(i, add(sub(m, x), x)) = sub(sub(i, x), sub(m, x))
+                                [by rewrite i-recovers the-common-addend-cancels]
+                              @conclusion-the-amounts-cancel |
+                                sub(sub(i, x), sub(m, x)) = sub(i, m)
+                                [by rewrite m-recovers the-cancellation-at-i-flipped]
+                              @the-cancellation-at-i-flipped |
+                                sub(sub(i, x), sub(m, x)) = sub(i, add(sub(m, x), x))
+                                [by symmetry the-cancellation-at-i]
+                            }
+                          @the-nested-guards-give-it |
+                            less_or_equal(sub(m, x), sub(i, x)) ->
+                              sub(sub(i, x), sub(m, x)) = sub(i, m)
+                            [by discharge given-the-nested-guard]
+                        }
+                      @the-outer-guard-gives-it |
+                        less_or_equal(x, i) ->
+                          less_or_equal(sub(m, x), sub(i, x)) ->
+                          sub(sub(i, x), sub(m, x)) = sub(i, m)
+                        [by discharge given-x-at-most-i-hyp]
                     }
                   @m-at-most-implies |
-                    less_than(m, succ(i)) -> sub(sub(i, x), sub(m, x)) = sub(i, m)
+                    less_or_equal(m, i) ->
+                      less_or_equal(x, i) ->
+                      less_or_equal(sub(m, x), sub(i, x)) ->
+                      sub(sub(i, x), sub(m, x)) = sub(i, m)
                     [by discharge given-m-at-most-i]
                 }
               @x-at-most-implies |
-                less_than(x, succ(m)) -> less_than(m, succ(i)) ->
+                less_or_equal(x, m) -> less_or_equal(m, i) ->
+                  less_or_equal(x, i) ->
+                  less_or_equal(sub(m, x), sub(i, x)) ->
                   sub(sub(i, x), sub(m, x)) = sub(i, m)
                 [by discharge given-x-at-most-m]
             }
           @discharge-x |
             forall x9: Nat;
-              less_than(x9, succ(m)) -> less_than(m, succ(i)) ->
+              less_or_equal(x9, m) -> less_or_equal(m, i) ->
+              less_or_equal(x9, i) ->
+              less_or_equal(sub(m, x9), sub(i, x9)) ->
               sub(sub(i, x9), sub(m, x9)) = sub(i, m)
             [by generalize generalize-x]
         }
       @discharge-m |
         forall m9, x9: Nat;
-          less_than(x9, succ(m9)) -> less_than(m9, succ(i)) ->
+          less_or_equal(x9, m9) -> less_or_equal(m9, i) ->
+          less_or_equal(x9, i) ->
+          less_or_equal(sub(m9, x9), sub(i, x9)) ->
           sub(sub(i, x9), sub(m9, x9)) = sub(i, m9)
         [by generalize generalize-m]
     }
   @conclusion |
     forall i, m, x: Nat;
-      less_than(x, succ(m)) -> less_than(m, succ(i)) ->
+      less_or_equal(x, m) -> less_or_equal(m, i) ->
+      less_or_equal(x, i) ->
+      less_or_equal(sub(m, x), sub(i, x)) ->
       sub(sub(i, x), sub(m, x)) = sub(i, m)
     [by generalize generalize-i]
 qed
@@ -936,7 +1826,9 @@ qed
 // x + j < i leaves x below the difference: from the gap, i = (x+j) + succ(d), so
 // i - j = x + succ(d), which exceeds x. The companion to addSubCancel for strict bounds.
 theorem aSumBelowGivesADifferenceAbove: forall x, j, i: Nat;
-  less_than(add(x, j), i) -> less_than(x, sub(i, j))
+  less_than(add(x, j), i) ->
+  less_or_equal(j, i) ->
+  less_than(x, sub(i, j))
 proof
   @generalize-x |
     fix x: Nat {
@@ -946,66 +1838,84 @@ proof
             fix i: Nat {
               @given-the-sum-is-below |
                 assume less_than(add(x, j), i) {
-                  @the-sum-is-below |
-                    less_than(add(x, j), i)
-                    [by hypothesis given-the-sum-is-below]
-                  // name the gap
-                  @the-gap-exists |
-                    exists d: Nat; add(add(x, j), succ(d)) = i
-                    [using specialize ordering.lessThanElim(add(x, j), i) the-sum-is-below]
-                  @with-the-gap-d |
-                    unpack d: Nat from the-gap-exists {
-                      @the-gap |
-                        add(add(x, j), succ(d)) = i
-                        [by hypothesis with-the-gap-d]
-                      // regroup so j is the outermost addend
-                      @the-regrouping |
-                        add(add(x, j), succ(d)) = add(add(x, succ(d)), j)
-                        [using assoc_commut]
-                      @i-regrouped |
-                        add(add(x, succ(d)), j) = i
-                        [using chain the-regrouping-flipped the-gap]
-                      @the-regrouping-flipped |
-                        add(add(x, succ(d)), j) = add(add(x, j), succ(d))
-                        [by symmetry the-regrouping]
-                      // so i - j is x + succ(d)
-                      @the-cancellation |
-                        sub(add(add(x, succ(d)), j), j) = add(x, succ(d))
-                        [using specialize subAddCancel(add(x, succ(d)), j)]
-                      @the-difference |
-                        sub(i, j) = add(x, succ(d))
-                        [by rewrite i-regrouped the-cancellation]
-                      // and x + succ(d) exceeds x
-                      @x-is-below-the-gap-sum |
-                        less_than(x, add(x, succ(d)))
-                        [using specialize ordering.lessThanIntro(x, d, add(x, succ(d))) reflexivity-of-the-gap-sum]
-                      @reflexivity-of-the-gap-sum |
-                        add(x, succ(d)) = add(x, succ(d))
-                        [by reflexivity]
-                      @conclusion-x-is-below-the-difference |
+                  @given-j-at-most-i |
+                    assume less_or_equal(j, i) {
+                      @the-sum-is-below |
+                        less_than(add(x, j), i)
+                        [by hypothesis given-the-sum-is-below]
+                      // name the gap
+                      @the-gap-exists |
+                        exists d: Nat; add(add(x, j), succ(d)) = i
+                        [using specialize ordering.lessThanElim(add(x, j), i) the-sum-is-below]
+                      @with-the-gap-d |
+                        unpack d: Nat from the-gap-exists {
+                          @the-gap |
+                            add(add(x, j), succ(d)) = i
+                            [by hypothesis with-the-gap-d]
+                          // regroup so j is the outermost addend
+                          @the-regrouping |
+                            add(add(x, j), succ(d)) = add(add(x, succ(d)), j)
+                            [using assoc_commut]
+                          @i-regrouped |
+                            add(add(x, succ(d)), j) = i
+                            [using chain the-regrouping-flipped the-gap]
+                          @the-regrouping-flipped |
+                            add(add(x, succ(d)), j) = add(add(x, j), succ(d))
+                            [by symmetry the-regrouping]
+                          // so i - j is x + succ(d)
+                          @the-summand-bound-here |
+                            less_or_equal(j, add(add(x, succ(d)), j))
+                            [using specialize theSummandBoundReordered(
+                              j, add(x, succ(d)))]
+                          @the-cancellation |
+                            sub(add(add(x, succ(d)), j), j) = add(x, succ(d))
+                            [using specialize subAddCancel(add(x, succ(d)), j)]
+                          @the-difference |
+                            sub(i, j) = add(x, succ(d))
+                            [by rewrite i-regrouped the-cancellation]
+                          // and x + succ(d) exceeds x
+                          @x-is-below-the-gap-sum |
+                            less_than(x, add(x, succ(d)))
+                            [using specialize ordering.lessThanIntro(x, d, add(x, succ(d))) reflexivity-of-the-gap-sum]
+                          @reflexivity-of-the-gap-sum |
+                            add(x, succ(d)) = add(x, succ(d))
+                            [by reflexivity]
+                          @conclusion-x-is-below-the-difference |
+                            less_than(x, sub(i, j))
+                            [by rewrite the-difference x-is-below-the-gap-sum]
+                        }
+                      @conclusion-from-the-gap |
                         less_than(x, sub(i, j))
-                        [by rewrite the-difference x-is-below-the-gap-sum]
+                        [by unpacked with-the-gap-d]
                     }
-                  @conclusion-from-the-gap |
-                    less_than(x, sub(i, j))
-                    [by unpacked with-the-gap-d]
+                  @the-guard-gives-it |
+                    less_or_equal(j, i) -> less_than(x, sub(i, j))
+                    [by discharge given-j-at-most-i]
                 }
               @below-implies |
-                less_than(add(x, j), i) -> less_than(x, sub(i, j))
+                less_than(add(x, j), i) ->
+                  less_or_equal(j, i) ->
+                  less_than(x, sub(i, j))
                 [by discharge given-the-sum-is-below]
             }
           @discharge-i |
             forall i9: Nat;
-              less_than(add(x, j), i9) -> less_than(x, sub(i9, j))
+              less_than(add(x, j), i9) ->
+              less_or_equal(j, i9) ->
+              less_than(x, sub(i9, j))
             [by generalize generalize-i]
         }
       @discharge-j |
         forall j9, i9: Nat;
-          less_than(add(x, j9), i9) -> less_than(x, sub(i9, j9))
+          less_than(add(x, j9), i9) ->
+          less_or_equal(j9, i9) ->
+          less_than(x, sub(i9, j9))
         [by generalize generalize-j]
     }
   @conclusion |
     forall x, j, i: Nat;
-      less_than(add(x, j), i) -> less_than(x, sub(i, j))
+      less_than(add(x, j), i) ->
+      less_or_equal(j, i) ->
+      less_than(x, sub(i, j))
     [by generalize generalize-x]
 qed
