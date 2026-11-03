@@ -99,4 +99,6 @@ was isolated.
 - `GUIDE.md`, `### WHAT A TACTIC IS GIVEN vs WHAT IT FINDS` — the rule this appears to violate
   for generated terms.
 - `[[no-totalizing-functions-in-std]]` — why guarded functions are becoming the norm.
-- `NESTED-MODEL-COMPOSITION-ISSUE.md` — the other open engine defect found in this pass.
+- `NESTED-MODEL-COMPOSITION-ISSUE.md` — the sibling diagnostics problem: an incomplete model
+  discharge also reports itself as a sort error in an unrelated file. (That file's original
+  claim, that models cannot compose, was wrong and is retracted there.)
