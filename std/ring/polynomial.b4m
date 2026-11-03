@@ -8352,3 +8352,289 @@ proof
       cappedRun(p, q, g, succ(g)) = coeff(mulP(p, q), g)
     [by generalize generalize-p]
 qed
+
+// -- BRIDGE 1: the triangle IS the left run -------------------------------------------------
+// Each complete anti-diagonal is `coeff(pq, n)` scaled by r at the complementary index —
+// Lemma C at count succ(n), then the full-run bridge — which is exactly the term
+// `cappedRun(pq, r, i, ·)` gains at count n. Both accumulate the same terms in the same
+// order, so the induction is a term-by-term match on the count, with `n <= i` travelling
+// inside for Lemma C.
+theorem theTriangleIsTheLeftRun: forall p, q, r: Poly; forall n, i: Nat;
+  peano_order.less_or_equal(n, succ(i)) ->
+  tripleTri(p, q, r, i, n) = cappedRun(mulP(p, q), r, i, n)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @base-case |
+                forall i: Nat;
+                  peano_order.less_or_equal(ZERO, succ(i)) ->
+                  tripleTri(p, q, r, i, ZERO) =
+                  cappedRun(mulP(p, q), r, i, ZERO)
+                [using specialize theLeftRunBase(p, q, r)]
+              @induction-step-for-all-n |
+                forall n: Nat;
+                  (forall i: Nat;
+                  peano_order.less_or_equal(n, succ(i)) ->
+                  tripleTri(p, q, r, i, n) =
+                  cappedRun(mulP(p, q), r, i, n)) ->
+                  (forall i: Nat;
+                  peano_order.less_or_equal(succ(n), succ(i)) ->
+                  tripleTri(p, q, r, i, succ(n)) =
+                  cappedRun(mulP(p, q), r, i, succ(n)))
+                [using specialize theLeftRunStep(p, q, r)]
+              @all-counts |
+                forall n: Nat; forall i: Nat;
+                  peano_order.less_or_equal(n, succ(i)) ->
+                  tripleTri(p, q, r, i, n) =
+                  cappedRun(mulP(p, q), r, i, n)
+                [using instantiation peano.induction((fun z: Nat => forall i: Nat; peano_order.less_or_equal(z, succ(i)) -> tripleTri(p, q, r, i, z) = cappedRun(mulP(p, q), r, i, z))) base-case induction-step-for-all-n]
+            }
+          @discharge-r |
+            forall r: Poly; forall n, i: Nat;
+              peano_order.less_or_equal(n, succ(i)) ->
+              tripleTri(p, q, r, i, n) = cappedRun(mulP(p, q), r, i, n)
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; forall n, i: Nat;
+          peano_order.less_or_equal(n, succ(i)) ->
+          tripleTri(p, q, r, i, n) = cappedRun(mulP(p, q), r, i, n)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall n, i: Nat;
+      peano_order.less_or_equal(n, succ(i)) ->
+      tripleTri(p, q, r, i, n) = cappedRun(mulP(p, q), r, i, n)
+    [by generalize generalize-p]
+qed
+
+// The base: both are empty.
+theorem theLeftRunBase: forall p, q, r: Poly;
+  forall i: Nat;
+  peano_order.less_or_equal(ZERO, succ(i)) ->
+  tripleTri(p, q, r, i, ZERO) = cappedRun(mulP(p, q), r, i, ZERO)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-i |
+                fix i: Nat {
+                  @the-empty-triangle |
+                    tripleTri(p, q, r, i, ZERO) = zeroR
+                    [using specialize tripleTriZero(p, q, r, i)]
+                  @the-empty-run |
+                    cappedRun(mulP(p, q), r, i, ZERO) = zeroR
+                    [using specialize cappedRunZero(mulP(p, q), r, i)]
+                  @the-equality |
+                    tripleTri(p, q, r, i, ZERO) =
+                      cappedRun(mulP(p, q), r, i, ZERO)
+                    [using simplify the-empty-triangle the-empty-run]
+                  @conclusion-the-base |
+                    peano_order.less_or_equal(ZERO, succ(i)) ->
+                      tripleTri(p, q, r, i, ZERO) =
+                      cappedRun(mulP(p, q), r, i, ZERO)
+                    [using tautology the-equality]
+                }
+              @discharge-i |
+                forall i: Nat;
+                  peano_order.less_or_equal(ZERO, succ(i)) ->
+                  tripleTri(p, q, r, i, ZERO) =
+                  cappedRun(mulP(p, q), r, i, ZERO)
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r: Poly; forall i: Nat;
+              peano_order.less_or_equal(ZERO, succ(i)) ->
+              tripleTri(p, q, r, i, ZERO) =
+              cappedRun(mulP(p, q), r, i, ZERO)
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; forall i: Nat;
+          peano_order.less_or_equal(ZERO, succ(i)) ->
+          tripleTri(p, q, r, i, ZERO) =
+          cappedRun(mulP(p, q), r, i, ZERO)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall i: Nat;
+      peano_order.less_or_equal(ZERO, succ(i)) ->
+      tripleTri(p, q, r, i, ZERO) = cappedRun(mulP(p, q), r, i, ZERO)
+    [by generalize generalize-p]
+qed
+
+// The step: the triangle gains its n-th complete anti-diagonal; Lemma C at count succ(n) and
+// the full-run bridge make it `coeff(pq, n)` times r at the complement, which is the term the
+// run gains at count n.
+theorem theLeftRunStep: forall p, q, r: Poly; forall n: Nat;
+  (forall i: Nat;
+  peano_order.less_or_equal(n, succ(i)) ->
+  tripleTri(p, q, r, i, n) = cappedRun(mulP(p, q), r, i, n)) ->
+  (forall i: Nat;
+  peano_order.less_or_equal(succ(n), succ(i)) ->
+  tripleTri(p, q, r, i, succ(n)) = cappedRun(mulP(p, q), r, i, succ(n)))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-n |
+                fix n: Nat {
+                  @given-the-hypothesis |
+                    assume forall i: Nat;
+                      peano_order.less_or_equal(n, succ(i)) ->
+                      tripleTri(p, q, r, i, n) =
+                      cappedRun(mulP(p, q), r, i, n) {
+                      @the-hypothesis |
+                        forall i: Nat;
+                          peano_order.less_or_equal(n, succ(i)) ->
+                          tripleTri(p, q, r, i, n) =
+                          cappedRun(mulP(p, q), r, i, n)
+                        [by hypothesis given-the-hypothesis]
+                      @generalize-i |
+                        fix i: Nat {
+                          @given-the-bound |
+                            assume peano_order.less_or_equal(succ(n),
+                              succ(i)) {
+                              @the-bound |
+                                peano_order.less_or_equal(succ(n), succ(i))
+                                [by hypothesis given-the-bound]
+                              @n-is-within-i |
+                                peano_order.less_or_equal(n, i)
+                                [using specialize
+                                  peano_order.succReflectsAtMost(n, i)
+                                  the-bound]
+                              @n-is-below-its-successor |
+                                peano_order.less_or_equal(n, succ(n))
+                                [using specialize
+                                  peano_order.aNatIsAtMostItsSuccessor(n)]
+                              @n-is-within-succ-i |
+                                peano_order.less_or_equal(n, succ(i))
+                                [using specialize
+                                  peano_order.lessOrEqualTransitive(n,
+                                  succ(n), succ(i))
+                                  n-is-below-its-successor the-bound]
+                              @the-hypothesis-applies |
+                                tripleTri(p, q, r, i, n) =
+                                  cappedRun(mulP(p, q), r, i, n)
+                                [using specialize the-hypothesis(i)
+                                  n-is-within-succ-i]
+                              @the-count-is-within |
+                                peano_order.less_or_equal(succ(n), succ(n))
+                                [using specialize
+                                  peano_order.lessOrEqualRefl(succ(n))]
+                              @the-triangle-grows |
+                                tripleTri(p, q, r, i, succ(n)) =
+                                  addR(tripleTri(p, q, r, i, n),
+                                  tripleDiag(p, q, r, i, n, succ(n)))
+                                [using specialize
+                                  tripleTriSucc(p, q, r, i, n)]
+                              @the-diagonal-scales |
+                                tripleDiag(p, q, r, i, n, succ(n)) =
+                                  mulR(cappedRun(p, q, n, succ(n)),
+                                  coeff(r, theGapTo(i, n)))
+                                [using specialize
+                                  aDiagonalIsTheScaledRun(p, q, r,
+                                  succ(n), i, n) the-count-is-within
+                                  n-is-within-i]
+                              @the-full-run-is-a-coefficient |
+                                cappedRun(p, q, n, succ(n)) =
+                                  coeff(mulP(p, q), n)
+                                [using specialize
+                                  aFullCappedRunIsTheProductCoefficient(p,
+                                  q, n)]
+                              @the-run-grows |
+                                cappedRun(mulP(p, q), r, i, succ(n)) =
+                                  addR(cappedRun(mulP(p, q), r, i, n),
+                                  mulR(coeff(mulP(p, q), n),
+                                  coeff(r, theGapTo(i, n))))
+                                [using specialize
+                                  cappedRunSucc(mulP(p, q), r, i, n)]
+                              @conclusion-the-step |
+                                tripleTri(p, q, r, i, succ(n)) =
+                                  cappedRun(mulP(p, q), r, i, succ(n))
+                                [using simplify the-triangle-grows
+                                  the-hypothesis-applies
+                                  the-diagonal-scales
+                                  the-full-run-is-a-coefficient
+                                  the-run-grows]
+                            }
+                          @the-bound-gives-it |
+                            peano_order.less_or_equal(succ(n), succ(i)) ->
+                              tripleTri(p, q, r, i, succ(n)) =
+                              cappedRun(mulP(p, q), r, i, succ(n))
+                            [by discharge given-the-bound]
+                        }
+                      @all-indices |
+                        forall i: Nat;
+                          peano_order.less_or_equal(succ(n), succ(i)) ->
+                          tripleTri(p, q, r, i, succ(n)) =
+                          cappedRun(mulP(p, q), r, i, succ(n))
+                        [by generalize generalize-i]
+                    }
+                  @the-hypothesis-gives-it |
+                    (forall i: Nat;
+                      peano_order.less_or_equal(n, succ(i)) ->
+                      tripleTri(p, q, r, i, n) =
+                      cappedRun(mulP(p, q), r, i, n)) ->
+                      (forall i: Nat;
+                      peano_order.less_or_equal(succ(n), succ(i)) ->
+                      tripleTri(p, q, r, i, succ(n)) =
+                      cappedRun(mulP(p, q), r, i, succ(n)))
+                    [by discharge given-the-hypothesis]
+                }
+              @discharge-n |
+                forall n: Nat;
+                  (forall i: Nat;
+                  peano_order.less_or_equal(n, succ(i)) ->
+                  tripleTri(p, q, r, i, n) =
+                  cappedRun(mulP(p, q), r, i, n)) ->
+                  (forall i: Nat;
+                  peano_order.less_or_equal(succ(n), succ(i)) ->
+                  tripleTri(p, q, r, i, succ(n)) =
+                  cappedRun(mulP(p, q), r, i, succ(n)))
+                [by generalize generalize-n]
+            }
+          @discharge-r |
+            forall r: Poly; forall n: Nat;
+              (forall i: Nat;
+              peano_order.less_or_equal(n, succ(i)) ->
+              tripleTri(p, q, r, i, n) =
+              cappedRun(mulP(p, q), r, i, n)) ->
+              (forall i: Nat;
+              peano_order.less_or_equal(succ(n), succ(i)) ->
+              tripleTri(p, q, r, i, succ(n)) =
+              cappedRun(mulP(p, q), r, i, succ(n)))
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; forall n: Nat;
+          (forall i: Nat;
+          peano_order.less_or_equal(n, succ(i)) ->
+          tripleTri(p, q, r, i, n) =
+          cappedRun(mulP(p, q), r, i, n)) ->
+          (forall i: Nat;
+          peano_order.less_or_equal(succ(n), succ(i)) ->
+          tripleTri(p, q, r, i, succ(n)) =
+          cappedRun(mulP(p, q), r, i, succ(n)))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall n: Nat;
+      (forall i: Nat;
+      peano_order.less_or_equal(n, succ(i)) ->
+      tripleTri(p, q, r, i, n) = cappedRun(mulP(p, q), r, i, n)) ->
+      (forall i: Nat;
+      peano_order.less_or_equal(succ(n), succ(i)) ->
+      tripleTri(p, q, r, i, succ(n)) = cappedRun(mulP(p, q), r, i, succ(n)))
+    [by generalize generalize-p]
+qed
