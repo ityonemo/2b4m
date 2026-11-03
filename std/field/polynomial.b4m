@@ -40,6 +40,7 @@ fact addNegLeftF = field.addNegLeft
 fact mulIsCommutativeF = field.mulIsCommutative
 fact mulOneLeftF = field.mulOneLeft
 fact mulAddDistribLeftF = field.mulAddDistribLeft
+fact mulIsAssociativeF = field.mulIsAssociative
 fact mulAddDistribRightF = field.mulAddDistribRight
 fact fieldInverse = field.fieldInverse
 fact oneNotZero = field.oneNotZero
@@ -246,6 +247,67 @@ axiom rsegmentSucc: forall p, q: Poly; forall j, c, n: Nat;
   rsegment(p, q, j, succ(c), succ(n)) =
   addF(mulF(coeff(p, j), coeff(q, succ(c))),
   rsegment(p, q, succ(j), c, n))
+
+// -- the associativity apparatus, restated so the ring proof transfers ---------------------
+// `std/ring/polynomial.b4m` proves `polyMulIsAssociative` over the triple-sum families below;
+// a model must map every symbol a transferred proof mentions, so F[x] declares them too.
+// Note what is NOT here: a subtraction. The ring version carries a term's three EXPONENTS and
+// names the index arithmetic (`theGapTo`, `theCofactorIndex`) rather than writing
+// `sub(sub(i,j),k)` — which is what retired the old standalone F[x] associativity file.
+func theGapTo(i: Nat, j: Nat) => Nat
+axiom theGapToAtZero: forall i: Nat; theGapTo(i, ZERO) = i
+axiom theGapToFromZero: forall j: Nat; theGapTo(ZERO, succ(j)) = ZERO
+axiom theGapToSteps: forall i, j: Nat;
+  theGapTo(succ(i), succ(j)) = theGapTo(i, j)
+
+func theCofactorIndex(i: Nat, j: Nat, k: Nat) => Nat
+axiom theCofactorIndexAtZero: forall i, j: Nat;
+  theCofactorIndex(i, j, ZERO) = theGapTo(i, j)
+axiom theCofactorIndexSteps: forall i, j, k: Nat;
+  theCofactorIndex(i, j, succ(k)) = theGapTo(theGapTo(i, j), succ(k))
+
+func cappedRun(q: Poly, r: Poly, g: Nat, n: Nat) => F
+axiom cappedRunZero: forall q, r: Poly; forall g: Nat;
+  cappedRun(q, r, g, ZERO) = zeroF
+axiom cappedRunSucc: forall q, r: Poly; forall g, n: Nat;
+  cappedRun(q, r, g, succ(n)) =
+  addF(cappedRun(q, r, g, n),
+  mulF(coeff(q, n), coeff(r, theGapTo(g, n))))
+
+func tripleTerm(p: Poly, q: Poly, r: Poly, i: Nat, j: Nat, k: Nat) => F
+axiom tripleTermMeaning: forall p, q, r: Poly; forall i, j, k: Nat;
+  tripleTerm(p, q, r, i, j, k) =
+  mulF(mulF(coeff(p, j), coeff(q, k)), coeff(r, theCofactorIndex(i, j, k)))
+
+func tripleRow(p: Poly, q: Poly, r: Poly, i: Nat, j: Nat, n: Nat) => F
+axiom tripleRowZero: forall p, q, r: Poly; forall i, j: Nat;
+  tripleRow(p, q, r, i, j, ZERO) = zeroF
+axiom tripleRowSucc: forall p, q, r: Poly; forall i, j, n: Nat;
+  tripleRow(p, q, r, i, j, succ(n)) =
+  addF(tripleRow(p, q, r, i, j, n), tripleTerm(p, q, r, i, j, n))
+
+func tripleDiag(p: Poly, q: Poly, r: Poly, i: Nat, m: Nat, c: Nat) => F
+axiom tripleDiagZero: forall p, q, r: Poly; forall i, m: Nat;
+  tripleDiag(p, q, r, i, m, ZERO) = zeroF
+axiom tripleDiagSucc: forall p, q, r: Poly; forall i, m, c: Nat;
+  tripleDiag(p, q, r, i, m, succ(c)) =
+  addF(tripleDiag(p, q, r, i, m, c),
+  tripleTerm(p, q, r, i, c, theGapTo(m, c)))
+
+func tripleTri(p: Poly, q: Poly, r: Poly, i: Nat, n: Nat) => F
+axiom tripleTriZero: forall p, q, r: Poly; forall i: Nat;
+  tripleTri(p, q, r, i, ZERO) = zeroF
+axiom tripleTriSucc: forall p, q, r: Poly; forall i, n: Nat;
+  tripleTri(p, q, r, i, succ(n)) =
+  addF(tripleTri(p, q, r, i, n), tripleDiag(p, q, r, i, n, succ(n)))
+
+func tripleRows(p: Poly, q: Poly, r: Poly, i: Nat, m: Nat, n: Nat) => F
+axiom tripleRowsZero: forall p, q, r: Poly; forall i, n: Nat;
+  tripleRows(p, q, r, i, ZERO, n) = zeroF
+axiom tripleRowsSucc: forall p, q, r: Poly; forall i, m, n: Nat;
+  tripleRows(p, q, r, i, succ(m), n) =
+  addF(tripleRows(p, q, r, i, m, n),
+  tripleRow(p, q, r, i, m, theGapTo(n, m)))
 
 // -- addition, negation, and the difference the construction subtracts --------------------
 //
@@ -986,6 +1048,7 @@ model FieldPolyModelsRingPoly {
   ring_poly.addNegLeftR <- addNegLeftF
   ring_poly.mulIsCommutativeR <- mulIsCommutativeF
   ring_poly.mulOneLeftR <- mulOneLeftF
+  ring_poly.mulIsAssociativeR <- mulIsAssociativeF
   ring_poly.mulAddDistribLeftR <- mulAddDistribLeftF
   ring_poly.mulAddDistribRightR <- mulAddDistribRightF
 
@@ -1025,6 +1088,30 @@ model FieldPolyModelsRingPoly {
   ring_poly.segmentZero <- segmentZero
   ring_poly.segmentSucc <- segmentSucc
   ring_poly.rsegment: rsegment
+  ring_poly.theGapTo: theGapTo
+  ring_poly.theCofactorIndex: theCofactorIndex
+  ring_poly.cappedRun: cappedRun
+  ring_poly.tripleTerm: tripleTerm
+  ring_poly.tripleRow: tripleRow
+  ring_poly.tripleDiag: tripleDiag
+  ring_poly.tripleTri: tripleTri
+  ring_poly.tripleRows: tripleRows
+  ring_poly.theGapToAtZero <- theGapToAtZero
+  ring_poly.theGapToFromZero <- theGapToFromZero
+  ring_poly.theGapToSteps <- theGapToSteps
+  ring_poly.theCofactorIndexAtZero <- theCofactorIndexAtZero
+  ring_poly.theCofactorIndexSteps <- theCofactorIndexSteps
+  ring_poly.cappedRunZero <- cappedRunZero
+  ring_poly.cappedRunSucc <- cappedRunSucc
+  ring_poly.tripleTermMeaning <- tripleTermMeaning
+  ring_poly.tripleRowZero <- tripleRowZero
+  ring_poly.tripleRowSucc <- tripleRowSucc
+  ring_poly.tripleDiagZero <- tripleDiagZero
+  ring_poly.tripleDiagSucc <- tripleDiagSucc
+  ring_poly.tripleTriZero <- tripleTriZero
+  ring_poly.tripleTriSucc <- tripleTriSucc
+  ring_poly.tripleRowsZero <- tripleRowsZero
+  ring_poly.tripleRowsSucc <- tripleRowsSucc
   ring_poly.rsegmentZero <- rsegmentZero
   ring_poly.rsegmentSucc <- rsegmentSucc
   ring_mono.monomial: monomial
@@ -1077,6 +1164,19 @@ proof
   @conclusion |
     forall p, q: Poly; mulP(p, q) = mulP(q, p)
     [using model(FieldPolyModelsRingPoly) ring_poly.polyMulIsCommutative]
+qed
+
+// Multiplication is associative. TRANSFERRED: proved generically in
+// `std/ring/polynomial.b4m`, which retired the separate
+// `std/field/polynomial-associativity.b4m` — that file carried the triple-sum apparatus
+// indexed by `sub(sub(i,j),k)`, and the ring-layer version carries its three exponents
+// instead, so nothing here owes a subtraction guard.
+theorem polyMulIsAssociative: forall p, q, r: Poly;
+  mulP(mulP(p, q), r) = mulP(p, mulP(q, r))
+proof
+  @conclusion |
+    forall p, q, r: Poly; mulP(mulP(p, q), r) = mulP(p, mulP(q, r))
+    [using model(FieldPolyModelsRingPoly) ring_poly.polyMulIsAssociative]
 qed
 
 // The right-handed zero law, from the left one and commutativity. (Neither §17.1 nor this
