@@ -6952,3 +6952,752 @@ proof
       theCofactorIndex(i, j, k) = theGapTo(theGapTo(i, j), k)
     [by generalize generalize-i]
 qed
+
+// A COMMON AMOUNT CANCELS: `(i - c) - (m - c) = i - m` for c <= m <= i. The entry at count
+// `c` of the m-th anti-diagonal reads r at this index, and the cancellation is what makes it
+// CONSTANT along the diagonal — which is why `coeff(r, ·)` factors out of Lemma C.
+//
+// Both bounds are load-bearing: past them the inner gaps floor at ZERO independently and the
+// identity fails. `std/peano/subtraction.b4m` has the `sub` version
+// (`aCommonAmountCancelsUnderNestedSubtraction`); this is the same fact for the named gaps,
+// proved by induction on the amount cancelled.
+theorem aCommonAmountCancels: forall c, i, m: Nat;
+  peano_order.less_or_equal(c, m) ->
+  peano_order.less_or_equal(m, i) ->
+  theGapTo(theGapTo(i, c), theGapTo(m, c)) = theGapTo(i, m)
+proof
+  @base-case |
+    forall i, m: Nat;
+      peano_order.less_or_equal(ZERO, m) ->
+      peano_order.less_or_equal(m, i) ->
+      theGapTo(theGapTo(i, ZERO), theGapTo(m, ZERO)) = theGapTo(i, m)
+    [using specialize theCancelBase]
+  @induction-step-for-all-c |
+    forall c: Nat;
+      (forall i, m: Nat;
+      peano_order.less_or_equal(c, m) ->
+      peano_order.less_or_equal(m, i) ->
+      theGapTo(theGapTo(i, c), theGapTo(m, c)) = theGapTo(i, m)) ->
+      (forall i, m: Nat;
+      peano_order.less_or_equal(succ(c), m) ->
+      peano_order.less_or_equal(m, i) ->
+      theGapTo(theGapTo(i, succ(c)), theGapTo(m, succ(c))) =
+      theGapTo(i, m))
+    [using specialize theCancelStep]
+  @conclusion |
+    forall c: Nat; forall i, m: Nat;
+      peano_order.less_or_equal(c, m) ->
+      peano_order.less_or_equal(m, i) ->
+      theGapTo(theGapTo(i, c), theGapTo(m, c)) = theGapTo(i, m)
+    [using instantiation peano.induction((fun z: Nat => forall i, m: Nat; peano_order.less_or_equal(z, m) -> peano_order.less_or_equal(m, i) -> theGapTo(theGapTo(i, z), theGapTo(m, z)) = theGapTo(i, m))) base-case induction-step-for-all-c]
+qed
+
+// The base: cancelling nothing, so both gaps are themselves.
+theorem theCancelBase: forall i, m: Nat;
+  peano_order.less_or_equal(ZERO, m) ->
+  peano_order.less_or_equal(m, i) ->
+  theGapTo(theGapTo(i, ZERO), theGapTo(m, ZERO)) = theGapTo(i, m)
+proof
+  @generalize-i |
+    fix i: Nat {
+      @generalize-m |
+        fix m: Nat {
+          @the-outer-gap |
+            theGapTo(i, ZERO) = i
+            [using specialize theGapToAtZero(i)]
+          @the-inner-gap |
+            theGapTo(m, ZERO) = m
+            [using specialize theGapToAtZero(m)]
+          @the-equality |
+            theGapTo(theGapTo(i, ZERO), theGapTo(m, ZERO)) =
+              theGapTo(i, m)
+            [using simplify the-outer-gap the-inner-gap]
+          @conclusion-inner |
+            peano_order.less_or_equal(ZERO, m) ->
+              peano_order.less_or_equal(m, i) ->
+              theGapTo(theGapTo(i, ZERO), theGapTo(m, ZERO)) =
+              theGapTo(i, m)
+            [using tautology the-equality]
+        }
+      @discharge-m |
+        forall m: Nat;
+          peano_order.less_or_equal(ZERO, m) ->
+          peano_order.less_or_equal(m, i) ->
+          theGapTo(theGapTo(i, ZERO), theGapTo(m, ZERO)) = theGapTo(i, m)
+        [by generalize generalize-m]
+    }
+  @conclusion |
+    forall i, m: Nat;
+      peano_order.less_or_equal(ZERO, m) ->
+      peano_order.less_or_equal(m, i) ->
+      theGapTo(theGapTo(i, ZERO), theGapTo(m, ZERO)) = theGapTo(i, m)
+    [by generalize generalize-i]
+qed
+
+// The step: at succ(c) both bounds force m and i to be successors, and all three `theGapTo`
+// applications step down by their succ/succ clause onto the hypothesis.
+theorem theCancelStep: forall c: Nat;
+  (forall i, m: Nat;
+  peano_order.less_or_equal(c, m) ->
+  peano_order.less_or_equal(m, i) ->
+  theGapTo(theGapTo(i, c), theGapTo(m, c)) = theGapTo(i, m)) ->
+  (forall i, m: Nat;
+  peano_order.less_or_equal(succ(c), m) ->
+  peano_order.less_or_equal(m, i) ->
+  theGapTo(theGapTo(i, succ(c)), theGapTo(m, succ(c))) = theGapTo(i, m))
+proof
+  @generalize-c |
+    fix c: Nat {
+      @given-the-hypothesis |
+        assume forall i, m: Nat;
+          peano_order.less_or_equal(c, m) ->
+          peano_order.less_or_equal(m, i) ->
+          theGapTo(theGapTo(i, c), theGapTo(m, c)) = theGapTo(i, m) {
+          @the-hypothesis |
+            forall i, m: Nat;
+              peano_order.less_or_equal(c, m) ->
+              peano_order.less_or_equal(m, i) ->
+              theGapTo(theGapTo(i, c), theGapTo(m, c)) = theGapTo(i, m)
+            [by hypothesis given-the-hypothesis]
+          @generalize-i |
+            fix i: Nat {
+              @generalize-m |
+                fix m: Nat {
+                  @given-c-within-m |
+                    assume peano_order.less_or_equal(succ(c), m) {
+                      @c-within-m |
+                        peano_order.less_or_equal(succ(c), m)
+                        [by hypothesis given-c-within-m]
+                      @given-m-within-i |
+                        assume peano_order.less_or_equal(m, i) {
+                          @m-within-i |
+                            peano_order.less_or_equal(m, i)
+                            [by hypothesis given-m-within-i]
+                          @m-is-positive |
+                            m = ZERO or (exists u: Nat; m = succ(u))
+                            [using specialize peano.zeroOrSucc(m)]
+                          @when-m-is-zero |
+                            assume m = ZERO {
+                              @m-is-zero |
+                                m = ZERO
+                                [by hypothesis when-m-is-zero]
+                              @the-bound-at-zero |
+                                peano_order.less_or_equal(succ(c), ZERO)
+                                [by rewrite m-is-zero c-within-m]
+                              @nothing-is-at-most-zero |
+                                not peano_order.less_or_equal(succ(c), ZERO)
+                                [using specialize
+                                  peano_order.noSuccessorIsAtMostZero(c)]
+                              @conclusion-vacuous |
+                                theGapTo(theGapTo(i, succ(c)),
+                                  theGapTo(m, succ(c))) = theGapTo(i, m)
+                                [by ex_falso the-bound-at-zero
+                                  nothing-is-at-most-zero]
+                            }
+                          @when-m-is-positive |
+                            assume exists u: Nat; m = succ(u) {
+                              @the-m-predecessor-exists |
+                                exists u: Nat; m = succ(u)
+                                [by hypothesis when-m-is-positive]
+                              @with-the-m-predecessor |
+                                unpack u: Nat from the-m-predecessor-exists {
+                                  @m-steps |
+                                    m = succ(u)
+                                    [by hypothesis with-the-m-predecessor]
+                                  @i-is-positive |
+                                    i = ZERO or (exists v: Nat; i = succ(v))
+                                    [using specialize peano.zeroOrSucc(i)]
+                                  @when-i-is-zero |
+                                    assume i = ZERO {
+                                      @i-is-zero |
+                                        i = ZERO
+                                        [by hypothesis when-i-is-zero]
+                                      @m-within-i-at-zero |
+                                        peano_order.less_or_equal(m, ZERO)
+                                        [by rewrite i-is-zero m-within-i]
+                                      @m-within-zero |
+                                        peano_order.less_or_equal(succ(u),
+                                          ZERO)
+                                        [by rewrite m-steps
+                                          m-within-i-at-zero]
+                                      @nothing-at-most-zero |
+                                        not peano_order.less_or_equal(
+                                          succ(u), ZERO)
+                                        [using specialize
+                                          peano_order.noSuccessorIsAtMostZero(
+                                          u)]
+                                      @conclusion-i-vacuous |
+                                        theGapTo(theGapTo(i, succ(c)),
+                                          theGapTo(m, succ(c))) =
+                                          theGapTo(i, m)
+                                        [by ex_falso m-within-zero
+                                          nothing-at-most-zero]
+                                    }
+                                  @when-i-is-positive |
+                                    assume exists v: Nat; i = succ(v) {
+                                      @the-i-predecessor-exists |
+                                        exists v: Nat; i = succ(v)
+                                        [by hypothesis when-i-is-positive]
+                                      @with-the-i-predecessor |
+                                        unpack v: Nat from
+                                          the-i-predecessor-exists {
+                                          @i-steps |
+                                            i = succ(v)
+                                            [by hypothesis
+                                              with-the-i-predecessor]
+                                          @c-within-u |
+                                            peano_order.less_or_equal(c, u)
+                                            [using specialize
+                                              peano_order.succReflectsAtMost(
+                                              c, u) the-raised-c-bound]
+                                          @the-raised-c-bound |
+                                            peano_order.less_or_equal(
+                                              succ(c), succ(u))
+                                            [by rewrite m-steps c-within-m]
+                                          @the-m-bound-at-succ-v |
+                                            peano_order.less_or_equal(m,
+                                              succ(v))
+                                            [by rewrite i-steps m-within-i]
+                                          @the-raised-m-bound |
+                                            peano_order.less_or_equal(
+                                              succ(u), succ(v))
+                                            [by rewrite m-steps
+                                              the-m-bound-at-succ-v]
+                                          @u-within-v |
+                                            peano_order.less_or_equal(u, v)
+                                            [using specialize
+                                              peano_order.succReflectsAtMost(
+                                              u, v) the-raised-m-bound]
+                                          @the-hypothesis-applies |
+                                            theGapTo(theGapTo(v, c),
+                                              theGapTo(u, c)) =
+                                              theGapTo(v, u)
+                                            [using specialize
+                                              the-hypothesis(v, u)
+                                              c-within-u u-within-v]
+                                          @the-outer-steps |
+                                            theGapTo(succ(v), succ(c)) =
+                                              theGapTo(v, c)
+                                            [using specialize
+                                              theGapToSteps(v, c)]
+                                          @the-inner-steps |
+                                            theGapTo(succ(u), succ(c)) =
+                                              theGapTo(u, c)
+                                            [using specialize
+                                              theGapToSteps(u, c)]
+                                          @the-target-steps |
+                                            theGapTo(succ(v), succ(u)) =
+                                              theGapTo(v, u)
+                                            [using specialize
+                                              theGapToSteps(v, u)]
+                                          @the-equality-at-predecessors |
+                                            theGapTo(theGapTo(succ(v),
+                                              succ(c)),
+                                              theGapTo(succ(u), succ(c))) =
+                                              theGapTo(succ(v), succ(u))
+                                            [using simplify the-outer-steps
+                                              the-inner-steps
+                                              the-hypothesis-applies
+                                              the-target-steps]
+                                          @conclusion-positive |
+                                            theGapTo(theGapTo(i, succ(c)),
+                                              theGapTo(m, succ(c))) =
+                                              theGapTo(i, m)
+                                            [using simplify i-steps m-steps
+                                              the-equality-at-predecessors]
+                                        }
+                                      @conclusion-i-positive |
+                                        theGapTo(theGapTo(i, succ(c)),
+                                          theGapTo(m, succ(c))) =
+                                          theGapTo(i, m)
+                                        [by unpacked with-the-i-predecessor]
+                                    }
+                                  @conclusion-either-i |
+                                    theGapTo(theGapTo(i, succ(c)),
+                                      theGapTo(m, succ(c))) =
+                                      theGapTo(i, m)
+                                    [by common_conclusion i-is-positive
+                                      when-i-is-zero when-i-is-positive]
+                                }
+                              @conclusion-m-positive |
+                                theGapTo(theGapTo(i, succ(c)),
+                                  theGapTo(m, succ(c))) = theGapTo(i, m)
+                                [by unpacked with-the-m-predecessor]
+                            }
+                          @conclusion-either-m |
+                            theGapTo(theGapTo(i, succ(c)),
+                              theGapTo(m, succ(c))) = theGapTo(i, m)
+                            [by common_conclusion m-is-positive
+                              when-m-is-zero when-m-is-positive]
+                        }
+                      @m-bound-gives-it |
+                        peano_order.less_or_equal(m, i) ->
+                          theGapTo(theGapTo(i, succ(c)),
+                          theGapTo(m, succ(c))) = theGapTo(i, m)
+                        [by discharge given-m-within-i]
+                    }
+                  @c-bound-gives-it |
+                    peano_order.less_or_equal(succ(c), m) ->
+                      peano_order.less_or_equal(m, i) ->
+                      theGapTo(theGapTo(i, succ(c)),
+                      theGapTo(m, succ(c))) = theGapTo(i, m)
+                    [by discharge given-c-within-m]
+                }
+              @discharge-m |
+                forall m: Nat;
+                  peano_order.less_or_equal(succ(c), m) ->
+                  peano_order.less_or_equal(m, i) ->
+                  theGapTo(theGapTo(i, succ(c)),
+                  theGapTo(m, succ(c))) = theGapTo(i, m)
+                [by generalize generalize-m]
+            }
+          @all-indices |
+            forall i, m: Nat;
+              peano_order.less_or_equal(succ(c), m) ->
+              peano_order.less_or_equal(m, i) ->
+              theGapTo(theGapTo(i, succ(c)),
+              theGapTo(m, succ(c))) = theGapTo(i, m)
+            [by generalize generalize-i]
+        }
+      @the-hypothesis-gives-it |
+        (forall i, m: Nat;
+          peano_order.less_or_equal(c, m) ->
+          peano_order.less_or_equal(m, i) ->
+          theGapTo(theGapTo(i, c), theGapTo(m, c)) = theGapTo(i, m)) ->
+          (forall i, m: Nat;
+          peano_order.less_or_equal(succ(c), m) ->
+          peano_order.less_or_equal(m, i) ->
+          theGapTo(theGapTo(i, succ(c)),
+          theGapTo(m, succ(c))) = theGapTo(i, m))
+        [by discharge given-the-hypothesis]
+    }
+  @conclusion |
+    forall c: Nat;
+      (forall i, m: Nat;
+      peano_order.less_or_equal(c, m) ->
+      peano_order.less_or_equal(m, i) ->
+      theGapTo(theGapTo(i, c), theGapTo(m, c)) = theGapTo(i, m)) ->
+      (forall i, m: Nat;
+      peano_order.less_or_equal(succ(c), m) ->
+      peano_order.less_or_equal(m, i) ->
+      theGapTo(theGapTo(i, succ(c)),
+      theGapTo(m, succ(c))) = theGapTo(i, m))
+    [by generalize generalize-c]
+qed
+
+// -- LEMMA C: an anti-diagonal IS the capped run, scaled by r -------------------------------
+// Along the m-th anti-diagonal the r-index is CONSTANT — `aCommonAmountCancels` says the
+// entry at count `c` reads r at `(i-c)-(m-c) = i-m` whatever `c` is — so `coeff(r, ·)`
+// factors out and what remains is p against q over the pairs summing to `m`. That is
+// `cappedRun(p, q, m, c)`: the SAME family Lemma D used, since both walk their count at the
+// back.
+//
+// The bounds travel inside the property: the step needs `c <= m` at `c` to apply the
+// cancellation, and `m <= i` throughout.
+theorem aDiagonalIsTheScaledRun: forall p, q, r: Poly; forall c, i, m: Nat;
+  peano_order.less_or_equal(c, m) ->
+  peano_order.less_or_equal(m, i) ->
+  tripleDiag(p, q, r, i, m, c) =
+  mulR(cappedRun(p, q, m, c), coeff(r, theGapTo(i, m)))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @base-case |
+                forall i, m: Nat;
+                  peano_order.less_or_equal(ZERO, m) ->
+                  peano_order.less_or_equal(m, i) ->
+                  tripleDiag(p, q, r, i, m, ZERO) =
+                  mulR(cappedRun(p, q, m, ZERO),
+                  coeff(r, theGapTo(i, m)))
+                [using specialize theDiagRunBase(p, q, r)]
+              @induction-step-for-all-c |
+                forall c: Nat;
+                  (forall i, m: Nat;
+                  peano_order.less_or_equal(c, m) ->
+                  peano_order.less_or_equal(m, i) ->
+                  tripleDiag(p, q, r, i, m, c) =
+                  mulR(cappedRun(p, q, m, c),
+                  coeff(r, theGapTo(i, m)))) ->
+                  (forall i, m: Nat;
+                  peano_order.less_or_equal(succ(c), m) ->
+                  peano_order.less_or_equal(m, i) ->
+                  tripleDiag(p, q, r, i, m, succ(c)) =
+                  mulR(cappedRun(p, q, m, succ(c)),
+                  coeff(r, theGapTo(i, m))))
+                [using specialize theDiagRunStep(p, q, r)]
+              @all-counts |
+                forall c: Nat; forall i, m: Nat;
+                  peano_order.less_or_equal(c, m) ->
+                  peano_order.less_or_equal(m, i) ->
+                  tripleDiag(p, q, r, i, m, c) =
+                  mulR(cappedRun(p, q, m, c), coeff(r, theGapTo(i, m)))
+                [using instantiation peano.induction((fun z: Nat => forall i, m: Nat; peano_order.less_or_equal(z, m) -> peano_order.less_or_equal(m, i) -> tripleDiag(p, q, r, i, m, z) = mulR(cappedRun(p, q, m, z), coeff(r, theGapTo(i, m))))) base-case induction-step-for-all-c]
+            }
+          @discharge-r |
+            forall r: Poly; forall c, i, m: Nat;
+              peano_order.less_or_equal(c, m) ->
+              peano_order.less_or_equal(m, i) ->
+              tripleDiag(p, q, r, i, m, c) =
+              mulR(cappedRun(p, q, m, c), coeff(r, theGapTo(i, m)))
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; forall c, i, m: Nat;
+          peano_order.less_or_equal(c, m) ->
+          peano_order.less_or_equal(m, i) ->
+          tripleDiag(p, q, r, i, m, c) =
+          mulR(cappedRun(p, q, m, c), coeff(r, theGapTo(i, m)))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall c, i, m: Nat;
+      peano_order.less_or_equal(c, m) ->
+      peano_order.less_or_equal(m, i) ->
+      tripleDiag(p, q, r, i, m, c) =
+      mulR(cappedRun(p, q, m, c), coeff(r, theGapTo(i, m)))
+    [by generalize generalize-p]
+qed
+
+// The base: both are empty, and zeroR times anything is zeroR.
+theorem theDiagRunBase: forall p, q, r: Poly;
+  forall i, m: Nat;
+  peano_order.less_or_equal(ZERO, m) ->
+  peano_order.less_or_equal(m, i) ->
+  tripleDiag(p, q, r, i, m, ZERO) =
+  mulR(cappedRun(p, q, m, ZERO), coeff(r, theGapTo(i, m)))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-i |
+                fix i: Nat {
+                  @generalize-m |
+                    fix m: Nat {
+                      @the-empty-diagonal |
+                        tripleDiag(p, q, r, i, m, ZERO) = zeroR
+                        [using specialize tripleDiagZero(p, q, r, i, m)]
+                      @the-empty-run |
+                        cappedRun(p, q, m, ZERO) = zeroR
+                        [using specialize cappedRunZero(p, q, m)]
+                      @zero-scales-away |
+                        mulR(zeroR, coeff(r, theGapTo(i, m))) = zeroR
+                        [using specialize
+                          mulZeroLeftR(coeff(r, theGapTo(i, m)))]
+                      @the-equality |
+                        tripleDiag(p, q, r, i, m, ZERO) =
+                          mulR(cappedRun(p, q, m, ZERO),
+                          coeff(r, theGapTo(i, m)))
+                        [using simplify the-empty-diagonal the-empty-run
+                          zero-scales-away]
+                      @conclusion-the-base |
+                        peano_order.less_or_equal(ZERO, m) ->
+                          peano_order.less_or_equal(m, i) ->
+                          tripleDiag(p, q, r, i, m, ZERO) =
+                          mulR(cappedRun(p, q, m, ZERO),
+                          coeff(r, theGapTo(i, m)))
+                        [using tautology the-equality]
+                    }
+                  @discharge-m |
+                    forall m: Nat;
+                      peano_order.less_or_equal(ZERO, m) ->
+                      peano_order.less_or_equal(m, i) ->
+                      tripleDiag(p, q, r, i, m, ZERO) =
+                      mulR(cappedRun(p, q, m, ZERO),
+                      coeff(r, theGapTo(i, m)))
+                    [by generalize generalize-m]
+                }
+              @discharge-i |
+                forall i, m: Nat;
+                  peano_order.less_or_equal(ZERO, m) ->
+                  peano_order.less_or_equal(m, i) ->
+                  tripleDiag(p, q, r, i, m, ZERO) =
+                  mulR(cappedRun(p, q, m, ZERO),
+                  coeff(r, theGapTo(i, m)))
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r: Poly; forall i, m: Nat;
+              peano_order.less_or_equal(ZERO, m) ->
+              peano_order.less_or_equal(m, i) ->
+              tripleDiag(p, q, r, i, m, ZERO) =
+              mulR(cappedRun(p, q, m, ZERO), coeff(r, theGapTo(i, m)))
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; forall i, m: Nat;
+          peano_order.less_or_equal(ZERO, m) ->
+          peano_order.less_or_equal(m, i) ->
+          tripleDiag(p, q, r, i, m, ZERO) =
+          mulR(cappedRun(p, q, m, ZERO), coeff(r, theGapTo(i, m)))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall i, m: Nat;
+      peano_order.less_or_equal(ZERO, m) ->
+      peano_order.less_or_equal(m, i) ->
+      tripleDiag(p, q, r, i, m, ZERO) =
+      mulR(cappedRun(p, q, m, ZERO), coeff(r, theGapTo(i, m)))
+    [by generalize generalize-p]
+qed
+
+// The step: both peel their last term. The diagonal's is
+// `p_c q_{gapTo(m,c)} r_{cofactor(i, c, gapTo(m,c))}`, and the cancellation turns that
+// r-index into `gapTo(i, m)` — the same constant the rest of the diagonal carries — so the
+// peeled terms match and R distributes to recombine the scalar.
+theorem theDiagRunStep: forall p, q, r: Poly; forall c: Nat;
+  (forall i, m: Nat;
+  peano_order.less_or_equal(c, m) ->
+  peano_order.less_or_equal(m, i) ->
+  tripleDiag(p, q, r, i, m, c) =
+  mulR(cappedRun(p, q, m, c), coeff(r, theGapTo(i, m)))) ->
+  (forall i, m: Nat;
+  peano_order.less_or_equal(succ(c), m) ->
+  peano_order.less_or_equal(m, i) ->
+  tripleDiag(p, q, r, i, m, succ(c)) =
+  mulR(cappedRun(p, q, m, succ(c)), coeff(r, theGapTo(i, m))))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-c |
+                fix c: Nat {
+                  @given-the-hypothesis |
+                    assume forall i, m: Nat;
+                      peano_order.less_or_equal(c, m) ->
+                      peano_order.less_or_equal(m, i) ->
+                      tripleDiag(p, q, r, i, m, c) =
+                      mulR(cappedRun(p, q, m, c),
+                      coeff(r, theGapTo(i, m))) {
+                      @the-hypothesis |
+                        forall i, m: Nat;
+                          peano_order.less_or_equal(c, m) ->
+                          peano_order.less_or_equal(m, i) ->
+                          tripleDiag(p, q, r, i, m, c) =
+                          mulR(cappedRun(p, q, m, c),
+                          coeff(r, theGapTo(i, m)))
+                        [by hypothesis given-the-hypothesis]
+                      @generalize-i |
+                        fix i: Nat {
+                          @generalize-m |
+                            fix m: Nat {
+                              @given-c-within-m |
+                                assume peano_order.less_or_equal(succ(c),
+                                  m) {
+                                  @c-within-m |
+                                    peano_order.less_or_equal(succ(c), m)
+                                    [by hypothesis given-c-within-m]
+                                  @given-m-within-i |
+                                    assume peano_order.less_or_equal(m, i) {
+                                      @m-within-i |
+                                        peano_order.less_or_equal(m, i)
+                                        [by hypothesis given-m-within-i]
+                                      @c-is-below-its-successor |
+                                        peano_order.less_or_equal(c,
+                                          succ(c))
+                                        [using specialize
+                                          peano_order.aNatIsAtMostItsSuccessor(
+                                          c)]
+                                      @c-within-m-weaker |
+                                        peano_order.less_or_equal(c, m)
+                                        [using specialize
+                                          peano_order.lessOrEqualTransitive(
+                                          c, succ(c), m)
+                                          c-is-below-its-successor
+                                          c-within-m]
+                                      @the-hypothesis-applies |
+                                        tripleDiag(p, q, r, i, m, c) =
+                                          mulR(cappedRun(p, q, m, c),
+                                          coeff(r, theGapTo(i, m)))
+                                        [using specialize
+                                          the-hypothesis(i, m)
+                                          c-within-m-weaker m-within-i]
+                                      @the-diagonal-grows |
+                                        tripleDiag(p, q, r, i, m, succ(c)) =
+                                          addR(tripleDiag(p, q, r, i, m, c),
+                                          tripleTerm(p, q, r, i, c,
+                                          theGapTo(m, c)))
+                                        [using specialize
+                                          tripleDiagSucc(p, q, r, i, m, c)]
+                                      @the-new-entry |
+                                        tripleTerm(p, q, r, i, c,
+                                          theGapTo(m, c)) =
+                                          mulR(mulR(coeff(p, c),
+                                          coeff(q, theGapTo(m, c))),
+                                          coeff(r, theCofactorIndex(i, c,
+                                          theGapTo(m, c))))
+                                        [using specialize
+                                          tripleTermMeaning(p, q, r, i, c,
+                                          theGapTo(m, c))]
+                                      @the-cofactor-is-the-gaps-gap |
+                                        theCofactorIndex(i, c,
+                                          theGapTo(m, c)) =
+                                          theGapTo(theGapTo(i, c),
+                                          theGapTo(m, c))
+                                        [using specialize
+                                          theCofactorIsTheGapsGap(i, c,
+                                          theGapTo(m, c))]
+                                      @the-common-amount-cancels |
+                                        theGapTo(theGapTo(i, c),
+                                          theGapTo(m, c)) = theGapTo(i, m)
+                                        [using specialize
+                                          aCommonAmountCancels(c, i, m)
+                                          c-within-m-weaker m-within-i]
+                                      @the-entry-reads-the-constant |
+                                        tripleTerm(p, q, r, i, c,
+                                          theGapTo(m, c)) =
+                                          mulR(mulR(coeff(p, c),
+                                          coeff(q, theGapTo(m, c))),
+                                          coeff(r, theGapTo(i, m)))
+                                        [using simplify the-new-entry
+                                          the-cofactor-is-the-gaps-gap
+                                          the-common-amount-cancels]
+                                      @the-run-grows |
+                                        cappedRun(p, q, m, succ(c)) =
+                                          addR(cappedRun(p, q, m, c),
+                                          mulR(coeff(p, c),
+                                          coeff(q, theGapTo(m, c))))
+                                        [using specialize
+                                          cappedRunSucc(p, q, m, c)]
+                                      @the-scalar-distributes |
+                                        mulR(addR(cappedRun(p, q, m, c),
+                                          mulR(coeff(p, c),
+                                          coeff(q, theGapTo(m, c)))),
+                                          coeff(r, theGapTo(i, m))) =
+                                          addR(mulR(cappedRun(p, q, m, c),
+                                          coeff(r, theGapTo(i, m))),
+                                          mulR(mulR(coeff(p, c),
+                                          coeff(q, theGapTo(m, c))),
+                                          coeff(r, theGapTo(i, m))))
+                                        [using specialize
+                                          ring.mulAddDistribRight(
+                                          cappedRun(p, q, m, c),
+                                          mulR(coeff(p, c),
+                                          coeff(q, theGapTo(m, c))),
+                                          coeff(r, theGapTo(i, m)))]
+                                      @conclusion-the-step |
+                                        tripleDiag(p, q, r, i, m, succ(c)) =
+                                          mulR(cappedRun(p, q, m, succ(c)),
+                                          coeff(r, theGapTo(i, m)))
+                                        [using simplify the-diagonal-grows
+                                          the-hypothesis-applies
+                                          the-entry-reads-the-constant
+                                          the-run-grows
+                                          the-scalar-distributes]
+                                    }
+                                  @m-bound-gives-it |
+                                    peano_order.less_or_equal(m, i) ->
+                                      tripleDiag(p, q, r, i, m, succ(c)) =
+                                      mulR(cappedRun(p, q, m, succ(c)),
+                                      coeff(r, theGapTo(i, m)))
+                                    [by discharge given-m-within-i]
+                                }
+                              @c-bound-gives-it |
+                                peano_order.less_or_equal(succ(c), m) ->
+                                  peano_order.less_or_equal(m, i) ->
+                                  tripleDiag(p, q, r, i, m, succ(c)) =
+                                  mulR(cappedRun(p, q, m, succ(c)),
+                                  coeff(r, theGapTo(i, m)))
+                                [by discharge given-c-within-m]
+                            }
+                          @discharge-m |
+                            forall m: Nat;
+                              peano_order.less_or_equal(succ(c), m) ->
+                              peano_order.less_or_equal(m, i) ->
+                              tripleDiag(p, q, r, i, m, succ(c)) =
+                              mulR(cappedRun(p, q, m, succ(c)),
+                              coeff(r, theGapTo(i, m)))
+                            [by generalize generalize-m]
+                        }
+                      @all-indices |
+                        forall i, m: Nat;
+                          peano_order.less_or_equal(succ(c), m) ->
+                          peano_order.less_or_equal(m, i) ->
+                          tripleDiag(p, q, r, i, m, succ(c)) =
+                          mulR(cappedRun(p, q, m, succ(c)),
+                          coeff(r, theGapTo(i, m)))
+                        [by generalize generalize-i]
+                    }
+                  @the-hypothesis-gives-it |
+                    (forall i, m: Nat;
+                      peano_order.less_or_equal(c, m) ->
+                      peano_order.less_or_equal(m, i) ->
+                      tripleDiag(p, q, r, i, m, c) =
+                      mulR(cappedRun(p, q, m, c),
+                      coeff(r, theGapTo(i, m)))) ->
+                      (forall i, m: Nat;
+                      peano_order.less_or_equal(succ(c), m) ->
+                      peano_order.less_or_equal(m, i) ->
+                      tripleDiag(p, q, r, i, m, succ(c)) =
+                      mulR(cappedRun(p, q, m, succ(c)),
+                      coeff(r, theGapTo(i, m))))
+                    [by discharge given-the-hypothesis]
+                }
+              @discharge-c |
+                forall c: Nat;
+                  (forall i, m: Nat;
+                  peano_order.less_or_equal(c, m) ->
+                  peano_order.less_or_equal(m, i) ->
+                  tripleDiag(p, q, r, i, m, c) =
+                  mulR(cappedRun(p, q, m, c),
+                  coeff(r, theGapTo(i, m)))) ->
+                  (forall i, m: Nat;
+                  peano_order.less_or_equal(succ(c), m) ->
+                  peano_order.less_or_equal(m, i) ->
+                  tripleDiag(p, q, r, i, m, succ(c)) =
+                  mulR(cappedRun(p, q, m, succ(c)),
+                  coeff(r, theGapTo(i, m))))
+                [by generalize generalize-c]
+            }
+          @discharge-r |
+            forall r: Poly; forall c: Nat;
+              (forall i, m: Nat;
+              peano_order.less_or_equal(c, m) ->
+              peano_order.less_or_equal(m, i) ->
+              tripleDiag(p, q, r, i, m, c) =
+              mulR(cappedRun(p, q, m, c), coeff(r, theGapTo(i, m)))) ->
+              (forall i, m: Nat;
+              peano_order.less_or_equal(succ(c), m) ->
+              peano_order.less_or_equal(m, i) ->
+              tripleDiag(p, q, r, i, m, succ(c)) =
+              mulR(cappedRun(p, q, m, succ(c)),
+              coeff(r, theGapTo(i, m))))
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; forall c: Nat;
+          (forall i, m: Nat;
+          peano_order.less_or_equal(c, m) ->
+          peano_order.less_or_equal(m, i) ->
+          tripleDiag(p, q, r, i, m, c) =
+          mulR(cappedRun(p, q, m, c), coeff(r, theGapTo(i, m)))) ->
+          (forall i, m: Nat;
+          peano_order.less_or_equal(succ(c), m) ->
+          peano_order.less_or_equal(m, i) ->
+          tripleDiag(p, q, r, i, m, succ(c)) =
+          mulR(cappedRun(p, q, m, succ(c)), coeff(r, theGapTo(i, m))))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall c: Nat;
+      (forall i, m: Nat;
+      peano_order.less_or_equal(c, m) ->
+      peano_order.less_or_equal(m, i) ->
+      tripleDiag(p, q, r, i, m, c) =
+      mulR(cappedRun(p, q, m, c), coeff(r, theGapTo(i, m)))) ->
+      (forall i, m: Nat;
+      peano_order.less_or_equal(succ(c), m) ->
+      peano_order.less_or_equal(m, i) ->
+      tripleDiag(p, q, r, i, m, succ(c)) =
+      mulR(cappedRun(p, q, m, succ(c)), coeff(r, theGapTo(i, m))))
+    [by generalize generalize-p]
+qed
