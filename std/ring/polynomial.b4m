@@ -6562,3 +6562,393 @@ proof
       tripleRows(p, q, r, i, succ(k), succ(k)))
     [by generalize generalize-p]
 qed
+
+// -- THE BACK-GROWING CAPPED RUN ------------------------------------------------------------
+// `cappedRun(q, r, g, n)` is the first `n` terms of the run over pairs summing to `g`, read
+// with q ASCENDING from ZERO and r taking the slack — and it grows at the BACK, on its count.
+//
+// WHY A THIRD RUN FAMILY. `segment` and `rsegment` both peel at the FRONT, moving their base;
+// a triple ROW peels at the back, on its count, because that is what makes it a prefix family
+// and the whole increment argument work. Matching a row against a front-peeling run fails
+// term-by-term (checked: the two orders agree only at the FULL row, not at a partial one), so
+// the row needs the run that walks the way it does. Two axioms, and `theGapTo` keeps the
+// slack subtraction-free.
+func cappedRun(q: Poly, r: Poly, g: Nat, n: Nat) => R
+axiom cappedRunZero: forall q, r: Poly; forall g: Nat;
+  cappedRun(q, r, g, ZERO) = zeroR
+axiom cappedRunSucc: forall q, r: Poly; forall g, n: Nat;
+  cappedRun(q, r, g, succ(n)) =
+  addR(cappedRun(q, r, g, n),
+  mulR(coeff(q, n), coeff(r, theGapTo(g, n))))
+
+// -- LEMMA D: a row IS the capped run, scaled by p_j -----------------------------------------
+// Every entry carries `coeff(p, j)`, which the summation index does not touch, so it pulls
+// out and what remains is the run over the pairs summing to the gap. Both sides peel at the
+// back on the same count, so the induction is a term-by-term match.
+theorem aRowIsTheScaledRun: forall p, q, r: Poly; forall n, i, j: Nat;
+  tripleRow(p, q, r, i, j, n) =
+  mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), n))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @base-case |
+                forall i, j: Nat;
+                  tripleRow(p, q, r, i, j, ZERO) =
+                  mulR(coeff(p, j),
+                  cappedRun(q, r, theGapTo(i, j), ZERO))
+                [using specialize theRowRunBase(p, q, r)]
+              @induction-step-for-all-n |
+                forall n: Nat;
+                  (forall i, j: Nat;
+                  tripleRow(p, q, r, i, j, n) =
+                  mulR(coeff(p, j),
+                  cappedRun(q, r, theGapTo(i, j), n))) ->
+                  (forall i, j: Nat;
+                  tripleRow(p, q, r, i, j, succ(n)) =
+                  mulR(coeff(p, j),
+                  cappedRun(q, r, theGapTo(i, j), succ(n))))
+                [using specialize theRowRunStep(p, q, r)]
+              @all-counts |
+                forall n: Nat; forall i, j: Nat;
+                  tripleRow(p, q, r, i, j, n) =
+                  mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), n))
+                [using instantiation peano.induction((fun z: Nat => forall i, j: Nat; tripleRow(p, q, r, i, j, z) = mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), z)))) base-case induction-step-for-all-n]
+            }
+          @discharge-r |
+            forall r: Poly; forall n, i, j: Nat;
+              tripleRow(p, q, r, i, j, n) =
+              mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), n))
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; forall n, i, j: Nat;
+          tripleRow(p, q, r, i, j, n) =
+          mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), n))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall n, i, j: Nat;
+      tripleRow(p, q, r, i, j, n) =
+      mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), n))
+    [by generalize generalize-p]
+qed
+
+// The base: both are empty, and p_j times zeroR is zeroR.
+theorem theRowRunBase: forall p, q, r: Poly;
+  forall i, j: Nat;
+  tripleRow(p, q, r, i, j, ZERO) =
+  mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), ZERO))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-i |
+                fix i: Nat {
+                  @generalize-j |
+                    fix j: Nat {
+                      @the-empty-row |
+                        tripleRow(p, q, r, i, j, ZERO) = zeroR
+                        [using specialize tripleRowZero(p, q, r, i, j)]
+                      @the-empty-run |
+                        cappedRun(q, r, theGapTo(i, j), ZERO) = zeroR
+                        [using specialize
+                          cappedRunZero(q, r, theGapTo(i, j))]
+                      @scaling-zero |
+                        mulR(coeff(p, j), zeroR) = zeroR
+                        [using specialize mulZeroRightR(coeff(p, j))]
+                      @conclusion-the-base |
+                        tripleRow(p, q, r, i, j, ZERO) =
+                          mulR(coeff(p, j),
+                          cappedRun(q, r, theGapTo(i, j), ZERO))
+                        [using simplify the-empty-row the-empty-run
+                          scaling-zero]
+                    }
+                  @discharge-j |
+                    forall j: Nat;
+                      tripleRow(p, q, r, i, j, ZERO) =
+                      mulR(coeff(p, j),
+                      cappedRun(q, r, theGapTo(i, j), ZERO))
+                    [by generalize generalize-j]
+                }
+              @discharge-i |
+                forall i, j: Nat;
+                  tripleRow(p, q, r, i, j, ZERO) =
+                  mulR(coeff(p, j),
+                  cappedRun(q, r, theGapTo(i, j), ZERO))
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r: Poly; forall i, j: Nat;
+              tripleRow(p, q, r, i, j, ZERO) =
+              mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), ZERO))
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; forall i, j: Nat;
+          tripleRow(p, q, r, i, j, ZERO) =
+          mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), ZERO))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall i, j: Nat;
+      tripleRow(p, q, r, i, j, ZERO) =
+      mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), ZERO))
+    [by generalize generalize-p]
+qed
+
+// The step: both peel their last term. The row's is `p_j q_n r_{cofactor(i,j,n)}` and the
+// run's is `q_n r_{theGapTo(g, n)}` scaled — the same term, since the cofactor index IS the
+// gap's gap. R distributes to recombine the scalar.
+theorem theRowRunStep: forall p, q, r: Poly; forall n: Nat;
+  (forall i, j: Nat;
+  tripleRow(p, q, r, i, j, n) =
+  mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), n))) ->
+  (forall i, j: Nat;
+  tripleRow(p, q, r, i, j, succ(n)) =
+  mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), succ(n))))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-n |
+                fix n: Nat {
+                  @given-the-hypothesis |
+                    assume forall i, j: Nat;
+                      tripleRow(p, q, r, i, j, n) =
+                      mulR(coeff(p, j),
+                      cappedRun(q, r, theGapTo(i, j), n)) {
+                      @the-hypothesis |
+                        forall i, j: Nat;
+                          tripleRow(p, q, r, i, j, n) =
+                          mulR(coeff(p, j),
+                          cappedRun(q, r, theGapTo(i, j), n))
+                        [by hypothesis given-the-hypothesis]
+                      @generalize-i |
+                        fix i: Nat {
+                          @generalize-j |
+                            fix j: Nat {
+                              @the-row-grows |
+                                tripleRow(p, q, r, i, j, succ(n)) =
+                                  addR(tripleRow(p, q, r, i, j, n),
+                                  tripleTerm(p, q, r, i, j, n))
+                                [using specialize
+                                  tripleRowSucc(p, q, r, i, j, n)]
+                              @the-new-entry |
+                                tripleTerm(p, q, r, i, j, n) =
+                                  mulR(mulR(coeff(p, j), coeff(q, n)),
+                                  coeff(r, theCofactorIndex(i, j, n)))
+                                [using specialize
+                                  tripleTermMeaning(p, q, r, i, j, n)]
+                              @the-cofactor-is-the-gaps-gap |
+                                theCofactorIndex(i, j, n) =
+                                  theGapTo(theGapTo(i, j), n)
+                                [using specialize
+                                  theCofactorIsTheGapsGap(i, j, n)]
+                              @the-row-applies |
+                                tripleRow(p, q, r, i, j, n) =
+                                  mulR(coeff(p, j),
+                                  cappedRun(q, r, theGapTo(i, j), n))
+                                [using specialize the-hypothesis(i, j)]
+                              @the-run-grows |
+                                cappedRun(q, r, theGapTo(i, j), succ(n)) =
+                                  addR(cappedRun(q, r, theGapTo(i, j), n),
+                                  mulR(coeff(q, n),
+                                  coeff(r, theGapTo(theGapTo(i, j), n))))
+                                [using specialize
+                                  cappedRunSucc(q, r, theGapTo(i, j), n)]
+                              @the-scaling-distributes |
+                                mulR(coeff(p, j),
+                                  addR(cappedRun(q, r, theGapTo(i, j), n),
+                                  mulR(coeff(q, n),
+                                  coeff(r,
+                                  theGapTo(theGapTo(i, j), n))))) =
+                                  addR(mulR(coeff(p, j),
+                                  cappedRun(q, r, theGapTo(i, j), n)),
+                                  mulR(coeff(p, j),
+                                  mulR(coeff(q, n),
+                                  coeff(r,
+                                  theGapTo(theGapTo(i, j), n)))))
+                                [using specialize ring.mulAddDistribLeft(
+                                  coeff(p, j),
+                                  cappedRun(q, r, theGapTo(i, j), n),
+                                  mulR(coeff(q, n),
+                                  coeff(r, theGapTo(theGapTo(i, j), n))))]
+                              @the-entry-regroups |
+                                mulR(mulR(coeff(p, j), coeff(q, n)),
+                                  coeff(r,
+                                  theGapTo(theGapTo(i, j), n))) =
+                                  mulR(coeff(p, j),
+                                  mulR(coeff(q, n),
+                                  coeff(r,
+                                  theGapTo(theGapTo(i, j), n))))
+                                [using specialize ring.mulIsAssociative(
+                                  coeff(p, j), coeff(q, n),
+                                  coeff(r, theGapTo(theGapTo(i, j), n)))]
+                              @conclusion-the-step |
+                                tripleRow(p, q, r, i, j, succ(n)) =
+                                  mulR(coeff(p, j),
+                                  cappedRun(q, r, theGapTo(i, j), succ(n)))
+                                [using simplify the-row-grows
+                                  the-new-entry
+                                  the-cofactor-is-the-gaps-gap
+                                  the-row-applies the-entry-regroups
+                                  the-run-grows the-scaling-distributes]
+                            }
+                          @discharge-j |
+                            forall j: Nat;
+                              tripleRow(p, q, r, i, j, succ(n)) =
+                              mulR(coeff(p, j),
+                              cappedRun(q, r, theGapTo(i, j), succ(n)))
+                            [by generalize generalize-j]
+                        }
+                      @all-indices |
+                        forall i, j: Nat;
+                          tripleRow(p, q, r, i, j, succ(n)) =
+                          mulR(coeff(p, j),
+                          cappedRun(q, r, theGapTo(i, j), succ(n)))
+                        [by generalize generalize-i]
+                    }
+                  @the-hypothesis-gives-it |
+                    (forall i, j: Nat;
+                      tripleRow(p, q, r, i, j, n) =
+                      mulR(coeff(p, j),
+                      cappedRun(q, r, theGapTo(i, j), n))) ->
+                      (forall i, j: Nat;
+                      tripleRow(p, q, r, i, j, succ(n)) =
+                      mulR(coeff(p, j),
+                      cappedRun(q, r, theGapTo(i, j), succ(n))))
+                    [by discharge given-the-hypothesis]
+                }
+              @discharge-n |
+                forall n: Nat;
+                  (forall i, j: Nat;
+                  tripleRow(p, q, r, i, j, n) =
+                  mulR(coeff(p, j),
+                  cappedRun(q, r, theGapTo(i, j), n))) ->
+                  (forall i, j: Nat;
+                  tripleRow(p, q, r, i, j, succ(n)) =
+                  mulR(coeff(p, j),
+                  cappedRun(q, r, theGapTo(i, j), succ(n))))
+                [by generalize generalize-n]
+            }
+          @discharge-r |
+            forall r: Poly; forall n: Nat;
+              (forall i, j: Nat;
+              tripleRow(p, q, r, i, j, n) =
+              mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), n))) ->
+              (forall i, j: Nat;
+              tripleRow(p, q, r, i, j, succ(n)) =
+              mulR(coeff(p, j),
+              cappedRun(q, r, theGapTo(i, j), succ(n))))
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; forall n: Nat;
+          (forall i, j: Nat;
+          tripleRow(p, q, r, i, j, n) =
+          mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), n))) ->
+          (forall i, j: Nat;
+          tripleRow(p, q, r, i, j, succ(n)) =
+          mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), succ(n))))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall n: Nat;
+      (forall i, j: Nat;
+      tripleRow(p, q, r, i, j, n) =
+      mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), n))) ->
+      (forall i, j: Nat;
+      tripleRow(p, q, r, i, j, succ(n)) =
+      mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), succ(n))))
+    [by generalize generalize-p]
+qed
+
+// The cofactor index IS the gap's gap: `(i - j) - k` either way. At k = ZERO both sides are
+// the gap; above it the two clauses agree by construction.
+theorem theCofactorIsTheGapsGap: forall i, j, k: Nat;
+  theCofactorIndex(i, j, k) = theGapTo(theGapTo(i, j), k)
+proof
+  @generalize-i |
+    fix i: Nat {
+      @generalize-j |
+        fix j: Nat {
+          @generalize-k |
+            fix k: Nat {
+              @the-case-split |
+                k = ZERO or (exists w: Nat; k = succ(w))
+                [using specialize peano.zeroOrSucc(k)]
+              @when-k-is-zero |
+                assume k = ZERO {
+                  @k-is-zero |
+                    k = ZERO
+                    [by hypothesis when-k-is-zero]
+                  @the-cofactor-at-zero |
+                    theCofactorIndex(i, j, ZERO) = theGapTo(i, j)
+                    [using specialize theCofactorIndexAtZero(i, j)]
+                  @the-gap-at-zero |
+                    theGapTo(theGapTo(i, j), ZERO) = theGapTo(i, j)
+                    [using specialize theGapToAtZero(theGapTo(i, j))]
+                  @the-equality-at-zero |
+                    theCofactorIndex(i, j, ZERO) =
+                      theGapTo(theGapTo(i, j), ZERO)
+                    [using simplify the-cofactor-at-zero the-gap-at-zero]
+                  @conclusion-zero |
+                    theCofactorIndex(i, j, k) =
+                      theGapTo(theGapTo(i, j), k)
+                    [by rewrite k-is-zero the-equality-at-zero]
+                }
+              @when-k-is-positive |
+                assume exists w: Nat; k = succ(w) {
+                  @the-predecessor-exists |
+                    exists w: Nat; k = succ(w)
+                    [by hypothesis when-k-is-positive]
+                  @with-the-predecessor |
+                    unpack w: Nat from the-predecessor-exists {
+                      @k-steps |
+                        k = succ(w)
+                        [by hypothesis with-the-predecessor]
+                      @the-cofactor-steps |
+                        theCofactorIndex(i, j, succ(w)) =
+                          theGapTo(theGapTo(i, j), succ(w))
+                        [using specialize
+                          theCofactorIndexSteps(i, j, w)]
+                      @conclusion-positive |
+                        theCofactorIndex(i, j, k) =
+                          theGapTo(theGapTo(i, j), k)
+                        [by rewrite k-steps the-cofactor-steps]
+                    }
+                  @conclusion-the-positive-case |
+                    theCofactorIndex(i, j, k) =
+                      theGapTo(theGapTo(i, j), k)
+                    [by unpacked with-the-predecessor]
+                }
+              @conclusion-either-way |
+                theCofactorIndex(i, j, k) = theGapTo(theGapTo(i, j), k)
+                [by common_conclusion the-case-split
+                  when-k-is-zero when-k-is-positive]
+            }
+          @discharge-k |
+            forall k: Nat;
+              theCofactorIndex(i, j, k) = theGapTo(theGapTo(i, j), k)
+            [by generalize generalize-k]
+        }
+      @discharge-j |
+        forall j, k: Nat;
+          theCofactorIndex(i, j, k) = theGapTo(theGapTo(i, j), k)
+        [by generalize generalize-j]
+    }
+  @conclusion |
+    forall i, j, k: Nat;
+      theCofactorIndex(i, j, k) = theGapTo(theGapTo(i, j), k)
+    [by generalize generalize-i]
+qed
