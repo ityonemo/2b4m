@@ -26,6 +26,7 @@ import rational <<< "std/rational.b4m"
 import peano <<< "std/peano.b4m"
 import ring <<< "std/ring.b4m"
 import ring_poly <<< "std/ring/polynomial.b4m"
+import ring_mono <<< "std/ring/polynomial/monomial.b4m"
 import ring_leading <<< "std/ring/polynomial/leading.b4m"
 
 sort Q = rational.Q
@@ -169,6 +170,19 @@ model RationalPolynomials {
   ring.mulIsAssociative <- rational.mulIsAssociative
   ring.mulAddDistribLeft <- rational.mulAddDistribLeft
   ring.mulAddDistribRight <- rational.mulAddDistribRight
+  // The F-LEVEL ALGEBRA FACTS. Re-transferring a theorem whose own proof is a transfer means
+  // the outer model must discharge every axiom the INNER proof reaches, not only those its
+  // statement mentions — F[x] discharges these onto `ring_poly`, so ℚ[x] must discharge them
+  // onto ℚ in turn. Omitting them does not report an undischarged axiom; it surfaces much
+  // later as a sort mismatch inside the source theory's own proof.
+  fieldpoly.addIsAssociativeF <- rational.addIsAssociative
+  fieldpoly.addIsCommutativeF <- rational.addIsCommutative
+  fieldpoly.addZeroLeftF <- rational.addZeroLeft
+  fieldpoly.addNegLeftF <- rational.addNegLeft
+  fieldpoly.mulIsCommutativeF <- rational.mulIsCommutative
+  fieldpoly.mulOneLeftF <- rational.mulOneLeft
+  fieldpoly.mulAddDistribLeftF <- rational.mulAddDistribLeft
+  fieldpoly.mulAddDistribRightF <- rational.mulAddDistribRight
 }
 
 // -- integer coefficients -----------------------------------------------------------------
@@ -1029,6 +1043,9 @@ model RationalPolynomialsOverARing {
   ring_poly.tailConvolution: qtailConvolution
   ring_poly.segment: qsegment
   ring_poly.rsegment: qrsegment
+  ring_mono.monomial: qmonomial
+  ring_mono.monomialCoeffAtItsIndex <- qMonomialCoeffAtItsIndex
+  ring_mono.monomialCoeffElsewhere <- qMonomialCoeffElsewhere
   ring_poly.theGapTo: qtheGapTo
   ring_poly.theCofactorIndex: qtheCofactorIndex
   ring_poly.cappedRun: qcappedRun
@@ -1038,7 +1055,6 @@ model RationalPolynomialsOverARing {
   ring_poly.tripleTri: qtripleTri
   ring_poly.tripleRows: qtripleRows
   ring_poly.theGapToAtZero <- qTheGapToAtZero
-  ring_poly.theGapToFromZero <- qTheGapToFromZero
   ring_poly.theGapToSteps <- qTheGapToSteps
   ring_poly.theCofactorIndexAtZero <- qTheCofactorIndexAtZero
   ring_poly.theCofactorIndexSteps <- qTheCofactorIndexSteps
@@ -2534,8 +2550,6 @@ qed
 // `sub(sub(i,j),k)` and nothing owes a subtraction guard.
 func qtheGapTo(i: Nat, j: Nat) => Nat
 axiom qTheGapToAtZero: forall i: Nat; qtheGapTo(i, NAT_ZERO) = i
-axiom qTheGapToFromZero: forall j: Nat;
-  qtheGapTo(NAT_ZERO, peano.succ(j)) = NAT_ZERO
 axiom qTheGapToSteps: forall i, j: Nat;
   qtheGapTo(peano.succ(i), peano.succ(j)) = qtheGapTo(i, j)
 
