@@ -8638,3 +8638,449 @@ proof
       tripleTri(p, q, r, i, succ(n)) = cappedRun(mulP(p, q), r, i, succ(n)))
     [by generalize generalize-p]
 qed
+
+// -- BRIDGE 2: the shortened rows ARE the right run -----------------------------------------
+// Row `m` at bound `succ(i)` runs `theGapTo(succ i, m)` = `succ(theGapTo(i, m))` entries —
+// the full inner run — so Lemma D plus the full-run bridge make it `p_m` times
+// `coeff(qr, theGapTo(i, m))`, which is the term `cappedRun(p, qr, i, ·)` gains at count m.
+// The bound `m <= i` travels inside, for `theRaisedGapSteps` to raise the row's length.
+theorem theShortenedRowsAreTheRightRun: forall p, q, r: Poly; forall m, i: Nat;
+  peano_order.less_or_equal(m, succ(i)) ->
+  tripleRows(p, q, r, i, m, succ(i)) =
+  cappedRun(p, mulP(q, r), i, m)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @base-case |
+                forall i: Nat;
+                  peano_order.less_or_equal(ZERO, succ(i)) ->
+                  tripleRows(p, q, r, i, ZERO, succ(i)) =
+                  cappedRun(p, mulP(q, r), i, ZERO)
+                [using specialize theRightRunBase(p, q, r)]
+              @induction-step-for-all-m |
+                forall m: Nat;
+                  (forall i: Nat;
+                  peano_order.less_or_equal(m, succ(i)) ->
+                  tripleRows(p, q, r, i, m, succ(i)) =
+                  cappedRun(p, mulP(q, r), i, m)) ->
+                  (forall i: Nat;
+                  peano_order.less_or_equal(succ(m), succ(i)) ->
+                  tripleRows(p, q, r, i, succ(m), succ(i)) =
+                  cappedRun(p, mulP(q, r), i, succ(m)))
+                [using specialize theRightRunStep(p, q, r)]
+              @all-counts |
+                forall m: Nat; forall i: Nat;
+                  peano_order.less_or_equal(m, succ(i)) ->
+                  tripleRows(p, q, r, i, m, succ(i)) =
+                  cappedRun(p, mulP(q, r), i, m)
+                [using instantiation peano.induction((fun z: Nat => forall i: Nat; peano_order.less_or_equal(z, succ(i)) -> tripleRows(p, q, r, i, z, succ(i)) = cappedRun(p, mulP(q, r), i, z))) base-case induction-step-for-all-m]
+            }
+          @discharge-r |
+            forall r: Poly; forall m, i: Nat;
+              peano_order.less_or_equal(m, succ(i)) ->
+              tripleRows(p, q, r, i, m, succ(i)) =
+              cappedRun(p, mulP(q, r), i, m)
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; forall m, i: Nat;
+          peano_order.less_or_equal(m, succ(i)) ->
+          tripleRows(p, q, r, i, m, succ(i)) =
+          cappedRun(p, mulP(q, r), i, m)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall m, i: Nat;
+      peano_order.less_or_equal(m, succ(i)) ->
+      tripleRows(p, q, r, i, m, succ(i)) = cappedRun(p, mulP(q, r), i, m)
+    [by generalize generalize-p]
+qed
+
+// The base: both are empty.
+theorem theRightRunBase: forall p, q, r: Poly;
+  forall i: Nat;
+  peano_order.less_or_equal(ZERO, succ(i)) ->
+  tripleRows(p, q, r, i, ZERO, succ(i)) =
+  cappedRun(p, mulP(q, r), i, ZERO)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-i |
+                fix i: Nat {
+                  @the-empty-rows |
+                    tripleRows(p, q, r, i, ZERO, succ(i)) = zeroR
+                    [using specialize
+                      tripleRowsZero(p, q, r, i, succ(i))]
+                  @the-empty-run |
+                    cappedRun(p, mulP(q, r), i, ZERO) = zeroR
+                    [using specialize cappedRunZero(p, mulP(q, r), i)]
+                  @the-equality |
+                    tripleRows(p, q, r, i, ZERO, succ(i)) =
+                      cappedRun(p, mulP(q, r), i, ZERO)
+                    [using simplify the-empty-rows the-empty-run]
+                  @conclusion-the-base |
+                    peano_order.less_or_equal(ZERO, succ(i)) ->
+                      tripleRows(p, q, r, i, ZERO, succ(i)) =
+                      cappedRun(p, mulP(q, r), i, ZERO)
+                    [using tautology the-equality]
+                }
+              @discharge-i |
+                forall i: Nat;
+                  peano_order.less_or_equal(ZERO, succ(i)) ->
+                  tripleRows(p, q, r, i, ZERO, succ(i)) =
+                  cappedRun(p, mulP(q, r), i, ZERO)
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r: Poly; forall i: Nat;
+              peano_order.less_or_equal(ZERO, succ(i)) ->
+              tripleRows(p, q, r, i, ZERO, succ(i)) =
+              cappedRun(p, mulP(q, r), i, ZERO)
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; forall i: Nat;
+          peano_order.less_or_equal(ZERO, succ(i)) ->
+          tripleRows(p, q, r, i, ZERO, succ(i)) =
+          cappedRun(p, mulP(q, r), i, ZERO)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall i: Nat;
+      peano_order.less_or_equal(ZERO, succ(i)) ->
+      tripleRows(p, q, r, i, ZERO, succ(i)) =
+      cappedRun(p, mulP(q, r), i, ZERO)
+    [by generalize generalize-p]
+qed
+
+// The step: the rows gain row `m` at length `theGapTo(succ i, m)`, which `theRaisedGapSteps`
+// identifies with `succ(theGapTo(i, m))` — the FULL inner run — so Lemma D and the full-run
+// bridge make it `p_m` times `coeff(qr, theGapTo(i, m))`, the term the run gains at count m.
+theorem theRightRunStep: forall p, q, r: Poly; forall m: Nat;
+  (forall i: Nat;
+  peano_order.less_or_equal(m, succ(i)) ->
+  tripleRows(p, q, r, i, m, succ(i)) =
+  cappedRun(p, mulP(q, r), i, m)) ->
+  (forall i: Nat;
+  peano_order.less_or_equal(succ(m), succ(i)) ->
+  tripleRows(p, q, r, i, succ(m), succ(i)) =
+  cappedRun(p, mulP(q, r), i, succ(m)))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-m |
+                fix m: Nat {
+                  @given-the-hypothesis |
+                    assume forall i: Nat;
+                      peano_order.less_or_equal(m, succ(i)) ->
+                      tripleRows(p, q, r, i, m, succ(i)) =
+                      cappedRun(p, mulP(q, r), i, m) {
+                      @the-hypothesis |
+                        forall i: Nat;
+                          peano_order.less_or_equal(m, succ(i)) ->
+                          tripleRows(p, q, r, i, m, succ(i)) =
+                          cappedRun(p, mulP(q, r), i, m)
+                        [by hypothesis given-the-hypothesis]
+                      @generalize-i |
+                        fix i: Nat {
+                          @given-the-bound |
+                            assume peano_order.less_or_equal(succ(m),
+                              succ(i)) {
+                              @the-bound |
+                                peano_order.less_or_equal(succ(m), succ(i))
+                                [by hypothesis given-the-bound]
+                              @m-is-within-i |
+                                peano_order.less_or_equal(m, i)
+                                [using specialize
+                                  peano_order.succReflectsAtMost(m, i)
+                                  the-bound]
+                              @m-is-below-its-successor |
+                                peano_order.less_or_equal(m, succ(m))
+                                [using specialize
+                                  peano_order.aNatIsAtMostItsSuccessor(m)]
+                              @m-is-within-succ-i |
+                                peano_order.less_or_equal(m, succ(i))
+                                [using specialize
+                                  peano_order.lessOrEqualTransitive(m,
+                                  succ(m), succ(i))
+                                  m-is-below-its-successor the-bound]
+                              @the-hypothesis-applies |
+                                tripleRows(p, q, r, i, m, succ(i)) =
+                                  cappedRun(p, mulP(q, r), i, m)
+                                [using specialize the-hypothesis(i)
+                                  m-is-within-succ-i]
+                              @the-rows-grow |
+                                tripleRows(p, q, r, i, succ(m), succ(i)) =
+                                  addR(tripleRows(p, q, r, i, m, succ(i)),
+                                  tripleRow(p, q, r, i, m,
+                                  theGapTo(succ(i), m)))
+                                [using specialize
+                                  tripleRowsSucc(p, q, r, i, m, succ(i))]
+                              @the-row-length-is-full |
+                                theGapTo(succ(i), m) =
+                                  succ(theGapTo(i, m))
+                                [using specialize
+                                  theRaisedGapSteps(m, i) m-is-within-i]
+                              @the-row-reflexivity |
+                                tripleRow(p, q, r, i, m,
+                                  succ(theGapTo(i, m))) =
+                                  tripleRow(p, q, r, i, m,
+                                  succ(theGapTo(i, m)))
+                                [by reflexivity]
+                              @the-row-at-the-full-length |
+                                tripleRow(p, q, r, i, m,
+                                  theGapTo(succ(i), m)) =
+                                  tripleRow(p, q, r, i, m,
+                                  succ(theGapTo(i, m)))
+                                [by rewrite the-row-length-is-full
+                                  the-row-reflexivity]
+                              @the-row-scales |
+                                tripleRow(p, q, r, i, m,
+                                  succ(theGapTo(i, m))) =
+                                  mulR(coeff(p, m),
+                                  cappedRun(q, r, theGapTo(i, m),
+                                  succ(theGapTo(i, m))))
+                                [using specialize
+                                  aRowIsTheScaledRun(p, q, r,
+                                  succ(theGapTo(i, m)), i, m)]
+                              @the-inner-full-run |
+                                cappedRun(q, r, theGapTo(i, m),
+                                  succ(theGapTo(i, m))) =
+                                  coeff(mulP(q, r), theGapTo(i, m))
+                                [using specialize
+                                  aFullCappedRunIsTheProductCoefficient(q,
+                                  r, theGapTo(i, m))]
+                              @the-run-grows |
+                                cappedRun(p, mulP(q, r), i, succ(m)) =
+                                  addR(cappedRun(p, mulP(q, r), i, m),
+                                  mulR(coeff(p, m),
+                                  coeff(mulP(q, r), theGapTo(i, m))))
+                                [using specialize
+                                  cappedRunSucc(p, mulP(q, r), i, m)]
+                              @conclusion-the-step |
+                                tripleRows(p, q, r, i, succ(m), succ(i)) =
+                                  cappedRun(p, mulP(q, r), i, succ(m))
+                                [using simplify the-rows-grow
+                                  the-hypothesis-applies
+                                  the-row-at-the-full-length
+                                  the-row-scales the-inner-full-run
+                                  the-run-grows]
+                            }
+                          @the-bound-gives-it |
+                            peano_order.less_or_equal(succ(m), succ(i)) ->
+                              tripleRows(p, q, r, i, succ(m), succ(i)) =
+                              cappedRun(p, mulP(q, r), i, succ(m))
+                            [by discharge given-the-bound]
+                        }
+                      @all-indices |
+                        forall i: Nat;
+                          peano_order.less_or_equal(succ(m), succ(i)) ->
+                          tripleRows(p, q, r, i, succ(m), succ(i)) =
+                          cappedRun(p, mulP(q, r), i, succ(m))
+                        [by generalize generalize-i]
+                    }
+                  @the-hypothesis-gives-it |
+                    (forall i: Nat;
+                      peano_order.less_or_equal(m, succ(i)) ->
+                      tripleRows(p, q, r, i, m, succ(i)) =
+                      cappedRun(p, mulP(q, r), i, m)) ->
+                      (forall i: Nat;
+                      peano_order.less_or_equal(succ(m), succ(i)) ->
+                      tripleRows(p, q, r, i, succ(m), succ(i)) =
+                      cappedRun(p, mulP(q, r), i, succ(m)))
+                    [by discharge given-the-hypothesis]
+                }
+              @discharge-m |
+                forall m: Nat;
+                  (forall i: Nat;
+                  peano_order.less_or_equal(m, succ(i)) ->
+                  tripleRows(p, q, r, i, m, succ(i)) =
+                  cappedRun(p, mulP(q, r), i, m)) ->
+                  (forall i: Nat;
+                  peano_order.less_or_equal(succ(m), succ(i)) ->
+                  tripleRows(p, q, r, i, succ(m), succ(i)) =
+                  cappedRun(p, mulP(q, r), i, succ(m)))
+                [by generalize generalize-m]
+            }
+          @discharge-r |
+            forall r: Poly; forall m: Nat;
+              (forall i: Nat;
+              peano_order.less_or_equal(m, succ(i)) ->
+              tripleRows(p, q, r, i, m, succ(i)) =
+              cappedRun(p, mulP(q, r), i, m)) ->
+              (forall i: Nat;
+              peano_order.less_or_equal(succ(m), succ(i)) ->
+              tripleRows(p, q, r, i, succ(m), succ(i)) =
+              cappedRun(p, mulP(q, r), i, succ(m)))
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; forall m: Nat;
+          (forall i: Nat;
+          peano_order.less_or_equal(m, succ(i)) ->
+          tripleRows(p, q, r, i, m, succ(i)) =
+          cappedRun(p, mulP(q, r), i, m)) ->
+          (forall i: Nat;
+          peano_order.less_or_equal(succ(m), succ(i)) ->
+          tripleRows(p, q, r, i, succ(m), succ(i)) =
+          cappedRun(p, mulP(q, r), i, succ(m)))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall m: Nat;
+      (forall i: Nat;
+      peano_order.less_or_equal(m, succ(i)) ->
+      tripleRows(p, q, r, i, m, succ(i)) =
+      cappedRun(p, mulP(q, r), i, m)) ->
+      (forall i: Nat;
+      peano_order.less_or_equal(succ(m), succ(i)) ->
+      tripleRows(p, q, r, i, succ(m), succ(i)) =
+      cappedRun(p, mulP(q, r), i, succ(m)))
+    [by generalize generalize-p]
+qed
+
+// -- MULTIPLICATION IS ASSOCIATIVE ----------------------------------------------------------
+// Everything meets here. At output index i:
+//
+//   coeff((pq)r, i) = cappedRun(pq, r, i, succ i)   = tripleTri(p,q,r,i,succ i)   [bridge 1]
+//   coeff(p(qr), i) = cappedRun(p, qr, i, succ i)   = tripleRows(p,q,r,i,succ i, succ i)
+//                                                                                 [bridge 2]
+//
+// and the two collections are equal by `theTriangleIsTheShortenedRows` — the exchange. So the
+// coefficients agree at every index, and `polyExtensionality` gives the polynomials.
+theorem theProductCoefficientsAgree: forall p, q, r: Poly; forall i: Nat;
+  coeff(mulP(mulP(p, q), r), i) = coeff(mulP(p, mulP(q, r)), i)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-i |
+                fix i: Nat {
+                  @succ-i-is-at-most-itself |
+                    peano_order.less_or_equal(succ(i), succ(i))
+                    [using specialize
+                      peano_order.lessOrEqualRefl(succ(i))]
+                  // the left side
+                  @the-triangle-is-the-left-run |
+                    tripleTri(p, q, r, i, succ(i)) =
+                      cappedRun(mulP(p, q), r, i, succ(i))
+                    [using specialize
+                      theTriangleIsTheLeftRun(p, q, r, succ(i), i)
+                      succ-i-is-at-most-itself]
+                  @the-left-run-is-the-coefficient |
+                    cappedRun(mulP(p, q), r, i, succ(i)) =
+                      coeff(mulP(mulP(p, q), r), i)
+                    [using specialize
+                      aFullCappedRunIsTheProductCoefficient(mulP(p, q),
+                      r, i)]
+                  @the-triangle-is-the-left-coefficient |
+                    tripleTri(p, q, r, i, succ(i)) =
+                      coeff(mulP(mulP(p, q), r), i)
+                    [using chain the-triangle-is-the-left-run
+                      the-left-run-is-the-coefficient]
+                  // the right side
+                  @the-rows-are-the-right-run |
+                    tripleRows(p, q, r, i, succ(i), succ(i)) =
+                      cappedRun(p, mulP(q, r), i, succ(i))
+                    [using specialize
+                      theShortenedRowsAreTheRightRun(p, q, r, succ(i), i)
+                      succ-i-is-at-most-itself]
+                  @the-right-run-is-the-coefficient |
+                    cappedRun(p, mulP(q, r), i, succ(i)) =
+                      coeff(mulP(p, mulP(q, r)), i)
+                    [using specialize
+                      aFullCappedRunIsTheProductCoefficient(p,
+                      mulP(q, r), i)]
+                  @the-rows-are-the-right-coefficient |
+                    tripleRows(p, q, r, i, succ(i), succ(i)) =
+                      coeff(mulP(p, mulP(q, r)), i)
+                    [using chain the-rows-are-the-right-run
+                      the-right-run-is-the-coefficient]
+                  // the exchange joins them
+                  @the-exchange |
+                    tripleTri(p, q, r, i, succ(i)) =
+                      tripleRows(p, q, r, i, succ(i), succ(i))
+                    [using specialize
+                      theTriangleIsTheShortenedRows(p, q, r, i, succ(i))]
+                  @the-left-coefficient-flipped |
+                    coeff(mulP(mulP(p, q), r), i) =
+                      tripleTri(p, q, r, i, succ(i))
+                    [by symmetry the-triangle-is-the-left-coefficient]
+                  @conclusion-the-coefficients-agree |
+                    coeff(mulP(mulP(p, q), r), i) =
+                      coeff(mulP(p, mulP(q, r)), i)
+                    [using chain the-left-coefficient-flipped
+                      the-exchange the-rows-are-the-right-coefficient]
+                }
+              @discharge-i |
+                forall i: Nat;
+                  coeff(mulP(mulP(p, q), r), i) =
+                  coeff(mulP(p, mulP(q, r)), i)
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r: Poly; forall i: Nat;
+              coeff(mulP(mulP(p, q), r), i) =
+              coeff(mulP(p, mulP(q, r)), i)
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; forall i: Nat;
+          coeff(mulP(mulP(p, q), r), i) =
+          coeff(mulP(p, mulP(q, r)), i)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall i: Nat;
+      coeff(mulP(mulP(p, q), r), i) = coeff(mulP(p, mulP(q, r)), i)
+    [by generalize generalize-p]
+qed
+
+// R[x] IS ASSOCIATIVE UNDER MULTIPLICATION. The last structural law, and Judson's §17.1
+// exercise: coefficientwise agreement plus extensionality.
+theorem polyMulIsAssociative: forall p, q, r: Poly;
+  mulP(mulP(p, q), r) = mulP(p, mulP(q, r))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @the-coefficients-agree |
+                forall i: Nat;
+                  coeff(mulP(mulP(p, q), r), i) =
+                  coeff(mulP(p, mulP(q, r)), i)
+                [using specialize theProductCoefficientsAgree(p, q, r)]
+              @conclusion-associativity |
+                mulP(mulP(p, q), r) = mulP(p, mulP(q, r))
+                [using specialize polyExtensionality(mulP(mulP(p, q), r),
+                  mulP(p, mulP(q, r))) the-coefficients-agree]
+            }
+          @discharge-r |
+            forall r: Poly; mulP(mulP(p, q), r) = mulP(p, mulP(q, r))
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; mulP(mulP(p, q), r) = mulP(p, mulP(q, r))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; mulP(mulP(p, q), r) = mulP(p, mulP(q, r))
+    [by generalize generalize-p]
+qed
