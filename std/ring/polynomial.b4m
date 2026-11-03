@@ -5851,3 +5851,446 @@ proof
       theGapTo(succ(n), succ(j)) = succ(theGapTo(n, succ(j))))
     [by generalize generalize-j]
 qed
+
+// -- THE PIVOT: raising the bound adds one anti-diagonal ------------------------------------
+// THE CONTENT OF THE WHOLE PROOF. Going from bound `n` to bound `succ(n)`, every row `j < m`
+// gains exactly its last entry — `theRaisedGapSteps` makes its length one longer, and
+// `tripleRowSucc` says a longer row is the row plus that entry — and the gained entries ARE
+// the n-th anti-diagonal truncated at `m`. Induction on the ROW COUNT with the bound fixed,
+// the guard travelling inside the property because the step needs it at `k` to raise the
+// row's length.
+theorem raisingTheBoundAddsTheDiagonal: forall p, q, r: Poly; forall i, n, m: Nat;
+  peano_order.less_or_equal(m, succ(n)) ->
+  tripleRows(p, q, r, i, m, succ(n)) =
+  addR(tripleRows(p, q, r, i, m, n), tripleDiag(p, q, r, i, n, m))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-i |
+                fix i: Nat {
+                  @generalize-n |
+                    fix n: Nat {
+                      @base-case |
+                        peano_order.less_or_equal(ZERO, succ(n)) ->
+                          tripleRows(p, q, r, i, ZERO, succ(n)) =
+                          addR(tripleRows(p, q, r, i, ZERO, n),
+                          tripleDiag(p, q, r, i, n, ZERO))
+                        [using specialize theIncrementBase(p, q, r, i, n)]
+                      @induction-step-for-all-k |
+                        forall k: Nat;
+                          (peano_order.less_or_equal(k, succ(n)) ->
+                          tripleRows(p, q, r, i, k, succ(n)) =
+                          addR(tripleRows(p, q, r, i, k, n),
+                          tripleDiag(p, q, r, i, n, k))) ->
+                          (peano_order.less_or_equal(succ(k), succ(n)) ->
+                          tripleRows(p, q, r, i, succ(k), succ(n)) =
+                          addR(tripleRows(p, q, r, i, succ(k), n),
+                          tripleDiag(p, q, r, i, n, succ(k))))
+                        [using specialize theIncrementStep(p, q, r, i, n)]
+                      @all-counts |
+                        forall m: Nat;
+                          peano_order.less_or_equal(m, succ(n)) ->
+                          tripleRows(p, q, r, i, m, succ(n)) =
+                          addR(tripleRows(p, q, r, i, m, n),
+                          tripleDiag(p, q, r, i, n, m))
+                        [using instantiation peano.induction((fun z: Nat => peano_order.less_or_equal(z, succ(n)) -> tripleRows(p, q, r, i, z, succ(n)) = addR(tripleRows(p, q, r, i, z, n), tripleDiag(p, q, r, i, n, z)))) base-case induction-step-for-all-k]
+                    }
+                  @discharge-n |
+                    forall n, m: Nat;
+                      peano_order.less_or_equal(m, succ(n)) ->
+                      tripleRows(p, q, r, i, m, succ(n)) =
+                      addR(tripleRows(p, q, r, i, m, n),
+                      tripleDiag(p, q, r, i, n, m))
+                    [by generalize generalize-n]
+                }
+              @discharge-i |
+                forall i, n, m: Nat;
+                  peano_order.less_or_equal(m, succ(n)) ->
+                  tripleRows(p, q, r, i, m, succ(n)) =
+                  addR(tripleRows(p, q, r, i, m, n),
+                  tripleDiag(p, q, r, i, n, m))
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r: Poly; forall i, n, m: Nat;
+              peano_order.less_or_equal(m, succ(n)) ->
+              tripleRows(p, q, r, i, m, succ(n)) =
+              addR(tripleRows(p, q, r, i, m, n),
+              tripleDiag(p, q, r, i, n, m))
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; forall i, n, m: Nat;
+          peano_order.less_or_equal(m, succ(n)) ->
+          tripleRows(p, q, r, i, m, succ(n)) =
+          addR(tripleRows(p, q, r, i, m, n),
+          tripleDiag(p, q, r, i, n, m))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall i, n, m: Nat;
+      peano_order.less_or_equal(m, succ(n)) ->
+      tripleRows(p, q, r, i, m, succ(n)) =
+      addR(tripleRows(p, q, r, i, m, n), tripleDiag(p, q, r, i, n, m))
+    [by generalize generalize-p]
+qed
+
+// The base: no rows on either side, and the empty diagonal, so all three are zeroR.
+theorem theIncrementBase: forall p, q, r: Poly; forall i, n: Nat;
+  peano_order.less_or_equal(ZERO, succ(n)) ->
+  tripleRows(p, q, r, i, ZERO, succ(n)) =
+  addR(tripleRows(p, q, r, i, ZERO, n), tripleDiag(p, q, r, i, n, ZERO))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-i |
+                fix i: Nat {
+                  @generalize-n |
+                    fix n: Nat {
+                      @the-empty-rows-raised |
+                        tripleRows(p, q, r, i, ZERO, succ(n)) = zeroR
+                        [using specialize
+                          tripleRowsZero(p, q, r, i, succ(n))]
+                      @the-empty-rows |
+                        tripleRows(p, q, r, i, ZERO, n) = zeroR
+                        [using specialize tripleRowsZero(p, q, r, i, n)]
+                      @the-empty-diagonal |
+                        tripleDiag(p, q, r, i, n, ZERO) = zeroR
+                        [using specialize tripleDiagZero(p, q, r, i, n)]
+                      @zero-plus-zero |
+                        addR(zeroR, zeroR) = zeroR
+                        [using specialize addZeroLeftR(zeroR)]
+                      @the-equality |
+                        tripleRows(p, q, r, i, ZERO, succ(n)) =
+                          addR(tripleRows(p, q, r, i, ZERO, n),
+                          tripleDiag(p, q, r, i, n, ZERO))
+                        [using simplify the-empty-rows-raised
+                          the-empty-rows the-empty-diagonal zero-plus-zero]
+                      @conclusion-the-base |
+                        peano_order.less_or_equal(ZERO, succ(n)) ->
+                          tripleRows(p, q, r, i, ZERO, succ(n)) =
+                          addR(tripleRows(p, q, r, i, ZERO, n),
+                          tripleDiag(p, q, r, i, n, ZERO))
+                        [using tautology the-equality]
+                    }
+                  @discharge-n |
+                    forall n: Nat;
+                      peano_order.less_or_equal(ZERO, succ(n)) ->
+                      tripleRows(p, q, r, i, ZERO, succ(n)) =
+                      addR(tripleRows(p, q, r, i, ZERO, n),
+                      tripleDiag(p, q, r, i, n, ZERO))
+                    [by generalize generalize-n]
+                }
+              @discharge-i |
+                forall i, n: Nat;
+                  peano_order.less_or_equal(ZERO, succ(n)) ->
+                  tripleRows(p, q, r, i, ZERO, succ(n)) =
+                  addR(tripleRows(p, q, r, i, ZERO, n),
+                  tripleDiag(p, q, r, i, n, ZERO))
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r: Poly; forall i, n: Nat;
+              peano_order.less_or_equal(ZERO, succ(n)) ->
+              tripleRows(p, q, r, i, ZERO, succ(n)) =
+              addR(tripleRows(p, q, r, i, ZERO, n),
+              tripleDiag(p, q, r, i, n, ZERO))
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; forall i, n: Nat;
+          peano_order.less_or_equal(ZERO, succ(n)) ->
+          tripleRows(p, q, r, i, ZERO, succ(n)) =
+          addR(tripleRows(p, q, r, i, ZERO, n),
+          tripleDiag(p, q, r, i, n, ZERO))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall i, n: Nat;
+      peano_order.less_or_equal(ZERO, succ(n)) ->
+      tripleRows(p, q, r, i, ZERO, succ(n)) =
+      addR(tripleRows(p, q, r, i, ZERO, n), tripleDiag(p, q, r, i, n, ZERO))
+    [by generalize generalize-p]
+qed
+
+// The step. Peel the (k+1)-st row off each side and the (k+1)-st entry off the diagonal:
+//
+//   rows(m+1, n+1) = rows(m, n+1) + row(m, gapTo(n+1, m))
+//   rows(m+1, n)   = rows(m, n)   + row(m, gapTo(n, m))
+//   diag(n, m+1)   = diag(n, m)   + term(m, gapTo(n, m))
+//
+// The raised row is one longer than the base row — `theRaisedGapSteps` at `k <= n`, then
+// `tripleRowSucc` — so it is the base row plus exactly the entry the diagonal gained. The
+// hypothesis handles the rest, and the four summands reassociate.
+theorem theIncrementStep: forall p, q, r: Poly; forall i, n: Nat;
+  forall k: Nat;
+  (peano_order.less_or_equal(k, succ(n)) ->
+  tripleRows(p, q, r, i, k, succ(n)) =
+  addR(tripleRows(p, q, r, i, k, n), tripleDiag(p, q, r, i, n, k))) ->
+  (peano_order.less_or_equal(succ(k), succ(n)) ->
+  tripleRows(p, q, r, i, succ(k), succ(n)) =
+  addR(tripleRows(p, q, r, i, succ(k), n),
+  tripleDiag(p, q, r, i, n, succ(k))))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-i |
+                fix i: Nat {
+                  @generalize-n |
+                    fix n: Nat {
+                      @generalize-k |
+                        fix k: Nat {
+                          @given-the-hypothesis |
+                            assume peano_order.less_or_equal(k, succ(n)) ->
+                              tripleRows(p, q, r, i, k, succ(n)) =
+                              addR(tripleRows(p, q, r, i, k, n),
+                              tripleDiag(p, q, r, i, n, k)) {
+                              @the-hypothesis |
+                                peano_order.less_or_equal(k, succ(n)) ->
+                                  tripleRows(p, q, r, i, k, succ(n)) =
+                                  addR(tripleRows(p, q, r, i, k, n),
+                                  tripleDiag(p, q, r, i, n, k))
+                                [by hypothesis given-the-hypothesis]
+                              @given-the-raised-bound |
+                                assume peano_order.less_or_equal(succ(k),
+                                  succ(n)) {
+                                  @the-raised-bound |
+                                    peano_order.less_or_equal(succ(k),
+                                      succ(n))
+                                    [by hypothesis given-the-raised-bound]
+                                  @k-is-within-n |
+                                    peano_order.less_or_equal(k, n)
+                                    [using specialize
+                                      peano_order.succReflectsAtMost(k, n)
+                                      the-raised-bound]
+                                  @k-is-below-its-successor |
+                                    peano_order.less_or_equal(k, succ(k))
+                                    [using specialize
+                                      peano_order.aNatIsAtMostItsSuccessor(k)]
+                                  @k-is-within-succ-n |
+                                    peano_order.less_or_equal(k, succ(n))
+                                    [using specialize
+                                      peano_order.lessOrEqualTransitive(k,
+                                      succ(k), succ(n))
+                                      k-is-below-its-successor
+                                      the-raised-bound]
+                                  @the-hypothesis-applies |
+                                    tripleRows(p, q, r, i, k, succ(n)) =
+                                      addR(tripleRows(p, q, r, i, k, n),
+                                      tripleDiag(p, q, r, i, n, k))
+                                    [using tautology the-hypothesis
+                                      k-is-within-succ-n]
+                                  // the three peels
+                                  @the-raised-side-peels |
+                                    tripleRows(p, q, r, i, succ(k),
+                                      succ(n)) =
+                                      addR(tripleRows(p, q, r, i, k,
+                                      succ(n)),
+                                      tripleRow(p, q, r, i, k,
+                                      theGapTo(succ(n), k)))
+                                    [using specialize
+                                      tripleRowsSucc(p, q, r, i, k, succ(n))]
+                                  @the-base-side-peels |
+                                    tripleRows(p, q, r, i, succ(k), n) =
+                                      addR(tripleRows(p, q, r, i, k, n),
+                                      tripleRow(p, q, r, i, k,
+                                      theGapTo(n, k)))
+                                    [using specialize
+                                      tripleRowsSucc(p, q, r, i, k, n)]
+                                  @the-diagonal-peels |
+                                    tripleDiag(p, q, r, i, n, succ(k)) =
+                                      addR(tripleDiag(p, q, r, i, n, k),
+                                      tripleTerm(p, q, r, i, k,
+                                      theGapTo(n, k)))
+                                    [using specialize
+                                      tripleDiagSucc(p, q, r, i, n, k)]
+                                  // the raised row is one longer
+                                  @the-raised-length |
+                                    theGapTo(succ(n), k) =
+                                      succ(theGapTo(n, k))
+                                    [using specialize
+                                      theRaisedGapSteps(k, n) k-is-within-n]
+                                  @the-longer-row-peels |
+                                    tripleRow(p, q, r, i, k,
+                                      succ(theGapTo(n, k))) =
+                                      addR(tripleRow(p, q, r, i, k,
+                                      theGapTo(n, k)),
+                                      tripleTerm(p, q, r, i, k,
+                                      theGapTo(n, k)))
+                                    [using specialize
+                                      tripleRowSucc(p, q, r, i, k,
+                                      theGapTo(n, k))]
+                                  @the-raised-row-gains-its-last-entry |
+                                    tripleRow(p, q, r, i, k,
+                                      theGapTo(succ(n), k)) =
+                                      addR(tripleRow(p, q, r, i, k,
+                                      theGapTo(n, k)),
+                                      tripleTerm(p, q, r, i, k,
+                                      theGapTo(n, k)))
+                                    [by rewrite the-raised-length
+                                      the-longer-row-peels]
+                                  // substitute into each side
+                                  @the-raised-side-expanded |
+                                    tripleRows(p, q, r, i, succ(k),
+                                      succ(n)) =
+                                      addR(addR(tripleRows(p, q, r, i, k, n),
+                                      tripleDiag(p, q, r, i, n, k)),
+                                      addR(tripleRow(p, q, r, i, k,
+                                      theGapTo(n, k)),
+                                      tripleTerm(p, q, r, i, k,
+                                      theGapTo(n, k))))
+                                    [using simplify the-raised-side-peels
+                                      the-hypothesis-applies
+                                      the-raised-row-gains-its-last-entry]
+                                  @the-target-side-expanded |
+                                    addR(tripleRows(p, q, r, i, succ(k), n),
+                                      tripleDiag(p, q, r, i, n, succ(k))) =
+                                      addR(addR(tripleRows(p, q, r, i, k, n),
+                                      tripleRow(p, q, r, i, k,
+                                      theGapTo(n, k))),
+                                      addR(tripleDiag(p, q, r, i, n, k),
+                                      tripleTerm(p, q, r, i, k,
+                                      theGapTo(n, k))))
+                                    [using simplify the-base-side-peels
+                                      the-diagonal-peels]
+                                  // the SAME four summands, reassociated
+                                  @the-two-expansions-agree |
+                                    addR(addR(tripleRows(p, q, r, i, k, n),
+                                      tripleDiag(p, q, r, i, n, k)),
+                                      addR(tripleRow(p, q, r, i, k,
+                                      theGapTo(n, k)),
+                                      tripleTerm(p, q, r, i, k,
+                                      theGapTo(n, k)))) =
+                                      addR(addR(tripleRows(p, q, r, i, k, n),
+                                      tripleRow(p, q, r, i, k,
+                                      theGapTo(n, k))),
+                                      addR(tripleDiag(p, q, r, i, n, k),
+                                      tripleTerm(p, q, r, i, k,
+                                      theGapTo(n, k))))
+                                    [using assoc_commut(addIsAssociativeR,
+                                      addIsCommutativeR, addLeftSwapR)]
+                                  @the-target-side-flipped |
+                                    addR(addR(tripleRows(p, q, r, i, k, n),
+                                      tripleRow(p, q, r, i, k,
+                                      theGapTo(n, k))),
+                                      addR(tripleDiag(p, q, r, i, n, k),
+                                      tripleTerm(p, q, r, i, k,
+                                      theGapTo(n, k)))) =
+                                      addR(tripleRows(p, q, r, i, succ(k),
+                                      n),
+                                      tripleDiag(p, q, r, i, n, succ(k)))
+                                    [by symmetry the-target-side-expanded]
+                                  @conclusion-the-step |
+                                    tripleRows(p, q, r, i, succ(k),
+                                      succ(n)) =
+                                      addR(tripleRows(p, q, r, i, succ(k),
+                                      n),
+                                      tripleDiag(p, q, r, i, n, succ(k)))
+                                    [using chain the-raised-side-expanded
+                                      the-two-expansions-agree
+                                      the-target-side-flipped]
+                                }
+                              @the-bound-gives-it |
+                                peano_order.less_or_equal(succ(k),
+                                  succ(n)) ->
+                                  tripleRows(p, q, r, i, succ(k), succ(n)) =
+                                  addR(tripleRows(p, q, r, i, succ(k), n),
+                                  tripleDiag(p, q, r, i, n, succ(k)))
+                                [by discharge given-the-raised-bound]
+                            }
+                          @the-hypothesis-gives-it |
+                            (peano_order.less_or_equal(k, succ(n)) ->
+                              tripleRows(p, q, r, i, k, succ(n)) =
+                              addR(tripleRows(p, q, r, i, k, n),
+                              tripleDiag(p, q, r, i, n, k))) ->
+                              (peano_order.less_or_equal(succ(k),
+                              succ(n)) ->
+                              tripleRows(p, q, r, i, succ(k), succ(n)) =
+                              addR(tripleRows(p, q, r, i, succ(k), n),
+                              tripleDiag(p, q, r, i, n, succ(k))))
+                            [by discharge given-the-hypothesis]
+                        }
+                      @all-counts |
+                        forall k: Nat;
+                          (peano_order.less_or_equal(k, succ(n)) ->
+                          tripleRows(p, q, r, i, k, succ(n)) =
+                          addR(tripleRows(p, q, r, i, k, n),
+                          tripleDiag(p, q, r, i, n, k))) ->
+                          (peano_order.less_or_equal(succ(k), succ(n)) ->
+                          tripleRows(p, q, r, i, succ(k), succ(n)) =
+                          addR(tripleRows(p, q, r, i, succ(k), n),
+                          tripleDiag(p, q, r, i, n, succ(k))))
+                        [by generalize generalize-k]
+                    }
+                  @discharge-n |
+                    forall n: Nat; forall k: Nat;
+                      (peano_order.less_or_equal(k, succ(n)) ->
+                      tripleRows(p, q, r, i, k, succ(n)) =
+                      addR(tripleRows(p, q, r, i, k, n),
+                      tripleDiag(p, q, r, i, n, k))) ->
+                      (peano_order.less_or_equal(succ(k), succ(n)) ->
+                      tripleRows(p, q, r, i, succ(k), succ(n)) =
+                      addR(tripleRows(p, q, r, i, succ(k), n),
+                      tripleDiag(p, q, r, i, n, succ(k))))
+                    [by generalize generalize-n]
+                }
+              @discharge-i |
+                forall i, n: Nat; forall k: Nat;
+                  (peano_order.less_or_equal(k, succ(n)) ->
+                  tripleRows(p, q, r, i, k, succ(n)) =
+                  addR(tripleRows(p, q, r, i, k, n),
+                  tripleDiag(p, q, r, i, n, k))) ->
+                  (peano_order.less_or_equal(succ(k), succ(n)) ->
+                  tripleRows(p, q, r, i, succ(k), succ(n)) =
+                  addR(tripleRows(p, q, r, i, succ(k), n),
+                  tripleDiag(p, q, r, i, n, succ(k))))
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r: Poly; forall i, n: Nat; forall k: Nat;
+              (peano_order.less_or_equal(k, succ(n)) ->
+              tripleRows(p, q, r, i, k, succ(n)) =
+              addR(tripleRows(p, q, r, i, k, n),
+              tripleDiag(p, q, r, i, n, k))) ->
+              (peano_order.less_or_equal(succ(k), succ(n)) ->
+              tripleRows(p, q, r, i, succ(k), succ(n)) =
+              addR(tripleRows(p, q, r, i, succ(k), n),
+              tripleDiag(p, q, r, i, n, succ(k))))
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; forall i, n: Nat; forall k: Nat;
+          (peano_order.less_or_equal(k, succ(n)) ->
+          tripleRows(p, q, r, i, k, succ(n)) =
+          addR(tripleRows(p, q, r, i, k, n),
+          tripleDiag(p, q, r, i, n, k))) ->
+          (peano_order.less_or_equal(succ(k), succ(n)) ->
+          tripleRows(p, q, r, i, succ(k), succ(n)) =
+          addR(tripleRows(p, q, r, i, succ(k), n),
+          tripleDiag(p, q, r, i, n, succ(k))))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall i, n: Nat; forall k: Nat;
+      (peano_order.less_or_equal(k, succ(n)) ->
+      tripleRows(p, q, r, i, k, succ(n)) =
+      addR(tripleRows(p, q, r, i, k, n),
+      tripleDiag(p, q, r, i, n, k))) ->
+      (peano_order.less_or_equal(succ(k), succ(n)) ->
+      tripleRows(p, q, r, i, succ(k), succ(n)) =
+      addR(tripleRows(p, q, r, i, succ(k), n),
+      tripleDiag(p, q, r, i, n, succ(k))))
+    [by generalize generalize-p]
+qed
