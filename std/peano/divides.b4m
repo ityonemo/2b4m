@@ -134,8 +134,266 @@ proof
     [using model(PeanoDivisibility) divisibility.dividesAdd]
 qed
 
+// The d = ZERO arm of `dividesSub`: a = 0*j = 0 and b = 0*kk = 0, so the difference is
+// sub(ZERO, ZERO) = ZERO, which ZERO divides.
+theorem theZeroDivisorCase: forall a, b: Nat;
+  divides(ZERO, a) -> divides(ZERO, b) ->
+  ordering.less_or_equal(b, a) ->
+  divides(ZERO, sub(a, b))
+proof
+  @generalize-a |
+    fix a: Nat {
+      @generalize-b |
+        fix b: Nat {
+          @given-zero-divides-a |
+            assume divides(ZERO, a) {
+              @zero-divides-a |
+                divides(ZERO, a)
+                [by hypothesis given-zero-divides-a]
+              @given-zero-divides-b |
+                assume divides(ZERO, b) {
+                  @zero-divides-b |
+                    divides(ZERO, b)
+                    [by hypothesis given-zero-divides-b]
+                  @given-b-at-most-a |
+                    assume ordering.less_or_equal(b, a) {
+                      @b-at-most-a |
+                        ordering.less_or_equal(b, a)
+                        [by hypothesis given-b-at-most-a]
+                      @with-a-quotient |
+                        unpack j: Nat from zero-divides-a {
+                          @a-is-zero-times-j |
+                            a = mul(ZERO, j)
+                            [by hypothesis with-a-quotient]
+                          @zero-times-j |
+                            mul(ZERO, j) = ZERO
+                            [using specialize peano.mulZeroLeft(j)]
+                          @a-is-zero |
+                            a = ZERO
+                            [using chain a-is-zero-times-j zero-times-j]
+                          @with-b-quotient |
+                            unpack kk: Nat from zero-divides-b {
+                              @b-is-zero-times-k |
+                                b = mul(ZERO, kk)
+                                [by hypothesis with-b-quotient]
+                              @zero-times-k |
+                                mul(ZERO, kk) = ZERO
+                                [using specialize peano.mulZeroLeft(kk)]
+                              @b-is-zero |
+                                b = ZERO
+                                [using chain b-is-zero-times-k zero-times-k]
+                              @zero-is-at-most-zero |
+                                ordering.less_or_equal(ZERO, ZERO)
+                                [using specialize ordering.lessOrEqualRefl(ZERO)]
+                              @the-difference-at-zero |
+                                sub(ZERO, ZERO) = ZERO
+                                [using specialize subtraction.subZeroRight(ZERO)]
+                              // `simplify` rewrites a to ZERO, so the half-rewritten shape
+                              // owes its own guard
+                              @b-is-at-most-zero |
+                                ordering.less_or_equal(b, ZERO)
+                                [by rewrite a-is-zero b-at-most-a]
+                              @the-difference-is-zero |
+                                sub(a, b) = ZERO
+                                [using simplify a-is-zero b-is-zero
+                                  the-difference-at-zero]
+                              @zero-times-zero |
+                                ZERO = mul(ZERO, ZERO)
+                                [by symmetry zero-times-zero-flipped]
+                              @zero-times-zero-flipped |
+                                mul(ZERO, ZERO) = ZERO
+                                [using specialize peano.mulZeroLeft(ZERO)]
+                              @the-difference-is-a-multiple |
+                                sub(a, b) = mul(ZERO, ZERO)
+                                [using chain the-difference-is-zero zero-times-zero]
+                              @conclusion-zero-divides-the-difference |
+                                divides(ZERO, sub(a, b))
+                                [by witness(ZERO) the-difference-is-a-multiple]
+                            }
+                          @from-the-b-quotient |
+                            divides(ZERO, sub(a, b))
+                            [by unpacked with-b-quotient]
+                        }
+                      @from-the-a-quotient |
+                        divides(ZERO, sub(a, b))
+                        [by unpacked with-a-quotient]
+                    }
+                  @b-at-most-a-gives-it |
+                    ordering.less_or_equal(b, a) -> divides(ZERO, sub(a, b))
+                    [by discharge given-b-at-most-a]
+                }
+              @zero-divides-b-gives-it |
+                divides(ZERO, b) ->
+                  ordering.less_or_equal(b, a) ->
+                  divides(ZERO, sub(a, b))
+                [by discharge given-zero-divides-b]
+            }
+          @all-give-it |
+            divides(ZERO, a) -> divides(ZERO, b) ->
+              ordering.less_or_equal(b, a) ->
+              divides(ZERO, sub(a, b))
+            [by discharge given-zero-divides-a]
+        }
+      @discharge-b |
+        forall b: Nat;
+          divides(ZERO, a) -> divides(ZERO, b) ->
+          ordering.less_or_equal(b, a) ->
+          divides(ZERO, sub(a, b))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Nat;
+      divides(ZERO, a) -> divides(ZERO, b) ->
+      ordering.less_or_equal(b, a) ->
+      divides(ZERO, sub(a, b))
+    [by generalize generalize-a]
+qed
+
+// The positive-divisor arm of `dividesSub`. a = d*j, b = d*kk and b <= a, so d*kk <= d*j, and
+// with d positive `multiplicationReflectsAtMost` gives kk <= j — which is exactly the guard the
+// quotients' own `sub(j, kk)` owes. Then `mulSubDistribLeft` applies.
+theorem thePositiveDivisorCase: forall d, a, b: Nat;
+  ordering.less_than(ZERO, d) ->
+  divides(d, a) -> divides(d, b) ->
+  ordering.less_or_equal(b, a) ->
+  divides(d, sub(a, b))
+proof
+  @generalize-d |
+    fix d: Nat {
+      @generalize-a |
+        fix a: Nat {
+          @generalize-b |
+            fix b: Nat {
+              @given-d-positive |
+                assume ordering.less_than(ZERO, d) {
+                  @d-is-positive |
+                    ordering.less_than(ZERO, d)
+                    [by hypothesis given-d-positive]
+                  @given-d-divides-a |
+                    assume divides(d, a) {
+                      @d-divides-a |
+                        divides(d, a)
+                        [by hypothesis given-d-divides-a]
+                      @given-d-divides-b |
+                        assume divides(d, b) {
+                          @d-divides-b |
+                            divides(d, b)
+                            [by hypothesis given-d-divides-b]
+                          @given-b-at-most-a |
+                            assume ordering.less_or_equal(b, a) {
+                              @b-at-most-a |
+                                ordering.less_or_equal(b, a)
+                                [by hypothesis given-b-at-most-a]
+                              @with-a-quotient-j |
+                                unpack j: Nat from d-divides-a {
+                                  @a-is-d-times-j |
+                                    a = mul(d, j)
+                                    [by hypothesis with-a-quotient-j]
+                                  @with-b-quotient-k |
+                                    unpack kk: Nat from d-divides-b {
+                                      @b-is-d-times-k |
+                                        b = mul(d, kk)
+                                        [by hypothesis with-b-quotient-k]
+                                      // d*kk <= d*j, hence kk <= j
+                                      @the-left-rewritten |
+                                        ordering.less_or_equal(mul(d, kk), a)
+                                        [by rewrite b-is-d-times-k b-at-most-a]
+                                      @the-products-compare |
+                                        ordering.less_or_equal(
+                                          mul(d, kk), mul(d, j))
+                                        [by rewrite a-is-d-times-j the-left-rewritten]
+                                      @the-quotients-compare |
+                                        ordering.less_or_equal(kk, j)
+                                        [using specialize
+                                          ordering.multiplicationReflectsAtMost(kk, j, d)
+                                          d-is-positive the-products-compare]
+                                      @the-distribution |
+                                        mul(d, sub(j, kk)) =
+                                          sub(mul(d, j), mul(d, kk))
+                                        [using specialize mulSubDistribLeft(d, j, kk)
+                                          the-quotients-compare the-products-compare]
+                                      @b-is-at-most-the-scaled-j |
+                                        ordering.less_or_equal(b, mul(d, j))
+                                        [by rewrite a-is-d-times-j b-at-most-a]
+                                      @the-difference-is-the-scaled-difference |
+                                        sub(a, b) = mul(d, sub(j, kk))
+                                        [using simplify a-is-d-times-j b-is-d-times-k
+                                          the-distribution-flipped]
+                                      @the-distribution-flipped |
+                                        sub(mul(d, j), mul(d, kk)) =
+                                          mul(d, sub(j, kk))
+                                        [by symmetry the-distribution]
+                                      @conclusion-d-divides-the-difference |
+                                        divides(d, sub(a, b))
+                                        [by witness(sub(j, kk))
+                                          the-difference-is-the-scaled-difference]
+                                    }
+                                  @from-the-b-quotient |
+                                    divides(d, sub(a, b))
+                                    [by unpacked with-b-quotient-k]
+                                }
+                              @from-the-a-quotient |
+                                divides(d, sub(a, b))
+                                [by unpacked with-a-quotient-j]
+                            }
+                          @b-at-most-a-gives-it |
+                            ordering.less_or_equal(b, a) -> divides(d, sub(a, b))
+                            [by discharge given-b-at-most-a]
+                        }
+                      @d-divides-b-gives-it |
+                        divides(d, b) ->
+                          ordering.less_or_equal(b, a) ->
+                          divides(d, sub(a, b))
+                        [by discharge given-d-divides-b]
+                    }
+                  @d-divides-a-gives-it |
+                    divides(d, a) -> divides(d, b) ->
+                      ordering.less_or_equal(b, a) ->
+                      divides(d, sub(a, b))
+                    [by discharge given-d-divides-a]
+                }
+              @all-give-it |
+                ordering.less_than(ZERO, d) ->
+                  divides(d, a) -> divides(d, b) ->
+                  ordering.less_or_equal(b, a) ->
+                  divides(d, sub(a, b))
+                [by discharge given-d-positive]
+            }
+          @discharge-b |
+            forall b: Nat;
+              ordering.less_than(ZERO, d) ->
+              divides(d, a) -> divides(d, b) ->
+              ordering.less_or_equal(b, a) ->
+              divides(d, sub(a, b))
+            [by generalize generalize-b]
+        }
+      @discharge-a |
+        forall a, b: Nat;
+          ordering.less_than(ZERO, d) ->
+          divides(d, a) -> divides(d, b) ->
+          ordering.less_or_equal(b, a) ->
+          divides(d, sub(a, b))
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall d, a, b: Nat;
+      ordering.less_than(ZERO, d) ->
+      divides(d, a) -> divides(d, b) ->
+      ordering.less_or_equal(b, a) ->
+      divides(d, sub(a, b))
+    [by generalize generalize-d]
+qed
+
 // divides(d,a) -> divides(d,b) -> divides(d, sub(a,b)): via mulSubDistribLeft.
-theorem dividesSub: forall d, a, b: Nat; divides(d, a) -> divides(d, b) -> divides(d, sub(a, b))
+//
+// WEAKENED by the guarded `sub`: it now carries `b <= a`, which every caller already has at a
+// concrete pair (`sub(succ(m), m)`, `sub(add(n,m), m)`, `sub(n, q)` with n = p+q). The inner
+// `sub(j, kk)` on the quotients needs `kk <= j`, reflected from `d*kk <= d*j` — which requires
+// d POSITIVE, so d = ZERO is its own arm. That arm is easy: d = ZERO forces a = b = ZERO.
+theorem dividesSub: forall d, a, b: Nat;
+  divides(d, a) -> divides(d, b) ->
+  ordering.less_or_equal(b, a) ->
+  divides(d, sub(a, b))
 proof
   @generalize-d |
     fix d: Nat {
@@ -145,57 +403,108 @@ proof
             fix b: Nat {
               @given-d-divides-a |
                 assume divides(d, a) {
+                  @d-divides-a |
+                    divides(d, a)
+                    [by hypothesis given-d-divides-a]
                   @given-d-divides-b |
                     assume divides(d, b) {
-                      @d-divides-a |
-                        divides(d, a)
-                        [by hypothesis given-d-divides-a]
                       @d-divides-b |
                         divides(d, b)
                         [by hypothesis given-d-divides-b]
-                      @with-a-quotient-j |
-                        unpack j: Nat from d-divides-a {
-                          @a-equals-d-times-j |
-                            a = mul(d, j)
-                            [by hypothesis with-a-quotient-j]
-                          @with-b-quotient-k |
-                            unpack kk: Nat from d-divides-b {
-                              @b-equals-d-times-k |
-                                b = mul(d, kk)
-                                [by hypothesis with-b-quotient-k]
-                              @difference-is-d-multiple |
-                                sub(a, b) = mul(d, sub(j, kk))
-                                [using simplify a-equals-d-times-j b-equals-d-times-k mulSubDistribLeft]
-                              @d-divides-difference-under-witness |
-                                divides(d, sub(a, b))
-                                [by witness(sub(j, kk)) difference-is-d-multiple]
-                            }
-                          @d-divides-difference-after-k |
+                      @given-b-at-most-a |
+                        assume ordering.less_or_equal(b, a) {
+                          @b-at-most-a |
+                            ordering.less_or_equal(b, a)
+                            [by hypothesis given-b-at-most-a]
+                          @d-splits |
+                            d = ZERO or (exists m: Nat; d = succ(m))
+                            [using specialize zeroOrSucc(d)]
+                          @the-difference-is-divisible |
                             divides(d, sub(a, b))
-                            [by unpacked with-b-quotient-k]
+                            [by common_conclusion d-splits
+                              when-d-is-zero when-d-is-positive]
+                          @when-d-is-zero |
+                            assume d = ZERO {
+                              @d-is-zero |
+                                d = ZERO
+                                [by hypothesis when-d-is-zero]
+                              // restate the divisibilities at ZERO, which is what the
+                              // zero arm's statement is about
+                              @zero-divides-a |
+                                divides(ZERO, a)
+                                [by rewrite d-is-zero d-divides-a]
+                              @zero-divides-b |
+                                divides(ZERO, b)
+                                [by rewrite d-is-zero d-divides-b]
+                              @zero-divides-the-difference |
+                                divides(ZERO, sub(a, b))
+                                [using specialize theZeroDivisorCase(a, b)
+                                  zero-divides-a zero-divides-b b-at-most-a]
+                              @conclusion-at-zero |
+                                divides(d, sub(a, b))
+                                [by rewrite d-is-zero zero-divides-the-difference]
+                            }
+                          @when-d-is-positive |
+                            assume exists m: Nat; d = succ(m) {
+                              @the-predecessor-exists |
+                                exists m: Nat; d = succ(m)
+                                [by hypothesis when-d-is-positive]
+                              @with-the-predecessor |
+                                unpack dm: Nat from the-predecessor-exists {
+                                  @d-is-succ-dm |
+                                    d = succ(dm)
+                                    [by hypothesis with-the-predecessor]
+                                  @d-is-positive |
+                                    ordering.less_than(ZERO, d)
+                                    [by rewrite d-is-succ-dm zero-is-below-the-successor]
+                                  @zero-is-below-the-successor |
+                                    ordering.less_than(ZERO, succ(dm))
+                                    [using specialize ordering.zeroBelowSucc(dm)]
+                                  @conclusion-at-a-positive-divisor |
+                                    divides(d, sub(a, b))
+                                    [using specialize thePositiveDivisorCase(d, a, b)
+                                      d-is-positive d-divides-a d-divides-b b-at-most-a]
+                                }
+                              @conclusion-from-the-predecessor |
+                                divides(d, sub(a, b))
+                                [by unpacked with-the-predecessor]
+                            }
                         }
-                      @d-divides-difference |
-                        divides(d, sub(a, b))
-                        [by unpacked with-a-quotient-j]
+                      @b-at-most-a-gives-it |
+                        ordering.less_or_equal(b, a) -> divides(d, sub(a, b))
+                        [by discharge given-b-at-most-a]
                     }
                   @d-divides-b-implies-d-divides-difference |
-                    divides(d, b) -> divides(d, sub(a, b))
+                    divides(d, b) ->
+                      ordering.less_or_equal(b, a) ->
+                      divides(d, sub(a, b))
                     [by discharge given-d-divides-b]
                 }
               @common-divisor-divides-difference |
-                divides(d, a) -> divides(d, b) -> divides(d, sub(a, b))
+                divides(d, a) -> divides(d, b) ->
+                  ordering.less_or_equal(b, a) ->
+                  divides(d, sub(a, b))
                 [by discharge given-d-divides-a]
             }
           @discharge-b |
-            forall b: Nat; divides(d, a) -> divides(d, b) -> divides(d, sub(a, b))
+            forall b: Nat;
+              divides(d, a) -> divides(d, b) ->
+              ordering.less_or_equal(b, a) ->
+              divides(d, sub(a, b))
             [by generalize generalize-b]
         }
       @discharge-a |
-        forall a, b: Nat; divides(d, a) -> divides(d, b) -> divides(d, sub(a, b))
+        forall a, b: Nat;
+          divides(d, a) -> divides(d, b) ->
+          ordering.less_or_equal(b, a) ->
+          divides(d, sub(a, b))
         [by generalize generalize-a]
     }
   @conclusion |
-    forall d, a, b: Nat; divides(d, a) -> divides(d, b) -> divides(d, sub(a, b))
+    forall d, a, b: Nat;
+      divides(d, a) -> divides(d, b) ->
+      ordering.less_or_equal(b, a) ->
+      divides(d, sub(a, b))
     [by generalize generalize-d]
 qed
 
@@ -246,6 +555,17 @@ proof
                       @a-is-remainder-plus-multiple |
                         a = add(mod(a, b), mul(b, div(a, b)))
                         [using arithmetic a-decomposes]
+                      // the quotient's multiple is at most a, since a is that multiple
+                      // plus the remainder
+                      @the-multiple-is-at-most-the-sum |
+                        ordering.less_or_equal(mul(b, div(a, b)),
+                          add(mod(a, b), mul(b, div(a, b))))
+                        [using specialize ordering.theSummandBoundReordered(
+                          mul(b, div(a, b)), mod(a, b))]
+                      @the-multiple-is-at-most-a |
+                        ordering.less_or_equal(mul(b, div(a, b)), a)
+                        [by rewrite a-is-remainder-plus-multiple
+                          the-multiple-is-at-most-the-sum]
                       // sac: sub(add(r, x), x) = r  with x = mul(b,q)
                       @remainder-recovered-by-subtraction |
                         sub(add(mod(a, b), mul(b, div(a, b))), mul(b, div(a, b))) = mod(a, b)
@@ -263,7 +583,9 @@ proof
                             [by hypothesis when-d-divides-a]
                           @d-divides-a-minus-multiple |
                             divides(d, sub(a, mul(b, div(a, b))))
-                            [using specialize dividesSub(d, a, mul(b, div(a, b))) d-divides-a d-divides-b-times-quotient]
+                            [using specialize dividesSub(d, a, mul(b, div(a, b)))
+                              d-divides-a d-divides-b-times-quotient
+                              the-multiple-is-at-most-a]
                           @d-divides-remainder |
                             divides(d, mod(a, b))
                             [by rewrite remainder-is-a-minus-multiple d-divides-a-minus-multiple]

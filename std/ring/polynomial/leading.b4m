@@ -1,0 +1,690 @@
+// std/ring/polynomial/leading.b4m — THE LEADING-PRODUCT STEP, GENERICALLY.
+//
+// Two facts about a product's coefficients, given degree bounds on the factors:
+//
+//   coeff(p·q, m+n) = p_m · q_n        the leading coefficient is the product of the leading
+//                                      coefficients (as an identity of bounds, with no
+//                                      claim that either is nonzero — that is the caller's
+//                                      integral-domain step)
+//   coeff(p·q, i)   = 0   for i > m+n  nothing survives above the degree sum
+//
+// Both are consumed by F[x], ℚ[x], ℤ[x] and ℤ_n[x] through a model, so they live here over
+// `ring.Ring` rather than in any one of those files.
+//
+// WHY THIS FILE IS SHORT. Under the reindexed convolution of `std/ring/polynomial.b4m` —
+// `convolution(p, q, j, m)` runs p UP from j while q runs DOWN from m, so the pair of indices
+// it reads always SUMS to j + m — both facts are a few lines on top of three generic run
+// lemmas proved there:
+//
+//   aRunSkipsAPrefixTheSecondFactorKills    drop a prefix whose q-coefficients are above n
+//   aRunIsOneTermWhenTheFirstFactorDiesAbove  collapse a run whose p dies above its base
+//   aRunWhoseTermsAllVanishIsZero           a run every term of which vanishes
+//
+// The earlier version of this file was ~1200 lines, because the convolution then took a
+// single index and read q at `sub(i, j)`: every statement about it owed a `j <= i` guard, and
+// most of the file was the index arithmetic to discharge those. Reindexing deleted all of it.
+import ring_poly <<< "std/ring/polynomial.b4m"
+import peano <<< "std/peano.b4m"
+import peano_order <<< "std/peano/order.b4m"
+
+sort Poly = ring_poly.Poly
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+const zeroR = ring_poly.zeroR
+func succ = peano.succ
+func add = peano.add
+func mulR = ring_poly.mulR
+func mulP = ring_poly.mulP
+func coeff = ring_poly.coeff
+func convolution = ring_poly.convolution
+pred less_than = peano.less_than
+pred degreeAtMost = ring_poly.degreeAtMost
+
+// -- THE LEADING COEFFICIENT ----------------------------------------------------------------
+// coeff(p·q, m+n) is the run from base ZERO of length m+n. Its index pairs sum to m+n
+// throughout, so:
+//
+//   * the first m terms read q strictly above n — `aRunSkipsAPrefixTheSecondFactorKills`
+//     drops them, landing the run at base m with length n;
+//   * that run reads p at m and then strictly above it — `aRunIsOneTermWhenTheFirstFactor-
+//     DiesAbove` collapses it to its single term p_m · q_n.
+theorem theProductsLeadingCoefficient: forall p, q: Poly; forall m, n: Nat;
+  degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+  coeff(mulP(p, q), add(m, n)) = mulR(coeff(p, m), coeff(q, n))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-m |
+            fix m: Nat {
+              @generalize-n |
+                fix n: Nat {
+                  @given-p-bounded |
+                    assume degreeAtMost(p, m) {
+                      @p-bounded |
+                        degreeAtMost(p, m)
+                        [by hypothesis given-p-bounded]
+                      @given-q-bounded |
+                        assume degreeAtMost(q, n) {
+                          @q-bounded |
+                            degreeAtMost(q, n)
+                            [by hypothesis given-q-bounded]
+                          @p-dies-above-m |
+                            forall e: Nat; coeff(p, succ(add(m, e))) = zeroR
+                            [using specialize aBoundedPolynomialDiesAbove(p, m)
+                              p-bounded]
+                          @the-prefix-terms-vanish |
+                            forall e, c: Nat;
+                              mulR(coeff(p, add(ZERO, e)),
+                              coeff(q, succ(add(n, c)))) = zeroR
+                            [using specialize theProductsAboveTheBoundVanish(p, q, n, ZERO)
+                              q-bounded]
+                          @the-coefficient-is-the-run |
+                            coeff(mulP(p, q), add(m, n)) =
+                              convolution(p, q, ZERO, add(m, n))
+                            [using specialize ring_poly.mulPolyCoeff(p, q, add(m, n))]
+                          @the-run-skips-the-prefix |
+                            convolution(p, q, ZERO, add(m, n)) =
+                              convolution(p, q, add(ZERO, m), n)
+                            [using specialize
+                              ring_poly.aRunSkipsAPrefixTheSecondFactorKills(p, q, n, m, ZERO)
+                              the-prefix-terms-vanish]
+                          @the-base-is-m |
+                            add(ZERO, m) = m
+                            [using specialize peano.addZeroLeft(m)]
+                          @the-run-starts-at-m |
+                            convolution(p, q, ZERO, add(m, n)) =
+                              convolution(p, q, m, n)
+                            [by rewrite the-base-is-m the-run-skips-the-prefix]
+                          @the-run-is-one-term |
+                            convolution(p, q, m, n) =
+                              mulR(coeff(p, m), coeff(q, n))
+                            [using specialize
+                              ring_poly.aRunIsOneTermWhenTheFirstFactorDiesAbove(p, q, n, m)
+                              p-dies-above-m]
+                          @conclusion-the-leading-coefficient |
+                            coeff(mulP(p, q), add(m, n)) =
+                              mulR(coeff(p, m), coeff(q, n))
+                            [using chain the-coefficient-is-the-run
+                              the-run-starts-at-m the-run-is-one-term]
+                        }
+                      @q-bounded-gives-it |
+                        degreeAtMost(q, n) ->
+                          coeff(mulP(p, q), add(m, n)) =
+                          mulR(coeff(p, m), coeff(q, n))
+                        [by discharge given-q-bounded]
+                    }
+                  @p-bounded-gives-it |
+                    degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+                      coeff(mulP(p, q), add(m, n)) =
+                      mulR(coeff(p, m), coeff(q, n))
+                    [by discharge given-p-bounded]
+                }
+              @discharge-n |
+                forall n: Nat;
+                  degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+                  coeff(mulP(p, q), add(m, n)) = mulR(coeff(p, m), coeff(q, n))
+                [by generalize generalize-n]
+            }
+          @discharge-m |
+            forall m, n: Nat;
+              degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+              coeff(mulP(p, q), add(m, n)) = mulR(coeff(p, m), coeff(q, n))
+            [by generalize generalize-m]
+        }
+      @discharge-q |
+        forall q: Poly; forall m, n: Nat;
+          degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+          coeff(mulP(p, q), add(m, n)) = mulR(coeff(p, m), coeff(q, n))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; forall m, n: Nat;
+      degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+      coeff(mulP(p, q), add(m, n)) = mulR(coeff(p, m), coeff(q, n))
+    [by generalize generalize-p]
+qed
+
+// -- ABOVE THE DEGREE SUM -------------------------------------------------------------------
+// At index i > m+n every term of the run vanishes, so the whole coefficient does. The term at
+// index pair (u, v) has u + v = i, and i exceeds m + n, so u and v cannot both be within
+// their bounds: that is `aPairSummingTooHighEscapesABound` below.
+theorem theProductVanishesAboveTheDegreeSum: forall p, q: Poly; forall m, n, i: Nat;
+  degreeAtMost(p, m) -> degreeAtMost(q, n) -> less_than(add(m, n), i) ->
+  coeff(mulP(p, q), i) = zeroR
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-m |
+            fix m: Nat {
+              @generalize-n |
+                fix n: Nat {
+                  @generalize-i |
+                    fix i: Nat {
+                      @given-p-bounded |
+                        assume degreeAtMost(p, m) {
+                          @p-bounded |
+                            degreeAtMost(p, m)
+                            [by hypothesis given-p-bounded]
+                          @given-q-bounded |
+                            assume degreeAtMost(q, n) {
+                              @q-bounded |
+                                degreeAtMost(q, n)
+                                [by hypothesis given-q-bounded]
+                              @given-i-is-high |
+                                assume less_than(add(m, n), i) {
+                                  @i-is-high |
+                                    less_than(add(m, n), i)
+                                    [by hypothesis given-i-is-high]
+                                  @the-terms-vanish |
+                                    forall u, v: Nat;
+                                      add(u, v) = add(ZERO, i) ->
+                                      mulR(coeff(p, u), coeff(q, v)) = zeroR
+                                    [using specialize
+                                      everyTermAboveTheDegreeSumVanishes(p, q, m, n, i)
+                                      p-bounded q-bounded i-is-high]
+                                  @the-coefficient-is-the-run |
+                                    coeff(mulP(p, q), i) =
+                                      convolution(p, q, ZERO, i)
+                                    [using specialize ring_poly.mulPolyCoeff(p, q, i)]
+                                  @the-run-vanishes |
+                                    convolution(p, q, ZERO, i) = zeroR
+                                    [using specialize
+                                      ring_poly.aRunWhoseTermsAllVanishIsZero(p, q, i, ZERO)
+                                      the-terms-vanish]
+                                  @conclusion-the-coefficient-vanishes |
+                                    coeff(mulP(p, q), i) = zeroR
+                                    [using chain the-coefficient-is-the-run
+                                      the-run-vanishes]
+                                }
+                              @i-high-gives-it |
+                                less_than(add(m, n), i) ->
+                                  coeff(mulP(p, q), i) = zeroR
+                                [by discharge given-i-is-high]
+                            }
+                          @q-bounded-gives-it |
+                            degreeAtMost(q, n) -> less_than(add(m, n), i) ->
+                              coeff(mulP(p, q), i) = zeroR
+                            [by discharge given-q-bounded]
+                        }
+                      @p-bounded-gives-it |
+                        degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+                          less_than(add(m, n), i) ->
+                          coeff(mulP(p, q), i) = zeroR
+                        [by discharge given-p-bounded]
+                    }
+                  @discharge-i |
+                    forall i: Nat;
+                      degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+                      less_than(add(m, n), i) -> coeff(mulP(p, q), i) = zeroR
+                    [by generalize generalize-i]
+                }
+              @discharge-n |
+                forall n, i: Nat;
+                  degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+                  less_than(add(m, n), i) -> coeff(mulP(p, q), i) = zeroR
+                [by generalize generalize-n]
+            }
+          @discharge-m |
+            forall m, n, i: Nat;
+              degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+              less_than(add(m, n), i) -> coeff(mulP(p, q), i) = zeroR
+            [by generalize generalize-m]
+        }
+      @discharge-q |
+        forall q: Poly; forall m, n, i: Nat;
+          degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+          less_than(add(m, n), i) -> coeff(mulP(p, q), i) = zeroR
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; forall m, n, i: Nat;
+      degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+      less_than(add(m, n), i) -> coeff(mulP(p, q), i) = zeroR
+    [by generalize generalize-p]
+qed
+
+// -- the three plumbing lemmas --------------------------------------------------------------
+
+// A degree bound, written as the run lemmas want it: strictly above m means succ(m + e).
+theorem aBoundedPolynomialDiesAbove: forall p: Poly; forall m: Nat;
+  degreeAtMost(p, m) ->
+  (forall e: Nat; coeff(p, succ(add(m, e))) = zeroR)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-m |
+        fix m: Nat {
+          @given-p-bounded |
+            assume degreeAtMost(p, m) {
+              @p-bounded |
+                degreeAtMost(p, m)
+                [by hypothesis given-p-bounded]
+              @the-bound-unfolds |
+                degreeAtMost(p, m) iff
+                  (forall i: Nat; less_than(m, i) -> coeff(p, i) = zeroR)
+                [using specialize ring_poly.degreeAtMostMeaning(p, m)]
+              @coefficients-above-m-vanish |
+                forall i: Nat; less_than(m, i) -> coeff(p, i) = zeroR
+                [using tautology the-bound-unfolds p-bounded]
+              @generalize-e |
+                fix e: Nat {
+                  @the-raised-index-is-above |
+                    less_than(m, succ(add(m, e)))
+                    [using specialize aBaseIsBelowItsRaisedSum(m, e)]
+                  @conclusion-the-raised-coefficient-vanishes |
+                    coeff(p, succ(add(m, e))) = zeroR
+                    [using specialize coefficients-above-m-vanish(succ(add(m, e)))
+                      the-raised-index-is-above]
+                }
+              @all-gaps |
+                forall e: Nat; coeff(p, succ(add(m, e))) = zeroR
+                [by generalize generalize-e]
+            }
+          @p-bounded-gives-it |
+            degreeAtMost(p, m) ->
+              (forall e: Nat; coeff(p, succ(add(m, e))) = zeroR)
+            [by discharge given-p-bounded]
+        }
+      @discharge-m |
+        forall m: Nat;
+          degreeAtMost(p, m) ->
+          (forall e: Nat; coeff(p, succ(add(m, e))) = zeroR)
+        [by generalize generalize-m]
+    }
+  @conclusion |
+    forall p: Poly; forall m: Nat;
+      degreeAtMost(p, m) ->
+      (forall e: Nat; coeff(p, succ(add(m, e))) = zeroR)
+    [by generalize generalize-p]
+qed
+
+// The prefix hypothesis the skip lemma wants: with q bounded by n, a product reading q
+// strictly above n vanishes whatever p's index.
+theorem theProductsAboveTheBoundVanish: forall p, q: Poly; forall n, b: Nat;
+  degreeAtMost(q, n) ->
+  (forall e, c: Nat;
+  mulR(coeff(p, add(b, e)), coeff(q, succ(add(n, c)))) = zeroR)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-n |
+            fix n: Nat {
+              @generalize-b |
+                fix b: Nat {
+                  @given-q-bounded |
+                    assume degreeAtMost(q, n) {
+                      @q-bounded |
+                        degreeAtMost(q, n)
+                        [by hypothesis given-q-bounded]
+                      @q-dies-above-n |
+                        forall c: Nat; coeff(q, succ(add(n, c))) = zeroR
+                        [using specialize aBoundedPolynomialDiesAbove(q, n) q-bounded]
+                      @generalize-e |
+                        fix e: Nat {
+                          @generalize-c |
+                            fix c: Nat {
+                              @the-q-coefficient-vanishes |
+                                coeff(q, succ(add(n, c))) = zeroR
+                                [using specialize q-dies-above-n(c)]
+                              @the-zero-product |
+                                mulR(coeff(p, add(b, e)), zeroR) = zeroR
+                                [using specialize
+                                  ring_poly.mulZeroRightR(coeff(p, add(b, e)))]
+                              @conclusion-this-term-vanishes |
+                                mulR(coeff(p, add(b, e)),
+                                  coeff(q, succ(add(n, c)))) = zeroR
+                                [using simplify the-q-coefficient-vanishes
+                                  the-zero-product]
+                            }
+                          @discharge-c |
+                            forall c: Nat;
+                              mulR(coeff(p, add(b, e)),
+                              coeff(q, succ(add(n, c)))) = zeroR
+                            [by generalize generalize-c]
+                        }
+                      @all-pairs |
+                        forall e, c: Nat;
+                          mulR(coeff(p, add(b, e)),
+                          coeff(q, succ(add(n, c)))) = zeroR
+                        [by generalize generalize-e]
+                    }
+                  @q-bounded-gives-it |
+                    degreeAtMost(q, n) ->
+                      (forall e, c: Nat;
+                      mulR(coeff(p, add(b, e)),
+                      coeff(q, succ(add(n, c)))) = zeroR)
+                    [by discharge given-q-bounded]
+                }
+              @discharge-b |
+                forall b: Nat;
+                  degreeAtMost(q, n) ->
+                  (forall e, c: Nat;
+                  mulR(coeff(p, add(b, e)),
+                  coeff(q, succ(add(n, c)))) = zeroR)
+                [by generalize generalize-b]
+            }
+          @discharge-n |
+            forall n, b: Nat;
+              degreeAtMost(q, n) ->
+              (forall e, c: Nat;
+              mulR(coeff(p, add(b, e)), coeff(q, succ(add(n, c)))) = zeroR)
+            [by generalize generalize-n]
+        }
+      @discharge-q |
+        forall q: Poly; forall n, b: Nat;
+          degreeAtMost(q, n) ->
+          (forall e, c: Nat;
+          mulR(coeff(p, add(b, e)), coeff(q, succ(add(n, c)))) = zeroR)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; forall n, b: Nat;
+      degreeAtMost(q, n) ->
+      (forall e, c: Nat;
+      mulR(coeff(p, add(b, e)), coeff(q, succ(add(n, c)))) = zeroR)
+    [by generalize generalize-p]
+qed
+
+// Every term of the run at index i > m+n vanishes: a pair summing to i cannot have both
+// entries within their bounds, since that would make the sum at most m + n.
+theorem everyTermAboveTheDegreeSumVanishes: forall p, q: Poly; forall m, n, i: Nat;
+  degreeAtMost(p, m) -> degreeAtMost(q, n) -> less_than(add(m, n), i) ->
+  (forall u, v: Nat;
+  add(u, v) = add(ZERO, i) -> mulR(coeff(p, u), coeff(q, v)) = zeroR)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-m |
+            fix m: Nat {
+              @generalize-n |
+                fix n: Nat {
+                  @generalize-i |
+                    fix i: Nat {
+                      @given-p-bounded |
+                        assume degreeAtMost(p, m) {
+                          @p-bounded |
+                            degreeAtMost(p, m)
+                            [by hypothesis given-p-bounded]
+                          @p-unfolds |
+                            degreeAtMost(p, m) iff
+                              (forall j: Nat;
+                              less_than(m, j) -> coeff(p, j) = zeroR)
+                            [using specialize ring_poly.degreeAtMostMeaning(p, m)]
+                          @p-dies-above-m |
+                            forall j: Nat;
+                              less_than(m, j) -> coeff(p, j) = zeroR
+                            [using tautology p-unfolds p-bounded]
+                          @given-q-bounded |
+                            assume degreeAtMost(q, n) {
+                              @q-bounded |
+                                degreeAtMost(q, n)
+                                [by hypothesis given-q-bounded]
+                              @q-unfolds |
+                                degreeAtMost(q, n) iff
+                                  (forall j: Nat;
+                                  less_than(n, j) -> coeff(q, j) = zeroR)
+                                [using specialize ring_poly.degreeAtMostMeaning(q, n)]
+                              @q-dies-above-n |
+                                forall j: Nat;
+                                  less_than(n, j) -> coeff(q, j) = zeroR
+                                [using tautology q-unfolds q-bounded]
+                              @given-i-is-high |
+                                assume less_than(add(m, n), i) {
+                                  @i-is-high |
+                                    less_than(add(m, n), i)
+                                    [by hypothesis given-i-is-high]
+                                  @generalize-u |
+                                    fix u: Nat {
+                                      @generalize-v |
+                                        fix v: Nat {
+                                          @given-the-pair-sums |
+                                            assume add(u, v) = add(ZERO, i) {
+                                              @the-pair-sums |
+                                                add(u, v) = add(ZERO, i)
+                                                [by hypothesis given-the-pair-sums]
+                                              @the-base-drops |
+                                                add(ZERO, i) = i
+                                                [using specialize peano.addZeroLeft(i)]
+                                              @the-pair-sums-to-i |
+                                                add(u, v) = i
+                                                [using chain the-pair-sums
+                                                  the-base-drops]
+                                              @one-index-escapes |
+                                                less_than(m, u) or less_than(n, v)
+                                                [using specialize
+                                                  aPairSummingTooHighEscapesABound(m, n, i, u, v)
+                                                  i-is-high the-pair-sums-to-i]
+                                              @when-p-is-past |
+                                                assume less_than(m, u) {
+                                                  @u-is-past-m |
+                                                    less_than(m, u)
+                                                    [by hypothesis when-p-is-past]
+                                                  @the-p-coefficient-vanishes |
+                                                    coeff(p, u) = zeroR
+                                                    [using specialize
+                                                      p-dies-above-m(u) u-is-past-m]
+                                                  @the-left-zero-product |
+                                                    mulR(zeroR, coeff(q, v)) = zeroR
+                                                    [using specialize
+                                                      ring_poly.mulZeroLeftR(coeff(q, v))]
+                                                  @conclusion-p-kills-it |
+                                                    mulR(coeff(p, u), coeff(q, v)) = zeroR
+                                                    [using simplify
+                                                      the-p-coefficient-vanishes
+                                                      the-left-zero-product]
+                                                }
+                                              @when-q-is-past |
+                                                assume less_than(n, v) {
+                                                  @v-is-past-n |
+                                                    less_than(n, v)
+                                                    [by hypothesis when-q-is-past]
+                                                  @the-q-coefficient-vanishes |
+                                                    coeff(q, v) = zeroR
+                                                    [using specialize
+                                                      q-dies-above-n(v) v-is-past-n]
+                                                  @the-right-zero-product |
+                                                    mulR(coeff(p, u), zeroR) = zeroR
+                                                    [using specialize
+                                                      ring_poly.mulZeroRightR(coeff(p, u))]
+                                                  @conclusion-q-kills-it |
+                                                    mulR(coeff(p, u), coeff(q, v)) = zeroR
+                                                    [using simplify
+                                                      the-q-coefficient-vanishes
+                                                      the-right-zero-product]
+                                                }
+                                              @conclusion-the-term-vanishes |
+                                                mulR(coeff(p, u), coeff(q, v)) = zeroR
+                                                [by common_conclusion one-index-escapes
+                                                  when-p-is-past when-q-is-past]
+                                            }
+                                          @the-pair-gives-it |
+                                            add(u, v) = add(ZERO, i) ->
+                                              mulR(coeff(p, u), coeff(q, v)) = zeroR
+                                            [by discharge given-the-pair-sums]
+                                        }
+                                      @discharge-v |
+                                        forall v: Nat;
+                                          add(u, v) = add(ZERO, i) ->
+                                          mulR(coeff(p, u), coeff(q, v)) = zeroR
+                                        [by generalize generalize-v]
+                                    }
+                                  @all-pairs |
+                                    forall u, v: Nat;
+                                      add(u, v) = add(ZERO, i) ->
+                                      mulR(coeff(p, u), coeff(q, v)) = zeroR
+                                    [by generalize generalize-u]
+                                }
+                              @i-high-gives-it |
+                                less_than(add(m, n), i) ->
+                                  (forall u, v: Nat;
+                                  add(u, v) = add(ZERO, i) ->
+                                  mulR(coeff(p, u), coeff(q, v)) = zeroR)
+                                [by discharge given-i-is-high]
+                            }
+                          @q-bounded-gives-it |
+                            degreeAtMost(q, n) -> less_than(add(m, n), i) ->
+                              (forall u, v: Nat;
+                              add(u, v) = add(ZERO, i) ->
+                              mulR(coeff(p, u), coeff(q, v)) = zeroR)
+                            [by discharge given-q-bounded]
+                        }
+                      @p-bounded-gives-it |
+                        degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+                          less_than(add(m, n), i) ->
+                          (forall u, v: Nat;
+                          add(u, v) = add(ZERO, i) ->
+                          mulR(coeff(p, u), coeff(q, v)) = zeroR)
+                        [by discharge given-p-bounded]
+                    }
+                  @discharge-i |
+                    forall i: Nat;
+                      degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+                      less_than(add(m, n), i) ->
+                      (forall u, v: Nat;
+                      add(u, v) = add(ZERO, i) ->
+                      mulR(coeff(p, u), coeff(q, v)) = zeroR)
+                    [by generalize generalize-i]
+                }
+              @discharge-n |
+                forall n, i: Nat;
+                  degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+                  less_than(add(m, n), i) ->
+                  (forall u, v: Nat;
+                  add(u, v) = add(ZERO, i) ->
+                  mulR(coeff(p, u), coeff(q, v)) = zeroR)
+                [by generalize generalize-n]
+            }
+          @discharge-m |
+            forall m, n, i: Nat;
+              degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+              less_than(add(m, n), i) ->
+              (forall u, v: Nat;
+              add(u, v) = add(ZERO, i) ->
+              mulR(coeff(p, u), coeff(q, v)) = zeroR)
+            [by generalize generalize-m]
+        }
+      @discharge-q |
+        forall q: Poly; forall m, n, i: Nat;
+          degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+          less_than(add(m, n), i) ->
+          (forall u, v: Nat;
+          add(u, v) = add(ZERO, i) ->
+          mulR(coeff(p, u), coeff(q, v)) = zeroR)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; forall m, n, i: Nat;
+      degreeAtMost(p, m) -> degreeAtMost(q, n) -> less_than(add(m, n), i) ->
+      (forall u, v: Nat;
+      add(u, v) = add(ZERO, i) -> mulR(coeff(p, u), coeff(q, v)) = zeroR)
+    [by generalize generalize-p]
+qed
+
+// The index fact under the vanishing half: if u + v = i and i > m + n, then u > m or v > n.
+// Were both within bounds the sum would be at most m + n, below i. Pure linear arithmetic.
+theorem aPairSummingTooHighEscapesABound: forall m, n, i, u, v: Nat;
+  less_than(add(m, n), i) -> add(u, v) = i ->
+  (less_than(m, u) or less_than(n, v))
+proof
+  @generalize-m |
+    fix m: Nat {
+      @generalize-n |
+        fix n: Nat {
+          @generalize-i |
+            fix i: Nat {
+              @generalize-u |
+                fix u: Nat {
+                  @generalize-v |
+                    fix v: Nat {
+                      @given-i-is-high |
+                        assume less_than(add(m, n), i) {
+                          @i-is-high |
+                            less_than(add(m, n), i)
+                            [by hypothesis given-i-is-high]
+                          @given-the-pair-sums |
+                            assume add(u, v) = i {
+                              @the-pair-sums |
+                                add(u, v) = i
+                                [by hypothesis given-the-pair-sums]
+                              @the-sum-is-high |
+                                less_than(add(m, n), add(u, v))
+                                [by rewrite the-pair-sums i-is-high]
+                              @conclusion-one-index-escapes |
+                                less_than(m, u) or less_than(n, v)
+                                [using specialize
+                                  peano_order.aSumBelowASumSplits(m, n, u, v)
+                                  the-sum-is-high]
+                            }
+                          @the-pair-gives-it |
+                            add(u, v) = i ->
+                              (less_than(m, u) or less_than(n, v))
+                            [by discharge given-the-pair-sums]
+                        }
+                      @i-high-gives-it |
+                        less_than(add(m, n), i) -> add(u, v) = i ->
+                          (less_than(m, u) or less_than(n, v))
+                        [by discharge given-i-is-high]
+                    }
+                  @discharge-v |
+                    forall v: Nat;
+                      less_than(add(m, n), i) -> add(u, v) = i ->
+                      (less_than(m, u) or less_than(n, v))
+                    [by generalize generalize-v]
+                }
+              @discharge-u |
+                forall u, v: Nat;
+                  less_than(add(m, n), i) -> add(u, v) = i ->
+                  (less_than(m, u) or less_than(n, v))
+                [by generalize generalize-u]
+            }
+          @discharge-i |
+            forall i, u, v: Nat;
+              less_than(add(m, n), i) -> add(u, v) = i ->
+              (less_than(m, u) or less_than(n, v))
+            [by generalize generalize-i]
+        }
+      @discharge-n |
+        forall n, i, u, v: Nat;
+          less_than(add(m, n), i) -> add(u, v) = i ->
+          (less_than(m, u) or less_than(n, v))
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall m, n, i, u, v: Nat;
+      less_than(add(m, n), i) -> add(u, v) = i ->
+      (less_than(m, u) or less_than(n, v))
+    [by generalize generalize-m]
+qed
+
+// m < succ(m + e): the raised sum strictly exceeds its base, by `lessThanIntro` with gap e.
+theorem aBaseIsBelowItsRaisedSum: forall m, e: Nat;
+  less_than(m, succ(add(m, e)))
+proof
+  @generalize-m |
+    fix m: Nat {
+      @generalize-e |
+        fix e: Nat {
+          @the-gap-witnesses-it |
+            add(m, succ(e)) = succ(add(m, e))
+            [using specialize peano.addSuccRight(m, e)]
+          @conclusion-the-base-is-below |
+            less_than(m, succ(add(m, e)))
+            [using specialize peano_order.lessThanIntro(m, e, succ(add(m, e)))
+              the-gap-witnesses-it]
+        }
+      @discharge-e |
+        forall e: Nat; less_than(m, succ(add(m, e)))
+        [by generalize generalize-e]
+    }
+  @conclusion |
+    forall m, e: Nat; less_than(m, succ(add(m, e)))
+    [by generalize generalize-m]
+qed

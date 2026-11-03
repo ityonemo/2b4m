@@ -13,17 +13,16 @@
 // THE DOMAIN PROPERTY is the point. It needs two things, both now available:
 //   * ℤ_p has no zero divisors — `std/integer/mod-n-domain.b4m`;
 //   * the product's leading coefficient is the product of the leadings —
-//     `std/ring/polynomial-leading.b4m`'s `theProductsLeadingCoefficient`.
+//     `std/ring/polynomial/leading.b4m`'s `theProductsLeadingCoefficient`.
 // Together: for nonzero p, q the coefficient at deg p + deg q is a product of two surviving
 // leading coefficients, so it survives, so the product is not the zero polynomial.
 import ring <<< "std/ring.b4m"
 import ring_poly <<< "std/ring/polynomial.b4m"
-import ring_leading <<< "std/ring/polynomial-leading.b4m"
+import ring_leading <<< "std/ring/polynomial/leading.b4m"
 import mod_n <<< "std/integer/mod-n.b4m"
 import mod_n_domain <<< "std/integer/mod-n-domain.b4m"
 import primes <<< "std/primes.b4m"
 import peano <<< "std/peano.b4m"
-import subtraction <<< "std/peano/subtraction.b4m"
 
 sort Zn = mod_n.Zn
 sort Nat = peano.Nat
@@ -58,16 +57,15 @@ axiom zAddPolyCoeff: forall p, q: ZnPoly; forall i: Nat;
   zcoeff(zaddP(p, q), i) = mod_n.add(zcoeff(p, i), zcoeff(q, i))
 axiom zNegPolyCoeff: forall p: ZnPoly; forall i: Nat;
   zcoeff(znegP(p), i) = mod_n.neg(zcoeff(p, i))
-axiom zConvolutionZero: forall p, q: ZnPoly; forall i: Nat;
-  zconvolution(p, q, i, ZERO) =
-  mod_n.mul(zcoeff(p, ZERO), zcoeff(q, i))
-axiom zConvolutionSucc: forall p, q: ZnPoly; forall i, k: Nat;
-  zconvolution(p, q, i, peano.succ(k)) =
-  mod_n.add(zconvolution(p, q, i, k),
-  mod_n.mul(zcoeff(p, peano.succ(k)),
-  zcoeff(q, subtraction.sub(i, peano.succ(k)))))
+axiom zConvolutionZero: forall p, q: ZnPoly; forall j: Nat;
+  zconvolution(p, q, j, ZERO) =
+  mod_n.mul(zcoeff(p, j), zcoeff(q, ZERO))
+axiom zConvolutionSucc: forall p, q: ZnPoly; forall j, m: Nat;
+  zconvolution(p, q, j, peano.succ(m)) =
+  mod_n.add(mod_n.mul(zcoeff(p, j), zcoeff(q, peano.succ(m))),
+  zconvolution(p, q, peano.succ(j), m))
 axiom zMulPolyCoeff: forall p, q: ZnPoly; forall i: Nat;
-  zcoeff(zmulP(p, q), i) = zconvolution(p, q, i, i)
+  zcoeff(zmulP(p, q), i) = zconvolution(p, q, ZERO, i)
 axiom zDegreeIsALeadingIndex: forall p: ZnPoly;
   (not (p = ZZEROP)) -> (not (zcoeff(p, zdegree(p)) = mod_n.ZERO))
 axiom zDegreeBoundsTheCoefficients: forall p: ZnPoly;

@@ -1741,33 +1741,60 @@ qed
 // The reflection sends letter i to letter n - i. The arithmetic of that complement, from the
 // gap d with n = i + (d + 1).
 
-theorem subOfGap: forall i: Nat; forall d: Nat; sub(add(i, succ(d)), i) = succ(d)
+// i <= i + succ(d) is the guard the conclusion's own `sub` owes, so it is STATED: a guard in
+// a theorem's conclusion is discharged from its antecedent, not from a step inside the proof.
+theorem subOfGap: forall i: Nat; forall d: Nat;
+  peano_order.less_or_equal(i, add(i, succ(d))) ->
+  sub(add(i, succ(d)), i) = succ(d)
 proof
   @generalize-i |
     fix i: Nat {
       @generalize-d |
         fix d: Nat {
-          @commuted |
-            add(i, succ(d)) = add(succ(d), i)
-            [using specialize addIsCommutative(i, succ(d))]
-          @cancelled |
-            sub(add(succ(d), i), i) = succ(d)
-            [using specialize subAddCancel(succ(d), i)]
-          @conclusion-gap |
-            sub(add(i, succ(d)), i) = succ(d)
-            [by rewrite commuted cancelled]
+          @given-the-bound |
+            assume peano_order.less_or_equal(i, add(i, succ(d))) {
+              @commuted |
+                add(i, succ(d)) = add(succ(d), i)
+                [using specialize addIsCommutative(i, succ(d))]
+              @i-is-at-most-the-commuted-sum |
+                peano_order.less_or_equal(i, add(succ(d), i))
+                [using specialize peano_order.theSummandBoundReordered(i, succ(d))]
+              @cancelled |
+                sub(add(succ(d), i), i) = succ(d)
+                [using specialize subAddCancel(succ(d), i)]
+              @conclusion-gap |
+                sub(add(i, succ(d)), i) = succ(d)
+                [by rewrite commuted cancelled]
+            }
+          @the-bound-gives-it |
+            peano_order.less_or_equal(i, add(i, succ(d))) ->
+              sub(add(i, succ(d)), i) = succ(d)
+            [by discharge given-the-bound]
         }
       @discharge-d |
-        forall d: Nat; sub(add(i, succ(d)), i) = succ(d)
+        forall d: Nat;
+          peano_order.less_or_equal(i, add(i, succ(d))) ->
+          sub(add(i, succ(d)), i) = succ(d)
         [by generalize generalize-d]
     }
   @conclusion |
-    forall i: Nat; forall d: Nat; sub(add(i, succ(d)), i) = succ(d)
+    forall i: Nat; forall d: Nat;
+      peano_order.less_or_equal(i, add(i, succ(d))) ->
+      sub(add(i, succ(d)), i) = succ(d)
     [by generalize generalize-i]
 qed
 
 // The complement of a letter below n is positive, and below n when the letter is positive.
-theorem complementIsPositive: forall i: Nat; forall n: Nat; less_than(i, n) -> less_than(ZERO, sub(n, i))
+// The complement of an index strictly inside the range is positive.
+//
+// Hypothesis spelled `i <= n` rather than `i < n`: the conclusion applies `sub(n, i)`, whose
+// guard IS `i <= n`, and a guard in the conclusion is discharged from the antecedent. The
+// strict form is recovered inside where the gap argument needs it — which it can be, because
+// `sub(n, i)` being POSITIVE already forces i != n.
+theorem complementIsPositive: forall i: Nat; forall n: Nat;
+  less_than(i, n) ->
+  peano_order.less_or_equal(i, n) ->
+  less_than(ZERO, sub(n, i))
 proof
   @generalize-i |
     fix i: Nat {
@@ -1778,45 +1805,65 @@ proof
               @below |
                 less_than(i, n)
                 [by hypothesis given-below]
-              @gap-exists |
-                exists d: Nat; add(i, succ(d)) = n
-                [using specialize lessThanElim(i, n) below]
-              @with-gap-d |
-                unpack d: Nat from gap-exists {
-                  @gap |
-                    add(i, succ(d)) = n
-                    [by hypothesis with-gap-d]
-                  @complement-of-the-sum |
-                    sub(add(i, succ(d)), i) = succ(d)
-                    [using specialize subOfGap(i, d)]
-                  @complement |
-                    sub(n, i) = succ(d)
-                    [by rewrite gap complement-of-the-sum]
-                  @zero-below-succ-d |
-                    less_than(ZERO, succ(d))
-                    [using specialize zeroBelowSucc(d)]
-                  @conclusion-positive |
+              @given-at-most |
+                assume peano_order.less_or_equal(i, n) {
+                  @gap-exists |
+                    exists d: Nat; add(i, succ(d)) = n
+                    [using specialize lessThanElim(i, n) below]
+                  @with-gap-d |
+                    unpack d: Nat from gap-exists {
+                      @gap |
+                        add(i, succ(d)) = n
+                        [by hypothesis with-gap-d]
+                      @i-is-at-most-the-gap-sum |
+                        peano_order.less_or_equal(i, add(i, succ(d)))
+                        [using specialize
+                          peano_order.theLeftSummandIsAtMostTheSum(i, succ(d))]
+                      @complement-of-the-sum |
+                        sub(add(i, succ(d)), i) = succ(d)
+                        [using specialize subOfGap(i, d) i-is-at-most-the-gap-sum]
+                      @complement |
+                        sub(n, i) = succ(d)
+                        [by rewrite gap complement-of-the-sum]
+                      @zero-below-succ-d |
+                        less_than(ZERO, succ(d))
+                        [using specialize zeroBelowSucc(d)]
+                      @conclusion-positive |
+                        less_than(ZERO, sub(n, i))
+                        [by rewrite complement zero-below-succ-d]
+                    }
+                  @conclusion-positive-at-d |
                     less_than(ZERO, sub(n, i))
-                    [by rewrite complement zero-below-succ-d]
+                    [by unpacked with-gap-d]
                 }
-              @conclusion-positive-at-d |
-                less_than(ZERO, sub(n, i))
-                [by unpacked with-gap-d]
+              @the-at-most-gives-it |
+                peano_order.less_or_equal(i, n) -> less_than(ZERO, sub(n, i))
+                [by discharge given-at-most]
             }
           @conclusion-at-n |
-            less_than(i, n) -> less_than(ZERO, sub(n, i))
+            less_than(i, n) ->
+              peano_order.less_or_equal(i, n) ->
+              less_than(ZERO, sub(n, i))
             [by discharge given-below]
         }
       @discharge-n |
-        forall n: Nat; less_than(i, n) -> less_than(ZERO, sub(n, i))
+        forall n: Nat;
+          less_than(i, n) ->
+          peano_order.less_or_equal(i, n) ->
+          less_than(ZERO, sub(n, i))
         [by generalize generalize-n]
     }
   @conclusion |
-    forall i: Nat; forall n: Nat; less_than(i, n) -> less_than(ZERO, sub(n, i))
+    forall i: Nat; forall n: Nat;
+      less_than(i, n) ->
+      peano_order.less_or_equal(i, n) ->
+      less_than(ZERO, sub(n, i))
     [by generalize generalize-i]
 qed
 
-theorem complementIsBelow: forall i: Nat; forall n: Nat; less_than(ZERO, i) -> less_than(i, n) -> less_than(sub(n, i), n)
+theorem complementIsBelow: forall i: Nat; forall n: Nat; less_than(ZERO, i) ->
+  peano_order.less_or_equal(i, n) ->
+  less_than(sub(n, i), n)
 proof
   @generalize-i |
     fix i: Nat {
@@ -1825,39 +1872,46 @@ proof
           @given-positive |
             assume less_than(ZERO, i) {
               @given-below |
-                assume less_than(i, n) {
+                assume peano_order.less_or_equal(i, n) {
                   @positive |
                     less_than(ZERO, i)
                     [by hypothesis given-positive]
-                  @below |
-                    less_than(i, n)
+                  @at-most |
+                    peano_order.less_or_equal(i, n)
                     [by hypothesis given-below]
-                  @below-succ |
-                    less_than(i, succ(n))
-                    [using specialize lessThanSuccRight(i, n) below]
                   @conclusion-complement-below |
                     less_than(sub(n, i), n)
-                    [using specialize subStrictlyDecreases(i, n) positive below-succ]
+                    [using specialize subStrictlyDecreases(i, n) positive at-most]
                 }
               @conclusion-given-below |
-                less_than(i, n) -> less_than(sub(n, i), n)
+                peano_order.less_or_equal(i, n) -> less_than(sub(n, i), n)
                 [by discharge given-below]
             }
           @conclusion-at-n |
-            less_than(ZERO, i) -> less_than(i, n) -> less_than(sub(n, i), n)
+            less_than(ZERO, i) ->
+              peano_order.less_or_equal(i, n) ->
+              less_than(sub(n, i), n)
             [by discharge given-positive]
         }
       @discharge-n |
-        forall n: Nat; less_than(ZERO, i) -> less_than(i, n) -> less_than(sub(n, i), n)
+        forall n: Nat; less_than(ZERO, i) ->
+          peano_order.less_or_equal(i, n) ->
+          less_than(sub(n, i), n)
         [by generalize generalize-n]
     }
   @conclusion |
-    forall i: Nat; forall n: Nat; less_than(ZERO, i) -> less_than(i, n) -> less_than(sub(n, i), n)
+    forall i: Nat; forall n: Nat; less_than(ZERO, i) ->
+      peano_order.less_or_equal(i, n) ->
+      less_than(sub(n, i), n)
     [by generalize generalize-i]
 qed
 
 // Complementing twice gives the letter back.
-theorem complementOfComplement: forall i: Nat; forall n: Nat; less_than(i, n) -> sub(n, sub(n, i)) = i
+theorem complementOfComplement: forall i: Nat; forall n: Nat;
+  less_than(i, n) ->
+  peano_order.less_or_equal(i, n) ->
+  peano_order.less_or_equal(sub(n, i), n) ->
+  sub(n, sub(n, i)) = i
 proof
   @generalize-i |
     fix i: Nat {
@@ -1868,49 +1922,89 @@ proof
               @below |
                 less_than(i, n)
                 [by hypothesis given-below]
-              @gap-exists |
-                exists d: Nat; add(i, succ(d)) = n
-                [using specialize lessThanElim(i, n) below]
-              @with-gap-d |
-                unpack d: Nat from gap-exists {
-                  @gap |
-                    add(i, succ(d)) = n
-                    [by hypothesis with-gap-d]
-                  @complement-of-the-sum |
-                    sub(add(i, succ(d)), i) = succ(d)
-                    [using specialize subOfGap(i, d)]
-                  @complement |
-                    sub(n, i) = succ(d)
-                    [by rewrite gap complement-of-the-sum]
-                  @cancelled |
-                    sub(add(i, succ(d)), succ(d)) = i
-                    [using specialize subAddCancel(i, succ(d))]
-                  @complement-of-succ-d |
-                    sub(n, succ(d)) = i
-                    [by rewrite gap cancelled]
-                  @conclusion-twice |
-                    sub(n, sub(n, i)) = i
-                    [by rewrite complement complement-of-succ-d]
+              @given-i-at-most-n |
+                assume peano_order.less_or_equal(i, n) {
+                  @given-the-nested-bound |
+                    assume peano_order.less_or_equal(sub(n, i), n) {
+                      @gap-exists |
+                        exists d: Nat; add(i, succ(d)) = n
+                        [using specialize lessThanElim(i, n) below]
+                      @with-gap-d |
+                        unpack d: Nat from gap-exists {
+                          @gap |
+                            add(i, succ(d)) = n
+                            [by hypothesis with-gap-d]
+                          @i-is-at-most-the-gap-sum |
+                            peano_order.less_or_equal(i, add(i, succ(d)))
+                            [using specialize peano_order.theLeftSummandIsAtMostTheSum(
+                              i, succ(d))]
+                          @complement-of-the-sum |
+                            sub(add(i, succ(d)), i) = succ(d)
+                            [using specialize subOfGap(i, d) i-is-at-most-the-gap-sum]
+                          @complement |
+                            sub(n, i) = succ(d)
+                            [by rewrite gap complement-of-the-sum]
+                          @the-gap-is-at-most-the-sum |
+                            peano_order.less_or_equal(succ(d), add(i, succ(d)))
+                            [using specialize peano_order.theSummandBoundReordered(
+                              succ(d), i)]
+                          @cancelled |
+                            sub(add(i, succ(d)), succ(d)) = i
+                            [using specialize subAddCancel(i, succ(d))]
+                          @the-gap-is-at-most-n |
+                            peano_order.less_or_equal(succ(d), n)
+                            [by rewrite gap the-gap-is-at-most-the-sum]
+                          @complement-of-succ-d |
+                            sub(n, succ(d)) = i
+                            [by rewrite gap cancelled]
+                          @conclusion-twice |
+                            sub(n, sub(n, i)) = i
+                            [by rewrite complement complement-of-succ-d]
+                        }
+                      @conclusion-twice-at-d |
+                        sub(n, sub(n, i)) = i
+                        [by unpacked with-gap-d]
+                    }
+                  @the-nested-bound-gives-it |
+                    peano_order.less_or_equal(sub(n, i), n) -> sub(n, sub(n, i)) = i
+                    [by discharge given-the-nested-bound]
                 }
-              @conclusion-twice-at-d |
-                sub(n, sub(n, i)) = i
-                [by unpacked with-gap-d]
+              @the-at-most-gives-it |
+                peano_order.less_or_equal(i, n) ->
+                  peano_order.less_or_equal(sub(n, i), n) ->
+                  sub(n, sub(n, i)) = i
+                [by discharge given-i-at-most-n]
             }
           @conclusion-at-n |
-            less_than(i, n) -> sub(n, sub(n, i)) = i
+            less_than(i, n) ->
+              peano_order.less_or_equal(i, n) ->
+              peano_order.less_or_equal(sub(n, i), n) ->
+              sub(n, sub(n, i)) = i
             [by discharge given-below]
         }
       @discharge-n |
-        forall n: Nat; less_than(i, n) -> sub(n, sub(n, i)) = i
+        forall n: Nat;
+          less_than(i, n) ->
+          peano_order.less_or_equal(i, n) ->
+          peano_order.less_or_equal(sub(n, i), n) ->
+          sub(n, sub(n, i)) = i
         [by generalize generalize-n]
     }
   @conclusion |
-    forall i: Nat; forall n: Nat; less_than(i, n) -> sub(n, sub(n, i)) = i
+    forall i: Nat; forall n: Nat;
+      less_than(i, n) ->
+      peano_order.less_or_equal(i, n) ->
+      peano_order.less_or_equal(sub(n, i), n) ->
+      sub(n, sub(n, i)) = i
     [by generalize generalize-i]
 qed
 
 // The complement of i+1 is one below the complement of i.
-theorem complementOfSuccessor: forall i: Nat; forall n: Nat; less_than(succ(i), n) -> succ(sub(n, succ(i))) = sub(n, i)
+theorem complementOfSuccessor: forall i: Nat; forall n: Nat;
+  less_than(succ(i), n) ->
+  peano_order.less_or_equal(succ(i), n) ->
+  peano_order.less_or_equal(i, n) ->
+  succ(sub(n, succ(i))) = sub(n, i)
 proof
   @generalize-i |
     fix i: Nat {
@@ -1918,62 +2012,104 @@ proof
         fix n: Nat {
           @given-below |
             assume less_than(succ(i), n) {
-              @below |
-                less_than(succ(i), n)
-                [by hypothesis given-below]
-              @gap-exists |
-                exists d: Nat; add(succ(i), succ(d)) = n
-                [using specialize lessThanElim(succ(i), n) below]
-              @with-gap-d |
-                unpack d: Nat from gap-exists {
-                  @gap |
-                    add(succ(i), succ(d)) = n
-                    [by hypothesis with-gap-d]
-                  @complement-of-the-sum |
-                    sub(add(succ(i), succ(d)), succ(i)) = succ(d)
-                    [using specialize subOfGap(succ(i), d)]
-                  @complement-of-succ-i |
-                    sub(n, succ(i)) = succ(d)
-                    [by rewrite gap complement-of-the-sum]
-                  @succ-pushed-out |
-                    add(succ(i), succ(d)) = succ(add(i, succ(d)))
-                    [using specialize addSuccLeft(i, succ(d))]
-                  @succ-pulled-in |
-                    add(i, succ(succ(d))) = succ(add(i, succ(d)))
-                    [using specialize addSuccRight(i, succ(d))]
-                  @gap-from-i |
-                    add(i, succ(succ(d))) = add(succ(i), succ(d))
-                    [by rewrite succ-pushed-out succ-pulled-in]
-                  @gap-from-i-is-n |
-                    add(i, succ(succ(d))) = n
-                    [using chain gap-from-i gap]
-                  @complement-of-the-longer-sum |
-                    sub(add(i, succ(succ(d))), i) = succ(succ(d))
-                    [using specialize subOfGap(i, succ(d))]
-                  @complement-of-i |
-                    sub(n, i) = succ(succ(d))
-                    [by rewrite gap-from-i-is-n complement-of-the-longer-sum]
-                  @complement-of-i-flipped |
-                    succ(succ(d)) = sub(n, i)
-                    [by symmetry complement-of-i]
-                  @conclusion-shifted |
-                    succ(sub(n, succ(i))) = sub(n, i)
-                    [by rewrite complement-of-succ-i complement-of-i-flipped]
+              @given-the-successor-bound |
+                assume peano_order.less_or_equal(succ(i), n) {
+                  @given-the-plain-bound |
+                    assume peano_order.less_or_equal(i, n) {
+                      @below |
+                        less_than(succ(i), n)
+                        [by hypothesis given-below]
+                      @gap-exists |
+                        exists d: Nat; add(succ(i), succ(d)) = n
+                        [using specialize lessThanElim(succ(i), n) below]
+                      @with-gap-d |
+                        unpack d: Nat from gap-exists {
+                          @gap |
+                            add(succ(i), succ(d)) = n
+                            [by hypothesis with-gap-d]
+                          @the-successor-is-at-most-the-sum |
+                            peano_order.less_or_equal(succ(i), add(succ(i), succ(d)))
+                            [using specialize peano_order.theLeftSummandIsAtMostTheSum(
+                              succ(i), succ(d))]
+                          @complement-of-the-sum |
+                            sub(add(succ(i), succ(d)), succ(i)) = succ(d)
+                            [using specialize subOfGap(succ(i), d)
+                              the-successor-is-at-most-the-sum]
+                          @the-successor-is-at-most-n |
+                            peano_order.less_or_equal(succ(i), n)
+                            [by rewrite gap the-successor-is-at-most-the-sum]
+                          @complement-of-succ-i |
+                            sub(n, succ(i)) = succ(d)
+                            [by rewrite gap complement-of-the-sum]
+                          @succ-pushed-out |
+                            add(succ(i), succ(d)) = succ(add(i, succ(d)))
+                            [using specialize addSuccLeft(i, succ(d))]
+                          @succ-pulled-in |
+                            add(i, succ(succ(d))) = succ(add(i, succ(d)))
+                            [using specialize addSuccRight(i, succ(d))]
+                          @gap-from-i |
+                            add(i, succ(succ(d))) = add(succ(i), succ(d))
+                            [by rewrite succ-pushed-out succ-pulled-in]
+                          @gap-from-i-is-n |
+                            add(i, succ(succ(d))) = n
+                            [using chain gap-from-i gap]
+                          @i-is-at-most-the-longer-sum |
+                            peano_order.less_or_equal(i, add(i, succ(succ(d))))
+                            [using specialize peano_order.theLeftSummandIsAtMostTheSum(
+                              i, succ(succ(d)))]
+                          @complement-of-the-longer-sum |
+                            sub(add(i, succ(succ(d))), i) = succ(succ(d))
+                            [using specialize subOfGap(i, succ(d))
+                              i-is-at-most-the-longer-sum]
+                          @i-is-at-most-n |
+                            peano_order.less_or_equal(i, n)
+                            [by rewrite gap-from-i-is-n i-is-at-most-the-longer-sum]
+                          @complement-of-i |
+                            sub(n, i) = succ(succ(d))
+                            [by rewrite gap-from-i-is-n complement-of-the-longer-sum]
+                          @complement-of-i-flipped |
+                            succ(succ(d)) = sub(n, i)
+                            [by symmetry complement-of-i]
+                          @conclusion-shifted |
+                            succ(sub(n, succ(i))) = sub(n, i)
+                            [by rewrite complement-of-succ-i complement-of-i-flipped]
+                        }
+                      @conclusion-shifted-at-d |
+                        succ(sub(n, succ(i))) = sub(n, i)
+                        [by unpacked with-gap-d]
+                    }
+                  @the-plain-bound-gives-it |
+                    peano_order.less_or_equal(i, n) ->
+                      succ(sub(n, succ(i))) = sub(n, i)
+                    [by discharge given-the-plain-bound]
                 }
-              @conclusion-shifted-at-d |
-                succ(sub(n, succ(i))) = sub(n, i)
-                [by unpacked with-gap-d]
+              @the-successor-bound-gives-it |
+                peano_order.less_or_equal(succ(i), n) ->
+                  peano_order.less_or_equal(i, n) ->
+                  succ(sub(n, succ(i))) = sub(n, i)
+                [by discharge given-the-successor-bound]
             }
           @conclusion-at-n |
-            less_than(succ(i), n) -> succ(sub(n, succ(i))) = sub(n, i)
+            less_than(succ(i), n) ->
+              peano_order.less_or_equal(succ(i), n) ->
+              peano_order.less_or_equal(i, n) ->
+              succ(sub(n, succ(i))) = sub(n, i)
             [by discharge given-below]
         }
       @discharge-n |
-        forall n: Nat; less_than(succ(i), n) -> succ(sub(n, succ(i))) = sub(n, i)
+        forall n: Nat;
+          less_than(succ(i), n) ->
+          peano_order.less_or_equal(succ(i), n) ->
+          peano_order.less_or_equal(i, n) ->
+          succ(sub(n, succ(i))) = sub(n, i)
         [by generalize generalize-n]
     }
   @conclusion |
-    forall i: Nat; forall n: Nat; less_than(succ(i), n) -> succ(sub(n, succ(i))) = sub(n, i)
+    forall i: Nat; forall n: Nat;
+      less_than(succ(i), n) ->
+      peano_order.less_or_equal(succ(i), n) ->
+      peano_order.less_or_equal(i, n) ->
+      succ(sub(n, succ(i))) = sub(n, i)
     [by generalize generalize-i]
 qed
 
@@ -1982,9 +2118,16 @@ theorem complementOfOne: forall m: Nat; sub(succ(m), succ(ZERO)) = m
 proof
   @generalize-m |
     fix m: Nat {
+      @zero-is-at-most-m |
+        peano_order.less_or_equal(ZERO, m)
+        [using specialize peano_order.zeroIsAtMostAnything(m)]
+      @the-successors-compare |
+        peano_order.less_or_equal(succ(ZERO), succ(m))
+        [using specialize peano_order.succPreservesAtMost(ZERO, m)
+          zero-is-at-most-m]
       @both-successors |
         sub(succ(m), succ(ZERO)) = sub(m, ZERO)
-        [using specialize subSuccSucc(m, ZERO)]
+        [using specialize subSuccSucc(m, ZERO) zero-is-at-most-m]
       @minus-zero |
         sub(m, ZERO) = m
         [using specialize subZeroRight(m)]
@@ -2004,14 +2147,14 @@ qed
 define isTheReflection(sigma, n) =
   invertible(sigma)
   and apply(sigma, numeral(ZERO)) = numeral(ZERO)
-  and (forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> apply(sigma, numeral(i)) = numeral(sub(n, i)))
+  and (forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> peano_order.less_or_equal(i, n) -> apply(sigma, numeral(i)) = numeral(sub(n, i)))
   and (forall x: Element; (not member(x, segment(n))) -> apply(sigma, x) = x)
 
 // Its graph, for the definite description: letter 0 stays, a positive letter goes to its
 // complement, anything outside the segment stays.
 define reflectionSpec(n, x, y) =
   (x = numeral(ZERO) and y = numeral(ZERO))
-  or (exists i: Nat; less_than(ZERO, i) and less_than(i, n) and x = numeral(i) and y = numeral(sub(n, i)))
+  or (exists i: Nat; less_than(ZERO, i) and less_than(i, n) and peano_order.less_or_equal(i, n) and x = numeral(i) and y = numeral(sub(n, i)))
   or ((not member(x, segment(n))) and y = x)
 
 // The spec is TOTAL and SINGLE-VALUED: a letter is 0 or positive, or the point is outside.
@@ -2093,14 +2236,14 @@ proof
                                                 [by symmetry y2-is-zero]
                                             }
                                           @when-complemented |
-                                            assume exists i2: Nat; less_than(ZERO, i2) and less_than(i2, n) and x = numeral(i2) and y2 = numeral(sub(n, i2)) {
+                                            assume exists i2: Nat; less_than(ZERO, i2) and less_than(i2, n) and peano_order.less_or_equal(i2, n) and x = numeral(i2) and y2 = numeral(sub(n, i2)) {
                                               @complemented-exists |
-                                                exists i2: Nat; less_than(ZERO, i2) and less_than(i2, n) and x = numeral(i2) and y2 = numeral(sub(n, i2))
+                                                exists i2: Nat; less_than(ZERO, i2) and less_than(i2, n) and peano_order.less_or_equal(i2, n) and x = numeral(i2) and y2 = numeral(sub(n, i2))
                                                 [by hypothesis when-complemented]
                                               @with-index-i2 |
                                                 unpack i2: Nat from complemented-exists {
                                                   @complemented-facts |
-                                                    less_than(ZERO, i2) and less_than(i2, n) and x = numeral(i2) and y2 = numeral(sub(n, i2))
+                                                    less_than(ZERO, i2) and less_than(i2, n) and peano_order.less_or_equal(i2, n) and x = numeral(i2) and y2 = numeral(sub(n, i2))
                                                     [by hypothesis with-index-i2]
                                                   @i2-positive |
                                                     less_than(ZERO, i2)
@@ -2172,14 +2315,17 @@ proof
                                   @i-positive |
                                     less_than(ZERO, i)
                                     [by rewrite i-is-succ zero-below-succ-i2]
+                                  @i-is-at-most-n |
+                                    peano_order.less_or_equal(i, n)
+                                    [using tautology i-in-range]
                                   @complement-is-itself |
                                     numeral(sub(n, i)) = numeral(sub(n, i))
                                     [by reflexivity]
                                   @complemented-facts |
-                                    less_than(ZERO, i) and less_than(i, n) and x = numeral(i) and numeral(sub(n, i)) = numeral(sub(n, i))
-                                    [using tautology i-positive i-in-range x-is-letter-i complement-is-itself]
+                                    less_than(ZERO, i) and less_than(i, n) and peano_order.less_or_equal(i, n) and x = numeral(i) and numeral(sub(n, i)) = numeral(sub(n, i))
+                                    [using tautology i-positive i-in-range i-is-at-most-n x-is-letter-i complement-is-itself]
                                   @complemented-witness |
-                                    exists i3: Nat; less_than(ZERO, i3) and less_than(i3, n) and x = numeral(i3) and numeral(sub(n, i)) = numeral(sub(n, i3))
+                                    exists i3: Nat; less_than(ZERO, i3) and less_than(i3, n) and peano_order.less_or_equal(i3, n) and x = numeral(i3) and numeral(sub(n, i)) = numeral(sub(n, i3))
                                     [by witness(i) complemented-facts]
                                   @spec-holds |
                                     reflectionSpec(n, x, numeral(sub(n, i)))
@@ -2219,14 +2365,14 @@ proof
                                                     [by ex_falso zero-positive zero-not-positive]
                                                 }
                                               @when-complemented |
-                                                assume exists i3: Nat; less_than(ZERO, i3) and less_than(i3, n) and x = numeral(i3) and y2 = numeral(sub(n, i3)) {
+                                                assume exists i3: Nat; less_than(ZERO, i3) and less_than(i3, n) and peano_order.less_or_equal(i3, n) and x = numeral(i3) and y2 = numeral(sub(n, i3)) {
                                                   @complemented-exists |
-                                                    exists i3: Nat; less_than(ZERO, i3) and less_than(i3, n) and x = numeral(i3) and y2 = numeral(sub(n, i3))
+                                                    exists i3: Nat; less_than(ZERO, i3) and less_than(i3, n) and peano_order.less_or_equal(i3, n) and x = numeral(i3) and y2 = numeral(sub(n, i3))
                                                     [by hypothesis when-complemented]
                                                   @with-index-i3 |
                                                     unpack i3: Nat from complemented-exists {
                                                       @complemented-facts-at-i3 |
-                                                        less_than(ZERO, i3) and less_than(i3, n) and x = numeral(i3) and y2 = numeral(sub(n, i3))
+                                                        less_than(ZERO, i3) and less_than(i3, n) and peano_order.less_or_equal(i3, n) and x = numeral(i3) and y2 = numeral(sub(n, i3))
                                                         [by hypothesis with-index-i3]
                                                       @x-is-letter-i3 |
                                                         x = numeral(i3)
@@ -2326,14 +2472,14 @@ proof
                                     [by rewrite y2-is-zero x-is-zero]
                                 }
                               @when-complemented |
-                                assume exists i2: Nat; less_than(ZERO, i2) and less_than(i2, n) and x = numeral(i2) and y2 = numeral(sub(n, i2)) {
+                                assume exists i2: Nat; less_than(ZERO, i2) and less_than(i2, n) and peano_order.less_or_equal(i2, n) and x = numeral(i2) and y2 = numeral(sub(n, i2)) {
                                   @complemented-exists |
-                                    exists i2: Nat; less_than(ZERO, i2) and less_than(i2, n) and x = numeral(i2) and y2 = numeral(sub(n, i2))
+                                    exists i2: Nat; less_than(ZERO, i2) and less_than(i2, n) and peano_order.less_or_equal(i2, n) and x = numeral(i2) and y2 = numeral(sub(n, i2))
                                     [by hypothesis when-complemented]
                                   @with-index-i2 |
                                     unpack i2: Nat from complemented-exists {
                                       @complemented-facts |
-                                        less_than(ZERO, i2) and less_than(i2, n) and x = numeral(i2) and y2 = numeral(sub(n, i2))
+                                        less_than(ZERO, i2) and less_than(i2, n) and peano_order.less_or_equal(i2, n) and x = numeral(i2) and y2 = numeral(sub(n, i2))
                                         [by hypothesis with-index-i2]
                                       @i2-in-range |
                                         less_than(i2, n)
@@ -2401,7 +2547,7 @@ qed
 // A map whose graph is the spec has the reflection's three values.
 theorem reflectionSpecValues: forall n: Nat; forall g: Fn; (forall x: Element; reflectionSpec(n, x, apply(g, x))) ->
   (apply(g, numeral(ZERO)) = numeral(ZERO)
-  and (forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i)))
+  and (forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> peano_order.less_or_equal(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i)))
   and (forall x: Element; (not member(x, segment(n))) -> apply(g, x) = x))
 proof
   @generalize-n |
@@ -2431,14 +2577,14 @@ proof
                         [by and_rhs stays]
                     }
                   @when-complemented |
-                    assume exists i: Nat; less_than(ZERO, i) and less_than(i, n) and numeral(ZERO) = numeral(i) and apply(g, numeral(ZERO)) = numeral(sub(n, i)) {
+                    assume exists i: Nat; less_than(ZERO, i) and less_than(i, n) and peano_order.less_or_equal(i, n) and numeral(ZERO) = numeral(i) and apply(g, numeral(ZERO)) = numeral(sub(n, i)) {
                       @complemented-exists |
-                        exists i: Nat; less_than(ZERO, i) and less_than(i, n) and numeral(ZERO) = numeral(i) and apply(g, numeral(ZERO)) = numeral(sub(n, i))
+                        exists i: Nat; less_than(ZERO, i) and less_than(i, n) and peano_order.less_or_equal(i, n) and numeral(ZERO) = numeral(i) and apply(g, numeral(ZERO)) = numeral(sub(n, i))
                         [by hypothesis when-complemented]
                       @with-index-i |
                         unpack i: Nat from complemented-exists {
                           @complemented-facts |
-                            less_than(ZERO, i) and less_than(i, n) and numeral(ZERO) = numeral(i) and apply(g, numeral(ZERO)) = numeral(sub(n, i))
+                            less_than(ZERO, i) and less_than(i, n) and peano_order.less_or_equal(i, n) and numeral(ZERO) = numeral(i) and apply(g, numeral(ZERO)) = numeral(sub(n, i))
                             [by hypothesis with-index-i]
                           @i-positive |
                             less_than(ZERO, i)
@@ -2481,96 +2627,108 @@ proof
                     assume less_than(ZERO, i) {
                       @given-in-range |
                         assume less_than(i, n) {
-                          @positive |
-                            less_than(ZERO, i)
-                            [by hypothesis given-positive]
-                          @in-range |
-                            less_than(i, n)
-                            [by hypothesis given-in-range]
-                          @spec-at-i |
-                            reflectionSpec(n, numeral(i), apply(g, numeral(i)))
-                            [using specialize graph(numeral(i))]
-                          @conclusion-complemented |
-                            apply(g, numeral(i)) = numeral(sub(n, i))
-                            case spec-at-i {
-                              @when-stays |
-                                assume numeral(i) = numeral(ZERO) and apply(g, numeral(i)) = numeral(ZERO) {
-                                  @stays |
-                                    numeral(i) = numeral(ZERO) and apply(g, numeral(i)) = numeral(ZERO)
-                                    [by hypothesis when-stays]
-                                  @letters-agree |
-                                    numeral(i) = numeral(ZERO)
-                                    [by and_lhs stays]
-                                  @i-is-zero |
-                                    i = ZERO
-                                    [using specialize numeralInjective(i, ZERO) letters-agree]
-                                  @zero-positive |
-                                    less_than(ZERO, ZERO)
-                                    [by rewrite i-is-zero positive]
-                                  @zero-not-positive |
-                                    not less_than(ZERO, ZERO)
-                                    [using specialize lessThanIrreflexive(ZERO)]
-                                  @conclusion-stays-ex_falso |
-                                    apply(g, numeral(i)) = numeral(sub(n, i))
-                                    [by ex_falso zero-positive zero-not-positive]
-                                }
-                              @when-complemented |
-                                assume exists i2: Nat; less_than(ZERO, i2) and less_than(i2, n) and numeral(i) = numeral(i2) and apply(g, numeral(i)) = numeral(sub(n, i2)) {
-                                  @complemented-exists |
-                                    exists i2: Nat; less_than(ZERO, i2) and less_than(i2, n) and numeral(i) = numeral(i2) and apply(g, numeral(i)) = numeral(sub(n, i2))
-                                    [by hypothesis when-complemented]
-                                  @with-index-i2 |
-                                    unpack i2: Nat from complemented-exists {
-                                      @complemented-facts |
-                                        less_than(ZERO, i2) and less_than(i2, n) and numeral(i) = numeral(i2) and apply(g, numeral(i)) = numeral(sub(n, i2))
-                                        [by hypothesis with-index-i2]
+                          @given-at-most |
+                            assume peano_order.less_or_equal(i, n) {
+                              @positive |
+                                less_than(ZERO, i)
+                                [by hypothesis given-positive]
+                              @in-range |
+                                less_than(i, n)
+                                [by hypothesis given-in-range]
+                              @i-is-at-most-n |
+                                peano_order.less_or_equal(i, n)
+                                [by hypothesis given-at-most]
+                              @spec-at-i |
+                                reflectionSpec(n, numeral(i), apply(g, numeral(i)))
+                                [using specialize graph(numeral(i))]
+                              @conclusion-complemented |
+                                apply(g, numeral(i)) = numeral(sub(n, i))
+                                case spec-at-i {
+                                  @when-stays |
+                                    assume numeral(i) = numeral(ZERO) and apply(g, numeral(i)) = numeral(ZERO) {
+                                      @stays |
+                                        numeral(i) = numeral(ZERO) and apply(g, numeral(i)) = numeral(ZERO)
+                                        [by hypothesis when-stays]
                                       @letters-agree |
-                                        numeral(i) = numeral(i2)
-                                        [using tautology complemented-facts]
-                                      @image-is-complement-of-i2 |
-                                        apply(g, numeral(i)) = numeral(sub(n, i2))
-                                        [using tautology complemented-facts]
-                                      @indices-agree |
-                                        i = i2
-                                        [using specialize numeralInjective(i, i2) letters-agree]
-                                      @conclusion-complement-of-i |
+                                        numeral(i) = numeral(ZERO)
+                                        [by and_lhs stays]
+                                      @i-is-zero |
+                                        i = ZERO
+                                        [using specialize numeralInjective(i, ZERO) letters-agree]
+                                      @zero-positive |
+                                        less_than(ZERO, ZERO)
+                                        [by rewrite i-is-zero positive]
+                                      @zero-not-positive |
+                                        not less_than(ZERO, ZERO)
+                                        [using specialize lessThanIrreflexive(ZERO)]
+                                      @conclusion-stays-ex_falso |
                                         apply(g, numeral(i)) = numeral(sub(n, i))
-                                        [by rewrite indices-agree image-is-complement-of-i2]
+                                        [by ex_falso zero-positive zero-not-positive]
                                     }
-                                  @conclusion-when-complemented |
-                                    apply(g, numeral(i)) = numeral(sub(n, i))
-                                    [by unpacked with-index-i2]
-                                }
-                              @when-outside |
-                                assume (not member(numeral(i), segment(n))) and apply(g, numeral(i)) = numeral(i) {
-                                  @outside |
-                                    (not member(numeral(i), segment(n))) and apply(g, numeral(i)) = numeral(i)
-                                    [by hypothesis when-outside]
-                                  @letter-out |
-                                    not member(numeral(i), segment(n))
-                                    [by and_lhs outside]
-                                  @letter-membership |
-                                    member(numeral(i), segment(n)) iff less_than(i, n)
-                                    [using specialize numeralInSegment(n, i)]
-                                  @letter-in |
-                                    member(numeral(i), segment(n))
-                                    [using tautology letter-membership in-range]
-                                  @conclusion-outside-ex_falso |
-                                    apply(g, numeral(i)) = numeral(sub(n, i))
-                                    [by ex_falso letter-in letter-out]
+                                  @when-complemented |
+                                    assume exists i2: Nat; less_than(ZERO, i2) and less_than(i2, n) and peano_order.less_or_equal(i2, n) and numeral(i) = numeral(i2) and apply(g, numeral(i)) = numeral(sub(n, i2)) {
+                                      @complemented-exists |
+                                        exists i2: Nat; less_than(ZERO, i2) and less_than(i2, n) and peano_order.less_or_equal(i2, n) and numeral(i) = numeral(i2) and apply(g, numeral(i)) = numeral(sub(n, i2))
+                                        [by hypothesis when-complemented]
+                                      @with-index-i2 |
+                                        unpack i2: Nat from complemented-exists {
+                                          @complemented-facts |
+                                            less_than(ZERO, i2) and less_than(i2, n) and peano_order.less_or_equal(i2, n) and numeral(i) = numeral(i2) and apply(g, numeral(i)) = numeral(sub(n, i2))
+                                            [by hypothesis with-index-i2]
+                                          @letters-agree |
+                                            numeral(i) = numeral(i2)
+                                            [using tautology complemented-facts]
+                                          @image-is-complement-of-i2 |
+                                            apply(g, numeral(i)) = numeral(sub(n, i2))
+                                            [using tautology complemented-facts]
+                                          @indices-agree |
+                                            i = i2
+                                            [using specialize numeralInjective(i, i2) letters-agree]
+                                          @conclusion-complement-of-i |
+                                            apply(g, numeral(i)) = numeral(sub(n, i))
+                                            [by rewrite indices-agree image-is-complement-of-i2]
+                                        }
+                                      @conclusion-when-complemented |
+                                        apply(g, numeral(i)) = numeral(sub(n, i))
+                                        [by unpacked with-index-i2]
+                                    }
+                                  @when-outside |
+                                    assume (not member(numeral(i), segment(n))) and apply(g, numeral(i)) = numeral(i) {
+                                      @outside |
+                                        (not member(numeral(i), segment(n))) and apply(g, numeral(i)) = numeral(i)
+                                        [by hypothesis when-outside]
+                                      @letter-out |
+                                        not member(numeral(i), segment(n))
+                                        [by and_lhs outside]
+                                      @letter-membership |
+                                        member(numeral(i), segment(n)) iff less_than(i, n)
+                                        [using specialize numeralInSegment(n, i)]
+                                      @letter-in |
+                                        member(numeral(i), segment(n))
+                                        [using tautology letter-membership in-range]
+                                      @conclusion-outside-ex_falso |
+                                        apply(g, numeral(i)) = numeral(sub(n, i))
+                                        [by ex_falso letter-in letter-out]
+                                    }
                                 }
                             }
+                          @the-at-most-gives-it |
+                            peano_order.less_or_equal(i, n) ->
+                              apply(g, numeral(i)) = numeral(sub(n, i))
+                            [by discharge given-at-most]
                         }
                       @conclusion-given-in-range |
-                        less_than(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i))
+                        less_than(i, n) ->
+                          peano_order.less_or_equal(i, n) ->
+                          apply(g, numeral(i)) = numeral(sub(n, i))
                         [by discharge given-in-range]
                     }
                   @conclusion-complement-clause |
-                    less_than(ZERO, i) -> less_than(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i))
+                    less_than(ZERO, i) -> less_than(i, n) -> peano_order.less_or_equal(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i))
                     [by discharge given-positive]
                 }
               @complements |
-                forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i))
+                forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> peano_order.less_or_equal(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i))
                 [by generalize generalize-i]
 
               // outside the segment
@@ -2603,14 +2761,14 @@ proof
                                 [by rewrite x-is-zero image-is-zero]
                             }
                           @when-complemented |
-                            assume exists i: Nat; less_than(ZERO, i) and less_than(i, n) and x = numeral(i) and apply(g, x) = numeral(sub(n, i)) {
+                            assume exists i: Nat; less_than(ZERO, i) and less_than(i, n) and peano_order.less_or_equal(i, n) and x = numeral(i) and apply(g, x) = numeral(sub(n, i)) {
                               @complemented-exists |
-                                exists i: Nat; less_than(ZERO, i) and less_than(i, n) and x = numeral(i) and apply(g, x) = numeral(sub(n, i))
+                                exists i: Nat; less_than(ZERO, i) and less_than(i, n) and peano_order.less_or_equal(i, n) and x = numeral(i) and apply(g, x) = numeral(sub(n, i))
                                 [by hypothesis when-complemented]
                               @with-index-i |
                                 unpack i: Nat from complemented-exists {
                                   @complemented-facts |
-                                    less_than(ZERO, i) and less_than(i, n) and x = numeral(i) and apply(g, x) = numeral(sub(n, i))
+                                    less_than(ZERO, i) and less_than(i, n) and peano_order.less_or_equal(i, n) and x = numeral(i) and apply(g, x) = numeral(sub(n, i))
                                     [by hypothesis with-index-i]
                                   @i-in-range |
                                     less_than(i, n)
@@ -2654,21 +2812,21 @@ proof
                 forall x: Element; (not member(x, segment(n))) -> apply(g, x) = x
                 [by generalize generalize-x]
               @conclusion-values |
-                apply(g, numeral(ZERO)) = numeral(ZERO) and (forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i))) and (forall x: Element; (not member(x, segment(n))) -> apply(g, x) = x)
+                apply(g, numeral(ZERO)) = numeral(ZERO) and (forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> peano_order.less_or_equal(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i))) and (forall x: Element; (not member(x, segment(n))) -> apply(g, x) = x)
                 [using tautology fixes-zero complements fixes-outside]
             }
           @conclusion-at-g |
-            (forall x: Element; reflectionSpec(n, x, apply(g, x))) -> (apply(g, numeral(ZERO)) = numeral(ZERO) and (forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i))) and (forall x: Element; (not member(x, segment(n))) -> apply(g, x) = x))
+            (forall x: Element; reflectionSpec(n, x, apply(g, x))) -> (apply(g, numeral(ZERO)) = numeral(ZERO) and (forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> peano_order.less_or_equal(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i))) and (forall x: Element; (not member(x, segment(n))) -> apply(g, x) = x))
             [by discharge given-graph]
         }
       @discharge-g |
-        forall g: Fn; (forall x: Element; reflectionSpec(n, x, apply(g, x))) -> (apply(g, numeral(ZERO)) = numeral(ZERO) and (forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i))) and (forall x: Element; (not member(x, segment(n))) -> apply(g, x) = x))
+        forall g: Fn; (forall x: Element; reflectionSpec(n, x, apply(g, x))) -> (apply(g, numeral(ZERO)) = numeral(ZERO) and (forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> peano_order.less_or_equal(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i))) and (forall x: Element; (not member(x, segment(n))) -> apply(g, x) = x))
         [by generalize generalize-g]
     }
   @conclusion |
     forall n: Nat; forall g: Fn; (forall x: Element; reflectionSpec(n, x, apply(g, x))) ->
       (apply(g, numeral(ZERO)) = numeral(ZERO)
-      and (forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i)))
+      and (forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> peano_order.less_or_equal(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i)))
       and (forall x: Element; (not member(x, segment(n))) -> apply(g, x) = x))
     [by generalize generalize-n]
 qed
@@ -2677,7 +2835,7 @@ qed
 // letter, and letter 0 and the outside are fixed.
 theorem reflectionValuesInvolute: forall n: Nat; forall g: Fn;
   apply(g, numeral(ZERO)) = numeral(ZERO) ->
-  (forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i))) ->
+  (forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> peano_order.less_or_equal(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i))) ->
   (forall x: Element; (not member(x, segment(n))) -> apply(g, x) = x) ->
   forall x: Element; apply(g, apply(g, x)) = x
 proof
@@ -2688,14 +2846,14 @@ proof
           @given-fixes-zero |
             assume apply(g, numeral(ZERO)) = numeral(ZERO) {
               @given-complements |
-                assume forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i)) {
+                assume forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> peano_order.less_or_equal(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i)) {
                   @given-fixes-outside |
                     assume forall x: Element; (not member(x, segment(n))) -> apply(g, x) = x {
                       @fixes-zero |
                         apply(g, numeral(ZERO)) = numeral(ZERO)
                         [by hypothesis given-fixes-zero]
                       @complements |
-                        forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i))
+                        forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> peano_order.less_or_equal(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i))
                         [by hypothesis given-complements]
                       @fixes-outside |
                         forall x: Element; (not member(x, segment(n))) -> apply(g, x) = x
@@ -2767,21 +2925,34 @@ proof
                                                   @i-positive |
                                                     less_than(ZERO, i)
                                                     [by rewrite i-is-succ zero-below-succ-i2]
+                                                  @i-is-at-most-n |
+                                                    peano_order.less_or_equal(i, n)
+                                                    [using tautology i-in-range]
                                                   @image-is-complement |
                                                     apply(g, numeral(i)) = numeral(sub(n, i))
-                                                    [using specialize complements(i) i-positive i-in-range]
+                                                    [using specialize complements(i) i-positive i-in-range
+                                                      i-is-at-most-n]
                                                   @complement-positive |
                                                     less_than(ZERO, sub(n, i))
-                                                    [using specialize complementIsPositive(i, n) i-in-range]
+                                                    [using specialize complementIsPositive(i, n) i-in-range
+                                                      i-is-at-most-n]
                                                   @complement-below |
                                                     less_than(sub(n, i), n)
-                                                    [using specialize complementIsBelow(i, n) i-positive i-in-range]
+                                                    [using specialize complementIsBelow(i, n) i-positive
+                                                      i-is-at-most-n]
+                                                  @the-complement-is-at-most-n |
+                                                    peano_order.less_or_equal(sub(n, i), n)
+                                                    [using specialize
+                                                      peano_subtraction.aDifferenceIsAtMostItsMinuend(i, n)
+                                                      i-is-at-most-n]
                                                   @image-of-complement |
                                                     apply(g, numeral(sub(n, i))) = numeral(sub(n, sub(n, i)))
-                                                    [using specialize complements(sub(n, i)) complement-positive complement-below]
+                                                    [using specialize complements(sub(n, i)) complement-positive
+                                                      complement-below the-complement-is-at-most-n]
                                                   @complement-twice |
                                                     sub(n, sub(n, i)) = i
-                                                    [using specialize complementOfComplement(i, n) i-in-range]
+                                                    [using specialize complementOfComplement(i, n) i-in-range
+                                                      i-is-at-most-n the-complement-is-at-most-n]
                                                   @image-of-complement-is-the-letter |
                                                     apply(g, numeral(sub(n, i))) = numeral(i)
                                                     [by rewrite complement-twice image-of-complement]
@@ -2825,21 +2996,21 @@ proof
                     [by discharge given-fixes-outside]
                 }
               @conclusion-given-complements |
-                (forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i))) -> (forall x: Element; (not member(x, segment(n))) -> apply(g, x) = x) -> forall x: Element; apply(g, apply(g, x)) = x
+                (forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> peano_order.less_or_equal(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i))) -> (forall x: Element; (not member(x, segment(n))) -> apply(g, x) = x) -> forall x: Element; apply(g, apply(g, x)) = x
                 [by discharge given-complements]
             }
           @conclusion-at-g |
-            apply(g, numeral(ZERO)) = numeral(ZERO) -> (forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i))) -> (forall x: Element; (not member(x, segment(n))) -> apply(g, x) = x) -> forall x: Element; apply(g, apply(g, x)) = x
+            apply(g, numeral(ZERO)) = numeral(ZERO) -> (forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> peano_order.less_or_equal(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i))) -> (forall x: Element; (not member(x, segment(n))) -> apply(g, x) = x) -> forall x: Element; apply(g, apply(g, x)) = x
             [by discharge given-fixes-zero]
         }
       @discharge-g |
-        forall g: Fn; apply(g, numeral(ZERO)) = numeral(ZERO) -> (forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i))) -> (forall x: Element; (not member(x, segment(n))) -> apply(g, x) = x) -> forall x: Element; apply(g, apply(g, x)) = x
+        forall g: Fn; apply(g, numeral(ZERO)) = numeral(ZERO) -> (forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> peano_order.less_or_equal(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i))) -> (forall x: Element; (not member(x, segment(n))) -> apply(g, x) = x) -> forall x: Element; apply(g, apply(g, x)) = x
         [by generalize generalize-g]
     }
   @conclusion |
     forall n: Nat; forall g: Fn;
       apply(g, numeral(ZERO)) = numeral(ZERO) ->
-      (forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i))) ->
+      (forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> peano_order.less_or_equal(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i))) ->
       (forall x: Element; (not member(x, segment(n))) -> apply(g, x) = x) ->
       forall x: Element; apply(g, apply(g, x)) = x
     [by generalize generalize-n]
@@ -2918,13 +3089,13 @@ proof
             forall x: Element; reflectionSpec(n, x, apply(g, x))
             [by hypothesis with-map-g]
           @values |
-            apply(g, numeral(ZERO)) = numeral(ZERO) and (forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i))) and (forall x: Element; (not member(x, segment(n))) -> apply(g, x) = x)
+            apply(g, numeral(ZERO)) = numeral(ZERO) and (forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> peano_order.less_or_equal(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i))) and (forall x: Element; (not member(x, segment(n))) -> apply(g, x) = x)
             [using specialize reflectionSpecValues(n, g) graph]
           @fixes-zero |
             apply(g, numeral(ZERO)) = numeral(ZERO)
             [using tautology values]
           @complements |
-            forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i))
+            forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> peano_order.less_or_equal(i, n) -> apply(g, numeral(i)) = numeral(sub(n, i))
             [using tautology values]
           @fixes-outside |
             forall x: Element; (not member(x, segment(n))) -> apply(g, x) = x
@@ -2968,7 +3139,7 @@ proof
                 apply(sigma, numeral(ZERO)) = numeral(ZERO)
                 [using tautology reflection]
               @complements |
-                forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> apply(sigma, numeral(i)) = numeral(sub(n, i))
+                forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> peano_order.less_or_equal(i, n) -> apply(sigma, numeral(i)) = numeral(sub(n, i))
                 [using tautology reflection]
               @fixes-outside |
                 forall x: Element; (not member(x, segment(n))) -> apply(sigma, x) = x
@@ -3011,7 +3182,7 @@ proof
                 apply(sigma, numeral(ZERO)) = numeral(ZERO)
                 [using tautology reflection]
               @complements |
-                forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> apply(sigma, numeral(i)) = numeral(sub(n, i))
+                forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> peano_order.less_or_equal(i, n) -> apply(sigma, numeral(i)) = numeral(sub(n, i))
                 [using tautology reflection]
               @fixes-outside |
                 forall x: Element; (not member(x, segment(n))) -> apply(sigma, x) = x
@@ -3082,12 +3253,17 @@ proof
                                       @i-positive |
                                         less_than(ZERO, i)
                                         [by rewrite i-is-succ zero-below-succ-i2]
+                                      @i-is-at-most-n |
+                                        peano_order.less_or_equal(i, n)
+                                        [using tautology i-in-range]
                                       @image-is-complement |
                                         apply(sigma, numeral(i)) = numeral(sub(n, i))
-                                        [using specialize complements(i) i-positive i-in-range]
+                                        [using specialize complements(i) i-positive i-in-range
+                                          i-is-at-most-n]
                                       @complement-below |
                                         less_than(sub(n, i), n)
-                                        [using specialize complementIsBelow(i, n) i-positive i-in-range]
+                                        [using specialize complementIsBelow(i, n) i-positive
+                                          i-is-at-most-n]
                                       @complement-membership |
                                         member(numeral(sub(n, i)), segment(n)) iff less_than(sub(n, i), n)
                                         [using specialize numeralInSegment(n, sub(n, i))]
@@ -3214,7 +3390,7 @@ proof
                         apply(sigma, numeral(ZERO)) = numeral(ZERO)
                         [using tautology reflection]
                       @complements |
-                        forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> apply(sigma, numeral(i)) = numeral(sub(n, i))
+                        forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> peano_order.less_or_equal(i, n) -> apply(sigma, numeral(i)) = numeral(sub(n, i))
                         [using tautology reflection]
                       @generalize-i |
                         fix i: Nat {
@@ -3226,9 +3402,13 @@ proof
                               @zero-below-succ-i |
                                 less_than(ZERO, succ(i))
                                 [using specialize zeroBelowSucc(i)]
+                              @succ-i-is-at-most-n |
+                                peano_order.less_or_equal(succ(i), n)
+                                [using tautology succ-i-in-range]
                               @reflection-of-succ-i |
                                 apply(sigma, numeral(succ(i))) = numeral(sub(n, succ(i)))
-                                [using specialize complements(succ(i)) zero-below-succ-i succ-i-in-range]
+                                [using specialize complements(succ(i)) zero-below-succ-i
+                                  succ-i-in-range succ-i-is-at-most-n]
                               @i-zero-or-succ |
                                 i = ZERO or (exists i2: Nat; i = succ(i2))
                                 [using specialize zeroOrSucc(i)]
@@ -3251,9 +3431,15 @@ proof
                                           @n-is-succ-m |
                                             n = succ(m)
                                             [by hypothesis with-last-m]
+                                          @one-is-at-most-n |
+                                            peano_order.less_or_equal(succ(ZERO), n)
+                                            [by rewrite i-is-zero succ-i-is-at-most-n]
                                           @reflection-of-one |
                                             apply(sigma, numeral(succ(ZERO))) = numeral(sub(n, succ(ZERO)))
                                             [by rewrite i-is-zero reflection-of-succ-i]
+                                          @one-is-at-most-succ-m |
+                                            peano_order.less_or_equal(succ(ZERO), succ(m))
+                                            [by rewrite n-is-succ-m one-is-at-most-n]
                                           @complement-of-one-at-succ-m |
                                             sub(succ(m), succ(ZERO)) = m
                                             [using specialize complementOfOne(m)]
@@ -3302,15 +3488,24 @@ proof
                                           @i-in-range |
                                             less_than(i, n)
                                             [using specialize lessThanTransitive(i, succ(i), n) i-below-succ-i succ-i-in-range]
+                                          @i-is-at-most-n |
+                                            peano_order.less_or_equal(i, n)
+                                            [using tautology i-in-range]
+                                          @succ-i-is-at-most-n-here |
+                                            peano_order.less_or_equal(succ(i), n)
+                                            [using tautology succ-i-in-range]
                                           @reflection-of-i |
                                             apply(sigma, numeral(i)) = numeral(sub(n, i))
-                                            [using specialize complements(i) i-positive i-in-range]
+                                            [using specialize complements(i) i-positive i-in-range
+                                              i-is-at-most-n]
                                           @complement-shifts |
                                             succ(sub(n, succ(i))) = sub(n, i)
-                                            [using specialize complementOfSuccessor(i, n) succ-i-in-range]
+                                            [using specialize complementOfSuccessor(i, n) succ-i-in-range
+                                              succ-i-is-at-most-n-here i-is-at-most-n]
                                           @complement-below |
                                             less_than(sub(n, i), n)
-                                            [using specialize complementIsBelow(i, n) i-positive i-in-range]
+                                            [using specialize complementIsBelow(i, n) i-positive
+                                              i-is-at-most-n]
                                           @shifted-complement-below |
                                             less_than(succ(sub(n, succ(i))), n)
                                             [by rewrite complement-shifts complement-below]
@@ -3397,7 +3592,7 @@ proof
                         apply(sigma, numeral(ZERO)) = numeral(ZERO)
                         [using tautology reflection]
                       @complements |
-                        forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> apply(sigma, numeral(i)) = numeral(sub(n, i))
+                        forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> peano_order.less_or_equal(i, n) -> apply(sigma, numeral(i)) = numeral(sub(n, i))
                         [using tautology reflection]
                       @generalize-x |
                         fix x: Element {
@@ -3498,9 +3693,13 @@ proof
                                                       @i-positive |
                                                         less_than(ZERO, i)
                                                         [by rewrite i-is-succ zero-below-succ-i2]
+                                                      @i-is-at-most-n |
+                                                        peano_order.less_or_equal(i, n)
+                                                        [using tautology i-in-range]
                                                       @reflection-of-i |
                                                         apply(sigma, numeral(i)) = numeral(sub(n, i))
-                                                        [using specialize complements(i) i-positive i-in-range]
+                                                        [using specialize complements(i) i-positive i-in-range
+                                                          i-is-at-most-n]
                                                       @i-plus-one-unfolds |
                                                         add(i, succ(ZERO)) = succ(add(i, ZERO))
                                                         [using specialize addSuccRight(i, ZERO)]
@@ -3510,9 +3709,20 @@ proof
                                                       @i-plus-one |
                                                         add(i, succ(ZERO)) = succ(i)
                                                         [by rewrite i-plus-zero i-plus-one-unfolds]
+                                                      @i-is-at-most-the-plus-one |
+                                                        peano_order.less_or_equal(
+                                                          i, add(i, succ(ZERO)))
+                                                        [using specialize
+                                                          peano_order.theLeftSummandIsAtMostTheSum(
+                                                          i, succ(ZERO))]
                                                       @complement-of-i-in-the-sum |
                                                         sub(add(i, succ(ZERO)), i) = succ(ZERO)
-                                                        [using specialize subOfGap(i, ZERO)]
+                                                        [using specialize subOfGap(i, ZERO)
+                                                          i-is-at-most-the-plus-one]
+                                                      @i-is-at-most-its-successor |
+                                                        peano_order.less_or_equal(i, succ(i))
+                                                        [using specialize
+                                                          peano_order.aNatIsAtMostItsSuccessor(i)]
                                                       @complement-of-i-in-succ-i |
                                                         sub(succ(i), i) = succ(ZERO)
                                                         [by rewrite i-plus-one complement-of-i-in-the-sum]
@@ -5883,7 +6093,7 @@ proof
                             apply(sigma, numeral(ZERO)) = numeral(ZERO)
                             [using tautology reflection]
                           @complements |
-                            forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> apply(sigma, numeral(i)) = numeral(sub(n, i))
+                            forall i: Nat; less_than(ZERO, i) -> less_than(i, n) -> peano_order.less_or_equal(i, n) -> apply(sigma, numeral(i)) = numeral(sub(n, i))
                             [using tautology reflection]
                           @one-below-two |
                             less_than(succ(ZERO), succ(succ(ZERO)))
@@ -5894,9 +6104,13 @@ proof
                           @zero-below-one |
                             less_than(ZERO, succ(ZERO))
                             [using specialize zeroBelowSucc(ZERO)]
+                          @one-is-at-most-n |
+                            peano_order.less_or_equal(succ(ZERO), n)
+                            [using tautology one-in-range]
                           @reflection-of-one |
                             apply(sigma, numeral(succ(ZERO))) = numeral(sub(n, succ(ZERO)))
-                            [using specialize complements(succ(ZERO)) zero-below-one one-in-range]
+                            [using specialize complements(succ(ZERO)) zero-below-one one-in-range
+                              one-is-at-most-n]
                           @n-is-a-successor |
                             exists m: Nat; n = succ(m)
                             [using specialize positiveIsASuccessor(succ(ZERO), n) one-in-range]
@@ -5972,6 +6186,10 @@ proof
                                                   @n-is-succ-m |
                                                     n = succ(m)
                                                     [by hypothesis with-last-m]
+                                                  @one-is-at-most-succ-m |
+                                                    peano_order.less_or_equal(
+                                                      succ(ZERO), succ(m))
+                                                    [by rewrite n-is-succ-m one-is-at-most-n]
                                                   @complement-of-one-at-succ-m |
                                                     sub(succ(m), succ(ZERO)) = m
                                                     [using specialize complementOfOne(m)]

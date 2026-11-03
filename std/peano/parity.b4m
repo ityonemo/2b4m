@@ -8,6 +8,7 @@
 import peano <<< "std/peano.b4m"
 import peano_divides <<< "std/peano/divides.b4m"
 import subtraction <<< "std/peano/subtraction.b4m"
+import ordering <<< "std/peano/order.b4m"
 
 sort Nat = peano.Nat
 const ZERO = peano.ZERO
@@ -416,20 +417,42 @@ proof
                         [by rewrite sq-is-add square-even]
                       // 2 | (2M + 1) and 2 | 2M ⇒ 2 | sub(2M+1, 2M) = 1
                       @sub-closed |
-                        forall d, a, b: Nat; divides(d, a) -> divides(d, b) -> divides(d, sub(a, b))
+                        forall d, a, b: Nat;
+                          divides(d, a) -> divides(d, b) ->
+                          ordering.less_or_equal(b, a) ->
+                          divides(d, sub(a, b))
                         [by cite dividesSub]
+                      @the-multiple-is-at-most-the-sum |
+                        ordering.less_or_equal(
+                          mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))),
+                          add(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))), ONE))
+                        [using specialize ordering.theLeftSummandIsAtMostTheSum(
+                          mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))), ONE)]
+                      @the-multiple-is-at-most-the-commuted-sum |
+                        ordering.less_or_equal(
+                          mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))),
+                          add(ONE, mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j)))))
+                        [using specialize ordering.theSummandBoundReordered(
+                          mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))), ONE)]
                       @sub-at |
                         divides(TWO, add(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))), ONE))
                           -> divides(TWO, mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))))
+                          -> ordering.less_or_equal(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))), add(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))), ONE))
                           -> divides(TWO, sub(add(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))), ONE), mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j)))))
                         [by apply_at(TWO, add(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))), ONE), mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j)))) sub-closed]
                       @sub-step |
                         divides(TWO, mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))))
+                          -> ordering.less_or_equal(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))), add(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))), ONE))
                           -> divides(TWO, sub(add(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))), ONE), mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j)))))
                         [by modus_ponens sub-at two-div-sum]
+                      @sub-step-with-the-divisor |
+                        ordering.less_or_equal(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))), add(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))), ONE))
+                          -> divides(TWO, sub(add(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))), ONE), mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j)))))
+                        [by modus_ponens sub-step two-m-even]
                       @two-div-sub |
                         divides(TWO, sub(add(mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j))), ONE), mul(TWO, add(mul(TWO, mul(j, j)), mul(TWO, j)))))
-                        [by modus_ponens sub-step two-m-even]
+                        [by modus_ponens sub-step-with-the-divisor
+                          the-multiple-is-at-most-the-sum]
                       // sub(add(2M, ONE), 2M) = ONE  (subAddCancel needs add(ONE, 2M); commute first)
                       @cancel |
                         forall a, b: Nat; sub(add(a, b), b) = a
@@ -488,9 +511,16 @@ proof
               @succ-even |
                 divides(TWO, succ(m))
                 [by hypothesis suppose-succ-even]
+              @m-is-at-most-its-successor |
+                ordering.less_or_equal(m, succ(m))
+                [using specialize ordering.aNatIsAtMostItsSuccessor(m)]
+              @m-is-at-most-one-plus-m |
+                ordering.less_or_equal(m, add(ONE, m))
+                [using specialize ordering.theSummandBoundReordered(m, ONE)]
               @two-divides-the-difference |
                 divides(TWO, sub(succ(m), m))
-                [using specialize dividesSub(TWO, succ(m), m) succ-even m-even]
+                [using specialize dividesSub(TWO, succ(m), m) succ-even m-even
+                  m-is-at-most-its-successor]
               @one-is-succ-zero |
                 ONE = succ(ZERO)
                 [by cite oneIsSuccZero]
