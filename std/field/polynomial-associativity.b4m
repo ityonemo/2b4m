@@ -29,7 +29,13 @@ func mulP = fieldpoly.mulP
 // -- the triple family --------------------------------------------------------------------
 // term(j,k) = p_j * q_k * r_{(i-j)-k}: the (j,k) entry of the triple product's expansion.
 func tripleTerm(p: Poly, q: Poly, r: Poly, i: Nat, j: Nat, k: Nat) => F
+// The entry's r-index is `(i - j) - k`, so under the de-totalized `sub` the axiom must say
+// that index exists: `j` within `i`, and `k` within what remains. Both hold wherever a
+// collection builds an entry — a row only runs while entries remain — so every real site
+// discharges them, and the guards restrict nothing mathematically.
 axiom tripleTermMeaning: forall p, q, r: Poly; forall i, j, k: Nat;
+  peano_order.less_or_equal(j, i) ->
+  peano_order.less_or_equal(k, sub(i, j)) ->
   tripleTerm(p, q, r, i, j, k) =
   mulF(mulF(coeff(p, j), coeff(q, k)), coeff(r, sub(sub(i, j), k)))
 
@@ -70,9 +76,14 @@ axiom tripleRowsSucc: forall p, q, r: Poly; forall i, m, n: Nat;
 // tripleRow(p,q,r,i,j,succ c) = p_j * convolution(q,r,sub(i,j),c). The row's entries all
 // carry the factor coeff(p,j), which does not depend on the summation index, so it pulls
 // out; what remains is exactly the convolution of q and r at sub(i,j). Induction on c.
-theorem aRowIsTheScaledConvolution: forall p, q, r: Poly; forall i, j, c: Nat;
+// The guard `j <= i` is what the de-totalized `sub` asks for: the row's inner convolution is
+// read at `sub(i, j)`, so the statement must say that index exists. Every caller has it — the
+// collection only ever builds rows at p-exponents within the output index.
+theorem aRowIsTheScaledConvolution: forall p, q, r: Poly; forall i, j: Nat;
+  peano_order.less_or_equal(j, i) ->
+  (forall c: Nat;
   tripleRow(p, q, r, i, j, succ(c)) =
-  mulF(coeff(p, j), fieldpoly.convolution(q, r, sub(i, j), c))
+  mulF(coeff(p, j), fieldpoly.convolution(q, r, sub(i, j), c)))
 proof
   @generalize-p |
     fix p: Poly {
@@ -84,6 +95,15 @@ proof
                 fix i: Nat {
                   @generalize-j |
                     fix j: Nat {
+                      @given-j-within |
+                        assume peano_order.less_or_equal(j, i) {
+                      @j-is-within |
+                        peano_order.less_or_equal(j, i)
+                        [by hypothesis given-j-within]
+                      @zero-is-within-the-gap |
+                        peano_order.less_or_equal(ZERO, sub(i, j))
+                        [using specialize
+                          peano_order.zeroIsAtMostAnything(sub(i, j))]
                       // base: one entry, and the convolution's own base case
                       @the-row-at-one |
                         tripleRow(p, q, r, i, j, succ(ZERO)) =
@@ -97,7 +117,9 @@ proof
                         tripleTerm(p, q, r, i, j, ZERO) =
                           mulF(mulF(coeff(p, j), coeff(q, ZERO)),
                           coeff(r, sub(sub(i, j), ZERO)))
-                        [using specialize tripleTermMeaning(p, q, r, i, j, ZERO)]
+                        [using specialize
+                          tripleTermMeaning(p, q, r, i, j, ZERO)
+                          j-is-within zero-is-within-the-gap]
                       @the-convolution-at-zero |
                         fieldpoly.convolution(q, r, sub(i, j), ZERO) =
                           mulF(coeff(q, ZERO), coeff(r, sub(i, j)))
@@ -105,10 +127,6 @@ proof
                       @subtracting-zero |
                         sub(sub(i, j), ZERO) = sub(i, j)
                         [using specialize subtraction.subZeroRight(sub(i, j))]
-                      @base-case |
-                        tripleRow(p, q, r, i, j, succ(ZERO)) =
-                          mulF(coeff(p, j), fieldpoly.convolution(q, r, sub(i, j), ZERO))
-                        [using simplify the-row-at-one the-empty-row the-first-entry subtracting-zero the-convolution-at-zero addZeroLeftAtTheEntry theProductRegroups]
                       @addZeroLeftAtTheEntry |
                         addF(zeroF, mulF(coeff(p, j),
                           mulF(coeff(q, ZERO), coeff(r, sub(i, j))))) =
@@ -120,6 +138,10 @@ proof
                           mulF(coeff(q, ZERO), coeff(r, sub(i, j))))
                         [using specialize field.mulIsAssociative(coeff(p, j), coeff(q, ZERO), coeff(r, sub(i, j)))]
                       // step
+                      @base-case |
+                        tripleRow(p, q, r, i, j, succ(ZERO)) =
+                          mulF(coeff(p, j), fieldpoly.convolution(q, r, sub(i, j), ZERO))
+                        [using simplify the-row-at-one the-empty-row the-first-entry subtracting-zero the-convolution-at-zero addZeroLeftAtTheEntry theProductRegroups]
                       @induction-step |
                         fix k: Nat {
                           @given-the-hypothesis |
@@ -140,7 +162,9 @@ proof
                                 tripleTerm(p, q, r, i, j, succ(k)) =
                                   mulF(mulF(coeff(p, j), coeff(q, succ(k))),
                                   coeff(r, sub(sub(i, j), succ(k))))
-                                [using specialize tripleTermMeaning(p, q, r, i, j, succ(k))]
+                                [using specialize
+                                  tripleTermMeaning(p, q, r, i, j, succ(k))
+                                  j-is-within succ-k-is-within-the-gap]
                               @the-convolution-grows |
                                 fieldpoly.convolution(q, r, sub(i, j), succ(k)) =
                                   addF(fieldpoly.convolution(q, r, sub(i, j), k),
@@ -195,35 +219,57 @@ proof
                           tripleRow(p, q, r, i, j, succ(c)) =
                           mulF(coeff(p, j), fieldpoly.convolution(q, r, sub(i, j), c))
                         [using instantiation peano.induction((fun c: Nat => tripleRow(p, q, r, i, j, succ(c)) = mulF(coeff(p, j), fieldpoly.convolution(q, r, sub(i, j), c)))) base-case induction-step-for-all-k]
+                        }
+                      @the-guard-gives-it |
+                        peano_order.less_or_equal(j, i) ->
+                          (forall c: Nat;
+                          tripleRow(p, q, r, i, j, succ(c)) =
+                          mulF(coeff(p, j),
+                          fieldpoly.convolution(q, r, sub(i, j), c)))
+                        [by discharge given-j-within]
                     }
                   @discharge-j |
-                    forall j9, c9: Nat;
+                    forall j9: Nat;
+                      peano_order.less_or_equal(j9, i) ->
+                      (forall c9: Nat;
                       tripleRow(p, q, r, i, j9, succ(c9)) =
-                      mulF(coeff(p, j9), fieldpoly.convolution(q, r, sub(i, j9), c9))
+                      mulF(coeff(p, j9),
+                      fieldpoly.convolution(q, r, sub(i, j9), c9)))
                     [by generalize generalize-j]
                 }
               @discharge-i |
-                forall i9, j9, c9: Nat;
+                forall i9, j9: Nat;
+                  peano_order.less_or_equal(j9, i9) ->
+                  (forall c9: Nat;
                   tripleRow(p, q, r, i9, j9, succ(c9)) =
-                  mulF(coeff(p, j9), fieldpoly.convolution(q, r, sub(i9, j9), c9))
+                  mulF(coeff(p, j9),
+                  fieldpoly.convolution(q, r, sub(i9, j9), c9)))
                 [by generalize generalize-i]
             }
           @discharge-r |
-            forall r9: Poly; forall i9, j9, c9: Nat;
+            forall r9: Poly; forall i9, j9: Nat;
+              peano_order.less_or_equal(j9, i9) ->
+              (forall c9: Nat;
               tripleRow(p, q, r9, i9, j9, succ(c9)) =
-              mulF(coeff(p, j9), fieldpoly.convolution(q, r9, sub(i9, j9), c9))
+              mulF(coeff(p, j9),
+              fieldpoly.convolution(q, r9, sub(i9, j9), c9)))
             [by generalize generalize-r]
         }
       @discharge-q |
-        forall q9, r9: Poly; forall i9, j9, c9: Nat;
+        forall q9, r9: Poly; forall i9, j9: Nat;
+          peano_order.less_or_equal(j9, i9) ->
+          (forall c9: Nat;
           tripleRow(p, q9, r9, i9, j9, succ(c9)) =
-          mulF(coeff(p, j9), fieldpoly.convolution(q9, r9, sub(i9, j9), c9))
+          mulF(coeff(p, j9),
+          fieldpoly.convolution(q9, r9, sub(i9, j9), c9)))
         [by generalize generalize-q]
     }
   @conclusion |
-    forall p, q, r: Poly; forall i, j, c: Nat;
+    forall p, q, r: Poly; forall i, j: Nat;
+      peano_order.less_or_equal(j, i) ->
+      (forall c: Nat;
       tripleRow(p, q, r, i, j, succ(c)) =
-      mulF(coeff(p, j), fieldpoly.convolution(q, r, sub(i, j), c))
+      mulF(coeff(p, j), fieldpoly.convolution(q, r, sub(i, j), c)))
     [by generalize generalize-p]
 qed
 
@@ -260,6 +306,10 @@ proof
                             peano.less_than(m, succ(i))
                             [by hypothesis given-m-at-most-i]
                           // base: one entry, x = ZERO, whose third index collapses
+                          @zero-is-within-m |
+                            peano_order.less_or_equal(ZERO, m)
+                            [using specialize
+                              peano_order.zeroIsAtMostAnything(m)]
                           @the-diagonal-at-one |
                             tripleDiag(p, q, r, i, m, succ(ZERO)) =
                               addF(tripleDiag(p, q, r, i, m, ZERO),
@@ -271,11 +321,28 @@ proof
                           @m-minus-zero |
                             sub(m, ZERO) = m
                             [using specialize subtraction.subZeroRight(m)]
+                          @zero-is-within-i |
+                            peano_order.less_or_equal(ZERO, i)
+                            [using specialize
+                              peano_order.zeroIsAtMostAnything(i)]
+                          @m-is-within-i |
+                            peano_order.less_or_equal(m, i)
+                            [using specialize
+                              peano_order.lessThanSuccToLessOrEqual(m, i)
+                              m-at-most-i]
+                          @i-less-zero-is-i |
+                            sub(i, ZERO) = i
+                            [using specialize subtraction.subZeroRight(i)]
+                          @m-is-within-the-full-gap |
+                            peano_order.less_or_equal(m, sub(i, ZERO))
+                            [by rewrite i-less-zero-is-i m-is-within-i]
                           @the-first-entry |
                             tripleTerm(p, q, r, i, ZERO, m) =
                               mulF(mulF(coeff(p, ZERO), coeff(q, m)),
                               coeff(r, sub(sub(i, ZERO), m)))
-                            [using specialize tripleTermMeaning(p, q, r, i, ZERO, m)]
+                            [using specialize
+                              tripleTermMeaning(p, q, r, i, ZERO, m)
+                              zero-is-within-i m-is-within-the-full-gap]
                           @i-minus-zero |
                             sub(i, ZERO) = i
                             [using specialize subtraction.subZeroRight(i)]
@@ -548,6 +615,11 @@ proof
                                       tripleDiag(p, q, r, i, n, k))
                                     [using tautology the-hypothesis k-at-most-succ-n]
                                   // peel the (k+1)-st row off each side
+                                  @k-is-within-n |
+                                    peano_order.less_or_equal(k, n)
+                                    [using specialize
+                                      peano_order.succReflectsAtMost(k, n)
+                                      succ-k-at-most]
                                   @the-raised-side-peels |
                                     tripleRows(p, q, r, i, succ(k), succ(n)) =
                                       addF(tripleRows(p, q, r, i, k, succ(n)),
@@ -566,7 +638,9 @@ proof
                                   // the raised row's bound is one higher, since k <= n
                                   @the-raised-bound |
                                     sub(succ(n), k) = succ(sub(n, k))
-                                    [using specialize subtraction.succOfSubLeft(k, n) k-below-succ-n]
+                                    [using specialize
+                                      subtraction.succOfSubLeft(k, n)
+                                      k-at-most-succ-n k-is-within-n]
                                   @the-raised-row-peels |
                                     tripleRow(p, q, r, i, k, succ(sub(n, k))) =
                                       addF(tripleRow(p, q, r, i, k, sub(n, k)),
@@ -752,6 +826,9 @@ proof
                               tripleDiag(p, q, r, i, k, succ(k)))
                             [using specialize the-increment-is-the-diagonal(p, q, r, i, k, succ(k)) succ-k-at-most-succ-k]
                           // and the extra row at bound k is EMPTY, since sub(k,k) = ZERO
+                          @k-is-at-most-itself |
+                            peano_order.less_or_equal(k, k)
+                            [using specialize peano_order.lessOrEqualRefl(k)]
                           @the-last-row-is-empty |
                             sub(k, k) = ZERO
                             [using specialize subtraction.subSelf(k)]
