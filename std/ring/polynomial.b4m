@@ -5588,1383 +5588,266 @@ proof
 qed
 
 // -- MULTIPLICATION IS ASSOCIATIVE ----------------------------------------------------------
-// Judson's §17.1 exercise, and the last structural law of R[x]. His proof reindexes a double
-// sum into a sum over triples j + k + l = i. This is that argument, ported from the F[x]
-// proof it was first written for (`std/field/polynomial-associativity.b4m`, now retired) and
-// reindexed to carry no subtraction.
+// Judson's §17.1 exercise, and the last structural law of R[x]. His display reindexes a
+// double sum into a sum over triples j + k + l = i.
 //
-// THE SHAPE, WHICH IS THE WHOLE DIFFICULTY. At a FIXED output index `i` the expansion of
-// coeff((pq)r, i) and coeff(p(qr), i) are two sums over the same triangle of index PAIRS
-// (j, k) — one grouped into rows, the other into anti-diagonals. Neither index alone is a
-// recursion variable: shrinking the row index changes each row's length, and shrinking a
-// row's length does not decompose the collection. The move that works is to induct on the
-// ROW COUNT with the bound fixed, so the increment is exactly one anti-diagonal
-// (`raisingTheBoundAddsTheDiagonal`); the outer induction on the bound is then three lines.
+// THE FAMILY SHAPE, WHICH IS THE WHOLE DIFFICULTY. The output index `i` is held FIXED and a
+// row is indexed by its COUNT, so lengthening a row ADDS a term and changes nothing else.
+// That prefix property is what makes the increment lemma provable — raising the bound gains
+// each present row exactly its last entry, and those gained entries form one anti-diagonal —
+// and it is the pivot the whole proof turns on (`raisingTheBoundAddsTheDiagonal`); the outer
+// induction on the bound is then three lines.
 //
-// Note `i` is held FIXED throughout: the triangle is of index pairs within one coefficient,
-// not an accumulation across coefficients. Anti-diagonals of that triangle do accumulate,
-// which is what makes the increment lemma nest where a per-total decomposition would not.
+// A FAMILY THAT INDEXES BY THE PAIR TOTAL INSTEAD DOES NOT WORK, and the failure is quiet:
+// if r's exponent is the row's LENGTH, lengthening a row shifts EVERY term's r-index rather
+// than appending one, so the row is not a prefix family and no back-peel lemma is true of it.
+// Checked the base case before writing the proof — `term(a,b,1)` against `term(a,b,0)` — which
+// is the cheapest place to catch it.
 //
-// WHAT THE REINDEXING CHANGED. The F[x] version wrote a term as
-// `p_j q_k r_{(i-j)-k}`, so every statement about it owed `j <= i` and `k <= i - j` — two
-// nested subtractions, and most of that file was the arithmetic discharging them. Here a term
-// carries its THREE EXPONENTS and the output index never appears; each family's recursion
-// keeps them summing to what it should, exactly as the reindexed `convolution` does.
+// NO SUBTRACTION. The entry's r-index is `(i - j) - k`, which the pre-de-totalization version
+// wrote as `sub(sub(i, j), k)` — making the axiom itself ill-formed under a guarded `sub`, and
+// pushing two obligations through every statement. Here it is NAMED: `theCofactorIndex` with
+// `succ`-pattern clauses, so the arithmetic lives at the one declaration that computes it and
+// no theorem below mentions a difference. `theGapTo` and `theCofactorIndex` are total AND
+// correct — they floor at ZERO by an explicit clause rather than by `sub`'s silent
+// truncation — so they satisfy the no-totalizing rule rather than evading it.
+func theGapTo(i: Nat, j: Nat) => Nat
+axiom theGapToAtZero: forall i: Nat; theGapTo(i, ZERO) = i
+axiom theGapToFromZero: forall j: Nat; theGapTo(ZERO, succ(j)) = ZERO
+axiom theGapToSteps: forall i, j: Nat;
+  theGapTo(succ(i), succ(j)) = theGapTo(i, j)
 
-// term(a,b,c) = p_a q_b r_c, the (a,b)-entry of the expansion with c determined by the total.
-func tripleTerm(p: Poly, q: Poly, r: Poly, a: Nat, b: Nat, c: Nat) => R
-axiom tripleTermMeaning: forall p, q, r: Poly; forall a, b, c: Nat;
-  tripleTerm(p, q, r, a, b, c) =
-  mulR(mulR(coeff(p, a), coeff(q, b)), coeff(r, c))
+func theCofactorIndex(i: Nat, j: Nat, k: Nat) => Nat
+axiom theCofactorIndexAtZero: forall i, j: Nat;
+  theCofactorIndex(i, j, ZERO) = theGapTo(i, j)
+axiom theCofactorIndexSteps: forall i, j, k: Nat;
+  theCofactorIndex(i, j, succ(k)) = theGapTo(theGapTo(i, j), succ(k))
 
-// ONE ROW: the first `n` entries at fixed p-exponent `a`, the q-exponent running up from
-// `b` while r's runs down from `c`. The pair (b, c) keeps its sum, so the row never computes
-// a difference — this is `convolution`'s own discipline applied to the inner two factors.
-// `tripleRow(p,q,r,a,b,len)` sums the `len+1` entries at p-exponent `a` whose q-exponent runs
-// up from `b` while r's runs down from `len`: the pair keeps the sum `b + len` throughout, so
-// the row never forms a difference. Declared to mirror `convolutionSucc` term for term, which
-// is what makes Lemma D a single peel rather than a reassociation.
-func tripleRow(p: Poly, q: Poly, r: Poly, a: Nat, b: Nat, len: Nat) => R
-axiom tripleRowZero: forall p, q, r: Poly; forall a, b: Nat;
-  tripleRow(p, q, r, a, b, ZERO) = tripleTerm(p, q, r, a, b, ZERO)
-axiom tripleRowSucc: forall p, q, r: Poly; forall a, b, len: Nat;
-  tripleRow(p, q, r, a, b, succ(len)) =
-  addR(tripleTerm(p, q, r, a, b, succ(len)),
-  tripleRow(p, q, r, a, succ(b), len))
+// term(j,k) at output index i = p_j q_k r_{(i-j)-k}.
+func tripleTerm(p: Poly, q: Poly, r: Poly, i: Nat, j: Nat, k: Nat) => R
+axiom tripleTermMeaning: forall p, q, r: Poly; forall i, j, k: Nat;
+  tripleTerm(p, q, r, i, j, k) =
+  mulR(mulR(coeff(p, j), coeff(q, k)), coeff(r, theCofactorIndex(i, j, k)))
 
-// An ANTI-DIAGONAL: r's exponent held at `c` while the p/q pair runs over the `len+1` pairs
-// summing to `a + len` — p up from `a`, q down from `len`. Mirrors `convolutionSucc` exactly,
-// so Lemma C is a single peel.
-//
-// Reindexed: the F[x] version wrote the entry's q-index as `sub(m, x)` and so carried TWO
-// guards (`m <= i` and the count within `m+1`), load-bearing because past the diagonal `sub`
-// saturates at ZERO and entries silently repeat. Carrying the pair structurally makes the
-// family unable to be read past its end, so both guards disappear.
-func tripleDiag(p: Poly, q: Poly, r: Poly, a: Nat, c: Nat, len: Nat) => R
-axiom tripleDiagZero: forall p, q, r: Poly; forall a, c: Nat;
-  tripleDiag(p, q, r, a, c, ZERO) = tripleTerm(p, q, r, a, ZERO, c)
-axiom tripleDiagSucc: forall p, q, r: Poly; forall a, c, len: Nat;
-  tripleDiag(p, q, r, a, c, succ(len)) =
-  addR(tripleTerm(p, q, r, a, succ(len), c),
-  tripleDiag(p, q, r, succ(a), c, len))
+// one ROW: the first `n` entries at fixed j. A PREFIX family in `n`.
+func tripleRow(p: Poly, q: Poly, r: Poly, i: Nat, j: Nat, n: Nat) => R
+axiom tripleRowZero: forall p, q, r: Poly; forall i, j: Nat;
+  tripleRow(p, q, r, i, j, ZERO) = zeroR
+axiom tripleRowSucc: forall p, q, r: Poly; forall i, j, n: Nat;
+  tripleRow(p, q, r, i, j, succ(n)) =
+  addR(tripleRow(p, q, r, i, j, n), tripleTerm(p, q, r, i, j, n))
 
-// A row IS the inner convolution, scaled by p's coefficient: every term carries `coeff(p, a)`,
-// which the summation index does not touch, so it pulls out and what remains is q against r.
-// Induction on the row length with the inner base quantified, so the step can advance it.
-theorem aRowIsTheScaledConvolution: forall p, q, r: Poly; forall a, n, b: Nat;
-  tripleRow(p, q, r, a, b, n) = mulR(coeff(p, a), convolution(q, r, b, n))
+// the first `c` entries of the m-th ANTI-DIAGONAL.
+func tripleDiag(p: Poly, q: Poly, r: Poly, i: Nat, m: Nat, c: Nat) => R
+axiom tripleDiagZero: forall p, q, r: Poly; forall i, m: Nat;
+  tripleDiag(p, q, r, i, m, ZERO) = zeroR
+axiom tripleDiagSucc: forall p, q, r: Poly; forall i, m, c: Nat;
+  tripleDiag(p, q, r, i, m, succ(c)) =
+  addR(tripleDiag(p, q, r, i, m, c),
+  tripleTerm(p, q, r, i, c, theGapTo(m, c)))
+
+// the TRIANGLE: anti-diagonals 0..n-1, each complete.
+func tripleTri(p: Poly, q: Poly, r: Poly, i: Nat, n: Nat) => R
+axiom tripleTriZero: forall p, q, r: Poly; forall i: Nat;
+  tripleTri(p, q, r, i, ZERO) = zeroR
+axiom tripleTriSucc: forall p, q, r: Poly; forall i, n: Nat;
+  tripleTri(p, q, r, i, succ(n)) =
+  addR(tripleTri(p, q, r, i, n), tripleDiag(p, q, r, i, n, succ(n)))
+
+// the SHORTENED ROWS: rows 0..m-1, row j truncated at the gap to n.
+func tripleRows(p: Poly, q: Poly, r: Poly, i: Nat, m: Nat, n: Nat) => R
+axiom tripleRowsZero: forall p, q, r: Poly; forall i, n: Nat;
+  tripleRows(p, q, r, i, ZERO, n) = zeroR
+axiom tripleRowsSucc: forall p, q, r: Poly; forall i, m, n: Nat;
+  tripleRows(p, q, r, i, succ(m), n) =
+  addR(tripleRows(p, q, r, i, m, n),
+  tripleRow(p, q, r, i, m, theGapTo(n, m)))
+
+// Raising the total raises the gap, for an index within it. The bound is genuine: at `j`
+// beyond `n` both sides floor at ZERO and the identity fails, which is the same mathematical
+// fact the `sub` spelling needed `succOfSubLeft` for — but here it is the ONLY hypothesis,
+// with no well-formedness obligation riding along.
+theorem theRaisedGapSteps: forall j, n: Nat;
+  peano_order.less_or_equal(j, n) ->
+  theGapTo(succ(n), j) = succ(theGapTo(n, j))
 proof
-  @generalize-p |
-    fix p: Poly {
-      @generalize-q |
-        fix q: Poly {
-          @generalize-r |
-            fix r: Poly {
-              @generalize-a |
-                fix a: Nat {
-                  @base-case |
-                    forall b: Nat;
-                      tripleRow(p, q, r, a, b, ZERO) =
-                      mulR(coeff(p, a), convolution(q, r, b, ZERO))
-                    [using specialize theRowBase(p, q, r, a)]
-                  @induction-step-for-all-n |
-                    forall n: Nat;
-                      (forall b: Nat;
-                      tripleRow(p, q, r, a, b, n) =
-                      mulR(coeff(p, a), convolution(q, r, b, n))) ->
-                      (forall b: Nat;
-                      tripleRow(p, q, r, a, b, succ(n)) =
-                      mulR(coeff(p, a), convolution(q, r, b, succ(n))))
-                    [using specialize theRowStep(p, q, r, a)]
-                  @all-lengths |
-                    forall n: Nat; forall b: Nat;
-                      tripleRow(p, q, r, a, b, n) =
-                      mulR(coeff(p, a), convolution(q, r, b, n))
-                    [using instantiation peano.induction((fun z: Nat => forall b: Nat; tripleRow(p, q, r, a, b, z) = mulR(coeff(p, a), convolution(q, r, b, z)))) base-case induction-step-for-all-n]
-                }
-              @discharge-a |
-                forall a: Nat; forall n: Nat; forall b: Nat;
-                  tripleRow(p, q, r, a, b, n) =
-                  mulR(coeff(p, a), convolution(q, r, b, n))
-                [by generalize generalize-a]
-            }
-          @discharge-r |
-            forall r: Poly; forall a, n, b: Nat;
-              tripleRow(p, q, r, a, b, n) =
-              mulR(coeff(p, a), convolution(q, r, b, n))
-            [by generalize generalize-r]
-        }
-      @discharge-q |
-        forall q, r: Poly; forall a, n, b: Nat;
-          tripleRow(p, q, r, a, b, n) =
-          mulR(coeff(p, a), convolution(q, r, b, n))
-        [by generalize generalize-q]
-    }
+  @base-case |
+    forall n: Nat;
+      peano_order.less_or_equal(ZERO, n) ->
+      theGapTo(succ(n), ZERO) = succ(theGapTo(n, ZERO))
+    [using specialize theRaisedGapBase]
+  @induction-step-for-all-j |
+    forall j: Nat;
+      (forall n: Nat;
+      peano_order.less_or_equal(j, n) ->
+      theGapTo(succ(n), j) = succ(theGapTo(n, j))) ->
+      (forall n: Nat;
+      peano_order.less_or_equal(succ(j), n) ->
+      theGapTo(succ(n), succ(j)) = succ(theGapTo(n, succ(j))))
+    [using specialize theRaisedGapStep]
   @conclusion |
-    forall p, q, r: Poly; forall a, n, b: Nat;
-      tripleRow(p, q, r, a, b, n) =
-      mulR(coeff(p, a), convolution(q, r, b, n))
-    [by generalize generalize-p]
+    forall j: Nat; forall n: Nat;
+      peano_order.less_or_equal(j, n) ->
+      theGapTo(succ(n), j) = succ(theGapTo(n, j))
+    [using instantiation peano.induction((fun z: Nat => forall n: Nat; peano_order.less_or_equal(z, n) -> theGapTo(succ(n), z) = succ(theGapTo(n, z)))) base-case induction-step-for-all-j]
 qed
 
-// The base: a single term, which `tripleTermMeaning` and `convolutionZero` both expand to the
-// same product, up to R's multiplicative associativity.
-theorem theRowBase: forall p, q, r: Poly; forall a: Nat;
-  forall b: Nat;
-  tripleRow(p, q, r, a, b, ZERO) =
-  mulR(coeff(p, a), convolution(q, r, b, ZERO))
+// The base: both sides are succ(n), by the ZERO clause on each.
+theorem theRaisedGapBase: forall n: Nat;
+  peano_order.less_or_equal(ZERO, n) ->
+  theGapTo(succ(n), ZERO) = succ(theGapTo(n, ZERO))
 proof
-  @generalize-p |
-    fix p: Poly {
-      @generalize-q |
-        fix q: Poly {
-          @generalize-r |
-            fix r: Poly {
-              @generalize-a |
-                fix a: Nat {
-                  @generalize-b |
-                    fix b: Nat {
-                      @the-row-is-one-term |
-                        tripleRow(p, q, r, a, b, ZERO) =
-                          tripleTerm(p, q, r, a, b, ZERO)
-                        [using specialize tripleRowZero(p, q, r, a, b)]
-                      @the-term-expands |
-                        tripleTerm(p, q, r, a, b, ZERO) =
-                          mulR(mulR(coeff(p, a), coeff(q, b)),
-                          coeff(r, ZERO))
+  @generalize-n |
+    fix n: Nat {
+      @the-raised-gap |
+        theGapTo(succ(n), ZERO) = succ(n)
+        [using specialize theGapToAtZero(succ(n))]
+      @the-gap |
+        theGapTo(n, ZERO) = n
+        [using specialize theGapToAtZero(n)]
+      @the-equality |
+        theGapTo(succ(n), ZERO) = succ(theGapTo(n, ZERO))
+        [using simplify the-raised-gap the-gap]
+      @conclusion-inner |
+        peano_order.less_or_equal(ZERO, n) ->
+          theGapTo(succ(n), ZERO) = succ(theGapTo(n, ZERO))
+        [using tautology the-equality]
+    }
+  @conclusion |
+    forall n: Nat;
+      peano_order.less_or_equal(ZERO, n) ->
+      theGapTo(succ(n), ZERO) = succ(theGapTo(n, ZERO))
+    [by generalize generalize-n]
+qed
+
+// The step: at succ(j) the bound forces n to be a successor too, and both `theGapTo`
+// applications then step down by their succ/succ clause onto the hypothesis.
+theorem theRaisedGapStep: forall j: Nat;
+  (forall n: Nat;
+  peano_order.less_or_equal(j, n) ->
+  theGapTo(succ(n), j) = succ(theGapTo(n, j))) ->
+  (forall n: Nat;
+  peano_order.less_or_equal(succ(j), n) ->
+  theGapTo(succ(n), succ(j)) = succ(theGapTo(n, succ(j))))
+proof
+  @generalize-j |
+    fix j: Nat {
+      @given-the-hypothesis |
+        assume forall n: Nat;
+          peano_order.less_or_equal(j, n) ->
+          theGapTo(succ(n), j) = succ(theGapTo(n, j)) {
+          @the-hypothesis |
+            forall n: Nat;
+              peano_order.less_or_equal(j, n) ->
+              theGapTo(succ(n), j) = succ(theGapTo(n, j))
+            [by hypothesis given-the-hypothesis]
+          @generalize-n |
+            fix n: Nat {
+              @given-the-bound |
+                assume peano_order.less_or_equal(succ(j), n) {
+                  @the-bound |
+                    peano_order.less_or_equal(succ(j), n)
+                    [by hypothesis given-the-bound]
+                  @n-is-positive |
+                    n = ZERO or (exists w: Nat; n = succ(w))
+                    [using specialize peano.zeroOrSucc(n)]
+                  @when-n-is-zero |
+                    assume n = ZERO {
+                      @n-is-zero |
+                        n = ZERO
+                        [by hypothesis when-n-is-zero]
+                      @the-bound-at-zero |
+                        peano_order.less_or_equal(succ(j), ZERO)
+                        [by rewrite n-is-zero the-bound]
+                      @nothing-is-below-zero |
+                        not peano_order.less_or_equal(succ(j), ZERO)
                         [using specialize
-                          tripleTermMeaning(p, q, r, a, b, ZERO)]
-                      @the-inner-run-is-one-term |
-                        convolution(q, r, b, ZERO) =
-                          mulR(coeff(q, b), coeff(r, ZERO))
-                        [using specialize convolutionZero(q, r, b)]
-                      @the-scalars-reassociate |
-                        mulR(mulR(coeff(p, a), coeff(q, b)),
-                          coeff(r, ZERO)) =
-                          mulR(coeff(p, a),
-                          mulR(coeff(q, b), coeff(r, ZERO)))
-                        [using specialize mulIsAssociativeR(coeff(p, a),
-                          coeff(q, b), coeff(r, ZERO))]
-                      @conclusion-the-base-scales |
-                        tripleRow(p, q, r, a, b, ZERO) =
-                          mulR(coeff(p, a), convolution(q, r, b, ZERO))
-                        [using simplify the-row-is-one-term the-term-expands
-                          the-scalars-reassociate the-inner-run-is-one-term]
+                          peano_order.noSuccessorIsAtMostZero(j)]
+                      @conclusion-vacuous |
+                        theGapTo(succ(n), succ(j)) =
+                          succ(theGapTo(n, succ(j)))
+                        [by ex_falso the-bound-at-zero
+                          nothing-is-below-zero]
                     }
-                  @discharge-b |
-                    forall b: Nat;
-                      tripleRow(p, q, r, a, b, ZERO) =
-                      mulR(coeff(p, a), convolution(q, r, b, ZERO))
-                    [by generalize generalize-b]
-                }
-              @discharge-a |
-                forall a: Nat; forall b: Nat;
-                  tripleRow(p, q, r, a, b, ZERO) =
-                  mulR(coeff(p, a), convolution(q, r, b, ZERO))
-                [by generalize generalize-a]
-            }
-          @discharge-r |
-            forall r: Poly; forall a: Nat; forall b: Nat;
-              tripleRow(p, q, r, a, b, ZERO) =
-              mulR(coeff(p, a), convolution(q, r, b, ZERO))
-            [by generalize generalize-r]
-        }
-      @discharge-q |
-        forall q, r: Poly; forall a: Nat; forall b: Nat;
-          tripleRow(p, q, r, a, b, ZERO) =
-          mulR(coeff(p, a), convolution(q, r, b, ZERO))
-        [by generalize generalize-q]
-    }
-  @conclusion |
-    forall p, q, r: Poly; forall a: Nat; forall b: Nat;
-      tripleRow(p, q, r, a, b, ZERO) =
-      mulR(coeff(p, a), convolution(q, r, b, ZERO))
-    [by generalize generalize-p]
-qed
-
-// The step: both runs peel their top term, the two peeled terms agree by R's associativity,
-// the two tails agree by the hypothesis at the raised inner base, and R distributes to
-// recombine the scalar.
-theorem theRowStep: forall p, q, r: Poly; forall a: Nat;
-  forall n: Nat;
-  (forall b: Nat;
-  tripleRow(p, q, r, a, b, n) =
-  mulR(coeff(p, a), convolution(q, r, b, n))) ->
-  (forall b: Nat;
-  tripleRow(p, q, r, a, b, succ(n)) =
-  mulR(coeff(p, a), convolution(q, r, b, succ(n))))
-proof
-  @generalize-p |
-    fix p: Poly {
-      @generalize-q |
-        fix q: Poly {
-          @generalize-r |
-            fix r: Poly {
-              @generalize-a |
-                fix a: Nat {
-                  @generalize-n |
-                    fix n: Nat {
-                      @given-the-hypothesis |
-                        assume forall b: Nat;
-                          tripleRow(p, q, r, a, b, n) =
-                          mulR(coeff(p, a), convolution(q, r, b, n)) {
-                          @the-hypothesis |
-                            forall b: Nat;
-                              tripleRow(p, q, r, a, b, n) =
-                              mulR(coeff(p, a), convolution(q, r, b, n))
-                            [by hypothesis given-the-hypothesis]
-                          @generalize-b |
-                            fix b: Nat {
-                              @the-row-peels |
-                                tripleRow(p, q, r, a, b, succ(n)) =
-                                  addR(tripleTerm(p, q, r, a, b, succ(n)),
-                                  tripleRow(p, q, r, a, succ(b), n))
-                                [using specialize
-                                  tripleRowSucc(p, q, r, a, b, n)]
-                              @the-peeled-term-expands |
-                                tripleTerm(p, q, r, a, b, succ(n)) =
-                                  mulR(mulR(coeff(p, a), coeff(q, b)),
-                                  coeff(r, succ(n)))
-                                [using specialize
-                                  tripleTermMeaning(p, q, r, a, b, succ(n))]
-                              @the-peeled-scalars-reassociate |
-                                mulR(mulR(coeff(p, a), coeff(q, b)),
-                                  coeff(r, succ(n))) =
-                                  mulR(coeff(p, a),
-                                  mulR(coeff(q, b), coeff(r, succ(n))))
-                                [using specialize mulIsAssociativeR(
-                                  coeff(p, a), coeff(q, b),
-                                  coeff(r, succ(n)))]
-                              @the-tail-scales |
-                                tripleRow(p, q, r, a, succ(b), n) =
-                                  mulR(coeff(p, a),
-                                  convolution(q, r, succ(b), n))
-                                [using specialize the-hypothesis(succ(b))]
-                              @the-inner-run-peels |
-                                convolution(q, r, b, succ(n)) =
-                                  addR(mulR(coeff(q, b), coeff(r, succ(n))),
-                                  convolution(q, r, succ(b), n))
-                                [using specialize
-                                  convolutionSucc(q, r, b, n)]
-                              @the-scalar-distributes |
-                                mulR(coeff(p, a),
-                                  addR(mulR(coeff(q, b), coeff(r, succ(n))),
-                                  convolution(q, r, succ(b), n))) =
-                                  addR(mulR(coeff(p, a),
-                                  mulR(coeff(q, b), coeff(r, succ(n)))),
-                                  mulR(coeff(p, a),
-                                  convolution(q, r, succ(b), n)))
-                                [using specialize ring.mulAddDistribLeft(
-                                  coeff(p, a),
-                                  mulR(coeff(q, b), coeff(r, succ(n))),
-                                  convolution(q, r, succ(b), n))]
-                              @conclusion-the-step-scales |
-                                tripleRow(p, q, r, a, b, succ(n)) =
-                                  mulR(coeff(p, a),
-                                  convolution(q, r, b, succ(n)))
-                                [using simplify the-row-peels
-                                  the-peeled-term-expands
-                                  the-peeled-scalars-reassociate
-                                  the-tail-scales the-inner-run-peels
-                                  the-scalar-distributes]
-                            }
-                          @all-inner-bases |
-                            forall b: Nat;
-                              tripleRow(p, q, r, a, b, succ(n)) =
-                              mulR(coeff(p, a),
-                              convolution(q, r, b, succ(n)))
-                            [by generalize generalize-b]
-                        }
-                      @the-hypothesis-gives-it |
-                        (forall b: Nat;
-                          tripleRow(p, q, r, a, b, n) =
-                          mulR(coeff(p, a), convolution(q, r, b, n))) ->
-                          (forall b: Nat;
-                          tripleRow(p, q, r, a, b, succ(n)) =
-                          mulR(coeff(p, a),
-                          convolution(q, r, b, succ(n))))
-                        [by discharge given-the-hypothesis]
-                    }
-                  @discharge-n |
-                    forall n: Nat;
-                      (forall b: Nat;
-                      tripleRow(p, q, r, a, b, n) =
-                      mulR(coeff(p, a), convolution(q, r, b, n))) ->
-                      (forall b: Nat;
-                      tripleRow(p, q, r, a, b, succ(n)) =
-                      mulR(coeff(p, a), convolution(q, r, b, succ(n))))
-                    [by generalize generalize-n]
-                }
-              @discharge-a |
-                forall a: Nat; forall n: Nat;
-                  (forall b: Nat;
-                  tripleRow(p, q, r, a, b, n) =
-                  mulR(coeff(p, a), convolution(q, r, b, n))) ->
-                  (forall b: Nat;
-                  tripleRow(p, q, r, a, b, succ(n)) =
-                  mulR(coeff(p, a), convolution(q, r, b, succ(n))))
-                [by generalize generalize-a]
-            }
-          @discharge-r |
-            forall r: Poly; forall a, n: Nat;
-              (forall b: Nat;
-              tripleRow(p, q, r, a, b, n) =
-              mulR(coeff(p, a), convolution(q, r, b, n))) ->
-              (forall b: Nat;
-              tripleRow(p, q, r, a, b, succ(n)) =
-              mulR(coeff(p, a), convolution(q, r, b, succ(n))))
-            [by generalize generalize-r]
-        }
-      @discharge-q |
-        forall q, r: Poly; forall a, n: Nat;
-          (forall b: Nat;
-          tripleRow(p, q, r, a, b, n) =
-          mulR(coeff(p, a), convolution(q, r, b, n))) ->
-          (forall b: Nat;
-          tripleRow(p, q, r, a, b, succ(n)) =
-          mulR(coeff(p, a), convolution(q, r, b, succ(n))))
-        [by generalize generalize-q]
-    }
-  @conclusion |
-    forall p, q, r: Poly; forall a, n: Nat;
-      (forall b: Nat;
-      tripleRow(p, q, r, a, b, n) =
-      mulR(coeff(p, a), convolution(q, r, b, n))) ->
-      (forall b: Nat;
-      tripleRow(p, q, r, a, b, succ(n)) =
-      mulR(coeff(p, a), convolution(q, r, b, succ(n))))
-    [by generalize generalize-p]
-qed
-
-// -- LEMMA C: an anti-diagonal IS the outer convolution, scaled by r_c ----------------------
-// Every entry carries `coeff(r, c)`, which the summation does not touch, so it pulls out and
-// what remains is p against q. Same single-peel structure as Lemma D, and for the same
-// reason: the family's recursion was declared to match `convolutionSucc`.
-theorem aDiagonalIsTheScaledConvolution: forall p, q, r: Poly; forall c, len, a: Nat;
-  tripleDiag(p, q, r, a, c, len) =
-  mulR(convolution(p, q, a, len), coeff(r, c))
-proof
-  @generalize-p |
-    fix p: Poly {
-      @generalize-q |
-        fix q: Poly {
-          @generalize-r |
-            fix r: Poly {
-              @generalize-c |
-                fix c: Nat {
-                  @base-case |
-                    forall a: Nat;
-                      tripleDiag(p, q, r, a, c, ZERO) =
-                      mulR(convolution(p, q, a, ZERO), coeff(r, c))
-                    [using specialize theDiagonalBase(p, q, r, c)]
-                  @induction-step-for-all-len |
-                    forall len: Nat;
-                      (forall a: Nat;
-                      tripleDiag(p, q, r, a, c, len) =
-                      mulR(convolution(p, q, a, len), coeff(r, c))) ->
-                      (forall a: Nat;
-                      tripleDiag(p, q, r, a, c, succ(len)) =
-                      mulR(convolution(p, q, a, succ(len)), coeff(r, c)))
-                    [using specialize theDiagonalStep(p, q, r, c)]
-                  @all-lengths |
-                    forall len: Nat; forall a: Nat;
-                      tripleDiag(p, q, r, a, c, len) =
-                      mulR(convolution(p, q, a, len), coeff(r, c))
-                    [using instantiation peano.induction((fun z: Nat => forall a: Nat; tripleDiag(p, q, r, a, c, z) = mulR(convolution(p, q, a, z), coeff(r, c)))) base-case induction-step-for-all-len]
-                }
-              @discharge-c |
-                forall c: Nat; forall len: Nat; forall a: Nat;
-                  tripleDiag(p, q, r, a, c, len) =
-                  mulR(convolution(p, q, a, len), coeff(r, c))
-                [by generalize generalize-c]
-            }
-          @discharge-r |
-            forall r: Poly; forall c, len, a: Nat;
-              tripleDiag(p, q, r, a, c, len) =
-              mulR(convolution(p, q, a, len), coeff(r, c))
-            [by generalize generalize-r]
-        }
-      @discharge-q |
-        forall q, r: Poly; forall c, len, a: Nat;
-          tripleDiag(p, q, r, a, c, len) =
-          mulR(convolution(p, q, a, len), coeff(r, c))
-        [by generalize generalize-q]
-    }
-  @conclusion |
-    forall p, q, r: Poly; forall c, len, a: Nat;
-      tripleDiag(p, q, r, a, c, len) =
-      mulR(convolution(p, q, a, len), coeff(r, c))
-    [by generalize generalize-p]
-qed
-
-// The base: one entry, which both sides read as p_a q_0 r_c up to R's associativity.
-theorem theDiagonalBase: forall p, q, r: Poly; forall c: Nat;
-  forall a: Nat;
-  tripleDiag(p, q, r, a, c, ZERO) =
-  mulR(convolution(p, q, a, ZERO), coeff(r, c))
-proof
-  @generalize-p |
-    fix p: Poly {
-      @generalize-q |
-        fix q: Poly {
-          @generalize-r |
-            fix r: Poly {
-              @generalize-c |
-                fix c: Nat {
-                  @generalize-a |
-                    fix a: Nat {
-                      @the-diagonal-is-one-entry |
-                        tripleDiag(p, q, r, a, c, ZERO) =
-                          tripleTerm(p, q, r, a, ZERO, c)
-                        [using specialize tripleDiagZero(p, q, r, a, c)]
-                      @the-entry-expands |
-                        tripleTerm(p, q, r, a, ZERO, c) =
-                          mulR(mulR(coeff(p, a), coeff(q, ZERO)),
-                          coeff(r, c))
-                        [using specialize
-                          tripleTermMeaning(p, q, r, a, ZERO, c)]
-                      @the-run-is-one-term |
-                        convolution(p, q, a, ZERO) =
-                          mulR(coeff(p, a), coeff(q, ZERO))
-                        [using specialize convolutionZero(p, q, a)]
-                      @conclusion-the-base-scales |
-                        tripleDiag(p, q, r, a, c, ZERO) =
-                          mulR(convolution(p, q, a, ZERO), coeff(r, c))
-                        [using simplify the-diagonal-is-one-entry
-                          the-entry-expands the-run-is-one-term]
-                    }
-                  @discharge-a |
-                    forall a: Nat;
-                      tripleDiag(p, q, r, a, c, ZERO) =
-                      mulR(convolution(p, q, a, ZERO), coeff(r, c))
-                    [by generalize generalize-a]
-                }
-              @discharge-c |
-                forall c: Nat; forall a: Nat;
-                  tripleDiag(p, q, r, a, c, ZERO) =
-                  mulR(convolution(p, q, a, ZERO), coeff(r, c))
-                [by generalize generalize-c]
-            }
-          @discharge-r |
-            forall r: Poly; forall c, a: Nat;
-              tripleDiag(p, q, r, a, c, ZERO) =
-              mulR(convolution(p, q, a, ZERO), coeff(r, c))
-            [by generalize generalize-r]
-        }
-      @discharge-q |
-        forall q, r: Poly; forall c, a: Nat;
-          tripleDiag(p, q, r, a, c, ZERO) =
-          mulR(convolution(p, q, a, ZERO), coeff(r, c))
-        [by generalize generalize-q]
-    }
-  @conclusion |
-    forall p, q, r: Poly; forall c: Nat; forall a: Nat;
-      tripleDiag(p, q, r, a, c, ZERO) =
-      mulR(convolution(p, q, a, ZERO), coeff(r, c))
-    [by generalize generalize-p]
-qed
-
-// The step: both peel their top entry and recurse at succ(a); R distributes to recombine the
-// scalar `coeff(r, c)` over the sum.
-theorem theDiagonalStep: forall p, q, r: Poly; forall c: Nat;
-  forall len: Nat;
-  (forall a: Nat;
-  tripleDiag(p, q, r, a, c, len) =
-  mulR(convolution(p, q, a, len), coeff(r, c))) ->
-  (forall a: Nat;
-  tripleDiag(p, q, r, a, c, succ(len)) =
-  mulR(convolution(p, q, a, succ(len)), coeff(r, c)))
-proof
-  @generalize-p |
-    fix p: Poly {
-      @generalize-q |
-        fix q: Poly {
-          @generalize-r |
-            fix r: Poly {
-              @generalize-c |
-                fix c: Nat {
-                  @generalize-len |
-                    fix len: Nat {
-                      @given-the-hypothesis |
-                        assume forall a: Nat;
-                          tripleDiag(p, q, r, a, c, len) =
-                          mulR(convolution(p, q, a, len), coeff(r, c)) {
-                          @the-hypothesis |
-                            forall a: Nat;
-                              tripleDiag(p, q, r, a, c, len) =
-                              mulR(convolution(p, q, a, len), coeff(r, c))
-                            [by hypothesis given-the-hypothesis]
-                          @generalize-a |
-                            fix a: Nat {
-                              @the-diagonal-peels |
-                                tripleDiag(p, q, r, a, c, succ(len)) =
-                                  addR(tripleTerm(p, q, r, a, succ(len), c),
-                                  tripleDiag(p, q, r, succ(a), c, len))
-                                [using specialize
-                                  tripleDiagSucc(p, q, r, a, c, len)]
-                              @the-peeled-entry-expands |
-                                tripleTerm(p, q, r, a, succ(len), c) =
-                                  mulR(mulR(coeff(p, a),
-                                  coeff(q, succ(len))), coeff(r, c))
-                                [using specialize tripleTermMeaning(
-                                  p, q, r, a, succ(len), c)]
-                              @the-tail-scales |
-                                tripleDiag(p, q, r, succ(a), c, len) =
-                                  mulR(convolution(p, q, succ(a), len),
-                                  coeff(r, c))
-                                [using specialize the-hypothesis(succ(a))]
-                              @the-run-peels |
-                                convolution(p, q, a, succ(len)) =
-                                  addR(mulR(coeff(p, a),
-                                  coeff(q, succ(len))),
-                                  convolution(p, q, succ(a), len))
-                                [using specialize
-                                  convolutionSucc(p, q, a, len)]
-                              @the-scalar-distributes |
-                                mulR(addR(mulR(coeff(p, a),
-                                  coeff(q, succ(len))),
-                                  convolution(p, q, succ(a), len)),
-                                  coeff(r, c)) =
-                                  addR(mulR(mulR(coeff(p, a),
-                                  coeff(q, succ(len))), coeff(r, c)),
-                                  mulR(convolution(p, q, succ(a), len),
-                                  coeff(r, c)))
-                                [using specialize ring.mulAddDistribRight(
-                                  mulR(coeff(p, a), coeff(q, succ(len))),
-                                  convolution(p, q, succ(a), len),
-                                  coeff(r, c))]
-                              @conclusion-the-step-scales |
-                                tripleDiag(p, q, r, a, c, succ(len)) =
-                                  mulR(convolution(p, q, a, succ(len)),
-                                  coeff(r, c))
-                                [using simplify the-diagonal-peels
-                                  the-peeled-entry-expands the-tail-scales
-                                  the-run-peels the-scalar-distributes]
-                            }
-                          @all-bases |
-                            forall a: Nat;
-                              tripleDiag(p, q, r, a, c, succ(len)) =
-                              mulR(convolution(p, q, a, succ(len)),
-                              coeff(r, c))
-                            [by generalize generalize-a]
-                        }
-                      @the-hypothesis-gives-it |
-                        (forall a: Nat;
-                          tripleDiag(p, q, r, a, c, len) =
-                          mulR(convolution(p, q, a, len), coeff(r, c))) ->
-                          (forall a: Nat;
-                          tripleDiag(p, q, r, a, c, succ(len)) =
-                          mulR(convolution(p, q, a, succ(len)),
-                          coeff(r, c)))
-                        [by discharge given-the-hypothesis]
-                    }
-                  @discharge-len |
-                    forall len: Nat;
-                      (forall a: Nat;
-                      tripleDiag(p, q, r, a, c, len) =
-                      mulR(convolution(p, q, a, len), coeff(r, c))) ->
-                      (forall a: Nat;
-                      tripleDiag(p, q, r, a, c, succ(len)) =
-                      mulR(convolution(p, q, a, succ(len)), coeff(r, c)))
-                    [by generalize generalize-len]
-                }
-              @discharge-c |
-                forall c: Nat; forall len: Nat;
-                  (forall a: Nat;
-                  tripleDiag(p, q, r, a, c, len) =
-                  mulR(convolution(p, q, a, len), coeff(r, c))) ->
-                  (forall a: Nat;
-                  tripleDiag(p, q, r, a, c, succ(len)) =
-                  mulR(convolution(p, q, a, succ(len)), coeff(r, c)))
-                [by generalize generalize-c]
-            }
-          @discharge-r |
-            forall r: Poly; forall c, len: Nat;
-              (forall a: Nat;
-              tripleDiag(p, q, r, a, c, len) =
-              mulR(convolution(p, q, a, len), coeff(r, c))) ->
-              (forall a: Nat;
-              tripleDiag(p, q, r, a, c, succ(len)) =
-              mulR(convolution(p, q, a, succ(len)), coeff(r, c)))
-            [by generalize generalize-r]
-        }
-      @discharge-q |
-        forall q, r: Poly; forall c, len: Nat;
-          (forall a: Nat;
-          tripleDiag(p, q, r, a, c, len) =
-          mulR(convolution(p, q, a, len), coeff(r, c))) ->
-          (forall a: Nat;
-          tripleDiag(p, q, r, a, c, succ(len)) =
-          mulR(convolution(p, q, a, succ(len)), coeff(r, c)))
-        [by generalize generalize-q]
-    }
-  @conclusion |
-    forall p, q, r: Poly; forall c: Nat; forall len: Nat;
-      (forall a: Nat;
-      tripleDiag(p, q, r, a, c, len) =
-      mulR(convolution(p, q, a, len), coeff(r, c))) ->
-      (forall a: Nat;
-      tripleDiag(p, q, r, a, c, succ(len)) =
-      mulR(convolution(p, q, a, succ(len)), coeff(r, c)))
-    [by generalize generalize-p]
-qed
-
-// -- the two collections -------------------------------------------------------------------
-// `tripleTri(p,q,r,c,n)` — the TRIANGLE: anti-diagonals, each complete. The diagonal at r's
-// exponent `c + d` runs over the p/q pairs bringing the total to `c + n`, so the total is
-// invariant and each diagonal's length is fixed by its own position.
-func tripleTri(p: Poly, q: Poly, r: Poly, c: Nat, n: Nat) => R
-axiom tripleTriZero: forall p, q, r: Poly; forall c: Nat;
-  tripleTri(p, q, r, c, ZERO) = tripleDiag(p, q, r, ZERO, c, ZERO)
-axiom tripleTriSucc: forall p, q, r: Poly; forall c, n: Nat;
-  tripleTri(p, q, r, c, succ(n)) =
-  addR(tripleDiag(p, q, r, ZERO, c, succ(n)),
-  tripleTri(p, q, r, succ(c), n))
-
-// `tripleRows(p,q,r,a,n)` — the SHORTENED ROWS: row at p-exponent `a + d` running over the
-// pairs bringing the total to `a + n`. Same triangle, grouped by the p-exponent instead.
-func tripleRows(p: Poly, q: Poly, r: Poly, a: Nat, n: Nat) => R
-axiom tripleRowsZero: forall p, q, r: Poly; forall a: Nat;
-  tripleRows(p, q, r, a, ZERO) = tripleRow(p, q, r, a, ZERO, ZERO)
-axiom tripleRowsSucc: forall p, q, r: Poly; forall a, n: Nat;
-  tripleRows(p, q, r, a, succ(n)) =
-  addR(tripleRow(p, q, r, a, ZERO, succ(n)),
-  tripleRows(p, q, r, succ(a), n))
-
-// -- LEMMA B: the triangle IS coeff((pq)r, ·) -----------------------------------------------
-// Each anti-diagonal is `coeff(pq, ·)` scaled by r's coefficient (Lemma C plus
-// `mulPolyCoeff`) — the summand of pq against r. The triangle raises r's exponent as it
-// shortens the diagonals, which is `rsegment` read with r as the FIRST factor: that run peels
-// r at its base and the other factor at the top, recursing one higher and one shorter, so the
-// two recursions coincide. Induction on the diagonal count with r's exponent quantified.
-theorem theTriangleIsTheLeftCoefficient: forall p, q, r: Poly; forall n, c: Nat;
-  tripleTri(p, q, r, c, n) = rsegment(r, mulP(p, q), c, n, n)
-proof
-  @generalize-p |
-    fix p: Poly {
-      @generalize-q |
-        fix q: Poly {
-          @generalize-r |
-            fix r: Poly {
-              @base-case |
-                forall c: Nat;
-                  tripleTri(p, q, r, c, ZERO) =
-                  rsegment(r, mulP(p, q), c, ZERO, ZERO)
-                [using specialize theTriangleBase(p, q, r)]
-              @induction-step-for-all-n |
-                forall n: Nat;
-                  (forall c: Nat;
-                  tripleTri(p, q, r, c, n) =
-                  rsegment(r, mulP(p, q), c, n, n)) ->
-                  (forall c: Nat;
-                  tripleTri(p, q, r, c, succ(n)) =
-                  rsegment(r, mulP(p, q), c, succ(n), succ(n)))
-                [using specialize theTriangleStep(p, q, r)]
-              @all-counts |
-                forall n: Nat; forall c: Nat;
-                  tripleTri(p, q, r, c, n) =
-                  rsegment(r, mulP(p, q), c, n, n)
-                [using instantiation peano.induction((fun z: Nat => forall c: Nat; tripleTri(p, q, r, c, z) = rsegment(r, mulP(p, q), c, z, z))) base-case induction-step-for-all-n]
-            }
-          @discharge-r |
-            forall r: Poly; forall n, c: Nat;
-              tripleTri(p, q, r, c, n) = rsegment(r, mulP(p, q), c, n, n)
-            [by generalize generalize-r]
-        }
-      @discharge-q |
-        forall q, r: Poly; forall n, c: Nat;
-          tripleTri(p, q, r, c, n) = rsegment(r, mulP(p, q), c, n, n)
-        [by generalize generalize-q]
-    }
-  @conclusion |
-    forall p, q, r: Poly; forall n, c: Nat;
-      tripleTri(p, q, r, c, n) = rsegment(r, mulP(p, q), c, n, n)
-    [by generalize generalize-p]
-qed
-
-// The base: one diagonal of length zero; both sides read it as r_c times coeff(pq, 0).
-theorem theTriangleBase: forall p, q, r: Poly;
-  forall c: Nat;
-  tripleTri(p, q, r, c, ZERO) = rsegment(r, mulP(p, q), c, ZERO, ZERO)
-proof
-  @generalize-p |
-    fix p: Poly {
-      @generalize-q |
-        fix q: Poly {
-          @generalize-r |
-            fix r: Poly {
-              @generalize-c |
-                fix c: Nat {
-                  @the-triangle-is-one-diagonal |
-                    tripleTri(p, q, r, c, ZERO) =
-                      tripleDiag(p, q, r, ZERO, c, ZERO)
-                    [using specialize tripleTriZero(p, q, r, c)]
-                  @the-diagonal-scales |
-                    tripleDiag(p, q, r, ZERO, c, ZERO) =
-                      mulR(convolution(p, q, ZERO, ZERO), coeff(r, c))
-                    [using specialize
-                      aDiagonalIsTheScaledConvolution(p, q, r, c, ZERO, ZERO)]
-                  @the-product-coefficient |
-                    coeff(mulP(p, q), ZERO) = convolution(p, q, ZERO, ZERO)
-                    [using specialize mulPolyCoeff(p, q, ZERO)]
-                  @the-run-is-one-term |
-                    rsegment(r, mulP(p, q), c, ZERO, ZERO) =
-                      mulR(coeff(r, c), coeff(mulP(p, q), ZERO))
-                    [using specialize rsegmentZero(r, mulP(p, q), c, ZERO)]
-                  @the-factors-commute |
-                    mulR(coeff(r, c), convolution(p, q, ZERO, ZERO)) =
-                      mulR(convolution(p, q, ZERO, ZERO), coeff(r, c))
-                    [using specialize mulIsCommutativeR(coeff(r, c),
-                      convolution(p, q, ZERO, ZERO))]
-                  @conclusion-the-base-agrees |
-                    tripleTri(p, q, r, c, ZERO) =
-                      rsegment(r, mulP(p, q), c, ZERO, ZERO)
-                    [using simplify the-triangle-is-one-diagonal
-                      the-diagonal-scales the-product-coefficient
-                      the-run-is-one-term the-factors-commute]
-                }
-              @discharge-c |
-                forall c: Nat;
-                  tripleTri(p, q, r, c, ZERO) =
-                  rsegment(r, mulP(p, q), c, ZERO, ZERO)
-                [by generalize generalize-c]
-            }
-          @discharge-r |
-            forall r: Poly; forall c: Nat;
-              tripleTri(p, q, r, c, ZERO) =
-              rsegment(r, mulP(p, q), c, ZERO, ZERO)
-            [by generalize generalize-r]
-        }
-      @discharge-q |
-        forall q, r: Poly; forall c: Nat;
-          tripleTri(p, q, r, c, ZERO) =
-          rsegment(r, mulP(p, q), c, ZERO, ZERO)
-        [by generalize generalize-q]
-    }
-  @conclusion |
-    forall p, q, r: Poly; forall c: Nat;
-      tripleTri(p, q, r, c, ZERO) = rsegment(r, mulP(p, q), c, ZERO, ZERO)
-    [by generalize generalize-p]
-qed
-
-// The step: the triangle peels its first diagonal — Lemma C makes it coeff(pq, succ n) times
-// r_c — and the run peels the same term with the factors transposed. Both recurse at
-// (succ c, n).
-theorem theTriangleStep: forall p, q, r: Poly; forall n: Nat;
-  (forall c: Nat;
-  tripleTri(p, q, r, c, n) = rsegment(r, mulP(p, q), c, n, n)) ->
-  (forall c: Nat;
-  tripleTri(p, q, r, c, succ(n)) =
-  rsegment(r, mulP(p, q), c, succ(n), succ(n)))
-proof
-  @generalize-p |
-    fix p: Poly {
-      @generalize-q |
-        fix q: Poly {
-          @generalize-r |
-            fix r: Poly {
-              @generalize-n |
-                fix n: Nat {
-                  @given-the-hypothesis |
-                    assume forall c: Nat;
-                      tripleTri(p, q, r, c, n) =
-                      rsegment(r, mulP(p, q), c, n, n) {
-                      @the-hypothesis |
-                        forall c: Nat;
-                          tripleTri(p, q, r, c, n) =
-                          rsegment(r, mulP(p, q), c, n, n)
-                        [by hypothesis given-the-hypothesis]
-                      @generalize-c |
-                        fix c: Nat {
-                          @the-triangle-peels |
-                            tripleTri(p, q, r, c, succ(n)) =
-                              addR(tripleDiag(p, q, r, ZERO, c, succ(n)),
-                              tripleTri(p, q, r, succ(c), n))
-                            [using specialize tripleTriSucc(p, q, r, c, n)]
-                          @the-peeled-diagonal-scales |
-                            tripleDiag(p, q, r, ZERO, c, succ(n)) =
-                              mulR(convolution(p, q, ZERO, succ(n)),
-                              coeff(r, c))
-                            [using specialize aDiagonalIsTheScaledConvolution(
-                              p, q, r, c, succ(n), ZERO)]
-                          @the-product-coefficient |
-                            coeff(mulP(p, q), succ(n)) =
-                              convolution(p, q, ZERO, succ(n))
-                            [using specialize mulPolyCoeff(p, q, succ(n))]
-                          @the-rest-agrees |
-                            tripleTri(p, q, r, succ(c), n) =
-                              rsegment(r, mulP(p, q), succ(c), n, n)
-                            [using specialize the-hypothesis(succ(c))]
-                          @the-run-peels |
-                            rsegment(r, mulP(p, q), c, succ(n), succ(n)) =
-                              addR(mulR(coeff(r, c),
-                              coeff(mulP(p, q), succ(n))),
-                              rsegment(r, mulP(p, q), succ(c), n, n))
+                  @when-n-is-positive |
+                    assume exists w: Nat; n = succ(w) {
+                      @the-predecessor-exists |
+                        exists w: Nat; n = succ(w)
+                        [by hypothesis when-n-is-positive]
+                      @with-the-predecessor |
+                        unpack w: Nat from the-predecessor-exists {
+                          @n-steps |
+                            n = succ(w)
+                            [by hypothesis with-the-predecessor]
+                          @the-bound-steps |
+                            peano_order.less_or_equal(succ(j), succ(w))
+                            [by rewrite n-steps the-bound]
+                          @j-is-within-w |
+                            peano_order.less_or_equal(j, w)
                             [using specialize
-                              rsegmentSucc(r, mulP(p, q), c, n, n)]
-                          @the-factors-commute |
-                            mulR(coeff(r, c),
-                              convolution(p, q, ZERO, succ(n))) =
-                              mulR(convolution(p, q, ZERO, succ(n)),
-                              coeff(r, c))
-                            [using specialize mulIsCommutativeR(coeff(r, c),
-                              convolution(p, q, ZERO, succ(n)))]
-                          @conclusion-the-step-agrees |
-                            tripleTri(p, q, r, c, succ(n)) =
-                              rsegment(r, mulP(p, q), c, succ(n), succ(n))
-                            [using simplify the-triangle-peels
-                              the-peeled-diagonal-scales
-                              the-product-coefficient the-rest-agrees
-                              the-run-peels the-factors-commute]
-                        }
-                      @all-exponents |
-                        forall c: Nat;
-                          tripleTri(p, q, r, c, succ(n)) =
-                          rsegment(r, mulP(p, q), c, succ(n), succ(n))
-                        [by generalize generalize-c]
-                    }
-                  @the-hypothesis-gives-it |
-                    (forall c: Nat;
-                      tripleTri(p, q, r, c, n) =
-                      rsegment(r, mulP(p, q), c, n, n)) ->
-                      (forall c: Nat;
-                      tripleTri(p, q, r, c, succ(n)) =
-                      rsegment(r, mulP(p, q), c, succ(n), succ(n)))
-                    [by discharge given-the-hypothesis]
-                }
-              @discharge-n |
-                forall n: Nat;
-                  (forall c: Nat;
-                  tripleTri(p, q, r, c, n) =
-                  rsegment(r, mulP(p, q), c, n, n)) ->
-                  (forall c: Nat;
-                  tripleTri(p, q, r, c, succ(n)) =
-                  rsegment(r, mulP(p, q), c, succ(n), succ(n)))
-                [by generalize generalize-n]
-            }
-          @discharge-r |
-            forall r: Poly; forall n: Nat;
-              (forall c: Nat;
-              tripleTri(p, q, r, c, n) =
-              rsegment(r, mulP(p, q), c, n, n)) ->
-              (forall c: Nat;
-              tripleTri(p, q, r, c, succ(n)) =
-              rsegment(r, mulP(p, q), c, succ(n), succ(n)))
-            [by generalize generalize-r]
-        }
-      @discharge-q |
-        forall q, r: Poly; forall n: Nat;
-          (forall c: Nat;
-          tripleTri(p, q, r, c, n) =
-          rsegment(r, mulP(p, q), c, n, n)) ->
-          (forall c: Nat;
-          tripleTri(p, q, r, c, succ(n)) =
-          rsegment(r, mulP(p, q), c, succ(n), succ(n)))
-        [by generalize generalize-q]
-    }
-  @conclusion |
-    forall p, q, r: Poly; forall n: Nat;
-      (forall c: Nat;
-      tripleTri(p, q, r, c, n) = rsegment(r, mulP(p, q), c, n, n)) ->
-      (forall c: Nat;
-      tripleTri(p, q, r, c, succ(n)) =
-      rsegment(r, mulP(p, q), c, succ(n), succ(n)))
-    [by generalize generalize-p]
-qed
-
-// -- LEMMA A: the shortened rows ARE coeff(p(qr), ·) ----------------------------------------
-// Each row is `coeff(p, a)` scaled by `coeff(qr, ·)` (Lemma D plus `mulPolyCoeff`) — the
-// summand of p against qr. The rows raise the p-exponent as they shorten, which is
-// `convolution` with p first. Induction on the row count with the p-exponent quantified.
-theorem theShortenedRowsAreTheRightCoefficient: forall p, q, r: Poly;
-  forall n, a: Nat;
-  tripleRows(p, q, r, a, n) = convolution(p, mulP(q, r), a, n)
-proof
-  @generalize-p |
-    fix p: Poly {
-      @generalize-q |
-        fix q: Poly {
-          @generalize-r |
-            fix r: Poly {
-              @base-case |
-                forall a: Nat;
-                  tripleRows(p, q, r, a, ZERO) =
-                  convolution(p, mulP(q, r), a, ZERO)
-                [using specialize theShortenedRowsBase(p, q, r)]
-              @induction-step-for-all-n |
-                forall n: Nat;
-                  (forall a: Nat;
-                  tripleRows(p, q, r, a, n) =
-                  convolution(p, mulP(q, r), a, n)) ->
-                  (forall a: Nat;
-                  tripleRows(p, q, r, a, succ(n)) =
-                  convolution(p, mulP(q, r), a, succ(n)))
-                [using specialize theShortenedRowsStep(p, q, r)]
-              @all-counts |
-                forall n: Nat; forall a: Nat;
-                  tripleRows(p, q, r, a, n) =
-                  convolution(p, mulP(q, r), a, n)
-                [using instantiation peano.induction((fun z: Nat => forall a: Nat; tripleRows(p, q, r, a, z) = convolution(p, mulP(q, r), a, z))) base-case induction-step-for-all-n]
-            }
-          @discharge-r |
-            forall r: Poly; forall n, a: Nat;
-              tripleRows(p, q, r, a, n) = convolution(p, mulP(q, r), a, n)
-            [by generalize generalize-r]
-        }
-      @discharge-q |
-        forall q, r: Poly; forall n, a: Nat;
-          tripleRows(p, q, r, a, n) = convolution(p, mulP(q, r), a, n)
-        [by generalize generalize-q]
-    }
-  @conclusion |
-    forall p, q, r: Poly; forall n, a: Nat;
-      tripleRows(p, q, r, a, n) = convolution(p, mulP(q, r), a, n)
-    [by generalize generalize-p]
-qed
-
-// The base: one row of length zero; both sides read it as p_a times coeff(qr, 0).
-theorem theShortenedRowsBase: forall p, q, r: Poly;
-  forall a: Nat;
-  tripleRows(p, q, r, a, ZERO) = convolution(p, mulP(q, r), a, ZERO)
-proof
-  @generalize-p |
-    fix p: Poly {
-      @generalize-q |
-        fix q: Poly {
-          @generalize-r |
-            fix r: Poly {
-              @generalize-a |
-                fix a: Nat {
-                  @the-rows-are-one-row |
-                    tripleRows(p, q, r, a, ZERO) =
-                      tripleRow(p, q, r, a, ZERO, ZERO)
-                    [using specialize tripleRowsZero(p, q, r, a)]
-                  @the-row-scales |
-                    tripleRow(p, q, r, a, ZERO, ZERO) =
-                      mulR(coeff(p, a), convolution(q, r, ZERO, ZERO))
-                    [using specialize
-                      aRowIsTheScaledConvolution(p, q, r, a, ZERO, ZERO)]
-                  @the-inner-product-coefficient |
-                    coeff(mulP(q, r), ZERO) = convolution(q, r, ZERO, ZERO)
-                    [using specialize mulPolyCoeff(q, r, ZERO)]
-                  @the-run-is-one-term |
-                    convolution(p, mulP(q, r), a, ZERO) =
-                      mulR(coeff(p, a), coeff(mulP(q, r), ZERO))
-                    [using specialize convolutionZero(p, mulP(q, r), a)]
-                  @conclusion-the-base-agrees |
-                    tripleRows(p, q, r, a, ZERO) =
-                      convolution(p, mulP(q, r), a, ZERO)
-                    [using simplify the-rows-are-one-row the-row-scales
-                      the-inner-product-coefficient the-run-is-one-term]
-                }
-              @discharge-a |
-                forall a: Nat;
-                  tripleRows(p, q, r, a, ZERO) =
-                  convolution(p, mulP(q, r), a, ZERO)
-                [by generalize generalize-a]
-            }
-          @discharge-r |
-            forall r: Poly; forall a: Nat;
-              tripleRows(p, q, r, a, ZERO) =
-              convolution(p, mulP(q, r), a, ZERO)
-            [by generalize generalize-r]
-        }
-      @discharge-q |
-        forall q, r: Poly; forall a: Nat;
-          tripleRows(p, q, r, a, ZERO) =
-          convolution(p, mulP(q, r), a, ZERO)
-        [by generalize generalize-q]
-    }
-  @conclusion |
-    forall p, q, r: Poly; forall a: Nat;
-      tripleRows(p, q, r, a, ZERO) = convolution(p, mulP(q, r), a, ZERO)
-    [by generalize generalize-p]
-qed
-
-// The step: the rows peel their first row — Lemma D makes it p_a times coeff(qr, succ n) —
-// and the run peels the same term. Both recurse at (succ a, n).
-theorem theShortenedRowsStep: forall p, q, r: Poly; forall n: Nat;
-  (forall a: Nat;
-  tripleRows(p, q, r, a, n) = convolution(p, mulP(q, r), a, n)) ->
-  (forall a: Nat;
-  tripleRows(p, q, r, a, succ(n)) =
-  convolution(p, mulP(q, r), a, succ(n)))
-proof
-  @generalize-p |
-    fix p: Poly {
-      @generalize-q |
-        fix q: Poly {
-          @generalize-r |
-            fix r: Poly {
-              @generalize-n |
-                fix n: Nat {
-                  @given-the-hypothesis |
-                    assume forall a: Nat;
-                      tripleRows(p, q, r, a, n) =
-                      convolution(p, mulP(q, r), a, n) {
-                      @the-hypothesis |
-                        forall a: Nat;
-                          tripleRows(p, q, r, a, n) =
-                          convolution(p, mulP(q, r), a, n)
-                        [by hypothesis given-the-hypothesis]
-                      @generalize-a |
-                        fix a: Nat {
-                          @the-rows-peel |
-                            tripleRows(p, q, r, a, succ(n)) =
-                              addR(tripleRow(p, q, r, a, ZERO, succ(n)),
-                              tripleRows(p, q, r, succ(a), n))
-                            [using specialize tripleRowsSucc(p, q, r, a, n)]
-                          @the-peeled-row-scales |
-                            tripleRow(p, q, r, a, ZERO, succ(n)) =
-                              mulR(coeff(p, a),
-                              convolution(q, r, ZERO, succ(n)))
-                            [using specialize aRowIsTheScaledConvolution(
-                              p, q, r, a, succ(n), ZERO)]
-                          @the-inner-product-coefficient |
-                            coeff(mulP(q, r), succ(n)) =
-                              convolution(q, r, ZERO, succ(n))
-                            [using specialize mulPolyCoeff(q, r, succ(n))]
-                          @the-rest-agrees |
-                            tripleRows(p, q, r, succ(a), n) =
-                              convolution(p, mulP(q, r), succ(a), n)
-                            [using specialize the-hypothesis(succ(a))]
-                          @the-run-peels |
-                            convolution(p, mulP(q, r), a, succ(n)) =
-                              addR(mulR(coeff(p, a),
-                              coeff(mulP(q, r), succ(n))),
-                              convolution(p, mulP(q, r), succ(a), n))
+                              peano_order.succReflectsAtMost(j, w)
+                              the-bound-steps]
+                          @the-hypothesis-at-w |
+                            theGapTo(succ(w), j) = succ(theGapTo(w, j))
+                            [using specialize the-hypothesis(w)
+                              j-is-within-w]
+                          @the-raised-gap-steps-down |
+                            theGapTo(succ(succ(w)), succ(j)) =
+                              theGapTo(succ(w), j)
                             [using specialize
-                              convolutionSucc(p, mulP(q, r), a, n)]
-                          @conclusion-the-step-agrees |
-                            tripleRows(p, q, r, a, succ(n)) =
-                              convolution(p, mulP(q, r), a, succ(n))
-                            [using simplify the-rows-peel
-                              the-peeled-row-scales
-                              the-inner-product-coefficient the-rest-agrees
-                              the-run-peels]
+                              theGapToSteps(succ(w), j)]
+                          @the-gap-steps-down |
+                            theGapTo(succ(w), succ(j)) = theGapTo(w, j)
+                            [using specialize theGapToSteps(w, j)]
+                          @the-equality-at-w |
+                            theGapTo(succ(succ(w)), succ(j)) =
+                              succ(theGapTo(succ(w), succ(j)))
+                            [using simplify the-raised-gap-steps-down
+                              the-hypothesis-at-w the-gap-steps-down]
+                          @conclusion-positive |
+                            theGapTo(succ(n), succ(j)) =
+                              succ(theGapTo(n, succ(j)))
+                            [by rewrite n-steps the-equality-at-w]
                         }
-                      @all-exponents |
-                        forall a: Nat;
-                          tripleRows(p, q, r, a, succ(n)) =
-                          convolution(p, mulP(q, r), a, succ(n))
-                        [by generalize generalize-a]
+                      @conclusion-the-positive-case |
+                        theGapTo(succ(n), succ(j)) =
+                          succ(theGapTo(n, succ(j)))
+                        [by unpacked with-the-predecessor]
                     }
-                  @the-hypothesis-gives-it |
-                    (forall a: Nat;
-                      tripleRows(p, q, r, a, n) =
-                      convolution(p, mulP(q, r), a, n)) ->
-                      (forall a: Nat;
-                      tripleRows(p, q, r, a, succ(n)) =
-                      convolution(p, mulP(q, r), a, succ(n)))
-                    [by discharge given-the-hypothesis]
+                  @conclusion-either-way |
+                    theGapTo(succ(n), succ(j)) =
+                      succ(theGapTo(n, succ(j)))
+                    [by common_conclusion n-is-positive
+                      when-n-is-zero when-n-is-positive]
                 }
-              @discharge-n |
-                forall n: Nat;
-                  (forall a: Nat;
-                  tripleRows(p, q, r, a, n) =
-                  convolution(p, mulP(q, r), a, n)) ->
-                  (forall a: Nat;
-                  tripleRows(p, q, r, a, succ(n)) =
-                  convolution(p, mulP(q, r), a, succ(n)))
-                [by generalize generalize-n]
+              @the-bound-gives-it |
+                peano_order.less_or_equal(succ(j), n) ->
+                  theGapTo(succ(n), succ(j)) =
+                  succ(theGapTo(n, succ(j)))
+                [by discharge given-the-bound]
             }
-          @discharge-r |
-            forall r: Poly; forall n: Nat;
-              (forall a: Nat;
-              tripleRows(p, q, r, a, n) =
-              convolution(p, mulP(q, r), a, n)) ->
-              (forall a: Nat;
-              tripleRows(p, q, r, a, succ(n)) =
-              convolution(p, mulP(q, r), a, succ(n)))
-            [by generalize generalize-r]
+          @all-totals |
+            forall n: Nat;
+              peano_order.less_or_equal(succ(j), n) ->
+              theGapTo(succ(n), succ(j)) = succ(theGapTo(n, succ(j)))
+            [by generalize generalize-n]
         }
-      @discharge-q |
-        forall q, r: Poly; forall n: Nat;
-          (forall a: Nat;
-          tripleRows(p, q, r, a, n) =
-          convolution(p, mulP(q, r), a, n)) ->
-          (forall a: Nat;
-          tripleRows(p, q, r, a, succ(n)) =
-          convolution(p, mulP(q, r), a, succ(n)))
-        [by generalize generalize-q]
+      @the-hypothesis-gives-it |
+        (forall n: Nat;
+          peano_order.less_or_equal(j, n) ->
+          theGapTo(succ(n), j) = succ(theGapTo(n, j))) ->
+          (forall n: Nat;
+          peano_order.less_or_equal(succ(j), n) ->
+          theGapTo(succ(n), succ(j)) = succ(theGapTo(n, succ(j))))
+        [by discharge given-the-hypothesis]
     }
   @conclusion |
-    forall p, q, r: Poly; forall n: Nat;
-      (forall a: Nat;
-      tripleRows(p, q, r, a, n) = convolution(p, mulP(q, r), a, n)) ->
-      (forall a: Nat;
-      tripleRows(p, q, r, a, succ(n)) =
-      convolution(p, mulP(q, r), a, succ(n)))
-    [by generalize generalize-p]
-qed
-
-// -- THE PIVOT: raising the bound adds one anti-diagonal ------------------------------------
-// The two collections partition the same triangle differently, so neither peels into the
-// other. The move that works — `std/nested-sum.b4m` records it, and the F[x] proof this is
-// ported from uses it — is a PARTIAL rows collection whose row count is free of the total.
-// Raising the total by one then gains each present row exactly its last entry, and those
-// gained entries ARE one anti-diagonal. That increment is provable on its own, which is what
-// breaks the circularity: the bridges alone make `tri = rows` equivalent to associativity.
-//
-// `partialRows(p,q,r,base,len,m)` sums `m` rows: at p-exponent `base` over the pairs summing
-// to `len`, then `succ(base)` over one fewer, and so on. The count `m` is the recursion
-// variable and the pair rides along.
-//
-// NO GUARD. The F[x] version carried `m <= succ(n)`, load-bearing because its row bound was
-// `sub(n, j)` and `sub` SATURATES: past the diagonal the bound clamped and rows silently
-// repeated. Here the remaining length is a `succ` pattern, so a row past the diagonal cannot
-// be formed and the guard has nothing to discharge. This is the de-totalization paying off.
-func partialRows(p: Poly, q: Poly, r: Poly, base: Nat, len: Nat, m: Nat) => R
-axiom partialRowsZero: forall p, q, r: Poly; forall base, len: Nat;
-  partialRows(p, q, r, base, len, ZERO) = zeroR
-axiom partialRowsSucc: forall p, q, r: Poly; forall base, len, m: Nat;
-  partialRows(p, q, r, base, len, succ(m)) =
-  addR(tripleRow(p, q, r, base, ZERO, len),
-  partialRows(p, q, r, succ(base), theShorter(len), m))
-
-// One less, floored at ZERO: the length the next row down runs over. A `succ`-pattern clause
-// rather than `sub(len, ONE)`, so no subtraction enters and the floor is explicit.
-func theShorter(len: Nat) => Nat
-axiom theShorterAtZero: theShorter(ZERO) = ZERO
-axiom theShorterAtSucc: forall n: Nat; theShorter(succ(n)) = n
-
-// A FULL partial-rows collection is the rows collection: `succ(n)` rows at total `n`.
-theorem aFullPartialIsTheRows: forall p, q, r: Poly; forall n, base: Nat;
-  partialRows(p, q, r, base, n, succ(n)) =
-  tripleRows(p, q, r, base, n)
-proof
-  @generalize-p |
-    fix p: Poly {
-      @generalize-q |
-        fix q: Poly {
-          @generalize-r |
-            fix r: Poly {
-              @base-case |
-                forall base: Nat;
-                  partialRows(p, q, r, base, ZERO, succ(ZERO)) =
-                  tripleRows(p, q, r, base, ZERO)
-                [using specialize theFullPartialBase(p, q, r)]
-              @induction-step-for-all-n |
-                forall n: Nat;
-                  (forall base: Nat;
-                  partialRows(p, q, r, base, n, succ(n)) =
-                  tripleRows(p, q, r, base, n)) ->
-                  (forall base: Nat;
-                  partialRows(p, q, r, base, succ(n), succ(succ(n))) =
-                  tripleRows(p, q, r, base, succ(n)))
-                [using specialize theFullPartialStep(p, q, r)]
-              @all-totals |
-                forall n: Nat; forall base: Nat;
-                  partialRows(p, q, r, base, n, succ(n)) =
-                  tripleRows(p, q, r, base, n)
-                [using instantiation peano.induction((fun z: Nat => forall base: Nat; partialRows(p, q, r, base, z, succ(z)) = tripleRows(p, q, r, base, z))) base-case induction-step-for-all-n]
-            }
-          @discharge-r |
-            forall r: Poly; forall n, base: Nat;
-              partialRows(p, q, r, base, n, succ(n)) =
-              tripleRows(p, q, r, base, n)
-            [by generalize generalize-r]
-        }
-      @discharge-q |
-        forall q, r: Poly; forall n, base: Nat;
-          partialRows(p, q, r, base, n, succ(n)) =
-          tripleRows(p, q, r, base, n)
-        [by generalize generalize-q]
-    }
-  @conclusion |
-    forall p, q, r: Poly; forall n, base: Nat;
-      partialRows(p, q, r, base, n, succ(n)) =
-      tripleRows(p, q, r, base, n)
-    [by generalize generalize-p]
-qed
-
-// The base: one row on each side. The partial at count succ(ZERO) peels its single row and
-// leaves an empty remainder; the rows collection at total ZERO IS that single row.
-theorem theFullPartialBase: forall p, q, r: Poly;
-  forall base: Nat;
-  partialRows(p, q, r, base, ZERO, succ(ZERO)) =
-  tripleRows(p, q, r, base, ZERO)
-proof
-  @generalize-p |
-    fix p: Poly {
-      @generalize-q |
-        fix q: Poly {
-          @generalize-r |
-            fix r: Poly {
-              @generalize-base |
-                fix base: Nat {
-                  @the-partial-peels |
-                    partialRows(p, q, r, base, ZERO, succ(ZERO)) =
-                      addR(tripleRow(p, q, r, base, ZERO, ZERO),
-                      partialRows(p, q, r, succ(base),
-                      theShorter(ZERO), ZERO))
-                    [using specialize
-                      partialRowsSucc(p, q, r, base, ZERO, ZERO)]
-                  @the-remainder-is-empty |
-                    partialRows(p, q, r, succ(base),
-                      theShorter(ZERO), ZERO) = zeroR
-                    [using specialize partialRowsZero(p, q, r, succ(base),
-                      theShorter(ZERO))]
-                  @adding-nothing |
-                    addR(tripleRow(p, q, r, base, ZERO, ZERO), zeroR) =
-                      tripleRow(p, q, r, base, ZERO, ZERO)
-                    [using specialize addZeroRightR(
-                      tripleRow(p, q, r, base, ZERO, ZERO))]
-                  @the-rows-are-one-row |
-                    tripleRows(p, q, r, base, ZERO) =
-                      tripleRow(p, q, r, base, ZERO, ZERO)
-                    [using specialize tripleRowsZero(p, q, r, base)]
-                  @conclusion-the-base-agrees |
-                    partialRows(p, q, r, base, ZERO, succ(ZERO)) =
-                      tripleRows(p, q, r, base, ZERO)
-                    [using simplify the-partial-peels the-remainder-is-empty
-                      adding-nothing the-rows-are-one-row]
-                }
-              @discharge-base |
-                forall base: Nat;
-                  partialRows(p, q, r, base, ZERO, succ(ZERO)) =
-                  tripleRows(p, q, r, base, ZERO)
-                [by generalize generalize-base]
-            }
-          @discharge-r |
-            forall r: Poly; forall base: Nat;
-              partialRows(p, q, r, base, ZERO, succ(ZERO)) =
-              tripleRows(p, q, r, base, ZERO)
-            [by generalize generalize-r]
-        }
-      @discharge-q |
-        forall q, r: Poly; forall base: Nat;
-          partialRows(p, q, r, base, ZERO, succ(ZERO)) =
-          tripleRows(p, q, r, base, ZERO)
-        [by generalize generalize-q]
-    }
-  @conclusion |
-    forall p, q, r: Poly; forall base: Nat;
-      partialRows(p, q, r, base, ZERO, succ(ZERO)) =
-      tripleRows(p, q, r, base, ZERO)
-    [by generalize generalize-p]
-qed
-
-// The step: both peel their first row at length succ(n) and recurse at (succ base, n) —
-// the partial via `theShorter(succ n) = n`, the collection by its own succ clause.
-theorem theFullPartialStep: forall p, q, r: Poly; forall n: Nat;
-  (forall base: Nat;
-  partialRows(p, q, r, base, n, succ(n)) =
-  tripleRows(p, q, r, base, n)) ->
-  (forall base: Nat;
-  partialRows(p, q, r, base, succ(n), succ(succ(n))) =
-  tripleRows(p, q, r, base, succ(n)))
-proof
-  @generalize-p |
-    fix p: Poly {
-      @generalize-q |
-        fix q: Poly {
-          @generalize-r |
-            fix r: Poly {
-              @generalize-n |
-                fix n: Nat {
-                  @given-the-hypothesis |
-                    assume forall base: Nat;
-                      partialRows(p, q, r, base, n, succ(n)) =
-                      tripleRows(p, q, r, base, n) {
-                      @the-hypothesis |
-                        forall base: Nat;
-                          partialRows(p, q, r, base, n, succ(n)) =
-                          tripleRows(p, q, r, base, n)
-                        [by hypothesis given-the-hypothesis]
-                      @generalize-base |
-                        fix base: Nat {
-                          @the-partial-peels |
-                            partialRows(p, q, r, base, succ(n),
-                              succ(succ(n))) =
-                              addR(tripleRow(p, q, r, base, ZERO, succ(n)),
-                              partialRows(p, q, r, succ(base),
-                              theShorter(succ(n)), succ(n)))
-                            [using specialize partialRowsSucc(p, q, r, base,
-                              succ(n), succ(n))]
-                          @the-shorter-length |
-                            theShorter(succ(n)) = n
-                            [using specialize theShorterAtSucc(n)]
-                          @reflexivity-at-the-tail |
-                            partialRows(p, q, r, succ(base), n, succ(n)) =
-                              partialRows(p, q, r, succ(base), n, succ(n))
-                            [by reflexivity]
-                          @the-tail-at-the-shorter-length |
-                            partialRows(p, q, r, succ(base),
-                              theShorter(succ(n)), succ(n)) =
-                              partialRows(p, q, r, succ(base), n, succ(n))
-                            [by rewrite the-shorter-length
-                              reflexivity-at-the-tail]
-                          @the-tail-agrees |
-                            partialRows(p, q, r, succ(base), n, succ(n)) =
-                              tripleRows(p, q, r, succ(base), n)
-                            [using specialize the-hypothesis(succ(base))]
-                          @the-rows-peel |
-                            tripleRows(p, q, r, base, succ(n)) =
-                              addR(tripleRow(p, q, r, base, ZERO, succ(n)),
-                              tripleRows(p, q, r, succ(base), n))
-                            [using specialize tripleRowsSucc(p, q, r, base, n)]
-                          @conclusion-the-step-agrees |
-                            partialRows(p, q, r, base, succ(n),
-                              succ(succ(n))) =
-                              tripleRows(p, q, r, base, succ(n))
-                            [using simplify the-partial-peels
-                              the-tail-at-the-shorter-length the-tail-agrees
-                              the-rows-peel]
-                        }
-                      @all-bases |
-                        forall base: Nat;
-                          partialRows(p, q, r, base, succ(n),
-                          succ(succ(n))) =
-                          tripleRows(p, q, r, base, succ(n))
-                        [by generalize generalize-base]
-                    }
-                  @the-hypothesis-gives-it |
-                    (forall base: Nat;
-                      partialRows(p, q, r, base, n, succ(n)) =
-                      tripleRows(p, q, r, base, n)) ->
-                      (forall base: Nat;
-                      partialRows(p, q, r, base, succ(n), succ(succ(n))) =
-                      tripleRows(p, q, r, base, succ(n)))
-                    [by discharge given-the-hypothesis]
-                }
-              @discharge-n |
-                forall n: Nat;
-                  (forall base: Nat;
-                  partialRows(p, q, r, base, n, succ(n)) =
-                  tripleRows(p, q, r, base, n)) ->
-                  (forall base: Nat;
-                  partialRows(p, q, r, base, succ(n), succ(succ(n))) =
-                  tripleRows(p, q, r, base, succ(n)))
-                [by generalize generalize-n]
-            }
-          @discharge-r |
-            forall r: Poly; forall n: Nat;
-              (forall base: Nat;
-              partialRows(p, q, r, base, n, succ(n)) =
-              tripleRows(p, q, r, base, n)) ->
-              (forall base: Nat;
-              partialRows(p, q, r, base, succ(n), succ(succ(n))) =
-              tripleRows(p, q, r, base, succ(n)))
-            [by generalize generalize-r]
-        }
-      @discharge-q |
-        forall q, r: Poly; forall n: Nat;
-          (forall base: Nat;
-          partialRows(p, q, r, base, n, succ(n)) =
-          tripleRows(p, q, r, base, n)) ->
-          (forall base: Nat;
-          partialRows(p, q, r, base, succ(n), succ(succ(n))) =
-          tripleRows(p, q, r, base, succ(n)))
-        [by generalize generalize-q]
-    }
-  @conclusion |
-    forall p, q, r: Poly; forall n: Nat;
-      (forall base: Nat;
-      partialRows(p, q, r, base, n, succ(n)) =
-      tripleRows(p, q, r, base, n)) ->
-      (forall base: Nat;
-      partialRows(p, q, r, base, succ(n), succ(succ(n))) =
-      tripleRows(p, q, r, base, succ(n)))
-    [by generalize generalize-p]
+    forall j: Nat;
+      (forall n: Nat;
+      peano_order.less_or_equal(j, n) ->
+      theGapTo(succ(n), j) = succ(theGapTo(n, j))) ->
+      (forall n: Nat;
+      peano_order.less_or_equal(succ(j), n) ->
+      theGapTo(succ(n), succ(j)) = succ(theGapTo(n, succ(j))))
+    [by generalize generalize-j]
 qed
