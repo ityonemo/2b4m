@@ -198,16 +198,16 @@ fact invOfProduct = permutation_sequence.invOfProduct
 // The arithmetic Judson leaves silent when he writes "σ_m ⋯ σ_1": reversing an index keeps
 // it in range — i < n implies n-(i+1) < n.
 theorem reversedIndexInRange: forall n: Nat; forall i: Nat;
-  less_than(i, n) -> less_than(sub(n, succ(i)), n)
+  peano_order.less_or_equal(succ(i), n) -> less_than(sub(n, succ(i)), n)
 proof
   @generalize-n |
     fix n: Nat {
       @generalize-i |
         fix i: Nat {
           @given-i-below-n |
-            assume less_than(i, n) {
-              @i-below-n |
-                less_than(i, n)
+            assume peano_order.less_or_equal(succ(i), n) {
+              @successor-is-at-most-n |
+                peano_order.less_or_equal(succ(i), n)
                 [by hypothesis given-i-below-n]
               @zero-plus-successor |
                 peano.add(ZERO, succ(i)) = succ(i)
@@ -215,23 +215,22 @@ proof
               @successor-is-positive |
                 less_than(ZERO, succ(i))
                 [using specialize peano_order.lessThanIntro(ZERO, i, succ(i)) zero-plus-successor]
-              @successor-below-successor |
-                less_than(succ(i), succ(n))
-                [using specialize peano_order.succPreservesOrder(i, n) i-below-n]
+              // i < n is exactly succ(i) <= n, ℕ's discreteness
               @conclusion-in-range |
                 less_than(sub(n, succ(i)), n)
-                [using specialize peano_subtraction.subStrictlyDecreases(succ(i), n) successor-is-positive successor-below-successor]
+                [using specialize peano_subtraction.subStrictlyDecreases(succ(i), n)
+                  successor-is-positive successor-is-at-most-n]
             }
           @conclusion-implication |
-            less_than(i, n) -> less_than(sub(n, succ(i)), n)
+            peano_order.less_or_equal(succ(i), n) -> less_than(sub(n, succ(i)), n)
             [by discharge given-i-below-n]
         }
       @discharge-i |
-        forall i: Nat; less_than(i, n) -> less_than(sub(n, succ(i)), n)
+        forall i: Nat; peano_order.less_or_equal(succ(i), n) -> less_than(sub(n, succ(i)), n)
         [by generalize generalize-i]
     }
   @conclusion |
-    forall n: Nat; forall i: Nat; less_than(i, n) -> less_than(sub(n, succ(i)), n)
+    forall n: Nat; forall i: Nat; peano_order.less_or_equal(succ(i), n) -> less_than(sub(n, succ(i)), n)
     [by generalize generalize-n]
 qed
 
@@ -281,7 +280,9 @@ proof
                     forall i: Nat; less_than(i, n) -> isTransposition(at(s, i))
                     [using tautology what-s-being-transpositions-means s-is-a-transposition-sequence]
                   @reversed-index-in-range |
-                    forall i: Nat; less_than(i, n) -> less_than(sub(n, succ(i)), n)
+                    forall i: Nat;
+                      peano_order.less_or_equal(succ(i), n) ->
+                      less_than(sub(n, succ(i)), n)
                     [using specialize reversedIndexInRange(n)]
                   // per entry: fix i below n, rewrite r's entry to s's at the reversed
                   // index, and apply s's hypothesis THERE (which needs the index bound).
@@ -292,12 +293,19 @@ proof
                           @i-below-n |
                             less_than(i, n)
                             [by hypothesis given-i-below-n]
+                          // i < n is succ(i) <= n, which the guarded `sub` needs
+                          @successor-is-at-most-n |
+                            peano_order.less_or_equal(succ(i), n)
+                            [using specialize
+                              peano_order.aStrictBoundRaisesToAnAtMostBound(i, n)
+                              i-below-n]
                           @r-entry-is-an-s-entry |
                             at(r, i) = at(s, sub(n, succ(i)))
                             [using specialize entries-are-s-entries(i) i-below-n]
                           @reversed-index-below-n |
                             less_than(sub(n, succ(i)), n)
-                            [using specialize reversed-index-in-range(i) i-below-n]
+                            [using specialize reversed-index-in-range(i)
+                              successor-is-at-most-n]
                           @s-entry-is-a-transposition |
                             isTransposition(at(s, sub(n, succ(i))))
                             [using specialize s-entries-are-transpositions(sub(n, succ(i))) reversed-index-below-n]
@@ -909,9 +917,16 @@ proof
                                                         divides(TWO, add(n, m))
                                                         [using specialize identityIsEvenLength(u, add(n, m)) joined-entries joined-is-identity]
                                                       // 2 | (n+m) and 2 | m give 2 | (n+m)-m = n.
+                                                      @m-is-at-most-the-total |
+                                                        peano_order.less_or_equal(
+                                                          m, add(n, m))
+                                                        [using specialize
+                                                          peano_order.theSummandBoundReordered(
+                                                          m, n)]
                                                       @total-minus-m-is-even |
                                                         divides(TWO, sub(add(n, m), m))
-                                                        [using specialize peano_divides.dividesSub(TWO, add(n, m), m) joined-length-is-even m-even]
+                                                        [using specialize peano_divides.dividesSub(TWO, add(n, m), m) joined-length-is-even m-even
+                                                          m-is-at-most-the-total]
                                                       @total-minus-m-is-n |
                                                         sub(add(n, m), m) = n
                                                         [using specialize peano_subtraction.subAddCancel(n, m)]

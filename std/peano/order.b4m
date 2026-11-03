@@ -2809,3 +2809,639 @@ proof
     forall a, b: Nat; less_or_equal(a, b) -> less_or_equal(succ(a), succ(b))
     [by generalize generalize-a]
 qed
+
+// succ(a) <= succ(b) implies a <= b — the converse of `succPreservesAtMost`, and the at-most
+// companion to `succReflectsOrder`. A guarded `sub` peeling two successors has the raised
+// bound and needs the plain one.
+theorem succReflectsAtMost: forall a, b: Nat;
+  less_or_equal(succ(a), succ(b)) -> less_or_equal(a, b)
+proof
+  @generalize-a |
+    fix a: Nat {
+      @generalize-b |
+        fix b: Nat {
+          @given-the-raised-bound |
+            assume less_or_equal(succ(a), succ(b)) {
+              @the-raised-bound |
+                less_or_equal(succ(a), succ(b))
+                [by hypothesis given-the-raised-bound]
+              @the-cases |
+                less_than(succ(a), succ(b)) or succ(a) = succ(b)
+                [using tautology the-raised-bound]
+              @the-plain-bound |
+                less_or_equal(a, b)
+                [by common_conclusion the-cases when-strict when-equal]
+              @when-strict |
+                assume less_than(succ(a), succ(b)) {
+                  @strictly-below |
+                    less_than(succ(a), succ(b))
+                    [by hypothesis when-strict]
+                  @the-plain-strict |
+                    less_than(a, b)
+                    [using specialize succReflectsOrder(a, b) strictly-below]
+                  @conclusion-strict-case |
+                    less_or_equal(a, b)
+                    [using tautology the-plain-strict]
+                }
+              @when-equal |
+                assume succ(a) = succ(b) {
+                  @the-successors-agree |
+                    succ(a) = succ(b)
+                    [by hypothesis when-equal]
+                  @they-agree |
+                    a = b
+                    [using specialize peano.succInjective(a, b) the-successors-agree]
+                  @conclusion-equal-case |
+                    less_or_equal(a, b)
+                    [using tautology they-agree]
+                }
+            }
+          @conclusion-the-bound-reflects |
+            less_or_equal(succ(a), succ(b)) -> less_or_equal(a, b)
+            [by discharge given-the-raised-bound]
+        }
+      @conclusion-for-all-b |
+        forall b: Nat; less_or_equal(succ(a), succ(b)) -> less_or_equal(a, b)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Nat; less_or_equal(succ(a), succ(b)) -> less_or_equal(a, b)
+    [by generalize generalize-a]
+qed
+
+// b < a is exactly succ(b) <= a — ℕ's discreteness, in the shape a guarded `sub(a, succ(b))`
+// needs. `lessThanIntro`/`lessThanElim` relate `less_than` to the gap existential; this reads
+// that gap as a successor bound.
+theorem aStrictBoundRaisesToAnAtMostBound: forall b, a: Nat;
+  less_than(b, a) -> less_or_equal(succ(b), a)
+proof
+  @generalize-b |
+    fix b: Nat {
+      @generalize-a |
+        fix a: Nat {
+          @given-b-below-a |
+            assume less_than(b, a) {
+              @b-below-a |
+                less_than(b, a)
+                [by hypothesis given-b-below-a]
+              // the successor of b is at most a: otherwise a < succ(b), i.e. a <= b,
+              // contradicting b < a
+              @suppose-not |
+                assume not less_or_equal(succ(b), a) {
+                  @not-at-most |
+                    not less_or_equal(succ(b), a)
+                    [by hypothesis suppose-not]
+                  // not (succ(b) <= a) rules out both succ(b) < a and succ(b) = a, so by
+                  // trichotomy a < succ(b)
+                  @the-three-cases |
+                    less_than(succ(b), a) or succ(b) = a or less_than(a, succ(b))
+                    [using specialize trichotomy(succ(b), a)]
+                  @a-is-below-the-successor |
+                    less_than(a, succ(b))
+                    [using tautology the-three-cases not-at-most]
+                  @a-is-at-most-b |
+                    less_or_equal(a, b)
+                    [using specialize lessThanSuccToLessOrEqual(a, b)
+                      a-is-below-the-successor]
+                  @b-is-not-below-a |
+                    not less_than(b, a)
+                    [using specialize lessOrEqualBlocksTheConverse(a, b) a-is-at-most-b]
+                }
+              @not-not-at-most |
+                not not less_or_equal(succ(b), a)
+                [by contradiction suppose-not b-below-a b-is-not-below-a]
+              @conclusion-the-successor-is-at-most-a |
+                less_or_equal(succ(b), a)
+                [by double_negation not-not-at-most]
+            }
+          @conclusion-strict-raises |
+            less_than(b, a) -> less_or_equal(succ(b), a)
+            [by discharge given-b-below-a]
+        }
+      @conclusion-for-all-a |
+        forall a: Nat; less_than(b, a) -> less_or_equal(succ(b), a)
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall b, a: Nat; less_than(b, a) -> less_or_equal(succ(b), a)
+    [by generalize generalize-b]
+qed
+
+// succ(b) <= a implies b < a — the converse of `aStrictBoundRaisesToAnAtMostBound`, and the
+// other half of ℕ's discreteness.
+theorem anAtMostSuccessorBoundIsStrict: forall b, a: Nat;
+  less_or_equal(succ(b), a) -> less_than(b, a)
+proof
+  @generalize-b |
+    fix b: Nat {
+      @generalize-a |
+        fix a: Nat {
+          @given-the-successor-bound |
+            assume less_or_equal(succ(b), a) {
+              @the-successor-bound |
+                less_or_equal(succ(b), a)
+                [by hypothesis given-the-successor-bound]
+              @the-cases |
+                less_than(succ(b), a) or succ(b) = a
+                [using tautology the-successor-bound]
+              @b-is-below-a |
+                less_than(b, a)
+                [by common_conclusion the-cases when-strict when-equal]
+              @when-strict |
+                assume less_than(succ(b), a) {
+                  @the-successor-is-below |
+                    less_than(succ(b), a)
+                    [by hypothesis when-strict]
+                  @b-is-below-its-successor |
+                    less_than(b, succ(b))
+                    [using specialize lessThanSelf(b)]
+                  @conclusion-strict-case |
+                    less_than(b, a)
+                    [using specialize lessThanTransitive(b, succ(b), a)
+                      b-is-below-its-successor the-successor-is-below]
+                }
+              @when-equal |
+                assume succ(b) = a {
+                  @they-agree |
+                    succ(b) = a
+                    [by hypothesis when-equal]
+                  @b-is-below-its-successor-here |
+                    less_than(b, succ(b))
+                    [using specialize lessThanSelf(b)]
+                  @conclusion-equal-case |
+                    less_than(b, a)
+                    [by rewrite they-agree b-is-below-its-successor-here]
+                }
+            }
+          @conclusion-the-bound-is-strict |
+            less_or_equal(succ(b), a) -> less_than(b, a)
+            [by discharge given-the-successor-bound]
+        }
+      @conclusion-for-all-a |
+        forall a: Nat; less_or_equal(succ(b), a) -> less_than(b, a)
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall b, a: Nat; less_or_equal(succ(b), a) -> less_than(b, a)
+    [by generalize generalize-b]
+qed
+
+// The converse of `additionPreservesAtMostOnTheRight`: a + c <= b + c implies a <= b.
+theorem additionReflectsAtMostOnTheRight: forall a, b, c: Nat;
+  less_or_equal(add(a, c), add(b, c)) -> less_or_equal(a, b)
+proof
+  @generalize-a |
+    fix a: Nat {
+      @generalize-b |
+        fix b: Nat {
+          @generalize-c |
+            fix c: Nat {
+              @given-the-padded-bound |
+                assume less_or_equal(add(a, c), add(b, c)) {
+                  @the-padded-bound |
+                    less_or_equal(add(a, c), add(b, c))
+                    [by hypothesis given-the-padded-bound]
+                  @the-cases |
+                    less_than(add(a, c), add(b, c)) or add(a, c) = add(b, c)
+                    [using tautology the-padded-bound]
+                  @the-plain-bound |
+                    less_or_equal(a, b)
+                    [by common_conclusion the-cases when-strict when-equal]
+                  @when-strict |
+                    assume less_than(add(a, c), add(b, c)) {
+                      @padded-strictly-below |
+                        less_than(add(a, c), add(b, c))
+                        [by hypothesis when-strict]
+                      @commute-the-left |
+                        add(a, c) = add(c, a)
+                        [using specialize peano.addIsCommutative(a, c)]
+                      @commute-the-right |
+                        add(b, c) = add(c, b)
+                        [using specialize peano.addIsCommutative(b, c)]
+                      @with-the-left-commuted |
+                        less_than(add(c, a), add(b, c))
+                        [by rewrite commute-the-left padded-strictly-below]
+                      @both-commuted |
+                        less_than(add(c, a), add(c, b))
+                        [by rewrite commute-the-right with-the-left-commuted]
+                      @plain-strictly-below |
+                        less_than(a, b)
+                        [using specialize lessThanAddCancelLeft(c, a, b) both-commuted]
+                      @conclusion-strict-case |
+                        less_or_equal(a, b)
+                        [using tautology plain-strictly-below]
+                    }
+                  @when-equal |
+                    assume add(a, c) = add(b, c) {
+                      @the-sums-agree |
+                        add(a, c) = add(b, c)
+                        [by hypothesis when-equal]
+                      @commute-the-left-side |
+                        add(a, c) = add(c, a)
+                        [using specialize peano.addIsCommutative(a, c)]
+                      @commute-the-right-side |
+                        add(b, c) = add(c, b)
+                        [using specialize peano.addIsCommutative(b, c)]
+                      @the-commuted-sums-agree |
+                        add(c, a) = add(c, b)
+                        [using chain commute-the-left-side-flipped the-sums-agree
+                          commute-the-right-side]
+                      @commute-the-left-side-flipped |
+                        add(c, a) = add(a, c)
+                        [by symmetry commute-the-left-side]
+                      @they-agree |
+                        a = b
+                        [using specialize peano.addCancelLeft(c, a, b)
+                          the-commuted-sums-agree]
+                      @conclusion-equal-case |
+                        less_or_equal(a, b)
+                        [using tautology they-agree]
+                    }
+                }
+              @conclusion-the-bound-reflects |
+                less_or_equal(add(a, c), add(b, c)) -> less_or_equal(a, b)
+                [by discharge given-the-padded-bound]
+            }
+          @discharge-c |
+            forall c: Nat;
+              less_or_equal(add(a, c), add(b, c)) -> less_or_equal(a, b)
+            [by generalize generalize-c]
+        }
+      @discharge-b |
+        forall b, c: Nat;
+          less_or_equal(add(a, c), add(b, c)) -> less_or_equal(a, b)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: Nat;
+      less_or_equal(add(a, c), add(b, c)) -> less_or_equal(a, b)
+    [by generalize generalize-a]
+qed
+
+// mul(c, a) <= mul(c, b) with c positive implies a <= b — the converse of
+// `multiplicationPreservesAtMost`. Positivity is required: at c = ZERO both products are ZERO
+// and nothing follows. Proved by contradiction through `multiplicationPreservesOrder`, whose
+// `succ(c)` shape is exactly what positivity supplies.
+theorem multiplicationReflectsAtMost: forall a, b, c: Nat;
+  less_than(ZERO, c) ->
+  less_or_equal(mul(c, a), mul(c, b)) ->
+  less_or_equal(a, b)
+proof
+  @generalize-a |
+    fix a: Nat {
+      @generalize-b |
+        fix b: Nat {
+          @generalize-c |
+            fix c: Nat {
+              @given-c-positive |
+                assume less_than(ZERO, c) {
+                  @c-is-positive |
+                    less_than(ZERO, c)
+                    [by hypothesis given-c-positive]
+                  @given-the-products-compare |
+                    assume less_or_equal(mul(c, a), mul(c, b)) {
+                      @the-products-compare |
+                        less_or_equal(mul(c, a), mul(c, b))
+                        [by hypothesis given-the-products-compare]
+                      @suppose-not |
+                        assume not less_or_equal(a, b) {
+                          @not-at-most |
+                            not less_or_equal(a, b)
+                            [by hypothesis suppose-not]
+                          @the-three-cases |
+                            less_than(a, b) or a = b or less_than(b, a)
+                            [using specialize trichotomy(a, b)]
+                          @b-is-below-a |
+                            less_than(b, a)
+                            [using tautology the-three-cases not-at-most]
+                          // c is succ of something, so the strict law applies
+                          @c-splits |
+                            c = ZERO or (exists m: Nat; c = succ(m))
+                            [using specialize peano.zeroOrSucc(c)]
+                          @c-is-a-successor |
+                            exists m: Nat; c = succ(m)
+                            [by common_conclusion c-splits
+                              when-c-would-be-zero when-c-is-a-successor]
+                          @when-c-would-be-zero |
+                            assume c = ZERO {
+                              @c-would-be-zero |
+                                c = ZERO
+                                [by hypothesis when-c-would-be-zero]
+                              @zero-would-be-positive |
+                                less_than(ZERO, ZERO)
+                                [by rewrite c-would-be-zero c-is-positive]
+                              @nothing-is-below-itself |
+                                not less_than(ZERO, ZERO)
+                                [using specialize lessThanIrreflexive(ZERO)]
+                              @conclusion-vacuous |
+                                exists m: Nat; c = succ(m)
+                                [by ex_falso zero-would-be-positive
+                                  nothing-is-below-itself]
+                            }
+                          @when-c-is-a-successor |
+                            assume exists m: Nat; c = succ(m) {
+                              @conclusion-already |
+                                exists m: Nat; c = succ(m)
+                                [by hypothesis when-c-is-a-successor]
+                            }
+                          @with-the-predecessor |
+                            unpack cm: Nat from c-is-a-successor {
+                              @c-is-succ-cm |
+                                c = succ(cm)
+                                [by hypothesis with-the-predecessor]
+                              @the-products-are-strictly-ordered |
+                                less_than(mul(succ(cm), b), mul(succ(cm), a))
+                                [using specialize multiplicationPreservesOrder(b, a, cm)
+                                  b-is-below-a]
+                              @the-products-at-c |
+                                less_than(mul(c, b), mul(c, a))
+                                [by rewrite c-is-succ-cm the-products-are-strictly-ordered]
+                              @the-converse-is-blocked |
+                                not less_than(mul(c, b), mul(c, a))
+                                [using specialize lessOrEqualBlocksTheConverse(
+                                  mul(c, a), mul(c, b)) the-products-compare]
+                              @conclusion-contradiction |
+                                less_or_equal(a, b)
+                                [by ex_falso the-products-at-c the-converse-is-blocked]
+                            }
+                          @the-contradiction |
+                            less_or_equal(a, b)
+                            [by unpacked with-the-predecessor]
+                        }
+                      @the-negation-implies-it |
+                        (not less_or_equal(a, b)) -> less_or_equal(a, b)
+                        [by discharge suppose-not]
+                      @conclusion-the-products-reflect |
+                        less_or_equal(a, b)
+                        [using tautology the-negation-implies-it]
+                    }
+                  @the-products-give-it |
+                    less_or_equal(mul(c, a), mul(c, b)) -> less_or_equal(a, b)
+                    [by discharge given-the-products-compare]
+                }
+              @positivity-gives-it |
+                less_than(ZERO, c) ->
+                  less_or_equal(mul(c, a), mul(c, b)) ->
+                  less_or_equal(a, b)
+                [by discharge given-c-positive]
+            }
+          @discharge-c |
+            forall c: Nat;
+              less_than(ZERO, c) ->
+              less_or_equal(mul(c, a), mul(c, b)) ->
+              less_or_equal(a, b)
+            [by generalize generalize-c]
+        }
+      @discharge-b |
+        forall b, c: Nat;
+          less_than(ZERO, c) ->
+          less_or_equal(mul(c, a), mul(c, b)) ->
+          less_or_equal(a, b)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: Nat;
+      less_than(ZERO, c) ->
+      less_or_equal(mul(c, a), mul(c, b)) ->
+      less_or_equal(a, b)
+    [by generalize generalize-a]
+qed
+
+// n <= succ(n) — `lessThanSelf` read at `less_or_equal`. A `sub(succ(n), n)` site needs it.
+theorem aNatIsAtMostItsSuccessor: forall n: Nat; less_or_equal(n, succ(n))
+proof
+  @generalize-n |
+    fix n: Nat {
+      @strictly-below |
+        less_than(n, succ(n))
+        [using specialize lessThanSelf(n)]
+      @conclusion-at-most |
+        less_or_equal(n, succ(n))
+        [using tautology strictly-below]
+    }
+  @conclusion |
+    forall n: Nat; less_or_equal(n, succ(n))
+    [by generalize generalize-n]
+qed
+
+// n <= add(n, a) — the LEFT-summand form of `aSummandIsAtMostTheSum`, which reads the summand
+// on the right. Both spellings occur at guard sites, so both exist.
+theorem theLeftSummandIsAtMostTheSum: forall n, a: Nat;
+  less_or_equal(n, add(n, a))
+proof
+  @generalize-n |
+    fix n: Nat {
+      @generalize-a |
+        fix a: Nat {
+          @the-right-form |
+            less_or_equal(n, add(a, n))
+            [using specialize theSummandBoundReordered(n, a)]
+          @the-sum-commutes |
+            add(a, n) = add(n, a)
+            [using specialize peano.addIsCommutative(a, n)]
+          @conclusion-the-left-form |
+            less_or_equal(n, add(n, a))
+            [by rewrite the-sum-commutes the-right-form]
+        }
+      @discharge-a |
+        forall a: Nat; less_or_equal(n, add(n, a))
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall n, a: Nat; less_or_equal(n, add(n, a))
+    [by generalize generalize-n]
+qed
+
+// a < b rules out b = a — from irreflexivity, since b = a would make a < a.
+theorem aStrictBoundGivesADisequality: forall a, b: Nat;
+  less_than(a, b) -> (not (b = a))
+proof
+  @generalize-a |
+    fix a: Nat {
+      @generalize-b |
+        fix b: Nat {
+          @given-a-below-b |
+            assume less_than(a, b) {
+              @a-below-b |
+                less_than(a, b)
+                [by hypothesis given-a-below-b]
+              @suppose-equal |
+                assume b = a {
+                  @they-are-equal |
+                    b = a
+                    [by hypothesis suppose-equal]
+                  @a-below-itself |
+                    less_than(a, a)
+                    [by rewrite they-are-equal a-below-b]
+                  @nothing-is-below-itself |
+                    not less_than(a, a)
+                    [using specialize lessThanIrreflexive(a)]
+                }
+              @conclusion-they-differ |
+                not (b = a)
+                [by contradiction suppose-equal a-below-itself
+                  nothing-is-below-itself]
+            }
+          @conclusion-the-bound-gives-it |
+            less_than(a, b) -> (not (b = a))
+            [by discharge given-a-below-b]
+        }
+      @discharge-b |
+        forall b: Nat; less_than(a, b) -> (not (b = a))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Nat; less_than(a, b) -> (not (b = a))
+    [by generalize generalize-a]
+qed
+
+// succ(k + d) is never k — k is at most the sum, hence strictly below its successor.
+theorem theSuccessorOfASumDiffers: forall k, d: Nat;
+  not (succ(add(k, d)) = k)
+proof
+  @generalize-k |
+    fix k: Nat {
+      @generalize-d |
+        fix d: Nat {
+          @k-is-at-most-the-sum |
+            less_or_equal(k, add(k, d))
+            [using specialize theLeftSummandIsAtMostTheSum(k, d)]
+          @k-is-strictly-below |
+            less_than(k, succ(add(k, d)))
+            [using specialize lessOrEqualToLessThanSucc(k, add(k, d))
+              k-is-at-most-the-sum]
+          @conclusion-they-differ |
+            not (succ(add(k, d)) = k)
+            [using specialize aStrictBoundGivesADisequality(k, succ(add(k, d)))
+              k-is-strictly-below]
+        }
+      @discharge-d |
+        forall d: Nat; not (succ(add(k, d)) = k)
+        [by generalize generalize-d]
+    }
+  @conclusion |
+    forall k, d: Nat; not (succ(add(k, d)) = k)
+    [by generalize generalize-k]
+qed
+
+// b differs from succ(b + k) — the left summand is strictly below a raised sum, so it cannot
+// equal it. The companion to `theSuccessorOfASumDiffers`, oriented the other way.
+theorem theBaseDiffersFromARaisedSum: forall b, k: Nat;
+  not (b = succ(add(b, k)))
+proof
+  @generalize-b |
+    fix b: Nat {
+      @generalize-k |
+        fix k: Nat {
+          @the-successor-differs |
+            not (succ(add(b, k)) = b)
+            [using specialize theSuccessorOfASumDiffers(b, k)]
+          @conclusion-the-base-differs |
+            not (b = succ(add(b, k)))
+            [using specialize natDisequalityIsSymmetric(succ(add(b, k)), b)
+              the-successor-differs]
+        }
+      @discharge-k |
+        forall k: Nat; not (b = succ(add(b, k)))
+        [by generalize generalize-k]
+    }
+  @conclusion |
+    forall b, k: Nat; not (b = succ(add(b, k)))
+    [by generalize generalize-b]
+qed
+
+// A sum below a sum splits: if m + n < u + v then m < u or n < v. Contrapositively, were both
+// u <= m and v <= n, adding the bounds would give u + v <= m + n, which blocks the strict
+// hypothesis. This is the index fact a degree argument wants: at an index above the degree
+// SUM, at least one factor is read past its own degree.
+theorem aSumBelowASumSplits: forall m, n, u, v: Nat;
+  less_than(add(m, n), add(u, v)) ->
+  (less_than(m, u) or less_than(n, v))
+proof
+  @generalize-m |
+    fix m: Nat {
+      @generalize-n |
+        fix n: Nat {
+          @generalize-u |
+            fix u: Nat {
+              @generalize-v |
+                fix v: Nat {
+                  @given-the-sum-is-below |
+                    assume less_than(add(m, n), add(u, v)) {
+                      @the-sum-is-below |
+                        less_than(add(m, n), add(u, v))
+                        [by hypothesis given-the-sum-is-below]
+                      @given-neither-escapes |
+                        assume not (less_than(m, u) or less_than(n, v)) {
+                          @neither-escapes |
+                            not (less_than(m, u) or less_than(n, v))
+                            [by hypothesis given-neither-escapes]
+                          @u-does-not-exceed-m |
+                            not less_than(m, u)
+                            [using tautology neither-escapes]
+                          @v-does-not-exceed-n |
+                            not less_than(n, v)
+                            [using tautology neither-escapes]
+                          @u-is-at-most-m |
+                            less_or_equal(u, m)
+                            [using specialize notBelowGivesAtMost(u, m)
+                              u-does-not-exceed-m]
+                          @v-is-at-most-n |
+                            less_or_equal(v, n)
+                            [using specialize notBelowGivesAtMost(v, n)
+                              v-does-not-exceed-n]
+                          @the-first-bound-adds |
+                            less_or_equal(add(u, v), add(m, v))
+                            [using specialize additionPreservesAtMostOnTheRight(u, m, v)
+                              u-is-at-most-m]
+                          @the-second-bound-adds |
+                            less_or_equal(add(m, v), add(m, n))
+                            [using specialize additionPreservesAtMost(v, n, m)
+                              v-is-at-most-n]
+                          @the-sums-are-ordered |
+                            less_or_equal(add(u, v), add(m, n))
+                            [using specialize lessOrEqualTransitive(
+                              add(u, v), add(m, v), add(m, n))
+                              the-first-bound-adds the-second-bound-adds]
+                          @the-converse-is-blocked |
+                            not less_than(add(m, n), add(u, v))
+                            [using specialize lessOrEqualBlocksTheConverse(
+                              add(u, v), add(m, n)) the-sums-are-ordered]
+                        }
+                      @neither-is-impossible |
+                        not not (less_than(m, u) or less_than(n, v))
+                        [by contradiction given-neither-escapes
+                          the-sum-is-below the-converse-is-blocked]
+                      @conclusion-one-index-escapes |
+                        less_than(m, u) or less_than(n, v)
+                        [by double_negation neither-is-impossible]
+                    }
+                  @the-sum-gives-it |
+                    less_than(add(m, n), add(u, v)) ->
+                      (less_than(m, u) or less_than(n, v))
+                    [by discharge given-the-sum-is-below]
+                }
+              @discharge-v |
+                forall v: Nat;
+                  less_than(add(m, n), add(u, v)) ->
+                  (less_than(m, u) or less_than(n, v))
+                [by generalize generalize-v]
+            }
+          @discharge-u |
+            forall u, v: Nat;
+              less_than(add(m, n), add(u, v)) ->
+              (less_than(m, u) or less_than(n, v))
+            [by generalize generalize-u]
+        }
+      @discharge-n |
+        forall n, u, v: Nat;
+          less_than(add(m, n), add(u, v)) ->
+          (less_than(m, u) or less_than(n, v))
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall m, n, u, v: Nat;
+      less_than(add(m, n), add(u, v)) ->
+      (less_than(m, u) or less_than(n, v))
+    [by generalize generalize-m]
+qed
