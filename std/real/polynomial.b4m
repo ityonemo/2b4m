@@ -1,0 +1,446 @@
+// std/real/polynomial.b4m — ℝ[x], as a model of F[x].
+//
+// ℝ is a field (`std/real.b4m`'s `RealField`), so every theorem `std/field/polynomial.b4m`
+// proves about F[x] is a theorem about ℝ[x]. This file declares ℝ[x]'s own symbols and the
+// model that connects them; the corpus then transfers rather than being restated.
+//
+// WHAT A POLYNOMIAL LAYER OWES. A model must map every symbol a transferred proof mentions,
+// and discharge every axiom it reaches — including the axioms of theories BELOW F[x], since
+// F[x]'s own theorems are often one-line transfers from `std/ring/polynomial.b4m` and a
+// re-transfer re-elaborates those proofs. That is why the block below names the field-level
+// algebra facts (`addZeroLeftF`, `mulAddDistribLeftF`, …) and not only the polynomial ones.
+// Omitting one does not report an undischarged axiom; it surfaces as a sort mismatch inside
+// whichever source file the re-elaboration lands in. See
+// `NESTED-MODEL-COMPOSITION-ISSUE.md`.
+import real <<< "std/real.b4m"
+import fieldpoly <<< "std/field/polynomial.b4m"
+import ring <<< "std/ring.b4m"
+import ring_poly <<< "std/ring/polynomial.b4m"
+import peano <<< "std/peano.b4m"
+
+sort Real = real.Real
+sort Nat = peano.Nat
+const ZERO = real.ZERO
+const NAT_ZERO = peano.ZERO
+
+// -- ℝ[x] ----------------------------------------------------------------------------------
+sort RPoly
+func rcoeff(p: RPoly, i: Nat) => Real
+const RZEROP: RPoly
+func raddP(p: RPoly, q: RPoly) => RPoly
+func rnegP(p: RPoly) => RPoly
+func rmulP(p: RPoly, q: RPoly) => RPoly
+func rmonomial(a: Real, k: Nat) => RPoly
+pred rdegreeAtMost(p: RPoly, n: Nat)
+func rdegree(p: RPoly) => Nat
+func rconvolution(p: RPoly, q: RPoly, j: Nat, m: Nat) => Real
+
+// the coefficient equations: ℝ[x]'s own primitives
+axiom rPolyExtensionality: forall p, q: RPoly;
+  (forall i: Nat; rcoeff(p, i) = rcoeff(q, i)) -> p = q
+axiom rZeroPolyCoeff: forall i: Nat; rcoeff(RZEROP, i) = ZERO
+axiom rAddPolyCoeff: forall p, q: RPoly; forall i: Nat;
+  rcoeff(raddP(p, q), i) = real.add(rcoeff(p, i), rcoeff(q, i))
+axiom rNegPolyCoeff: forall p: RPoly; forall i: Nat;
+  rcoeff(rnegP(p), i) = real.neg(rcoeff(p, i))
+axiom rMonomialCoeffAtItsIndex: forall a: Real; forall k: Nat;
+  rcoeff(rmonomial(a, k), k) = a
+axiom rMonomialCoeffElsewhere: forall a: Real; forall k, i: Nat;
+  (not (i = k)) -> rcoeff(rmonomial(a, k), i) = ZERO
+axiom rDegreeAtMostMeaning: forall p: RPoly; forall n: Nat;
+  rdegreeAtMost(p, n) iff
+  (forall i: Nat; peano.less_than(n, i) -> rcoeff(p, i) = ZERO)
+axiom rDegreeIsALeadingIndex: forall p: RPoly;
+  (not (p = RZEROP)) -> (not (rcoeff(p, rdegree(p)) = ZERO))
+axiom rDegreeBoundsTheCoefficients: forall p: RPoly;
+  (not (p = RZEROP)) -> rdegreeAtMost(p, rdegree(p))
+
+// the convolution, reindexed as F[x] states it: a BASE and a LENGTH whose sum is invariant,
+// so no index is ever subtracted.
+axiom rConvolutionZero: forall p, q: RPoly; forall j: Nat;
+  rconvolution(p, q, j, NAT_ZERO) =
+  real.mul(rcoeff(p, j), rcoeff(q, NAT_ZERO))
+axiom rConvolutionSucc: forall p, q: RPoly; forall j, m: Nat;
+  rconvolution(p, q, j, peano.succ(m)) =
+  real.add(real.mul(rcoeff(p, j), rcoeff(q, peano.succ(m))),
+  rconvolution(p, q, peano.succ(j), m))
+axiom rMulPolyCoeff: forall p, q: RPoly; forall i: Nat;
+  rcoeff(rmulP(p, q), i) = rconvolution(p, q, NAT_ZERO, i)
+
+// -- evaluation ----------------------------------------------------------------------------
+func rpower(a: Real, n: Nat) => Real
+axiom rPowerZero: forall a: Real; rpower(a, NAT_ZERO) = real.ONE
+axiom rPowerSucc: forall a: Real; forall n: Nat;
+  rpower(a, peano.succ(n)) = real.mul(a, rpower(a, n))
+
+func revalUpTo(p: RPoly, a: Real, k: Nat) => Real
+axiom rEvalZero: forall p: RPoly; forall a: Real;
+  revalUpTo(p, a, NAT_ZERO) = ZERO
+axiom rEvalSucc: forall p: RPoly; forall a: Real; forall k: Nat;
+  revalUpTo(p, a, peano.succ(k)) =
+  real.add(revalUpTo(p, a, k), real.mul(rcoeff(p, k), rpower(a, k)))
+
+// `p(a)`: the sum over every index up to AND INCLUDING the degree.
+define revaluate(p, a) = revalUpTo(p, a, peano.succ(rdegree(p)))
+
+pred rIsZeroOf(a: Real, p: RPoly)
+axiom rIsZeroOfMeaning: forall a: Real; forall p: RPoly;
+  rIsZeroOf(a, p) iff revaluate(p, a) = ZERO
+
+// -- the run families a transferred proof mentions -----------------------------------------
+// F[x] declares these because `std/ring/polynomial.b4m`'s proofs induct on them (the sum
+// reversal behind commutativity, the triple sums behind associativity). A model must map
+// every symbol a transferred proof names, so ℝ[x] declares them too. None involves a
+// subtraction: each decrementing index is a `succ` pattern, and the index arithmetic the
+// triple sums need is NAMED (`rtheGapTo`, `rtheCofactorIndex`).
+func rtailConvolution(p: RPoly, q: RPoly, j: Nat, m: Nat) => Real
+axiom rTailConvolutionZero: forall p, q: RPoly; forall m: Nat;
+  rtailConvolution(p, q, NAT_ZERO, m) =
+  real.mul(rcoeff(p, NAT_ZERO), rcoeff(q, m))
+axiom rTailConvolutionSucc: forall p, q: RPoly; forall j, m: Nat;
+  rtailConvolution(p, q, peano.succ(j), m) =
+  real.add(real.mul(rcoeff(p, peano.succ(j)), rcoeff(q, m)),
+  rtailConvolution(p, q, j, peano.succ(m)))
+
+func rsegmentOf(p: RPoly, q: RPoly, j: Nat, c: Nat, n: Nat) => Real
+axiom rSegmentZero: forall p, q: RPoly; forall j, c: Nat;
+  rsegmentOf(p, q, j, c, NAT_ZERO) = real.mul(rcoeff(p, j), rcoeff(q, c))
+axiom rSegmentSucc: forall p, q: RPoly; forall j, c, n: Nat;
+  rsegmentOf(p, q, peano.succ(j), c, peano.succ(n)) =
+  real.add(real.mul(rcoeff(p, peano.succ(j)), rcoeff(q, c)),
+  rsegmentOf(p, q, j, peano.succ(c), n))
+
+func rrsegmentOf(p: RPoly, q: RPoly, j: Nat, c: Nat, n: Nat) => Real
+axiom rRsegmentZero: forall p, q: RPoly; forall j, c: Nat;
+  rrsegmentOf(p, q, j, c, NAT_ZERO) = real.mul(rcoeff(p, j), rcoeff(q, c))
+axiom rRsegmentSucc: forall p, q: RPoly; forall j, c, n: Nat;
+  rrsegmentOf(p, q, j, peano.succ(c), peano.succ(n)) =
+  real.add(real.mul(rcoeff(p, j), rcoeff(q, peano.succ(c))),
+  rrsegmentOf(p, q, peano.succ(j), c, n))
+
+func rtheGapTo(i: Nat, j: Nat) => Nat
+axiom rTheGapToAtZero: forall i: Nat; rtheGapTo(i, NAT_ZERO) = i
+axiom rTheGapToSteps: forall i, j: Nat;
+  rtheGapTo(peano.succ(i), peano.succ(j)) = rtheGapTo(i, j)
+
+func rtheCofactorIndex(i: Nat, j: Nat, k: Nat) => Nat
+axiom rTheCofactorIndexAtZero: forall i, j: Nat;
+  rtheCofactorIndex(i, j, NAT_ZERO) = rtheGapTo(i, j)
+axiom rTheCofactorIndexSteps: forall i, j, k: Nat;
+  rtheCofactorIndex(i, j, peano.succ(k)) =
+  rtheGapTo(rtheGapTo(i, j), peano.succ(k))
+
+func rcappedRun(q: RPoly, r: RPoly, g: Nat, n: Nat) => Real
+axiom rCappedRunZero: forall q, r: RPoly; forall g: Nat;
+  rcappedRun(q, r, g, NAT_ZERO) = ZERO
+axiom rCappedRunSucc: forall q, r: RPoly; forall g, n: Nat;
+  rcappedRun(q, r, g, peano.succ(n)) =
+  real.add(rcappedRun(q, r, g, n),
+  real.mul(rcoeff(q, n), rcoeff(r, rtheGapTo(g, n))))
+
+func rtripleTerm(p: RPoly, q: RPoly, r: RPoly, i: Nat, j: Nat, k: Nat) => Real
+axiom rTripleTermMeaning: forall p, q, r: RPoly; forall i, j, k: Nat;
+  rtripleTerm(p, q, r, i, j, k) =
+  real.mul(real.mul(rcoeff(p, j), rcoeff(q, k)),
+  rcoeff(r, rtheCofactorIndex(i, j, k)))
+
+func rtripleRow(p: RPoly, q: RPoly, r: RPoly, i: Nat, j: Nat, n: Nat) => Real
+axiom rTripleRowZero: forall p, q, r: RPoly; forall i, j: Nat;
+  rtripleRow(p, q, r, i, j, NAT_ZERO) = ZERO
+axiom rTripleRowSucc: forall p, q, r: RPoly; forall i, j, n: Nat;
+  rtripleRow(p, q, r, i, j, peano.succ(n)) =
+  real.add(rtripleRow(p, q, r, i, j, n), rtripleTerm(p, q, r, i, j, n))
+
+func rtripleDiag(p: RPoly, q: RPoly, r: RPoly, i: Nat, m: Nat, c: Nat) => Real
+axiom rTripleDiagZero: forall p, q, r: RPoly; forall i, m: Nat;
+  rtripleDiag(p, q, r, i, m, NAT_ZERO) = ZERO
+axiom rTripleDiagSucc: forall p, q, r: RPoly; forall i, m, c: Nat;
+  rtripleDiag(p, q, r, i, m, peano.succ(c)) =
+  real.add(rtripleDiag(p, q, r, i, m, c),
+  rtripleTerm(p, q, r, i, c, rtheGapTo(m, c)))
+
+func rtripleTri(p: RPoly, q: RPoly, r: RPoly, i: Nat, n: Nat) => Real
+axiom rTripleTriZero: forall p, q, r: RPoly; forall i: Nat;
+  rtripleTri(p, q, r, i, NAT_ZERO) = ZERO
+axiom rTripleTriSucc: forall p, q, r: RPoly; forall i, n: Nat;
+  rtripleTri(p, q, r, i, peano.succ(n)) =
+  real.add(rtripleTri(p, q, r, i, n),
+  rtripleDiag(p, q, r, i, n, peano.succ(n)))
+
+func rtripleRows(p: RPoly, q: RPoly, r: RPoly, i: Nat, m: Nat, n: Nat) => Real
+axiom rTripleRowsZero: forall p, q, r: RPoly; forall i, n: Nat;
+  rtripleRows(p, q, r, i, NAT_ZERO, n) = ZERO
+axiom rTripleRowsSucc: forall p, q, r: RPoly; forall i, m, n: Nat;
+  rtripleRows(p, q, r, i, peano.succ(m), n) =
+  real.add(rtripleRows(p, q, r, i, m, n),
+  rtripleRow(p, q, r, i, m, rtheGapTo(n, m)))
+
+// The unit polynomial, as its OWN constant with its own coefficient axioms — the shape
+// `ring_poly.ONEP` maps onto. F[x] instead derives it from `monomial(oneF, ZERO)`, which
+// makes its unit a defined expression; a model target must be a SYMBOL, so ℝ[x] declares the
+// constant directly, exactly as ℚ[x] does.
+const RONEP: RPoly
+axiom rOnePolyCoeffZero: rcoeff(RONEP, NAT_ZERO) = real.ONE
+axiom rOnePolyCoeffHigher: forall i: Nat;
+  rcoeff(RONEP, peano.succ(i)) = ZERO
+
+// RONEP IS the unit monomial: both have ONE at index 0 and vanish elsewhere, so
+// extensionality identifies them. This is what the model owes for mapping F[x]'s
+// `monomialOne` onto ℝ[x]'s own constant.
+theorem rOneIsTheUnitMonomial: RONEP = rmonomial(real.ONE, NAT_ZERO)
+proof
+  @the-coefficients-agree |
+    fix i: Nat {
+      @the-case-split |
+        i = NAT_ZERO or (exists w: Nat; i = peano.succ(w))
+        [using specialize peano.zeroOrSucc(i)]
+      @when-zero |
+        assume i = NAT_ZERO {
+          @i-is-zero |
+            i = NAT_ZERO
+            [by hypothesis when-zero]
+          @the-unit-at-zero |
+            rcoeff(RONEP, NAT_ZERO) = real.ONE
+            [by cite rOnePolyCoeffZero]
+          @the-monomial-at-zero |
+            rcoeff(rmonomial(real.ONE, NAT_ZERO), NAT_ZERO) = real.ONE
+            [using specialize rMonomialCoeffAtItsIndex(real.ONE, NAT_ZERO)]
+          @agree-at-zero |
+            rcoeff(RONEP, NAT_ZERO) =
+              rcoeff(rmonomial(real.ONE, NAT_ZERO), NAT_ZERO)
+            [using simplify the-unit-at-zero the-monomial-at-zero]
+          @conclusion-zero |
+            rcoeff(RONEP, i) = rcoeff(rmonomial(real.ONE, NAT_ZERO), i)
+            [by rewrite i-is-zero agree-at-zero]
+        }
+      @when-positive |
+        assume exists w: Nat; i = peano.succ(w) {
+          @the-predecessor-exists |
+            exists w: Nat; i = peano.succ(w)
+            [by hypothesis when-positive]
+          @with-the-predecessor |
+            unpack w: Nat from the-predecessor-exists {
+              @i-steps |
+                i = peano.succ(w)
+                [by hypothesis with-the-predecessor]
+              @the-unit-above |
+                rcoeff(RONEP, peano.succ(w)) = ZERO
+                [using specialize rOnePolyCoeffHigher(w)]
+              @the-index-differs |
+                not (peano.succ(w) = NAT_ZERO)
+                [using specialize peano.succNotZero(w)]
+              @the-monomial-above |
+                rcoeff(rmonomial(real.ONE, NAT_ZERO), peano.succ(w)) = ZERO
+                [using specialize rMonomialCoeffElsewhere(real.ONE,
+                  NAT_ZERO, peano.succ(w)) the-index-differs]
+              @agree-above |
+                rcoeff(RONEP, peano.succ(w)) =
+                  rcoeff(rmonomial(real.ONE, NAT_ZERO), peano.succ(w))
+                [using simplify the-unit-above the-monomial-above]
+              @conclusion-positive |
+                rcoeff(RONEP, i) =
+                  rcoeff(rmonomial(real.ONE, NAT_ZERO), i)
+                [by rewrite i-steps agree-above]
+            }
+          @conclusion-the-positive-case |
+            rcoeff(RONEP, i) = rcoeff(rmonomial(real.ONE, NAT_ZERO), i)
+            [by unpacked with-the-predecessor]
+        }
+      @conclusion-at-i |
+        rcoeff(RONEP, i) = rcoeff(rmonomial(real.ONE, NAT_ZERO), i)
+        [by common_conclusion the-case-split when-zero when-positive]
+    }
+  @all-coefficients-agree |
+    forall i: Nat;
+      rcoeff(RONEP, i) = rcoeff(rmonomial(real.ONE, NAT_ZERO), i)
+    [by generalize the-coefficients-agree]
+  @conclusion |
+    RONEP = rmonomial(real.ONE, NAT_ZERO)
+    [using specialize rPolyExtensionality(RONEP,
+      rmonomial(real.ONE, NAT_ZERO)) all-coefficients-agree]
+qed
+
+// -- F[x]'s corpus, transferred ------------------------------------------------------------
+// The coefficient field AND the polynomial layer both travel.
+model RealPolynomials {
+  fieldpoly.F: Real
+  fieldpoly.zeroF: ZERO
+  fieldpoly.oneF: real.ONE
+  fieldpoly.addF: real.add
+  fieldpoly.mulF: real.mul
+  fieldpoly.negF: real.neg
+  fieldpoly.recipF: real.recip
+  fieldpoly.Poly: RPoly
+  fieldpoly.coeff: rcoeff
+  fieldpoly.ZEROP: RZEROP
+  fieldpoly.addP: raddP
+  fieldpoly.negP: rnegP
+  fieldpoly.mulP: rmulP
+  fieldpoly.monomial: rmonomial
+  fieldpoly.degreeAtMost: rdegreeAtMost
+  fieldpoly.degree: rdegree
+  fieldpoly.convolution: rconvolution
+  fieldpoly.power: rpower
+  fieldpoly.evalUpTo: revalUpTo
+  fieldpoly.isZeroOf: rIsZeroOf
+  fieldpoly.tailConvolution: rtailConvolution
+  fieldpoly.segment: rsegmentOf
+  fieldpoly.rsegment: rrsegmentOf
+  fieldpoly.theGapTo: rtheGapTo
+  fieldpoly.theCofactorIndex: rtheCofactorIndex
+  fieldpoly.cappedRun: rcappedRun
+  fieldpoly.tripleTerm: rtripleTerm
+  fieldpoly.tripleRow: rtripleRow
+  fieldpoly.tripleDiag: rtripleDiag
+  fieldpoly.tripleTri: rtripleTri
+  fieldpoly.tripleRows: rtripleRows
+  fieldpoly.monomialOne: RONEP
+  fieldpoly.monomialOneIsTheUnitMonomial <- rOneIsTheUnitMonomial
+  // the field-level algebra, which F[x]'s own transferred proofs reach
+  fieldpoly.addIsAssociativeF <- real.addIsAssociative
+  fieldpoly.addIsCommutativeF <- real.addIsCommutative
+  fieldpoly.addZeroLeftF <- real.addZeroLeft
+  fieldpoly.addNegLeftF <- real.addNegLeft
+  fieldpoly.mulIsAssociativeF <- real.mulIsAssociative
+  fieldpoly.mulIsCommutativeF <- real.mulIsCommutative
+  fieldpoly.mulOneLeftF <- real.mulOneLeft
+  fieldpoly.mulAddDistribLeftF <- real.mulAddDistribLeft
+  fieldpoly.mulAddDistribRightF <- real.mulAddDistribRight
+  // the polynomial layer
+  fieldpoly.polyExtensionality <- rPolyExtensionality
+  fieldpoly.zeroPolyCoeff <- rZeroPolyCoeff
+  fieldpoly.addPolyCoeff <- rAddPolyCoeff
+  fieldpoly.negPolyCoeff <- rNegPolyCoeff
+  fieldpoly.monomialCoeffAtItsIndex <- rMonomialCoeffAtItsIndex
+  fieldpoly.monomialCoeffElsewhere <- rMonomialCoeffElsewhere
+  fieldpoly.degreeAtMostMeaning <- rDegreeAtMostMeaning
+  fieldpoly.degreeIsALeadingIndex <- rDegreeIsALeadingIndex
+  fieldpoly.degreeBoundsTheCoefficients <- rDegreeBoundsTheCoefficients
+  fieldpoly.convolutionZero <- rConvolutionZero
+  fieldpoly.convolutionSucc <- rConvolutionSucc
+  fieldpoly.mulPolyCoeff <- rMulPolyCoeff
+  fieldpoly.powerZero <- rPowerZero
+  fieldpoly.powerSucc <- rPowerSucc
+  fieldpoly.evalZero <- rEvalZero
+  fieldpoly.evalSucc <- rEvalSucc
+  fieldpoly.isZeroOfMeaning <- rIsZeroOfMeaning
+  fieldpoly.tailConvolutionZero <- rTailConvolutionZero
+  fieldpoly.tailConvolutionSucc <- rTailConvolutionSucc
+  fieldpoly.segmentZero <- rSegmentZero
+  fieldpoly.segmentSucc <- rSegmentSucc
+  fieldpoly.rsegmentZero <- rRsegmentZero
+  fieldpoly.rsegmentSucc <- rRsegmentSucc
+  fieldpoly.theGapToAtZero <- rTheGapToAtZero
+  fieldpoly.theGapToSteps <- rTheGapToSteps
+  fieldpoly.theCofactorIndexAtZero <- rTheCofactorIndexAtZero
+  fieldpoly.theCofactorIndexSteps <- rTheCofactorIndexSteps
+  fieldpoly.cappedRunZero <- rCappedRunZero
+  fieldpoly.cappedRunSucc <- rCappedRunSucc
+  fieldpoly.tripleTermMeaning <- rTripleTermMeaning
+  fieldpoly.tripleRowZero <- rTripleRowZero
+  fieldpoly.tripleRowSucc <- rTripleRowSucc
+  fieldpoly.tripleDiagZero <- rTripleDiagZero
+  fieldpoly.tripleDiagSucc <- rTripleDiagSucc
+  fieldpoly.tripleTriZero <- rTripleTriZero
+  fieldpoly.tripleTriSucc <- rTripleTriSucc
+  fieldpoly.tripleRowsZero <- rTripleRowsZero
+  fieldpoly.tripleRowsSucc <- rTripleRowsSucc
+}
+
+// -- the transferred ring structure, named locally -----------------------------------------
+// Callers should not have to re-open the model; these give ℝ[x]'s ring laws bare names.
+theorem rMulIsCommutative: forall p, q: RPoly; rmulP(p, q) = rmulP(q, p)
+proof
+  @conclusion |
+    forall p, q: RPoly; rmulP(p, q) = rmulP(q, p)
+    [using model(RealPolynomials) fieldpoly.polyMulIsCommutative]
+qed
+
+theorem rMulIsAssociative: forall p, q, r: RPoly;
+  rmulP(rmulP(p, q), r) = rmulP(p, rmulP(q, r))
+proof
+  @conclusion |
+    forall p, q, r: RPoly; rmulP(rmulP(p, q), r) = rmulP(p, rmulP(q, r))
+    [using model(RealPolynomials) fieldpoly.polyMulIsAssociative]
+qed
+
+theorem rAddIsCommutative: forall p, q: RPoly; raddP(p, q) = raddP(q, p)
+proof
+  @conclusion |
+    forall p, q: RPoly; raddP(p, q) = raddP(q, p)
+    [using model(RealPolynomials) fieldpoly.polyAddIsCommutative]
+qed
+
+theorem rAddIsAssociative: forall p, q, r: RPoly;
+  raddP(raddP(p, q), r) = raddP(p, raddP(q, r))
+proof
+  @conclusion |
+    forall p, q, r: RPoly; raddP(raddP(p, q), r) = raddP(p, raddP(q, r))
+    [using model(RealPolynomials) fieldpoly.polyAddIsAssociative]
+qed
+
+// -- the ring layer, for the facts stated over `ring_poly.ONEP` ----------------------------
+// `polyMulOneLeft` is stated in `std/ring/polynomial.b4m` over its own `ONEP`, which F[x]
+// maps onto a DERIVED unit (`monomial(oneF, ZERO)`). Re-transferring through F[x] therefore
+// re-elaborates a proof in F[x]'s names, which ℝ[x]'s model cannot re-point. ℚ[x] solved
+// this the same way: map the ring layer DIRECTLY, where the unit is a plain constant.
+model RealPolynomialsOverARing {
+  ring.Ring: Real
+  ring.ZERO: ZERO
+  ring.ONE: real.ONE
+  ring.add: real.add
+  ring.mul: real.mul
+  ring.neg: real.neg
+  ring.addIsAssociative <- real.addIsAssociative
+  ring.addZeroLeft <- real.addZeroLeft
+  ring.addNegLeft <- real.addNegLeft
+  ring.addIsCommutative <- real.addIsCommutative
+  ring.mulIsAssociative <- real.mulIsAssociative
+  ring.mulAddDistribLeft <- real.mulAddDistribLeft
+  ring.mulAddDistribRight <- real.mulAddDistribRight
+  ring_poly.mulOneLeftR <- real.mulOneLeft
+  ring_poly.mulIsCommutativeR <- real.mulIsCommutative
+  ring_poly.Nat: Nat
+  ring_poly.ZERO: NAT_ZERO
+  ring_poly.succ: peano.succ
+  ring_poly.addN: peano.add
+  ring_poly.less_than: peano.less_than
+  ring_poly.Poly: RPoly
+  ring_poly.coeff: rcoeff
+  ring_poly.ZEROP: RZEROP
+  ring_poly.ONEP: RONEP
+  ring_poly.addP: raddP
+  ring_poly.negP: rnegP
+  ring_poly.mulP: rmulP
+  ring_poly.convolution: rconvolution
+  ring_poly.tailConvolution: rtailConvolution
+  ring_poly.segment: rsegmentOf
+  ring_poly.rsegment: rrsegmentOf
+  ring_poly.degreeAtMost: rdegreeAtMost
+  ring_poly.degree: rdegree
+  ring_poly.polyExtensionality <- rPolyExtensionality
+  ring_poly.zeroPolyCoeff <- rZeroPolyCoeff
+  ring_poly.onePolyCoeffZero <- rOnePolyCoeffZero
+  ring_poly.onePolyCoeffHigher <- rOnePolyCoeffHigher
+  ring_poly.addPolyCoeff <- rAddPolyCoeff
+  ring_poly.negPolyCoeff <- rNegPolyCoeff
+  ring_poly.degreeAtMostMeaning <- rDegreeAtMostMeaning
+  ring_poly.degreeIsALeadingIndex <- rDegreeIsALeadingIndex
+  ring_poly.degreeBoundsTheCoefficients <- rDegreeBoundsTheCoefficients
+  ring_poly.convolutionZero <- rConvolutionZero
+  ring_poly.convolutionSucc <- rConvolutionSucc
+  ring_poly.tailConvolutionZero <- rTailConvolutionZero
+  ring_poly.tailConvolutionSucc <- rTailConvolutionSucc
+  ring_poly.segmentZero <- rSegmentZero
+  ring_poly.segmentSucc <- rSegmentSucc
+  ring_poly.rsegmentZero <- rRsegmentZero
+  ring_poly.rsegmentSucc <- rRsegmentSucc
+  ring_poly.mulPolyCoeff <- rMulPolyCoeff
+}
+
+theorem rMulOneLeft: forall p: RPoly; rmulP(RONEP, p) = p
+proof
+  @conclusion |
+    forall p: RPoly; rmulP(RONEP, p) = p
+    [using model(RealPolynomialsOverARing) ring_poly.polyMulOneLeft]
+qed
