@@ -6697,3 +6697,274 @@ proof
       convolution(p, mulP(q, r), a, succ(n)))
     [by generalize generalize-p]
 qed
+
+// -- THE PIVOT: raising the bound adds one anti-diagonal ------------------------------------
+// The two collections partition the same triangle differently, so neither peels into the
+// other. The move that works — `std/nested-sum.b4m` records it, and the F[x] proof this is
+// ported from uses it — is a PARTIAL rows collection whose row count is free of the total.
+// Raising the total by one then gains each present row exactly its last entry, and those
+// gained entries ARE one anti-diagonal. That increment is provable on its own, which is what
+// breaks the circularity: the bridges alone make `tri = rows` equivalent to associativity.
+//
+// `partialRows(p,q,r,base,len,m)` sums `m` rows: at p-exponent `base` over the pairs summing
+// to `len`, then `succ(base)` over one fewer, and so on. The count `m` is the recursion
+// variable and the pair rides along.
+//
+// NO GUARD. The F[x] version carried `m <= succ(n)`, load-bearing because its row bound was
+// `sub(n, j)` and `sub` SATURATES: past the diagonal the bound clamped and rows silently
+// repeated. Here the remaining length is a `succ` pattern, so a row past the diagonal cannot
+// be formed and the guard has nothing to discharge. This is the de-totalization paying off.
+func partialRows(p: Poly, q: Poly, r: Poly, base: Nat, len: Nat, m: Nat) => R
+axiom partialRowsZero: forall p, q, r: Poly; forall base, len: Nat;
+  partialRows(p, q, r, base, len, ZERO) = zeroR
+axiom partialRowsSucc: forall p, q, r: Poly; forall base, len, m: Nat;
+  partialRows(p, q, r, base, len, succ(m)) =
+  addR(tripleRow(p, q, r, base, ZERO, len),
+  partialRows(p, q, r, succ(base), theShorter(len), m))
+
+// One less, floored at ZERO: the length the next row down runs over. A `succ`-pattern clause
+// rather than `sub(len, ONE)`, so no subtraction enters and the floor is explicit.
+func theShorter(len: Nat) => Nat
+axiom theShorterAtZero: theShorter(ZERO) = ZERO
+axiom theShorterAtSucc: forall n: Nat; theShorter(succ(n)) = n
+
+// A FULL partial-rows collection is the rows collection: `succ(n)` rows at total `n`.
+theorem aFullPartialIsTheRows: forall p, q, r: Poly; forall n, base: Nat;
+  partialRows(p, q, r, base, n, succ(n)) =
+  tripleRows(p, q, r, base, n)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @base-case |
+                forall base: Nat;
+                  partialRows(p, q, r, base, ZERO, succ(ZERO)) =
+                  tripleRows(p, q, r, base, ZERO)
+                [using specialize theFullPartialBase(p, q, r)]
+              @induction-step-for-all-n |
+                forall n: Nat;
+                  (forall base: Nat;
+                  partialRows(p, q, r, base, n, succ(n)) =
+                  tripleRows(p, q, r, base, n)) ->
+                  (forall base: Nat;
+                  partialRows(p, q, r, base, succ(n), succ(succ(n))) =
+                  tripleRows(p, q, r, base, succ(n)))
+                [using specialize theFullPartialStep(p, q, r)]
+              @all-totals |
+                forall n: Nat; forall base: Nat;
+                  partialRows(p, q, r, base, n, succ(n)) =
+                  tripleRows(p, q, r, base, n)
+                [using instantiation peano.induction((fun z: Nat => forall base: Nat; partialRows(p, q, r, base, z, succ(z)) = tripleRows(p, q, r, base, z))) base-case induction-step-for-all-n]
+            }
+          @discharge-r |
+            forall r: Poly; forall n, base: Nat;
+              partialRows(p, q, r, base, n, succ(n)) =
+              tripleRows(p, q, r, base, n)
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; forall n, base: Nat;
+          partialRows(p, q, r, base, n, succ(n)) =
+          tripleRows(p, q, r, base, n)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall n, base: Nat;
+      partialRows(p, q, r, base, n, succ(n)) =
+      tripleRows(p, q, r, base, n)
+    [by generalize generalize-p]
+qed
+
+// The base: one row on each side. The partial at count succ(ZERO) peels its single row and
+// leaves an empty remainder; the rows collection at total ZERO IS that single row.
+theorem theFullPartialBase: forall p, q, r: Poly;
+  forall base: Nat;
+  partialRows(p, q, r, base, ZERO, succ(ZERO)) =
+  tripleRows(p, q, r, base, ZERO)
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-base |
+                fix base: Nat {
+                  @the-partial-peels |
+                    partialRows(p, q, r, base, ZERO, succ(ZERO)) =
+                      addR(tripleRow(p, q, r, base, ZERO, ZERO),
+                      partialRows(p, q, r, succ(base),
+                      theShorter(ZERO), ZERO))
+                    [using specialize
+                      partialRowsSucc(p, q, r, base, ZERO, ZERO)]
+                  @the-remainder-is-empty |
+                    partialRows(p, q, r, succ(base),
+                      theShorter(ZERO), ZERO) = zeroR
+                    [using specialize partialRowsZero(p, q, r, succ(base),
+                      theShorter(ZERO))]
+                  @adding-nothing |
+                    addR(tripleRow(p, q, r, base, ZERO, ZERO), zeroR) =
+                      tripleRow(p, q, r, base, ZERO, ZERO)
+                    [using specialize addZeroRightR(
+                      tripleRow(p, q, r, base, ZERO, ZERO))]
+                  @the-rows-are-one-row |
+                    tripleRows(p, q, r, base, ZERO) =
+                      tripleRow(p, q, r, base, ZERO, ZERO)
+                    [using specialize tripleRowsZero(p, q, r, base)]
+                  @conclusion-the-base-agrees |
+                    partialRows(p, q, r, base, ZERO, succ(ZERO)) =
+                      tripleRows(p, q, r, base, ZERO)
+                    [using simplify the-partial-peels the-remainder-is-empty
+                      adding-nothing the-rows-are-one-row]
+                }
+              @discharge-base |
+                forall base: Nat;
+                  partialRows(p, q, r, base, ZERO, succ(ZERO)) =
+                  tripleRows(p, q, r, base, ZERO)
+                [by generalize generalize-base]
+            }
+          @discharge-r |
+            forall r: Poly; forall base: Nat;
+              partialRows(p, q, r, base, ZERO, succ(ZERO)) =
+              tripleRows(p, q, r, base, ZERO)
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; forall base: Nat;
+          partialRows(p, q, r, base, ZERO, succ(ZERO)) =
+          tripleRows(p, q, r, base, ZERO)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall base: Nat;
+      partialRows(p, q, r, base, ZERO, succ(ZERO)) =
+      tripleRows(p, q, r, base, ZERO)
+    [by generalize generalize-p]
+qed
+
+// The step: both peel their first row at length succ(n) and recurse at (succ base, n) —
+// the partial via `theShorter(succ n) = n`, the collection by its own succ clause.
+theorem theFullPartialStep: forall p, q, r: Poly; forall n: Nat;
+  (forall base: Nat;
+  partialRows(p, q, r, base, n, succ(n)) =
+  tripleRows(p, q, r, base, n)) ->
+  (forall base: Nat;
+  partialRows(p, q, r, base, succ(n), succ(succ(n))) =
+  tripleRows(p, q, r, base, succ(n)))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-n |
+                fix n: Nat {
+                  @given-the-hypothesis |
+                    assume forall base: Nat;
+                      partialRows(p, q, r, base, n, succ(n)) =
+                      tripleRows(p, q, r, base, n) {
+                      @the-hypothesis |
+                        forall base: Nat;
+                          partialRows(p, q, r, base, n, succ(n)) =
+                          tripleRows(p, q, r, base, n)
+                        [by hypothesis given-the-hypothesis]
+                      @generalize-base |
+                        fix base: Nat {
+                          @the-partial-peels |
+                            partialRows(p, q, r, base, succ(n),
+                              succ(succ(n))) =
+                              addR(tripleRow(p, q, r, base, ZERO, succ(n)),
+                              partialRows(p, q, r, succ(base),
+                              theShorter(succ(n)), succ(n)))
+                            [using specialize partialRowsSucc(p, q, r, base,
+                              succ(n), succ(n))]
+                          @the-shorter-length |
+                            theShorter(succ(n)) = n
+                            [using specialize theShorterAtSucc(n)]
+                          @reflexivity-at-the-tail |
+                            partialRows(p, q, r, succ(base), n, succ(n)) =
+                              partialRows(p, q, r, succ(base), n, succ(n))
+                            [by reflexivity]
+                          @the-tail-at-the-shorter-length |
+                            partialRows(p, q, r, succ(base),
+                              theShorter(succ(n)), succ(n)) =
+                              partialRows(p, q, r, succ(base), n, succ(n))
+                            [by rewrite the-shorter-length
+                              reflexivity-at-the-tail]
+                          @the-tail-agrees |
+                            partialRows(p, q, r, succ(base), n, succ(n)) =
+                              tripleRows(p, q, r, succ(base), n)
+                            [using specialize the-hypothesis(succ(base))]
+                          @the-rows-peel |
+                            tripleRows(p, q, r, base, succ(n)) =
+                              addR(tripleRow(p, q, r, base, ZERO, succ(n)),
+                              tripleRows(p, q, r, succ(base), n))
+                            [using specialize tripleRowsSucc(p, q, r, base, n)]
+                          @conclusion-the-step-agrees |
+                            partialRows(p, q, r, base, succ(n),
+                              succ(succ(n))) =
+                              tripleRows(p, q, r, base, succ(n))
+                            [using simplify the-partial-peels
+                              the-tail-at-the-shorter-length the-tail-agrees
+                              the-rows-peel]
+                        }
+                      @all-bases |
+                        forall base: Nat;
+                          partialRows(p, q, r, base, succ(n),
+                          succ(succ(n))) =
+                          tripleRows(p, q, r, base, succ(n))
+                        [by generalize generalize-base]
+                    }
+                  @the-hypothesis-gives-it |
+                    (forall base: Nat;
+                      partialRows(p, q, r, base, n, succ(n)) =
+                      tripleRows(p, q, r, base, n)) ->
+                      (forall base: Nat;
+                      partialRows(p, q, r, base, succ(n), succ(succ(n))) =
+                      tripleRows(p, q, r, base, succ(n)))
+                    [by discharge given-the-hypothesis]
+                }
+              @discharge-n |
+                forall n: Nat;
+                  (forall base: Nat;
+                  partialRows(p, q, r, base, n, succ(n)) =
+                  tripleRows(p, q, r, base, n)) ->
+                  (forall base: Nat;
+                  partialRows(p, q, r, base, succ(n), succ(succ(n))) =
+                  tripleRows(p, q, r, base, succ(n)))
+                [by generalize generalize-n]
+            }
+          @discharge-r |
+            forall r: Poly; forall n: Nat;
+              (forall base: Nat;
+              partialRows(p, q, r, base, n, succ(n)) =
+              tripleRows(p, q, r, base, n)) ->
+              (forall base: Nat;
+              partialRows(p, q, r, base, succ(n), succ(succ(n))) =
+              tripleRows(p, q, r, base, succ(n)))
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; forall n: Nat;
+          (forall base: Nat;
+          partialRows(p, q, r, base, n, succ(n)) =
+          tripleRows(p, q, r, base, n)) ->
+          (forall base: Nat;
+          partialRows(p, q, r, base, succ(n), succ(succ(n))) =
+          tripleRows(p, q, r, base, succ(n)))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall n: Nat;
+      (forall base: Nat;
+      partialRows(p, q, r, base, n, succ(n)) =
+      tripleRows(p, q, r, base, n)) ->
+      (forall base: Nat;
+      partialRows(p, q, r, base, succ(n), succ(succ(n))) =
+      tripleRows(p, q, r, base, succ(n)))
+    [by generalize generalize-p]
+qed
