@@ -127,6 +127,11 @@ pub const Step = struct {
         /// as the certificate when the certifier chain declines (instead of the
         /// hard error). Keeps the step kernel-checked. Arithmetic-only for now.
         fallback: ?Token = null,
+        /// `[using model(M) definition(N) src.f]` — the cited fact is a DEFINITION BLOCK's
+        /// clause N (zero-indexed) rather than a named theorem. Only `model`/`import` carry
+        /// this; the plain `definition` RULE keeps its arm in `schema`, since it has no `(M)`
+        /// competing for the slot.
+        definition_arm: ?usize = null,
 
         pub const Kind = enum { by, using };
     };

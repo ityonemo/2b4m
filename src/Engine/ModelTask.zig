@@ -140,10 +140,25 @@ fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key)
     }
     for (m.obligations) |mapping| {
         // the SHAPE of a `<-` discharge, likewise read off the declarations.
+        // Non-zero once the SOURCE is known to be a definition block's symbol (set by the shape
+        // check below, which already has the declaration in hand). Left zero for every other
+        // source kind, so a model that uses no definitional discharge probes nothing — the probe
+        // reads a file's declarations, and demanding that parse early perturbs the engine's
+        // schedule corpus-wide.
+        var src_arms: usize = 0;
         if (try mappingDecl(self, h, task.file, mapping.source, &blocker)) |sd| {
             const t = try tokText(self, mapping.source);
             switch (sd.decl.*) {
-                .sort, .constant, .func, .pred => return diagAt(self, task, mapping.source.start, "'{s}' is a sort or symbol, not an axiom — map it with `:` (`{s}: <target>`), not `<-`", .{ t, t }),
+                // A DEFINITION BLOCK's symbol IS a legal `<-` source: its clauses are axioms
+                // (published under mangled names), so the symbol names a whole obligation SET.
+                // `base.f <- tgt.f` pairs them arm-for-arm — see `pairDefinitionClauses`. A
+                // symbol with NO clauses is the old error: nothing to discharge.
+                .func, .pred => {
+                    src_arms = try definitionArmCount(self, sd.file, mapping.source.name);
+                    if (src_arms == 0)
+                        return diagAt(self, task, mapping.source.start, "'{s}' is a symbol with no definition clauses, so there is nothing to discharge — map it with `:` (`{s}: <target>`), not `<-`", .{ t, t });
+                },
+                .sort, .constant => return diagAt(self, task, mapping.source.start, "'{s}' is a sort or symbol, not an axiom — map it with `:` (`{s}: <target>`), not `<-`", .{ t, t }),
                 .define => return diagAt(self, task, mapping.source.start, "'{s}' is a transparent (`define`d) symbol — it rides along on the primitives in its body and cannot be a model mapping source; map those primitives instead", .{t}),
                 // A plain THEOREM needs no mapping — it materializes through the mapped axioms.
                 // A theorem SCHEMA does not: an instantiation is per-instance proof, so there is
@@ -170,8 +185,12 @@ fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key)
                 else => {},
             }
         } else if (blocker) |b| return h.suspendOn(b);
-        const src = try resolveEntity(self, h, task.file, source, mapping.source, .fact, &blocker);
+        // A definition symbol has no fact of its OWN name, so resolving one would rack a doomed
+        // ProveTask — skip it; the per-arm resolution below supplies the sources instead.
+        const src = if (src_arms != 0) null else try resolveEntity(self, h, task.file, source, mapping.source, .fact, &blocker);
         if (mapping.projection) |proj| {
+            if (src_arms != 0)
+                return diagAt(self, task, mapping.source.start, "'{s}' is a definition, which is discharged by another definition (`{s} <- <local definition>`), not by a projected theorem", .{ try tokText(self, mapping.source), try tokText(self, mapping.source) });
             // `srcAxiom <- NamedModel@proj.thm` — discharge srcAxiom by transferring the theorem
             // `proj.thm` THROUGH the model `NamedModel` (the inverted-dependency composition, e.g.
             // group axioms on a subgroup routed through the subgroup model). The discharging fact
@@ -181,6 +200,40 @@ fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key)
                 try overlay.append(self.arena, .{ .src = s, .tgt = t });
                 try self.recordModelDischarged(t);
             };
+            continue;
+        }
+        // DEFINITIONAL DISCHARGE — `base.f <- tgt.f`, both sides a definition block's SYMBOL.
+        // A definition's clauses are nameless to the author (published mangled), so the symbol
+        // names the whole obligation set and the discharge pairs them ARM FOR ARM: clause 0
+        // against clause 0, and so on. Deliberately NOT checked for shape here — a mismatched
+        // pair is caught at the first citation, where the diagnostic can show both formulas
+        // ("step claims X but the axiom derives Y"); re-deriving that check at the model would
+        // duplicate it and say less. A definitional axiom is overloadable ONLY by a definition,
+        // which is what makes the arm-for-arm correspondence meaningful.
+        if (src_arms != 0) {
+            const tgt_md = (try mappingDecl(self, h, task.file, mapping.target, &blocker)) orelse {
+                if (blocker) |b| return h.suspendOn(b);
+                return diagAt(self, task, mapping.target.start, "reference not found: '{s}'", .{try tokText(self, mapping.target)});
+            };
+            const tgt_arms = try definitionArmCount(self, tgt_md.file, mapping.target.name);
+            if (tgt_arms == 0)
+                return diagAt(self, task, mapping.target.start, "'{s}' discharges the definition '{s}', so it must itself be a definition block (a definitional axiom is overloadable only by a definition)", .{ try tokText(self, mapping.target), try tokText(self, mapping.source) });
+            if (tgt_arms != src_arms)
+                return diagAt(self, task, mapping.target.start, "'{s}' has {d} definition clause(s) but '{s}' has {d} — a definitional discharge pairs them arm for arm", .{ try tokText(self, mapping.target), tgt_arms, try tokText(self, mapping.source), src_arms });
+            const src_sym = self.interner.stringBytes(mapping.source.name);
+            const tgt_sym = self.interner.stringBytes(mapping.target.name);
+            for (0..src_arms) |arm| {
+                var s_tok = mapping.source;
+                s_tok.name = try self.interner.definitionClauseName(self.arena, src_sym, arm);
+                var t_tok = mapping.target;
+                t_tok.name = try self.interner.definitionClauseName(self.arena, tgt_sym, arm);
+                const s = try resolveEntity(self, h, task.file, source, s_tok, .fact, &blocker);
+                const t = try resolveEntity(self, h, task.file, source, t_tok, .fact, &blocker);
+                if (s) |sx| if (t) |tx| {
+                    try overlay.append(self.arena, .{ .src = sx, .tgt = tx });
+                    try self.recordModelDischarged(tx);
+                };
+            }
             continue;
         }
         const tgt = try resolveEntity(self, h, task.file, source, mapping.target, .fact, &blocker);
@@ -195,6 +248,27 @@ fn produce(self: *Context, task: ModelTask, h: *Engine.Handle, key: IdentKV.Key)
     // publish its Index into IdentKV under M's name; then record its define targets.
     const model_ix = try self.idents.publish(self.io, key, .{ .model = .{ .parent = .universe, .overlay = try overlay.toOwnedSlice(self.arena), .dischargers = try dischargers.toOwnedSlice(self.arena), .home = task.file } });
     try self.recordModelDefineTargets(model_ix, define_targets.items);
+}
+
+/// How many definition clauses the symbol `name` declares in `file` — found by probing the
+/// mangled clause names `definition{sym}{0}`, `{1}`, … in that file's registry until one is
+/// absent. The parser stages clauses contiguously from arm 0, so the first gap is the count.
+/// Zero means the symbol carries no definition block (a bare `func`/`pred`).
+///
+/// Takes the symbol's ALREADY-RESOLVED file, deliberately: resolving it here would demand the
+/// declaring file's parse, and doing that for every `<-` source — definitional or not — pulls
+/// other files' parses earlier and perturbs the engine's schedule corpus-wide (measured: it
+/// moved the `--chaos` replay fixture's citation count by 20). Callers pass the file they
+/// already have from `mappingDecl`, so this is a pure registry read that racks nothing.
+fn definitionArmCount(self: *Context, file: InternPool.Index, name: InternPool.StrId) std.mem.Allocator.Error!usize {
+    const fid = self.fileOf(file) orelse return 0;
+    const symbol = self.interner.stringBytes(name);
+    var arm: usize = 0;
+    while (true) {
+        const clause = try self.interner.definitionClauseName(self.arena, symbol, arm);
+        if (self.declOf(fid, clause) == null) return arm;
+        arm += 1;
+    }
 }
 
 /// Is a `:` mapping's TARGET token a define (in the model's file, or an imported file)? A
