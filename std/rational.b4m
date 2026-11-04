@@ -46,7 +46,21 @@ const ONE: Q
 func add(a: Q, b: Q) => Q
 func mul(a: Q, b: Q) => Q
 func neg(a: Q) => Q
-func recip(a: Q) => Q
+// `recip`'s GUARD, threaded down from std/group.b4m (see std/field.b4m): this layer
+// declares the predicate over its own sort and binds field's through the field model below,
+// so there is ONE definition and no layer's copy is a fresh assumption.
+pred nonzero(a: Q):
+  nonzero(a) iff (not (a = ZERO))
+
+// the clause under a citable name, for moving between the predicate and the disequation
+theorem nonzeroMeaning: forall a: Q; nonzero(a) iff (not (a = ZERO))
+proof
+  @conclusion |
+    forall a: Q; nonzero(a) iff (not (a = ZERO))
+    [by definition nonzero]
+qed
+
+func recip(a: Q) => Q requires nonzero(a)
 pred less_than(a: Q, b: Q)
 
 // -- ordered-field axioms (discharge the ordered-field model below) ----------
@@ -59,7 +73,7 @@ axiom mulAddDistribLeft: forall a, b, c: Q; mul(a, add(b, c)) = add(mul(a, b), m
 axiom mulAddDistribRight: forall a, b, c: Q; mul(add(a, b), c) = add(mul(a, c), mul(b, c))
 axiom mulIsCommutative: forall a, b: Q; mul(a, b) = mul(b, a)
 axiom mulOneLeft: forall a: Q; mul(ONE, a) = a
-axiom fieldInverse: forall a: Q; a != ZERO -> mul(a, recip(a)) = ONE
+axiom fieldInverse: forall a: Q; nonzero(a) -> mul(a, recip(a)) = ONE
 axiom oneNotZero: ONE != ZERO
 axiom lessThanIrreflexive: forall a: Q; not less_than(a, a)
 axiom lessThanTransitive: forall a, b, c: Q; less_than(a, b) -> less_than(b, c) -> less_than(a, c)
@@ -77,6 +91,8 @@ model RationalOrderedField {
   field_order.mul: mul
   field_order.neg: neg
   field_order.recip: recip
+  field_order.nonzero: nonzero
+  field_order.nonzero <- nonzero
   field_order.less_than: less_than
   field_order.addIsAssociative <- addIsAssociative
   field_order.addZeroLeft <- addZeroLeft
@@ -110,6 +126,8 @@ model RationalField {
   field.mul: mul
   field.neg: neg
   field.recip: recip
+  field.nonzero: nonzero
+  field.nonzero <- nonzero
   field.addIsAssociative <- addIsAssociative
   field.addZeroLeft <- addZeroLeft
   field.addNegLeft <- addNegLeft
@@ -145,9 +163,13 @@ axiom isIntegerNeg: forall a: Q; isInteger(a) -> isInteger(neg(a))
 // core, and the AATA chapters cite `addLeftSwap` / `mulLeftSwap` / `succInjective`. The gap
 // surfaced only when Judson's §17.3 Lemma 17.12 opened on "suppose
 // p(x) = b_0/c_0 + … + b_n/c_n x^n, where the b_i's and c_i's are integers".
+// The denominator's nonzero-ness is spelled with the PREDICATE, not as `c != ZERO`: it has to
+// GUARD the `recip(c)` in the same formula, and a guard is matched syntactically. Stated as a
+// disequation it would merely sit beside the division — true, and not load-bearing — which is
+// exactly the shape that lets a total `recip` divide by zero inside a verified proof.
 axiom everyRationalIsAQuotientOfIntegers: forall q: Q;
   exists b, c: Q;
-  isInteger(b) and isInteger(c) and c != ZERO and q = mul(b, recip(c))
+  isInteger(b) and isInteger(c) and nonzero(c) and q = mul(b, recip(c))
 
 // -- successor / predecessor on ℚ (the discrete step, for the integer model) --
 // ℤ's theory is built on succ/prev; to model it on ℚ's integers we realize the
@@ -1153,7 +1175,6 @@ model NaturalsInRational {
 
 import rational_units <<< "std/rational/units.b4m"
 
-pred nonzero = rational_units.nonzero
 sort QStar = rational_units.QStar
 func pow = rational_units.pow
 fact finiteOrderIsPlusOrMinusOne = rational_units.finiteOrderIsPlusOrMinusOne

@@ -47,6 +47,8 @@ func radd = real.add
 func rmul = real.mul
 func rneg = real.neg
 func rrecip = real.recip
+// `rrecip`'s guard: an application owes this where it is written
+pred rnonzero = real.nonzero
 func sin = real_trig.sin
 func cos = real_trig.cos
 const pi = real_trig.pi
@@ -853,6 +855,13 @@ proof
       @n-nonzero |
         toReal(succ(m)) != RZERO
         [using tautology n-zero-implies zero-not-below-itself]
+      // as the PREDICATE `rrecip` is guarded by, matched syntactically
+      @n-characterized |
+        rnonzero(toReal(succ(m))) iff (not (toReal(succ(m)) = RZERO))
+        [using specialize real.nonzeroMeaning(toReal(succ(m)))]
+      @n-is-nonzero |
+        rnonzero(toReal(succ(m)))
+        [using tautology n-characterized n-nonzero]
       @scale-as-product |
         scale(succ(m), rmul(twoPi, rrecip(toReal(succ(m))))) = rmul(toReal(succ(m)), rmul(twoPi, rrecip(toReal(succ(m)))))
         [using specialize scaleIsProduct(rmul(twoPi, rrecip(toReal(succ(m)))), succ(m))]
@@ -861,7 +870,7 @@ proof
         [using specialize real.mulLeftSwap(toReal(succ(m)), twoPi, rrecip(toReal(succ(m))))]
       @n-times-recip |
         rmul(toReal(succ(m)), rrecip(toReal(succ(m)))) = RONE
-        [using specialize real.fieldInverse(toReal(succ(m))) n-nonzero]
+        [using specialize real.fieldInverse(toReal(succ(m))) n-is-nonzero]
       @swapped-cancelled |
         rmul(toReal(succ(m)), rmul(twoPi, rrecip(toReal(succ(m))))) = rmul(twoPi, RONE)
         [by rewrite n-times-recip swapped]
@@ -958,122 +967,172 @@ proof
 qed
 
 // on the circle the inverse is the conjugate: z⁻¹ = z̄ / |z|² = z̄.
-theorem circleClosedUnderInverse: forall z: Complex; onCircle(z) -> onCircle(recip(z))
+// `nonzero(z)` leads because the conclusion writes `recip(z)`, which lives OUTSIDE the
+// assume: a guard on a term in a discharged conclusion must be met from the antecedent. The
+// proof still derives the disequation itself (a circle point has |z|² = 1 != 0), so this
+// hypothesis is not new mathematical content — only the syntactic form the guard needs.
+theorem circleClosedUnderInverse: forall z: Complex;
+  complex.nonzero(z) -> onCircle(z) -> onCircle(recip(z))
 proof
   @generalize-z |
     fix z: Complex {
-      @given-z |
-        assume onCircle(z) {
-          @z-unit |
-            normSq(z) = RONE
-            [by hypothesis given-z]
-          // z ≠ 0, since |0|² = 0 ≠ 1.
-          @zero-embedded |
-            fromReal(RZERO) = ZERO
-            [by cite fromRealZero]
-          @re-of-embedded-zero |
-            re(fromReal(RZERO)) = RZERO
-            [using specialize reOfReal(RZERO)]
-          @im-of-embedded-zero |
-            im(fromReal(RZERO)) = RZERO
-            [using specialize imOfReal(RZERO)]
-          @re-of-zero |
-            re(ZERO) = RZERO
-            [by rewrite zero-embedded re-of-embedded-zero]
-          @im-of-zero |
-            im(ZERO) = RZERO
-            [by rewrite zero-embedded im-of-embedded-zero]
-          @normsq-zero-unfolded |
-            normSq(ZERO) = radd(rmul(re(ZERO), re(ZERO)), rmul(im(ZERO), im(ZERO)))
-            [by reflexivity]
-          @normsq-zero-re |
-            normSq(ZERO) = radd(rmul(RZERO, RZERO), rmul(im(ZERO), im(ZERO)))
-            [by rewrite re-of-zero normsq-zero-unfolded]
-          @normsq-zero-parts |
-            normSq(ZERO) = radd(rmul(RZERO, RZERO), rmul(RZERO, RZERO))
-            [by rewrite im-of-zero normsq-zero-re]
-          @zero-arithmetic |
-            radd(rmul(RZERO, RZERO), rmul(RZERO, RZERO)) = RZERO
-            [using polynomial(real)]
-          @normsq-of-zero |
-            normSq(ZERO) = RZERO
-            [using chain normsq-zero-parts zero-arithmetic]
-          @one-not-zero |
-            RONE != RZERO
-            [using import(real) oneNotZero]
-          @given-z-zero |
-            assume z = ZERO {
-              @z-zero |
-                z = ZERO
-                [by hypothesis given-z-zero]
-              @normsq-z-is-zero |
-                normSq(z) = RZERO
-                [by rewrite z-zero normsq-of-zero]
-              @one-is-normsq |
-                RONE = normSq(z)
-                [by symmetry z-unit]
-              @one-is-zero |
-                RONE = RZERO
-                [using chain one-is-normsq normsq-z-is-zero]
+      @given-z-nonzero |
+        assume complex.nonzero(z) {
+          @given-z |
+            assume onCircle(z) {
+              @z-unit |
+                normSq(z) = RONE
+                [by hypothesis given-z]
+              // z ≠ 0, since |0|² = 0 ≠ 1.
+              @zero-embedded |
+                fromReal(RZERO) = ZERO
+                [by cite fromRealZero]
+              @re-of-embedded-zero |
+                re(fromReal(RZERO)) = RZERO
+                [using specialize reOfReal(RZERO)]
+              @im-of-embedded-zero |
+                im(fromReal(RZERO)) = RZERO
+                [using specialize imOfReal(RZERO)]
+              @re-of-zero |
+                re(ZERO) = RZERO
+                [by rewrite zero-embedded re-of-embedded-zero]
+              @im-of-zero |
+                im(ZERO) = RZERO
+                [by rewrite zero-embedded im-of-embedded-zero]
+              @normsq-zero-unfolded |
+                normSq(ZERO) = radd(rmul(re(ZERO), re(ZERO)), rmul(im(ZERO), im(ZERO)))
+                [by reflexivity]
+              @normsq-zero-re |
+                normSq(ZERO) = radd(rmul(RZERO, RZERO), rmul(im(ZERO), im(ZERO)))
+                [by rewrite re-of-zero normsq-zero-unfolded]
+              @normsq-zero-parts |
+                normSq(ZERO) = radd(rmul(RZERO, RZERO), rmul(RZERO, RZERO))
+                [by rewrite im-of-zero normsq-zero-re]
+              @zero-arithmetic |
+                radd(rmul(RZERO, RZERO), rmul(RZERO, RZERO)) = RZERO
+                [using polynomial(real)]
+              @normsq-of-zero |
+                normSq(ZERO) = RZERO
+                [using chain normsq-zero-parts zero-arithmetic]
+              @one-not-zero |
+                RONE != RZERO
+                [using import(real) oneNotZero]
+              @given-z-zero |
+                assume z = ZERO {
+                  @z-zero |
+                    z = ZERO
+                    [by hypothesis given-z-zero]
+                  @normsq-z-is-zero |
+                    normSq(z) = RZERO
+                    [by rewrite z-zero normsq-of-zero]
+                  @one-is-normsq |
+                    RONE = normSq(z)
+                    [by symmetry z-unit]
+                  @one-is-zero |
+                    RONE = RZERO
+                    [using chain one-is-normsq normsq-z-is-zero]
+                }
+              @z-zero-implies |
+                z = ZERO -> RONE = RZERO
+                [by discharge given-z-zero]
+              @z-nonzero |
+                z != ZERO
+                [using tautology z-zero-implies one-not-zero]
+              // as the PREDICATE `recip` is guarded by
+              @z-characterized |
+                complex.nonzero(z) iff (not (z = ZERO))
+                [using specialize complex.nonzeroMeaning(z)]
+              @z-is-nonzero |
+                complex.nonzero(z)
+                [using tautology z-characterized z-nonzero]
+              // recip(z) = z̄ · recip(1) = z̄.
+              // the second antecedent: |z|² embeds to a nonzero complex, which `recip` needs as a
+              // guard on the conclusion's own term
+              @the-norm-is-nonzero |
+                complex.nonzero(fromReal(normSq(z)))
+                [using specialize complex_modulus.theEmbeddedNormSqIsNonzero(z) z-is-nonzero]
+              @recip-formula |
+                recip(z) = mul(conj(z), recip(fromReal(normSq(z))))
+                [using specialize recipIsConjOverNormSq(z) z-is-nonzero the-norm-is-nonzero]
+              // the rewrite introduces `recip(fromReal(RONE))`, a fresh guarded term, so its
+              // obligation is owed here: fromReal(1) = 1 and 1 != 0.
+              @one-embedded |
+                fromReal(RONE) = ONE
+                [by cite fromRealOne]
+              @the-unit-is-not-zero |
+                ONE != ZERO
+                [using import(complex) oneNotZero]
+              @the-embedded-unit-is-not-zero |
+                fromReal(RONE) != ZERO
+                [by rewrite one-embedded the-unit-is-not-zero]
+              @the-embedded-unit-characterized |
+                complex.nonzero(fromReal(RONE)) iff (not (fromReal(RONE) = ZERO))
+                [using specialize complex.nonzeroMeaning(fromReal(RONE))]
+              @the-embedded-unit-is-nonzero |
+                complex.nonzero(fromReal(RONE))
+                [using tautology the-embedded-unit-characterized the-embedded-unit-is-not-zero]
+              @recip-formula-unit |
+                recip(z) = mul(conj(z), recip(fromReal(RONE)))
+                [by rewrite z-unit recip-formula]
+              // and `recip(ONE)` after the next rewrite
+              @the-unit-characterized |
+                complex.nonzero(ONE) iff (not (ONE = ZERO))
+                [using specialize complex.nonzeroMeaning(ONE)]
+              @the-unit-is-nonzero |
+                complex.nonzero(ONE)
+                [using tautology the-unit-characterized the-unit-is-not-zero]
+              @recip-formula-one |
+                recip(z) = mul(conj(z), recip(ONE))
+                [by rewrite one-embedded recip-formula-unit]
+              @complex-one-not-zero |
+                ONE != ZERO
+                [using import(complex) oneNotZero]
+              @complex-one-characterized |
+                complex.nonzero(ONE) iff (not (ONE = ZERO))
+                [using specialize complex.nonzeroMeaning(ONE)]
+              @complex-one-is-nonzero |
+                complex.nonzero(ONE)
+                [using tautology complex-one-characterized complex-one-not-zero]
+              @one-times-recip-one |
+                mul(ONE, recip(ONE)) = ONE
+                [using specialize fieldInverse(ONE) complex-one-is-nonzero]
+              @one-times-recip-one-unfolds |
+                mul(ONE, recip(ONE)) = recip(ONE)
+                [using specialize mulOneLeft(recip(ONE))]
+              @recip-one-is-product |
+                recip(ONE) = mul(ONE, recip(ONE))
+                [by symmetry one-times-recip-one-unfolds]
+              @recip-of-one |
+                recip(ONE) = ONE
+                [using chain recip-one-is-product one-times-recip-one]
+              @recip-is-conj-times-one |
+                recip(z) = mul(conj(z), ONE)
+                [by rewrite recip-of-one recip-formula-one]
+              @conj-times-one |
+                mul(conj(z), ONE) = conj(z)
+                [using specialize mulOneRight(conj(z))]
+              @recip-is-conj |
+                recip(z) = conj(z)
+                [using chain recip-is-conj-times-one conj-times-one]
+              @conj-normsq |
+                normSq(conj(z)) = normSq(z)
+                [using specialize normSqConj(z)]
+              @conj-unit |
+                normSq(conj(z)) = RONE
+                [using chain conj-normsq z-unit]
+              @conclusion-recip-unit |
+                onCircle(recip(z))
+                [by rewrite recip-is-conj conj-unit]
             }
-          @z-zero-implies |
-            z = ZERO -> RONE = RZERO
-            [by discharge given-z-zero]
-          @z-nonzero |
-            z != ZERO
-            [using tautology z-zero-implies one-not-zero]
-          // recip(z) = z̄ · recip(1) = z̄.
-          @recip-formula |
-            recip(z) = mul(conj(z), recip(fromReal(normSq(z))))
-            [using specialize recipIsConjOverNormSq(z) z-nonzero]
-          @recip-formula-unit |
-            recip(z) = mul(conj(z), recip(fromReal(RONE)))
-            [by rewrite z-unit recip-formula]
-          @one-embedded |
-            fromReal(RONE) = ONE
-            [by cite fromRealOne]
-          @recip-formula-one |
-            recip(z) = mul(conj(z), recip(ONE))
-            [by rewrite one-embedded recip-formula-unit]
-          @complex-one-not-zero |
-            ONE != ZERO
-            [using import(complex) oneNotZero]
-          @one-times-recip-one |
-            mul(ONE, recip(ONE)) = ONE
-            [using specialize fieldInverse(ONE) complex-one-not-zero]
-          @one-times-recip-one-unfolds |
-            mul(ONE, recip(ONE)) = recip(ONE)
-            [using specialize mulOneLeft(recip(ONE))]
-          @recip-one-is-product |
-            recip(ONE) = mul(ONE, recip(ONE))
-            [by symmetry one-times-recip-one-unfolds]
-          @recip-of-one |
-            recip(ONE) = ONE
-            [using chain recip-one-is-product one-times-recip-one]
-          @recip-is-conj-times-one |
-            recip(z) = mul(conj(z), ONE)
-            [by rewrite recip-of-one recip-formula-one]
-          @conj-times-one |
-            mul(conj(z), ONE) = conj(z)
-            [using specialize mulOneRight(conj(z))]
-          @recip-is-conj |
-            recip(z) = conj(z)
-            [using chain recip-is-conj-times-one conj-times-one]
-          @conj-normsq |
-            normSq(conj(z)) = normSq(z)
-            [using specialize normSqConj(z)]
-          @conj-unit |
-            normSq(conj(z)) = RONE
-            [using chain conj-normsq z-unit]
-          @conclusion-recip-unit |
-            onCircle(recip(z))
-            [by rewrite recip-is-conj conj-unit]
+          @z-implies |
+            onCircle(z) -> onCircle(recip(z))
+            [by discharge given-z]
         }
-      @z-implies |
-        onCircle(z) -> onCircle(recip(z))
-        [by discharge given-z]
+      @z-nonzero-implies |
+        complex.nonzero(z) -> onCircle(z) -> onCircle(recip(z))
+        [by discharge given-z-nonzero]
     }
   @conclusion |
-    forall z: Complex; onCircle(z) -> onCircle(recip(z))
+    forall z: Complex; complex.nonzero(z) -> onCircle(z) -> onCircle(recip(z))
     [by generalize generalize-z]
 qed

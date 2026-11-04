@@ -213,198 +213,231 @@ qed
 // Strategy: induction on m. Base: nothing below NAT_ZERO, the singleton serves. Step: take the
 // sequence good below k, append a one-entry sequence carrying recip(qat(s,k)) at position k
 // via concat — clause 1 keeps the entries below k, clause 2 puts the new one at k + 0 = k.
-theorem theReciprocalSequenceExists: forall s: QSeq; forall m: Nat;
-  exists t: QSeq; forall i: Nat; nat_less_than(i, m) -> qat(t, i) = recip(qat(s, i))
+// The sequence must be nonzero WHERE IT IS INVERTED, as a hypothesis rather than a
+// per-conclusion guard: the construction inverts every entry below m eagerly, so it must know
+// they are nonzero BEFORE building. With a total `recip` this would build silently with junk
+// at a zero entry — the unverifiable-division case the no-totalizing rule exists to prevent.
+theorem theReciprocalSequenceExists: forall s: QSeq;
+  (forall i: Nat; rational.nonzero(qat(s, i))) ->
+  (forall m: Nat; exists t: QSeq; forall i: Nat;
+  nat_less_than(i, m) -> qat(t, i) = recip(qat(s, i)))
 proof
   @generalize-s |
     fix s: QSeq {
-      // base: any sequence serves below NAT_ZERO
-      @some-sequence-exists |
-        exists t: QSeq; qat(t, NAT_ZERO) = recip(qat(s, NAT_ZERO))
-        [using specialize qSeqSingletonOnly(recip(qat(s, NAT_ZERO)))]
-      @base-case |
-        unpack t0: QSeq from some-sequence-exists {
-          @nothing-below-zero |
-            fix i: Nat {
-              @given-i-below-zero |
-                assume nat_less_than(i, NAT_ZERO) {
-                  @i-below-zero |
-                    nat_less_than(i, NAT_ZERO)
-                    [by hypothesis given-i-below-zero]
-                  @nothing-is-below-zero |
-                    not nat_less_than(i, NAT_ZERO)
-                    [using specialize peano_order.notLessThanZero(i)]
-                  @conclusion-vacuous |
-                    qat(t0, i) = recip(qat(s, i))
-                    [by ex_falso i-below-zero nothing-is-below-zero]
+      @given-every-entry-is-nonzero |
+        assume forall i: Nat; rational.nonzero(qat(s, i)) {
+          @every-entry-is-nonzero |
+            forall i: Nat; rational.nonzero(qat(s, i))
+            [by hypothesis given-every-entry-is-nonzero]
+          // base: any sequence serves below NAT_ZERO — and it is witnessed at ZERO rather than at
+          // a reciprocal, because `recip` is GUARDED and nothing here knows `qat(s, ZERO)` is
+          // nonzero. The value is never read: no index is below ZERO.
+          @some-sequence-exists |
+            exists t: QSeq; qat(t, NAT_ZERO) = ZERO
+            [using specialize qSeqSingletonOnly(ZERO)]
+          @base-case |
+            unpack t0: QSeq from some-sequence-exists {
+              @nothing-below-zero |
+                fix i: Nat {
+                  // the guard BEFORE the assume: the discharged conclusion writes
+                  // `recip(qat(s, i))` outside it, so the obligation must be met from here.
+                  @this-entry-is-nonzero |
+                    rational.nonzero(qat(s, i))
+                    [using specialize every-entry-is-nonzero(i)]
+                  @given-i-below-zero |
+                    assume nat_less_than(i, NAT_ZERO) {
+                      @i-below-zero |
+                        nat_less_than(i, NAT_ZERO)
+                        [by hypothesis given-i-below-zero]
+                      @nothing-is-below-zero |
+                        not nat_less_than(i, NAT_ZERO)
+                        [using specialize peano_order.notLessThanZero(i)]
+                      @conclusion-vacuous |
+                        qat(t0, i) = recip(qat(s, i))
+                        [by ex_falso i-below-zero nothing-is-below-zero]
+                    }
+                  @below-zero-implies |
+                    nat_less_than(i, NAT_ZERO) -> qat(t0, i) = recip(qat(s, i))
+                    [by discharge given-i-below-zero]
                 }
-              @below-zero-implies |
-                nat_less_than(i, NAT_ZERO) -> qat(t0, i) = recip(qat(s, i))
-                [by discharge given-i-below-zero]
+              @all-below-zero |
+                forall i: Nat; nat_less_than(i, NAT_ZERO) -> qat(t0, i) = recip(qat(s, i))
+                [by generalize nothing-below-zero]
+              @conclusion-base-inner |
+                exists t: QSeq; forall i: Nat;
+                  nat_less_than(i, NAT_ZERO) -> qat(t, i) = recip(qat(s, i))
+                [by witness(t0) all-below-zero]
             }
-          @all-below-zero |
-            forall i: Nat; nat_less_than(i, NAT_ZERO) -> qat(t0, i) = recip(qat(s, i))
-            [by generalize nothing-below-zero]
-          @conclusion-base-inner |
+          @base-case-exported |
             exists t: QSeq; forall i: Nat;
               nat_less_than(i, NAT_ZERO) -> qat(t, i) = recip(qat(s, i))
-            [by witness(t0) all-below-zero]
-        }
-      @base-case-exported |
-        exists t: QSeq; forall i: Nat;
-          nat_less_than(i, NAT_ZERO) -> qat(t, i) = recip(qat(s, i))
-        [by unpacked base-case]
+            [by unpacked base-case]
 
-      @induction-step |
-        fix k: Nat {
-          @given-inductive-hypothesis |
-            assume exists t: QSeq; forall i: Nat;
-              nat_less_than(i, k) -> qat(t, i) = recip(qat(s, i)) {
-              @inductive-hypothesis |
-                exists t: QSeq; forall i: Nat;
-                  nat_less_than(i, k) -> qat(t, i) = recip(qat(s, i))
-                [by hypothesis given-inductive-hypothesis]
-              @conclusion-the-step |
-                unpack tk: QSeq from inductive-hypothesis {
-                  @with-previous-tk |
-                    forall i: Nat; nat_less_than(i, k) -> qat(tk, i) = recip(qat(s, i))
-                    [by hypothesis conclusion-the-step]
-                  // a one-entry sequence carrying the k-th image
-                  @the-new-entry-exists |
-                    exists w: QSeq; qat(w, NAT_ZERO) = recip(qat(s, k))
-                    [using specialize qSeqSingletonOnly(recip(qat(s, k)))]
-                  @with-the-new-entry |
-                    unpack w: QSeq from the-new-entry-exists {
-                      @the-new-entry |
-                        qat(w, NAT_ZERO) = recip(qat(s, k))
-                        [by hypothesis with-the-new-entry]
-                      @the-concat-exists |
-                        exists u: QSeq;
-                          (forall i: Nat; nat_less_than(i, k) -> qat(u, i) = qat(tk, i))
-                          and (forall i: Nat; nat_less_than(i, nat_succ(NAT_ZERO)) ->
-                          qat(u, nat_add(k, i)) = qat(w, i))
-                        [using specialize qSeqConcatOnly(tk, w, k, nat_succ(NAT_ZERO))]
-                      @with-the-concat |
-                        unpack u: QSeq from the-concat-exists {
-                          @with-concat-u |
-                            (forall i: Nat; nat_less_than(i, k) -> qat(u, i) = qat(tk, i))
+          @induction-step |
+            fix k: Nat {
+              @given-inductive-hypothesis |
+                assume exists t: QSeq; forall i: Nat;
+                  nat_less_than(i, k) -> qat(t, i) = recip(qat(s, i)) {
+                  @inductive-hypothesis |
+                    exists t: QSeq; forall i: Nat;
+                      nat_less_than(i, k) -> qat(t, i) = recip(qat(s, i))
+                    [by hypothesis given-inductive-hypothesis]
+                  @conclusion-the-step |
+                    unpack tk: QSeq from inductive-hypothesis {
+                      @with-previous-tk |
+                        forall i: Nat; nat_less_than(i, k) -> qat(tk, i) = recip(qat(s, i))
+                        [by hypothesis conclusion-the-step]
+                      // the k-th entry is nonzero, so its reciprocal is a writable term — this is
+                      // the step a TOTAL `recip` would let through with junk.
+                      @the-k-th-entry-is-nonzero |
+                        rational.nonzero(qat(s, k))
+                        [using specialize every-entry-is-nonzero(k)]
+                      // a one-entry sequence carrying the k-th image
+                      @the-new-entry-exists |
+                        exists w: QSeq; qat(w, NAT_ZERO) = recip(qat(s, k))
+                        [using specialize qSeqSingletonOnly(recip(qat(s, k)))]
+                      @with-the-new-entry |
+                        unpack w: QSeq from the-new-entry-exists {
+                          @the-new-entry |
+                            qat(w, NAT_ZERO) = recip(qat(s, k))
+                            [by hypothesis with-the-new-entry]
+                          @the-concat-exists |
+                            exists u: QSeq;
+                              (forall i: Nat; nat_less_than(i, k) -> qat(u, i) = qat(tk, i))
                               and (forall i: Nat; nat_less_than(i, nat_succ(NAT_ZERO)) ->
                               qat(u, nat_add(k, i)) = qat(w, i))
-                            [by hypothesis with-the-concat]
-                          @below-k-unchanged |
-                            forall i: Nat; nat_less_than(i, k) -> qat(u, i) = qat(tk, i)
-                            [by and_lhs with-concat-u]
-                          @at-k-is-the-new-entry |
-                            forall i: Nat; nat_less_than(i, nat_succ(NAT_ZERO)) ->
-                              qat(u, nat_add(k, i)) = qat(w, i)
-                            [by and_rhs with-concat-u]
-                          // index k + 0 = k carries the new entry
-                          @zero-below-one |
-                            nat_less_than(NAT_ZERO, nat_succ(NAT_ZERO))
-                            [using specialize peano_order.lessThanSelf(NAT_ZERO)]
-                          @at-k-plus-zero |
-                            qat(u, nat_add(k, NAT_ZERO)) = qat(w, NAT_ZERO)
-                            [using specialize at-k-is-the-new-entry(NAT_ZERO) zero-below-one]
-                          @k-plus-zero |
-                            nat_add(k, NAT_ZERO) = k
-                            [using specialize peano.addZeroRight(k)]
-                          @at-k |
-                            qat(u, k) = qat(w, NAT_ZERO)
-                            [by rewrite k-plus-zero at-k-plus-zero]
-                          @at-k-is-the-image |
-                            qat(u, k) = recip(qat(s, k))
-                            [by rewrite the-new-entry at-k]
-                          @good-below-succ-k |
-                            fix i: Nat {
-                              @given-i-below-succ-k |
-                                assume nat_less_than(i, nat_succ(k)) {
-                                  @i-below-succ-k |
-                                    nat_less_than(i, nat_succ(k))
-                                    [by hypothesis given-i-below-succ-k]
-                                  @the-split |
-                                    nat_less_than(i, k) or i = k
-                                    [using specialize peano_order.lessThanSuccSplit(i, k) i-below-succ-k]
-                                  @conclusion-this-entry |
-                                    qat(u, i) = recip(qat(s, i))
-                                    case the-split {
-                                      @when-i-below-k |
-                                        assume nat_less_than(i, k) {
-                                          @i-below-k |
-                                            nat_less_than(i, k)
-                                            [by hypothesis when-i-below-k]
-                                          @unchanged-at-i |
-                                            qat(u, i) = qat(tk, i)
-                                            [using specialize below-k-unchanged(i) i-below-k]
-                                          @the-old-image |
-                                            qat(tk, i) = recip(qat(s, i))
-                                            [using specialize with-previous-tk(i) i-below-k]
-                                          @conclusion-below-k |
-                                            qat(u, i) = recip(qat(s, i))
-                                            [using simplify unchanged-at-i the-old-image]
-                                        }
-                                      @when-i-is-k |
-                                        assume i = k {
-                                          @i-is-k |
-                                            i = k
-                                            [by hypothesis when-i-is-k]
-                                          @conclusion-at-k |
-                                            qat(u, i) = recip(qat(s, i))
-                                            [by rewrite i-is-k at-k-is-the-image]
+                            [using specialize qSeqConcatOnly(tk, w, k, nat_succ(NAT_ZERO))]
+                          @with-the-concat |
+                            unpack u: QSeq from the-concat-exists {
+                              @with-concat-u |
+                                (forall i: Nat; nat_less_than(i, k) -> qat(u, i) = qat(tk, i))
+                                  and (forall i: Nat; nat_less_than(i, nat_succ(NAT_ZERO)) ->
+                                  qat(u, nat_add(k, i)) = qat(w, i))
+                                [by hypothesis with-the-concat]
+                              @below-k-unchanged |
+                                forall i: Nat; nat_less_than(i, k) -> qat(u, i) = qat(tk, i)
+                                [by and_lhs with-concat-u]
+                              @at-k-is-the-new-entry |
+                                forall i: Nat; nat_less_than(i, nat_succ(NAT_ZERO)) ->
+                                  qat(u, nat_add(k, i)) = qat(w, i)
+                                [by and_rhs with-concat-u]
+                              // index k + 0 = k carries the new entry
+                              @zero-below-one |
+                                nat_less_than(NAT_ZERO, nat_succ(NAT_ZERO))
+                                [using specialize peano_order.lessThanSelf(NAT_ZERO)]
+                              @at-k-plus-zero |
+                                qat(u, nat_add(k, NAT_ZERO)) = qat(w, NAT_ZERO)
+                                [using specialize at-k-is-the-new-entry(NAT_ZERO) zero-below-one]
+                              @k-plus-zero |
+                                nat_add(k, NAT_ZERO) = k
+                                [using specialize peano.addZeroRight(k)]
+                              @at-k |
+                                qat(u, k) = qat(w, NAT_ZERO)
+                                [by rewrite k-plus-zero at-k-plus-zero]
+                              @at-k-is-the-image |
+                                qat(u, k) = recip(qat(s, k))
+                                [by rewrite the-new-entry at-k]
+                              @good-below-succ-k |
+                                fix i: Nat {
+                                  @entry-i-is-nonzero |
+                                    rational.nonzero(qat(s, i))
+                                    [using specialize every-entry-is-nonzero(i)]
+                                  @given-i-below-succ-k |
+                                    assume nat_less_than(i, nat_succ(k)) {
+                                      @i-below-succ-k |
+                                        nat_less_than(i, nat_succ(k))
+                                        [by hypothesis given-i-below-succ-k]
+                                      @the-split |
+                                        nat_less_than(i, k) or i = k
+                                        [using specialize peano_order.lessThanSuccSplit(i, k) i-below-succ-k]
+                                      @conclusion-this-entry |
+                                        qat(u, i) = recip(qat(s, i))
+                                        case the-split {
+                                          @when-i-below-k |
+                                            assume nat_less_than(i, k) {
+                                              @i-below-k |
+                                                nat_less_than(i, k)
+                                                [by hypothesis when-i-below-k]
+                                              @unchanged-at-i |
+                                                qat(u, i) = qat(tk, i)
+                                                [using specialize below-k-unchanged(i) i-below-k]
+                                              @the-old-image |
+                                                qat(tk, i) = recip(qat(s, i))
+                                                [using specialize with-previous-tk(i) i-below-k]
+                                              @conclusion-below-k |
+                                                qat(u, i) = recip(qat(s, i))
+                                                [using simplify unchanged-at-i the-old-image]
+                                            }
+                                          @when-i-is-k |
+                                            assume i = k {
+                                              @i-is-k |
+                                                i = k
+                                                [by hypothesis when-i-is-k]
+                                              @conclusion-at-k |
+                                                qat(u, i) = recip(qat(s, i))
+                                                [by rewrite i-is-k at-k-is-the-image]
+                                            }
                                         }
                                     }
+                                  @below-succ-k-implies |
+                                    nat_less_than(i, nat_succ(k)) -> qat(u, i) = recip(qat(s, i))
+                                    [by discharge given-i-below-succ-k]
                                 }
-                              @below-succ-k-implies |
-                                nat_less_than(i, nat_succ(k)) -> qat(u, i) = recip(qat(s, i))
-                                [by discharge given-i-below-succ-k]
+                              @all-good-below-succ-k |
+                                forall i: Nat;
+                                  nat_less_than(i, nat_succ(k)) -> qat(u, i) = recip(qat(s, i))
+                                [by generalize good-below-succ-k]
+                              @conclusion-the-extended |
+                                exists t: QSeq; forall i: Nat;
+                                  nat_less_than(i, nat_succ(k)) -> qat(t, i) = recip(qat(s, i))
+                                [by witness(u) all-good-below-succ-k]
                             }
-                          @all-good-below-succ-k |
-                            forall i: Nat;
-                              nat_less_than(i, nat_succ(k)) -> qat(u, i) = recip(qat(s, i))
-                            [by generalize good-below-succ-k]
-                          @conclusion-the-extended |
+                          @conclusion-concat-exported |
                             exists t: QSeq; forall i: Nat;
                               nat_less_than(i, nat_succ(k)) -> qat(t, i) = recip(qat(s, i))
-                            [by witness(u) all-good-below-succ-k]
+                            [by unpacked with-the-concat]
                         }
-                      @conclusion-concat-exported |
+                      @conclusion-entry-exported |
                         exists t: QSeq; forall i: Nat;
                           nat_less_than(i, nat_succ(k)) -> qat(t, i) = recip(qat(s, i))
-                        [by unpacked with-the-concat]
+                        [by unpacked with-the-new-entry]
                     }
-                  @conclusion-entry-exported |
+                  @the-step-exported |
                     exists t: QSeq; forall i: Nat;
                       nat_less_than(i, nat_succ(k)) -> qat(t, i) = recip(qat(s, i))
-                    [by unpacked with-the-new-entry]
+                    [by unpacked conclusion-the-step]
                 }
-              @the-step-exported |
-                exists t: QSeq; forall i: Nat;
-                  nat_less_than(i, nat_succ(k)) -> qat(t, i) = recip(qat(s, i))
-                [by unpacked conclusion-the-step]
+              @induction-step-at-k |
+                (exists t: QSeq; forall i: Nat;
+                  nat_less_than(i, k) -> qat(t, i) = recip(qat(s, i))) ->
+                  (exists t: QSeq; forall i: Nat;
+                  nat_less_than(i, nat_succ(k)) -> qat(t, i) = recip(qat(s, i)))
+                [by discharge given-inductive-hypothesis]
             }
-          @induction-step-at-k |
-            (exists t: QSeq; forall i: Nat;
+          @induction-step-for-all-k |
+            forall k: Nat;
+              (exists t: QSeq; forall i: Nat;
               nat_less_than(i, k) -> qat(t, i) = recip(qat(s, i))) ->
               (exists t: QSeq; forall i: Nat;
               nat_less_than(i, nat_succ(k)) -> qat(t, i) = recip(qat(s, i)))
-            [by discharge given-inductive-hypothesis]
+            [by generalize induction-step]
+          @all-bounds |
+            forall m: Nat;
+              exists t: QSeq; forall i: Nat;
+              nat_less_than(i, m) -> qat(t, i) = recip(qat(s, i))
+            [using instantiation peano.induction((fun z: Nat => (exists t: QSeq; forall i: Nat; nat_less_than(i, z) -> qat(t, i) = recip(qat(s, i))))) base-case-exported induction-step-for-all-k]
         }
-      @induction-step-for-all-k |
-        forall k: Nat;
-          (exists t: QSeq; forall i: Nat;
-          nat_less_than(i, k) -> qat(t, i) = recip(qat(s, i))) ->
-          (exists t: QSeq; forall i: Nat;
-          nat_less_than(i, nat_succ(k)) -> qat(t, i) = recip(qat(s, i)))
-        [by generalize induction-step]
-      @all-bounds |
-        forall m: Nat;
-          exists t: QSeq; forall i: Nat;
-          nat_less_than(i, m) -> qat(t, i) = recip(qat(s, i))
-        [using instantiation peano.induction((fun z: Nat => (exists t: QSeq; forall i: Nat; nat_less_than(i, z) -> qat(t, i) = recip(qat(s, i))))) base-case-exported induction-step-for-all-k]
+      @nonzero-implies-the-sequence |
+        (forall i: Nat; rational.nonzero(qat(s, i))) ->
+          (forall m: Nat; exists t: QSeq; forall i: Nat;
+          nat_less_than(i, m) -> qat(t, i) = recip(qat(s, i)))
+        [by discharge given-every-entry-is-nonzero]
     }
   @conclusion |
-    forall s: QSeq; forall m: Nat;
-      exists t: QSeq; forall i: Nat;
-      nat_less_than(i, m) -> qat(t, i) = recip(qat(s, i))
+    forall s: QSeq;
+      (forall i: Nat; rational.nonzero(qat(s, i))) ->
+      (forall m: Nat; exists t: QSeq; forall i: Nat;
+      nat_less_than(i, m) -> qat(t, i) = recip(qat(s, i)))
     [by generalize generalize-s]
 qed
 
@@ -957,22 +990,22 @@ qed
 // shift is why the spec is carried as a predicate on the VALUE at each index rather than a
 // fixed per-index list.
 theorem aBoundedChoiceIsRealizedByASequence: forall n: Nat;
-  (forall i: Nat; exists v: Q; isInteger(v) and (not (v = rational.ZERO))) ->
+  (forall i: Nat; exists v: Q; isInteger(v) and rational.nonzero(v)) ->
   (exists s: QSeq; forall i: Nat; nat_less_than(i, n) ->
-  (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO))))
+  (isInteger(qat(s, i)) and rational.nonzero(qat(s, i))))
 proof
   @given-the-per-index-witnesses |
     assume forall i: Nat; exists v: Q;
-      isInteger(v) and (not (v = rational.ZERO)) {
+      isInteger(v) and rational.nonzero(v) {
       @the-per-index-witnesses |
         forall i: Nat; exists v: Q;
-          isInteger(v) and (not (v = rational.ZERO))
+          isInteger(v) and rational.nonzero(v)
         [by hypothesis given-the-per-index-witnesses]
 
       // base: below NAT_ZERO there is nothing to realize, so ANY sequence serves — and one
       // exists because the witnesses do.
       @the-witness-at-zero |
-        exists v: Q; isInteger(v) and (not (v = rational.ZERO))
+        exists v: Q; isInteger(v) and rational.nonzero(v)
         [using specialize the-per-index-witnesses(NAT_ZERO)]
       @base-case |
         unpack v0: Q from the-witness-at-zero {
@@ -995,43 +1028,43 @@ proof
                         [using specialize peano_order.notLessThanZero(i)]
                       @conclusion-vacuous |
                         isInteger(qat(s0, i)) and
-                          (not (qat(s0, i) = rational.ZERO))
+                          rational.nonzero(qat(s0, i))
                         [by ex_falso i-below-zero nothing-is-below-zero]
                     }
                   @below-zero-implies |
                     nat_less_than(i, NAT_ZERO) ->
                       (isInteger(qat(s0, i)) and
-                      (not (qat(s0, i) = rational.ZERO)))
+                      rational.nonzero(qat(s0, i)))
                     [by discharge given-i-below-zero]
                 }
               @all-below-zero |
                 forall i: Nat; nat_less_than(i, NAT_ZERO) ->
                   (isInteger(qat(s0, i)) and
-                  (not (qat(s0, i) = rational.ZERO)))
+                  rational.nonzero(qat(s0, i)))
                 [by generalize nothing-below-zero]
               @conclusion-the-base-sequence |
                 exists s: QSeq; forall i: Nat; nat_less_than(i, NAT_ZERO) ->
-                  (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
+                  (isInteger(qat(s, i)) and rational.nonzero(qat(s, i)))
                 [by witness(s0) all-below-zero]
             }
           @conclusion-base-inner |
             exists s: QSeq; forall i: Nat; nat_less_than(i, NAT_ZERO) ->
-              (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
+              (isInteger(qat(s, i)) and rational.nonzero(qat(s, i)))
             [by unpacked with-the-singleton]
         }
       @base-case-exported |
         exists s: QSeq; forall i: Nat; nat_less_than(i, NAT_ZERO) ->
-          (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
+          (isInteger(qat(s, i)) and rational.nonzero(qat(s, i)))
         [by unpacked base-case]
 
       @induction-step |
         fix k: Nat {
           @given-inductive-hypothesis |
             assume exists s: QSeq; forall i: Nat; nat_less_than(i, k) ->
-              (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO))) {
+              (isInteger(qat(s, i)) and rational.nonzero(qat(s, i))) {
               @inductive-hypothesis |
                 exists s: QSeq; forall i: Nat; nat_less_than(i, k) ->
-                  (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
+                  (isInteger(qat(s, i)) and rational.nonzero(qat(s, i)))
                 [by hypothesis given-inductive-hypothesis]
               // PREPEND IS THE WRONG END for this spec. Prepending shifts every old index
               // up by one, so a sequence good below k becomes good at indices 1..k — it
@@ -1043,25 +1076,25 @@ proof
               // and the result is good below nat_succ(k) — index 0 holds the new witness, and
               // index nat_succ(i) for i < k holds the old entry at i.
               @the-witness-at-k |
-                exists v: Q; isInteger(v) and (not (v = rational.ZERO))
+                exists v: Q; isInteger(v) and rational.nonzero(v)
                 [using specialize the-per-index-witnesses(k)]
               @conclusion-the-step |
                 unpack vk: Q from the-witness-at-k {
                   @with-witness-vk |
-                    isInteger(vk) and (not (vk = rational.ZERO))
+                    isInteger(vk) and rational.nonzero(vk)
                     [by hypothesis conclusion-the-step]
                   @vk-is-an-integer |
                     isInteger(vk)
                     [by and_lhs with-witness-vk]
                   @vk-is-nonzero |
-                    not (vk = rational.ZERO)
+                    rational.nonzero(vk)
                     [by and_rhs with-witness-vk]
                   @with-the-previous |
                     unpack sk: QSeq from inductive-hypothesis {
                       @with-previous-sk |
                         forall i: Nat; nat_less_than(i, k) ->
                           (isInteger(qat(sk, i)) and
-                          (not (qat(sk, i) = rational.ZERO)))
+                          rational.nonzero(qat(sk, i)))
                         [by hypothesis with-the-previous]
                       @the-prepend-exists |
                         exists u: QSeq;
@@ -1092,7 +1125,7 @@ proof
                                     [using specialize peano.zeroOrSucc(i)]
                                   @conclusion-this-entry |
                                     isInteger(qat(u, i)) and
-                                      (not (qat(u, i) = rational.ZERO))
+                                      rational.nonzero(qat(u, i))
                                     case the-index-cases {
                                       // index 0 holds the fresh witness
                                       @when-i-is-zero |
@@ -1105,11 +1138,11 @@ proof
                                             [by rewrite i-is-zero the-head-is-vk]
                                           @vk-is-good |
                                             isInteger(vk) and
-                                              (not (vk = rational.ZERO))
+                                              rational.nonzero(vk)
                                             [by both vk-is-an-integer vk-is-nonzero]
                                           @conclusion-at-zero |
                                             isInteger(qat(u, i)) and
-                                              (not (qat(u, i) = rational.ZERO))
+                                              rational.nonzero(qat(u, i))
                                             [by rewrite the-entry-is-vk vk-is-good]
                                         }
                                       // index nat_succ(m) holds the old entry at m, and m < k
@@ -1131,23 +1164,23 @@ proof
                                                 [using specialize peano_order.succReflectsOrder(m, k) succ-m-below-succ-k]
                                               @the-old-entry-is-good |
                                                 isInteger(qat(sk, m)) and
-                                                  (not (qat(sk, m) = rational.ZERO))
+                                                  rational.nonzero(qat(sk, m))
                                                 [using specialize with-previous-sk(m) m-below-k]
                                               @the-entry-shifts |
                                                 qat(u, nat_succ(m)) = qat(sk, m)
                                                 [using specialize the-tail-shifts(m)]
                                               @the-new-entry-is-good |
                                                 isInteger(qat(u, nat_succ(m))) and
-                                                  (not (qat(u, nat_succ(m)) = rational.ZERO))
+                                                  rational.nonzero(qat(u, nat_succ(m)))
                                                 [by rewrite the-entry-shifts the-old-entry-is-good]
                                               @conclusion-at-successor |
                                                 isInteger(qat(u, i)) and
-                                                  (not (qat(u, i) = rational.ZERO))
+                                                  rational.nonzero(qat(u, i))
                                                 [by rewrite i-is-succ-m the-new-entry-is-good]
                                             }
                                           @conclusion-successor-exported |
                                             isInteger(qat(u, i)) and
-                                              (not (qat(u, i) = rational.ZERO))
+                                              rational.nonzero(qat(u, i))
                                             [by unpacked with-the-predecessor]
                                         }
                                     }
@@ -1155,108 +1188,108 @@ proof
                               @below-succ-k-implies-good |
                                 nat_less_than(i, nat_succ(k)) ->
                                   (isInteger(qat(u, i)) and
-                                  (not (qat(u, i) = rational.ZERO)))
+                                  rational.nonzero(qat(u, i)))
                                 [by discharge given-i-below-succ-k]
                             }
                           @all-good-below-succ-k |
                             forall i: Nat; nat_less_than(i, nat_succ(k)) ->
                               (isInteger(qat(u, i)) and
-                              (not (qat(u, i) = rational.ZERO)))
+                              rational.nonzero(qat(u, i)))
                             [by generalize good-below-succ-k]
                           @conclusion-the-extended-sequence |
                             exists s: QSeq; forall i: Nat; nat_less_than(i, nat_succ(k)) ->
                               (isInteger(qat(s, i)) and
-                              (not (qat(s, i) = rational.ZERO)))
+                              rational.nonzero(qat(s, i)))
                             [by witness(u) all-good-below-succ-k]
                         }
                       @conclusion-prepend-exported |
                         exists s: QSeq; forall i: Nat; nat_less_than(i, nat_succ(k)) ->
                           (isInteger(qat(s, i)) and
-                          (not (qat(s, i) = rational.ZERO)))
+                          rational.nonzero(qat(s, i)))
                         [by unpacked with-the-prepend]
                     }
                   @conclusion-previous-exported |
                     exists s: QSeq; forall i: Nat; nat_less_than(i, nat_succ(k)) ->
                       (isInteger(qat(s, i)) and
-                      (not (qat(s, i) = rational.ZERO)))
+                      rational.nonzero(qat(s, i)))
                     [by unpacked with-the-previous]
                 }
               @the-step-exported |
                 exists s: QSeq; forall i: Nat; nat_less_than(i, nat_succ(k)) ->
-                  (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
+                  (isInteger(qat(s, i)) and rational.nonzero(qat(s, i)))
                 [by unpacked conclusion-the-step]
             }
           @induction-step-at-k |
             (exists s: QSeq; forall i: Nat; nat_less_than(i, k) ->
-              (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))) ->
+              (isInteger(qat(s, i)) and rational.nonzero(qat(s, i)))) ->
               (exists s: QSeq; forall i: Nat; nat_less_than(i, nat_succ(k)) ->
-              (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO))))
+              (isInteger(qat(s, i)) and rational.nonzero(qat(s, i))))
             [by discharge given-inductive-hypothesis]
         }
       @induction-step-for-all-k |
         forall k: Nat;
           (exists s: QSeq; forall i: Nat; nat_less_than(i, k) ->
-          (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))) ->
+          (isInteger(qat(s, i)) and rational.nonzero(qat(s, i)))) ->
           (exists s: QSeq; forall i: Nat; nat_less_than(i, nat_succ(k)) ->
-          (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO))))
+          (isInteger(qat(s, i)) and rational.nonzero(qat(s, i))))
         [by generalize induction-step]
       @all-bounds |
         forall n: Nat;
           exists s: QSeq; forall i: Nat; nat_less_than(i, n) ->
-          (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
-        [using instantiation peano.induction((fun t: Nat => (exists s: QSeq; forall i: Nat; nat_less_than(i, t) -> (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))))) base-case-exported induction-step-for-all-k]
+          (isInteger(qat(s, i)) and rational.nonzero(qat(s, i)))
+        [using instantiation peano.induction((fun t: Nat => (exists s: QSeq; forall i: Nat; nat_less_than(i, t) -> (isInteger(qat(s, i)) and rational.nonzero(qat(s, i)))))) base-case-exported induction-step-for-all-k]
       // the hypothesis is discharged OUTSIDE the `forall n`, so re-fix n and push it in
       @reorder |
         fix n: Nat {
           @at-this-bound |
             exists s: QSeq; forall i: Nat; nat_less_than(i, n) ->
-              (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
+              (isInteger(qat(s, i)) and rational.nonzero(qat(s, i)))
             [using specialize all-bounds(n)]
         }
       @all-bounds-refixed |
         forall n: Nat;
           exists s: QSeq; forall i: Nat; nat_less_than(i, n) ->
-          (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
+          (isInteger(qat(s, i)) and rational.nonzero(qat(s, i)))
         [by generalize reorder]
     }
   @witnesses-imply-the-sequences |
-    (forall i: Nat; exists v: Q; isInteger(v) and (not (v = rational.ZERO))) ->
+    (forall i: Nat; exists v: Q; isInteger(v) and rational.nonzero(v)) ->
       (forall n: Nat;
       exists s: QSeq; forall i: Nat; nat_less_than(i, n) ->
-      (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO))))
+      (isInteger(qat(s, i)) and rational.nonzero(qat(s, i))))
     [by discharge given-the-per-index-witnesses]
 
   @final-reorder |
     fix n: Nat {
       @given-the-witnesses-again |
         assume forall i: Nat; exists v: Q;
-          isInteger(v) and (not (v = rational.ZERO)) {
+          isInteger(v) and rational.nonzero(v) {
           @the-witnesses-again |
             forall i: Nat; exists v: Q;
-              isInteger(v) and (not (v = rational.ZERO))
+              isInteger(v) and rational.nonzero(v)
             [by hypothesis given-the-witnesses-again]
           @all-bounds-here |
             forall n9: Nat;
               exists s: QSeq; forall i: Nat; nat_less_than(i, n9) ->
-              (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
+              (isInteger(qat(s, i)) and rational.nonzero(qat(s, i)))
             [by modus_ponens witnesses-imply-the-sequences the-witnesses-again]
           @conclusion-at-n |
             exists s: QSeq; forall i: Nat; nat_less_than(i, n) ->
-              (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO)))
+              (isInteger(qat(s, i)) and rational.nonzero(qat(s, i)))
             [using specialize all-bounds-here(n)]
         }
       @witnesses-imply-at-n |
         (forall i: Nat; exists v: Q;
-          isInteger(v) and (not (v = rational.ZERO))) ->
+          isInteger(v) and rational.nonzero(v)) ->
           (exists s: QSeq; forall i: Nat; nat_less_than(i, n) ->
-          (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO))))
+          (isInteger(qat(s, i)) and rational.nonzero(qat(s, i))))
         [by discharge given-the-witnesses-again]
     }
   @conclusion |
     forall n: Nat;
-      (forall i: Nat; exists v: Q; isInteger(v) and (not (v = rational.ZERO))) ->
+      (forall i: Nat; exists v: Q; isInteger(v) and rational.nonzero(v)) ->
       (exists s: QSeq; forall i: Nat; nat_less_than(i, n) ->
-      (isInteger(qat(s, i)) and (not (qat(s, i) = rational.ZERO))))
+      (isInteger(qat(s, i)) and rational.nonzero(qat(s, i))))
     [by generalize final-reorder]
 qed
 
@@ -1519,7 +1552,7 @@ func theSubject() => qpoly.QPoly
 pred isADenominatorFor(i: Nat, v: Q)
 axiom denominatorMeaning: forall i: Nat; forall v: Q;
   isADenominatorFor(i, v) iff
-  (isInteger(v) and less_than(ZERO, v) and (not (v = rational.ZERO)) and
+  (isInteger(v) and less_than(ZERO, v) and rational.nonzero(v) and
   (exists b: Q; isInteger(b) and
   qpoly.qcoeff(theSubject, i) = rational.mul(b, recip(v))))
 
@@ -1533,25 +1566,25 @@ proof
       @every-coefficient-is-a-ratio |
         forall p2: qpoly.QPoly; forall i2: Nat;
           exists b, c: Q;
-          isInteger(b) and isInteger(c) and c != rational.ZERO and
+          isInteger(b) and isInteger(c) and rational.nonzero(c) and
           qpoly.qcoeff(p2, i2) = rational.mul(b, recip(c))
         [using import(qpoly) everyCoefficientIsARatioOfIntegers]
       @the-ratio |
         exists b, c: Q;
-          isInteger(b) and isInteger(c) and c != rational.ZERO and
+          isInteger(b) and isInteger(c) and rational.nonzero(c) and
           qpoly.qcoeff(theSubject, i) = rational.mul(b, recip(c))
         [using specialize every-coefficient-is-a-ratio(theSubject, i)]
       @with-the-ratio |
         unpack b: Q from the-ratio {
           @with-numerator-b |
             exists c: Q;
-              isInteger(b) and isInteger(c) and c != rational.ZERO and
+              isInteger(b) and isInteger(c) and rational.nonzero(c) and
               qpoly.qcoeff(theSubject, i) = rational.mul(b, recip(c))
             [by hypothesis with-the-ratio]
           @with-the-denominator |
             unpack c: Q from with-numerator-b {
               @the-parts |
-                isInteger(b) and isInteger(c) and c != rational.ZERO and
+                isInteger(b) and isInteger(c) and rational.nonzero(c) and
                   qpoly.qcoeff(theSubject, i) = rational.mul(b, recip(c))
                 [by hypothesis with-the-denominator]
               @b-is-an-integer |
@@ -1561,7 +1594,7 @@ proof
                 isInteger(c)
                 [using tautology the-parts]
               @c-is-nonzero |
-                not (c = rational.ZERO)
+                rational.nonzero(c)
                 [using tautology the-parts]
               @the-coefficient |
                 qpoly.qcoeff(theSubject, i) = rational.mul(b, recip(c))
@@ -1602,7 +1635,7 @@ proof
                                 [by witness(b) the-numerator-works]
                               @the-spec-parts |
                                 isInteger(c) and less_than(ZERO, c) and
-                                  (not (c = rational.ZERO)) and
+                                  rational.nonzero(c) and
                                   (exists b2: Q; isInteger(b2) and
                                   qpoly.qcoeff(theSubject, i) =
                                   rational.mul(b2, recip(c)))
@@ -1611,7 +1644,7 @@ proof
                                 isADenominatorFor(i, c) iff
                                   (isInteger(c) and
                                   less_than(ZERO, c) and
-                                  (not (c = rational.ZERO)) and
+                                  rational.nonzero(c) and
                                   (exists b2: Q; isInteger(b2) and
                                   qpoly.qcoeff(theSubject, i) =
                                   rational.mul(b2, recip(c))))
@@ -1632,9 +1665,17 @@ proof
                               @c-is-zero |
                                 c = rational.ZERO
                                 [by symmetry zero-is-c]
+                              // `ex_falso` needs the literal negation, which the predicate
+                              // does not supply syntactically.
+                              @c-characterized-here |
+                                rational.nonzero(c) iff (not (c = rational.ZERO))
+                                [using specialize rational.nonzeroMeaning(c)]
+                              @c-is-not-zero-here |
+                                not (c = rational.ZERO)
+                                [using tautology c-characterized-here c-is-nonzero]
                               @conclusion-zero |
                                 exists v: Q; isADenominatorFor(i, v)
-                                [by ex_falso c-is-zero c-is-nonzero]
+                                [by ex_falso c-is-zero c-is-not-zero-here]
                             }
                         }
                     }
@@ -1652,8 +1693,8 @@ proof
                         less_than(ZERO, rational.neg(c))
                         [using specialize negatives-of-negatives(c) c-is-negative]
                       @minus-c-is-nonzero |
-                        not (rational.neg(c) = rational.ZERO)
-                        [using specialize rational_integer_order.aPositiveIsNonzero(rational.neg(c)) minus-c-is-positive]
+                        rational.nonzero(rational.neg(c))
+                        [using specialize rational_integer_order.aPositiveIsNonzeroPredicate(rational.neg(c)) minus-c-is-positive]
                       @the-integer-negations |
                         forall x: Q; isInteger(x) ->
                           isInteger(rational.neg(x))
@@ -1664,11 +1705,14 @@ proof
                       @minus-b-is-an-integer |
                         isInteger(rational.neg(b))
                         [using specialize the-integer-negations(b) b-is-an-integer]
+                      @the-negated-denominator-is-nonzero |
+                        rational.nonzero(rational.neg(c))
+                        [using specialize aNegationOfANonzeroIsNonzero(c) c-is-nonzero]
                       @the-flip |
                         rational.mul(rational.neg(b),
                           recip(rational.neg(c))) =
                           rational.mul(b, recip(c))
-                        [using specialize theFractionSurvivesASignFlip(b, c) c-is-nonzero]
+                        [using specialize theFractionSurvivesASignFlip(b, c) c-is-nonzero the-negated-denominator-is-nonzero]
                       @the-flipped-coefficient |
                         qpoly.qcoeff(theSubject, i) =
                           rational.mul(rational.neg(b),
@@ -1688,7 +1732,7 @@ proof
                       @the-flipped-spec-parts |
                         isInteger(rational.neg(c)) and
                           less_than(ZERO, rational.neg(c)) and
-                          (not (rational.neg(c) = rational.ZERO)) and
+                          rational.nonzero(rational.neg(c)) and
                           (exists b2: Q; isInteger(b2) and
                           qpoly.qcoeff(theSubject, i) =
                           rational.mul(b2, recip(rational.neg(c))))
@@ -1697,7 +1741,7 @@ proof
                         isADenominatorFor(i, rational.neg(c)) iff
                           (isInteger(rational.neg(c)) and
                           less_than(ZERO, rational.neg(c)) and
-                          (not (rational.neg(c) = rational.ZERO)) and
+                          rational.nonzero(rational.neg(c)) and
                           (exists b2: Q; isInteger(b2) and
                           qpoly.qcoeff(theSubject, i) =
                           rational.mul(b2, recip(rational.neg(c)))))
@@ -1747,7 +1791,7 @@ qed
 // Pure field algebra; `polynomial(rational)` cannot do it because recip is not a ring op, so
 // it goes through fieldInverse explicitly.
 theorem theDenominatorCancels: forall v, k, b: Q;
-  (not (v = rational.ZERO)) ->
+  rational.nonzero(v) ->
   rational.mul(rational.mul(v, k), rational.mul(b, recip(v))) =
   rational.mul(k, b)
 proof
@@ -1758,9 +1802,9 @@ proof
           @generalize-b |
             fix b: Q {
               @given-v-nonzero |
-                assume not (v = rational.ZERO) {
+                assume rational.nonzero(v) {
                   @v-nonzero |
-                    not (v = rational.ZERO)
+                    rational.nonzero(v)
                     [by hypothesis given-v-nonzero]
                   @v-times-its-reciprocal |
                     rational.mul(v, recip(v)) = rational.ONE
@@ -1784,28 +1828,28 @@ proof
                     [using simplify with-one-in-front one-times]
                 }
               @nonzero-implies |
-                (not (v = rational.ZERO)) ->
+                rational.nonzero(v) ->
                   rational.mul(rational.mul(v, k), rational.mul(b, recip(v))) =
                   rational.mul(k, b)
                 [by discharge given-v-nonzero]
             }
           @discharge-b |
             forall b9: Q;
-              (not (v = rational.ZERO)) ->
+              rational.nonzero(v) ->
               rational.mul(rational.mul(v, k), rational.mul(b9, recip(v))) =
               rational.mul(k, b9)
             [by generalize generalize-b]
         }
       @discharge-k |
         forall k9: Q; forall b9: Q;
-          (not (v = rational.ZERO)) ->
+          rational.nonzero(v) ->
           rational.mul(rational.mul(v, k9), rational.mul(b9, recip(v))) =
           rational.mul(k9, b9)
         [by generalize generalize-k]
     }
   @conclusion |
     forall v, k, b: Q;
-      (not (v = rational.ZERO)) ->
+      rational.nonzero(v) ->
       rational.mul(rational.mul(v, k), rational.mul(b, recip(v))) =
       rational.mul(k, b)
     [by generalize generalize-v]
@@ -1839,18 +1883,18 @@ proof
                   @the-spec |
                     isADenominatorFor(i, v) iff
                       (isInteger(v) and less_than(ZERO, v) and
-                      (not (v = rational.ZERO)) and
+                      rational.nonzero(v) and
                       (exists b: Q; isInteger(b) and
                       qpoly.qcoeff(theSubject, i) = rational.mul(b, recip(v))))
                     [using specialize denominatorMeaning(i, v)]
                   @the-parts |
                     isInteger(v) and less_than(ZERO, v) and
-                      (not (v = rational.ZERO)) and
+                      rational.nonzero(v) and
                       (exists b: Q; isInteger(b) and
                       qpoly.qcoeff(theSubject, i) = rational.mul(b, recip(v)))
                     [using tautology the-spec v-is-a-denominator]
                   @v-is-nonzero |
-                    not (v = rational.ZERO)
+                    rational.nonzero(v)
                     [using tautology the-parts]
                   @a-numerator-exists |
                     exists b: Q; isInteger(b) and
@@ -2069,7 +2113,7 @@ pred isAMaximalCommonDivisorUpTo(d: Q, s: QSeq, n: Nat)
 axiom maximalCommonDivisorMeaning: forall d: Q; forall s: QSeq; forall n: Nat;
   isAMaximalCommonDivisorUpTo(d, s, n) iff
   (isInteger(d) and less_than(ZERO, d) and
-  (not (d = rational.ZERO)) and
+  rational.nonzero(d) and
   isACommonDivisorUpTo(d, s, n) and
   (forall e: Q; isInteger(e) -> isACommonDivisorUpTo(e, s, n) ->
   dividesIntegrally(e, d)))
@@ -2077,7 +2121,7 @@ axiom maximalCommonDivisorMeaning: forall d: Q; forall s: QSeq; forall n: Nat;
 // Cancellation at ℚ: a nonzero factor cancels. From `fieldInverse` directly — ℚ has no
 // cancellation lemma of its own, and `std/field/units.b4m`'s is over the Nonzero subsort.
 theorem aNonzeroFactorCancels: forall a, b, c: Q;
-  (not (a = rational.ZERO)) -> rational.mul(a, b) = rational.mul(a, c) -> b = c
+  rational.nonzero(a) -> rational.mul(a, b) = rational.mul(a, c) -> b = c
 proof
   @generalize-a |
     fix a: Q {
@@ -2086,9 +2130,9 @@ proof
           @generalize-c |
             fix c: Q {
               @given-a-nonzero |
-                assume not (a = rational.ZERO) {
+                assume rational.nonzero(a) {
                   @a-nonzero |
-                    not (a = rational.ZERO)
+                    rational.nonzero(a)
                     [by hypothesis given-a-nonzero]
                   @given-the-products-agree |
                     assume rational.mul(a, b) = rational.mul(a, c) {
@@ -2151,25 +2195,25 @@ proof
                     [by discharge given-the-products-agree]
                 }
               @nonzero-implies |
-                (not (a = rational.ZERO)) ->
+                rational.nonzero(a) ->
                   rational.mul(a, b) = rational.mul(a, c) -> b = c
                 [by discharge given-a-nonzero]
             }
           @discharge-c |
             forall c9: Q;
-              (not (a = rational.ZERO)) ->
+              rational.nonzero(a) ->
               rational.mul(a, b) = rational.mul(a, c9) -> b = c9
             [by generalize generalize-c]
         }
       @discharge-b |
         forall b9: Q; forall c9: Q;
-          (not (a = rational.ZERO)) ->
+          rational.nonzero(a) ->
           rational.mul(a, b9) = rational.mul(a, c9) -> b9 = c9
         [by generalize generalize-b]
     }
   @conclusion |
     forall a, b, c: Q;
-      (not (a = rational.ZERO)) ->
+      rational.nonzero(a) ->
       rational.mul(a, b) = rational.mul(a, c) -> b = c
     [by generalize generalize-a]
 qed
@@ -2180,21 +2224,25 @@ qed
 //
 // Both belong in `std/rational.b4m` beside the other `recip` algebra; they are here because
 // the proof needs `aNonzeroFactorCancels`, which `std/rational.b4m` does not have.
-theorem theReciprocalOfANegation: forall c: Q;
-  (not (c = ZERO)) ->
-  rational.recip(rational.neg(c)) = rational.neg(rational.recip(c))
+// A nonzero's negation is nonzero: c = neg(neg(c)) = neg(ZERO) = ZERO otherwise. Needed as a
+// separate theorem because `recip(neg(c))` owes `nonzero(neg(c))` as a GUARD, and a caller
+// holding only `nonzero(c)` cannot supply it syntactically.
+theorem aNegationOfANonzeroIsNonzero: forall c: Q;
+  rational.nonzero(c) -> rational.nonzero(rational.neg(c))
 proof
   @generalize-c |
     fix c: Q {
       @given-c-nonzero |
-        assume not (c = ZERO) {
+        assume rational.nonzero(c) {
           @c-nonzero |
-            not (c = ZERO)
+            rational.nonzero(c)
             [by hypothesis given-c-nonzero]
-          @c-inverts |
-            rational.mul(c, rational.recip(c)) = rational.ONE
-            [using specialize rational.fieldInverse(c) c-nonzero]
-          // neg(c) is nonzero too: otherwise c = neg(neg(c)) = neg(ZERO) = ZERO
+          @c-characterized |
+            rational.nonzero(c) iff (not (c = ZERO))
+            [using specialize rational.nonzeroMeaning(c)]
+          @c-is-not-zero |
+            not (c = ZERO)
+            [using tautology c-characterized c-nonzero]
           @given-neg-c-is-zero |
             assume rational.neg(c) = ZERO {
               @neg-c-is-zero |
@@ -2203,12 +2251,12 @@ proof
               @the-double-negation |
                 rational.neg(rational.neg(c)) = c
                 [using specialize rational.negNeg(c)]
-              @c-is-the-double-negation |
+              @c-is-neg-neg-c |
                 c = rational.neg(rational.neg(c))
                 [by symmetry the-double-negation]
               @c-is-neg-zero |
                 c = rational.neg(ZERO)
-                [by rewrite neg-c-is-zero c-is-the-double-negation]
+                [by rewrite neg-c-is-zero c-is-neg-neg-c]
               @neg-zero-is-zero |
                 rational.neg(ZERO) = ZERO
                 [using import(rational) negZero]
@@ -2216,50 +2264,134 @@ proof
                 c = ZERO
                 [using simplify c-is-neg-zero neg-zero-is-zero]
             }
-          @neg-c-nonzero |
+          @neg-c-is-not-zero |
             not (rational.neg(c) = ZERO)
-            [by contradiction given-neg-c-is-zero c-is-zero c-nonzero]
-          @neg-c-inverts |
-            rational.mul(rational.neg(c),
-              rational.recip(rational.neg(c))) = rational.ONE
-            [using specialize rational.fieldInverse(rational.neg(c)) neg-c-nonzero]
-          // the two negations cancel, so neg(recip(c)) is also an inverse
-          @the-two-negations-cancel |
-            rational.mul(rational.neg(c),
-              rational.neg(rational.recip(c))) =
-              rational.mul(c, rational.recip(c))
-            [using polynomial(rational)]
-          @the-negation-inverts |
-            rational.mul(rational.neg(c),
-              rational.neg(rational.recip(c))) = rational.ONE
-            [using simplify the-two-negations-cancel c-inverts]
-          @the-two-agree |
-            rational.mul(rational.neg(c),
-              rational.recip(rational.neg(c))) =
-              rational.mul(rational.neg(c),
-              rational.neg(rational.recip(c)))
-            [using simplify neg-c-inverts the-negation-inverts]
-          @conclusion-the-reciprocal |
-            rational.recip(rational.neg(c)) =
+            [by contradiction given-neg-c-is-zero c-is-zero c-is-not-zero]
+          @neg-c-characterized |
+            rational.nonzero(rational.neg(c)) iff (not (rational.neg(c) = ZERO))
+            [using specialize rational.nonzeroMeaning(rational.neg(c))]
+          @conclusion-neg-c-is-nonzero |
+            rational.nonzero(rational.neg(c))
+            [using tautology neg-c-characterized neg-c-is-not-zero]
+        }
+      @nonzero-implies-neg-nonzero |
+        rational.nonzero(c) -> rational.nonzero(rational.neg(c))
+        [by discharge given-c-nonzero]
+    }
+  @conclusion |
+    forall c: Q; rational.nonzero(c) -> rational.nonzero(rational.neg(c))
+    [by generalize generalize-c]
+qed
+
+// BOTH nonzero facts are antecedents: the conclusion writes `recip(neg(c))` and `recip(c)`,
+// so it owes a guard on each term, and `nonzero(c)` does not syntactically supply
+// `nonzero(neg(c))` even though it implies it (the proof derives that implication inside).
+theorem theReciprocalOfANegation: forall c: Q;
+  rational.nonzero(c) -> rational.nonzero(rational.neg(c)) ->
+  rational.recip(rational.neg(c)) = rational.neg(rational.recip(c))
+proof
+  @generalize-c |
+    fix c: Q {
+      @given-c-nonzero |
+        assume rational.nonzero(c) {
+          @given-neg-c-nonzero |
+            assume rational.nonzero(rational.neg(c)) {
+              @c-nonzero |
+                rational.nonzero(c)
+                [by hypothesis given-c-nonzero]
+              @c-inverts |
+                rational.mul(c, rational.recip(c)) = rational.ONE
+                [using specialize rational.fieldInverse(c) c-nonzero]
+              // neg(c) is nonzero too: otherwise c = neg(neg(c)) = neg(ZERO) = ZERO
+              @given-neg-c-is-zero |
+                assume rational.neg(c) = ZERO {
+                  @neg-c-is-zero |
+                    rational.neg(c) = ZERO
+                    [by hypothesis given-neg-c-is-zero]
+                  @the-double-negation |
+                    rational.neg(rational.neg(c)) = c
+                    [using specialize rational.negNeg(c)]
+                  @c-is-the-double-negation |
+                    c = rational.neg(rational.neg(c))
+                    [by symmetry the-double-negation]
+                  @c-is-neg-zero |
+                    c = rational.neg(ZERO)
+                    [by rewrite neg-c-is-zero c-is-the-double-negation]
+                  @neg-zero-is-zero |
+                    rational.neg(ZERO) = ZERO
+                    [using import(rational) negZero]
+                  @c-is-zero |
+                    c = ZERO
+                    [using simplify c-is-neg-zero neg-zero-is-zero]
+                }
+              // `contradiction` needs the DISEQUATION form of the hypothesis, which is now the
+              // predicate — the characterization moves between them.
+              @c-characterized |
+                rational.nonzero(c) iff (not (c = ZERO))
+                [using specialize rational.nonzeroMeaning(c)]
+              @c-is-not-zero |
+                not (c = ZERO)
+                [using tautology c-characterized c-nonzero]
+              @neg-c-nonzero |
+                not (rational.neg(c) = ZERO)
+                [by contradiction given-neg-c-is-zero c-is-zero c-is-not-zero]
+              // as the PREDICATE `recip` is guarded by — a `contradiction` yields the
+              // disequation, and the guard is matched syntactically.
+              @neg-c-characterized |
+                rational.nonzero(rational.neg(c)) iff (not (rational.neg(c) = ZERO))
+                [using specialize rational.nonzeroMeaning(rational.neg(c))]
+              @neg-c-is-nonzero |
+                rational.nonzero(rational.neg(c))
+                [using tautology neg-c-characterized neg-c-nonzero]
+              @neg-c-inverts |
+                rational.mul(rational.neg(c),
+                  rational.recip(rational.neg(c))) = rational.ONE
+                [using specialize rational.fieldInverse(rational.neg(c)) neg-c-is-nonzero]
+              // the two negations cancel, so neg(recip(c)) is also an inverse
+              @the-two-negations-cancel |
+                rational.mul(rational.neg(c),
+                  rational.neg(rational.recip(c))) =
+                  rational.mul(c, rational.recip(c))
+                [using polynomial(rational)]
+              @the-negation-inverts |
+                rational.mul(rational.neg(c),
+                  rational.neg(rational.recip(c))) = rational.ONE
+                [using simplify the-two-negations-cancel c-inverts]
+              @the-two-agree |
+                rational.mul(rational.neg(c),
+                  rational.recip(rational.neg(c))) =
+                  rational.mul(rational.neg(c),
+                  rational.neg(rational.recip(c)))
+                [using simplify neg-c-inverts the-negation-inverts]
+              @conclusion-the-reciprocal |
+                rational.recip(rational.neg(c)) =
+                  rational.neg(rational.recip(c))
+                [using specialize aNonzeroFactorCancels(rational.neg(c), rational.recip(rational.neg(c)), rational.neg(rational.recip(c))) neg-c-is-nonzero the-two-agree]
+            }
+          @neg-nonzero-implies |
+            rational.nonzero(rational.neg(c)) ->
+              rational.recip(rational.neg(c)) =
               rational.neg(rational.recip(c))
-            [using specialize aNonzeroFactorCancels(rational.neg(c), rational.recip(rational.neg(c)), rational.neg(rational.recip(c))) neg-c-nonzero the-two-agree]
+            [by discharge given-neg-c-nonzero]
         }
       @nonzero-implies |
-        (not (c = ZERO)) ->
+        rational.nonzero(c) -> rational.nonzero(rational.neg(c)) ->
           rational.recip(rational.neg(c)) =
           rational.neg(rational.recip(c))
         [by discharge given-c-nonzero]
     }
   @conclusion |
     forall c: Q;
-      (not (c = ZERO)) ->
+      rational.nonzero(c) -> rational.nonzero(rational.neg(c)) ->
       rational.recip(rational.neg(c)) = rational.neg(rational.recip(c))
     [by generalize generalize-c]
 qed
 
 // The fraction itself is unchanged when both halves flip sign.
+// Both guards lead: the conclusion writes `recip(neg(c))` and `recip(c)`, so it owes one on
+// each — `aNegationOfANonzeroIsNonzero` is how a caller supplies the second.
 theorem theFractionSurvivesASignFlip: forall b, c: Q;
-  (not (c = ZERO)) ->
+  rational.nonzero(c) -> rational.nonzero(rational.neg(c)) ->
   rational.mul(rational.neg(b), rational.recip(rational.neg(c))) =
   rational.mul(b, rational.recip(c))
 proof
@@ -2268,27 +2400,39 @@ proof
       @generalize-c |
         fix c: Q {
           @given-c-nonzero |
-            assume not (c = ZERO) {
-              @c-nonzero |
-                not (c = ZERO)
-                [by hypothesis given-c-nonzero]
-              @the-reciprocal-flips |
-                rational.recip(rational.neg(c)) =
-                  rational.neg(rational.recip(c))
-                [using specialize theReciprocalOfANegation(c) c-nonzero]
-              @the-negations-cancel |
-                rational.mul(rational.neg(b),
-                  rational.neg(rational.recip(c))) =
-                  rational.mul(b, rational.recip(c))
-                [using polynomial(rational)]
-              @conclusion-unchanged |
-                rational.mul(rational.neg(b),
+            assume rational.nonzero(c) {
+              @given-neg-c-nonzero |
+                assume rational.nonzero(rational.neg(c)) {
+                  @c-nonzero |
+                    rational.nonzero(c)
+                    [by hypothesis given-c-nonzero]
+                  @neg-c-is-nonzero |
+                    rational.nonzero(rational.neg(c))
+                    [by hypothesis given-neg-c-nonzero]
+                  @the-reciprocal-flips |
+                    rational.recip(rational.neg(c)) =
+                      rational.neg(rational.recip(c))
+                    [using specialize theReciprocalOfANegation(c) c-nonzero neg-c-is-nonzero]
+                  @the-negations-cancel |
+                    rational.mul(rational.neg(b),
+                      rational.neg(rational.recip(c))) =
+                      rational.mul(b, rational.recip(c))
+                    [using polynomial(rational)]
+                  @conclusion-unchanged |
+                    rational.mul(rational.neg(b),
+                      rational.recip(rational.neg(c))) =
+                      rational.mul(b, rational.recip(c))
+                    [by rewrite the-reciprocal-flips the-negations-cancel]
+                }
+              @neg-nonzero-implies |
+                rational.nonzero(rational.neg(c)) ->
+                  rational.mul(rational.neg(b),
                   rational.recip(rational.neg(c))) =
                   rational.mul(b, rational.recip(c))
-                [by rewrite the-reciprocal-flips the-negations-cancel]
+                [by discharge given-neg-c-nonzero]
             }
           @nonzero-implies |
-            (not (c = ZERO)) ->
+            rational.nonzero(c) -> rational.nonzero(rational.neg(c)) ->
               rational.mul(rational.neg(b),
               rational.recip(rational.neg(c))) =
               rational.mul(b, rational.recip(c))
@@ -2296,7 +2440,7 @@ proof
         }
       @discharge-c |
         forall c9: Q;
-          (not (c9 = ZERO)) ->
+          rational.nonzero(c9) -> rational.nonzero(rational.neg(c9)) ->
           rational.mul(rational.neg(b),
           rational.recip(rational.neg(c9))) =
           rational.mul(b, rational.recip(c9))
@@ -2304,7 +2448,7 @@ proof
     }
   @conclusion |
     forall b, c: Q;
-      (not (c = ZERO)) ->
+      rational.nonzero(c) -> rational.nonzero(rational.neg(c)) ->
       rational.mul(rational.neg(b), rational.recip(rational.neg(c))) =
       rational.mul(b, rational.recip(c))
     [by generalize generalize-b]
@@ -2498,7 +2642,7 @@ qed
 
 // d·e | d with d nonzero forces e | ONE: write d = (d·e)·m, regroup to d·(e·m), cancel d.
 theorem cancellingTheDivisorLeavesAUnit: forall d, e: Q;
-  (not (d = rational.ZERO)) ->
+  rational.nonzero(d) ->
   dividesIntegrally(rational.mul(d, e), d) ->
   dividesIntegrally(e, ONE)
 proof
@@ -2507,9 +2651,9 @@ proof
       @generalize-e |
         fix e: Q {
           @given-d-nonzero |
-            assume not (d = rational.ZERO) {
+            assume rational.nonzero(d) {
               @d-nonzero |
-                not (d = rational.ZERO)
+                rational.nonzero(d)
                 [by hypothesis given-d-nonzero]
               @given-the-division |
                 assume dividesIntegrally(rational.mul(d, e), d) {
@@ -2580,21 +2724,21 @@ proof
                 [by discharge given-the-division]
             }
           @nonzero-implies |
-            (not (d = rational.ZERO)) ->
+            rational.nonzero(d) ->
               dividesIntegrally(rational.mul(d, e), d) ->
               dividesIntegrally(e, ONE)
             [by discharge given-d-nonzero]
         }
       @discharge-e |
         forall e9: Q;
-          (not (d = rational.ZERO)) ->
+          rational.nonzero(d) ->
           dividesIntegrally(rational.mul(d, e9), d) ->
           dividesIntegrally(e9, ONE)
         [by generalize generalize-e]
     }
   @conclusion |
     forall d, e: Q;
-      (not (d = rational.ZERO)) ->
+      rational.nonzero(d) ->
       dividesIntegrally(rational.mul(d, e), d) ->
       dividesIntegrally(e, ONE)
     [by generalize generalize-d]
@@ -2631,7 +2775,7 @@ proof
                           @the-maximal-meaning |
                             isAMaximalCommonDivisorUpTo(d, s, n) iff
                               (isInteger(d) and less_than(ZERO, d) and
-                              (not (d = rational.ZERO)) and
+                              rational.nonzero(d) and
                               isACommonDivisorUpTo(d, s, n) and
                               (forall e2: Q; isInteger(e2) ->
                               isACommonDivisorUpTo(e2, s, n) ->
@@ -2639,7 +2783,7 @@ proof
                             [using specialize maximalCommonDivisorMeaning(d, s, n)]
                           @the-maximal-parts |
                             isInteger(d) and less_than(ZERO, d) and
-                              (not (d = rational.ZERO)) and
+                              rational.nonzero(d) and
                               isACommonDivisorUpTo(d, s, n) and
                               (forall e2: Q; isInteger(e2) ->
                               isACommonDivisorUpTo(e2, s, n) ->
@@ -2649,7 +2793,7 @@ proof
                             isInteger(d)
                             [using tautology the-maximal-parts]
                           @d-is-nonzero |
-                            not (d = rational.ZERO)
+                            rational.nonzero(d)
                             [using tautology the-maximal-parts]
                           @maximality |
                             forall e2: Q; isInteger(e2) ->
@@ -2892,7 +3036,7 @@ pred isAMaximalCommonDivisorOfThePair(g: Q, a: Q, b: Q)
 axiom pairDivisorMeaning: forall g, a, b: Q;
   isAMaximalCommonDivisorOfThePair(g, a, b) iff
   (isInteger(g) and less_than(ZERO, g) and
-  (not (g = rational.ZERO)) and
+  rational.nonzero(g) and
   dividesIntegrally(g, a) and dividesIntegrally(g, b) and
   (forall e: Q; isInteger(e) -> dividesIntegrally(e, a) ->
   dividesIntegrally(e, b) -> dividesIntegrally(e, g)))
@@ -2926,7 +3070,7 @@ proof
                               @the-pair-meaning |
                                 isAMaximalCommonDivisorOfThePair(g, a, b) iff
                                   (isInteger(g) and less_than(ZERO, g) and
-                                  (not (g = rational.ZERO)) and
+                                  rational.nonzero(g) and
                                   dividesIntegrally(g, a) and
                                   dividesIntegrally(g, b) and
                                   (forall e2: Q; isInteger(e2) ->
@@ -2936,7 +3080,7 @@ proof
                                 [using specialize pairDivisorMeaning(g, a, b)]
                               @the-pair-parts |
                                 isInteger(g) and less_than(ZERO, g) and
-                                  (not (g = rational.ZERO)) and
+                                  rational.nonzero(g) and
                                   dividesIntegrally(g, a) and
                                   dividesIntegrally(g, b) and
                                   (forall e2: Q; isInteger(e2) ->
@@ -2948,7 +3092,7 @@ proof
                                 isInteger(g)
                                 [using tautology the-pair-parts]
                               @g-is-nonzero |
-                                not (g = rational.ZERO)
+                                rational.nonzero(g)
                                 [using tautology the-pair-parts]
                               @pair-maximality |
                                 forall e2: Q; isInteger(e2) ->
@@ -5106,7 +5250,7 @@ qed
 // product of the coefficients' denominators and each denominator is nonzero. Induction on the
 // bound, using ℚ's `noZeroDivisors`.
 theorem theProductOfNonzerosIsNonzero: forall s: QSeq; forall n: Nat;
-  (forall i: Nat; nat_less_than(i, n) -> (not (qat(s, i) = ZERO))) ->
+  (forall i: Nat; nat_less_than(i, n) -> rational.nonzero(qat(s, i))) ->
   (not (qProductUpTo(s, n) = ZERO))
 proof
   @generalize-s |
@@ -5114,7 +5258,7 @@ proof
       // base: the empty product is ONE, and ONE is not ZERO
       @base-case-proof |
         assume forall i: Nat; nat_less_than(i, NAT_ZERO) ->
-          (not (qat(s, i) = ZERO)) {
+          rational.nonzero(qat(s, i)) {
           @the-empty-product |
             qProductUpTo(s, NAT_ZERO) = ONE
             [using specialize qProductUpToZero(s)]
@@ -5127,7 +5271,7 @@ proof
         }
       @base-case |
         (forall i: Nat; nat_less_than(i, NAT_ZERO) ->
-          (not (qat(s, i) = ZERO))) ->
+          rational.nonzero(qat(s, i))) ->
           (not (qProductUpTo(s, NAT_ZERO) = ZERO))
         [by discharge base-case-proof]
 
@@ -5135,19 +5279,19 @@ proof
         fix k: Nat {
           @given-inductive-hypothesis |
             assume (forall i: Nat; nat_less_than(i, k) ->
-              (not (qat(s, i) = ZERO))) ->
+              rational.nonzero(qat(s, i))) ->
               (not (qProductUpTo(s, k) = ZERO)) {
               @inductive-hypothesis |
                 (forall i: Nat; nat_less_than(i, k) ->
-                  (not (qat(s, i) = ZERO))) ->
+                  rational.nonzero(qat(s, i))) ->
                   (not (qProductUpTo(s, k) = ZERO))
                 [by hypothesis given-inductive-hypothesis]
               @given-all-nonzero |
                 assume forall i: Nat; nat_less_than(i, nat_succ(k)) ->
-                  (not (qat(s, i) = ZERO)) {
+                  rational.nonzero(qat(s, i)) {
                   @all-nonzero |
                     forall i: Nat; nat_less_than(i, nat_succ(k)) ->
-                      (not (qat(s, i) = ZERO))
+                      rational.nonzero(qat(s, i))
                     [by hypothesis given-all-nonzero]
                   @k-below-its-successor |
                     nat_less_than(k, nat_succ(k))
@@ -5164,23 +5308,31 @@ proof
                             nat_less_than(i, nat_succ(k))
                             [using specialize peano_order.lessThanTransitive(i, k, nat_succ(k)) i-below-k k-below-its-successor]
                           @conclusion-this-nonzero |
-                            not (qat(s, i) = ZERO)
+                            rational.nonzero(qat(s, i))
                             [using specialize all-nonzero(i) i-below-succ-k]
                         }
                       @below-k-implies |
-                        nat_less_than(i, k) -> (not (qat(s, i) = ZERO))
+                        nat_less_than(i, k) -> rational.nonzero(qat(s, i))
                         [by discharge given-i-below-k]
                     }
                   @all-below-k-nonzero |
                     forall i: Nat; nat_less_than(i, k) ->
-                      (not (qat(s, i) = ZERO))
+                      rational.nonzero(qat(s, i))
                     [by generalize below-k-nonzero]
                   @the-partial-is-nonzero |
                     not (qProductUpTo(s, k) = ZERO)
                     [by modus_ponens inductive-hypothesis all-below-k-nonzero]
                   @the-k-th-is-nonzero |
-                    not (qat(s, k) = ZERO)
+                    rational.nonzero(qat(s, k))
                     [using specialize all-nonzero(k) k-below-its-successor]
+                  // the DISEQUATION form too: `ex_falso` below needs the literal negation,
+                  // which the predicate does not supply syntactically.
+                  @the-k-th-characterized |
+                    rational.nonzero(qat(s, k)) iff (not (qat(s, k) = ZERO))
+                    [using specialize rational.nonzeroMeaning(qat(s, k))]
+                  @the-k-th-is-not-zero |
+                    not (qat(s, k) = ZERO)
+                    [using tautology the-k-th-characterized the-k-th-is-nonzero]
                   @the-next-product |
                     qProductUpTo(s, nat_succ(k)) =
                       rational.mul(qProductUpTo(s, k), qat(s, k))
@@ -5217,7 +5369,7 @@ proof
                                 [by hypothesis when-the-entry-vanishes]
                               @conclusion-impossible-entry |
                                 ONE = ZERO
-                                [by ex_falso the-entry-vanishes the-k-th-is-nonzero]
+                                [by ex_falso the-entry-vanishes the-k-th-is-not-zero]
                             }
                         }
                     }
@@ -5230,38 +5382,38 @@ proof
                 }
               @conclusion-step-implication |
                 (forall i: Nat; nat_less_than(i, nat_succ(k)) ->
-                  (not (qat(s, i) = ZERO))) ->
+                  rational.nonzero(qat(s, i))) ->
                   (not (qProductUpTo(s, nat_succ(k)) = ZERO))
                 [by discharge given-all-nonzero]
             }
           @induction-step-at-k |
             ((forall i: Nat; nat_less_than(i, k) ->
-              (not (qat(s, i) = ZERO))) ->
+              rational.nonzero(qat(s, i))) ->
               (not (qProductUpTo(s, k) = ZERO))) ->
               ((forall i: Nat; nat_less_than(i, nat_succ(k)) ->
-              (not (qat(s, i) = ZERO))) ->
+              rational.nonzero(qat(s, i))) ->
               (not (qProductUpTo(s, nat_succ(k)) = ZERO)))
             [by discharge given-inductive-hypothesis]
         }
       @induction-step-for-all-k |
         forall k: Nat;
           ((forall i: Nat; nat_less_than(i, k) ->
-          (not (qat(s, i) = ZERO))) ->
+          rational.nonzero(qat(s, i))) ->
           (not (qProductUpTo(s, k) = ZERO))) ->
           ((forall i: Nat; nat_less_than(i, nat_succ(k)) ->
-          (not (qat(s, i) = ZERO))) ->
+          rational.nonzero(qat(s, i))) ->
           (not (qProductUpTo(s, nat_succ(k)) = ZERO)))
         [by generalize induction-step]
       @all-bounds |
         forall n: Nat;
           (forall i: Nat; nat_less_than(i, n) ->
-          (not (qat(s, i) = ZERO))) ->
+          rational.nonzero(qat(s, i))) ->
           (not (qProductUpTo(s, n) = ZERO))
-        [using instantiation peano.induction((fun z: Nat => ((forall i: Nat; nat_less_than(i, z) -> (not (qat(s, i) = ZERO))) -> (not (qProductUpTo(s, z) = ZERO))))) base-case induction-step-for-all-k]
+        [using instantiation peano.induction((fun z: Nat => ((forall i: Nat; nat_less_than(i, z) -> rational.nonzero(qat(s, i))) -> (not (qProductUpTo(s, z) = ZERO))))) base-case induction-step-for-all-k]
     }
   @conclusion |
     forall s: QSeq; forall n: Nat;
-      (forall i: Nat; nat_less_than(i, n) -> (not (qat(s, i) = ZERO))) ->
+      (forall i: Nat; nat_less_than(i, n) -> rational.nonzero(qat(s, i))) ->
       (not (qProductUpTo(s, n) = ZERO))
     [by generalize generalize-s]
 qed
@@ -6267,7 +6419,7 @@ proof
                         isADenominatorFor(i, qat(t, i)) iff
                           (isInteger(qat(t, i)) and
                           less_than(ZERO, qat(t, i)) and
-                          (not (qat(t, i) = ZERO)) and
+                          rational.nonzero(qat(t, i)) and
                           (exists b: Q; isInteger(b) and
                           qpoly.qcoeff(theSubject, i) =
                           rational.mul(b, recip(qat(t, i)))))
@@ -6306,7 +6458,7 @@ qed
 
 theorem aDenominatorIsNonzero: forall t: QSeq; forall n: Nat;
   (forall i: Nat; nat_less_than(i, n) -> isADenominatorFor(i, qat(t, i))) ->
-  (forall i: Nat; nat_less_than(i, n) -> (not (qat(t, i) = ZERO)))
+  (forall i: Nat; nat_less_than(i, n) -> rational.nonzero(qat(t, i)))
 proof
   @generalize-t |
     fix t: QSeq {
@@ -6333,29 +6485,29 @@ proof
                         isADenominatorFor(i, qat(t, i)) iff
                           (isInteger(qat(t, i)) and
                           less_than(ZERO, qat(t, i)) and
-                          (not (qat(t, i) = ZERO)) and
+                          rational.nonzero(qat(t, i)) and
                           (exists b: Q; isInteger(b) and
                           qpoly.qcoeff(theSubject, i) =
                           rational.mul(b, recip(qat(t, i)))))
                         [using specialize denominatorMeaning(i, qat(t, i))]
                       @conclusion-nonzero |
-                        not (qat(t, i) = ZERO)
+                        rational.nonzero(qat(t, i))
                         [using tautology the-meaning the-spec-here]
                     }
                   @below-implies |
-                    nat_less_than(i, n) -> (not (qat(t, i) = ZERO))
+                    nat_less_than(i, n) -> rational.nonzero(qat(t, i))
                     [by discharge given-i-below]
                 }
               @conclusion-all |
                 forall i: Nat; nat_less_than(i, n) ->
-                  (not (qat(t, i) = ZERO))
+                  rational.nonzero(qat(t, i))
                 [by generalize each-index]
             }
           @the-implication |
             (forall i: Nat; nat_less_than(i, n) ->
               isADenominatorFor(i, qat(t, i))) ->
               (forall i: Nat; nat_less_than(i, n) ->
-              (not (qat(t, i) = ZERO)))
+              rational.nonzero(qat(t, i)))
             [by discharge given-the-denominators]
         }
       @discharge-n |
@@ -6363,13 +6515,13 @@ proof
           (forall i: Nat; nat_less_than(i, n9) ->
           isADenominatorFor(i, qat(t, i))) ->
           (forall i: Nat; nat_less_than(i, n9) ->
-          (not (qat(t, i) = ZERO)))
+          rational.nonzero(qat(t, i)))
         [by generalize generalize-n]
     }
   @conclusion |
     forall t: QSeq; forall n: Nat;
       (forall i: Nat; nat_less_than(i, n) -> isADenominatorFor(i, qat(t, i))) ->
-      (forall i: Nat; nat_less_than(i, n) -> (not (qat(t, i) = ZERO)))
+      (forall i: Nat; nat_less_than(i, n) -> rational.nonzero(qat(t, i)))
     [by generalize generalize-t]
 qed
 
@@ -6405,7 +6557,7 @@ proof
                         isADenominatorFor(i, qat(t, i)) iff
                           (isInteger(qat(t, i)) and
                           less_than(ZERO, qat(t, i)) and
-                          (not (qat(t, i) = ZERO)) and
+                          rational.nonzero(qat(t, i)) and
                           (exists b: Q; isInteger(b) and
                           qpoly.qcoeff(theSubject, i) =
                           rational.mul(b, recip(qat(t, i)))))
@@ -6582,7 +6734,7 @@ proof
             forall i: Nat; nat_less_than(i, n) -> isInteger(qat(t, i))
             [using specialize aDenominatorIsAPositiveInteger(t, n) the-denominators]
           @the-entries-are-nonzero |
-            forall i: Nat; nat_less_than(i, n) -> (not (qat(t, i) = ZERO))
+            forall i: Nat; nat_less_than(i, n) -> rational.nonzero(qat(t, i))
             [using specialize aDenominatorIsNonzero(t, n) the-denominators]
           // B: the product
           @the-product-is-an-integer |
@@ -7464,8 +7616,8 @@ proof
                                 qat(q, NAT_ZERO) = m
                                 [using tautology the-parts]
                               @d-is-nonzero |
-                                not (d = ZERO)
-                                [using specialize rational_integer_order.aPositiveIsNonzero(d) d-positive]
+                                rational.nonzero(d)
+                                [using specialize rational_integer_order.aPositiveIsNonzeroPredicate(d) d-positive]
                               // d divides s_0 integrally: s_0 = d * k, k an integer
                               @the-divisor-meaning |
                                 isACommonDivisorUpTo(d, s, n) iff
@@ -9633,8 +9785,8 @@ proof
                         aQuotientSequenceFor(d, s, q, n)
                         [using tautology the-setup]
                       @d-is-nonzero |
-                        not (d = ZERO)
-                        [using specialize rational_integer_order.aPositiveIsNonzero(d) d-positive]
+                        rational.nonzero(d)
+                        [using specialize rational_integer_order.aPositiveIsNonzeroPredicate(d) d-positive]
                       @the-divisor-meaning |
                         isACommonDivisorUpTo(d, s, n) iff
                           (forall i: Nat; nat_less_than(i, n) ->
@@ -10294,7 +10446,7 @@ qed
 // `whole = g·s`, and a product with a zero factor is zero.
 theorem theReducedFractionScalesTheCoefficient: forall coefficient, entry: Q;
   forall whole, d, g, r, s: Q;
-  (not (g = ZERO)) -> (not (s = ZERO)) ->
+  rational.nonzero(g) -> rational.nonzero(s) ->
   d = rational.mul(g, r) -> whole = rational.mul(g, s) ->
   rational.mul(whole, coefficient) = rational.mul(d, entry) ->
   coefficient = rational.mul(rational.mul(r, rational.recip(s)), entry)
@@ -10314,9 +10466,9 @@ proof
                           @generalize-s |
                             fix s: Q {
                               @given-g-nonzero |
-                                assume not (g = ZERO) {
+                                assume rational.nonzero(g) {
                                   @given-s-nonzero |
-                                    assume not (s = ZERO) {
+                                    assume rational.nonzero(s) {
                                       @given-d-factors |
                                         assume d = rational.mul(g, r) {
                                           @given-whole-factors |
@@ -10327,10 +10479,10 @@ proof
                                                   coefficient) =
                                                   rational.mul(d, entry) {
                                                   @g-nonzero |
-                                                    not (g = ZERO)
+                                                    rational.nonzero(g)
                                                     [by hypothesis given-g-nonzero]
                                                   @s-nonzero |
-                                                    not (s = ZERO)
+                                                    rational.nonzero(s)
                                                     [by hypothesis given-s-nonzero]
                                                   @d-factors |
                                                     d = rational.mul(g, r)
@@ -10392,8 +10544,7 @@ proof
                                                     [by rewrite the-right-regrouped the-left-rewritten]
                                                   @the-cancellation |
                                                     forall a, b, c: Q;
-                                                      (not (a =
-                                                      rational.ZERO)) ->
+                                                      rational.nonzero(a) ->
                                                       rational.mul(a, b) =
                                                       rational.mul(a, c) ->
                                                       b = c
@@ -10508,7 +10659,7 @@ proof
                                         [by discharge given-d-factors]
                                     }
                                   @s-implies |
-                                    (not (s = ZERO)) ->
+                                    rational.nonzero(s) ->
                                       ((d = rational.mul(g, r)) ->
                                       ((whole = rational.mul(g, s)) ->
                                       ((rational.mul(whole, coefficient) =
@@ -10519,8 +10670,8 @@ proof
                                     [by discharge given-s-nonzero]
                                 }
                               @the-implication |
-                                (not (g = ZERO)) ->
-                                  ((not (s = ZERO)) ->
+                                rational.nonzero(g) ->
+                                  (rational.nonzero(s) ->
                                   ((d = rational.mul(g, r)) ->
                                   ((whole = rational.mul(g, s)) ->
                                   ((rational.mul(whole, coefficient) =
@@ -10532,8 +10683,8 @@ proof
                             }
                           @discharge-s |
                             forall s9: Q;
-                              (not (g = ZERO)) ->
-                              ((not (s9 = ZERO)) ->
+                              rational.nonzero(g) ->
+                              (rational.nonzero(s9) ->
                               ((d = rational.mul(g, r)) ->
                               ((whole = rational.mul(g, s9)) ->
                               ((rational.mul(whole, coefficient) =
@@ -10545,8 +10696,8 @@ proof
                         }
                       @discharge-r |
                         forall r9, s9: Q;
-                          (not (g = ZERO)) ->
-                          ((not (s9 = ZERO)) ->
+                          rational.nonzero(g) ->
+                          (rational.nonzero(s9) ->
                           ((d = rational.mul(g, r9)) ->
                           ((whole = rational.mul(g, s9)) ->
                           ((rational.mul(whole, coefficient) =
@@ -10558,8 +10709,8 @@ proof
                     }
                   @discharge-g |
                     forall g9, r9, s9: Q;
-                      (not (g9 = ZERO)) ->
-                      ((not (s9 = ZERO)) ->
+                      rational.nonzero(g9) ->
+                      (rational.nonzero(s9) ->
                       ((d = rational.mul(g9, r9)) ->
                       ((whole = rational.mul(g9, s9)) ->
                       ((rational.mul(whole, coefficient) =
@@ -10571,8 +10722,8 @@ proof
                 }
               @discharge-d |
                 forall d9, g9, r9, s9: Q;
-                  (not (g9 = ZERO)) ->
-                  ((not (s9 = ZERO)) ->
+                  rational.nonzero(g9) ->
+                  (rational.nonzero(s9) ->
                   ((d9 = rational.mul(g9, r9)) ->
                   ((whole = rational.mul(g9, s9)) ->
                   ((rational.mul(whole, coefficient) =
@@ -10584,8 +10735,8 @@ proof
             }
           @discharge-whole |
             forall whole9, d9, g9, r9, s9: Q;
-              (not (g9 = ZERO)) ->
-              ((not (s9 = ZERO)) ->
+              rational.nonzero(g9) ->
+              (rational.nonzero(s9) ->
               ((d9 = rational.mul(g9, r9)) ->
               ((whole9 = rational.mul(g9, s9)) ->
               ((rational.mul(whole9, coefficient) =
@@ -10597,8 +10748,8 @@ proof
         }
       @discharge-entry |
         forall entry9: Q; forall whole9, d9, g9, r9, s9: Q;
-          (not (g9 = ZERO)) ->
-          ((not (s9 = ZERO)) ->
+          rational.nonzero(g9) ->
+          (rational.nonzero(s9) ->
           ((d9 = rational.mul(g9, r9)) ->
           ((whole9 = rational.mul(g9, s9)) ->
           ((rational.mul(whole9, coefficient) =
@@ -10610,7 +10761,7 @@ proof
     }
   @conclusion |
     forall coefficient, entry: Q; forall whole, d, g, r, s: Q;
-      (not (g = ZERO)) -> (not (s = ZERO)) ->
+      rational.nonzero(g) -> rational.nonzero(s) ->
       d = rational.mul(g, r) -> whole = rational.mul(g, s) ->
       rational.mul(whole, coefficient) = rational.mul(d, entry) ->
       coefficient = rational.mul(rational.mul(r, rational.recip(s)), entry)
@@ -10624,7 +10775,7 @@ qed
 // across the index range is all this does.
 theorem theScalingHoldsBelowTheBound: forall u, qseq: QSeq; forall n: Nat;
   forall whole, d, g, r, s: Q;
-  (not (g = ZERO)) -> (not (s = ZERO)) ->
+  rational.nonzero(g) -> rational.nonzero(s) ->
   d = rational.mul(g, r) -> whole = rational.mul(g, s) ->
   (forall i: Nat; nat_less_than(i, n) ->
   qat(u, i) = rational.mul(whole, qpoly.qcoeff(theSubject, i))) ->
@@ -10651,8 +10802,8 @@ proof
                               @generalize-s |
                                 fix s: Q {
                                   @given-the-setup |
-                                    assume (not (g = ZERO)) and
-                                      (not (s = ZERO)) and
+                                    assume rational.nonzero(g) and
+                                      rational.nonzero(s) and
                                       d = rational.mul(g, r) and
                                       whole = rational.mul(g, s) and
                                       (forall i: Nat;
@@ -10664,8 +10815,8 @@ proof
                                       qat(u, i) = rational.mul(d,
                                       qat(qseq, i))) {
                                       @the-setup |
-                                        (not (g = ZERO)) and
-                                          (not (s = ZERO)) and
+                                        rational.nonzero(g) and
+                                          rational.nonzero(s) and
                                           d = rational.mul(g, r) and
                                           whole = rational.mul(g, s) and
                                           (forall i: Nat;
@@ -10678,10 +10829,10 @@ proof
                                           qat(qseq, i)))
                                         [by hypothesis given-the-setup]
                                       @g-nonzero |
-                                        not (g = ZERO)
+                                        rational.nonzero(g)
                                         [using tautology the-setup]
                                       @s-nonzero |
-                                        not (s = ZERO)
+                                        rational.nonzero(s)
                                         [using tautology the-setup]
                                       @d-factors |
                                         d = rational.mul(g, r)
@@ -10704,8 +10855,8 @@ proof
                                       @the-scaling-lemma |
                                         forall coefficient, entry: Q;
                                           forall whole2, d2, g2, r2, s2: Q;
-                                          (not (g2 = ZERO)) ->
-                                          (not (s2 = ZERO)) ->
+                                          rational.nonzero(g2) ->
+                                          rational.nonzero(s2) ->
                                           d2 = rational.mul(g2, r2) ->
                                           whole2 = rational.mul(g2, s2) ->
                                           rational.mul(whole2,
@@ -10769,8 +10920,8 @@ proof
                                         [by generalize each-index]
                                     }
                                   @the-implication |
-                                    ((not (g = ZERO)) and
-                                      (not (s = ZERO)) and
+                                    (rational.nonzero(g) and
+                                      rational.nonzero(s) and
                                       d = rational.mul(g, r) and
                                       whole = rational.mul(g, s) and
                                       (forall i: Nat;
@@ -10788,8 +10939,8 @@ proof
                                       rational.recip(s)), qat(qseq, i)))
                                     [by discharge given-the-setup]
                                   @curried |
-                                    (not (g = ZERO)) ->
-                                      (not (s = ZERO)) ->
+                                    rational.nonzero(g) ->
+                                      rational.nonzero(s) ->
                                       d = rational.mul(g, r) ->
                                       whole = rational.mul(g, s) ->
                                       (forall i: Nat;
@@ -10809,8 +10960,8 @@ proof
                                 }
                               @discharge-s |
                                 forall s9: Q;
-                                  (not (g = ZERO)) ->
-                                  (not (s9 = ZERO)) ->
+                                  rational.nonzero(g) ->
+                                  rational.nonzero(s9) ->
                                   d = rational.mul(g, r) ->
                                   whole = rational.mul(g, s9) ->
                                   (forall i: Nat; nat_less_than(i, n) ->
@@ -10827,8 +10978,8 @@ proof
                             }
                           @discharge-r |
                             forall r9, s9: Q;
-                              (not (g = ZERO)) ->
-                              (not (s9 = ZERO)) ->
+                              rational.nonzero(g) ->
+                              rational.nonzero(s9) ->
                               d = rational.mul(g, r9) ->
                               whole = rational.mul(g, s9) ->
                               (forall i: Nat; nat_less_than(i, n) ->
@@ -10844,8 +10995,8 @@ proof
                         }
                       @discharge-g |
                         forall g9, r9, s9: Q;
-                          (not (g9 = ZERO)) ->
-                          (not (s9 = ZERO)) ->
+                          rational.nonzero(g9) ->
+                          rational.nonzero(s9) ->
                           d = rational.mul(g9, r9) ->
                           whole = rational.mul(g9, s9) ->
                           (forall i: Nat; nat_less_than(i, n) ->
@@ -10861,8 +11012,8 @@ proof
                     }
                   @discharge-d |
                     forall d9, g9, r9, s9: Q;
-                      (not (g9 = ZERO)) ->
-                      (not (s9 = ZERO)) ->
+                      rational.nonzero(g9) ->
+                      rational.nonzero(s9) ->
                       d9 = rational.mul(g9, r9) ->
                       whole = rational.mul(g9, s9) ->
                       (forall i: Nat; nat_less_than(i, n) ->
@@ -10878,8 +11029,8 @@ proof
                 }
               @discharge-whole |
                 forall whole9, d9, g9, r9, s9: Q;
-                  (not (g9 = ZERO)) ->
-                  (not (s9 = ZERO)) ->
+                  rational.nonzero(g9) ->
+                  rational.nonzero(s9) ->
                   d9 = rational.mul(g9, r9) ->
                   whole9 = rational.mul(g9, s9) ->
                   (forall i: Nat; nat_less_than(i, n) ->
@@ -10895,8 +11046,8 @@ proof
             }
           @discharge-n |
             forall n9: Nat; forall whole9, d9, g9, r9, s9: Q;
-              (not (g9 = ZERO)) ->
-              (not (s9 = ZERO)) ->
+              rational.nonzero(g9) ->
+              rational.nonzero(s9) ->
               d9 = rational.mul(g9, r9) ->
               whole9 = rational.mul(g9, s9) ->
               (forall i: Nat; nat_less_than(i, n9) ->
@@ -10912,8 +11063,8 @@ proof
         }
       @discharge-qseq |
         forall qseq9: QSeq; forall n9: Nat; forall whole9, d9, g9, r9, s9: Q;
-          (not (g9 = ZERO)) ->
-          (not (s9 = ZERO)) ->
+          rational.nonzero(g9) ->
+          rational.nonzero(s9) ->
           d9 = rational.mul(g9, r9) ->
           whole9 = rational.mul(g9, s9) ->
           (forall i: Nat; nat_less_than(i, n9) ->
@@ -10929,7 +11080,7 @@ proof
     }
   @conclusion |
     forall u, qseq: QSeq; forall n: Nat; forall whole, d, g, r, s: Q;
-      (not (g = ZERO)) -> (not (s = ZERO)) ->
+      rational.nonzero(g) -> rational.nonzero(s) ->
       d = rational.mul(g, r) -> whole = rational.mul(g, s) ->
       (forall i: Nat; nat_less_than(i, n) ->
       qat(u, i) = rational.mul(whole, qpoly.qcoeff(theSubject, i))) ->
@@ -11080,7 +11231,7 @@ qed
 theorem theDecompositionFromTheDivisor: forall u, qseq: QSeq; forall n: Nat;
   forall whole, d: Q;
   qpoly.qdegreeAtMost(theSubject, n) ->
-  isInteger(whole) -> (not (whole = ZERO)) ->
+  isInteger(whole) -> rational.nonzero(whole) ->
   isInteger(d) -> less_than(ZERO, d) ->
   (forall i: Nat; nat_less_than(i, nat_succ(n)) -> isInteger(qat(qseq, i))) ->
   theQuotientsAreCoprime(qseq, nat_succ(n)) ->
@@ -11104,7 +11255,7 @@ proof
                       @given-the-setup |
                         assume qpoly.qdegreeAtMost(theSubject, n) and
                           isInteger(whole) and
-                          (not (whole = ZERO)) and isInteger(d) and
+                          rational.nonzero(whole) and isInteger(d) and
                           less_than(ZERO, d) and
                           (forall i: Nat;
                           nat_less_than(i, nat_succ(n)) ->
@@ -11120,7 +11271,7 @@ proof
                           @the-setup |
                             qpoly.qdegreeAtMost(theSubject, n) and
                               isInteger(whole) and
-                              (not (whole = ZERO)) and isInteger(d) and
+                              rational.nonzero(whole) and isInteger(d) and
                               less_than(ZERO, d) and
                               (forall i: Nat;
                               nat_less_than(i, nat_succ(n)) ->
@@ -11142,7 +11293,7 @@ proof
                             isInteger(whole)
                             [using tautology the-setup]
                           @whole-is-nonzero |
-                            not (whole = ZERO)
+                            rational.nonzero(whole)
                             [using tautology the-setup]
                           @d-is-an-integer |
                             isInteger(d)
@@ -11235,8 +11386,8 @@ proof
                                           r, s)
                                         [using tautology the-reduction]
                                       @g-is-nonzero |
-                                        not (g = ZERO)
-                                        [using specialize rational_integer_order.aPositiveIsNonzero(g) g-is-positive]
+                                        rational.nonzero(g)
+                                        [using specialize rational_integer_order.aPositiveIsNonzeroPredicate(g) g-is-positive]
                                       // s != ZERO: whole = g·s, so s = ZERO would
                                       // make whole = ZERO
                                       @given-s-is-zero |
@@ -11254,9 +11405,22 @@ proof
                                             whole = ZERO
                                             [using simplify whole-is-g-times-zero g-times-zero]
                                         }
-                                      @s-is-nonzero |
+                                      // `contradiction` needs the literal negation
+                                      @whole-characterized |
+                                        rational.nonzero(whole) iff (not (whole = ZERO))
+                                        [using specialize rational.nonzeroMeaning(whole)]
+                                      @whole-is-not-zero |
+                                        not (whole = ZERO)
+                                        [using tautology whole-characterized whole-is-nonzero]
+                                      @s-is-not-zero |
                                         not (s = ZERO)
-                                        [by contradiction given-s-is-zero whole-is-zero whole-is-nonzero]
+                                        [by contradiction given-s-is-zero whole-is-zero whole-is-not-zero]
+                                      @s-characterized |
+                                        rational.nonzero(s) iff (not (s = ZERO))
+                                        [using specialize rational.nonzeroMeaning(s)]
+                                      @s-is-nonzero |
+                                        rational.nonzero(s)
+                                        [using tautology s-characterized s-is-not-zero]
 
                                       // STAGE D: the quotient sequence as a
                                       // degree-bounded polynomial
@@ -11417,7 +11581,7 @@ proof
                                               nat_succ(n)) iff
                                               (isInteger(r) and
                                               isInteger(s) and
-                                              s != ZERO and
+                                              rational.nonzero(s) and
                                               qpoly.hasIntegerCoefficientsUpTo(
                                               qp, nat_succ(n)) and
                                               qpoly.coefficientsAreRelativelyPrimeUpTo(
@@ -11485,7 +11649,7 @@ proof
                       @the-implication |
                         (qpoly.qdegreeAtMost(theSubject, n) and
                           isInteger(whole) and
-                          (not (whole = ZERO)) and isInteger(d) and
+                          rational.nonzero(whole) and isInteger(d) and
                           less_than(ZERO, d) and
                           (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
                           isInteger(qat(qseq, i))) and
@@ -11501,7 +11665,7 @@ proof
                         [by discharge given-the-setup]
                       @curried |
                         qpoly.qdegreeAtMost(theSubject, n) ->
-                          isInteger(whole) -> (not (whole = ZERO)) ->
+                          isInteger(whole) -> rational.nonzero(whole) ->
                           isInteger(d) -> less_than(ZERO, d) ->
                           (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
                           isInteger(qat(qseq, i))) ->
@@ -11519,7 +11683,7 @@ proof
                   @discharge-d |
                     forall d9: Q;
                       qpoly.qdegreeAtMost(theSubject, n) ->
-                      isInteger(whole) -> (not (whole = ZERO)) ->
+                      isInteger(whole) -> rational.nonzero(whole) ->
                       isInteger(d9) -> less_than(ZERO, d9) ->
                       (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
                       isInteger(qat(qseq, i))) ->
@@ -11537,7 +11701,7 @@ proof
               @discharge-whole |
                 forall whole9, d9: Q;
                   qpoly.qdegreeAtMost(theSubject, n) ->
-                  isInteger(whole9) -> (not (whole9 = ZERO)) ->
+                  isInteger(whole9) -> rational.nonzero(whole9) ->
                   isInteger(d9) -> less_than(ZERO, d9) ->
                   (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
                   isInteger(qat(qseq, i))) ->
@@ -11555,7 +11719,7 @@ proof
           @discharge-n |
             forall n9: Nat; forall whole9, d9: Q;
               qpoly.qdegreeAtMost(theSubject, n9) ->
-              isInteger(whole9) -> (not (whole9 = ZERO)) ->
+              isInteger(whole9) -> rational.nonzero(whole9) ->
               isInteger(d9) -> less_than(ZERO, d9) ->
               (forall i: Nat; nat_less_than(i, nat_succ(n9)) ->
               isInteger(qat(qseq, i))) ->
@@ -11573,7 +11737,7 @@ proof
       @discharge-qseq |
         forall qseq9: QSeq; forall n9: Nat; forall whole9, d9: Q;
           qpoly.qdegreeAtMost(theSubject, n9) ->
-          isInteger(whole9) -> (not (whole9 = ZERO)) ->
+          isInteger(whole9) -> rational.nonzero(whole9) ->
           isInteger(d9) -> less_than(ZERO, d9) ->
           (forall i: Nat; nat_less_than(i, nat_succ(n9)) ->
           isInteger(qat(qseq9, i))) ->
@@ -11591,7 +11755,7 @@ proof
   @conclusion |
     forall u, qseq: QSeq; forall n: Nat; forall whole, d: Q;
       qpoly.qdegreeAtMost(theSubject, n) ->
-      isInteger(whole) -> (not (whole = ZERO)) ->
+      isInteger(whole) -> rational.nonzero(whole) ->
       isInteger(d) -> less_than(ZERO, d) ->
       (forall i: Nat; nat_less_than(i, nat_succ(n)) ->
       isInteger(qat(qseq, i))) ->
@@ -11698,9 +11862,15 @@ proof
                     not less_than(ZERO, ZERO)
                     [using specialize rational.lessThanIrreflexive(ZERO)]
                 }
-              @whole-is-nonzero |
+              @whole-is-not-zero |
                 not (whole = ZERO)
                 [by contradiction given-whole-is-zero zero-below-zero zero-is-not-below-zero]
+              @whole-characterized-here |
+                rational.nonzero(whole) iff (not (whole = ZERO))
+                [using specialize rational.nonzeroMeaning(whole)]
+              @whole-is-nonzero |
+                rational.nonzero(whole)
+                [using tautology whole-characterized-here whole-is-not-zero]
 
               // the bound is a successor, so it is positive — stage B needs that
               @zero-below-the-bound |
@@ -12937,7 +13107,7 @@ qed
 theorem theNumeratorDividesTheConstantTerm: forall p: qpoly.QPoly;
   forall r, s: Q; forall n: Nat;
   isInteger(r) -> isInteger(s) -> less_than(ZERO, r) ->
-  (not (s = ZERO)) ->
+  rational.nonzero(s) ->
   (forall i: Nat; isInteger(qpoly.qcoeff(p, i))) ->
   qpoly.arePairwiseRelativelyPrime(r, s) ->
   qpoly.qclearedSum(p, r, s, nat_succ(n)) = ZERO ->
@@ -12953,7 +13123,7 @@ proof
                 fix n: Nat {
                   @given-the-setup |
                     assume isInteger(r) and isInteger(s) and
-                      less_than(ZERO, r) and (not (s = ZERO)) and
+                      less_than(ZERO, r) and rational.nonzero(s) and
                       (forall i: Nat;
                       isInteger(qpoly.qcoeff(p, i))) and
                       qpoly.arePairwiseRelativelyPrime(r, s) and
@@ -12962,7 +13132,7 @@ proof
                       @the-setup |
                         isInteger(r) and isInteger(s) and
                           less_than(ZERO, r) and
-                          (not (s = ZERO)) and
+                          rational.nonzero(s) and
                           (forall i: Nat;
                           isInteger(qpoly.qcoeff(p, i))) and
                           qpoly.arePairwiseRelativelyPrime(r, s) and
@@ -13187,7 +13357,7 @@ proof
                     }
                   @the-implication |
                     (isInteger(r) and isInteger(s) and
-                      less_than(ZERO, r) and (not (s = ZERO)) and
+                      less_than(ZERO, r) and rational.nonzero(s) and
                       (forall i: Nat;
                       isInteger(qpoly.qcoeff(p, i))) and
                       qpoly.arePairwiseRelativelyPrime(r, s) and
@@ -13198,7 +13368,7 @@ proof
                     [by discharge given-the-setup]
                   @curried |
                     isInteger(r) -> isInteger(s) ->
-                      less_than(ZERO, r) -> (not (s = ZERO)) ->
+                      less_than(ZERO, r) -> rational.nonzero(s) ->
                       (forall i: Nat;
                       isInteger(qpoly.qcoeff(p, i))) ->
                       qpoly.arePairwiseRelativelyPrime(r, s) ->
@@ -13211,7 +13381,7 @@ proof
               @discharge-n |
                 forall n9: Nat;
                   isInteger(r) -> isInteger(s) ->
-                  less_than(ZERO, r) -> (not (s = ZERO)) ->
+                  less_than(ZERO, r) -> rational.nonzero(s) ->
                   (forall i: Nat; isInteger(qpoly.qcoeff(p, i))) ->
                   qpoly.arePairwiseRelativelyPrime(r, s) ->
                   qpoly.qclearedSum(p, r, s, nat_succ(n9)) = ZERO ->
@@ -13221,7 +13391,7 @@ proof
           @discharge-s |
             forall s9: Q; forall n9: Nat;
               isInteger(r) -> isInteger(s9) ->
-              less_than(ZERO, r) -> (not (s9 = ZERO)) ->
+              less_than(ZERO, r) -> rational.nonzero(s9) ->
               (forall i: Nat; isInteger(qpoly.qcoeff(p, i))) ->
               qpoly.arePairwiseRelativelyPrime(r, s9) ->
               qpoly.qclearedSum(p, r, s9, nat_succ(n9)) = ZERO ->
@@ -13231,7 +13401,7 @@ proof
       @discharge-r |
         forall r9, s9: Q; forall n9: Nat;
           isInteger(r9) -> isInteger(s9) ->
-          less_than(ZERO, r9) -> (not (s9 = ZERO)) ->
+          less_than(ZERO, r9) -> rational.nonzero(s9) ->
           (forall i: Nat; isInteger(qpoly.qcoeff(p, i))) ->
           qpoly.arePairwiseRelativelyPrime(r9, s9) ->
           qpoly.qclearedSum(p, r9, s9, nat_succ(n9)) = ZERO ->
@@ -13241,7 +13411,7 @@ proof
   @conclusion |
     forall p: qpoly.QPoly; forall r, s: Q; forall n: Nat;
       isInteger(r) -> isInteger(s) -> less_than(ZERO, r) ->
-      (not (s = ZERO)) ->
+      rational.nonzero(s) ->
       (forall i: Nat; isInteger(qpoly.qcoeff(p, i))) ->
       qpoly.arePairwiseRelativelyPrime(r, s) ->
       qpoly.qclearedSum(p, r, s, nat_succ(n)) = ZERO ->
@@ -13503,7 +13673,7 @@ qed
 theorem theDenominatorDividesTheLeadingCoefficient: forall p: qpoly.QPoly;
   forall r, s: Q; forall n: Nat;
   isInteger(r) -> isInteger(s) -> less_than(ZERO, r) ->
-  (not (s = ZERO)) ->
+  rational.nonzero(s) ->
   (forall i: Nat; isInteger(qpoly.qcoeff(p, i))) ->
   qpoly.arePairwiseRelativelyPrime(r, s) ->
   qpoly.qclearedSum(p, r, s, nat_succ(n)) = ZERO ->
@@ -13519,7 +13689,7 @@ proof
                 fix n: Nat {
                   @given-the-setup |
                     assume isInteger(r) and isInteger(s) and
-                      less_than(ZERO, r) and (not (s = ZERO)) and
+                      less_than(ZERO, r) and rational.nonzero(s) and
                       (forall i: Nat;
                       isInteger(qpoly.qcoeff(p, i))) and
                       qpoly.arePairwiseRelativelyPrime(r, s) and
@@ -13528,7 +13698,7 @@ proof
                       @the-setup |
                         isInteger(r) and isInteger(s) and
                           less_than(ZERO, r) and
-                          (not (s = ZERO)) and
+                          rational.nonzero(s) and
                           (forall i: Nat;
                           isInteger(qpoly.qcoeff(p, i))) and
                           qpoly.arePairwiseRelativelyPrime(r, s) and
@@ -13545,7 +13715,7 @@ proof
                         less_than(ZERO, r)
                         [using tautology the-setup]
                       @s-is-nonzero |
-                        not (s = ZERO)
+                        rational.nonzero(s)
                         [using tautology the-setup]
                       @the-coefficients-are-integers |
                         forall i: Nat;
@@ -13580,12 +13750,16 @@ proof
                           rational.mul(qpoly.qcoeff(p, n),
                           qpoly.qpower(r, n))) = ZERO
                         [using specialize rational.noZeroDivisors(s, rational.add(qpoly.qclearedSum(p, r, s, n), rational.mul(qpoly.qcoeff(p, n), qpoly.qpower(r, n)))) the-product-vanishes]
+                      // `tautology` sees `nonzero(s)` and `s = ZERO` as unrelated ATOMS
+                      @s-characterized-here |
+                        rational.nonzero(s) iff (not (s = ZERO))
+                        [using specialize rational.nonzeroMeaning(s)]
                       @the-cofactor-vanishes |
                         rational.add(
                           qpoly.qclearedSum(p, r, s, n),
                           rational.mul(qpoly.qcoeff(p, n),
                           qpoly.qpower(r, n))) = ZERO
-                        [using tautology a-factor-vanishes s-is-nonzero]
+                        [using tautology a-factor-vanishes s-is-nonzero s-characterized-here]
                       // so a_n·r^n = -S(n), which s divides
                       @the-sum-facts |
                         forall k: Nat;
@@ -13719,7 +13893,7 @@ proof
                     }
                   @the-implication |
                     (isInteger(r) and isInteger(s) and
-                      less_than(ZERO, r) and (not (s = ZERO)) and
+                      less_than(ZERO, r) and rational.nonzero(s) and
                       (forall i: Nat;
                       isInteger(qpoly.qcoeff(p, i))) and
                       qpoly.arePairwiseRelativelyPrime(r, s) and
@@ -13729,7 +13903,7 @@ proof
                     [by discharge given-the-setup]
                   @curried |
                     isInteger(r) -> isInteger(s) ->
-                      less_than(ZERO, r) -> (not (s = ZERO)) ->
+                      less_than(ZERO, r) -> rational.nonzero(s) ->
                       (forall i: Nat;
                       isInteger(qpoly.qcoeff(p, i))) ->
                       qpoly.arePairwiseRelativelyPrime(r, s) ->
@@ -13741,7 +13915,7 @@ proof
               @discharge-n |
                 forall n9: Nat;
                   isInteger(r) -> isInteger(s) ->
-                  less_than(ZERO, r) -> (not (s = ZERO)) ->
+                  less_than(ZERO, r) -> rational.nonzero(s) ->
                   (forall i: Nat; isInteger(qpoly.qcoeff(p, i))) ->
                   qpoly.arePairwiseRelativelyPrime(r, s) ->
                   qpoly.qclearedSum(p, r, s, nat_succ(n9)) = ZERO ->
@@ -13751,7 +13925,7 @@ proof
           @discharge-s |
             forall s9: Q; forall n9: Nat;
               isInteger(r) -> isInteger(s9) ->
-              less_than(ZERO, r) -> (not (s9 = ZERO)) ->
+              less_than(ZERO, r) -> rational.nonzero(s9) ->
               (forall i: Nat; isInteger(qpoly.qcoeff(p, i))) ->
               qpoly.arePairwiseRelativelyPrime(r, s9) ->
               qpoly.qclearedSum(p, r, s9, nat_succ(n9)) = ZERO ->
@@ -13761,7 +13935,7 @@ proof
       @discharge-r |
         forall r9, s9: Q; forall n9: Nat;
           isInteger(r9) -> isInteger(s9) ->
-          less_than(ZERO, r9) -> (not (s9 = ZERO)) ->
+          less_than(ZERO, r9) -> rational.nonzero(s9) ->
           (forall i: Nat; isInteger(qpoly.qcoeff(p, i))) ->
           qpoly.arePairwiseRelativelyPrime(r9, s9) ->
           qpoly.qclearedSum(p, r9, s9, nat_succ(n9)) = ZERO ->
@@ -13771,7 +13945,7 @@ proof
   @conclusion |
     forall p: qpoly.QPoly; forall r, s: Q; forall n: Nat;
       isInteger(r) -> isInteger(s) -> less_than(ZERO, r) ->
-      (not (s = ZERO)) ->
+      rational.nonzero(s) ->
       (forall i: Nat; isInteger(qpoly.qcoeff(p, i))) ->
       qpoly.arePairwiseRelativelyPrime(r, s) ->
       qpoly.qclearedSum(p, r, s, nat_succ(n)) = ZERO ->

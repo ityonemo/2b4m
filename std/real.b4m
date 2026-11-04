@@ -29,7 +29,21 @@ const ONE: Real
 func add(a: Real, b: Real) => Real
 func mul(a: Real, b: Real) => Real
 func neg(a: Real) => Real
-func recip(a: Real) => Real
+// `recip`'s GUARD, threaded down from std/group.b4m (see std/field.b4m): this layer
+// declares the predicate over its own sort and binds field's through the field model below,
+// so there is ONE definition and no layer's copy is a fresh assumption.
+pred nonzero(a: Real):
+  nonzero(a) iff (not (a = ZERO))
+
+// the clause under a citable name, for moving between the predicate and the disequation
+theorem nonzeroMeaning: forall a: Real; nonzero(a) iff (not (a = ZERO))
+proof
+  @conclusion |
+    forall a: Real; nonzero(a) iff (not (a = ZERO))
+    [by definition nonzero]
+qed
+
+func recip(a: Real) => Real requires nonzero(a)
 pred less_than(a: Real, b: Real)
 
 // -- ordered-field axioms (discharge the ordered-field model below) ----------
@@ -42,7 +56,7 @@ axiom mulAddDistribLeft: forall a, b, c: Real; mul(a, add(b, c)) = add(mul(a, b)
 axiom mulAddDistribRight: forall a, b, c: Real; mul(add(a, b), c) = add(mul(a, c), mul(b, c))
 axiom mulIsCommutative: forall a, b: Real; mul(a, b) = mul(b, a)
 axiom mulOneLeft: forall a: Real; mul(ONE, a) = a
-axiom fieldInverse: forall a: Real; a != ZERO -> mul(a, recip(a)) = ONE
+axiom fieldInverse: forall a: Real; nonzero(a) -> mul(a, recip(a)) = ONE
 axiom oneNotZero: ONE != ZERO
 axiom lessThanIrreflexive: forall a: Real; not less_than(a, a)
 axiom lessThanTransitive: forall a, b, c: Real; less_than(a, b) -> less_than(b, c) -> less_than(a, c)
@@ -62,6 +76,8 @@ model RealOrderedField {
   field_order.mul: mul
   field_order.neg: neg
   field_order.recip: recip
+  field_order.nonzero: nonzero
+  field_order.nonzero <- nonzero
   field_order.less_than: less_than
   field_order.addIsAssociative <- addIsAssociative
   field_order.addZeroLeft <- addZeroLeft
@@ -120,7 +136,7 @@ axiom isRationalOne: isRational(ONE)
 axiom isRationalAdd: forall a, b: Real; isRational(a) -> isRational(b) -> isRational(add(a, b))
 axiom isRationalMul: forall a, b: Real; isRational(a) -> isRational(b) -> isRational(mul(a, b))
 axiom isRationalNeg: forall a: Real; isRational(a) -> isRational(neg(a))
-axiom isRationalRecip: forall a: Real; isRational(a) -> a != ZERO -> isRational(recip(a))
+axiom isRationalRecip: forall a: Real; isRational(a) -> nonzero(a) -> isRational(recip(a))
 
 model RealField {
   field.Field: Real
@@ -130,6 +146,8 @@ model RealField {
   field.mul: mul
   field.neg: neg
   field.recip: recip
+  field.nonzero: nonzero
+  field.nonzero <- nonzero
   field.addIsAssociative <- addIsAssociative
   field.addZeroLeft <- addZeroLeft
   field.addNegLeft <- addNegLeft
@@ -737,34 +755,34 @@ qed
 // smoke test (containment predicate): a nonzero rational's reciprocal is a nonzero
 // rational — closure under recip together with no-zero-divisors keeps it nonzero
 // (if recip(a) were 0 then a·recip(a) = a·0 = 0, contradicting a·recip(a) = 1 ≠ 0).
-theorem isRationalRecipNonzero: forall a: Real; isRational(a) -> a != ZERO -> isRational(recip(a))
+theorem isRationalRecipNonzero: forall a: Real; isRational(a) -> nonzero(a) -> isRational(recip(a))
 proof
   @generalize-a |
     fix a: Real {
       @given-a-rational |
         assume isRational(a) {
           @given-a-nonzero |
-            assume a != ZERO {
+            assume nonzero(a) {
               @a-is-rational |
                 isRational(a)
                 [by hypothesis given-a-rational]
               @a-nonzero |
-                a != ZERO
+                nonzero(a)
                 [by hypothesis given-a-nonzero]
               @recip-is-rational |
                 isRational(recip(a))
                 [using specialize isRationalRecip(a) a-is-rational a-nonzero]
             }
           @a-nonzero-implies-recip-rational |
-            a != ZERO -> isRational(recip(a))
+            nonzero(a) -> isRational(recip(a))
             [by discharge given-a-nonzero]
         }
       @a-rational-implies-rest |
-        isRational(a) -> a != ZERO -> isRational(recip(a))
+        isRational(a) -> nonzero(a) -> isRational(recip(a))
         [by discharge given-a-rational]
     }
   @conclusion |
-    forall a: Real; isRational(a) -> a != ZERO -> isRational(recip(a))
+    forall a: Real; isRational(a) -> nonzero(a) -> isRational(recip(a))
     [by generalize generalize-a]
 qed
 
@@ -1414,7 +1432,6 @@ fact scaleIsProduct = scaling_theory.scaleIsProduct
 
 import real_units <<< "std/real/units.b4m"
 
-pred nonzero = real_units.nonzero
 sort RStar = real_units.RStar
 func pow = real_units.pow
 fact finiteOrderIsPlusOrMinusOne = real_units.finiteOrderIsPlusOrMinusOne

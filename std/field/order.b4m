@@ -21,7 +21,22 @@ const ONE: OrderedField
 func add(a: OrderedField, b: OrderedField) => OrderedField
 func mul(a: OrderedField, b: OrderedField) => OrderedField
 func neg(a: OrderedField) => OrderedField
-func recip(a: OrderedField) => OrderedField
+// `nonzero` and the guard it carries continue the chain group -> ring -> field -> here. A
+// DEFINITION BLOCK: a definitional obligation is overloadable only by another definition, so
+// once group's is one, every modelling layer's is — each states the clause over its OWN sort
+// and discharges the layer below's arm-for-arm.
+pred nonzero(a: OrderedField):
+  nonzero(a) iff (not (a = ZERO))
+
+// the clause under a citable name, for moving between the predicate and the disequation
+theorem nonzeroMeaning: forall a: OrderedField; nonzero(a) iff (not (a = ZERO))
+proof
+  @conclusion |
+    forall a: OrderedField; nonzero(a) iff (not (a = ZERO))
+    [by definition nonzero]
+qed
+
+func recip(a: OrderedField) => OrderedField requires nonzero(a)
 
 // -- field axioms (discharge the field model below) -------------------------
 axiom addIsAssociative: forall a, b, c: OrderedField; add(add(a, b), c) = add(a, add(b, c))
@@ -33,7 +48,7 @@ axiom mulAddDistribLeft: forall a, b, c: OrderedField; mul(a, add(b, c)) = add(m
 axiom mulAddDistribRight: forall a, b, c: OrderedField; mul(add(a, b), c) = add(mul(a, c), mul(b, c))
 axiom mulIsCommutative: forall a, b: OrderedField; mul(a, b) = mul(b, a)
 axiom mulOneLeft: forall a: OrderedField; mul(ONE, a) = a
-axiom fieldInverse: forall a: OrderedField; a != ZERO -> mul(a, recip(a)) = ONE
+axiom fieldInverse: forall a: OrderedField; nonzero(a) -> mul(a, recip(a)) = ONE
 axiom oneNotZero: ONE != ZERO
 
 model FieldIsOrdered {
@@ -44,6 +59,8 @@ model FieldIsOrdered {
   field.mul: mul
   field.neg: neg
   field.recip: recip
+  field.nonzero: nonzero
+  field.nonzero <- nonzero
   field.addIsAssociative <- addIsAssociative
   field.addZeroLeft <- addZeroLeft
   field.addNegLeft <- addNegLeft
@@ -296,10 +313,10 @@ proof
     [using model(FieldIsOrdered) field.addLeftSwap]
 qed
 
-theorem recipMulLeft: forall a: OrderedField; a != ZERO -> mul(recip(a), a) = ONE
+theorem recipMulLeft: forall a: OrderedField; nonzero(a) -> mul(recip(a), a) = ONE
 proof
   @conclusion |
-    forall a: OrderedField; a != ZERO -> mul(recip(a), a) = ONE
+    forall a: OrderedField; nonzero(a) -> mul(recip(a), a) = ONE
     [using model(FieldIsOrdered) field.recipMulLeft]
 qed
 
