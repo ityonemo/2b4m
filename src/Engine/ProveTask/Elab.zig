@@ -707,6 +707,10 @@ fn conjunctOf(self: *const Elab, k: TermId, prop: TermId) bool {
     return false;
 }
 
+/// Flip to true to trace every guard-obligation miss (proposition, lookup block, source
+/// offset) plus any same-text fact already taught. See ACCELERANT-GUARD-DISCHARGE-ISSUE.md.
+const guard_trace = false;
+
 fn requireKnown(self: *Elab, prop: TermId, loc: u32) Error!void {
     const known = self.known orelse return;
     // a proposition about a BOUND element (its subject mentions one of this formula's
@@ -718,6 +722,19 @@ fn requireKnown(self: *Elab, prop: TermId, loc: u32) Error!void {
     if (known.lookup(prop, self.known_block)) |t| {
         if (t.step) |s| known.reachable.append(self.arena, s) catch return error.OutOfMemory;
         return;
+    }
+    if (guard_trace) {
+        const rendered = self.renderProp(prop) catch "?";
+        std.debug.print("[guard-miss] prop={d} '{s}' at kb={d} loc={d} entries={d}\n", .{
+            @intFromEnum(prop), rendered, @intFromEnum(self.known_block), loc, known.entries.items.len,
+        });
+        for (known.entries.items) |t| {
+            const r2 = self.renderProp(t.prop) catch "?";
+            if (std.mem.eql(u8, r2, rendered))
+                std.debug.print("    SAME TEXT taught: prop={d} block={d} step={?d}\n", .{
+                    @intFromEnum(t.prop), @intFromEnum(t.block), t.step,
+                });
+        }
     }
     known.misses.append(self.arena, .{ .prop = prop, .loc = loc }) catch return error.OutOfMemory;
     known.missed = true;

@@ -1222,7 +1222,12 @@ qed
 pred isUnit(x: Zn)
 axiom isUnitCharacterization: forall x: Zn; isUnit(x) iff (exists y: Zn; mul(x, y) = ONE and mul(y, x) = ONE)
 sort Units = Zn where isUnit
-func unitInverse(x: Zn) => Zn
+// GUARDED by `isUnit`: in ℤ/n only the units are invertible, so `unitInverse` of a non-unit
+// is not a term one can write — an application owes `isUnit(x)` where it appears. Before this
+// the symbol was total with only its AXIOMS guarded, which left the value at a non-unit
+// unusable in a proof but still WRITABLE in a statement. A verified program could then invert
+// a residue it never proved coprime to the modulus.
+func unitInverse(x: Zn) => Zn requires isUnit(x)
 
 // on a unit, unitInverse is a two-sided inverse, and it is itself a unit.
 axiom unitInverseLeft: forall x: Units; mul(unitInverse(x), x) = ONE

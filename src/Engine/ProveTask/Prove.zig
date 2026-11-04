@@ -1216,6 +1216,21 @@ fn settleMisses(self: *Prove, e: *Elab, kb: kernel.BlockId) Error!void {
     self.known.misses.clearRetainingCapacity();
     var unresolved = false;
     for (misses) |m| {
+        // RE-LOOK-UP FIRST. A miss is recorded while a term is elaborated, but an
+        // ACCELERANT's generated intermediate terms are elaborated during
+        // `lowerJustification` — by which point `known` may already teach the guard from a
+        // step in scope. The original code only ever SETTLED a miss under a model transfer
+        // and otherwise went straight to the diagnostic, so a guard proved two steps above
+        // was reported as unproved: the symptom written up in SIMPLIFY-ISSUES.md, where a
+        // `simplify` owed `less_or_equal(j, i)` that an earlier step had proved.
+        //
+        // This is a pure RE-CHECK against the same visibility rule `requireKnown` uses
+        // (`Known.lookup`'s ancestor-or-self test), so it discharges nothing that was not
+        // already proved and visible — it just stops asking before the answer exists.
+        if (self.known.lookup(m.prop, kb)) |t| {
+            if (t.step) |st| self.known.reachable.append(self.ctx.arena, st) catch return error.OutOfMemory;
+            continue;
+        }
         if (self.model != InternPool.Index.none and self.model != .universe) {
             if (try self.dischargeGoal(kb, m.loc, m.prop)) |sref| {
                 try self.known.teach(self.ctx.arena, m.prop, kb, @intFromEnum(sref.id));

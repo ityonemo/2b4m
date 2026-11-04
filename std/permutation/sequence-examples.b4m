@@ -32,6 +32,7 @@ fact seqSingleton = permutation_sequence.seqSingleton
 fact seqConcat = permutation_sequence.seqConcat
 fact seqReverse = permutation_sequence.seqReverse
 fact invOfProduct = permutation_sequence.invOfProduct
+fact productUpToIsAPermutation = permutation_sequence.productUpToIsAPermutation
 
 // Every permutation is a length-one product: the singleton sequence [f].
 theorem everyPermutationIsASingletonProduct: forall f: Fn;
@@ -141,6 +142,13 @@ proof
     fix s: Seq {
       @generalize-n |
         fix n: Nat {
+          // `inverse` is GUARDED and the obligation lands in the step that EXITS the block
+          // below, elaborated in this parent. The partial product is a permutation with no
+          // hypothesis, so deriving it here — inside every `fix`, outside every block —
+          // serves the whole nesting.
+          @the-partial-product-is-a-permutation |
+            invertible(productUpTo(s, n))
+            [using specialize productUpToIsAPermutation(s, n)]
           @the-reversal-exists |
             exists r: Seq;
               (forall i: Nat; peano.less_than(i, n) -> at(r, i) = at(s, peano.sub(n, succ(i))))
@@ -155,6 +163,11 @@ proof
               @reversed-product |
                 productUpTo(r, n) = revProductUpTo(s, n)
                 [by and_rhs reversal-facts]
+              // `inverse` is GUARDED; every partial product of a sequence of permutations
+              // is itself a permutation, with no hypothesis.
+              @the-product-is-a-permutation |
+                invertible(productUpTo(s, n))
+                [using specialize productUpToIsAPermutation(s, n)]
               @inverse-is-the-reversed-product |
                 inverse(productUpTo(s, n)) = revProductUpTo(s, n)
                 [using specialize invOfProduct(s, n)]

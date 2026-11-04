@@ -261,78 +261,89 @@ proof
 qed
 
 // (g f)⁻¹ = f⁻¹ g⁻¹: f⁻¹ g⁻¹ is a left inverse of g f, and left inverses are the inverse.
+// `invertible(compose(g, f))` is an antecedent as well as the two factors'. It FOLLOWS from
+// them (`composeIsAPermutation`), but `inverse` is GUARDED and the conclusion writes
+// `inverse(compose(g, f))` in a DISCHARGED position — a guard there is read from the
+// antecedent, not from a derivation inside the proof. Callers hold both factors and get the
+// composite's invertibility from the closure lemma.
 theorem inverseOfComposite: forall g: Fn; forall f: Fn;
-  invertible(g) -> invertible(f) -> inverse(compose(g, f)) = compose(inverse(f), inverse(g))
+  invertible(compose(g, f)) -> invertible(g) -> invertible(f) -> inverse(compose(g, f)) = compose(inverse(f), inverse(g))
 proof
   @generalize-g |
     fix g: Fn {
       @generalize-f |
         fix f: Fn {
-          @given-g |
-            assume invertible(g) {
-              @given-f |
-                assume invertible(f) {
-                  @g-is-invertible |
-                    invertible(g)
-                    [by hypothesis given-g]
-                  @f-is-invertible |
-                    invertible(f)
-                    [by hypothesis given-f]
-                  @composite-is-invertible |
-                    invertible(compose(g, f))
-                    [using specialize composeIsAPermutation(g, f) g-is-invertible f-is-invertible]
-                  @g-inverse-undoes-g |
-                    compose(inverse(g), g) = identityFn
-                    [using specialize inverseLeft(g) g-is-invertible]
-                  @f-inverse-undoes-f |
-                    compose(inverse(f), f) = identityFn
-                    [using specialize inverseLeft(f) f-is-invertible]
-                  // (f⁻¹ g⁻¹)(g f) = f⁻¹ (g⁻¹ (g f)) = f⁻¹ ((g⁻¹ g) f) = f⁻¹ (id f) = f⁻¹ f = id
-                  @outer-associated |
-                    compose(compose(inverse(f), inverse(g)), compose(g, f)) = compose(inverse(f), compose(inverse(g), compose(g, f)))
-                    [using specialize composeAssoc(inverse(f), inverse(g), compose(g, f))]
-                  @inner-associated |
-                    compose(compose(inverse(g), g), f) = compose(inverse(g), compose(g, f))
-                    [using specialize composeAssoc(inverse(g), g, f)]
-                  @inner-associated-flipped |
-                    compose(inverse(g), compose(g, f)) = compose(compose(inverse(g), g), f)
-                    [by symmetry inner-associated]
-                  @inner-cancels |
-                    compose(inverse(g), compose(g, f)) = compose(identityFn, f)
-                    [by rewrite g-inverse-undoes-g inner-associated-flipped]
-                  @identity-drops |
-                    compose(identityFn, f) = f
-                    [using specialize composeIdentityLeft(f)]
-                  @inner-is-f |
-                    compose(inverse(g), compose(g, f)) = f
-                    [using chain inner-cancels identity-drops]
-                  @outer-is-f-inverse-f |
-                    compose(compose(inverse(f), inverse(g)), compose(g, f)) = compose(inverse(f), f)
-                    [by rewrite inner-is-f outer-associated]
-                  @candidate-is-a-left-inverse |
-                    compose(compose(inverse(f), inverse(g)), compose(g, f)) = identityFn
-                    [using chain outer-is-f-inverse-f f-inverse-undoes-f]
-                  @conclusion-candidate-is-the-inverse |
-                    compose(inverse(f), inverse(g)) = inverse(compose(g, f))
-                    [using specialize leftInverseIsTheInverse(compose(g, f), compose(inverse(f), inverse(g))) composite-is-invertible candidate-is-a-left-inverse]
-                  @conclusion-flipped |
-                    inverse(compose(g, f)) = compose(inverse(f), inverse(g))
-                    [by symmetry conclusion-candidate-is-the-inverse]
+          @given-composite |
+            assume invertible(compose(g, f)) {
+              @given-g |
+                assume invertible(g) {
+                  @given-f |
+                    assume invertible(f) {
+                      @g-is-invertible |
+                        invertible(g)
+                        [by hypothesis given-g]
+                      @f-is-invertible |
+                        invertible(f)
+                        [by hypothesis given-f]
+                      @composite-is-invertible |
+                        invertible(compose(g, f))
+                        [by hypothesis given-composite]
+                      @g-inverse-undoes-g |
+                        compose(inverse(g), g) = identityFn
+                        [using specialize inverseLeft(g) g-is-invertible]
+                      @f-inverse-undoes-f |
+                        compose(inverse(f), f) = identityFn
+                        [using specialize inverseLeft(f) f-is-invertible]
+                      // (f⁻¹ g⁻¹)(g f) = f⁻¹ (g⁻¹ (g f)) = f⁻¹ ((g⁻¹ g) f) = f⁻¹ (id f) = f⁻¹ f = id
+                      @outer-associated |
+                        compose(compose(inverse(f), inverse(g)), compose(g, f)) = compose(inverse(f), compose(inverse(g), compose(g, f)))
+                        [using specialize composeAssoc(inverse(f), inverse(g), compose(g, f))]
+                      @inner-associated |
+                        compose(compose(inverse(g), g), f) = compose(inverse(g), compose(g, f))
+                        [using specialize composeAssoc(inverse(g), g, f)]
+                      @inner-associated-flipped |
+                        compose(inverse(g), compose(g, f)) = compose(compose(inverse(g), g), f)
+                        [by symmetry inner-associated]
+                      @inner-cancels |
+                        compose(inverse(g), compose(g, f)) = compose(identityFn, f)
+                        [by rewrite g-inverse-undoes-g inner-associated-flipped]
+                      @identity-drops |
+                        compose(identityFn, f) = f
+                        [using specialize composeIdentityLeft(f)]
+                      @inner-is-f |
+                        compose(inverse(g), compose(g, f)) = f
+                        [using chain inner-cancels identity-drops]
+                      @outer-is-f-inverse-f |
+                        compose(compose(inverse(f), inverse(g)), compose(g, f)) = compose(inverse(f), f)
+                        [by rewrite inner-is-f outer-associated]
+                      @candidate-is-a-left-inverse |
+                        compose(compose(inverse(f), inverse(g)), compose(g, f)) = identityFn
+                        [using chain outer-is-f-inverse-f f-inverse-undoes-f]
+                      @conclusion-candidate-is-the-inverse |
+                        compose(inverse(f), inverse(g)) = inverse(compose(g, f))
+                        [using specialize leftInverseIsTheInverse(compose(g, f), compose(inverse(f), inverse(g))) composite-is-invertible candidate-is-a-left-inverse]
+                      @conclusion-flipped |
+                        inverse(compose(g, f)) = compose(inverse(f), inverse(g))
+                        [by symmetry conclusion-candidate-is-the-inverse]
+                    }
+                  @conclusion-f |
+                    invertible(f) -> inverse(compose(g, f)) = compose(inverse(f), inverse(g))
+                    [by discharge given-f]
                 }
-              @conclusion-f |
-                invertible(f) -> inverse(compose(g, f)) = compose(inverse(f), inverse(g))
-                [by discharge given-f]
+              @conclusion-g |
+                invertible(g) -> invertible(f) -> inverse(compose(g, f)) = compose(inverse(f), inverse(g))
+                [by discharge given-g]
             }
-          @conclusion-g |
-            invertible(g) -> invertible(f) -> inverse(compose(g, f)) = compose(inverse(f), inverse(g))
-            [by discharge given-g]
+          @conclusion-composite |
+            invertible(compose(g, f)) -> invertible(g) -> invertible(f) -> inverse(compose(g, f)) = compose(inverse(f), inverse(g))
+            [by discharge given-composite]
         }
       @discharge-f |
-        forall f: Fn; invertible(g) -> invertible(f) -> inverse(compose(g, f)) = compose(inverse(f), inverse(g))
+        forall f: Fn; invertible(compose(g, f)) -> invertible(g) -> invertible(f) -> inverse(compose(g, f)) = compose(inverse(f), inverse(g))
         [by generalize generalize-f]
     }
   @conclusion |
-    forall g: Fn; forall f: Fn; invertible(g) -> invertible(f) -> inverse(compose(g, f)) = compose(inverse(f), inverse(g))
+    forall g: Fn; forall f: Fn; invertible(compose(g, f)) -> invertible(g) -> invertible(f) -> inverse(compose(g, f)) = compose(inverse(f), inverse(g))
     [by generalize generalize-g]
 qed
 
@@ -369,6 +380,10 @@ model PermSeq {
 // The identity is its own inverse.
 theorem inverseOfIdentity: inverse(identityFn) = identityFn
 proof
+  // `inverse` is GUARDED, so even this writes an obligation — the identity is invertible.
+  @the-identity-is-invertible |
+    invertible(identityFn)
+    [using import(permutation) identityIsAPermutation]
   @conclusion |
     inverse(identityFn) = identityFn
     [using model(PermSeq) group_sequence.inverseIdentity]

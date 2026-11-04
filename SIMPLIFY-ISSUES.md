@@ -94,6 +94,16 @@ was isolated.
 - `--fast` admits these, so they surface only under strict check. That is correct (the guard
   genuinely is not discharged) but means the loop does not warn you.
 
+## The engine half
+
+**`ACCELERANT-GUARD-DISCHARGE-ISSUE.md` (2026-11-04) traces this through the engine** and
+finds the path it takes: an accelerant generates a synthetic SCHEMA whose obligations become
+ANTECEDENTS (`wrapObligations`), and the call site must discharge them via
+`withGuardPremises` → `dischargeGoal` → `refForKnown` → `Known.lookup`. That machinery exists
+and is on the path, so the fix belongs at the discharge end rather than in the tactic. It also
+records what was ruled out (block visibility, alpha-equivalence, a missing fact) and the one
+real bug found on the way, in `settleMisses`, now fixed.
+
 ## Related
 
 - `GUIDE.md`, `### WHAT A TACTIC IS GIVEN vs WHAT IT FINDS` — the rule this appears to violate
@@ -102,3 +112,69 @@ was isolated.
 - `NESTED-MODEL-COMPOSITION-ISSUE.md` — the sibling diagnostics problem: an incomplete model
   discharge also reports itself as a sort error in an unrelated file. (That file's original
   claim, that models cannot compose, was wrong and is retracted there.)
+
+## MEASURED 2026-11-03: `simplify` owes a guard no in-scope step can satisfy — WORKAROUND FOUND
+
+Hit three times during the `function.inverse` de-totalization, in
+`std/permutation/alternating-identities.b4m` (`theLongCycleCommutatorIsAThreeCycle`,
+`theTwoThreeCyclesCommutatorIsAFiveCycle`, `theTwoCycleCommutatorRegrouped`). Each is a
+`[using simplify image-a1 image-a2 image-a3 the-closed-form]` step whose formula writes
+`inverse(sigma)` and `inverse(inverse(sigma))`, reporting
+`unproved obligation: 'invertible(sigma)'`.
+
+**THE WORKAROUND: substitute the equations one at a time with `[by rewrite …]`.** Each
+`simplify` became three kernel `rewrite` steps — the same substitutions the tactic was doing,
+written out — and all three theorems now check strict. The guard is read normally on the
+kernel path. This is the same explicit-steps escape the rest of this file documents, and it is
+cheap here: three steps per site, no new lemmas.
+
+**What made it look unfixable.** Every placement that fixes the *discharged-conclusion* rule
+(which `ACCELERANT-GUARD-DISCHARGE-ISSUE.md` resolved as NOT A BUG) was tried first, and none
+moved the error: the fact restated as the step immediately above; `invertible(inverse(sigma))`
+added for the outer `inverse`; the binder retyped to the refined sort `Perm`; the guard read
+via `[by predicate …]`; the antecedent hoisted ahead of the point binders; the fact hoisted to
+the `fix`/`assume` boundary. So this is NOT the discharged-conclusion rule — teaching `known`
+at any depth cannot satisfy it.
+
+**Two diagnostics that localize it:**
+
+- **It is a `--fast`/strict divergence.** `check --fast <file> <theorem>` PASSES; strict
+  rejects. Under the standing invariant (`--fast` must never reject what strict certifies;
+  `--fast` may accept what strict rejects, but neither may accept something FALSE) this is the
+  permitted direction — the goals are true, now proved — but it places the obligation on the
+  CERTIFIER path, not the decision path.
+- **The guard-miss trace never sees it.** The instrumentation in `Elab.requireKnown` (now a
+  flip-to-true `guard_trace` constant in `src/Engine/ProveTask/Elab.zig`; recipe in
+  `ACCELERANT-GUARD-DISCHARGE-ISSUE.md`) prints nothing for these three sites while printing
+  freely for others in the same run. **So the obligation is not routed through `requireKnown`
+  at all** — which explains why no amount of teaching `known` helps, and is where a real fix
+  should look: `simplify`'s certifier builds its own terms and raises their guards on a path
+  that does not consult the step's context.
+
+**Status: all three theorems PROVED**, so the de-totalization pass is not blocked. What remains
+open is the engine behaviour, and it SHOULD be fixed rather than worked around (user, 2026-11-03:
+"it would be nice to make simplify work out of the box"). The workaround trades one tactic call
+for three hand-written kernel steps that spell out exactly what the tactic was already doing —
+a tactic owing a guard its caller cannot discharge is a defect, and the trace localizes it: the
+obligation bypasses `requireKnown`, so the fix belongs where `simplify`'s certifier builds its
+terms and raises their guards without consulting the step's context.
+
+## A second, cheaper pattern found in the same pass (NOT a bug)
+
+`[using specialize invInvolution(sigma) sigma-is-a-permutation]` fails with
+`unproved obligation: 'invertible(sigma)'` whenever the cited theorem binds its variable at a
+REFINED sort (`forall a: Perm`). `specialize` cannot read a refined binder's qualifier from a
+ref — the guard is looked up, never passed. Peel the binder explicitly instead:
+
+```2b4m
+@the-involution |
+  forall a: Perm; inverse(inverse(a)) = a
+  [by cite function_invertible.invInvolution]
+@double-inverse |
+  inverse(inverse(sigma)) = sigma
+  [by apply_at(sigma) the-involution]
+```
+
+This fixed four sites across `decomposition.b4m`, `normal-subgroup.b4m` and
+`alternating-identities.b4m`, and is worth reaching for before any restructuring: it is two
+steps and changes no statement.

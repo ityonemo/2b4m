@@ -58,15 +58,21 @@ axiom invertibleDef: forall f: Fn;
   invertible(f) iff
   (exists g: Fn; compose(g, f) = identityFn and compose(f, g) = identityFn)
 
-// the inverse map. `inverse` is a TOTAL symbol (every Fn has some `inverse(f)`),
-// but its behavior is only PINNED when f is invertible: then inverse(f) is the
-// two-sided inverse. For a non-invertible f, inverse(f) is an unconstrained
-// junk value (never reasoned about) — the standard way to name "f⁻¹" without a
-// choice/definite-description operator. The two axioms below say inverse(f) IS
-// a two-sided inverse whenever one exists; two-sided inverses are unique
-// (`aTwoSidedInverseIsUnique`, re-exported below), so this determines inverse(f)
-// exactly on the invertibles.
-func inverse(f: Fn) => Fn
+// the inverse map, GUARDED by `invertible`: only a bijection has an inverse, so
+// `inverse(f)` is not a term one can write without discharging `invertible(f)` where it
+// appears. The two axioms below then say what it IS, and two-sided inverses are unique
+// (`aTwoSidedInverseIsUnique`, re-exported below), so they determine it exactly.
+//
+// Before this the symbol was TOTAL with only its axioms guarded, and the comment here
+// defended `inverse(f)` at a non-invertible f as "an unconstrained junk value (never
+// reasoned about) — the standard way to name f⁻¹ without a choice operator". That is the
+// pattern the no-totalizing rule forbids: never-reasoned-about is a claim about today's
+// proofs, not a property of the symbol, and the value stays WRITABLE in a statement. A
+// verified program could invert a function it never proved bijective.
+//
+// Naming f⁻¹ without choice does not require totality — the guard supplies exactly the
+// hypothesis a choice operator would have needed, at the site that needs it.
+func inverse(f: Fn) => Fn requires invertible(f)
 
 // f invertible ⇒ inverse(f) ∘ f = id
 axiom inverseLeft: forall f: Fn; invertible(f) -> compose(inverse(f), f) = identityFn
