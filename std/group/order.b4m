@@ -751,9 +751,14 @@ proof
                 inverse(power(g, k)) = power(inverse(g), k)
                 [by symmetry inv-power]
               // inverse(power g k) = E ⟹ power g k = inverse(inverse(power g k)) = inverse(E) = E.
+              // `specialize` cannot read a refined binder's qualifier from a ref, and under a
+              // GUARDED model this theory's `Grp` becomes a refined sort with `inverse` guarded.
+              @the-involution |
+                forall b: Grp; inverse(inverse(b)) = b
+                [by cite group_power.invInvolution]
               @invol |
                 inverse(inverse(power(g, k))) = power(g, k)
-                [using specialize group_power.invInvolution(power(g, k))]
+                [by apply_at(power(g, k)) the-involution]
               @inv-of-e |
                 inverse(inverse(power(g, k))) = inverse(E)
                 [by rewrite inv-of-power-is-e invol-refl]
@@ -766,9 +771,16 @@ proof
               @power-is-inv-inv |
                 power(g, k) = inverse(inverse(power(g, k)))
                 [by symmetry invol]
+              // Spelled out with kernel rewrites rather than `chain`: a tactic raises the
+              // guards of the terms IT builds on a path that does not consult the step's
+              // context, so `inverse(inverse(power(g, k)))` re-owes a guard already proved
+              // right above (see SIMPLIFY-ISSUES.md).
+              @power-is-inverse-of-identity |
+                power(g, k) = inverse(E)
+                [by rewrite inv-of-e power-is-inv-inv]
               @conclusion-forward |
                 power(g, k) = E
-                [using chain power-is-inv-inv inv-of-e inverse-of-identity]
+                [by rewrite inverse-of-identity power-is-inverse-of-identity]
             }
           @given-g-kills |
             assume power(g, k) = E {
@@ -1038,9 +1050,15 @@ proof
           @inverse-of-conjugate-inner |
             inverse(op(inverse(g), a)) = op(inverse(a), inverse(inverse(g)))
             [using specialize group_power.invProduct(inverse(g), a)]
+          // `specialize` cannot read a refined binder's qualifier from a ref, and under a
+          // GUARDED model this theory's `Grp` becomes a refined sort with `inverse` guarded.
+          // cite + apply_at peels the binder and reads the guard normally.
+          @the-involution |
+            forall b: Grp; inverse(inverse(b)) = b
+            [by cite group_power.invInvolution]
           @inverse-twice |
             inverse(inverse(g)) = g
-            [using specialize group_power.invInvolution(g)]
+            [by apply_at(g) the-involution]
           @inverse-of-conjugate-inner-simplified |
             inverse(op(inverse(g), a)) = op(inverse(a), g)
             [by rewrite inverse-twice inverse-of-conjugate-inner]

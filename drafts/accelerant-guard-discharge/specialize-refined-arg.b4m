@@ -1,0 +1,49 @@
+// MINIMAL REPRO for ACCELERANT-GUARD-DISCHARGE-ISSUE.md. EXPECTED TO FAIL with
+//
+//   error: unproved obligation: 'invertible(f)'
+//
+// `specialize` cannot discharge a guard from a step in scope — here `@f-is-invertible`, which
+// is the enclosing assume's OWN hypothesis, restated two steps above the failure. Depth is not
+// the issue: this is the shallowest possible case.
+//
+// The contrast that localizes it: `@single-inverse-is-writable` writes `inverse(f)` directly
+// and discharges FINE, because an author-written term is checked against `known` by
+// `Elab.requireKnown`. Only the accelerant path fails, which is where a synthetic schema
+// states its obligations as ANTECEDENTS (`wrapObligations`) that the call site must then
+// discharge via `withGuardPremises` -> `dischargeGoal` -> `refForKnown`.
+//
+// Note `invInvolution` is quantified over the REFINED sort `InvFn`, exactly as
+// std/function/invertible.b4m's is — so applying it at a bare `Fn` is what raises the
+// obligation.
+sort Fn
+pred invertible(f: Fn)
+sort InvFn = Fn where invertible
+func inverse(f: Fn) => Fn requires invertible(f)
+
+// a lemma over the REFINED sort, as std/function/invertible.b4m's invInvolution is
+axiom invInvolution: forall a: InvFn; inverse(inverse(a)) = a
+
+theorem doubleInverseAtAnFn: forall f: Fn; invertible(f) -> inverse(inverse(f)) = f
+proof
+  @generalize-f |
+    fix f: Fn {
+      @given-invertible |
+        assume invertible(f) {
+          @f-is-invertible |
+            invertible(f)
+            [by hypothesis given-invertible]
+          @single-inverse-is-writable |
+            inverse(f) = inverse(f)
+            [by reflexivity]
+          @the-double-inverse |
+            inverse(inverse(f)) = f
+            [using specialize invInvolution(f) f-is-invertible]
+        }
+      @conclusion-impl |
+        invertible(f) -> inverse(inverse(f)) = f
+        [by discharge given-invertible]
+    }
+  @conclusion |
+    forall f: Fn; invertible(f) -> inverse(inverse(f)) = f
+    [by generalize generalize-f]
+qed

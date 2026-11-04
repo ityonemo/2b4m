@@ -245,6 +245,13 @@ proof
     fix s: Seq {
       @generalize-n |
         fix n: Nat {
+          // `inverse` is GUARDED and the obligation lands in the step that EXITS the block
+          // below, elaborated in this parent. The partial product is a permutation with no
+          // hypothesis, so deriving it here — inside every `fix`, outside every block —
+          // serves the whole nesting.
+          @the-partial-product-is-a-permutation |
+            invertible(productUpTo(s, n))
+            [using specialize productUpToIsAPermutation(s, n)]
           @given-all-transpositions |
             assume allTranspositions(s, n) {
               @the-reversal-exists |
@@ -264,6 +271,11 @@ proof
                   @product-is-the-reversed-product |
                     productUpTo(r, n) = revProductUpTo(s, n)
                     [by and_rhs reversal-properties]
+                  // `inverse` is GUARDED; every partial product of a sequence of
+                  // permutations is itself a permutation, with no hypothesis.
+                  @the-product-is-a-permutation |
+                    invertible(productUpTo(s, n))
+                    [using specialize productUpToIsAPermutation(s, n)]
                   @reversed-product-is-the-inverse |
                     inverse(productUpTo(s, n)) = revProductUpTo(s, n)
                     [using specialize invOfProduct(s, n)]
@@ -357,96 +369,113 @@ qed
 
 // Judson: "the inverse of any transposition is itself, so σ⁻¹ = σ_r ⋯ σ_1 is also in A_n" —
 // the reversed sequence, same length, hence the same parity.
-theorem inverseOfEvenIsEven: forall g: Fn; isEvenPerm(g) -> isEvenPerm(inverse(g))
+// `inverse` is GUARDED, so `invertible(g)` is stated as an antecedent: the conclusion
+// `isEvenPerm(inverse(g))` is discharged in blocks above where the factorization lives, and a
+// discharged conclusion reads its guard from its own antecedent LITERALLY — `isEvenPerm(g)`,
+// though it implies invertibility, is a different proposition.
+theorem inverseOfEvenIsEven: forall g: Fn;
+  invertible(g) -> isEvenPerm(g) -> isEvenPerm(inverse(g))
 proof
   @generalize-g |
     fix g: Fn {
-      @given-even |
-        assume isEvenPerm(g) {
-          @g-is-even |
-            isEvenPerm(g)
-            [by hypothesis given-even]
-          @what-even-means-for-g |
-            isEvenPerm(g) iff (exists s: Seq; exists m: Nat; allTranspositions(s, m) and productUpTo(s, m) = g and divides(TWO, m))
-            [using specialize isEvenPermDef(g)]
-          @the-witness |
-            exists s: Seq; exists m: Nat;
-              allTranspositions(s, m) and productUpTo(s, m) = g and divides(TWO, m)
-            [using tautology what-even-means-for-g g-is-even]
-          @with-sequence |
-            unpack s: Seq from the-witness {
-              @inner |
-                exists m: Nat; allTranspositions(s, m) and productUpTo(s, m) = g and divides(TWO, m)
-                [by hypothesis with-sequence]
-              @with-length |
-                unpack m: Nat from inner {
-                  @facts |
-                    allTranspositions(s, m) and productUpTo(s, m) = g and divides(TWO, m)
-                    [by hypothesis with-length]
-                  @first-two |
-                    allTranspositions(s, m) and productUpTo(s, m) = g
-                    [by and_lhs facts]
-                  @transpositions |
-                    allTranspositions(s, m)
-                    [by and_lhs first-two]
-                  @product-is-g |
-                    productUpTo(s, m) = g
-                    [by and_rhs first-two]
-                  @m-is-even |
-                    divides(TWO, m)
-                    [by and_rhs facts]
-                  // the REVERSED sequence: same length m, still transpositions, product g⁻¹
-                  @reversal-exists |
-                    exists r: Seq; allTranspositions(r, m) and productUpTo(r, m) = inverse(productUpTo(s, m))
-                    [using specialize reversedIsTranspositions(s, m) transpositions]
-                  @with-reversal |
-                    unpack r: Seq from reversal-exists {
-                      @reversal-facts |
-                        allTranspositions(r, m) and productUpTo(r, m) = inverse(productUpTo(s, m))
-                        [by hypothesis with-reversal]
-                      @r-transpositions |
-                        allTranspositions(r, m)
-                        [by and_lhs reversal-facts]
-                      @r-product |
-                        productUpTo(r, m) = inverse(productUpTo(s, m))
-                        [by and_rhs reversal-facts]
-                      @r-product-is-g-inverse |
-                        productUpTo(r, m) = inverse(g)
-                        [by rewrite product-is-g r-product]
-                      @r-all-three |
-                        allTranspositions(r, m) and productUpTo(r, m) = inverse(g) and divides(TWO, m)
-                        [using tautology r-transpositions r-product-is-g-inverse m-is-even]
-                      @inner-witness |
-                        exists m2: Nat; allTranspositions(r, m2) and productUpTo(r, m2) = inverse(g) and divides(TWO, m2)
-                        [by witness(m) r-all-three]
-                      @a-factorization-exists |
-                        exists r2: Seq; exists m2: Nat; allTranspositions(r2, m2) and productUpTo(r2, m2) = inverse(g) and divides(TWO, m2)
-                        [by witness(r) inner-witness]
-                      @what-even-means-for-the-inverse |
-                        isEvenPerm(inverse(g)) iff (exists r2: Seq; exists m2: Nat; allTranspositions(r2, m2) and productUpTo(r2, m2) = inverse(g) and divides(TWO, m2))
-                        [using specialize isEvenPermDef(inverse(g))]
-                      @conclusion-witness |
+      @given-invertible |
+        assume invertible(g) {
+          @given-even |
+            assume isEvenPerm(g) {
+              @g-is-even |
+                isEvenPerm(g)
+                [by hypothesis given-even]
+              @what-even-means-for-g |
+                isEvenPerm(g) iff (exists s: Seq; exists m: Nat; allTranspositions(s, m) and productUpTo(s, m) = g and divides(TWO, m))
+                [using specialize isEvenPermDef(g)]
+              @the-witness |
+                exists s: Seq; exists m: Nat;
+                  allTranspositions(s, m) and productUpTo(s, m) = g and divides(TWO, m)
+                [using tautology what-even-means-for-g g-is-even]
+              @with-sequence |
+                unpack s: Seq from the-witness {
+                  @inner |
+                    exists m: Nat; allTranspositions(s, m) and productUpTo(s, m) = g and divides(TWO, m)
+                    [by hypothesis with-sequence]
+                  @with-length |
+                    unpack m: Nat from inner {
+                      @facts |
+                        allTranspositions(s, m) and productUpTo(s, m) = g and divides(TWO, m)
+                        [by hypothesis with-length]
+                      @first-two |
+                        allTranspositions(s, m) and productUpTo(s, m) = g
+                        [by and_lhs facts]
+                      @transpositions |
+                        allTranspositions(s, m)
+                        [by and_lhs first-two]
+                      @product-is-g |
+                        productUpTo(s, m) = g
+                        [by and_rhs first-two]
+                      @m-is-even |
+                        divides(TWO, m)
+                        [by and_rhs facts]
+                      // the REVERSED sequence: same length m, still transpositions, product g⁻¹
+                      // `reversedIsTranspositions` concludes about `inverse(productUpTo(s, m))`, and
+                      // `inverse` is GUARDED. A partial product of permutations is a permutation with no
+                      // hypothesis, so the guard is available unconditionally.
+                      @the-partial-product-is-a-permutation |
+                        invertible(productUpTo(s, m))
+                        [using specialize productUpToIsAPermutation(s, m)]
+                      @reversal-exists |
+                        exists r: Seq; allTranspositions(r, m) and productUpTo(r, m) = inverse(productUpTo(s, m))
+                        [using specialize reversedIsTranspositions(s, m) transpositions]
+                      @with-reversal |
+                        unpack r: Seq from reversal-exists {
+                          @reversal-facts |
+                            allTranspositions(r, m) and productUpTo(r, m) = inverse(productUpTo(s, m))
+                            [by hypothesis with-reversal]
+                          @r-transpositions |
+                            allTranspositions(r, m)
+                            [by and_lhs reversal-facts]
+                          @r-product |
+                            productUpTo(r, m) = inverse(productUpTo(s, m))
+                            [by and_rhs reversal-facts]
+                          @r-product-is-g-inverse |
+                            productUpTo(r, m) = inverse(g)
+                            [by rewrite product-is-g r-product]
+                          @r-all-three |
+                            allTranspositions(r, m) and productUpTo(r, m) = inverse(g) and divides(TWO, m)
+                            [using tautology r-transpositions r-product-is-g-inverse m-is-even]
+                          @inner-witness |
+                            exists m2: Nat; allTranspositions(r, m2) and productUpTo(r, m2) = inverse(g) and divides(TWO, m2)
+                            [by witness(m) r-all-three]
+                          @a-factorization-exists |
+                            exists r2: Seq; exists m2: Nat; allTranspositions(r2, m2) and productUpTo(r2, m2) = inverse(g) and divides(TWO, m2)
+                            [by witness(r) inner-witness]
+                          @what-even-means-for-the-inverse |
+                            isEvenPerm(inverse(g)) iff (exists r2: Seq; exists m2: Nat; allTranspositions(r2, m2) and productUpTo(r2, m2) = inverse(g) and divides(TWO, m2))
+                            [using specialize isEvenPermDef(inverse(g))]
+                          @conclusion-witness |
+                            isEvenPerm(inverse(g))
+                            [using tautology what-even-means-for-the-inverse a-factorization-exists]
+                        }
+                      @conclusion-reversal |
                         isEvenPerm(inverse(g))
-                        [using tautology what-even-means-for-the-inverse a-factorization-exists]
+                        [by unpacked with-reversal]
                     }
-                  @conclusion-reversal |
+                  @conclusion-length |
                     isEvenPerm(inverse(g))
-                    [by unpacked with-reversal]
+                    [by unpacked with-length]
                 }
-              @conclusion-length |
+              @conclusion-sequence |
                 isEvenPerm(inverse(g))
-                [by unpacked with-length]
+                [by unpacked with-sequence]
             }
-          @conclusion-sequence |
-            isEvenPerm(inverse(g))
-            [by unpacked with-sequence]
+          @conclusion-even-gives-even |
+            isEvenPerm(g) -> isEvenPerm(inverse(g))
+            [by discharge given-even]
         }
       @conclusion-implication |
-        isEvenPerm(g) -> isEvenPerm(inverse(g))
-        [by discharge given-even]
+        invertible(g) -> isEvenPerm(g) -> isEvenPerm(inverse(g))
+        [by discharge given-invertible]
     }
   @conclusion |
-    forall g: Fn; isEvenPerm(g) -> isEvenPerm(inverse(g))
+    forall g: Fn; invertible(g) -> isEvenPerm(g) -> isEvenPerm(inverse(g))
     [by generalize generalize-g]
 qed
 
@@ -670,11 +699,14 @@ proof
     [using tautology what-membership-means both]
 qed
 
-theorem theAlternatingGroupIsClosedUnderInverses: forall g: Fn;
+// `inverse` is GUARDED, so `g` is bound at the REFINED sort `Perm` rather than carrying an
+// extra `invertible(g) ->` antecedent: the guard then comes from the binder, which keeps the
+// statement the shape `subgroup.subgroupClosedInverse` expects for a model discharge.
+theorem theAlternatingGroupIsClosedUnderInverses: forall g: Perm;
   inAlternating(g) -> inAlternating(inverse(g))
 proof
   @generalize-g |
-    fix g: Fn {
+    fix g: Perm {
       @given-in |
         assume inAlternating(g) {
           @g-is-in |
@@ -694,7 +726,7 @@ proof
             [using specialize inverseIsAPermutation(g) g-is-a-permutation]
           @the-inverse-is-even |
             isEvenPerm(inverse(g))
-            [using specialize inverseOfEvenIsEven(g) g-is-even]
+            [using specialize inverseOfEvenIsEven(g) g-is-a-permutation g-is-even]
           @both |
             invertible(inverse(g)) and isEvenPerm(inverse(g))
             [by both the-inverse-is-a-permutation the-inverse-is-even]
@@ -710,7 +742,7 @@ proof
         [by discharge given-in]
     }
   @conclusion |
-    forall g: Fn; inAlternating(g) -> inAlternating(inverse(g))
+    forall g: Perm; inAlternating(g) -> inAlternating(inverse(g))
     [by generalize generalize-g]
 qed
 
@@ -840,6 +872,12 @@ proof
                                                 divides(TWO, m)
                                                 [by hypothesis given-m-even]
                                               // σ⁻¹ as a transposition product: reverse s.
+                                              // `reversedIsTranspositions` concludes about `inverse(productUpTo(s, m))`, and
+                                              // `inverse` is GUARDED. A partial product of permutations is a permutation with no
+                                              // hypothesis, so the guard is available unconditionally.
+                                              @the-partial-product-is-a-permutation |
+                                                invertible(productUpTo(s, m))
+                                                [using specialize productUpToIsAPermutation(s, m)]
                                               @reversal-exists |
                                                 exists r: Seq; allTranspositions(r, m) and productUpTo(r, m) = inverse(productUpTo(s, m))
                                                 [using specialize reversedIsTranspositions(s, m) s-transpositions]
@@ -4269,12 +4307,15 @@ qed
 // homomorphism to Z/2, where sigma's sign cancels against sigma^-1's — but that needs the
 // parity-of-a-product law, which std does not yet carry. Closure by even conjugators is what
 // Lemma 10.9 below consumes.)
-theorem theAlternatingGroupIsClosedUnderConjugation: forall sigma: Fn; forall g: Fn;
+// `inverse` is GUARDED, so `sigma` is bound at the REFINED sort `Perm`: the guard then comes
+// from the binder and the quantifier prefix keeps its shape, rather than an extra
+// `invertible(sigma) ->` antecedent that every restatement downstream would have to carry.
+theorem theAlternatingGroupIsClosedUnderConjugation: forall sigma: Perm; forall g: Fn;
   inAlternating(sigma) -> inAlternating(g) ->
   inAlternating(compose(compose(sigma, g), inverse(sigma)))
 proof
   @generalize-sigma |
-    fix sigma: Fn {
+    fix sigma: Perm {
       @generalize-g |
         fix g: Fn {
           @given-sigma-in-a |
@@ -4317,7 +4358,7 @@ proof
         [by generalize generalize-g]
     }
   @conclusion |
-    forall sigma: Fn; forall g: Fn;
+    forall sigma: Perm; forall g: Fn;
       inAlternating(sigma) -> inAlternating(g) ->
       inAlternating(compose(compose(sigma, g), inverse(sigma)))
     [by generalize generalize-sigma]
@@ -4335,15 +4376,19 @@ qed
 // result is unconditional. What it does NOT supply is transitivity: that conjugation reaches
 // EVERY 3-cycle from a given one needs "any triple of distinct points maps to any other by
 // some even sigma", which is where n >= 5 enters and is the remaining geometric step.
+// `inverse` is GUARDED, so `invertible(sigma)` is stated as the FIRST antecedent and the
+// `forall c` sits inside it: a discharged conclusion's guard is read from its own antecedent
+// LITERALLY, and `inAlternating(sigma)` — though it implies invertibility — is a different
+// proposition, so it does not serve.
 theorem aConjugateOfAThreeCycleIsAThreeCycleInTheAlternatingGroup:
-  forall sigma: Fn; forall c: Fn;
-  inAlternating(sigma) -> isAThreeCycle(c) ->
+  forall sigma: Fn; invertible(sigma) -> inAlternating(sigma) ->
+  forall c: Fn; isAThreeCycle(c) ->
   isAThreeCycle(compose(compose(sigma, c), inverse(sigma)))
 proof
   @generalize-sigma |
     fix sigma: Fn {
-      @generalize-c |
-        fix c: Fn {
+      @given-sigma-invertible |
+        assume invertible(sigma) {
           @given-sigma-in-a |
             assume inAlternating(sigma) {
               @sigma-in-a |
@@ -4355,33 +4400,42 @@ proof
               @sigma-is-a-permutation |
                 invertible(sigma)
                 [using tautology the-membership-characterization sigma-in-a]
-              @given-c-is-a-three-cycle |
-                assume isAThreeCycle(c) {
-                  @c-is-a-three-cycle |
-                    isAThreeCycle(c)
-                    [by hypothesis given-c-is-a-three-cycle]
-                  @conclusion-the-conjugate-is-a-three-cycle |
-                    isAThreeCycle(compose(compose(sigma, c), inverse(sigma)))
-                    [using specialize aConjugateOfAThreeCycleIsAThreeCycle(sigma, c) sigma-is-a-permutation c-is-a-three-cycle]
+              @generalize-c |
+                fix c: Fn {
+                  @given-c-is-a-three-cycle |
+                    assume isAThreeCycle(c) {
+                      @c-is-a-three-cycle |
+                        isAThreeCycle(c)
+                        [by hypothesis given-c-is-a-three-cycle]
+                      @conclusion-the-conjugate-is-a-three-cycle |
+                        isAThreeCycle(compose(compose(sigma, c), inverse(sigma)))
+                        [using specialize aConjugateOfAThreeCycleIsAThreeCycle(sigma, c) sigma-is-a-permutation c-is-a-three-cycle]
+                    }
+                  @conclusion-three-cycle-gives |
+                    isAThreeCycle(c) ->
+                      isAThreeCycle(compose(compose(sigma, c), inverse(sigma)))
+                    [by discharge given-c-is-a-three-cycle]
                 }
-              @conclusion-three-cycle-gives |
-                isAThreeCycle(c) ->
+              @discharge-c |
+                forall c: Fn; isAThreeCycle(c) ->
                   isAThreeCycle(compose(compose(sigma, c), inverse(sigma)))
-                [by discharge given-c-is-a-three-cycle]
+                [by generalize generalize-c]
             }
-          @conclusion-at-c |
-            inAlternating(sigma) -> isAThreeCycle(c) ->
+          @conclusion-at-sigma-in-a |
+            inAlternating(sigma) ->
+              forall c: Fn; isAThreeCycle(c) ->
               isAThreeCycle(compose(compose(sigma, c), inverse(sigma)))
             [by discharge given-sigma-in-a]
         }
-      @discharge-c |
-        forall c: Fn; inAlternating(sigma) -> isAThreeCycle(c) ->
+      @conclusion-at-sigma |
+        invertible(sigma) -> inAlternating(sigma) ->
+          forall c: Fn; isAThreeCycle(c) ->
           isAThreeCycle(compose(compose(sigma, c), inverse(sigma)))
-        [by generalize generalize-c]
+        [by discharge given-sigma-invertible]
     }
   @conclusion |
-    forall sigma: Fn; forall c: Fn;
-      inAlternating(sigma) -> isAThreeCycle(c) ->
+    forall sigma: Fn; invertible(sigma) -> inAlternating(sigma) ->
+      forall c: Fn; isAThreeCycle(c) ->
       isAThreeCycle(compose(compose(sigma, c), inverse(sigma)))
     [by generalize generalize-sigma]
 qed
@@ -4520,6 +4574,12 @@ proof
                                         allTranspositions(t, k) iff (forall i: Nat; less_than(i, k) -> isTransposition(at(t, i)))
                                         [using specialize allTranspositionsDef(t, k)]
                                       // sigma^-1's run: the reversal, SAME length n
+                                      // `reversedIsTranspositions` concludes about `inverse(productUpTo(s, n))`, and
+                                      // `inverse` is GUARDED. A partial product of permutations is a permutation with no
+                                      // hypothesis, so the guard is available unconditionally.
+                                      @the-partial-product-is-a-permutation |
+                                        invertible(productUpTo(s, n))
+                                        [using specialize productUpToIsAPermutation(s, n)]
                                       @reversed-exists |
                                         exists r2: Seq; allTranspositions(r2, n) and productUpTo(r2, n) = inverse(productUpTo(s, n))
                                         [using specialize reversedIsTranspositions(s, n) sigma-transpositions]
