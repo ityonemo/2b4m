@@ -113,68 +113,74 @@ real bug found on the way, in `settleMisses`, now fixed.
   discharge also reports itself as a sort error in an unrelated file. (That file's original
   claim, that models cannot compose, was wrong and is retracted there.)
 
-## MEASURED 2026-11-03: `simplify` owes a guard no in-scope step can satisfy — WORKAROUND FOUND
+## MEASURED 2026-11-03: three accelerants re-owe a guard a step in scope has proved
 
-Hit three times during the `function.inverse` de-totalization, in
+Hit during the `function.inverse` de-totalization, in
 `std/permutation/alternating-identities.b4m` (`theLongCycleCommutatorIsAThreeCycle`,
-`theTwoThreeCyclesCommutatorIsAFiveCycle`, `theTwoCycleCommutatorRegrouped`). Each is a
-`[using simplify image-a1 image-a2 image-a3 the-closed-form]` step whose formula writes
-`inverse(sigma)` and `inverse(inverse(sigma))`, reporting
-`unproved obligation: 'invertible(sigma)'`.
+`theTwoThreeCyclesCommutatorIsAFiveCycle`, `theTwoCycleCommutatorRegrouped`) and in
+`std/group/order.b4m:776`.
 
-**THE WORKAROUND: substitute the equations one at a time with `[by rewrite …]`.** Each
-`simplify` became three kernel `rewrite` steps — the same substitutions the tactic was doing,
-written out — and all three theorems now check strict. The guard is read normally on the
-kernel path. This is the same explicit-steps escape the rest of this file documents, and it is
-cheap here: three steps per site, no new lemmas.
+**RED FIXTURES: `drafts/accelerant-generated-guard/`** — one 80-line ground proof per affected
+word, differing only in the final justification, each failing `unproved obligation: 'ok(s)'`
+with `ok(s)` proved at the top of the same (and only) block. The README there records what
+each fixture suppresses so that nothing but the engine is implicated, and the trap that cost
+the most time: an axiom written `forall f: Fn; inv(inv(f)) = f` is genuinely ILL-FORMED (it
+asserts something about `inv(f)` where `inv(f)` may be undefined), and its error is reported
+against the CITING step, looking exactly like this defect. Check the cited statement's own
+well-formedness first.
 
-**What made it look unfixable.** Every placement that fixes the *discharged-conclusion* rule
-(which `ACCELERANT-GUARD-DISCHARGE-ISSUE.md` resolved as NOT A BUG) was tried first, and none
-moved the error: the fact restated as the step immediately above; `invertible(inverse(sigma))`
-added for the outer `inverse`; the binder retyped to the refined sort `Perm`; the guard read
-via `[by predicate …]`; the antecedent hoisted ahead of the point binders; the fact hoisted to
-the `fix`/`assume` boundary. So this is NOT the discharged-conclusion rule — teaching `known`
-at any depth cannot satisfy it.
+### Scope: three words of eight
 
-**Two diagnostics that localize it:**
+| word | verdict | why |
+|---|---|---|
+| `simplify` | **RED** | rewrites INSIDE the guarded application |
+| `chain` | **RED** | joins two equations THROUGH it |
+| `specialize` | **RED** | instantiates a binder UNDER it |
+| `assoc` / `assoc_commut` | green | reorder, never rebuild |
+| `polynomial` / `arithmetic` | green | guarded application is an opaque atom |
+| `extensionality` | green | reduces to a pointwise residue |
 
-- **It is a `--fast`/strict divergence.** `check --fast <file> <theorem>` PASSES; strict
-  rejects. Under the standing invariant (`--fast` must never reject what strict certifies;
-  `--fast` may accept what strict rejects, but neither may accept something FALSE) this is the
-  permitted direction — the goals are true, now proved — but it places the obligation on the
-  CERTIFIER path, not the decision path.
-- **The guard-miss trace never sees it.** The instrumentation in `Elab.requireKnown` (now a
-  flip-to-true `guard_trace` constant in `src/Engine/ProveTask/Elab.zig`; recipe in
-  `ACCELERANT-GUARD-DISCHARGE-ISSUE.md`) prints nothing for these three sites while printing
-  freely for others in the same run. **So the obligation is not routed through `requireKnown`
-  at all** — which explains why no amount of teaching `known` helps, and is where a real fix
-  should look: `simplify`'s certifier builds its own terms and raises their guards on a path
-  that does not consult the step's context.
+**The dividing line is SUBSTITUTION:** a word treating a guarded application as an opaque atom
+passes; a word substituting into it reconstructs the application and re-raises its guard.
 
-**Status: all three theorems PROVED**, so the de-totalization pass is not blocked. What remains
-open is the engine behaviour, and it SHOULD be fixed rather than worked around (user, 2026-11-03:
-"it would be nice to make simplify work out of the box"). The workaround trades one tactic call
-for three hand-written kernel steps that spell out exactly what the tactic was already doing —
-a tactic owing a guard its caller cannot discharge is a defect, and the trace localizes it: the
-obligation bypasses `requireKnown`, so the fix belongs where `simplify`'s certifier builds its
-terms and raises their guards without consulting the step's context.
+### Where the lookup actually goes — CORRECTION
 
-## A second, cheaper pattern found in the same pass (NOT a bug)
+An earlier version of this section claimed the obligation never reaches `requireKnown`, on the
+evidence that the `guard_trace` instrumentation printed nothing for the live sites. **That was
+wrong**, and the minimal fixtures show it. With `guard_trace = true`:
 
-`[using specialize invInvolution(sigma) sigma-is-a-permutation]` fails with
-`unproved obligation: 'invertible(sigma)'` whenever the cited theorem binds its variable at a
-REFINED sort (`forall a: Perm`). `specialize` cannot read a refined binder's qualifier from a
-ref — the guard is looked up, never passed. Peel the binder explicitly instead:
-
-```2b4m
-@the-involution |
-  forall a: Perm; inverse(inverse(a)) = a
-  [by cite function_invertible.invInvolution]
-@double-inverse |
-  inverse(inverse(sigma)) = sigma
-  [by apply_at(sigma) the-involution]
+```
+[guard-miss] prop=3 'ok(s)' at kb=0 loc=3082 entries=0
 ```
 
-This fixed four sites across `decomposition.b4m`, `normal-subgroup.b4m` and
-`alternating-identities.b4m`, and is worth reaching for before any restructuring: it is two
-steps and changes no statement.
+It DOES reach `requireKnown` — in block 0 against an EMPTY `known` (`entries=0`). That is the
+synthetic's own ProveTask, where `e.known = null` is set deliberately (a synthetic is
+registered globally and instantiated by name, so it must not depend on one call site's
+context). The guard was never missing; it was being looked up in a space that has no steps.
+
+That still points at relativize-and-cite as the fix, but for a different reason than
+originally recorded: not "the obligation is invisible", but "the obligation is raised in the
+synthetic's space, where by design nothing can answer it, instead of being carried out to the
+call site as an antecedent".
+
+### The target behaviour
+
+An accelerant relativizes its own generated statement to `guard(...) -> <statement>` and emits
+the invocation so the guard is discharged at the call site by citing a step in scope (user
+design, 2026-11-03: *"it would be nice to make simplify work out of the box"*, then *"all of
+the accelerants should be able to reconfigure theorem statement as `guard(...) -> <actual
+statement>`"*). The machinery exists and is already uniform — `Builder.termExpr` records every
+delaborated term in `Synthetic.seen`, `syntheticObligations` reads what those terms owe,
+`wrapObligations` prepends them as antecedents, `withGuardPremises` discharges them at the call
+site, and the single call site `demandUsing` covers every accelerant. So the gap is narrower
+than "some words have the mechanism and some do not".
+
+The constraint on any fix: the ONLY thing an accelerant may go digging for is a guard —
+logical inputs stay named in the citation. The rule governs the ENGINE, not the author; manual
+rummaging while writing a proof is fine.
+
+### Author-side workarounds meanwhile
+
+All landed in `5d47eb9`, all green: substitute the equations one at a time with
+`[by rewrite …]` instead of one `simplify`/`chain`; and for a `specialize` at a REFINED binder,
+`[by cite …]` + `[by apply_at(t) …]`.
