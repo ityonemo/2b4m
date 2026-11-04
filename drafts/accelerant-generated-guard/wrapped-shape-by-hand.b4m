@@ -1,0 +1,76 @@
+// THE DECISIVE TEST. Hand-written equivalent of what `Prove.wrapObligations` produces for
+// the `simplify` synthetic: the two guards as LEADING ANTECEDENTS, assumed around the proof,
+// and restated as explicit steps inside.
+//
+// It STILL fails `unproved obligation: 'ok(s)'` at the `simplify`.
+//
+// That rules out the wrapped shape, the obligation collection, and the antecedent discharge
+// all at once: the guards are the enclosing hypotheses AND proved steps in the same block,
+// and `simplify` reads neither. So the defect is in how `simplify`'s own check consults the
+// context it is handed -- see the README's "Where the defect is NOT".
+//
+// Replacing the one `simplify` with two `[by rewrite ...]` steps proves the same goal.
+sort Point
+sort Fn
+pred ok(f: Fn)
+sort OkFn = Fn where ok
+func inv(f: Fn) => Fn requires ok(f)
+func compose(f: Fn, g: Fn) => Fn
+func at(f: Fn, p: Point) => Point
+func swap(p: Point, q: Point) => Fn
+const s: Fn
+const a: Point
+const b: Point
+const c: Point
+axiom sIsOk: ok(s)
+axiom invIsOk: forall f: Fn; ok(f) -> ok(inv(f))
+axiom theClosedForm: forall f: OkFn; forall p: Point; forall q: Point;
+  compose(compose(inv(f), swap(p, q)), inv(inv(f)))
+    = swap(at(inv(f), p), at(inv(f), q))
+axiom theFirstImage: at(inv(s), a) = c
+axiom theSecondImage: at(inv(s), b) = c
+
+// the WRAPPED shape: guards as leading antecedents
+theorem theWrappedForm:
+  ok(s) -> ok(inv(s)) ->
+  compose(compose(inv(s), swap(a, b)), inv(inv(s))) = swap(c, c)
+proof
+  @obligation0 |
+    assume ok(s) {
+      @obligation1 |
+        assume ok(inv(s)) {
+          @s-is-ok |
+            ok(s)
+            [by hypothesis obligation0]
+          @the-inverse-is-ok |
+            ok(inv(s))
+            [by hypothesis obligation1]
+          @the-closed-form |
+            forall f: OkFn; forall p: Point; forall q: Point;
+              compose(compose(inv(f), swap(p, q)), inv(inv(f)))
+                = swap(at(inv(f), p), at(inv(f), q))
+            [by cite theClosedForm]
+          @the-closed-form-at-s |
+            compose(compose(inv(s), swap(a, b)), inv(inv(s)))
+              = swap(at(inv(s), a), at(inv(s), b))
+            [by apply_at(s, a, b) the-closed-form]
+          @first-image |
+            at(inv(s), a) = c
+            [by cite theFirstImage]
+          @second-image |
+            at(inv(s), b) = c
+            [by cite theSecondImage]
+          @conclusion-inner |
+            compose(compose(inv(s), swap(a, b)), inv(inv(s))) = swap(c, c)
+            [using simplify first-image second-image the-closed-form-at-s]
+        }
+      @obligation-export1 |
+        ok(inv(s)) ->
+          compose(compose(inv(s), swap(a, b)), inv(inv(s))) = swap(c, c)
+        [by discharge obligation1]
+    }
+  @conclusion |
+    ok(s) -> ok(inv(s)) ->
+      compose(compose(inv(s), swap(a, b)), inv(inv(s))) = swap(c, c)
+    [by discharge obligation0]
+qed
