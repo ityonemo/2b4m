@@ -6774,6 +6774,56 @@ fn produceArithmetic(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
 /// Cooper), first that certifies wins, emitting its cert as the synthetic schema's proof.
 /// A declined-but-valid goal with `fallback(thm)` emits the fallback path; else a terminal
 /// error. STRICT ONLY — never a trusted verdict.
+/// The diagnostic for a refuted `arithmetic` goal. Shared by the DECISION GATE (which runs in
+/// both modes) and the strict certifier path, because both refute on the same `decideMixed`
+/// verdict and a reader deserves the same message either way — the gate used to carry only the
+/// two degenerate branches, so running it in strict (e884a17) silently downgraded every
+/// countermodel to "the statement is false" and broke three goldens.
+///
+/// Three shapes, in order of what they can tell you:
+///   - an abstracted opaque subterm (`mul(a, b)`, `f(x)`) is in the countermodel: the goal
+///     needs more than linear arithmetic, and its atom values are not independently
+///     realizable, so naming the subterm beats inventing numbers;
+///   - no values and no opaques: nothing to show, the statement is just false;
+///   - otherwise: the falsifying assignment, with the abstraction's params (p1, p2, …) mapped
+///     back to the CALLER's own variable names and sorted for stability.
+fn arithCountermodelFail(
+    self: *Prove,
+    loc: u32,
+    cm: anytype,
+    abs: FvarAbstraction,
+) Error!?Accelerant.Synthetic {
+    for (cm.values) |a| if (a.term) |offending|
+        return self.fail(loc, "arithmetic: '{s}' is outside linear arithmetic", .{try self.renderTerm(offending)});
+    if (cm.values.len == 0 and cm.opaques.len == 0)
+        return self.fail(loc, "arithmetic: the statement is false", .{});
+    const Shown = struct { name: []const u8, value: i128 };
+    const shown = try self.ctx.arena.alloc(Shown, cm.values.len);
+    for (cm.values, shown) |a, *out| {
+        var orig = a.name;
+        for (abs.names, abs.origs) |pn, on| if (pn == a.name) {
+            orig = on;
+        };
+        out.* = .{ .name = self.ctx.interner.stringBytes(try self.displayName(orig)), .value = a.value };
+    }
+    std.mem.sort(Shown, shown, {}, struct {
+        fn lessThan(_: void, x: Shown, y: Shown) bool {
+            return std.mem.lessThan(u8, x.name, y.name);
+        }
+    }.lessThan);
+    var msg: std.Io.Writer.Allocating = .init(self.ctx.arena);
+    var count: usize = 0;
+    for (shown) |a| {
+        msg.writer.print("{s}{s} := {d}", .{ if (count > 0) ", " else "", a.name, a.value }) catch return error.OutOfMemory;
+        count += 1;
+    }
+    for (cm.opaques) |lit| {
+        msg.writer.print("{s}{s} := {s}", .{ if (count > 0) ", " else "", try self.renderTerm(lit.atom), if (lit.value) "true" else "false" }) catch return error.OutOfMemory;
+        count += 1;
+    }
+    return self.fail(loc, "arithmetic: false at {s}", .{msg.written()});
+}
+
 fn buildArithmetic(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
     // `--fast` declines to EMIT the certificate; the DECISION still runs. (It did run until
     // `4d84393` restored per-word admit and inserted an early return here, collapsing it away —
@@ -6846,9 +6896,31 @@ fn buildArithmetic(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim
                 // strict: decided TRUE, now go build the certificate below.
             },
             .countermodel => |cm| {
-                for (cm.values) |a| if (a.term) |offending|
-                    return self.fail(c.rule.start, "arithmetic: '{s}' is outside linear arithmetic", .{try self.renderTerm(offending)});
-                return self.fail(c.rule.start, "arithmetic: the statement is false", .{});
+                // Does this refutation rest on an ABSTRACTED OPAQUE SUBTERM (`sumTo(succ(k))`,
+                // `mul(a, b)`)? Then the decision adjudicated NOTHING: it replaced the subterm
+                // with a fresh variable free to range, so the "countermodel" is an artifact of
+                // that abstraction rather than a falsifying assignment — a cited premise may
+                // well pin the subterm's value, which is exactly how `examples/gauss.b4m` is
+                // true and certifiable while the decision cannot see it.
+                var abstained = false;
+                for (cm.values) |a| if (a.term != null) {
+                    abstained = true;
+                };
+                // THE INVARIANT IS ONE-DIRECTIONAL.
+                //   - `--fast` must NEVER reject what strict can certify: a certificate is
+                //     kernel-checked proof the statement is true, so rejecting it is simply
+                //     wrong. `--fast` is the WEAKER check; on an abstention it accepts.
+                //   - `--fast` MAY accept what strict rejects — strict rejects for want of a
+                //     CERTIFICATE, which is a fact about the certifier's reach, not about the
+                //     statement.
+                //   - Neither mode may accept something FALSE: a genuine countermodel (nothing
+                //     opaque in it) is a real refutation and rejects in both.
+                if (!abstained) return self.arithCountermodelFail(c.rule.start, cm, abs);
+                if (self.admit_mode) {
+                    self.admit_ok = true;
+                    return null;
+                }
+                // strict: fall through to the certifier, which may prove what we could not decide.
             },
             .too_many_atoms => |n| return self.fail(c.rule.start, "arithmetic: {d} distinct atoms exceeds the limit of {d}", .{ n, smt.atom_limit }),
             .too_large => return self.fail(c.rule.start, "arithmetic: decision exceeded the work limit", .{}),
@@ -6897,42 +6969,7 @@ fn buildArithmetic(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim
                 const farkas_reason: []const u8 = if (symbols.less_than == null) "theory lacks symbol 'less_than'" else "form not in certification scope";
                 return self.fail(c.rule.start, "'arithmetic' is valid but no certifier could prove it here:\n  - equation/order/exists: form not in certification scope\n  - mixed-skeleton: form not in certification scope\n  - farkas: {s}\n  - cooper: form not in certification scope\nuse --fast to accept the accelerated verdict", .{farkas_reason});
             },
-            .countermodel => |cm| {
-                // an abstracted opaque subterm (mul(a, b), f(x)) in the countermodel means the goal
-                // needs reasoning beyond linear arithmetic — its atom values are not independently
-                // realizable, so a numeric countermodel would mislead: name the subterm instead.
-                for (cm.values) |a| if (a.term) |offending|
-                    return self.fail(c.rule.start, "arithmetic: '{s}' is outside linear arithmetic", .{try self.renderTerm(offending)});
-                if (cm.values.len == 0 and cm.opaques.len == 0)
-                    return self.fail(c.rule.start, "arithmetic: the statement is false", .{});
-                // the values name the abstraction's params (p1, p2, …): show the caller's own
-                // fixed variables, ordered by name.
-                const Shown = struct { name: []const u8, value: i128 };
-                const shown = try self.ctx.arena.alloc(Shown, cm.values.len);
-                for (cm.values, shown) |a, *out| {
-                    var orig = a.name;
-                    for (abs.names, abs.origs) |pn, on| if (pn == a.name) {
-                        orig = on;
-                    };
-                    out.* = .{ .name = self.ctx.interner.stringBytes(try self.displayName(orig)), .value = a.value };
-                }
-                std.mem.sort(Shown, shown, {}, struct {
-                    fn lessThan(_: void, x: Shown, y: Shown) bool {
-                        return std.mem.lessThan(u8, x.name, y.name);
-                    }
-                }.lessThan);
-                var msg: std.Io.Writer.Allocating = .init(self.ctx.arena);
-                var count: usize = 0;
-                for (shown) |a| {
-                    msg.writer.print("{s}{s} := {d}", .{ if (count > 0) ", " else "", a.name, a.value }) catch return error.OutOfMemory;
-                    count += 1;
-                }
-                for (cm.opaques) |lit| {
-                    msg.writer.print("{s}{s} := {s}", .{ if (count > 0) ", " else "", try self.renderTerm(lit.atom), if (lit.value) "true" else "false" }) catch return error.OutOfMemory;
-                    count += 1;
-                }
-                return self.fail(c.rule.start, "arithmetic: false at {s}", .{msg.written()});
-            },
+            .countermodel => |cm| return self.arithCountermodelFail(c.rule.start, cm, abs),
             .too_many_atoms => |n| return self.fail(c.rule.start, "arithmetic: {d} distinct atoms exceeds the limit of {d}", .{ n, smt.atom_limit }),
             .too_large => return self.fail(c.rule.start, "arithmetic: decision exceeded the work limit", .{}),
             .overflow => return self.fail(c.rule.start, "arithmetic: coefficient overflow", .{}),

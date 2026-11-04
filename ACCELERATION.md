@@ -103,6 +103,28 @@ KEPT and what is DROPPED, measured from the admit site in `src/Engine/ProveTask/
 **The one-line rule: the decision is a FILTER, the certificate is the AUTHORITY, and `--fast`
 keeps every filter and drops the authority.**
 
+**The invariant is ONE-DIRECTIONAL, and the direction matters** (settled 2026-11-04, after a
+regression in the other direction):
+
+- **`--fast` must NEVER reject what strict can certify.** A certificate is kernel-checked proof
+  the statement is true, so rejecting it is simply wrong — and `--fast` is the *weaker* check.
+- **`--fast` MAY accept what strict rejects.** Strict rejects for want of a CERTIFICATE, which
+  is a fact about the certifier's reach, not about the statement. That asymmetry is the whole
+  point of the mode.
+- **Neither mode may accept something FALSE.** This is the floor, and the only hard constraint.
+
+So a decision's "no" must be read for WHAT IT ESTABLISHED. A genuine countermodel adjudicated
+the statement and found it false — both modes reject. A refutation resting on an **abstracted
+opaque subterm** (`sumTo(succ(k))`, `mul(a, b)`) adjudicated *nothing*: the decision replaced
+the subterm with a fresh variable free to range, so the "countermodel" is an artifact of that
+abstraction, and a cited premise may well pin the subterm's value. That is an **abstention** —
+`--fast` accepts it and strict proceeds to the certifier.
+
+`e884a17` made the `arithmetic` decision gate run in strict as well as `--fast`, which was
+right, but treated an abstention as a rejection — so strict was lowered to the decision's reach
+and `examples/gauss.b4m` (true, certifiable, and previously passing) started failing in both
+modes. The fix splits the two kinds of "no"; `gauss.b4m` is the regression gate.
+
 
 | word | KEPT under `--fast` | DROPPED |
 |---|---|---|
