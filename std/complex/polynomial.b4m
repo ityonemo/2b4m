@@ -1,0 +1,753 @@
+// std/complex/polynomial.b4m — ℂ[x], as a model of F[x].
+//
+// ℂ is a field (`std/complex.b4m`'s `ComplexField`), so every theorem
+// `std/field/polynomial.b4m` proves about F[x] is a theorem about ℂ[x]. This file declares
+// ℂ[x]'s own symbols and the model that connects them; the corpus then transfers rather than
+// being restated. Nothing here is specific to ℂ beyond the coefficient theory — ℂ[x] is a
+// polynomial ring over a field like any other, and the algebraic closure of ℂ (which WOULD
+// distinguish it: every nonconstant polynomial has a root) is not assumed anywhere below.
+//
+// WHAT A POLYNOMIAL LAYER OWES. A model must map every symbol a transferred proof mentions
+// and discharge every axiom it reaches — including the axioms of theories BELOW F[x], since
+// F[x]'s own theorems are often one-line transfers from `std/ring/polynomial.b4m` and a
+// re-transfer re-elaborates those proofs. That is why the block below names the field-level
+// algebra facts (`addZeroLeftF`, `mulAddDistribLeftF`, …) and not only the polynomial ones.
+// Omitting one does not report an undischarged axiom; it surfaces as a sort mismatch inside
+// whichever source file the re-elaboration lands in. See
+// `NESTED-MODEL-COMPOSITION-ISSUE.md`.
+//
+// The operations are DEFINITION BLOCKS, not axioms: each says what a symbol COMPUTES, and a
+// definition's clause set discharges F[x]'s corresponding one arm-for-arm
+// (`fieldpoly.addP <- caddP`). So `--axioms` reports ℂ[x] as resting on three assumptions of
+// its own, not forty. See `DEFINITIONS-IN-MODELS-ISSUE.md`.
+import complex <<< "std/complex.b4m"
+import fieldpoly <<< "std/field/polynomial.b4m"
+import ring <<< "std/ring.b4m"
+import ring_poly <<< "std/ring/polynomial.b4m"
+import peano <<< "std/peano.b4m"
+
+sort Complex = complex.Complex
+sort Nat = peano.Nat
+const ZERO = complex.ZERO
+const NAT_ZERO = peano.ZERO
+
+// -- ℂ[x] ----------------------------------------------------------------------------------
+sort CPoly
+func ccoeff(p: CPoly, i: Nat) => Complex
+const CZEROP: CPoly
+func caddP(p: CPoly, q: CPoly) => CPoly:
+  ccoeff(caddP(p, q), i) = complex.add(ccoeff(p, i), ccoeff(q, i))
+func cnegP(p: CPoly) => CPoly:
+  ccoeff(cnegP(p), i) = complex.neg(ccoeff(p, i))
+func cmulP(p: CPoly, q: CPoly) => CPoly:
+  ccoeff(cmulP(p, q), i) = cconvolution(p, q, NAT_ZERO, i)
+func cmonomial(a: Complex, k: Nat) => CPoly:
+  ccoeff(cmonomial(a, k), k) = a;
+  (not (i = k)) -> ccoeff(cmonomial(a, k), i) = ZERO
+pred cdegreeAtMost(p: CPoly, n: Nat)
+func cdegree(p: CPoly) => Nat
+func cconvolution(p: CPoly, q: CPoly, j: Nat, m: Nat) => Complex:
+  cconvolution(p, q, j, NAT_ZERO) = complex.mul(ccoeff(p, j), ccoeff(q, NAT_ZERO));
+  cconvolution(p, q, j, peano.succ(m)) = complex.add(complex.mul(ccoeff(p, j), ccoeff(q, peano.succ(m))), cconvolution(p, q, peano.succ(j), m))
+
+// the coefficient equations: ℂ[x]'s own primitives
+axiom cPolyExtensionality: forall p, q: CPoly;
+  (forall i: Nat; ccoeff(p, i) = ccoeff(q, i)) -> p = q
+axiom cZeroPolyCoeff: forall i: Nat; ccoeff(CZEROP, i) = ZERO
+axiom cDegreeAtMostMeaning: forall p: CPoly; forall n: Nat;
+  cdegreeAtMost(p, n) iff
+  (forall i: Nat; peano.less_than(n, i) -> ccoeff(p, i) = ZERO)
+axiom cDegreeIsALeadingIndex: forall p: CPoly;
+  (not (p = CZEROP)) -> (not (ccoeff(p, cdegree(p)) = ZERO))
+axiom cDegreeBoundsTheCoefficients: forall p: CPoly;
+  (not (p = CZEROP)) -> cdegreeAtMost(p, cdegree(p))
+
+// the convolution, reindexed as F[x] states it: a BASE and a LENGTH whose sum is invariant,
+// so no index is ever subtracted.
+
+// -- evaluation ----------------------------------------------------------------------------
+func cpower(a: Complex, n: Nat) => Complex:
+  cpower(a, NAT_ZERO) = complex.ONE;
+  cpower(a, peano.succ(n)) = complex.mul(a, cpower(a, n))
+
+func cevalUpTo(p: CPoly, a: Complex, k: Nat) => Complex:
+  cevalUpTo(p, a, NAT_ZERO) = ZERO;
+  cevalUpTo(p, a, peano.succ(k)) = complex.add(cevalUpTo(p, a, k), complex.mul(ccoeff(p, k), cpower(a, k)))
+
+// `p(a)`: the sum over every index up to AND INCLUDING the degree.
+define revaluate(p, a) = cevalUpTo(p, a, peano.succ(cdegree(p)))
+
+pred cIsZeroOf(a: Complex, p: CPoly)
+axiom cIsZeroOfMeaning: forall a: Complex; forall p: CPoly;
+  cIsZeroOf(a, p) iff revaluate(p, a) = ZERO
+
+// -- the run families a transferred proof mentions -----------------------------------------
+// F[x] declares these because `std/ring/polynomial.b4m`'s proofs induct on them (the sum
+// reversal behind commutativity, the triple sums behind associativity). A model must map
+// every symbol a transferred proof names, so ℂ[x] declares them too. None involves a
+// subtraction: each decrementing index is a `succ` pattern, and the index arithmetic the
+// triple sums need is NAMED (`ctheGapTo`, `ctheCofactorIndex`).
+func ctailConvolution(p: CPoly, q: CPoly, j: Nat, m: Nat) => Complex:
+  ctailConvolution(p, q, NAT_ZERO, m) = complex.mul(ccoeff(p, NAT_ZERO), ccoeff(q, m));
+  ctailConvolution(p, q, peano.succ(j), m) = complex.add(complex.mul(ccoeff(p, peano.succ(j)), ccoeff(q, m)), ctailConvolution(p, q, j, peano.succ(m)))
+
+func csegmentOf(p: CPoly, q: CPoly, j: Nat, c: Nat, n: Nat) => Complex:
+  csegmentOf(p, q, j, c, NAT_ZERO) = complex.mul(ccoeff(p, j), ccoeff(q, c));
+  csegmentOf(p, q, peano.succ(j), c, peano.succ(n)) = complex.add(complex.mul(ccoeff(p, peano.succ(j)), ccoeff(q, c)), csegmentOf(p, q, j, peano.succ(c), n))
+
+func crsegmentOf(p: CPoly, q: CPoly, j: Nat, c: Nat, n: Nat) => Complex:
+  crsegmentOf(p, q, j, c, NAT_ZERO) = complex.mul(ccoeff(p, j), ccoeff(q, c));
+  crsegmentOf(p, q, j, peano.succ(c), peano.succ(n)) = complex.add(complex.mul(ccoeff(p, j), ccoeff(q, peano.succ(c))), crsegmentOf(p, q, peano.succ(j), c, n))
+
+func ctheGapTo(i: Nat, j: Nat) => Nat:
+  ctheGapTo(i, NAT_ZERO) = i;
+  ctheGapTo(peano.succ(i), peano.succ(j)) = ctheGapTo(i, j)
+
+func ctheCofactorIndex(i: Nat, j: Nat, k: Nat) => Nat:
+  ctheCofactorIndex(i, j, NAT_ZERO) = ctheGapTo(i, j);
+  ctheCofactorIndex(i, j, peano.succ(k)) = ctheGapTo(ctheGapTo(i, j), peano.succ(k))
+
+func ccappedRun(q: CPoly, r: CPoly, g: Nat, n: Nat) => Complex:
+  ccappedRun(q, r, g, NAT_ZERO) = ZERO;
+  ccappedRun(q, r, g, peano.succ(n)) = complex.add(ccappedRun(q, r, g, n), complex.mul(ccoeff(q, n), ccoeff(r, ctheGapTo(g, n))))
+
+func ctripleTerm(p: CPoly, q: CPoly, r: CPoly, i: Nat, j: Nat, k: Nat) => Complex:
+  ctripleTerm(p, q, r, i, j, k) = complex.mul(complex.mul(ccoeff(p, j), ccoeff(q, k)), ccoeff(r, ctheCofactorIndex(i, j, k)))
+
+func ctripleRow(p: CPoly, q: CPoly, r: CPoly, i: Nat, j: Nat, n: Nat) => Complex:
+  ctripleRow(p, q, r, i, j, NAT_ZERO) = ZERO;
+  ctripleRow(p, q, r, i, j, peano.succ(n)) = complex.add(ctripleRow(p, q, r, i, j, n), ctripleTerm(p, q, r, i, j, n))
+
+func ctripleDiag(p: CPoly, q: CPoly, r: CPoly, i: Nat, m: Nat, c: Nat) => Complex:
+  ctripleDiag(p, q, r, i, m, NAT_ZERO) = ZERO;
+  ctripleDiag(p, q, r, i, m, peano.succ(c)) = complex.add(ctripleDiag(p, q, r, i, m, c), ctripleTerm(p, q, r, i, c, ctheGapTo(m, c)))
+
+func ctripleTri(p: CPoly, q: CPoly, r: CPoly, i: Nat, n: Nat) => Complex:
+  ctripleTri(p, q, r, i, NAT_ZERO) = ZERO;
+  ctripleTri(p, q, r, i, peano.succ(n)) = complex.add(ctripleTri(p, q, r, i, n), ctripleDiag(p, q, r, i, n, peano.succ(n)))
+
+func ctripleRows(p: CPoly, q: CPoly, r: CPoly, i: Nat, m: Nat, n: Nat) => Complex:
+  ctripleRows(p, q, r, i, NAT_ZERO, n) = ZERO;
+  ctripleRows(p, q, r, i, peano.succ(m), n) = complex.add(ctripleRows(p, q, r, i, m, n), ctripleRow(p, q, r, i, m, ctheGapTo(n, m)))
+
+// The unit polynomial, as its OWN constant with its own coefficient axioms — the shape
+// `ring_poly.ONEP` maps onto. F[x] instead derives it from `monomial(oneF, ZERO)`, which
+// makes its unit a defined expression; a model target must be a SYMBOL, so ℂ[x] declares the
+// constant directly, exactly as ℚ[x] does.
+const CONEP: CPoly
+axiom cOnePolyCoeffZero: ccoeff(CONEP, NAT_ZERO) = complex.ONE
+axiom cOnePolyCoeffHigher: forall i: Nat;
+  ccoeff(CONEP, peano.succ(i)) = ZERO
+
+// CONEP IS the unit monomial: both have ONE at index 0 and vanish elsewhere, so
+// extensionality identifies them. This is what the model owes for mapping F[x]'s
+// `monomialOne` onto ℂ[x]'s own constant.
+theorem cOneIsTheUnitMonomial: CONEP = cmonomial(complex.ONE, NAT_ZERO)
+proof
+  @the-coefficients-agree |
+    fix i: Nat {
+      @the-case-split |
+        i = NAT_ZERO or (exists w: Nat; i = peano.succ(w))
+        [using specialize peano.zeroOrSucc(i)]
+      @when-zero |
+        assume i = NAT_ZERO {
+          @i-is-zero |
+            i = NAT_ZERO
+            [by hypothesis when-zero]
+          @the-unit-at-zero |
+            ccoeff(CONEP, NAT_ZERO) = complex.ONE
+            [by cite cOnePolyCoeffZero]
+          @the-monomial-at-zero |
+            ccoeff(cmonomial(complex.ONE, NAT_ZERO), NAT_ZERO) = complex.ONE
+            [using specialize cMonomialCoeffAtItsIndex(complex.ONE, NAT_ZERO)]
+          @agree-at-zero |
+            ccoeff(CONEP, NAT_ZERO) =
+              ccoeff(cmonomial(complex.ONE, NAT_ZERO), NAT_ZERO)
+            [using simplify the-unit-at-zero the-monomial-at-zero]
+          @conclusion-zero |
+            ccoeff(CONEP, i) = ccoeff(cmonomial(complex.ONE, NAT_ZERO), i)
+            [by rewrite i-is-zero agree-at-zero]
+        }
+      @when-positive |
+        assume exists w: Nat; i = peano.succ(w) {
+          @the-predecessor-exists |
+            exists w: Nat; i = peano.succ(w)
+            [by hypothesis when-positive]
+          @with-the-predecessor |
+            unpack w: Nat from the-predecessor-exists {
+              @i-steps |
+                i = peano.succ(w)
+                [by hypothesis with-the-predecessor]
+              @the-unit-above |
+                ccoeff(CONEP, peano.succ(w)) = ZERO
+                [using specialize cOnePolyCoeffHigher(w)]
+              @the-index-differs |
+                not (peano.succ(w) = NAT_ZERO)
+                [using specialize peano.succNotZero(w)]
+              @the-monomial-above |
+                ccoeff(cmonomial(complex.ONE, NAT_ZERO), peano.succ(w)) = ZERO
+                [using specialize cMonomialCoeffElsewhere(complex.ONE,
+                  NAT_ZERO, peano.succ(w)) the-index-differs]
+              @agree-above |
+                ccoeff(CONEP, peano.succ(w)) =
+                  ccoeff(cmonomial(complex.ONE, NAT_ZERO), peano.succ(w))
+                [using simplify the-unit-above the-monomial-above]
+              @conclusion-positive |
+                ccoeff(CONEP, i) =
+                  ccoeff(cmonomial(complex.ONE, NAT_ZERO), i)
+                [by rewrite i-steps agree-above]
+            }
+          @conclusion-the-positive-case |
+            ccoeff(CONEP, i) = ccoeff(cmonomial(complex.ONE, NAT_ZERO), i)
+            [by unpacked with-the-predecessor]
+        }
+      @conclusion-at-i |
+        ccoeff(CONEP, i) = ccoeff(cmonomial(complex.ONE, NAT_ZERO), i)
+        [by common_conclusion the-case-split when-zero when-positive]
+    }
+  @all-coefficients-agree |
+    forall i: Nat;
+      ccoeff(CONEP, i) = ccoeff(cmonomial(complex.ONE, NAT_ZERO), i)
+    [by generalize the-coefficients-agree]
+  @conclusion |
+    CONEP = cmonomial(complex.ONE, NAT_ZERO)
+    [using specialize cPolyExtensionality(CONEP,
+      cmonomial(complex.ONE, NAT_ZERO)) all-coefficients-agree]
+qed
+
+// -- F[x]'s corpus, transferred ------------------------------------------------------------
+// The coefficient field AND the polynomial layer both travel.
+model ComplexPolynomials {
+  fieldpoly.F: Complex
+  fieldpoly.zeroF: ZERO
+  fieldpoly.oneF: complex.ONE
+  fieldpoly.addF: complex.add
+  fieldpoly.mulF: complex.mul
+  fieldpoly.negF: complex.neg
+  fieldpoly.recipF: complex.recip
+  fieldpoly.Poly: CPoly
+  fieldpoly.coeff: ccoeff
+  fieldpoly.ZEROP: CZEROP
+  fieldpoly.addP: caddP
+  fieldpoly.negP: cnegP
+  fieldpoly.mulP: cmulP
+  fieldpoly.monomial: cmonomial
+  fieldpoly.degreeAtMost: cdegreeAtMost
+  fieldpoly.degree: cdegree
+  fieldpoly.convolution: cconvolution
+  fieldpoly.power: cpower
+  fieldpoly.evalUpTo: cevalUpTo
+  fieldpoly.isZeroOf: cIsZeroOf
+  fieldpoly.tailConvolution: ctailConvolution
+  fieldpoly.segment: csegmentOf
+  fieldpoly.rsegment: crsegmentOf
+  fieldpoly.theGapTo: ctheGapTo
+  fieldpoly.theCofactorIndex: ctheCofactorIndex
+  fieldpoly.cappedRun: ccappedRun
+  fieldpoly.tripleTerm: ctripleTerm
+  fieldpoly.tripleRow: ctripleRow
+  fieldpoly.tripleDiag: ctripleDiag
+  fieldpoly.tripleTri: ctripleTri
+  fieldpoly.tripleRows: ctripleRows
+  fieldpoly.monomialOne: CONEP
+  fieldpoly.monomialOneIsTheUnitMonomial <- cOneIsTheUnitMonomial
+  // the field-level algebra, which F[x]'s own transferred proofs reach
+  fieldpoly.addIsAssociativeF <- complex.addIsAssociative
+  fieldpoly.addIsCommutativeF <- complex.addIsCommutative
+  fieldpoly.addZeroLeftF <- complex.addZeroLeft
+  fieldpoly.addNegLeftF <- complex.addNegLeft
+  fieldpoly.mulIsAssociativeF <- complex.mulIsAssociative
+  fieldpoly.mulIsCommutativeF <- complex.mulIsCommutative
+  fieldpoly.mulOneLeftF <- complex.mulOneLeft
+  fieldpoly.mulAddDistribLeftF <- complex.mulAddDistribLeft
+  fieldpoly.mulAddDistribRightF <- complex.mulAddDistribRight
+  // the polynomial layer
+  fieldpoly.polyExtensionality <- cPolyExtensionality
+  fieldpoly.zeroPolyCoeff <- cZeroPolyCoeff
+  fieldpoly.addP <- caddP
+  fieldpoly.negP <- cnegP
+  fieldpoly.monomial <- cmonomial
+  fieldpoly.degreeAtMostMeaning <- cDegreeAtMostMeaning
+  fieldpoly.degreeIsALeadingIndex <- cDegreeIsALeadingIndex
+  fieldpoly.degreeBoundsTheCoefficients <- cDegreeBoundsTheCoefficients
+  fieldpoly.convolution <- cconvolution
+  fieldpoly.mulP <- cmulP
+  fieldpoly.power <- cpower
+  fieldpoly.evalUpTo <- cevalUpTo
+  fieldpoly.isZeroOfMeaning <- cIsZeroOfMeaning
+  fieldpoly.tailConvolution <- ctailConvolution
+  fieldpoly.segment <- csegmentOf
+  fieldpoly.rsegment <- crsegmentOf
+  fieldpoly.theGapTo <- ctheGapTo
+  fieldpoly.theCofactorIndex <- ctheCofactorIndex
+  fieldpoly.cappedRun <- ccappedRun
+  fieldpoly.tripleTerm <- ctripleTerm
+  fieldpoly.tripleRow <- ctripleRow
+  fieldpoly.tripleDiag <- ctripleDiag
+  fieldpoly.tripleTri <- ctripleTri
+  fieldpoly.tripleRows <- ctripleRows
+}
+
+// -- the transferred ring structure, named locally -----------------------------------------
+// Callers should not have to re-open the model; these give ℂ[x]'s ring laws bare names.
+theorem cMulIsCommutative: forall p, q: CPoly; cmulP(p, q) = cmulP(q, p)
+proof
+  @conclusion |
+    forall p, q: CPoly; cmulP(p, q) = cmulP(q, p)
+    [using model(ComplexPolynomials) fieldpoly.polyMulIsCommutative]
+qed
+
+theorem cMulIsAssociative: forall p, q, r: CPoly;
+  cmulP(cmulP(p, q), r) = cmulP(p, cmulP(q, r))
+proof
+  @conclusion |
+    forall p, q, r: CPoly; cmulP(cmulP(p, q), r) = cmulP(p, cmulP(q, r))
+    [using model(ComplexPolynomials) fieldpoly.polyMulIsAssociative]
+qed
+
+theorem cAddIsCommutative: forall p, q: CPoly; caddP(p, q) = caddP(q, p)
+proof
+  @conclusion |
+    forall p, q: CPoly; caddP(p, q) = caddP(q, p)
+    [using model(ComplexPolynomials) fieldpoly.polyAddIsCommutative]
+qed
+
+theorem cAddIsAssociative: forall p, q, r: CPoly;
+  caddP(caddP(p, q), r) = caddP(p, caddP(q, r))
+proof
+  @conclusion |
+    forall p, q, r: CPoly; caddP(caddP(p, q), r) = caddP(p, caddP(q, r))
+    [using model(ComplexPolynomials) fieldpoly.polyAddIsAssociative]
+qed
+
+// -- the ring layer, for the facts stated over `ring_poly.ONEP` ----------------------------
+// `polyMulOneLeft` is stated in `std/ring/polynomial.b4m` over its own `ONEP`, which F[x]
+// maps onto a DERIVED unit (`monomial(oneF, ZERO)`). Re-transferring through F[x] therefore
+// re-elaborates a proof in F[x]'s names, which ℂ[x]'s model cannot re-point. ℚ[x] solved
+// this the same way: map the ring layer DIRECTLY, where the unit is a plain constant.
+model ComplexPolynomialsOverARing {
+  ring.Ring: Complex
+  ring.ZERO: ZERO
+  ring.ONE: complex.ONE
+  ring.add: complex.add
+  ring.mul: complex.mul
+  ring.neg: complex.neg
+  ring.addIsAssociative <- complex.addIsAssociative
+  ring.addZeroLeft <- complex.addZeroLeft
+  ring.addNegLeft <- complex.addNegLeft
+  ring.addIsCommutative <- complex.addIsCommutative
+  ring.mulIsAssociative <- complex.mulIsAssociative
+  ring.mulAddDistribLeft <- complex.mulAddDistribLeft
+  ring.mulAddDistribRight <- complex.mulAddDistribRight
+  ring_poly.mulOneLeftR <- complex.mulOneLeft
+  ring_poly.mulIsCommutativeR <- complex.mulIsCommutative
+  ring_poly.Nat: Nat
+  ring_poly.ZERO: NAT_ZERO
+  ring_poly.succ: peano.succ
+  ring_poly.addN: peano.add
+  ring_poly.less_than: peano.less_than
+  ring_poly.Poly: CPoly
+  ring_poly.coeff: ccoeff
+  ring_poly.ZEROP: CZEROP
+  ring_poly.ONEP: CONEP
+  ring_poly.addP: caddP
+  ring_poly.negP: cnegP
+  ring_poly.mulP: cmulP
+  ring_poly.convolution: cconvolution
+  ring_poly.tailConvolution: ctailConvolution
+  ring_poly.segment: csegmentOf
+  ring_poly.rsegment: crsegmentOf
+  ring_poly.degreeAtMost: cdegreeAtMost
+  ring_poly.degree: cdegree
+  ring_poly.polyExtensionality <- cPolyExtensionality
+  ring_poly.zeroPolyCoeff <- cZeroPolyCoeff
+  ring_poly.onePolyCoeffZero <- cOnePolyCoeffZero
+  ring_poly.onePolyCoeffHigher <- cOnePolyCoeffHigher
+  ring_poly.addP <- caddP
+  ring_poly.negP <- cnegP
+  ring_poly.degreeAtMostMeaning <- cDegreeAtMostMeaning
+  ring_poly.degreeIsALeadingIndex <- cDegreeIsALeadingIndex
+  ring_poly.degreeBoundsTheCoefficients <- cDegreeBoundsTheCoefficients
+  ring_poly.convolution <- cconvolution
+  ring_poly.tailConvolution <- ctailConvolution
+  ring_poly.segment <- csegmentOf
+  ring_poly.rsegment <- crsegmentOf
+  ring_poly.mulP <- cmulP
+}
+
+theorem cMulOneLeft: forall p: CPoly; cmulP(CONEP, p) = p
+proof
+  @conclusion |
+    forall p: CPoly; cmulP(CONEP, p) = p
+    [using model(ComplexPolynomialsOverARing) ring_poly.polyMulOneLeft]
+qed
+
+// -- definition-clause shims ---------------------------------------------------------------
+//
+// The symbols above are DEFINITION BLOCKS, so `--axioms` reports their clauses as
+// definitions rather than as assumptions to weigh. A clause has no user-facing name,
+// though, and a model's `<-` and `specialize` both resolve BY NAME — so each clause keeps a
+// one-line theorem under the name it had as an axiom. These add no assumption: every one is
+// proved `[by definition(N) <symbol>]`.
+
+theorem cAddPolyCoeff:
+  forall p, q: CPoly; forall i: Nat;
+  ccoeff(caddP(p, q), i) = complex.add(ccoeff(p, i), ccoeff(q, i))
+proof
+  @conclusion |
+    forall p, q: CPoly; forall i: Nat;
+      ccoeff(caddP(p, q), i) = complex.add(ccoeff(p, i), ccoeff(q, i))
+    [by definition caddP]
+qed
+
+theorem cNegPolyCoeff:
+  forall p: CPoly; forall i: Nat;
+  ccoeff(cnegP(p), i) = complex.neg(ccoeff(p, i))
+proof
+  @conclusion |
+    forall p: CPoly; forall i: Nat;
+      ccoeff(cnegP(p), i) = complex.neg(ccoeff(p, i))
+    [by definition cnegP]
+qed
+
+theorem cMulPolyCoeff:
+  forall p, q: CPoly; forall i: Nat;
+  ccoeff(cmulP(p, q), i) = cconvolution(p, q, NAT_ZERO, i)
+proof
+  @conclusion |
+    forall p, q: CPoly; forall i: Nat;
+      ccoeff(cmulP(p, q), i) = cconvolution(p, q, NAT_ZERO, i)
+    [by definition cmulP]
+qed
+
+theorem cMonomialCoeffAtItsIndex:
+  forall a: Complex; forall k: Nat;
+  ccoeff(cmonomial(a, k), k) = a
+proof
+  @conclusion |
+    forall a: Complex; forall k: Nat;
+      ccoeff(cmonomial(a, k), k) = a
+    [by definition(0) cmonomial]
+qed
+
+theorem cMonomialCoeffElsewhere:
+  forall a: Complex; forall k, i: Nat;
+  (not (i = k)) -> ccoeff(cmonomial(a, k), i) = ZERO
+proof
+  @conclusion |
+    forall a: Complex; forall k, i: Nat;
+      (not (i = k)) -> ccoeff(cmonomial(a, k), i) = ZERO
+    [by definition(1) cmonomial]
+qed
+
+theorem cConvolutionZero:
+  forall p, q: CPoly; forall j: Nat;
+  cconvolution(p, q, j, NAT_ZERO) =
+  complex.mul(ccoeff(p, j), ccoeff(q, NAT_ZERO))
+proof
+  @conclusion |
+    forall p, q: CPoly; forall j: Nat;
+      cconvolution(p, q, j, NAT_ZERO) =
+      complex.mul(ccoeff(p, j), ccoeff(q, NAT_ZERO))
+    [by definition(0) cconvolution]
+qed
+
+theorem cConvolutionSucc:
+  forall p, q: CPoly; forall j, m: Nat;
+  cconvolution(p, q, j, peano.succ(m)) =
+  complex.add(complex.mul(ccoeff(p, j), ccoeff(q, peano.succ(m))),
+  cconvolution(p, q, peano.succ(j), m))
+proof
+  @conclusion |
+    forall p, q: CPoly; forall j, m: Nat;
+      cconvolution(p, q, j, peano.succ(m)) =
+      complex.add(complex.mul(ccoeff(p, j), ccoeff(q, peano.succ(m))),
+      cconvolution(p, q, peano.succ(j), m))
+    [by definition(1) cconvolution]
+qed
+
+theorem cPowerZero:
+  forall a: Complex; cpower(a, NAT_ZERO) = complex.ONE
+proof
+  @conclusion |
+    forall a: Complex; cpower(a, NAT_ZERO) = complex.ONE
+    [by definition(0) cpower]
+qed
+
+theorem cPowerSucc:
+  forall a: Complex; forall n: Nat;
+  cpower(a, peano.succ(n)) = complex.mul(a, cpower(a, n))
+proof
+  @conclusion |
+    forall a: Complex; forall n: Nat;
+      cpower(a, peano.succ(n)) = complex.mul(a, cpower(a, n))
+    [by definition(1) cpower]
+qed
+
+theorem cEvalZero:
+  forall p: CPoly; forall a: Complex;
+  cevalUpTo(p, a, NAT_ZERO) = ZERO
+proof
+  @conclusion |
+    forall p: CPoly; forall a: Complex;
+      cevalUpTo(p, a, NAT_ZERO) = ZERO
+    [by definition(0) cevalUpTo]
+qed
+
+theorem cEvalSucc:
+  forall p: CPoly; forall a: Complex; forall k: Nat;
+  cevalUpTo(p, a, peano.succ(k)) =
+  complex.add(cevalUpTo(p, a, k), complex.mul(ccoeff(p, k), cpower(a, k)))
+proof
+  @conclusion |
+    forall p: CPoly; forall a: Complex; forall k: Nat;
+      cevalUpTo(p, a, peano.succ(k)) =
+      complex.add(cevalUpTo(p, a, k), complex.mul(ccoeff(p, k), cpower(a, k)))
+    [by definition(1) cevalUpTo]
+qed
+
+theorem cTailConvolutionZero:
+  forall p, q: CPoly; forall m: Nat;
+  ctailConvolution(p, q, NAT_ZERO, m) =
+  complex.mul(ccoeff(p, NAT_ZERO), ccoeff(q, m))
+proof
+  @conclusion |
+    forall p, q: CPoly; forall m: Nat;
+      ctailConvolution(p, q, NAT_ZERO, m) =
+      complex.mul(ccoeff(p, NAT_ZERO), ccoeff(q, m))
+    [by definition(0) ctailConvolution]
+qed
+
+theorem cTailConvolutionSucc:
+  forall p, q: CPoly; forall j, m: Nat;
+  ctailConvolution(p, q, peano.succ(j), m) =
+  complex.add(complex.mul(ccoeff(p, peano.succ(j)), ccoeff(q, m)),
+  ctailConvolution(p, q, j, peano.succ(m)))
+proof
+  @conclusion |
+    forall p, q: CPoly; forall j, m: Nat;
+      ctailConvolution(p, q, peano.succ(j), m) =
+      complex.add(complex.mul(ccoeff(p, peano.succ(j)), ccoeff(q, m)),
+      ctailConvolution(p, q, j, peano.succ(m)))
+    [by definition(1) ctailConvolution]
+qed
+
+theorem cSegmentZero:
+  forall p, q: CPoly; forall j, c: Nat;
+  csegmentOf(p, q, j, c, NAT_ZERO) = complex.mul(ccoeff(p, j), ccoeff(q, c))
+proof
+  @conclusion |
+    forall p, q: CPoly; forall j, c: Nat;
+      csegmentOf(p, q, j, c, NAT_ZERO) = complex.mul(ccoeff(p, j), ccoeff(q, c))
+    [by definition(0) csegmentOf]
+qed
+
+theorem cSegmentSucc:
+  forall p, q: CPoly; forall j, c, n: Nat;
+  csegmentOf(p, q, peano.succ(j), c, peano.succ(n)) =
+  complex.add(complex.mul(ccoeff(p, peano.succ(j)), ccoeff(q, c)),
+  csegmentOf(p, q, j, peano.succ(c), n))
+proof
+  @conclusion |
+    forall p, q: CPoly; forall j, c, n: Nat;
+      csegmentOf(p, q, peano.succ(j), c, peano.succ(n)) =
+      complex.add(complex.mul(ccoeff(p, peano.succ(j)), ccoeff(q, c)),
+      csegmentOf(p, q, j, peano.succ(c), n))
+    [by definition(1) csegmentOf]
+qed
+
+theorem cRsegmentZero:
+  forall p, q: CPoly; forall j, c: Nat;
+  crsegmentOf(p, q, j, c, NAT_ZERO) = complex.mul(ccoeff(p, j), ccoeff(q, c))
+proof
+  @conclusion |
+    forall p, q: CPoly; forall j, c: Nat;
+      crsegmentOf(p, q, j, c, NAT_ZERO) = complex.mul(ccoeff(p, j), ccoeff(q, c))
+    [by definition(0) crsegmentOf]
+qed
+
+theorem cRsegmentSucc:
+  forall p, q: CPoly; forall j, c, n: Nat;
+  crsegmentOf(p, q, j, peano.succ(c), peano.succ(n)) =
+  complex.add(complex.mul(ccoeff(p, j), ccoeff(q, peano.succ(c))),
+  crsegmentOf(p, q, peano.succ(j), c, n))
+proof
+  @conclusion |
+    forall p, q: CPoly; forall j, c, n: Nat;
+      crsegmentOf(p, q, j, peano.succ(c), peano.succ(n)) =
+      complex.add(complex.mul(ccoeff(p, j), ccoeff(q, peano.succ(c))),
+      crsegmentOf(p, q, peano.succ(j), c, n))
+    [by definition(1) crsegmentOf]
+qed
+
+theorem cTheGapToAtZero:
+  forall i: Nat; ctheGapTo(i, NAT_ZERO) = i
+proof
+  @conclusion |
+    forall i: Nat; ctheGapTo(i, NAT_ZERO) = i
+    [by definition(0) ctheGapTo]
+qed
+
+theorem cTheGapToSteps:
+  forall i, j: Nat;
+  ctheGapTo(peano.succ(i), peano.succ(j)) = ctheGapTo(i, j)
+proof
+  @conclusion |
+    forall i, j: Nat;
+      ctheGapTo(peano.succ(i), peano.succ(j)) = ctheGapTo(i, j)
+    [by definition(1) ctheGapTo]
+qed
+
+theorem cTheCofactorIndexAtZero:
+  forall i, j: Nat;
+  ctheCofactorIndex(i, j, NAT_ZERO) = ctheGapTo(i, j)
+proof
+  @conclusion |
+    forall i, j: Nat;
+      ctheCofactorIndex(i, j, NAT_ZERO) = ctheGapTo(i, j)
+    [by definition(0) ctheCofactorIndex]
+qed
+
+theorem cTheCofactorIndexSteps:
+  forall i, j, k: Nat;
+  ctheCofactorIndex(i, j, peano.succ(k)) =
+  ctheGapTo(ctheGapTo(i, j), peano.succ(k))
+proof
+  @conclusion |
+    forall i, j, k: Nat;
+      ctheCofactorIndex(i, j, peano.succ(k)) =
+      ctheGapTo(ctheGapTo(i, j), peano.succ(k))
+    [by definition(1) ctheCofactorIndex]
+qed
+
+theorem cCappedRunZero:
+  forall q, r: CPoly; forall g: Nat;
+  ccappedRun(q, r, g, NAT_ZERO) = ZERO
+proof
+  @conclusion |
+    forall q, r: CPoly; forall g: Nat;
+      ccappedRun(q, r, g, NAT_ZERO) = ZERO
+    [by definition(0) ccappedRun]
+qed
+
+theorem cCappedRunSucc:
+  forall q, r: CPoly; forall g, n: Nat;
+  ccappedRun(q, r, g, peano.succ(n)) =
+  complex.add(ccappedRun(q, r, g, n),
+  complex.mul(ccoeff(q, n), ccoeff(r, ctheGapTo(g, n))))
+proof
+  @conclusion |
+    forall q, r: CPoly; forall g, n: Nat;
+      ccappedRun(q, r, g, peano.succ(n)) =
+      complex.add(ccappedRun(q, r, g, n),
+      complex.mul(ccoeff(q, n), ccoeff(r, ctheGapTo(g, n))))
+    [by definition(1) ccappedRun]
+qed
+
+theorem cTripleTermMeaning:
+  forall p, q, r: CPoly; forall i, j, k: Nat;
+  ctripleTerm(p, q, r, i, j, k) =
+  complex.mul(complex.mul(ccoeff(p, j), ccoeff(q, k)),
+  ccoeff(r, ctheCofactorIndex(i, j, k)))
+proof
+  @conclusion |
+    forall p, q, r: CPoly; forall i, j, k: Nat;
+      ctripleTerm(p, q, r, i, j, k) =
+      complex.mul(complex.mul(ccoeff(p, j), ccoeff(q, k)),
+      ccoeff(r, ctheCofactorIndex(i, j, k)))
+    [by definition ctripleTerm]
+qed
+
+theorem cTripleRowZero:
+  forall p, q, r: CPoly; forall i, j: Nat;
+  ctripleRow(p, q, r, i, j, NAT_ZERO) = ZERO
+proof
+  @conclusion |
+    forall p, q, r: CPoly; forall i, j: Nat;
+      ctripleRow(p, q, r, i, j, NAT_ZERO) = ZERO
+    [by definition(0) ctripleRow]
+qed
+
+theorem cTripleRowSucc:
+  forall p, q, r: CPoly; forall i, j, n: Nat;
+  ctripleRow(p, q, r, i, j, peano.succ(n)) =
+  complex.add(ctripleRow(p, q, r, i, j, n), ctripleTerm(p, q, r, i, j, n))
+proof
+  @conclusion |
+    forall p, q, r: CPoly; forall i, j, n: Nat;
+      ctripleRow(p, q, r, i, j, peano.succ(n)) =
+      complex.add(ctripleRow(p, q, r, i, j, n), ctripleTerm(p, q, r, i, j, n))
+    [by definition(1) ctripleRow]
+qed
+
+theorem cTripleDiagZero:
+  forall p, q, r: CPoly; forall i, m: Nat;
+  ctripleDiag(p, q, r, i, m, NAT_ZERO) = ZERO
+proof
+  @conclusion |
+    forall p, q, r: CPoly; forall i, m: Nat;
+      ctripleDiag(p, q, r, i, m, NAT_ZERO) = ZERO
+    [by definition(0) ctripleDiag]
+qed
+
+theorem cTripleDiagSucc:
+  forall p, q, r: CPoly; forall i, m, c: Nat;
+  ctripleDiag(p, q, r, i, m, peano.succ(c)) =
+  complex.add(ctripleDiag(p, q, r, i, m, c),
+  ctripleTerm(p, q, r, i, c, ctheGapTo(m, c)))
+proof
+  @conclusion |
+    forall p, q, r: CPoly; forall i, m, c: Nat;
+      ctripleDiag(p, q, r, i, m, peano.succ(c)) =
+      complex.add(ctripleDiag(p, q, r, i, m, c),
+      ctripleTerm(p, q, r, i, c, ctheGapTo(m, c)))
+    [by definition(1) ctripleDiag]
+qed
+
+theorem cTripleTriZero:
+  forall p, q, r: CPoly; forall i: Nat;
+  ctripleTri(p, q, r, i, NAT_ZERO) = ZERO
+proof
+  @conclusion |
+    forall p, q, r: CPoly; forall i: Nat;
+      ctripleTri(p, q, r, i, NAT_ZERO) = ZERO
+    [by definition(0) ctripleTri]
+qed
+
+theorem cTripleTriSucc:
+  forall p, q, r: CPoly; forall i, n: Nat;
+  ctripleTri(p, q, r, i, peano.succ(n)) =
+  complex.add(ctripleTri(p, q, r, i, n),
+  ctripleDiag(p, q, r, i, n, peano.succ(n)))
+proof
+  @conclusion |
+    forall p, q, r: CPoly; forall i, n: Nat;
+      ctripleTri(p, q, r, i, peano.succ(n)) =
+      complex.add(ctripleTri(p, q, r, i, n),
+      ctripleDiag(p, q, r, i, n, peano.succ(n)))
+    [by definition(1) ctripleTri]
+qed
+
+theorem cTripleRowsZero:
+  forall p, q, r: CPoly; forall i, n: Nat;
+  ctripleRows(p, q, r, i, NAT_ZERO, n) = ZERO
+proof
+  @conclusion |
+    forall p, q, r: CPoly; forall i, n: Nat;
+      ctripleRows(p, q, r, i, NAT_ZERO, n) = ZERO
+    [by definition(0) ctripleRows]
+qed
+
+theorem cTripleRowsSucc:
+  forall p, q, r: CPoly; forall i, m, n: Nat;
+  ctripleRows(p, q, r, i, peano.succ(m), n) =
+  complex.add(ctripleRows(p, q, r, i, m, n),
+  ctripleRow(p, q, r, i, m, ctheGapTo(n, m)))
+proof
+  @conclusion |
+    forall p, q, r: CPoly; forall i, m, n: Nat;
+      ctripleRows(p, q, r, i, peano.succ(m), n) =
+      complex.add(ctripleRows(p, q, r, i, m, n),
+      ctripleRow(p, q, r, i, m, ctheGapTo(n, m)))
+    [by definition(1) ctripleRows]
+qed
