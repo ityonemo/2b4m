@@ -237,7 +237,7 @@ qed
 // integers". It is ℚ's fraction axiom read at a coefficient.
 theorem everyCoefficientIsARatioOfIntegers: forall p: QPoly; forall i: Nat;
   exists b, c: Q;
-  isInteger(b) and isInteger(c) and c != ZERO and
+  isInteger(b) and isInteger(c) and rational.nonzero(c) and
   qcoeff(p, i) = rational.mul(b, rational.recip(c))
 proof
   @generalize-p |
@@ -246,21 +246,21 @@ proof
         fix i: Nat {
           @conclusion-the-coefficient-is-a-ratio |
             exists b, c: Q;
-              isInteger(b) and isInteger(c) and c != ZERO and
+              isInteger(b) and isInteger(c) and rational.nonzero(c) and
               qcoeff(p, i) = rational.mul(b, rational.recip(c))
             [using specialize rational.everyRationalIsAQuotientOfIntegers(qcoeff(p, i))]
         }
       @discharge-i |
         forall i9: Nat;
           exists b, c: Q;
-          isInteger(b) and isInteger(c) and c != ZERO and
+          isInteger(b) and isInteger(c) and rational.nonzero(c) and
           qcoeff(p, i9) = rational.mul(b, rational.recip(c))
         [by generalize generalize-i]
     }
   @conclusion |
     forall p: QPoly; forall i: Nat;
       exists b, c: Q;
-      isInteger(b) and isInteger(c) and c != ZERO and
+      isInteger(b) and isInteger(c) and rational.nonzero(c) and
       qcoeff(p, i) = rational.mul(b, rational.recip(c))
     [by generalize generalize-p]
 qed
@@ -402,7 +402,7 @@ define arePairwiseRelativelyPrime(a, b) =
 pred isTheIntegerDecomposition(p: QPoly, q: QPoly, r: Q, s: Q, n: Nat)
 axiom integerDecompositionMeaning: forall p, q: QPoly; forall r, s: Q; forall n: Nat;
   isTheIntegerDecomposition(p, q, r, s, n) iff
-  (isInteger(r) and isInteger(s) and s != ZERO and
+  (isInteger(r) and isInteger(s) and rational.nonzero(s) and
   hasIntegerCoefficientsUpTo(q, n) and
   coefficientsAreRelativelyPrimeUpTo(q, n) and
   arePairwiseRelativelyPrime(r, s) and
@@ -411,7 +411,12 @@ axiom integerDecompositionMeaning: forall p, q: QPoly; forall r, s: Q; forall n:
 // The decomposition's shape composes: given one, p really is the scaled polynomial, and that
 // scaling is a ℚ[x] element like any other. A sanity theorem — it is what makes the
 // predicate above a statement about p rather than a bag of unrelated conjuncts.
+// `nonzero(s)` leads: the conclusion writes the guarded `recip(s)` OUTSIDE the assume, so its
+// obligation must be met from the antecedent — the checker reads guards syntactically, and
+// `isTheIntegerDecomposition(...)` does not supply one. Callers hold the nonzero as a
+// hypothesis of their own and pass it here.
 theorem aScaledIntegerPolynomialIsRational: forall p, q: QPoly; forall r, s: Q; forall n: Nat;
+  rational.nonzero(s) ->
   isTheIntegerDecomposition(p, q, r, s, n) ->
   p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), NAT_ZERO), q)
 proof
@@ -425,54 +430,85 @@ proof
                 fix s: Q {
                   @generalize-n |
                     fix n: Nat {
-                      @given-the-decomposition |
-                        assume isTheIntegerDecomposition(p, q, r, s, n) {
-                          @the-decomposition |
-                            isTheIntegerDecomposition(p, q, r, s, n)
-                            [by hypothesis given-the-decomposition]
-                          @the-definition |
-                            isTheIntegerDecomposition(p, q, r, s, n) iff
-                              (isInteger(r) and isInteger(s) and s != ZERO and
-                              hasIntegerCoefficientsUpTo(q, n) and
-                              coefficientsAreRelativelyPrimeUpTo(q, n) and
-                              arePairwiseRelativelyPrime(r, s) and
-                              p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), NAT_ZERO), q))
-                            [using specialize integerDecompositionMeaning(p, q, r, s, n)]
-                          @conclusion-p-is-the-scaling |
-                            p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), NAT_ZERO), q)
-                            [using tautology the-definition the-decomposition]
+                      @given-s-is-nonzero |
+                        assume rational.nonzero(s) {
+                          @given-the-decomposition |
+                            assume isTheIntegerDecomposition(p, q, r, s, n) {
+                              @the-decomposition |
+                                isTheIntegerDecomposition(p, q, r, s, n)
+                                [by hypothesis given-the-decomposition]
+                              @the-definition |
+                                isTheIntegerDecomposition(p, q, r, s, n) iff
+                                  (isInteger(r) and isInteger(s) and rational.nonzero(s) and
+                                  hasIntegerCoefficientsUpTo(q, n) and
+                                  coefficientsAreRelativelyPrimeUpTo(q, n) and
+                                  arePairwiseRelativelyPrime(r, s) and
+                                  p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), NAT_ZERO), q))
+                                [using specialize integerDecompositionMeaning(p, q, r, s, n)]
+                              // explicit elimination rather than `tautology`: the tactic's
+                              // GENERATED intermediate terms do not discharge a guard a step in
+                              // scope has proved (SIMPLIFY-ISSUES.md).
+                              @the-definition-forward |
+                                isTheIntegerDecomposition(p, q, r, s, n) ->
+                                  (isInteger(r) and isInteger(s) and rational.nonzero(s) and
+                                  hasIntegerCoefficientsUpTo(q, n) and
+                                  coefficientsAreRelativelyPrimeUpTo(q, n) and
+                                  arePairwiseRelativelyPrime(r, s) and
+                                  p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), NAT_ZERO), q))
+                                [by equiv_forward the-definition]
+                              @the-conjunction |
+                                isInteger(r) and isInteger(s) and rational.nonzero(s) and
+                                  hasIntegerCoefficientsUpTo(q, n) and
+                                  coefficientsAreRelativelyPrimeUpTo(q, n) and
+                                  arePairwiseRelativelyPrime(r, s) and
+                                  p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), NAT_ZERO), q)
+                                [by modus_ponens the-definition-forward the-decomposition]
+                              @conclusion-p-is-the-scaling |
+                                p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), NAT_ZERO), q)
+                                [by and_rhs the-conjunction]
+                            }
+                          @the-decomposition-implies |
+                            isTheIntegerDecomposition(p, q, r, s, n) ->
+                              p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), NAT_ZERO), q)
+                            [by discharge given-the-decomposition]
                         }
-                      @the-decomposition-implies |
-                        isTheIntegerDecomposition(p, q, r, s, n) ->
+                      @s-nonzero-implies |
+                        rational.nonzero(s) ->
+                          isTheIntegerDecomposition(p, q, r, s, n) ->
                           p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), NAT_ZERO), q)
-                        [by discharge given-the-decomposition]
+                        [by discharge given-s-is-nonzero]
                     }
                   @discharge-n |
                     forall n9: Nat;
+                      rational.nonzero(s) ->
                       isTheIntegerDecomposition(p, q, r, s, n9) ->
                       p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), NAT_ZERO), q)
                     [by generalize generalize-n]
                 }
               @discharge-s |
                 forall s9: Q; forall n9: Nat;
+                  rational.nonzero(s9) ->
                   isTheIntegerDecomposition(p, q, r, s9, n9) ->
                   p = qmulP(qmonomial(rational.mul(r, rational.recip(s9)), NAT_ZERO), q)
                 [by generalize generalize-s]
             }
           @discharge-r |
             forall r9, s9: Q; forall n9: Nat;
+              rational.nonzero(s9) ->
               isTheIntegerDecomposition(p, q, r9, s9, n9) ->
               p = qmulP(qmonomial(rational.mul(r9, rational.recip(s9)), NAT_ZERO), q)
             [by generalize generalize-r]
         }
       @discharge-q |
         forall q9: QPoly; forall r9, s9: Q; forall n9: Nat;
+          rational.nonzero(s9) ->
           isTheIntegerDecomposition(p, q9, r9, s9, n9) ->
           p = qmulP(qmonomial(rational.mul(r9, rational.recip(s9)), NAT_ZERO), q9)
         [by generalize generalize-q]
     }
   @conclusion |
     forall p, q: QPoly; forall r, s: Q; forall n: Nat;
+      rational.nonzero(s) ->
       isTheIntegerDecomposition(p, q, r, s, n) ->
       p = qmulP(qmonomial(rational.mul(r, rational.recip(s)), NAT_ZERO), q)
     [by generalize generalize-p]
@@ -1372,15 +1408,15 @@ qed
 
 // A power and its reciprocal's power cancel. The one auxiliary the clearing identity needs.
 theorem aPowerCancelsTheReciprocalsPower: forall s: Q; forall k: peano.Nat;
-  (not (s = ZERO)) ->
+  rational.nonzero(s) ->
   rational.mul(qpower(s, k), qpower(rational.recip(s), k)) = rational.ONE
 proof
   @generalize-s |
     fix s: Q {
       @given-s-nonzero |
-        assume not (s = ZERO) {
+        assume rational.nonzero(s) {
           @s-nonzero |
-            not (s = ZERO)
+            rational.nonzero(s)
             [by hypothesis given-s-nonzero]
           @s-inverts |
             rational.mul(s, rational.recip(s)) = rational.ONE
@@ -1481,7 +1517,7 @@ proof
             [using instantiation peano.induction((fun z: peano.Nat => (rational.mul(qpower(s, z), qpower(rational.recip(s), z)) = rational.ONE))) base-case induction-step-for-all-k]
         }
       @nonzero-implies |
-        (not (s = ZERO)) ->
+        rational.nonzero(s) ->
           (forall k: peano.Nat;
           rational.mul(qpower(s, k),
           qpower(rational.recip(s), k)) = rational.ONE)
@@ -1491,9 +1527,9 @@ proof
       @each-exponent |
         fix k: peano.Nat {
           @given-s-nonzero-again |
-            assume not (s = ZERO) {
+            assume rational.nonzero(s) {
               @s-nonzero-again |
-                not (s = ZERO)
+                rational.nonzero(s)
                 [by hypothesis given-s-nonzero-again]
               @all-exponents-here |
                 forall k2: peano.Nat;
@@ -1506,21 +1542,21 @@ proof
                 [using specialize all-exponents-here(k)]
             }
           @nonzero-implies-at-k |
-            (not (s = ZERO)) ->
+            rational.nonzero(s) ->
               rational.mul(qpower(s, k),
               qpower(rational.recip(s), k)) = rational.ONE
             [by discharge given-s-nonzero-again]
         }
       @discharge-s |
         forall k: peano.Nat;
-          (not (s = ZERO)) ->
+          rational.nonzero(s) ->
           rational.mul(qpower(s, k),
           qpower(rational.recip(s), k)) = rational.ONE
         [by generalize each-exponent]
     }
   @conclusion |
     forall s: Q; forall k: peano.Nat;
-      (not (s = ZERO)) ->
+      rational.nonzero(s) ->
       rational.mul(qpower(s, k), qpower(rational.recip(s), k)) =
       rational.ONE
     [by generalize generalize-s]
@@ -1530,7 +1566,7 @@ qed
 // whose terms are all integers when p's coefficients, r and s are.
 theorem clearingTheDenominatorGivesTheClearedSum: forall p: QPoly;
   forall r, s: Q; forall k: peano.Nat;
-  (not (s = ZERO)) ->
+  rational.nonzero(s) ->
   rational.mul(qpower(s, k),
   qevalUpTo(p, rational.mul(r, rational.recip(s)), k)) =
   qclearedSum(p, r, s, k)
@@ -1542,9 +1578,9 @@ proof
           @generalize-s |
             fix s: Q {
               @given-s-nonzero |
-                assume not (s = ZERO) {
+                assume rational.nonzero(s) {
                   @s-nonzero |
-                    not (s = ZERO)
+                    rational.nonzero(s)
                     [by hypothesis given-s-nonzero]
                   // base: s^0 · 0 = 0
                   @the-zero-power |
@@ -1741,7 +1777,7 @@ proof
                     [using instantiation peano.induction((fun z: peano.Nat => (rational.mul(qpower(s, z), qevalUpTo(p, rational.mul(r, rational.recip(s)), z)) = qclearedSum(p, r, s, z)))) base-case induction-step-for-all-k]
                 }
               @nonzero-implies |
-                (not (s = ZERO)) ->
+                rational.nonzero(s) ->
                   (forall k: peano.Nat;
                   rational.mul(qpower(s, k),
                   qevalUpTo(p, rational.mul(r,
@@ -1751,9 +1787,9 @@ proof
               @each-bound |
                 fix k: peano.Nat {
                   @given-s-nonzero-again |
-                    assume not (s = ZERO) {
+                    assume rational.nonzero(s) {
                       @s-nonzero-again |
-                        not (s = ZERO)
+                        rational.nonzero(s)
                         [by hypothesis given-s-nonzero-again]
                       @all-bounds-here |
                         forall k2: peano.Nat;
@@ -1770,7 +1806,7 @@ proof
                         [using specialize all-bounds-here(k)]
                     }
                   @nonzero-implies-at-k |
-                    (not (s = ZERO)) ->
+                    rational.nonzero(s) ->
                       rational.mul(qpower(s, k),
                       qevalUpTo(p, rational.mul(r,
                       rational.recip(s)), k)) =
@@ -1779,7 +1815,7 @@ proof
                 }
               @discharge-s |
                 forall k: peano.Nat;
-                  (not (s = ZERO)) ->
+                  rational.nonzero(s) ->
                   rational.mul(qpower(s, k),
                   qevalUpTo(p, rational.mul(r,
                   rational.recip(s)), k)) =
@@ -1788,7 +1824,7 @@ proof
             }
           @discharge-r |
             forall s9: Q; forall k: peano.Nat;
-              (not (s9 = ZERO)) ->
+              rational.nonzero(s9) ->
               rational.mul(qpower(s9, k),
               qevalUpTo(p, rational.mul(r, rational.recip(s9)), k)) =
               qclearedSum(p, r, s9, k)
@@ -1796,7 +1832,7 @@ proof
         }
       @discharge-p |
         forall r9, s9: Q; forall k: peano.Nat;
-          (not (s9 = ZERO)) ->
+          rational.nonzero(s9) ->
           rational.mul(qpower(s9, k),
           qevalUpTo(p, rational.mul(r9, rational.recip(s9)), k)) =
           qclearedSum(p, r9, s9, k)
@@ -1804,7 +1840,7 @@ proof
     }
   @conclusion |
     forall p: QPoly; forall r, s: Q; forall k: peano.Nat;
-      (not (s = ZERO)) ->
+      rational.nonzero(s) ->
       rational.mul(qpower(s, k),
       qevalUpTo(p, rational.mul(r, rational.recip(s)), k)) =
       qclearedSum(p, r, s, k)

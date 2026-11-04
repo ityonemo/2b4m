@@ -123,6 +123,31 @@ lines collapsed to 13 symbol lines.
   integer-coefficient predicates fail with `cannot infer the sort of 'i'`. These stay axioms
   unless clause binders gain declared sorts.
 
+## KNOWN GAP: an alias cannot discharge a definitional obligation
+
+**Not yet fixed; do it if it bites again.** `base.f <- localAlias` is refused —
+
+```
+error: 'hnz' discharges the definition 'base.gnz', so it must itself be a definition block
+       (a definitional axiom is overloadable only by a definition)
+```
+
+— even when `pred hnz = base.gnz` aliases a definition block. The cause is mechanical, not
+mathematical: `definitionArmCount` re-mangles the TOKEN'S OWN name, so for the alias it probes
+for `definition{hnz}{0}`, which does not exist — the clause was published as
+`definition{gnz}{0}` in the origin file. The arm count comes back 0 and the discharge is
+refused.
+
+**The fix:** resolve the token to its ORIGIN declaration before probing. Alias resolution is
+identity-by-origin everywhere else in the engine (see the `alias-collapse` design), so the
+probe is the odd one out.
+
+**The workaround, which is what `std/real/units.b4m` does:** name the origin on the discharge,
+qualified — `field_order.nonzero <- real.nonzero` rather than `<- nonzero`. Works today and
+reads fine, so this is a convenience gap rather than a blocker.
+
+Repro: `drafts/model-composition/aliasdisch.b4m`.
+
 ## Engine notes for whoever touches this next
 
 - The mangling now lives in one place: `InternPool.definitionClauseName` /

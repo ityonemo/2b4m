@@ -14,6 +14,35 @@ const E: Grp
 func op(a: Grp, b: Grp) => Grp
 func inverse(a: Grp) => Grp
 
+// `nonzero` — "not the identity". A DEFINED predicate (a definition block), so a modelling
+// theory OVERLOADS it: `group.nonzero <- nonzero` discharges this clause arm-for-arm rather
+// than restating it as an axiom. It originates here, the lowest theory with an identity to be
+// distinct from, and is threaded up through ring to field by each layer's model.
+//
+// Note `inverse` is TOTAL — a group has no partiality, so nothing here owes this as a guard.
+// The predicate exists for the theories above that do: a field's `recip` is defined only on
+// the nonzero elements, and `std/field/units.b4m` cuts by exactly this to make F* a group.
+pred nonzero(a: Grp):
+  nonzero(a) iff (not (a = E))
+
+// The identity is the one element that is not `nonzero` — the clause read at `E`, and the
+// library's demonstration that this definition says what it should.
+theorem theIdentityIsNotNonzero: not nonzero(E)
+proof
+  @the-meaning |
+    forall a: Grp; nonzero(a) iff (not (a = E))
+    [by definition nonzero]
+  @at-the-identity |
+    nonzero(E) iff (not (E = E))
+    [using specialize the-meaning(E)]
+  @the-identity-is-itself |
+    E = E
+    [by reflexivity]
+  @conclusion |
+    not nonzero(E)
+    [using tautology at-the-identity the-identity-is-itself]
+qed
+
 // A group's THREE axioms: associativity, a LEFT identity, a LEFT inverse. The
 // right-sided laws (`opIdentityRight`, `opInverseRight`) are THEOREMS, proved from
 // these below — the classic "one-sided axioms suffice" derivation.

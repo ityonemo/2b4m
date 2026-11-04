@@ -27,6 +27,11 @@ import peano_order <<< "std/peano/order.b4m"
 
 sort F = field.Field
 const zeroF = field.ZERO
+// `recipF` is GUARDED by this predicate (std/field.b4m threads it down from std/group.b4m),
+// so every site writing a reciprocal states its hypothesis as `nonzeroF(...)` rather than as
+// a disequation — the guard checker matches the obligation syntactically.
+pred nonzeroF = field.nonzero
+fact nonzeroFMeaning = field.nonzeroMeaning
 const oneF = field.ONE
 func addF = field.add
 func mulF = field.mul
@@ -416,7 +421,7 @@ qed
 
 // The chosen coefficient reproduces the leading coefficient: `(a_n * recip(b_m)) * b_m = a_n`.
 theorem theChosenCoefficientReproducesTheLeadingOne: forall leading, divisor_leading: F;
-  (not (divisor_leading = zeroF)) ->
+  nonzeroF(divisor_leading) ->
   mulF(mulF(leading, recipF(divisor_leading)), divisor_leading) = leading
 proof
   @generalize-leading |
@@ -424,9 +429,9 @@ proof
       @generalize-divisor |
         fix divisor_leading: F {
           @given-the-divisor-is-nonzero |
-            assume not (divisor_leading = zeroF) {
+            assume nonzeroF(divisor_leading) {
               @the-divisor-is-nonzero |
-                divisor_leading != zeroF
+                nonzeroF(divisor_leading)
                 [by hypothesis given-the-divisor-is-nonzero]
               @regroup |
                 mulF(mulF(leading, recipF(divisor_leading)), divisor_leading) =
@@ -447,19 +452,19 @@ proof
                 [using chain regrouped-to-one times-one]
             }
           @nonzero-implies-reproduction |
-            (not (divisor_leading = zeroF)) ->
+            nonzeroF(divisor_leading) ->
               mulF(mulF(leading, recipF(divisor_leading)), divisor_leading) = leading
             [by discharge given-the-divisor-is-nonzero]
         }
       @discharge-divisor |
         forall divisor_leading: F;
-          (not (divisor_leading = zeroF)) ->
+          nonzeroF(divisor_leading) ->
           mulF(mulF(leading, recipF(divisor_leading)), divisor_leading) = leading
         [by generalize generalize-divisor]
     }
   @conclusion |
     forall leading, divisor_leading: F;
-      (not (divisor_leading = zeroF)) ->
+      nonzeroF(divisor_leading) ->
       mulF(mulF(leading, recipF(divisor_leading)), divisor_leading) = leading
     [by generalize generalize-leading]
 qed
@@ -469,7 +474,7 @@ qed
 // `f` and `g` are arbitrary; what matters is that `g`'s m-th coefficient is nonzero (it is
 // `g`'s leading one) and that `f`'s coefficient at `k + m` is the `leading` being cancelled.
 theorem theLeadingTermsCancel: forall f, g: Poly; forall k, m: Nat;
-  (not (coeff(g, m) = zeroF)) ->
+  nonzeroF(coeff(g, m)) ->
   coeff(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)),
   peano.add(k, m)) = zeroF
 proof
@@ -482,9 +487,9 @@ proof
               @generalize-m |
                 fix m: Nat {
                   @given-the-divisor-leads |
-                    assume not (coeff(g, m) = zeroF) {
+                    assume nonzeroF(coeff(g, m)) {
                       @the-divisor-leads |
-                        coeff(g, m) != zeroF
+                        nonzeroF(coeff(g, m))
                         [by hypothesis given-the-divisor-leads]
 
                       // the difference's coefficient, by subPolyCoeff
@@ -523,31 +528,31 @@ proof
                         [using chain the-difference-is-a-cancelling-pair the-pair-cancels]
                     }
                   @leading-implies-cancellation |
-                    (not (coeff(g, m) = zeroF)) ->
+                    nonzeroF(coeff(g, m)) ->
                       coeff(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), peano.add(k, m)) = zeroF
                     [by discharge given-the-divisor-leads]
                 }
               @discharge-m |
                 forall m: Nat;
-                  (not (coeff(g, m) = zeroF)) ->
+                  nonzeroF(coeff(g, m)) ->
                   coeff(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), peano.add(k, m)) = zeroF
                 [by generalize generalize-m]
             }
           @discharge-k |
             forall k: Nat; forall m: Nat;
-              (not (coeff(g, m) = zeroF)) ->
+              nonzeroF(coeff(g, m)) ->
               coeff(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), peano.add(k, m)) = zeroF
             [by generalize generalize-k]
         }
       @discharge-g |
         forall g: Poly; forall k, m: Nat;
-          (not (coeff(g, m) = zeroF)) ->
+          nonzeroF(coeff(g, m)) ->
           coeff(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), peano.add(k, m)) = zeroF
         [by generalize generalize-g]
     }
   @conclusion |
     forall f, g: Poly; forall k, m: Nat;
-      (not (coeff(g, m) = zeroF)) ->
+      nonzeroF(coeff(g, m)) ->
       coeff(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), peano.add(k, m)) = zeroF
     [by generalize generalize-f]
 qed
@@ -734,10 +739,13 @@ qed
 // `degree(f) = succ(d)`. The bound on the subtrahend is `degreeOfAProduct` plus the
 // monomial's own degree: `deg(monomial(c,k) * g) = k + m`, which the hypothesis says is
 // `succ(d)`.
+// The divisor's leading coefficient is nonzero FIRST, because `recipF` is guarded: every
+// later antecedent writes `recipF(coeff(g, m))`, and a guard must be in scope where the term
+// appears. Antecedents are conjunctive, so the order carries no mathematical content.
 theorem theConstructionDropsADegree: forall f, g: Poly; forall k, m, d: Nat;
+  nonzeroF(coeff(g, m)) ->
   (not (f = ZEROP)) -> (not (g = ZEROP)) ->
   (not (monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) = ZEROP)) ->
-  (not (coeff(g, m) = zeroF)) ->
   (not (mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))) = zeroF)) ->
   degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
   degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
@@ -752,14 +760,14 @@ proof
                 fix m: Nat {
                   @generalize-d |
                     fix d: Nat {
-                      @given-f-nonzero |
-                        assume not (f = ZEROP) {
-                          @given-g-nonzero |
-                            assume not (g = ZEROP) {
-                              @given-the-monomial-nonzero |
-                                assume not (monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) = ZEROP) {
-                                  @given-the-divisor-leads |
-                                    assume not (coeff(g, m) = zeroF) {
+                      @given-the-divisor-leads |
+                        assume nonzeroF(coeff(g, m)) {
+                          @given-f-nonzero |
+                            assume not (f = ZEROP) {
+                              @given-g-nonzero |
+                                assume not (g = ZEROP) {
+                                  @given-the-monomial-nonzero |
+                                    assume not (monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) = ZEROP) {
                                       @given-the-coefficient-nonzero |
                                         assume not (mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))) = zeroF) {
                                           @given-g-has-degree-m |
@@ -778,7 +786,7 @@ proof
                                                         not (monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) = ZEROP)
                                                         [by hypothesis given-the-monomial-nonzero]
                                                       @the-divisor-leads |
-                                                        coeff(g, m) != zeroF
+                                                        nonzeroF(coeff(g, m))
                                                         [by hypothesis given-the-divisor-leads]
                                                       @the-coefficient-nonzero |
                                                         mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))) != zeroF
@@ -861,44 +869,43 @@ proof
                                           degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
                                         [by discharge given-the-coefficient-nonzero]
                                     }
-                                  @leading-implies-the-drop |
-                                    (not (coeff(g, m) = zeroF)) ->
+                                  @monomial-implies-the-drop |
+                                    (not (monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) = ZEROP)) ->
                                       (not (mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))) = zeroF)) ->
                                       degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
                                       degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
-                                    [by discharge given-the-divisor-leads]
+                                    [by discharge given-the-monomial-nonzero]
                                 }
-                              @monomial-implies-the-drop |
-                                (not (monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) = ZEROP)) ->
-                                  (not (coeff(g, m) = zeroF)) ->
+                              @g-nonzero-implies-the-drop |
+                                (not (g = ZEROP)) ->
+                                  (not (monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) = ZEROP)) ->
                                   (not (mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))) = zeroF)) ->
                                   degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
                                   degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
-                                [by discharge given-the-monomial-nonzero]
+                                [by discharge given-g-nonzero]
                             }
-                          @g-nonzero-implies-the-drop |
-                            (not (g = ZEROP)) ->
+                          @f-nonzero-implies-the-drop |
+                            (not (f = ZEROP)) -> (not (g = ZEROP)) ->
                               (not (monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) = ZEROP)) ->
-                              (not (coeff(g, m) = zeroF)) ->
                               (not (mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))) = zeroF)) ->
                               degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
                               degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
-                            [by discharge given-g-nonzero]
+                            [by discharge given-f-nonzero]
                         }
                       @the-drop |
-                        (not (f = ZEROP)) -> (not (g = ZEROP)) ->
+                        nonzeroF(coeff(g, m)) ->
+                          (not (f = ZEROP)) -> (not (g = ZEROP)) ->
                           (not (monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) = ZEROP)) ->
-                          (not (coeff(g, m) = zeroF)) ->
                           (not (mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))) = zeroF)) ->
                           degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
                           degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
-                        [by discharge given-f-nonzero]
+                        [by discharge given-the-divisor-leads]
                     }
                   @discharge-d |
                     forall d: Nat;
+                      nonzeroF(coeff(g, m)) ->
                       (not (f = ZEROP)) -> (not (g = ZEROP)) ->
                       (not (monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) = ZEROP)) ->
-                      (not (coeff(g, m) = zeroF)) ->
                       (not (mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))) = zeroF)) ->
                       degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
                       degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
@@ -906,9 +913,9 @@ proof
                 }
               @discharge-m |
                 forall m, d: Nat;
+                  nonzeroF(coeff(g, m)) ->
                   (not (f = ZEROP)) -> (not (g = ZEROP)) ->
                   (not (monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) = ZEROP)) ->
-                  (not (coeff(g, m) = zeroF)) ->
                   (not (mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))) = zeroF)) ->
                   degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
                   degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
@@ -916,9 +923,9 @@ proof
             }
           @discharge-k |
             forall k, m, d: Nat;
+              nonzeroF(coeff(g, m)) ->
               (not (f = ZEROP)) -> (not (g = ZEROP)) ->
               (not (monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) = ZEROP)) ->
-              (not (coeff(g, m) = zeroF)) ->
               (not (mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))) = zeroF)) ->
               degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
               degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
@@ -926,9 +933,9 @@ proof
         }
       @discharge-g |
         forall g: Poly; forall k, m, d: Nat;
+          nonzeroF(coeff(g, m)) ->
           (not (f = ZEROP)) -> (not (g = ZEROP)) ->
           (not (monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) = ZEROP)) ->
-          (not (coeff(g, m) = zeroF)) ->
           (not (mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))) = zeroF)) ->
           degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
           degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
@@ -936,9 +943,9 @@ proof
     }
   @conclusion |
     forall f, g: Poly; forall k, m, d: Nat;
+      nonzeroF(coeff(g, m)) ->
       (not (f = ZEROP)) -> (not (g = ZEROP)) ->
       (not (monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) = ZEROP)) ->
-      (not (coeff(g, m) = zeroF)) ->
       (not (mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))) = zeroF)) ->
       degree(g) = m -> degree(f) = peano.add(k, m) -> peano.add(k, m) = succ(d) ->
       degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
@@ -1608,7 +1615,7 @@ qed
 // zero divisors, and `recip` of a nonzero is nonzero (else multiplying it by `b_m` could not
 // give `1`).
 theorem theChosenCoefficientIsNonzero: forall leading, divisor_leading: F;
-  (not (leading = zeroF)) -> (not (divisor_leading = zeroF)) ->
+  nonzeroF(leading) -> nonzeroF(divisor_leading) ->
   (not (mulF(leading, recipF(divisor_leading)) = zeroF))
 proof
   @generalize-leading |
@@ -1616,14 +1623,14 @@ proof
       @generalize-divisor |
         fix divisor_leading: F {
           @given-the-leading-is-nonzero |
-            assume not (leading = zeroF) {
+            assume nonzeroF(leading) {
               @given-the-divisor-is-nonzero |
-                assume not (divisor_leading = zeroF) {
+                assume nonzeroF(divisor_leading) {
                   @the-leading-is-nonzero |
-                    leading != zeroF
+                    nonzeroF(leading)
                     [by hypothesis given-the-leading-is-nonzero]
                   @the-divisor-is-nonzero |
-                    divisor_leading != zeroF
+                    nonzeroF(divisor_leading)
                     [by hypothesis given-the-divisor-is-nonzero]
                   // recip(b) is nonzero: if it were zero, b·recip(b) would be zero, not one.
                   // recip(b) != 0: if it were, recip(b)·b would be 0, but it is 1.
@@ -1661,29 +1668,34 @@ proof
                     mulF(leading, recipF(divisor_leading)) = zeroF ->
                       (leading = zeroF or recipF(divisor_leading) = zeroF)
                     [using specialize field.noZeroDivisors(leading, recipF(divisor_leading))]
+                  // `tautology` sees `nonzeroF(leading)` and `leading = zeroF` as unrelated
+                  // ATOMS, so the characterization is what links them.
+                  @leading-characterized |
+                    nonzeroF(leading) iff (not (leading = zeroF))
+                    [using specialize nonzeroFMeaning(leading)]
                   @conclusion-the-coefficient-is-nonzero |
                     not (mulF(leading, recipF(divisor_leading)) = zeroF)
-                    [using tautology the-product-splits the-leading-is-nonzero the-reciprocal-is-nonzero]
+                    [using tautology the-product-splits the-leading-is-nonzero the-reciprocal-is-nonzero leading-characterized]
                 }
               @divisor-nonzero-implies-the-product |
-                (not (divisor_leading = zeroF)) ->
+                nonzeroF(divisor_leading) ->
                   (not (mulF(leading, recipF(divisor_leading)) = zeroF))
                 [by discharge given-the-divisor-is-nonzero]
             }
           @both-nonzero-imply-the-product |
-            (not (leading = zeroF)) -> (not (divisor_leading = zeroF)) ->
+            nonzeroF(leading) -> nonzeroF(divisor_leading) ->
               (not (mulF(leading, recipF(divisor_leading)) = zeroF))
             [by discharge given-the-leading-is-nonzero]
         }
       @discharge-divisor |
         forall divisor_leading: F;
-          (not (leading = zeroF)) -> (not (divisor_leading = zeroF)) ->
+          nonzeroF(leading) -> nonzeroF(divisor_leading) ->
           (not (mulF(leading, recipF(divisor_leading)) = zeroF))
         [by generalize generalize-divisor]
     }
   @conclusion |
     forall leading, divisor_leading: F;
-      (not (leading = zeroF)) -> (not (divisor_leading = zeroF)) ->
+      nonzeroF(leading) -> nonzeroF(divisor_leading) ->
       (not (mulF(leading, recipF(divisor_leading)) = zeroF))
     [by generalize generalize-leading]
 qed
@@ -1764,6 +1776,13 @@ proof
                                               @g-leads-at-m |
                                                 not (coeff(g, m) = zeroF)
                                                 [by rewrite g-degree g-leads-at-its-degree]
+                                              // the reciprocal's guard wants the PREDICATE
+                                              @g-leading-characterized |
+                                                nonzeroF(coeff(g, m)) iff (not (coeff(g, m) = zeroF))
+                                                [using specialize nonzeroFMeaning(coeff(g, m))]
+                                              @g-is-nonzero-at-m |
+                                                nonzeroF(coeff(g, m))
+                                                [using tautology g-leading-characterized g-leads-at-m]
 
                                               // f's leading coefficient is nonzero
                                               @f-leads-at-its-degree |
@@ -1772,11 +1791,18 @@ proof
                                               @f-leads-at-the-top |
                                                 not (coeff(f, peano.add(k, m)) = zeroF)
                                                 [by rewrite f-degree f-leads-at-its-degree]
+                                              @f-leading-characterized |
+                                                nonzeroF(coeff(f, peano.add(k, m))) iff
+                                                  (not (coeff(f, peano.add(k, m)) = zeroF))
+                                                [using specialize nonzeroFMeaning(coeff(f, peano.add(k, m)))]
+                                              @f-is-nonzero-at-the-top |
+                                                nonzeroF(coeff(f, peano.add(k, m)))
+                                                [using tautology f-leading-characterized f-leads-at-the-top]
 
                                               // so the chosen coefficient, and the monomial, are nonzero
                                               @the-chosen-coefficient-is-nonzero |
                                                 not (mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))) = zeroF)
-                                                [using specialize theChosenCoefficientIsNonzero(coeff(f, peano.add(k, m)), coeff(g, m)) f-leads-at-the-top g-leads-at-m]
+                                                [using specialize theChosenCoefficientIsNonzero(coeff(f, peano.add(k, m)), coeff(g, m)) f-is-nonzero-at-the-top g-is-nonzero-at-m]
                                               @the-monomial-is-nonzero |
                                                 not (monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) = ZEROP)
                                                 [using specialize aNonzeroMonomialIsNonzero(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k) the-chosen-coefficient-is-nonzero]
@@ -1784,7 +1810,7 @@ proof
                                               // the reduced polynomial's degree drops
                                               @the-reduction-is-bounded |
                                                 degreeAtMost(subP(f, mulP(monomial(mulF(coeff(f, peano.add(k, m)), recipF(coeff(g, m))), k), g)), d)
-                                                [using specialize theConstructionDropsADegree(f, g, k, m, d) f-nonzero g-nonzero the-monomial-is-nonzero g-leads-at-m the-chosen-coefficient-is-nonzero g-degree f-degree the-successor]
+                                                [using specialize theConstructionDropsADegree(f, g, k, m, d) g-is-nonzero-at-m f-nonzero g-nonzero the-monomial-is-nonzero the-chosen-coefficient-is-nonzero g-degree f-degree the-successor]
 
                                               // the recursion divides it, and the quotient extends
                                               @the-reduction-divides |
@@ -1972,6 +1998,12 @@ proof
                           @g-leads-at-zero |
                             not (coeff(g, ZERO) = zeroF)
                             [by rewrite g-constant g-leads-at-its-degree]
+                          @g-at-zero-characterized |
+                            nonzeroF(coeff(g, ZERO)) iff (not (coeff(g, ZERO) = zeroF))
+                            [using specialize nonzeroFMeaning(coeff(g, ZERO))]
+                          @g-is-nonzero-at-zero |
+                            nonzeroF(coeff(g, ZERO))
+                            [using tautology g-at-zero-characterized g-leads-at-zero]
 
                           // the cancellation at k = m = ZERO, where ZERO + ZERO = ZERO
                           @the-indices-sum-to-zero |
@@ -1979,7 +2011,7 @@ proof
                             [using specialize peano.addZeroRight(ZERO)]
                           @the-cancellation-at-the-sum |
                             coeff(subP(f, mulP(monomial(mulF(coeff(f, peano.add(ZERO, ZERO)), recipF(coeff(g, ZERO))), ZERO), g)), peano.add(ZERO, ZERO)) = zeroF
-                            [using specialize theLeadingTermsCancel(f, g, ZERO, ZERO) g-leads-at-zero]
+                            [using specialize theLeadingTermsCancel(f, g, ZERO, ZERO) g-is-nonzero-at-zero]
                           // rewrite add(ZERO,ZERO) to ZERO everywhere it occurs at once
                           @the-cancellation-at-zero |
                             coeff(subP(f, mulP(monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO), g)), ZERO) = zeroF
@@ -2000,15 +2032,23 @@ proof
                             forall i: Nat; less_than(ZERO, i) -> coeff(f, i) = zeroF
                             [using tautology f-is-bounded what-f-bounding-means]
 
-                          @the-chosen-coefficient-is-nonzero |
-                            not (mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))) = zeroF)
-                            [using specialize theChosenCoefficientIsNonzero(coeff(f, ZERO), coeff(g, ZERO)) f-leads-at-zero g-leads-at-zero]
+                          // f's leading coefficient first: the chosen coefficient's step
+                          // needs it, and `recipF`'s guard needs it as the PREDICATE.
                           @f-leads-at-its-degree |
                             not (coeff(f, degree(f)) = zeroF)
                             [using specialize degreeIsALeadingIndex(f) f-nonzero]
                           @f-leads-at-zero |
                             not (coeff(f, ZERO) = zeroF)
                             [by rewrite f-constant f-leads-at-its-degree]
+                          @f-at-zero-characterized |
+                            nonzeroF(coeff(f, ZERO)) iff (not (coeff(f, ZERO) = zeroF))
+                            [using specialize nonzeroFMeaning(coeff(f, ZERO))]
+                          @f-is-nonzero-at-zero |
+                            nonzeroF(coeff(f, ZERO))
+                            [using tautology f-at-zero-characterized f-leads-at-zero]
+                          @the-chosen-coefficient-is-nonzero |
+                            not (mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))) = zeroF)
+                            [using specialize theChosenCoefficientIsNonzero(coeff(f, ZERO), coeff(g, ZERO)) f-is-nonzero-at-zero g-is-nonzero-at-zero]
                           @the-monomial-is-nonzero |
                             not (monomial(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO) = ZEROP)
                             [using specialize aNonzeroMonomialIsNonzero(mulF(coeff(f, ZERO), recipF(coeff(g, ZERO))), ZERO) the-chosen-coefficient-is-nonzero]

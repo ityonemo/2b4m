@@ -1,0 +1,32 @@
+// MINIMAL REPRO: can a theorem proved from a DEFINITION CLAUSE be model-transferred?
+sort G
+const E: G
+func op(a: G, b: G) => G
+pred gnz(a: G):
+  gnz(a) iff (not (a = E))
+axiom opIdent: forall a: G; op(E, a) = a
+
+// proved FROM THE CLAUSE
+theorem gnzMeaning: forall a: G; gnz(a) iff (not (a = E))
+proof
+  @conclusion |
+    forall a: G; gnz(a) iff (not (a = E))
+    [by definition gnz]
+qed
+
+// a theorem whose proof CITES that one
+theorem usesIt: forall a: G; gnz(a) -> (not (a = E))
+proof
+  @generalize-a |
+    fix a: G {
+      @meaning-at-a |
+        gnz(a) iff (not (a = E))
+        [using specialize gnzMeaning(a)]
+      @conclusion-inner |
+        gnz(a) -> (not (a = E))
+        [using tautology meaning-at-a]
+    }
+  @conclusion |
+    forall a: G; gnz(a) -> (not (a = E))
+    [by generalize generalize-a]
+qed

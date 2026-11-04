@@ -45,8 +45,12 @@ func succ = peano.succ
 pred nat_less_than = peano.less_than
 
 // -- the nonzero cut and natural powers, in ℝ's own symbols --------------------------------
-pred nonzero(a: Real)
-axiom nonzeroCharacterization: forall a: Real; nonzero(a) iff a != ZERO
+// ALIASED, not declared: `recip`'s guard names real's `nonzero`, so a second
+// same-content predicate here would be a DIFFERENT symbol and the guard would not
+// discharge in a transferred proof. The definitional discharge of `field_order.nonzero`
+// belongs to std/real.b4m, which declares it — this file must not re-map it.
+pred nonzero = real.nonzero
+fact nonzeroCharacterization = real.nonzeroMeaning
 sort RStar = Real where nonzero
 
 func pow(x: Real, n: Nat) => Real
@@ -63,6 +67,8 @@ model RealUnits {
   field_order.neg: neg
   field_order.recip: recip
   field_order.less_than: less_than
+  field_order.nonzero: nonzero
+  field_order.nonzero <- real.nonzero
   field_units.nonzero: nonzero
   field_units.pow: pow
   field_order.addIsAssociative <- addIsAssociative
@@ -82,7 +88,6 @@ model RealUnits {
   field_order.lessThanAddRight <- lessThanAddRight
   field_order.lessThanAddCancel <- lessThanAddCancel
   field_order.positiveProduct <- positiveProduct
-  field_units.nonzeroCharacterization <- nonzeroCharacterization
   field_units.powZero <- powZero
   field_units.powSucc <- powSucc
 }
@@ -151,22 +156,16 @@ qed
 theorem unitsInverseLeft: forall x: RStar; mul(recip(x), x) = ONE
 proof
   @recip-on-the-left |
-    forall a: Real; a != ZERO -> mul(recip(a), a) = ONE
+    forall a: Real; nonzero(a) -> mul(recip(a), a) = ONE
     [using model(RealUnits) field_order.recipMulLeft]
   @generalize-x |
     fix x: RStar {
       @x-nonzero |
         nonzero(x)
         [by predicate generalize-x]
-      @x-characterized |
-        nonzero(x) iff x != ZERO
-        [using specialize nonzeroCharacterization(x)]
-      @x-not-zero |
-        x != ZERO
-        [using tautology x-characterized x-nonzero]
       @conclusion-inner |
         mul(recip(x), x) = ONE
-        [using specialize recip-on-the-left(x) x-not-zero]
+        [using specialize recip-on-the-left(x) x-nonzero]
     }
   @conclusion |
     forall x: RStar; mul(recip(x), x) = ONE

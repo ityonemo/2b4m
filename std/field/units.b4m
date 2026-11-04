@@ -58,10 +58,14 @@ fact notLessThanZero = peano_order.notLessThanZero
 fact zeroOrSucc = peano.zeroOrSucc
 
 // -- F* = the nonzero elements ------------------------------------------------------------
-// An OPAQUE predicate pinned by its characterization (not a `define`), so it stays folded
-// through the guarded model transfer.
-pred nonzero(a: F)
-axiom nonzeroCharacterization: forall a: F; nonzero(a) iff a != ZERO
+// `nonzero` is NOT declared here any more: it is the one threaded group -> ring -> field ->
+// field/order, aliased in. That matters beyond removing a duplicate axiom — `recip` is
+// GUARDED by this very predicate, so the cut below and the guard are now the SAME predicate,
+// which is what lets the guarded model map the group's TOTAL `inverse` onto the partial
+// `recip`. While this file declared its own, the two were distinct symbols with equal
+// content, and the guard could not be discharged from the refinement.
+pred nonzero = field_order.nonzero
+fact nonzeroCharacterization = field_order.nonzeroMeaning
 
 sort Nonzero = F where nonzero
 
@@ -148,7 +152,7 @@ theorem recipOfNonzeroIsNonzero: forall a: F; nonzero(a) -> nonzero(recip(a))
 proof
   @characterization |
     forall a: F; nonzero(a) iff a != ZERO
-    [by cite nonzeroCharacterization]
+    [using import(field_order) nonzeroMeaning]
   @generalize-a |
     fix a: F {
       @given-a-nonzero |
@@ -156,18 +160,12 @@ proof
           @a-nonzero |
             nonzero(a)
             [by hypothesis given-a-nonzero]
-          @a-characterized |
-            nonzero(a) iff a != ZERO
-            [using specialize characterization(a)]
           @recip-characterized |
             nonzero(recip(a)) iff recip(a) != ZERO
             [using specialize characterization(recip(a))]
-          @a-not-zero |
-            a != ZERO
-            [using tautology a-characterized a-nonzero]
           @a-times-recip |
             mul(a, recip(a)) = ONE
-            [using specialize fieldInverse(a) a-not-zero]
+            [using specialize fieldInverse(a) a-nonzero]
           @a-times-zero |
             mul(a, ZERO) = ZERO
             [using specialize mulZeroRight(a)]
@@ -247,25 +245,18 @@ proof
     [by generalize generalize-x]
 qed
 
+// Now a direct read of the refinement: `recip` is guarded by `nonzero`, which is exactly
+// what `Nonzero`'s predicate supplies, so no characterization bridge is needed.
 theorem unitsInverseLeft: forall x: Nonzero; mul(recip(x), x) = ONE
 proof
-  @characterization |
-    forall a: F; nonzero(a) iff a != ZERO
-    [by cite nonzeroCharacterization]
   @generalize-x |
     fix x: Nonzero {
       @x-nonzero |
         nonzero(x)
         [by predicate generalize-x]
-      @x-characterized |
-        nonzero(x) iff x != ZERO
-        [using specialize characterization(x)]
-      @x-not-zero |
-        x != ZERO
-        [using tautology x-characterized x-nonzero]
       @conclusion-inner |
         mul(recip(x), x) = ONE
-        [using specialize recipMulLeft(x) x-not-zero]
+        [using specialize recipMulLeft(x) x-nonzero]
     }
   @conclusion |
     forall x: Nonzero; mul(recip(x), x) = ONE

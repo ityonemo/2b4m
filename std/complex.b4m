@@ -21,7 +21,21 @@ const i: Complex
 func add(a: Complex, b: Complex) => Complex
 func mul(a: Complex, b: Complex) => Complex
 func neg(a: Complex) => Complex
-func recip(a: Complex) => Complex
+// `recip`'s GUARD, threaded down from std/group.b4m (see std/field.b4m): this layer
+// declares the predicate over its own sort and binds field's through the field model below,
+// so there is ONE definition and no layer's copy is a fresh assumption.
+pred nonzero(a: Complex):
+  nonzero(a) iff (not (a = ZERO))
+
+// the clause under a citable name, for moving between the predicate and the disequation
+theorem nonzeroMeaning: forall a: Complex; nonzero(a) iff (not (a = ZERO))
+proof
+  @conclusion |
+    forall a: Complex; nonzero(a) iff (not (a = ZERO))
+    [by definition nonzero]
+qed
+
+func recip(a: Complex) => Complex requires nonzero(a)
 
 // -- field axioms (discharge the field model below) --------------------------
 axiom addIsAssociative: forall a, b, c: Complex; add(add(a, b), c) = add(a, add(b, c))
@@ -33,7 +47,7 @@ axiom mulAddDistribLeft: forall a, b, c: Complex; mul(a, add(b, c)) = add(mul(a,
 axiom mulAddDistribRight: forall a, b, c: Complex; mul(add(a, b), c) = add(mul(a, c), mul(b, c))
 axiom mulIsCommutative: forall a, b: Complex; mul(a, b) = mul(b, a)
 axiom mulOneLeft: forall a: Complex; mul(ONE, a) = a
-axiom fieldInverse: forall a: Complex; a != ZERO -> mul(a, recip(a)) = ONE
+axiom fieldInverse: forall a: Complex; nonzero(a) -> mul(a, recip(a)) = ONE
 axiom oneNotZero: ONE != ZERO
 
 model ComplexField {
@@ -44,6 +58,8 @@ model ComplexField {
   field.mul: mul
   field.neg: neg
   field.recip: recip
+  field.nonzero: nonzero
+  field.nonzero <- nonzero
   field.addIsAssociative <- addIsAssociative
   field.addZeroLeft <- addZeroLeft
   field.addNegLeft <- addNegLeft

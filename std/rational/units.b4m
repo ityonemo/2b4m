@@ -45,8 +45,12 @@ func nat_succ = peano.succ
 pred nat_less_than = peano.less_than
 
 // -- the nonzero cut and natural powers, in ℚ's own symbols --------------------------------
-pred nonzero(a: Q)
-axiom nonzeroCharacterization: forall a: Q; nonzero(a) iff a != ZERO
+// ALIASED, not declared: `recip`'s guard names rational's `nonzero`, so a second
+// same-content predicate here would be a DIFFERENT symbol and the guard would not
+// discharge in a transferred proof. The definitional discharge of `field_order.nonzero`
+// belongs to std/rational.b4m, which declares it — this file must not re-map it.
+pred nonzero = rational.nonzero
+fact nonzeroCharacterization = rational.nonzeroMeaning
 sort QStar = Q where nonzero
 
 func pow(x: Q, n: Nat) => Q
@@ -63,6 +67,8 @@ model RationalUnits {
   field_order.neg: neg
   field_order.recip: recip
   field_order.less_than: less_than
+  field_order.nonzero: nonzero
+  field_order.nonzero <- rational.nonzero
   field_units.nonzero: nonzero
   field_units.pow: pow
   field_order.addIsAssociative <- addIsAssociative
@@ -82,7 +88,6 @@ model RationalUnits {
   field_order.lessThanAddRight <- lessThanAddRight
   field_order.lessThanAddCancel <- lessThanAddCancel
   field_order.positiveProduct <- positiveProduct
-  field_units.nonzeroCharacterization <- nonzeroCharacterization
   field_units.powZero <- powZero
   field_units.powSucc <- powSucc
 }
@@ -151,22 +156,16 @@ qed
 theorem unitsInverseLeft: forall x: QStar; mul(recip(x), x) = ONE
 proof
   @recip-on-the-left |
-    forall a: Q; a != ZERO -> mul(recip(a), a) = ONE
+    forall a: Q; nonzero(a) -> mul(recip(a), a) = ONE
     [using model(RationalUnits) field_order.recipMulLeft]
   @generalize-x |
     fix x: QStar {
       @x-nonzero |
         nonzero(x)
         [by predicate generalize-x]
-      @x-characterized |
-        nonzero(x) iff x != ZERO
-        [using specialize nonzeroCharacterization(x)]
-      @x-not-zero |
-        x != ZERO
-        [using tautology x-characterized x-nonzero]
       @conclusion-inner |
         mul(recip(x), x) = ONE
-        [using specialize recip-on-the-left(x) x-not-zero]
+        [using specialize recip-on-the-left(x) x-nonzero]
     }
   @conclusion |
     forall x: QStar; mul(recip(x), x) = ONE

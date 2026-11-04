@@ -170,6 +170,37 @@ proof
     [by generalize generalize-a]
 qed
 
+// The same fact as the PREDICATE `recip` is guarded by. `recip(1 + a)` owes `nonzero(1 + a)`
+// where it is written, and the guard checker matches that syntactically — a disequation in
+// scope does not discharge it, even though `nonzeroMeaning` makes the two interchangeable.
+theorem theShiftIsNonzero: forall a: Real; a != neg(ONE) -> real.nonzero(add(ONE, a))
+proof
+  @generalize-a |
+    fix a: Real {
+      @given-not-minus-one |
+        assume a != neg(ONE) {
+          @not-minus-one |
+            a != neg(ONE)
+            [by hypothesis given-not-minus-one]
+          @the-shift-is-not-zero |
+            add(ONE, a) != ZERO
+            [using specialize shiftedIsNonzero(a) not-minus-one]
+          @the-shift-characterized |
+            real.nonzero(add(ONE, a)) iff (not (add(ONE, a) = ZERO))
+            [using specialize real.nonzeroMeaning(add(ONE, a))]
+          @conclusion-the-shift-is-nonzero |
+            real.nonzero(add(ONE, a))
+            [using tautology the-shift-characterized the-shift-is-not-zero]
+        }
+      @not-minus-one-implies-nonzero |
+        a != neg(ONE) -> real.nonzero(add(ONE, a))
+        [by discharge given-not-minus-one]
+    }
+  @conclusion |
+    forall a: Real; a != neg(ONE) -> real.nonzero(add(ONE, a))
+    [by generalize generalize-a]
+qed
+
 // a⁻¹ ∗ a = 0 for a ≠ −1: (−a·r) ∗ a = a − a·(r·(1 + a)) with r = 1/(1 + a), and r(1 + a) = 1.
 theorem starInverseLeftOnReals: forall a: Real; a != neg(ONE) -> star(starInverse(a), a) = ZERO
 proof
@@ -181,8 +212,8 @@ proof
             a != neg(ONE)
             [by hypothesis given-not-minus-one]
           @shift-nonzero |
-            add(ONE, a) != ZERO
-            [using specialize shiftedIsNonzero(a) not-minus-one]
+            real.nonzero(add(ONE, a))
+            [using specialize theShiftIsNonzero(a) not-minus-one]
           @shift-times-recip |
             mul(add(ONE, a), recip(add(ONE, a))) = ONE
             [using specialize fieldInverse(add(ONE, a)) shift-nonzero]

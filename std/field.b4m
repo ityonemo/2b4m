@@ -22,7 +22,32 @@ const ONE: Field
 func add(a: Field, b: Field) => Field
 func mul(a: Field, b: Field) => Field
 func neg(a: Field) => Field
-func recip(a: Field) => Field
+
+// `recip`'s GUARD, threaded down from std/group.b4m through std/ring.b4m: each layer declares
+// the predicate over its OWN sort and binds the layer below through its model
+// (`ring.nonzero <- nonzero` in `RingIsField`), so there is one notion and no layer's copy is
+// a fresh assumption. A definition block, not an axiom, which is what makes that binding
+// possible — see DEFINITIONS-IN-MODELS-ISSUE.md.
+//
+// The guard is spelled `nonzero(a)` and NOT `a != ZERO`, and the choice is load-bearing:
+// `std/field/units.b4m` builds F* as a guarded model of std/group.b4m on `F where nonzero`,
+// mapping the group's TOTAL `inverse` onto this PARTIAL `recip`. So the obligation a `recip`
+// application owes must be exactly what that refined sort supplies, SYNTACTICALLY — the guard
+// checker does not reason through the characterizing `iff`, so a guard spelled `a != ZERO`
+// would not be discharged by `nonzero(a)` in scope.
+pred nonzero(a: Field):
+  nonzero(a) iff (not (a = ZERO))
+
+// The clause under a citable name: a definition's clause has none, and consumers need to
+// move between `nonzero(a)` and `a != ZERO` (a case split on equality gives the latter).
+theorem nonzeroMeaning: forall a: Field; nonzero(a) iff (not (a = ZERO))
+proof
+  @conclusion |
+    forall a: Field; nonzero(a) iff (not (a = ZERO))
+    [by definition nonzero]
+qed
+
+func recip(a: Field) => Field requires nonzero(a)
 
 // -- ring axioms (discharge the ring model below) ---------------------------
 // Left-axiomatic, as in ring.b4m: only LEFT identity/inverse are primitive.
@@ -37,7 +62,7 @@ axiom mulAddDistribRight: forall a, b, c: Field; mul(add(a, b), c) = add(mul(a, 
 // -- field-specific axioms --------------------------------------------------
 axiom mulIsCommutative: forall a, b: Field; mul(a, b) = mul(b, a)
 axiom mulOneLeft: forall a: Field; mul(ONE, a) = a
-axiom fieldInverse: forall a: Field; a != ZERO -> mul(a, recip(a)) = ONE
+axiom fieldInverse: forall a: Field; nonzero(a) -> mul(a, recip(a)) = ONE
 axiom oneNotZero: ONE != ZERO
 
 // the ring structure is a commutative ring.
@@ -55,6 +80,8 @@ model RingIsField {
   ring.mulIsAssociative <- mulIsAssociative
   ring.mulAddDistribLeft <- mulAddDistribLeft
   ring.mulAddDistribRight <- mulAddDistribRight
+  ring.nonzero: nonzero
+  ring.nonzero <- nonzero
 }
 
 // -- unit + reciprocal laws (derived) ---------------------------------------
@@ -298,14 +325,14 @@ proof
 qed
 
 // recip(a)·a = 1 for a ≠ 0 (the right-inverse axiom commuted).
-theorem recipMulLeft: forall a: Field; a != ZERO -> mul(recip(a), a) = ONE
+theorem recipMulLeft: forall a: Field; nonzero(a) -> mul(recip(a), a) = ONE
 proof
   @generalize-a |
     fix a: Field {
       @given-a-nonzero |
-        assume a != ZERO {
+        assume nonzero(a) {
           @a-nonzero |
-            a != ZERO
+            nonzero(a)
             [by hypothesis given-a-nonzero]
           @right-inverse |
             mul(a, recip(a)) = ONE
@@ -318,11 +345,11 @@ proof
             [using chain commute right-inverse]
         }
       @discharge |
-        a != ZERO -> mul(recip(a), a) = ONE
+        nonzero(a) -> mul(recip(a), a) = ONE
         [by discharge given-a-nonzero]
     }
   @conclusion |
-    forall a: Field; a != ZERO -> mul(recip(a), a) = ONE
+    forall a: Field; nonzero(a) -> mul(recip(a), a) = ONE
     [by generalize generalize-a]
 qed
 
@@ -361,9 +388,20 @@ proof
                       @a-nonzero |
                         a != ZERO
                         [by hypothesis when-a-nonzero]
+                      // bridge the disequation the case split gives to the PREDICATE `recip`
+                      // is guarded by — `nonzero`'s defining clause is exactly this `iff`.
+                      @nonzero-means-not-zero |
+                        forall x: Field; nonzero(x) iff (not (x = ZERO))
+                        [by definition nonzero]
+                      @a-characterized |
+                        nonzero(a) iff (not (a = ZERO))
+                        [using specialize nonzero-means-not-zero(a)]
+                      @a-is-nonzero |
+                        nonzero(a)
+                        [using tautology a-characterized a-nonzero]
                       @recip-a-left |
                         mul(recip(a), a) = ONE
-                        [using specialize recipMulLeft(a) a-nonzero]
+                        [using specialize recipMulLeft(a) a-is-nonzero]
                       // b = 1·b = (recip(a)·a)·b = recip(a)·(a·b) = recip(a)·0 = 0
                       @one-times-b |
                         mul(ONE, b) = b

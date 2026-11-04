@@ -429,16 +429,30 @@ qed
 // EXERCISE 19(c): z⁻¹ = z̄ / |z|², i.e. recip(z) = z̄ · recip(|z|²) for z ≠ 0. The candidate
 // w = z̄ · recip(|z|²) satisfies z·w = (z z̄)·recip(|z|²) = |z|²·recip(|z|²) = 1, and the
 // inverse is unique: recip(z) = recip(z)·(z·w) = (recip(z)·z)·w = w.
-theorem recipIsConjOverNormSq: forall z: Complex; z != ZERO -> recip(z) = mul(conj(z), recip(fromReal(normSq(z))))
+// BOTH reciprocals in the conclusion live outside the assume, so BOTH guards must be met
+// from the antecedent — `recip` is guarded and the checker matches obligations syntactically.
+// The second is derivable from the first (a nonzero complex has nonzero norm², proved below as
+// `theEmbeddedNormSqIsNonzero`) but a derivation inside the proof cannot discharge a guard in
+// the CONCLUSION, so it is stated.
+// |z|² ≠ 0 for z ≠ 0, as the PREDICATE: `recip(fromReal(normSq(z)))` owes this guard, and a
+// caller of `recipIsConjOverNormSq` needs it in the antecedent (the conclusion's term lies
+// outside the assume). Extracted so that theorem keeps a single hypothesis.
+theorem theEmbeddedNormSqIsNonzero: forall z: Complex;
+  complex.nonzero(z) -> complex.nonzero(fromReal(normSq(z)))
 proof
   @generalize-z |
     fix z: Complex {
       @given-z-nonzero |
-        assume z != ZERO {
+        assume complex.nonzero(z) {
+          @z-is-nonzero |
+            complex.nonzero(z)
+            [by hypothesis given-z-nonzero]
+          @z-characterized |
+            complex.nonzero(z) iff (not (z = ZERO))
+            [using specialize complex.nonzeroMeaning(z)]
           @z-nonzero |
             z != ZERO
-            [by hypothesis given-z-nonzero]
-          // |z|² ≠ 0, so its embedding is a nonzero complex number with a reciprocal.
+            [using tautology z-characterized z-is-nonzero]
           @normsq-zero-implies-zero |
             normSq(z) = real.ZERO -> z = ZERO
             [using specialize normSqZeroGivesZero(z)]
@@ -469,63 +483,139 @@ proof
           @embedding-nonzero |
             fromReal(normSq(z)) != ZERO
             [using tautology embedding-zero-implies normsq-nonzero]
-          @embedding-times-recip |
-            mul(fromReal(normSq(z)), recip(fromReal(normSq(z)))) = ONE
-            [using specialize complex.fieldInverse(fromReal(normSq(z))) embedding-nonzero]
-          // z · w = 1 for w = z̄ · recip(|z|²).
-          @z-times-conj |
-            mul(z, conj(z)) = fromReal(normSq(z))
-            [using specialize zTimesConjIsNormSq(z)]
-          @z-times-w-regrouped |
-            mul(z, mul(conj(z), recip(fromReal(normSq(z))))) = mul(mul(z, conj(z)), recip(fromReal(normSq(z))))
-            [using assoc(complex.mulIsAssociative)]
-          @z-times-w-via-normsq |
-            mul(z, mul(conj(z), recip(fromReal(normSq(z))))) = mul(fromReal(normSq(z)), recip(fromReal(normSq(z))))
-            [by rewrite z-times-conj z-times-w-regrouped]
-          @z-times-w |
-            mul(z, mul(conj(z), recip(fromReal(normSq(z))))) = ONE
-            [using chain z-times-w-via-normsq embedding-times-recip]
-          // recip(z) = recip(z)·1 = recip(z)·(z·w) = (recip(z)·z)·w = 1·w = w.
-          @z-times-recip |
-            mul(z, recip(z)) = ONE
-            [using specialize complex.fieldInverse(z) z-nonzero]
-          @recip-times-z-commuted |
-            mul(recip(z), z) = mul(z, recip(z))
-            [using specialize complex.mulIsCommutative(recip(z), z)]
-          @recip-times-z |
-            mul(recip(z), z) = ONE
-            [using chain recip-times-z-commuted z-times-recip]
-          @recip-times-one |
-            mul(recip(z), ONE) = recip(z)
-            [using specialize complex.mulOneRight(recip(z))]
-          @recip-as-product-with-one |
-            recip(z) = mul(recip(z), ONE)
-            [by symmetry recip-times-one]
-          @recip-as-product-with-z-w |
-            recip(z) = mul(recip(z), mul(z, mul(conj(z), recip(fromReal(normSq(z))))))
-            [by rewrite z-times-w recip-as-product-with-one]
-          @recip-product-regrouped |
-            mul(recip(z), mul(z, mul(conj(z), recip(fromReal(normSq(z)))))) = mul(mul(recip(z), z), mul(conj(z), recip(fromReal(normSq(z)))))
-            [using assoc(complex.mulIsAssociative)]
-          @recip-as-regrouped-product |
-            recip(z) = mul(mul(recip(z), z), mul(conj(z), recip(fromReal(normSq(z)))))
-            [using chain recip-as-product-with-z-w recip-product-regrouped]
-          @recip-as-one-times-w |
-            recip(z) = mul(ONE, mul(conj(z), recip(fromReal(normSq(z)))))
-            [by rewrite recip-times-z recip-as-regrouped-product]
-          @one-times-w |
-            mul(ONE, mul(conj(z), recip(fromReal(normSq(z))))) = mul(conj(z), recip(fromReal(normSq(z))))
-            [using specialize complex.mulOneLeft(mul(conj(z), recip(fromReal(normSq(z)))))]
-          @conclusion-recip-is-w |
-            recip(z) = mul(conj(z), recip(fromReal(normSq(z))))
-            [using chain recip-as-one-times-w one-times-w]
+          @embedding-characterized |
+            complex.nonzero(fromReal(normSq(z))) iff (not (fromReal(normSq(z)) = ZERO))
+            [using specialize complex.nonzeroMeaning(fromReal(normSq(z)))]
+          @conclusion-the-embedding-is-nonzero |
+            complex.nonzero(fromReal(normSq(z)))
+            [using tautology embedding-characterized embedding-nonzero]
         }
       @z-nonzero-implies |
-        z != ZERO -> recip(z) = mul(conj(z), recip(fromReal(normSq(z))))
+        complex.nonzero(z) -> complex.nonzero(fromReal(normSq(z)))
         [by discharge given-z-nonzero]
     }
   @conclusion |
-    forall z: Complex; z != ZERO -> recip(z) = mul(conj(z), recip(fromReal(normSq(z))))
+    forall z: Complex; complex.nonzero(z) -> complex.nonzero(fromReal(normSq(z)))
+    [by generalize generalize-z]
+qed
+
+theorem recipIsConjOverNormSq: forall z: Complex; complex.nonzero(z) -> complex.nonzero(fromReal(normSq(z))) -> recip(z) = mul(conj(z), recip(fromReal(normSq(z))))
+proof
+  @generalize-z |
+    fix z: Complex {
+      @given-z-nonzero |
+        assume complex.nonzero(z) {
+          @given-the-norm-is-nonzero |
+            assume complex.nonzero(fromReal(normSq(z))) {
+              @z-is-nonzero |
+                complex.nonzero(z)
+                [by hypothesis given-z-nonzero]
+              // the disequation too: the normSq argument is derived from it
+              @z-characterized |
+                complex.nonzero(z) iff (not (z = ZERO))
+                [using specialize complex.nonzeroMeaning(z)]
+              @z-nonzero |
+                z != ZERO
+                [using tautology z-characterized z-is-nonzero]
+              // |z|² ≠ 0, so its embedding is a nonzero complex number with a reciprocal.
+              @normsq-zero-implies-zero |
+                normSq(z) = real.ZERO -> z = ZERO
+                [using specialize normSqZeroGivesZero(z)]
+              @normsq-nonzero |
+                normSq(z) != real.ZERO
+                [using tautology normsq-zero-implies-zero z-nonzero]
+              @real-zero-embeds |
+                fromReal(real.ZERO) = ZERO
+                [using import(complex) fromRealZero]
+              @given-embedding-zero |
+                assume fromReal(normSq(z)) = ZERO {
+                  @embedding-zero |
+                    fromReal(normSq(z)) = ZERO
+                    [by hypothesis given-embedding-zero]
+                  @zero-is-embedded-zero |
+                    ZERO = fromReal(real.ZERO)
+                    [by symmetry real-zero-embeds]
+                  @embeddings-agree |
+                    fromReal(normSq(z)) = fromReal(real.ZERO)
+                    [using chain embedding-zero zero-is-embedded-zero]
+                  @normsq-zero |
+                    normSq(z) = real.ZERO
+                    [using specialize complex.fromRealInjective(normSq(z), real.ZERO) embeddings-agree]
+                }
+              @embedding-zero-implies |
+                fromReal(normSq(z)) = ZERO -> normSq(z) = real.ZERO
+                [by discharge given-embedding-zero]
+              @embedding-nonzero |
+                fromReal(normSq(z)) != ZERO
+                [using tautology embedding-zero-implies normsq-nonzero]
+              // `recip` is guarded by the PREDICATE, matched syntactically — bridge via its clause
+              @embedding-characterized |
+                complex.nonzero(fromReal(normSq(z))) iff (not (fromReal(normSq(z)) = ZERO))
+                [using specialize complex.nonzeroMeaning(fromReal(normSq(z)))]
+              @embedding-is-nonzero |
+                complex.nonzero(fromReal(normSq(z)))
+                [using tautology embedding-characterized embedding-nonzero]
+              @embedding-times-recip |
+                mul(fromReal(normSq(z)), recip(fromReal(normSq(z)))) = ONE
+                [using specialize complex.fieldInverse(fromReal(normSq(z))) embedding-is-nonzero]
+              // z · w = 1 for w = z̄ · recip(|z|²).
+              @z-times-conj |
+                mul(z, conj(z)) = fromReal(normSq(z))
+                [using specialize zTimesConjIsNormSq(z)]
+              @z-times-w-regrouped |
+                mul(z, mul(conj(z), recip(fromReal(normSq(z))))) = mul(mul(z, conj(z)), recip(fromReal(normSq(z))))
+                [using assoc(complex.mulIsAssociative)]
+              @z-times-w-via-normsq |
+                mul(z, mul(conj(z), recip(fromReal(normSq(z))))) = mul(fromReal(normSq(z)), recip(fromReal(normSq(z))))
+                [by rewrite z-times-conj z-times-w-regrouped]
+              @z-times-w |
+                mul(z, mul(conj(z), recip(fromReal(normSq(z))))) = ONE
+                [using chain z-times-w-via-normsq embedding-times-recip]
+              // recip(z) = recip(z)·1 = recip(z)·(z·w) = (recip(z)·z)·w = 1·w = w.
+              @z-times-recip |
+                mul(z, recip(z)) = ONE
+                [using specialize complex.fieldInverse(z) z-is-nonzero]
+              @recip-times-z-commuted |
+                mul(recip(z), z) = mul(z, recip(z))
+                [using specialize complex.mulIsCommutative(recip(z), z)]
+              @recip-times-z |
+                mul(recip(z), z) = ONE
+                [using chain recip-times-z-commuted z-times-recip]
+              @recip-times-one |
+                mul(recip(z), ONE) = recip(z)
+                [using specialize complex.mulOneRight(recip(z))]
+              @recip-as-product-with-one |
+                recip(z) = mul(recip(z), ONE)
+                [by symmetry recip-times-one]
+              @recip-as-product-with-z-w |
+                recip(z) = mul(recip(z), mul(z, mul(conj(z), recip(fromReal(normSq(z))))))
+                [by rewrite z-times-w recip-as-product-with-one]
+              @recip-product-regrouped |
+                mul(recip(z), mul(z, mul(conj(z), recip(fromReal(normSq(z)))))) = mul(mul(recip(z), z), mul(conj(z), recip(fromReal(normSq(z)))))
+                [using assoc(complex.mulIsAssociative)]
+              @recip-as-regrouped-product |
+                recip(z) = mul(mul(recip(z), z), mul(conj(z), recip(fromReal(normSq(z)))))
+                [using chain recip-as-product-with-z-w recip-product-regrouped]
+              @recip-as-one-times-w |
+                recip(z) = mul(ONE, mul(conj(z), recip(fromReal(normSq(z)))))
+                [by rewrite recip-times-z recip-as-regrouped-product]
+              @one-times-w |
+                mul(ONE, mul(conj(z), recip(fromReal(normSq(z))))) = mul(conj(z), recip(fromReal(normSq(z))))
+                [using specialize complex.mulOneLeft(mul(conj(z), recip(fromReal(normSq(z)))))]
+              @conclusion-recip-is-w |
+                recip(z) = mul(conj(z), recip(fromReal(normSq(z))))
+                [using chain recip-as-one-times-w one-times-w]
+            }
+          @the-norm-implies |
+            complex.nonzero(fromReal(normSq(z))) -> recip(z) = mul(conj(z), recip(fromReal(normSq(z))))
+            [by discharge given-the-norm-is-nonzero]
+        }
+      @z-nonzero-implies |
+        complex.nonzero(z) -> complex.nonzero(fromReal(normSq(z))) -> recip(z) = mul(conj(z), recip(fromReal(normSq(z))))
+        [by discharge given-z-nonzero]
+    }
+  @conclusion |
+    forall z: Complex; complex.nonzero(z) -> complex.nonzero(fromReal(normSq(z))) -> recip(z) = mul(conj(z), recip(fromReal(normSq(z))))
     [by generalize generalize-z]
 qed
 
