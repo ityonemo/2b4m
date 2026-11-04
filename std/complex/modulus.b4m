@@ -42,7 +42,23 @@ fact sqrtMonotone = real_sqrt.sqrtMonotone
 
 // the norm-square (a real) and the modulus (its nonnegative square root).
 define normSq(z) = radd(rmul(re(z), re(z)), rmul(im(z), im(z)))
-define abs(z) = sqrt(normSq(z))
+
+// `abs` is a REAL FUNCTION, not a `define`, and that is forced by `sqrt` being GUARDED. A
+// `define` is a macro: every `abs(z)` would expand to `sqrt(normSq(z))` and re-raise the
+// guard `0 <= normSq(z)` at the use site — including inside a DISCHARGED CONCLUSION, where
+// nothing can discharge it. As a function the obligation is met ONCE, here, against the
+// unconditional `normSqNonneg`; callers then write `abs(z)` freely, which is exactly right
+// because the modulus really is total on ℂ.
+func abs(z: Complex) => Real
+axiom absIsTheRootOfTheNormSquare: forall z: Complex; abs(z) = sqrt(normSq(z))
+
+// The modulus is nonnegative — `sqrt` lands in the nonnegatives and `normSq` is always in its
+// domain. A THEOREM now rather than an inline `sqrtNonneg` citation: `abs` is an opaque
+// function since `sqrt` became guarded, so `0 <= sqrt(normSq(z))` no longer reads as
+// `0 <= abs(z)` on sight.
+intheory absNonneg
+intheory absOfDifferenceIsSymmetric
+intheory absSquared
 
 // normSq is nonnegative: a sum of two squares, each ≥ 0.
 theorem normSqNonneg: forall z: Complex; less_or_equal(real.ZERO, normSq(z))
@@ -61,6 +77,52 @@ proof
     }
   @conclusion |
     forall z: Complex; less_or_equal(real.ZERO, normSq(z))
+    [by generalize generalize-z]
+qed
+
+theorem absNonneg: forall z: Complex; less_or_equal(real.ZERO, abs(z))
+proof
+  @generalize-z |
+    fix z: Complex {
+      @the-norm-is-nonneg |
+        less_or_equal(real.ZERO, normSq(z))
+        [using specialize normSqNonneg(z)]
+      @the-root-is-nonneg |
+        less_or_equal(real.ZERO, sqrt(normSq(z)))
+        [using specialize sqrtNonneg(normSq(z)) the-norm-is-nonneg]
+      @abs-unfolds |
+        abs(z) = sqrt(normSq(z))
+        [using specialize absIsTheRootOfTheNormSquare(z)]
+      @conclusion-abs-nonneg |
+        less_or_equal(real.ZERO, abs(z))
+        [by rewrite abs-unfolds the-root-is-nonneg]
+    }
+  @conclusion |
+    forall z: Complex; less_or_equal(real.ZERO, abs(z))
+    [by generalize generalize-z]
+qed
+
+// |z|² = normSq(z): the modulus squares back, since normSq is in `sqrt`'s domain. Also a
+// theorem now, for the same reason as `absNonneg`.
+theorem absSquared: forall z: Complex; rmul(abs(z), abs(z)) = normSq(z)
+proof
+  @generalize-z |
+    fix z: Complex {
+      @the-norm-is-nonneg |
+        less_or_equal(real.ZERO, normSq(z))
+        [using specialize normSqNonneg(z)]
+      @the-root-squares-back |
+        rmul(sqrt(normSq(z)), sqrt(normSq(z))) = normSq(z)
+        [using specialize sqrtSquare(normSq(z)) the-norm-is-nonneg]
+      @abs-unfolds |
+        abs(z) = sqrt(normSq(z))
+        [using specialize absIsTheRootOfTheNormSquare(z)]
+      @conclusion-abs-squared |
+        rmul(abs(z), abs(z)) = normSq(z)
+        [by rewrite abs-unfolds the-root-squares-back]
+    }
+  @conclusion |
+    forall z: Complex; rmul(abs(z), abs(z)) = normSq(z)
     [by generalize generalize-z]
 qed
 
@@ -120,12 +182,30 @@ proof
       @normsq-conj |
         normSq(conj(z)) = normSq(z)
         [using specialize normSqConj(z)]
+      // `sqrt` is GUARDED: every application owes `0 <= its argument` where written, and a
+      // norm-square is always nonnegative.
+      @conj-normsq-nonneg |
+        less_or_equal(real.ZERO, normSq(conj(z)))
+        [using specialize normSqNonneg(conj(z))]
+      @z-normsq-nonneg |
+        less_or_equal(real.ZERO, normSq(z))
+        [using specialize normSqNonneg(z)]
       @abs-conj-refl |
         abs(conj(z)) = sqrt(normSq(conj(z)))
-        [by reflexivity]
+        [using specialize absIsTheRootOfTheNormSquare(conj(z))]
+      @abs-z-refl |
+        abs(z) = sqrt(normSq(z))
+        [using specialize absIsTheRootOfTheNormSquare(z)]
+      // rewrite normSq(conj z) -> normSq z INSIDE the unfolded form, then fold back to abs
+      @abs-conj-as-the-z-root |
+        abs(conj(z)) = sqrt(normSq(z))
+        [by rewrite normsq-conj abs-conj-refl]
+      @the-z-root-is-abs-z |
+        sqrt(normSq(z)) = abs(z)
+        [by symmetry abs-z-refl]
       @conclusion-abs-conj |
         abs(conj(z)) = abs(z)
-        [by rewrite normsq-conj abs-conj-refl]
+        [using chain abs-conj-as-the-z-root the-z-root-is-abs-z]
     }
   @conclusion |
     forall z: Complex; abs(conj(z)) = abs(z)
@@ -216,19 +296,41 @@ proof
           @w-norm-nonneg |
             less_or_equal(real.ZERO, normSq(w))
             [using specialize normSqNonneg(w)]
+          // `sqrt` is GUARDED, so each application owes `0 <= its argument`: the product's
+          // own norm-square, and the product of the two norm-squares (which is also
+          // `sqrtMulNonneg`'s third premise now).
+          @product-norm-nonneg |
+            less_or_equal(real.ZERO, normSq(mul(z, w)))
+            [using specialize normSqNonneg(mul(z, w))]
+          @norms-product-nonneg |
+            less_or_equal(real.ZERO, rmul(normSq(z), normSq(w)))
+            [using specialize real.mulNonneg(normSq(z), normSq(w)) z-norm-nonneg w-norm-nonneg]
           // abs(zw) unfolds to √(normSq zw); rewrite normSq(zw) = normSq z · normSq w.
           @abs-mul-refl |
             abs(mul(z, w)) = sqrt(normSq(mul(z, w)))
-            [by reflexivity]
+            [using specialize absIsTheRootOfTheNormSquare(mul(z, w))]
           @abs-mul-rewritten |
             abs(mul(z, w)) = sqrt(rmul(normSq(z), normSq(w)))
             [by rewrite normsq-mul abs-mul-refl]
+          @abs-z-unfolds |
+            abs(z) = sqrt(normSq(z))
+            [using specialize absIsTheRootOfTheNormSquare(z)]
+          @abs-w-unfolds |
+            abs(w) = sqrt(normSq(w))
+            [using specialize absIsTheRootOfTheNormSquare(w)]
           @sqrt-splits |
+            sqrt(rmul(normSq(z), normSq(w))) = rmul(sqrt(normSq(z)), sqrt(normSq(w)))
+            [using specialize real_sqrt.sqrtMulNonneg(normSq(z), normSq(w)) z-norm-nonneg w-norm-nonneg norms-product-nonneg]
+          // fold the two roots back to abs: rewrite each factor by its defining equation
+          @the-split-with-abs-z |
+            sqrt(rmul(normSq(z), normSq(w))) = rmul(abs(z), sqrt(normSq(w)))
+            [by rewrite abs-z-unfolds sqrt-splits]
+          @the-split-with-both |
             sqrt(rmul(normSq(z), normSq(w))) = rmul(abs(z), abs(w))
-            [using specialize real_sqrt.sqrtMulNonneg(normSq(z), normSq(w)) z-norm-nonneg w-norm-nonneg]
+            [by rewrite abs-w-unfolds the-split-with-abs-z]
           @conclusion-abs-mul |
             abs(mul(z, w)) = rmul(abs(z), abs(w))
-            [using chain abs-mul-rewritten sqrt-splits]
+            [using chain abs-mul-rewritten the-split-with-both]
         }
       @discharge-w |
         forall w: Complex; abs(mul(z, w)) = rmul(abs(z), abs(w))
@@ -712,27 +814,21 @@ proof
     fix z: Complex {
       @generalize-w |
         fix w: Complex {
-          @normsq-z-nonneg |
-            less_or_equal(real.ZERO, normSq(z))
-            [using specialize normSqNonneg(z)]
-          @normsq-w-nonneg |
-            less_or_equal(real.ZERO, normSq(w))
-            [using specialize normSqNonneg(w)]
           @abs-z-nonneg |
             less_or_equal(real.ZERO, abs(z))
-            [using specialize sqrtNonneg(normSq(z)) normsq-z-nonneg]
+            [using specialize absNonneg(z)]
           @abs-w-nonneg |
             less_or_equal(real.ZERO, abs(w))
-            [using specialize sqrtNonneg(normSq(w)) normsq-w-nonneg]
+            [using specialize absNonneg(w)]
           @product-nonneg |
             less_or_equal(real.ZERO, rmul(abs(z), abs(w)))
             [using specialize real.mulNonneg(abs(z), abs(w)) abs-z-nonneg abs-w-nonneg]
           @abs-z-squares |
             rmul(abs(z), abs(z)) = normSq(z)
-            [using specialize sqrtSquare(normSq(z)) normsq-z-nonneg]
+            [using specialize absSquared(z)]
           @abs-w-squares |
             rmul(abs(w), abs(w)) = normSq(w)
-            [using specialize sqrtSquare(normSq(w)) normsq-w-nonneg]
+            [using specialize absSquared(w)]
           @product-square-regrouped |
             rmul(rmul(abs(z), abs(w)), rmul(abs(z), abs(w))) = rmul(rmul(abs(z), abs(z)), rmul(abs(w), abs(w)))
             [using assoc_commut(real.mulIsAssociative, real.mulIsCommutative, real.mulLeftSwap)]
@@ -830,18 +926,12 @@ proof
           @normsq-of-sum-bounded |
             less_or_equal(normSq(cadd(z, w)), radd(radd(normSq(z), normSq(w)), radd(rmul(abs(z), abs(w)), rmul(abs(z), abs(w)))))
             [by rewrite normsq-of-sum expansion-bounded]
-          @normsq-z-nonneg |
-            less_or_equal(real.ZERO, normSq(z))
-            [using specialize normSqNonneg(z)]
-          @normsq-w-nonneg |
-            less_or_equal(real.ZERO, normSq(w))
-            [using specialize normSqNonneg(w)]
           @abs-z-squares |
             rmul(abs(z), abs(z)) = normSq(z)
-            [using specialize sqrtSquare(normSq(z)) normsq-z-nonneg]
+            [using specialize absSquared(z)]
           @abs-w-squares |
             rmul(abs(w), abs(w)) = normSq(w)
-            [using specialize sqrtSquare(normSq(w)) normsq-w-nonneg]
+            [using specialize absSquared(w)]
           @square-of-sum-expands |
             rmul(radd(abs(z), abs(w)), radd(abs(z), abs(w))) = radd(radd(rmul(abs(z), abs(z)), rmul(abs(w), abs(w))), radd(rmul(abs(z), abs(w)), rmul(abs(z), abs(w))))
             [using polynomial(real)]
@@ -857,24 +947,37 @@ proof
           @normsq-of-sum-nonneg |
             less_or_equal(real.ZERO, normSq(cadd(z, w)))
             [using specialize normSqNonneg(cadd(z, w))]
+          // `sqrtMonotone` now takes `0 <= y` too (its conclusion writes `sqrt(y)`), and here
+          // y is a SQUARE — nonnegative regardless of the sum's sign.
+          @the-bound-square-is-nonneg |
+            less_or_equal(real.ZERO, rmul(radd(abs(z), abs(w)), radd(abs(z), abs(w))))
+            [using specialize real.squareNonneg(radd(abs(z), abs(w)))]
           @roots-ordered |
             less_or_equal(sqrt(normSq(cadd(z, w))), sqrt(rmul(radd(abs(z), abs(w)), radd(abs(z), abs(w)))))
-            [using specialize sqrtMonotone(normSq(cadd(z, w)), rmul(radd(abs(z), abs(w)), radd(abs(z), abs(w)))) normsq-of-sum-nonneg normsq-of-sum-at-most-square]
+            [using specialize sqrtMonotone(normSq(cadd(z, w)), rmul(radd(abs(z), abs(w)), radd(abs(z), abs(w)))) normsq-of-sum-nonneg the-bound-square-is-nonneg normsq-of-sum-at-most-square]
           @abs-z-nonneg |
             less_or_equal(real.ZERO, abs(z))
-            [using specialize sqrtNonneg(normSq(z)) normsq-z-nonneg]
+            [using specialize absNonneg(z)]
           @abs-w-nonneg |
             less_or_equal(real.ZERO, abs(w))
-            [using specialize sqrtNonneg(normSq(w)) normsq-w-nonneg]
+            [using specialize absNonneg(w)]
           @sum-of-moduli-nonneg |
             less_or_equal(real.ZERO, radd(abs(z), abs(w)))
             [using specialize real.addNonneg(abs(z), abs(w)) abs-z-nonneg abs-w-nonneg]
           @root-of-square |
             sqrt(rmul(radd(abs(z), abs(w)), radd(abs(z), abs(w)))) = radd(abs(z), abs(w))
             [using specialize sqrtOfSquare(radd(abs(z), abs(w))) sum-of-moduli-nonneg]
+          // fold BOTH sides back to abs: the RHS root collapses by `sqrtOfSquare`, and the
+          // LHS is `abs(z+w)` by its defining equation.
+          @the-rhs-folded |
+            less_or_equal(sqrt(normSq(cadd(z, w))), radd(abs(z), abs(w)))
+            [by rewrite root-of-square roots-ordered]
+          @abs-of-the-sum-unfolds |
+            abs(cadd(z, w)) = sqrt(normSq(cadd(z, w)))
+            [using specialize absIsTheRootOfTheNormSquare(cadd(z, w))]
           @conclusion-triangle |
             less_or_equal(abs(cadd(z, w)), radd(abs(z), abs(w)))
-            [by rewrite root-of-square roots-ordered]
+            [by rewrite abs-of-the-sum-unfolds the-rhs-folded]
         }
       @discharge-w |
         forall w: Complex; less_or_equal(abs(cadd(z, w)), radd(abs(z), abs(w)))
@@ -965,6 +1068,51 @@ proof
     [by generalize generalize-z]
 qed
 
+// |w − z| = |z − w|, the abs-level companion. Needed as its own theorem because `abs` is an
+// opaque function now (`sqrt` being guarded), so the normSq symmetry above no longer rewrites
+// underneath it.
+theorem absOfDifferenceIsSymmetric: forall z, w: Complex;
+  abs(cadd(w, cneg(z))) = abs(cadd(z, cneg(w)))
+proof
+  @generalize-z |
+    fix z: Complex {
+      @generalize-w |
+        fix w: Complex {
+          // both roots owe their argument be nonnegative, which a norm-square always is
+          @left-norm-nonneg |
+            less_or_equal(real.ZERO, normSq(cadd(w, cneg(z))))
+            [using specialize normSqNonneg(cadd(w, cneg(z)))]
+          @right-norm-nonneg |
+            less_or_equal(real.ZERO, normSq(cadd(z, cneg(w))))
+            [using specialize normSqNonneg(cadd(z, cneg(w)))]
+          @the-norms-agree |
+            normSq(cadd(w, cneg(z))) = normSq(cadd(z, cneg(w)))
+            [using specialize normSqOfDifferenceIsSymmetric(z, w)]
+          @left-unfolds |
+            abs(cadd(w, cneg(z))) = sqrt(normSq(cadd(w, cneg(z))))
+            [using specialize absIsTheRootOfTheNormSquare(cadd(w, cneg(z)))]
+          @right-unfolds |
+            abs(cadd(z, cneg(w))) = sqrt(normSq(cadd(z, cneg(w))))
+            [using specialize absIsTheRootOfTheNormSquare(cadd(z, cneg(w)))]
+          @left-as-the-right-root |
+            abs(cadd(w, cneg(z))) = sqrt(normSq(cadd(z, cneg(w))))
+            [by rewrite the-norms-agree left-unfolds]
+          @the-right-root-is-abs |
+            sqrt(normSq(cadd(z, cneg(w)))) = abs(cadd(z, cneg(w)))
+            [by symmetry right-unfolds]
+          @conclusion-symmetric |
+            abs(cadd(w, cneg(z))) = abs(cadd(z, cneg(w)))
+            [using chain left-as-the-right-root the-right-root-is-abs]
+        }
+      @discharge-w |
+        forall w: Complex; abs(cadd(w, cneg(z))) = abs(cadd(z, cneg(w)))
+        [by generalize generalize-w]
+    }
+  @conclusion |
+    forall z, w: Complex; abs(cadd(w, cneg(z))) = abs(cadd(z, cneg(w)))
+    [by generalize generalize-z]
+qed
+
 // EXERCISE 19(e): |z| − |w| ≤ |z − w| and |w| − |z| ≤ |z − w|, i.e. ||z| − |w|| ≤ |z − w|.
 // From the triangle inequality at z = (z − w) + w and at w = (w − z) + z.
 theorem reverseTriangleInequality: forall z, w: Complex; less_or_equal(radd(abs(z), rneg(abs(w))), abs(cadd(z, cneg(w)))) and less_or_equal(radd(abs(w), rneg(abs(z))), abs(cadd(z, cneg(w))))
@@ -1015,8 +1163,8 @@ proof
             less_or_equal(abs(w), radd(abs(cadd(w, cneg(z))), abs(z)))
             [by rewrite w-recovered triangle-at-w]
           @difference-symmetric |
-            normSq(cadd(w, cneg(z))) = normSq(cadd(z, cneg(w)))
-            [using specialize normSqOfDifferenceIsSymmetric(z, w)]
+            abs(cadd(w, cneg(z))) = abs(cadd(z, cneg(w)))
+            [using specialize absOfDifferenceIsSymmetric(z, w)]
           @abs-w-bounded |
             less_or_equal(abs(w), radd(abs(cadd(z, cneg(w))), abs(z)))
             [by rewrite difference-symmetric abs-w-bounded-raw]
