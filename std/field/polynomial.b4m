@@ -93,16 +93,13 @@ axiom degreeBoundsTheCoefficients: forall p: Poly;
 // REINDEXED to match `ring_poly` (the no-totalizing-`sub` sweep): the second argument is the
 // COMPLEMENTARY exponent and counts down while the first counts up, so no subtraction
 // appears. See `std/ring/polynomial.b4m` for the rationale.
-func convolution(p: Poly, q: Poly, j: Nat, m: Nat) => F
-axiom convolutionZero: forall p, q: Poly; forall j: Nat;
-  convolution(p, q, j, ZERO) = mulF(coeff(p, j), coeff(q, ZERO))
-axiom convolutionSucc: forall p, q: Poly; forall j, m: Nat;
+func convolution(p: Poly, q: Poly, j: Nat, m: Nat) => F:
+  convolution(p, q, j, ZERO) = mulF(coeff(p, j), coeff(q, ZERO));
   convolution(p, q, j, succ(m)) =
   addF(mulF(coeff(p, j), coeff(q, succ(m))),
   convolution(p, q, succ(j), m))
 
-func mulP(p: Poly, q: Poly) => Poly
-axiom mulPolyCoeff: forall p, q: Poly; forall i: Nat;
+func mulP(p: Poly, q: Poly) => Poly:
   coeff(mulP(p, q), i) = convolution(p, q, ZERO, i)
 
 // Judson's Proposition 17.4 over a field: a product of nonzeros is nonzero, and the degree
@@ -223,27 +220,21 @@ qed
 //
 // They are pure reification: nothing below proves anything ABOUT them directly. Their whole
 // job is to let `polyMulIsCommutative` land over `F`.
-func tailConvolution(p: Poly, q: Poly, j: Nat, m: Nat) => F
-axiom tailConvolutionZero: forall p, q: Poly; forall m: Nat;
-  tailConvolution(p, q, ZERO, m) = mulF(coeff(p, ZERO), coeff(q, m))
-axiom tailConvolutionSucc: forall p, q: Poly; forall j, m: Nat;
+func tailConvolution(p: Poly, q: Poly, j: Nat, m: Nat) => F:
+  tailConvolution(p, q, ZERO, m) = mulF(coeff(p, ZERO), coeff(q, m));
   tailConvolution(p, q, succ(j), m) =
   addF(mulF(coeff(p, succ(j)), coeff(q, m)),
   tailConvolution(p, q, j, succ(m)))
 
-func segment(p: Poly, q: Poly, j: Nat, c: Nat, n: Nat) => F
-axiom segmentZero: forall p, q: Poly; forall j, c: Nat;
-  segment(p, q, j, c, ZERO) = mulF(coeff(p, j), coeff(q, c))
-axiom segmentSucc: forall p, q: Poly; forall j, c, n: Nat;
+func segment(p: Poly, q: Poly, j: Nat, c: Nat, n: Nat) => F:
+  segment(p, q, j, c, ZERO) = mulF(coeff(p, j), coeff(q, c));
   segment(p, q, succ(j), c, succ(n)) =
   addF(mulF(coeff(p, succ(j)), coeff(q, c)),
   segment(p, q, j, succ(c), n))
 
 // the bottom-up capped run, mirror of `segment`
-func rsegment(p: Poly, q: Poly, j: Nat, c: Nat, n: Nat) => F
-axiom rsegmentZero: forall p, q: Poly; forall j, c: Nat;
-  rsegment(p, q, j, c, ZERO) = mulF(coeff(p, j), coeff(q, c))
-axiom rsegmentSucc: forall p, q: Poly; forall j, c, n: Nat;
+func rsegment(p: Poly, q: Poly, j: Nat, c: Nat, n: Nat) => F:
+  rsegment(p, q, j, c, ZERO) = mulF(coeff(p, j), coeff(q, c));
   rsegment(p, q, j, succ(c), succ(n)) =
   addF(mulF(coeff(p, j), coeff(q, succ(c))),
   rsegment(p, q, succ(j), c, n))
@@ -254,56 +245,42 @@ axiom rsegmentSucc: forall p, q: Poly; forall j, c, n: Nat;
 // Note what is NOT here: a subtraction. The ring version carries a term's three EXPONENTS and
 // names the index arithmetic (`theGapTo`, `theCofactorIndex`) rather than writing
 // `sub(sub(i,j),k)` — which is what retired the old standalone F[x] associativity file.
-func theGapTo(i: Nat, j: Nat) => Nat
-axiom theGapToAtZero: forall i: Nat; theGapTo(i, ZERO) = i
-axiom theGapToSteps: forall i, j: Nat;
+func theGapTo(i: Nat, j: Nat) => Nat:
+  theGapTo(i, ZERO) = i;
   theGapTo(succ(i), succ(j)) = theGapTo(i, j)
 
-func theCofactorIndex(i: Nat, j: Nat, k: Nat) => Nat
-axiom theCofactorIndexAtZero: forall i, j: Nat;
-  theCofactorIndex(i, j, ZERO) = theGapTo(i, j)
-axiom theCofactorIndexSteps: forall i, j, k: Nat;
+func theCofactorIndex(i: Nat, j: Nat, k: Nat) => Nat:
+  theCofactorIndex(i, j, ZERO) = theGapTo(i, j);
   theCofactorIndex(i, j, succ(k)) = theGapTo(theGapTo(i, j), succ(k))
 
-func cappedRun(q: Poly, r: Poly, g: Nat, n: Nat) => F
-axiom cappedRunZero: forall q, r: Poly; forall g: Nat;
-  cappedRun(q, r, g, ZERO) = zeroF
-axiom cappedRunSucc: forall q, r: Poly; forall g, n: Nat;
+func cappedRun(q: Poly, r: Poly, g: Nat, n: Nat) => F:
+  cappedRun(q, r, g, ZERO) = zeroF;
   cappedRun(q, r, g, succ(n)) =
   addF(cappedRun(q, r, g, n),
   mulF(coeff(q, n), coeff(r, theGapTo(g, n))))
 
-func tripleTerm(p: Poly, q: Poly, r: Poly, i: Nat, j: Nat, k: Nat) => F
-axiom tripleTermMeaning: forall p, q, r: Poly; forall i, j, k: Nat;
+func tripleTerm(p: Poly, q: Poly, r: Poly, i: Nat, j: Nat, k: Nat) => F:
   tripleTerm(p, q, r, i, j, k) =
   mulF(mulF(coeff(p, j), coeff(q, k)), coeff(r, theCofactorIndex(i, j, k)))
 
-func tripleRow(p: Poly, q: Poly, r: Poly, i: Nat, j: Nat, n: Nat) => F
-axiom tripleRowZero: forall p, q, r: Poly; forall i, j: Nat;
-  tripleRow(p, q, r, i, j, ZERO) = zeroF
-axiom tripleRowSucc: forall p, q, r: Poly; forall i, j, n: Nat;
+func tripleRow(p: Poly, q: Poly, r: Poly, i: Nat, j: Nat, n: Nat) => F:
+  tripleRow(p, q, r, i, j, ZERO) = zeroF;
   tripleRow(p, q, r, i, j, succ(n)) =
   addF(tripleRow(p, q, r, i, j, n), tripleTerm(p, q, r, i, j, n))
 
-func tripleDiag(p: Poly, q: Poly, r: Poly, i: Nat, m: Nat, c: Nat) => F
-axiom tripleDiagZero: forall p, q, r: Poly; forall i, m: Nat;
-  tripleDiag(p, q, r, i, m, ZERO) = zeroF
-axiom tripleDiagSucc: forall p, q, r: Poly; forall i, m, c: Nat;
+func tripleDiag(p: Poly, q: Poly, r: Poly, i: Nat, m: Nat, c: Nat) => F:
+  tripleDiag(p, q, r, i, m, ZERO) = zeroF;
   tripleDiag(p, q, r, i, m, succ(c)) =
   addF(tripleDiag(p, q, r, i, m, c),
   tripleTerm(p, q, r, i, c, theGapTo(m, c)))
 
-func tripleTri(p: Poly, q: Poly, r: Poly, i: Nat, n: Nat) => F
-axiom tripleTriZero: forall p, q, r: Poly; forall i: Nat;
-  tripleTri(p, q, r, i, ZERO) = zeroF
-axiom tripleTriSucc: forall p, q, r: Poly; forall i, n: Nat;
+func tripleTri(p: Poly, q: Poly, r: Poly, i: Nat, n: Nat) => F:
+  tripleTri(p, q, r, i, ZERO) = zeroF;
   tripleTri(p, q, r, i, succ(n)) =
   addF(tripleTri(p, q, r, i, n), tripleDiag(p, q, r, i, n, succ(n)))
 
-func tripleRows(p: Poly, q: Poly, r: Poly, i: Nat, m: Nat, n: Nat) => F
-axiom tripleRowsZero: forall p, q, r: Poly; forall i, n: Nat;
-  tripleRows(p, q, r, i, ZERO, n) = zeroF
-axiom tripleRowsSucc: forall p, q, r: Poly; forall i, m, n: Nat;
+func tripleRows(p: Poly, q: Poly, r: Poly, i: Nat, m: Nat, n: Nat) => F:
+  tripleRows(p, q, r, i, ZERO, n) = zeroF;
   tripleRows(p, q, r, i, succ(m), n) =
   addF(tripleRows(p, q, r, i, m, n),
   tripleRow(p, q, r, i, m, theGapTo(n, m)))
@@ -312,12 +289,10 @@ axiom tripleRowsSucc: forall p, q, r: Poly; forall i, m, n: Nat;
 //
 // Judson's `f(x) - (a_n/b_m) x^{n-m} g(x)` needs a difference, so addition and negation come
 // back here, now that there is a theorem that uses them.
-func addP(p: Poly, q: Poly) => Poly
-axiom addPolyCoeff: forall p, q: Poly; forall i: Nat;
+func addP(p: Poly, q: Poly) => Poly:
   coeff(addP(p, q), i) = addF(coeff(p, i), coeff(q, i))
 
-func negP(p: Poly) => Poly
-axiom negPolyCoeff: forall p: Poly; forall i: Nat;
+func negP(p: Poly) => Poly:
   coeff(negP(p), i) = negF(coeff(p, i))
 
 // `subP(p, q)` is `p - q`. Over a FIELD subtraction is total and honest — it is addition of
@@ -364,9 +339,8 @@ qed
 // `F[x]` above is observe-only — `coeff` reads a polynomial and only `ZEROP` is named, so
 // nothing BUILDS one. Judson's construction needs `(a_n / b_m) x^{n-m}`, a single term, so
 // that is the constructor to add: `monomial(a, k)` is the polynomial `a x^k`.
-func monomial(a: F, k: Nat) => Poly
-axiom monomialCoeffAtItsIndex: forall a: F; forall k: Nat; coeff(monomial(a, k), k) = a
-axiom monomialCoeffElsewhere: forall a: F; forall k, i: Nat;
+func monomial(a: F, k: Nat) => Poly:
+  coeff(monomial(a, k), k) = a;
   (not (i = k)) -> coeff(monomial(a, k), i) = zeroF
 // Transferred: generic in the coefficient ring, so it lives in
 // `std/ring/polynomial/monomial.b4m`.
@@ -1077,15 +1051,12 @@ model FieldPolyModelsRingPoly {
   ring_poly.degreeAtMostMeaning <- degreeAtMostMeaning
   ring_poly.zeroPolyCoeff <- zeroPolyCoeff
   ring_poly.polyExtensionality <- polyExtensionality
-  ring_poly.addPolyCoeff <- addPolyCoeff
-  ring_poly.negPolyCoeff <- negPolyCoeff
-  ring_poly.mulPolyCoeff <- mulPolyCoeff
-  ring_poly.convolutionZero <- convolutionZero
-  ring_poly.convolutionSucc <- convolutionSucc
-  ring_poly.tailConvolutionZero <- tailConvolutionZero
-  ring_poly.tailConvolutionSucc <- tailConvolutionSucc
-  ring_poly.segmentZero <- segmentZero
-  ring_poly.segmentSucc <- segmentSucc
+  ring_poly.addP <- addP
+  ring_poly.negP <- negP
+  ring_poly.mulP <- mulP
+  ring_poly.convolution <- convolution
+  ring_poly.tailConvolution <- tailConvolution
+  ring_poly.segment <- segment
   ring_poly.rsegment: rsegment
   ring_poly.theGapTo: theGapTo
   ring_poly.theCofactorIndex: theCofactorIndex
@@ -1095,26 +1066,17 @@ model FieldPolyModelsRingPoly {
   ring_poly.tripleDiag: tripleDiag
   ring_poly.tripleTri: tripleTri
   ring_poly.tripleRows: tripleRows
-  ring_poly.theGapToAtZero <- theGapToAtZero
-  ring_poly.theGapToSteps <- theGapToSteps
-  ring_poly.theCofactorIndexAtZero <- theCofactorIndexAtZero
-  ring_poly.theCofactorIndexSteps <- theCofactorIndexSteps
-  ring_poly.cappedRunZero <- cappedRunZero
-  ring_poly.cappedRunSucc <- cappedRunSucc
-  ring_poly.tripleTermMeaning <- tripleTermMeaning
-  ring_poly.tripleRowZero <- tripleRowZero
-  ring_poly.tripleRowSucc <- tripleRowSucc
-  ring_poly.tripleDiagZero <- tripleDiagZero
-  ring_poly.tripleDiagSucc <- tripleDiagSucc
-  ring_poly.tripleTriZero <- tripleTriZero
-  ring_poly.tripleTriSucc <- tripleTriSucc
-  ring_poly.tripleRowsZero <- tripleRowsZero
-  ring_poly.tripleRowsSucc <- tripleRowsSucc
-  ring_poly.rsegmentZero <- rsegmentZero
-  ring_poly.rsegmentSucc <- rsegmentSucc
+  ring_poly.theGapTo <- theGapTo
+  ring_poly.theCofactorIndex <- theCofactorIndex
+  ring_poly.cappedRun <- cappedRun
+  ring_poly.tripleTerm <- tripleTerm
+  ring_poly.tripleRow <- tripleRow
+  ring_poly.tripleDiag <- tripleDiag
+  ring_poly.tripleTri <- tripleTri
+  ring_poly.tripleRows <- tripleRows
+  ring_poly.rsegment <- rsegment
   ring_mono.monomial: monomial
-  ring_mono.monomialCoeffAtItsIndex <- monomialCoeffAtItsIndex
-  ring_mono.monomialCoeffElsewhere <- monomialCoeffElsewhere
+  ring_mono.monomial <- monomial
 }
 
 // The four laws the division algorithm's assembly step needs, transferred.
@@ -2600,13 +2562,12 @@ qed
 // evaluation map has to be here. `evalUpTo(p, a, k)` is `a_0 + a_1 a + ... + a_{k-1} a^{k-1}`,
 // summed to a bound exactly as the convolution is; `p(a)` is then the sum to one past the
 // degree, which is the first bound that reaches every nonzero coefficient.
-func power(a: F, n: Nat) => F
-axiom powerZero: forall a: F; power(a, ZERO) = oneF
-axiom powerSucc: forall a: F; forall n: Nat; power(a, succ(n)) = mulF(a, power(a, n))
+func power(a: F, n: Nat) => F:
+  power(a, ZERO) = oneF;
+  power(a, succ(n)) = mulF(a, power(a, n))
 
-func evalUpTo(p: Poly, a: F, k: Nat) => F
-axiom evalZero: forall p: Poly; forall a: F; evalUpTo(p, a, ZERO) = zeroF
-axiom evalSucc: forall p: Poly; forall a: F; forall k: Nat;
+func evalUpTo(p: Poly, a: F, k: Nat) => F:
+  evalUpTo(p, a, ZERO) = zeroF;
   evalUpTo(p, a, succ(k)) = addF(evalUpTo(p, a, k), mulF(coeff(p, k), power(a, k)))
 
 // `evaluate(p, a)` is Judson's `p(a)`: the sum over every index up to and including the
@@ -6756,4 +6717,356 @@ proof
   @conclusion |
     forall p, q, r: Poly; addP(p, r) = addP(q, r) -> p = q
     [using model(FieldPolyModelsRingPoly) ring_poly.polyAddCancelRight]
+qed
+
+// -- definition-clause shims ---------------------------------------------------------------
+//
+// The symbols above are DEFINITION BLOCKS, so `--axioms` reports their clauses as
+// definitions rather than as assumptions to weigh. A clause has no user-facing name,
+// though, and both `specialize` and a model's `<-` once resolved these BY NAME — so each
+// clause keeps a one-line theorem under the name it had as an axiom. These add no
+// assumption: every one is proved `[by definition(N) <symbol>]`.
+
+theorem convolutionZero:
+  forall p, q: Poly; forall j: Nat;
+  convolution(p, q, j, ZERO) = mulF(coeff(p, j), coeff(q, ZERO))
+proof
+  @conclusion |
+    forall p, q: Poly; forall j: Nat;
+      convolution(p, q, j, ZERO) = mulF(coeff(p, j), coeff(q, ZERO))
+    [by definition(0) convolution]
+qed
+
+theorem convolutionSucc:
+  forall p, q: Poly; forall j, m: Nat;
+  convolution(p, q, j, succ(m)) =
+  addF(mulF(coeff(p, j), coeff(q, succ(m))),
+  convolution(p, q, succ(j), m))
+proof
+  @conclusion |
+    forall p, q: Poly; forall j, m: Nat;
+      convolution(p, q, j, succ(m)) =
+      addF(mulF(coeff(p, j), coeff(q, succ(m))),
+      convolution(p, q, succ(j), m))
+    [by definition(1) convolution]
+qed
+
+theorem mulPolyCoeff:
+  forall p, q: Poly; forall i: Nat;
+  coeff(mulP(p, q), i) = convolution(p, q, ZERO, i)
+proof
+  @conclusion |
+    forall p, q: Poly; forall i: Nat;
+      coeff(mulP(p, q), i) = convolution(p, q, ZERO, i)
+    [by definition mulP]
+qed
+
+theorem tailConvolutionZero:
+  forall p, q: Poly; forall m: Nat;
+  tailConvolution(p, q, ZERO, m) = mulF(coeff(p, ZERO), coeff(q, m))
+proof
+  @conclusion |
+    forall p, q: Poly; forall m: Nat;
+      tailConvolution(p, q, ZERO, m) = mulF(coeff(p, ZERO), coeff(q, m))
+    [by definition(0) tailConvolution]
+qed
+
+theorem tailConvolutionSucc:
+  forall p, q: Poly; forall j, m: Nat;
+  tailConvolution(p, q, succ(j), m) =
+  addF(mulF(coeff(p, succ(j)), coeff(q, m)),
+  tailConvolution(p, q, j, succ(m)))
+proof
+  @conclusion |
+    forall p, q: Poly; forall j, m: Nat;
+      tailConvolution(p, q, succ(j), m) =
+      addF(mulF(coeff(p, succ(j)), coeff(q, m)),
+      tailConvolution(p, q, j, succ(m)))
+    [by definition(1) tailConvolution]
+qed
+
+theorem segmentZero:
+  forall p, q: Poly; forall j, c: Nat;
+  segment(p, q, j, c, ZERO) = mulF(coeff(p, j), coeff(q, c))
+proof
+  @conclusion |
+    forall p, q: Poly; forall j, c: Nat;
+      segment(p, q, j, c, ZERO) = mulF(coeff(p, j), coeff(q, c))
+    [by definition(0) segment]
+qed
+
+theorem segmentSucc:
+  forall p, q: Poly; forall j, c, n: Nat;
+  segment(p, q, succ(j), c, succ(n)) =
+  addF(mulF(coeff(p, succ(j)), coeff(q, c)),
+  segment(p, q, j, succ(c), n))
+proof
+  @conclusion |
+    forall p, q: Poly; forall j, c, n: Nat;
+      segment(p, q, succ(j), c, succ(n)) =
+      addF(mulF(coeff(p, succ(j)), coeff(q, c)),
+      segment(p, q, j, succ(c), n))
+    [by definition(1) segment]
+qed
+
+theorem rsegmentZero:
+  forall p, q: Poly; forall j, c: Nat;
+  rsegment(p, q, j, c, ZERO) = mulF(coeff(p, j), coeff(q, c))
+proof
+  @conclusion |
+    forall p, q: Poly; forall j, c: Nat;
+      rsegment(p, q, j, c, ZERO) = mulF(coeff(p, j), coeff(q, c))
+    [by definition(0) rsegment]
+qed
+
+theorem rsegmentSucc:
+  forall p, q: Poly; forall j, c, n: Nat;
+  rsegment(p, q, j, succ(c), succ(n)) =
+  addF(mulF(coeff(p, j), coeff(q, succ(c))),
+  rsegment(p, q, succ(j), c, n))
+proof
+  @conclusion |
+    forall p, q: Poly; forall j, c, n: Nat;
+      rsegment(p, q, j, succ(c), succ(n)) =
+      addF(mulF(coeff(p, j), coeff(q, succ(c))),
+      rsegment(p, q, succ(j), c, n))
+    [by definition(1) rsegment]
+qed
+
+theorem theGapToAtZero:
+  forall i: Nat; theGapTo(i, ZERO) = i
+proof
+  @conclusion |
+    forall i: Nat; theGapTo(i, ZERO) = i
+    [by definition(0) theGapTo]
+qed
+
+theorem theGapToSteps:
+  forall i, j: Nat;
+  theGapTo(succ(i), succ(j)) = theGapTo(i, j)
+proof
+  @conclusion |
+    forall i, j: Nat;
+      theGapTo(succ(i), succ(j)) = theGapTo(i, j)
+    [by definition(1) theGapTo]
+qed
+
+theorem theCofactorIndexAtZero:
+  forall i, j: Nat;
+  theCofactorIndex(i, j, ZERO) = theGapTo(i, j)
+proof
+  @conclusion |
+    forall i, j: Nat;
+      theCofactorIndex(i, j, ZERO) = theGapTo(i, j)
+    [by definition(0) theCofactorIndex]
+qed
+
+theorem theCofactorIndexSteps:
+  forall i, j, k: Nat;
+  theCofactorIndex(i, j, succ(k)) = theGapTo(theGapTo(i, j), succ(k))
+proof
+  @conclusion |
+    forall i, j, k: Nat;
+      theCofactorIndex(i, j, succ(k)) = theGapTo(theGapTo(i, j), succ(k))
+    [by definition(1) theCofactorIndex]
+qed
+
+theorem cappedRunZero:
+  forall q, r: Poly; forall g: Nat;
+  cappedRun(q, r, g, ZERO) = zeroF
+proof
+  @conclusion |
+    forall q, r: Poly; forall g: Nat;
+      cappedRun(q, r, g, ZERO) = zeroF
+    [by definition(0) cappedRun]
+qed
+
+theorem cappedRunSucc:
+  forall q, r: Poly; forall g, n: Nat;
+  cappedRun(q, r, g, succ(n)) =
+  addF(cappedRun(q, r, g, n),
+  mulF(coeff(q, n), coeff(r, theGapTo(g, n))))
+proof
+  @conclusion |
+    forall q, r: Poly; forall g, n: Nat;
+      cappedRun(q, r, g, succ(n)) =
+      addF(cappedRun(q, r, g, n),
+      mulF(coeff(q, n), coeff(r, theGapTo(g, n))))
+    [by definition(1) cappedRun]
+qed
+
+theorem tripleTermMeaning:
+  forall p, q, r: Poly; forall i, j, k: Nat;
+  tripleTerm(p, q, r, i, j, k) =
+  mulF(mulF(coeff(p, j), coeff(q, k)), coeff(r, theCofactorIndex(i, j, k)))
+proof
+  @conclusion |
+    forall p, q, r: Poly; forall i, j, k: Nat;
+      tripleTerm(p, q, r, i, j, k) =
+      mulF(mulF(coeff(p, j), coeff(q, k)), coeff(r, theCofactorIndex(i, j, k)))
+    [by definition tripleTerm]
+qed
+
+theorem tripleRowZero:
+  forall p, q, r: Poly; forall i, j: Nat;
+  tripleRow(p, q, r, i, j, ZERO) = zeroF
+proof
+  @conclusion |
+    forall p, q, r: Poly; forall i, j: Nat;
+      tripleRow(p, q, r, i, j, ZERO) = zeroF
+    [by definition(0) tripleRow]
+qed
+
+theorem tripleRowSucc:
+  forall p, q, r: Poly; forall i, j, n: Nat;
+  tripleRow(p, q, r, i, j, succ(n)) =
+  addF(tripleRow(p, q, r, i, j, n), tripleTerm(p, q, r, i, j, n))
+proof
+  @conclusion |
+    forall p, q, r: Poly; forall i, j, n: Nat;
+      tripleRow(p, q, r, i, j, succ(n)) =
+      addF(tripleRow(p, q, r, i, j, n), tripleTerm(p, q, r, i, j, n))
+    [by definition(1) tripleRow]
+qed
+
+theorem tripleDiagZero:
+  forall p, q, r: Poly; forall i, m: Nat;
+  tripleDiag(p, q, r, i, m, ZERO) = zeroF
+proof
+  @conclusion |
+    forall p, q, r: Poly; forall i, m: Nat;
+      tripleDiag(p, q, r, i, m, ZERO) = zeroF
+    [by definition(0) tripleDiag]
+qed
+
+theorem tripleDiagSucc:
+  forall p, q, r: Poly; forall i, m, c: Nat;
+  tripleDiag(p, q, r, i, m, succ(c)) =
+  addF(tripleDiag(p, q, r, i, m, c),
+  tripleTerm(p, q, r, i, c, theGapTo(m, c)))
+proof
+  @conclusion |
+    forall p, q, r: Poly; forall i, m, c: Nat;
+      tripleDiag(p, q, r, i, m, succ(c)) =
+      addF(tripleDiag(p, q, r, i, m, c),
+      tripleTerm(p, q, r, i, c, theGapTo(m, c)))
+    [by definition(1) tripleDiag]
+qed
+
+theorem tripleTriZero:
+  forall p, q, r: Poly; forall i: Nat;
+  tripleTri(p, q, r, i, ZERO) = zeroF
+proof
+  @conclusion |
+    forall p, q, r: Poly; forall i: Nat;
+      tripleTri(p, q, r, i, ZERO) = zeroF
+    [by definition(0) tripleTri]
+qed
+
+theorem tripleTriSucc:
+  forall p, q, r: Poly; forall i, n: Nat;
+  tripleTri(p, q, r, i, succ(n)) =
+  addF(tripleTri(p, q, r, i, n), tripleDiag(p, q, r, i, n, succ(n)))
+proof
+  @conclusion |
+    forall p, q, r: Poly; forall i, n: Nat;
+      tripleTri(p, q, r, i, succ(n)) =
+      addF(tripleTri(p, q, r, i, n), tripleDiag(p, q, r, i, n, succ(n)))
+    [by definition(1) tripleTri]
+qed
+
+theorem tripleRowsZero:
+  forall p, q, r: Poly; forall i, n: Nat;
+  tripleRows(p, q, r, i, ZERO, n) = zeroF
+proof
+  @conclusion |
+    forall p, q, r: Poly; forall i, n: Nat;
+      tripleRows(p, q, r, i, ZERO, n) = zeroF
+    [by definition(0) tripleRows]
+qed
+
+theorem tripleRowsSucc:
+  forall p, q, r: Poly; forall i, m, n: Nat;
+  tripleRows(p, q, r, i, succ(m), n) =
+  addF(tripleRows(p, q, r, i, m, n),
+  tripleRow(p, q, r, i, m, theGapTo(n, m)))
+proof
+  @conclusion |
+    forall p, q, r: Poly; forall i, m, n: Nat;
+      tripleRows(p, q, r, i, succ(m), n) =
+      addF(tripleRows(p, q, r, i, m, n),
+      tripleRow(p, q, r, i, m, theGapTo(n, m)))
+    [by definition(1) tripleRows]
+qed
+
+theorem addPolyCoeff:
+  forall p, q: Poly; forall i: Nat;
+  coeff(addP(p, q), i) = addF(coeff(p, i), coeff(q, i))
+proof
+  @conclusion |
+    forall p, q: Poly; forall i: Nat;
+      coeff(addP(p, q), i) = addF(coeff(p, i), coeff(q, i))
+    [by definition addP]
+qed
+
+theorem negPolyCoeff:
+  forall p: Poly; forall i: Nat;
+  coeff(negP(p), i) = negF(coeff(p, i))
+proof
+  @conclusion |
+    forall p: Poly; forall i: Nat;
+      coeff(negP(p), i) = negF(coeff(p, i))
+    [by definition negP]
+qed
+
+theorem monomialCoeffAtItsIndex:
+  forall a: F; forall k: Nat; coeff(monomial(a, k), k) = a
+proof
+  @conclusion |
+    forall a: F; forall k: Nat; coeff(monomial(a, k), k) = a
+    [by definition(0) monomial]
+qed
+
+theorem monomialCoeffElsewhere:
+  forall a: F; forall k, i: Nat;
+  (not (i = k)) -> coeff(monomial(a, k), i) = zeroF
+proof
+  @conclusion |
+    forall a: F; forall k, i: Nat;
+      (not (i = k)) -> coeff(monomial(a, k), i) = zeroF
+    [by definition(1) monomial]
+qed
+
+theorem powerZero:
+  forall a: F; power(a, ZERO) = oneF
+proof
+  @conclusion |
+    forall a: F; power(a, ZERO) = oneF
+    [by definition(0) power]
+qed
+
+theorem powerSucc:
+  forall a: F; forall n: Nat; power(a, succ(n)) = mulF(a, power(a, n))
+proof
+  @conclusion |
+    forall a: F; forall n: Nat; power(a, succ(n)) = mulF(a, power(a, n))
+    [by definition(1) power]
+qed
+
+theorem evalZero:
+  forall p: Poly; forall a: F; evalUpTo(p, a, ZERO) = zeroF
+proof
+  @conclusion |
+    forall p: Poly; forall a: F; evalUpTo(p, a, ZERO) = zeroF
+    [by definition(0) evalUpTo]
+qed
+
+theorem evalSucc:
+  forall p: Poly; forall a: F; forall k: Nat;
+  evalUpTo(p, a, succ(k)) = addF(evalUpTo(p, a, k), mulF(coeff(p, k), power(a, k)))
+proof
+  @conclusion |
+    forall p: Poly; forall a: F; forall k: Nat;
+      evalUpTo(p, a, succ(k)) = addF(evalUpTo(p, a, k), mulF(coeff(p, k), power(a, k)))
+    [by definition(1) evalUpTo]
 qed

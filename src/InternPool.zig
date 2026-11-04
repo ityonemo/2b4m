@@ -929,6 +929,29 @@ pub fn internString(self: *InternPool, bytes: []const u8) std.mem.Allocator.Erro
     return self.intern(.{ .string = bytes });
 }
 
+/// A definition block's clause axiom is PUBLISHED under a mangled name, `definition{sym}{arm}`,
+/// so it cannot collide with the pred/func declaration that the block already names, and so
+/// reports can tell a STIPULATION from an ASSUMPTION. `{` cannot occur in a parsed identifier,
+/// so the spelling is unreachable from source — every surface that wants a clause (a
+/// `[by definition(N) f]` cite, a `<- definition(N) f` discharge, the read pass's demand)
+/// re-mangles here rather than searching.
+pub fn definitionClauseName(self: *InternPool, arena: std.mem.Allocator, symbol: []const u8, arm: usize) std.mem.Allocator.Error!StrId {
+    const text = try std.fmt.allocPrint(arena, "definition{{{s}}}{{{d}}}", .{ symbol, arm });
+    return self.internString(text);
+}
+
+/// If `name` is a definition clause's mangled publication name, the user-facing symbol and
+/// its arm; else null — the inverse of `definitionClauseName`, for reports.
+pub fn definitionClauseParts(name: []const u8) ?struct { symbol: []const u8, arm: []const u8 } {
+    const prefix = "definition{";
+    if (!std.mem.startsWith(u8, name, prefix)) return null;
+    const rest = name[prefix.len..];
+    const close = std.mem.indexOfScalar(u8, rest, '}') orelse return null;
+    const tail = rest[close + 1 ..];
+    if (tail.len < 2 or tail[0] != '{' or tail[tail.len - 1] != '}') return null;
+    return .{ .symbol = rest[0..close], .arm = tail[1 .. tail.len - 1] };
+}
+
 /// The bytes of an interned string. Asserts `id` names a `.string` item.
 pub fn stringBytes(self: *const InternPool, id: StrId) []const u8 {
     std.debug.assert(self.items.get(@intFromEnum(id)).tag == .string);

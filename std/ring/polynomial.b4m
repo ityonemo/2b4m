@@ -104,14 +104,12 @@ axiom onePolyCoeffHigher: forall i: Nat; coeff(ONEP, succ(i)) = zeroR
 
 // -- addition: c_i = a_i + b_i -----------------------------------------------------------
 
-func addP(p: Poly, q: Poly) => Poly
-axiom addPolyCoeff: forall p, q: Poly; forall i: Nat;
+func addP(p: Poly, q: Poly) => Poly:
   coeff(addP(p, q), i) = addR(coeff(p, i), coeff(q, i))
 
 // -- negation: the inverse of p is the polynomial of negated coefficients -----------------
 
-func negP(p: Poly) => Poly
-axiom negPolyCoeff: forall p: Poly; forall i: Nat;
+func negP(p: Poly) => Poly:
   coeff(negP(p), i) = negR(coeff(p, i))
 
 // -- multiplication: the convolution c_i = sum_{k=0}^{i} a_k b_{i-k} ----------------------
@@ -134,15 +132,12 @@ axiom negPolyCoeff: forall p: Poly; forall i: Nat;
 // its VALUE never mattered. That is the library's junk-value idiom, not the asserted-value
 // violation `subZeroLeft` was. Guarding would have forced a false hypothesis onto true
 // theorems; reindexing removes the obligation at its source.
-func convolution(p: Poly, q: Poly, j: Nat, m: Nat) => R
-axiom convolutionZero: forall p, q: Poly; forall j: Nat;
-  convolution(p, q, j, ZERO) = mulR(coeff(p, j), coeff(q, ZERO))
-axiom convolutionSucc: forall p, q: Poly; forall j, m: Nat;
+func convolution(p: Poly, q: Poly, j: Nat, m: Nat) => R:
+  convolution(p, q, j, ZERO) = mulR(coeff(p, j), coeff(q, ZERO));
   convolution(p, q, j, succ(m)) =
   addR(mulR(coeff(p, j), coeff(q, succ(m))), convolution(p, q, succ(j), m))
 
-func mulP(p: Poly, q: Poly) => Poly
-axiom mulPolyCoeff: forall p, q: Poly; forall i: Nat;
+func mulP(p: Poly, q: Poly) => Poly:
   coeff(mulP(p, q), i) = convolution(p, q, ZERO, i)
 
 // -- R's additive left-swap, which `assoc_commut`'s explicit AC triple requires -----------
@@ -1279,12 +1274,10 @@ qed
 // REINDEXED alongside `convolution`: the FIRST exponent counts down, the second up, so
 //   tailConvolution(p, q, j, m) = a_j b_m + a_{j-1} b_{m+1} + ... (grown at the base)
 // Mirror image of `convolution`, and likewise free of `sub`.
-func tailConvolution(p: Poly, q: Poly, j: Nat, m: Nat) => R
 // Base at j = ZERO (the first exponent has run down); step peels the top term off a
 // positive first exponent. Mirror of `convolution`, which bases at m = ZERO.
-axiom tailConvolutionZero: forall p, q: Poly; forall m: Nat;
-  tailConvolution(p, q, ZERO, m) = mulR(coeff(p, ZERO), coeff(q, m))
-axiom tailConvolutionSucc: forall p, q: Poly; forall j, m: Nat;
+func tailConvolution(p: Poly, q: Poly, j: Nat, m: Nat) => R:
+  tailConvolution(p, q, ZERO, m) = mulR(coeff(p, ZERO), coeff(q, m));
   tailConvolution(p, q, succ(j), m) =
   addR(mulR(coeff(p, succ(j)), coeff(q, m)),
   tailConvolution(p, q, j, succ(m)))
@@ -1473,14 +1466,12 @@ qed
 // walking j up / c down:
 //   a_j b_c + a_{j+1} b_{c-1} + ... + a_{j+n} b_{c-n}
 // Based at (ZERO, i) it is the convolution; `sub` appears nowhere.
-func segment(p: Poly, q: Poly, j: Nat, c: Nat, n: Nat) => R
 // Grows at the TOP, with the first exponent DECREMENTED STRUCTURALLY (as a `succ` pattern)
 // and the second incremented — the same walk `tailConvolution` makes, but capped at n+1
 // terms. That shape is what the sum-reversal proof needs, and it keeps `sub` out: a
 // decrementing index must appear as a `succ` pattern, never as a subtraction.
-axiom segmentZero: forall p, q: Poly; forall j, c: Nat;
-  segment(p, q, j, c, ZERO) = mulR(coeff(p, j), coeff(q, c))
-axiom segmentSucc: forall p, q: Poly; forall j, c, n: Nat;
+func segment(p: Poly, q: Poly, j: Nat, c: Nat, n: Nat) => R:
+  segment(p, q, j, c, ZERO) = mulR(coeff(p, j), coeff(q, c));
   segment(p, q, succ(j), c, succ(n)) =
   addR(mulR(coeff(p, succ(j)), coeff(q, c)),
   segment(p, q, j, succ(c), n))
@@ -1496,10 +1487,8 @@ axiom segmentSucc: forall p, q: Poly; forall j, c, n: Nat;
 // convolution, and the sum-reversal argument needs exactly that.
 //
 // The second exponent is decremented as a `succ` PATTERN, so no `sub` appears.
-func rsegment(p: Poly, q: Poly, j: Nat, c: Nat, n: Nat) => R
-axiom rsegmentZero: forall p, q: Poly; forall j, c: Nat;
-  rsegment(p, q, j, c, ZERO) = mulR(coeff(p, j), coeff(q, c))
-axiom rsegmentSucc: forall p, q: Poly; forall j, c, n: Nat;
+func rsegment(p: Poly, q: Poly, j: Nat, c: Nat, n: Nat) => R:
+  rsegment(p, q, j, c, ZERO) = mulR(coeff(p, j), coeff(q, c));
   rsegment(p, q, j, succ(c), succ(n)) =
   addR(mulR(coeff(p, j), coeff(q, succ(c))),
   rsegment(p, q, succ(j), c, n))
@@ -3669,7 +3658,7 @@ proof
                     }
                   @the-vanishing-gives-it |
                     (forall e, c: Nat;
-  mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
+                      mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
                       convolution(p, q, b, addN(ZERO, t)) =
                       convolution(p, q, addN(b, ZERO), t)
                     [by discharge given-the-vanishing]
@@ -3677,7 +3666,7 @@ proof
               @discharge-b |
                 forall b: Nat;
                   (forall e, c: Nat;
-  mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
+                  mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
                   convolution(p, q, b, addN(ZERO, t)) =
                   convolution(p, q, addN(b, ZERO), t)
                 [by generalize generalize-b]
@@ -3685,7 +3674,7 @@ proof
           @discharge-t |
             forall t, b: Nat;
               (forall e, c: Nat;
-  mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
+              mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
               convolution(p, q, b, addN(ZERO, t)) =
               convolution(p, q, addN(b, ZERO), t)
             [by generalize generalize-t]
@@ -3693,7 +3682,7 @@ proof
       @discharge-q |
         forall q: Poly; forall t, b: Nat;
           (forall e, c: Nat;
-  mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
+          mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
           convolution(p, q, b, addN(ZERO, t)) =
           convolution(p, q, addN(b, ZERO), t)
         [by generalize generalize-q]
@@ -3701,7 +3690,7 @@ proof
   @conclusion |
     forall p, q: Poly; forall t, b: Nat;
       (forall e, c: Nat;
-  mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
+      mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
       convolution(p, q, b, addN(ZERO, t)) =
       convolution(p, q, addN(b, ZERO), t)
     [by generalize generalize-p]
@@ -3714,14 +3703,14 @@ qed
 // above `b`.
 theorem thePrefixSkipStepPerGap: forall p, q: Poly; forall t, k: Nat;
   (forall b: Nat;
-      (forall e, c: Nat;
-      mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
-      convolution(p, q, b, addN(k, t)) = convolution(p, q, addN(b, k), t)) ->
+  (forall e, c: Nat;
+  mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
+  convolution(p, q, b, addN(k, t)) = convolution(p, q, addN(b, k), t)) ->
   (forall b: Nat;
-      (forall e, c: Nat;
-      mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
-      convolution(p, q, b, addN(succ(k), t)) =
-      convolution(p, q, addN(b, succ(k)), t))
+  (forall e, c: Nat;
+  mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
+  convolution(p, q, b, addN(succ(k), t)) =
+  convolution(p, q, addN(b, succ(k)), t))
 proof
   @generalize-p |
     fix p: Poly {
@@ -3733,14 +3722,14 @@ proof
                 fix k: Nat {
                   @given-the-hypothesis |
                     assume (forall b: Nat;
-      (forall e, c: Nat;
-      mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
-      convolution(p, q, b, addN(k, t)) = convolution(p, q, addN(b, k), t)) {
+                      (forall e, c: Nat;
+                      mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
+                      convolution(p, q, b, addN(k, t)) = convolution(p, q, addN(b, k), t)) {
                       @the-hypothesis |
                         (forall b: Nat;
-      (forall e, c: Nat;
-      mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
-      convolution(p, q, b, addN(k, t)) = convolution(p, q, addN(b, k), t))
+                          (forall e, c: Nat;
+                          mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
+                          convolution(p, q, b, addN(k, t)) = convolution(p, q, addN(b, k), t))
                         [by hypothesis given-the-hypothesis]
                       @generalize-b |
                         fix b: Nat {
@@ -3820,68 +3809,68 @@ proof
                             }
                           @the-vanishing-gives-it |
                             (forall e, c: Nat;
-      mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
+                              mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
                               convolution(p, q, b, addN(succ(k), t)) =
                               convolution(p, q, addN(b, succ(k)), t)
                             [by discharge given-the-vanishing]
                         }
                       @all-bases |
                         (forall b: Nat;
-      (forall e, c: Nat;
-      mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
-      convolution(p, q, b, addN(succ(k), t)) =
-      convolution(p, q, addN(b, succ(k)), t))
+                          (forall e, c: Nat;
+                          mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
+                          convolution(p, q, b, addN(succ(k), t)) =
+                          convolution(p, q, addN(b, succ(k)), t))
                         [by generalize generalize-b]
                     }
                   @the-hypothesis-gives-it |
                     (forall b: Nat;
-      (forall e, c: Nat;
-      mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
-      convolution(p, q, b, addN(k, t)) = convolution(p, q, addN(b, k), t)) ->
+                      (forall e, c: Nat;
+                      mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
+                      convolution(p, q, b, addN(k, t)) = convolution(p, q, addN(b, k), t)) ->
                       (forall b: Nat;
-      (forall e, c: Nat;
-      mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
-      convolution(p, q, b, addN(succ(k), t)) =
-      convolution(p, q, addN(b, succ(k)), t))
+                      (forall e, c: Nat;
+                      mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
+                      convolution(p, q, b, addN(succ(k), t)) =
+                      convolution(p, q, addN(b, succ(k)), t))
                     [by discharge given-the-hypothesis]
                 }
               @discharge-k |
                 forall k: Nat;
                   (forall b: Nat;
-      (forall e, c: Nat;
-      mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
-      convolution(p, q, b, addN(k, t)) = convolution(p, q, addN(b, k), t)) ->
+                  (forall e, c: Nat;
+                  mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
+                  convolution(p, q, b, addN(k, t)) = convolution(p, q, addN(b, k), t)) ->
                   (forall b: Nat;
-      (forall e, c: Nat;
-      mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
-      convolution(p, q, b, addN(succ(k), t)) =
-      convolution(p, q, addN(b, succ(k)), t))
+                  (forall e, c: Nat;
+                  mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
+                  convolution(p, q, b, addN(succ(k), t)) =
+                  convolution(p, q, addN(b, succ(k)), t))
                 [by generalize generalize-k]
             }
           @discharge-t |
             forall t, k: Nat;
               (forall b: Nat;
-      (forall e, c: Nat;
-      mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
-      convolution(p, q, b, addN(k, t)) = convolution(p, q, addN(b, k), t)) ->
+              (forall e, c: Nat;
+              mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
+              convolution(p, q, b, addN(k, t)) = convolution(p, q, addN(b, k), t)) ->
               (forall b: Nat;
-      (forall e, c: Nat;
-      mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
-      convolution(p, q, b, addN(succ(k), t)) =
-      convolution(p, q, addN(b, succ(k)), t))
+              (forall e, c: Nat;
+              mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
+              convolution(p, q, b, addN(succ(k), t)) =
+              convolution(p, q, addN(b, succ(k)), t))
             [by generalize generalize-t]
         }
       @discharge-q |
         forall q: Poly; forall t, k: Nat;
           (forall b: Nat;
-      (forall e, c: Nat;
-      mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
-      convolution(p, q, b, addN(k, t)) = convolution(p, q, addN(b, k), t)) ->
+          (forall e, c: Nat;
+          mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
+          convolution(p, q, b, addN(k, t)) = convolution(p, q, addN(b, k), t)) ->
           (forall b: Nat;
-      (forall e, c: Nat;
-      mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
-      convolution(p, q, b, addN(succ(k), t)) =
-      convolution(p, q, addN(b, succ(k)), t))
+          (forall e, c: Nat;
+          mulR(coeff(p, addN(b, e)), coeff(q, succ(addN(t, c)))) = zeroR) ->
+          convolution(p, q, b, addN(succ(k), t)) =
+          convolution(p, q, addN(b, succ(k)), t))
         [by generalize generalize-q]
     }
   @conclusion |
@@ -5611,53 +5600,41 @@ qed
 // no theorem below mentions a difference. `theGapTo` and `theCofactorIndex` are total AND
 // correct — they floor at ZERO by an explicit clause rather than by `sub`'s silent
 // truncation — so they satisfy the no-totalizing rule rather than evading it.
-func theGapTo(i: Nat, j: Nat) => Nat
-axiom theGapToAtZero: forall i: Nat; theGapTo(i, ZERO) = i
-axiom theGapToSteps: forall i, j: Nat;
+func theGapTo(i: Nat, j: Nat) => Nat:
+  theGapTo(i, ZERO) = i;
   theGapTo(succ(i), succ(j)) = theGapTo(i, j)
 
-func theCofactorIndex(i: Nat, j: Nat, k: Nat) => Nat
-axiom theCofactorIndexAtZero: forall i, j: Nat;
-  theCofactorIndex(i, j, ZERO) = theGapTo(i, j)
-axiom theCofactorIndexSteps: forall i, j, k: Nat;
+func theCofactorIndex(i: Nat, j: Nat, k: Nat) => Nat:
+  theCofactorIndex(i, j, ZERO) = theGapTo(i, j);
   theCofactorIndex(i, j, succ(k)) = theGapTo(theGapTo(i, j), succ(k))
 
 // term(j,k) at output index i = p_j q_k r_{(i-j)-k}.
-func tripleTerm(p: Poly, q: Poly, r: Poly, i: Nat, j: Nat, k: Nat) => R
-axiom tripleTermMeaning: forall p, q, r: Poly; forall i, j, k: Nat;
+func tripleTerm(p: Poly, q: Poly, r: Poly, i: Nat, j: Nat, k: Nat) => R:
   tripleTerm(p, q, r, i, j, k) =
   mulR(mulR(coeff(p, j), coeff(q, k)), coeff(r, theCofactorIndex(i, j, k)))
 
 // one ROW: the first `n` entries at fixed j. A PREFIX family in `n`.
-func tripleRow(p: Poly, q: Poly, r: Poly, i: Nat, j: Nat, n: Nat) => R
-axiom tripleRowZero: forall p, q, r: Poly; forall i, j: Nat;
-  tripleRow(p, q, r, i, j, ZERO) = zeroR
-axiom tripleRowSucc: forall p, q, r: Poly; forall i, j, n: Nat;
+func tripleRow(p: Poly, q: Poly, r: Poly, i: Nat, j: Nat, n: Nat) => R:
+  tripleRow(p, q, r, i, j, ZERO) = zeroR;
   tripleRow(p, q, r, i, j, succ(n)) =
   addR(tripleRow(p, q, r, i, j, n), tripleTerm(p, q, r, i, j, n))
 
 // the first `c` entries of the m-th ANTI-DIAGONAL.
-func tripleDiag(p: Poly, q: Poly, r: Poly, i: Nat, m: Nat, c: Nat) => R
-axiom tripleDiagZero: forall p, q, r: Poly; forall i, m: Nat;
-  tripleDiag(p, q, r, i, m, ZERO) = zeroR
-axiom tripleDiagSucc: forall p, q, r: Poly; forall i, m, c: Nat;
+func tripleDiag(p: Poly, q: Poly, r: Poly, i: Nat, m: Nat, c: Nat) => R:
+  tripleDiag(p, q, r, i, m, ZERO) = zeroR;
   tripleDiag(p, q, r, i, m, succ(c)) =
   addR(tripleDiag(p, q, r, i, m, c),
   tripleTerm(p, q, r, i, c, theGapTo(m, c)))
 
 // the TRIANGLE: anti-diagonals 0..n-1, each complete.
-func tripleTri(p: Poly, q: Poly, r: Poly, i: Nat, n: Nat) => R
-axiom tripleTriZero: forall p, q, r: Poly; forall i: Nat;
-  tripleTri(p, q, r, i, ZERO) = zeroR
-axiom tripleTriSucc: forall p, q, r: Poly; forall i, n: Nat;
+func tripleTri(p: Poly, q: Poly, r: Poly, i: Nat, n: Nat) => R:
+  tripleTri(p, q, r, i, ZERO) = zeroR;
   tripleTri(p, q, r, i, succ(n)) =
   addR(tripleTri(p, q, r, i, n), tripleDiag(p, q, r, i, n, succ(n)))
 
 // the SHORTENED ROWS: rows 0..m-1, row j truncated at the gap to n.
-func tripleRows(p: Poly, q: Poly, r: Poly, i: Nat, m: Nat, n: Nat) => R
-axiom tripleRowsZero: forall p, q, r: Poly; forall i, n: Nat;
-  tripleRows(p, q, r, i, ZERO, n) = zeroR
-axiom tripleRowsSucc: forall p, q, r: Poly; forall i, m, n: Nat;
+func tripleRows(p: Poly, q: Poly, r: Poly, i: Nat, m: Nat, n: Nat) => R:
+  tripleRows(p, q, r, i, ZERO, n) = zeroR;
   tripleRows(p, q, r, i, succ(m), n) =
   addR(tripleRows(p, q, r, i, m, n),
   tripleRow(p, q, r, i, m, theGapTo(n, m)))
@@ -6572,10 +6549,8 @@ qed
 // term-by-term (checked: the two orders agree only at the FULL row, not at a partial one), so
 // the row needs the run that walks the way it does. Two axioms, and `theGapTo` keeps the
 // slack subtraction-free.
-func cappedRun(q: Poly, r: Poly, g: Nat, n: Nat) => R
-axiom cappedRunZero: forall q, r: Poly; forall g: Nat;
-  cappedRun(q, r, g, ZERO) = zeroR
-axiom cappedRunSucc: forall q, r: Poly; forall g, n: Nat;
+func cappedRun(q: Poly, r: Poly, g: Nat, n: Nat) => R:
+  cappedRun(q, r, g, ZERO) = zeroR;
   cappedRun(q, r, g, succ(n)) =
   addR(cappedRun(q, r, g, n),
   mulR(coeff(q, n), coeff(r, theGapTo(g, n))))
@@ -9082,4 +9057,302 @@ proof
   @conclusion |
     forall p, q, r: Poly; mulP(mulP(p, q), r) = mulP(p, mulP(q, r))
     [by generalize generalize-p]
+qed
+
+// -- definition-clause shims ---------------------------------------------------------------
+//
+// The symbols above are DEFINITION BLOCKS, so `--axioms` reports their clauses as
+// definitions rather than as assumptions to weigh. A clause has no user-facing name,
+// though, and both `specialize` and a model's `<-` once resolved these BY NAME — so each
+// clause keeps a one-line theorem under the name it had as an axiom. These add no
+// assumption: every one is proved `[by definition(N) <symbol>]`.
+
+theorem addPolyCoeff:
+  forall p, q: Poly; forall i: Nat;
+  coeff(addP(p, q), i) = addR(coeff(p, i), coeff(q, i))
+proof
+  @conclusion |
+    forall p, q: Poly; forall i: Nat;
+      coeff(addP(p, q), i) = addR(coeff(p, i), coeff(q, i))
+    [by definition addP]
+qed
+
+theorem negPolyCoeff:
+  forall p: Poly; forall i: Nat;
+  coeff(negP(p), i) = negR(coeff(p, i))
+proof
+  @conclusion |
+    forall p: Poly; forall i: Nat;
+      coeff(negP(p), i) = negR(coeff(p, i))
+    [by definition negP]
+qed
+
+theorem convolutionZero:
+  forall p, q: Poly; forall j: Nat;
+  convolution(p, q, j, ZERO) = mulR(coeff(p, j), coeff(q, ZERO))
+proof
+  @conclusion |
+    forall p, q: Poly; forall j: Nat;
+      convolution(p, q, j, ZERO) = mulR(coeff(p, j), coeff(q, ZERO))
+    [by definition(0) convolution]
+qed
+
+theorem convolutionSucc:
+  forall p, q: Poly; forall j, m: Nat;
+  convolution(p, q, j, succ(m)) =
+  addR(mulR(coeff(p, j), coeff(q, succ(m))), convolution(p, q, succ(j), m))
+proof
+  @conclusion |
+    forall p, q: Poly; forall j, m: Nat;
+      convolution(p, q, j, succ(m)) =
+      addR(mulR(coeff(p, j), coeff(q, succ(m))), convolution(p, q, succ(j), m))
+    [by definition(1) convolution]
+qed
+
+theorem mulPolyCoeff:
+  forall p, q: Poly; forall i: Nat;
+  coeff(mulP(p, q), i) = convolution(p, q, ZERO, i)
+proof
+  @conclusion |
+    forall p, q: Poly; forall i: Nat;
+      coeff(mulP(p, q), i) = convolution(p, q, ZERO, i)
+    [by definition mulP]
+qed
+
+theorem tailConvolutionZero:
+  forall p, q: Poly; forall m: Nat;
+  tailConvolution(p, q, ZERO, m) = mulR(coeff(p, ZERO), coeff(q, m))
+proof
+  @conclusion |
+    forall p, q: Poly; forall m: Nat;
+      tailConvolution(p, q, ZERO, m) = mulR(coeff(p, ZERO), coeff(q, m))
+    [by definition(0) tailConvolution]
+qed
+
+theorem tailConvolutionSucc:
+  forall p, q: Poly; forall j, m: Nat;
+  tailConvolution(p, q, succ(j), m) =
+  addR(mulR(coeff(p, succ(j)), coeff(q, m)),
+  tailConvolution(p, q, j, succ(m)))
+proof
+  @conclusion |
+    forall p, q: Poly; forall j, m: Nat;
+      tailConvolution(p, q, succ(j), m) =
+      addR(mulR(coeff(p, succ(j)), coeff(q, m)),
+      tailConvolution(p, q, j, succ(m)))
+    [by definition(1) tailConvolution]
+qed
+
+theorem segmentZero:
+  forall p, q: Poly; forall j, c: Nat;
+  segment(p, q, j, c, ZERO) = mulR(coeff(p, j), coeff(q, c))
+proof
+  @conclusion |
+    forall p, q: Poly; forall j, c: Nat;
+      segment(p, q, j, c, ZERO) = mulR(coeff(p, j), coeff(q, c))
+    [by definition(0) segment]
+qed
+
+theorem segmentSucc:
+  forall p, q: Poly; forall j, c, n: Nat;
+  segment(p, q, succ(j), c, succ(n)) =
+  addR(mulR(coeff(p, succ(j)), coeff(q, c)),
+  segment(p, q, j, succ(c), n))
+proof
+  @conclusion |
+    forall p, q: Poly; forall j, c, n: Nat;
+      segment(p, q, succ(j), c, succ(n)) =
+      addR(mulR(coeff(p, succ(j)), coeff(q, c)),
+      segment(p, q, j, succ(c), n))
+    [by definition(1) segment]
+qed
+
+theorem rsegmentZero:
+  forall p, q: Poly; forall j, c: Nat;
+  rsegment(p, q, j, c, ZERO) = mulR(coeff(p, j), coeff(q, c))
+proof
+  @conclusion |
+    forall p, q: Poly; forall j, c: Nat;
+      rsegment(p, q, j, c, ZERO) = mulR(coeff(p, j), coeff(q, c))
+    [by definition(0) rsegment]
+qed
+
+theorem rsegmentSucc:
+  forall p, q: Poly; forall j, c, n: Nat;
+  rsegment(p, q, j, succ(c), succ(n)) =
+  addR(mulR(coeff(p, j), coeff(q, succ(c))),
+  rsegment(p, q, succ(j), c, n))
+proof
+  @conclusion |
+    forall p, q: Poly; forall j, c, n: Nat;
+      rsegment(p, q, j, succ(c), succ(n)) =
+      addR(mulR(coeff(p, j), coeff(q, succ(c))),
+      rsegment(p, q, succ(j), c, n))
+    [by definition(1) rsegment]
+qed
+
+theorem theGapToAtZero:
+  forall i: Nat; theGapTo(i, ZERO) = i
+proof
+  @conclusion |
+    forall i: Nat; theGapTo(i, ZERO) = i
+    [by definition(0) theGapTo]
+qed
+
+theorem theGapToSteps:
+  forall i, j: Nat;
+  theGapTo(succ(i), succ(j)) = theGapTo(i, j)
+proof
+  @conclusion |
+    forall i, j: Nat;
+      theGapTo(succ(i), succ(j)) = theGapTo(i, j)
+    [by definition(1) theGapTo]
+qed
+
+theorem theCofactorIndexAtZero:
+  forall i, j: Nat;
+  theCofactorIndex(i, j, ZERO) = theGapTo(i, j)
+proof
+  @conclusion |
+    forall i, j: Nat;
+      theCofactorIndex(i, j, ZERO) = theGapTo(i, j)
+    [by definition(0) theCofactorIndex]
+qed
+
+theorem theCofactorIndexSteps:
+  forall i, j, k: Nat;
+  theCofactorIndex(i, j, succ(k)) = theGapTo(theGapTo(i, j), succ(k))
+proof
+  @conclusion |
+    forall i, j, k: Nat;
+      theCofactorIndex(i, j, succ(k)) = theGapTo(theGapTo(i, j), succ(k))
+    [by definition(1) theCofactorIndex]
+qed
+
+theorem tripleTermMeaning:
+  forall p, q, r: Poly; forall i, j, k: Nat;
+  tripleTerm(p, q, r, i, j, k) =
+  mulR(mulR(coeff(p, j), coeff(q, k)), coeff(r, theCofactorIndex(i, j, k)))
+proof
+  @conclusion |
+    forall p, q, r: Poly; forall i, j, k: Nat;
+      tripleTerm(p, q, r, i, j, k) =
+      mulR(mulR(coeff(p, j), coeff(q, k)), coeff(r, theCofactorIndex(i, j, k)))
+    [by definition tripleTerm]
+qed
+
+theorem tripleRowZero:
+  forall p, q, r: Poly; forall i, j: Nat;
+  tripleRow(p, q, r, i, j, ZERO) = zeroR
+proof
+  @conclusion |
+    forall p, q, r: Poly; forall i, j: Nat;
+      tripleRow(p, q, r, i, j, ZERO) = zeroR
+    [by definition(0) tripleRow]
+qed
+
+theorem tripleRowSucc:
+  forall p, q, r: Poly; forall i, j, n: Nat;
+  tripleRow(p, q, r, i, j, succ(n)) =
+  addR(tripleRow(p, q, r, i, j, n), tripleTerm(p, q, r, i, j, n))
+proof
+  @conclusion |
+    forall p, q, r: Poly; forall i, j, n: Nat;
+      tripleRow(p, q, r, i, j, succ(n)) =
+      addR(tripleRow(p, q, r, i, j, n), tripleTerm(p, q, r, i, j, n))
+    [by definition(1) tripleRow]
+qed
+
+theorem tripleDiagZero:
+  forall p, q, r: Poly; forall i, m: Nat;
+  tripleDiag(p, q, r, i, m, ZERO) = zeroR
+proof
+  @conclusion |
+    forall p, q, r: Poly; forall i, m: Nat;
+      tripleDiag(p, q, r, i, m, ZERO) = zeroR
+    [by definition(0) tripleDiag]
+qed
+
+theorem tripleDiagSucc:
+  forall p, q, r: Poly; forall i, m, c: Nat;
+  tripleDiag(p, q, r, i, m, succ(c)) =
+  addR(tripleDiag(p, q, r, i, m, c),
+  tripleTerm(p, q, r, i, c, theGapTo(m, c)))
+proof
+  @conclusion |
+    forall p, q, r: Poly; forall i, m, c: Nat;
+      tripleDiag(p, q, r, i, m, succ(c)) =
+      addR(tripleDiag(p, q, r, i, m, c),
+      tripleTerm(p, q, r, i, c, theGapTo(m, c)))
+    [by definition(1) tripleDiag]
+qed
+
+theorem tripleTriZero:
+  forall p, q, r: Poly; forall i: Nat;
+  tripleTri(p, q, r, i, ZERO) = zeroR
+proof
+  @conclusion |
+    forall p, q, r: Poly; forall i: Nat;
+      tripleTri(p, q, r, i, ZERO) = zeroR
+    [by definition(0) tripleTri]
+qed
+
+theorem tripleTriSucc:
+  forall p, q, r: Poly; forall i, n: Nat;
+  tripleTri(p, q, r, i, succ(n)) =
+  addR(tripleTri(p, q, r, i, n), tripleDiag(p, q, r, i, n, succ(n)))
+proof
+  @conclusion |
+    forall p, q, r: Poly; forall i, n: Nat;
+      tripleTri(p, q, r, i, succ(n)) =
+      addR(tripleTri(p, q, r, i, n), tripleDiag(p, q, r, i, n, succ(n)))
+    [by definition(1) tripleTri]
+qed
+
+theorem tripleRowsZero:
+  forall p, q, r: Poly; forall i, n: Nat;
+  tripleRows(p, q, r, i, ZERO, n) = zeroR
+proof
+  @conclusion |
+    forall p, q, r: Poly; forall i, n: Nat;
+      tripleRows(p, q, r, i, ZERO, n) = zeroR
+    [by definition(0) tripleRows]
+qed
+
+theorem tripleRowsSucc:
+  forall p, q, r: Poly; forall i, m, n: Nat;
+  tripleRows(p, q, r, i, succ(m), n) =
+  addR(tripleRows(p, q, r, i, m, n),
+  tripleRow(p, q, r, i, m, theGapTo(n, m)))
+proof
+  @conclusion |
+    forall p, q, r: Poly; forall i, m, n: Nat;
+      tripleRows(p, q, r, i, succ(m), n) =
+      addR(tripleRows(p, q, r, i, m, n),
+      tripleRow(p, q, r, i, m, theGapTo(n, m)))
+    [by definition(1) tripleRows]
+qed
+
+theorem cappedRunZero:
+  forall q, r: Poly; forall g: Nat;
+  cappedRun(q, r, g, ZERO) = zeroR
+proof
+  @conclusion |
+    forall q, r: Poly; forall g: Nat;
+      cappedRun(q, r, g, ZERO) = zeroR
+    [by definition(0) cappedRun]
+qed
+
+theorem cappedRunSucc:
+  forall q, r: Poly; forall g, n: Nat;
+  cappedRun(q, r, g, succ(n)) =
+  addR(cappedRun(q, r, g, n),
+  mulR(coeff(q, n), coeff(r, theGapTo(g, n))))
+proof
+  @conclusion |
+    forall q, r: Poly; forall g, n: Nat;
+      cappedRun(q, r, g, succ(n)) =
+      addR(cappedRun(q, r, g, n),
+      mulR(coeff(q, n), coeff(r, theGapTo(g, n))))
+    [by definition(1) cappedRun]
 qed

@@ -497,6 +497,12 @@ fn locate(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.In
             try demandDiag(self, task, "the generated proof of this step cites '{s}', which is not in scope here; alias it from the theory that states it (`theorem {s} = <module>.{s}`)", .{ name, name, name });
             return null;
         };
+        // a MANGLED definition-clause name never appeared in source, so echoing it would name
+        // a spelling the author cannot have written: report the symbol and arm they did write.
+        if (InternPool.definitionClauseParts(name)) |d| {
+            try demandDiag(self, task, "'{s}' has no definition clause {s} (a definition block publishes one clause per arm, numbered from 0)", .{ d.symbol, d.arm });
+            return null;
+        }
         try demandDiag(self, task, "reference not found: '{s}'", .{name});
         return null;
     };

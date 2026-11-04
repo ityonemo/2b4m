@@ -538,6 +538,8 @@ pub const Parser = struct {
     ///   `<source> : <target> -| <closure>`   — FUNC→refined-result: closure discharger
     ///                                           (`closed_operation`; single fact for now)
     ///   `<source> <- <localThm>`             — an axiom-obligation discharge (→ `obligations`)
+    /// A `<-` whose SOURCE is a definition block's symbol discharges its whole clause set
+    /// arm-for-arm, and its TARGET must likewise be a definition block (see ModelTask).
     /// A `<target>@<projected>` model-projection value is only valid on the `<-` form. The
     /// PARENS/`- |` witness clauses are only valid on the `:` form (a symbol map); which of
     /// them is legal for a given symbol (const vs func) is checked later, in ModelTask, where
@@ -718,8 +720,7 @@ pub const Parser = struct {
         // the marker to disclose a definition differently from a genuine assumption.
         var mangled = name;
         if (self.interner) |ip| {
-            const mangled_text = std.fmt.allocPrint(self.arena, "definition{{{s}}}{{{d}}}", .{ self.text(name), arm }) catch return error.OutOfMemory;
-            mangled.name = ip.internString(mangled_text) catch {
+            mangled.name = ip.definitionClauseName(self.arena, self.text(name), arm) catch {
                 self.intern_oom = true;
                 return;
             };
@@ -989,6 +990,25 @@ pub const Parser = struct {
                     fallback = try self.expect(.identifier);
                     _ = try self.expect(.r_paren);
                 }
+                // `[using model(M) definition(N) src.f]` — the transferred fact is a DEFINITION
+                // BLOCK's clause, not a named theorem. The rule's own `(M)` already claimed the
+                // `schema` slot, so the arm rides its own field. Recognized by TEXT before the
+                // refs loop, which would otherwise swallow `definition` as the cited name.
+                var definition_arm: ?usize = null;
+                if (isTheoryRule(self.text(rule)) and self.tok.tag == .identifier and
+                    std.mem.eql(u8, self.text(self.tok), "definition"))
+                {
+                    _ = self.advance();
+                    var arm: usize = 0;
+                    if (self.tok.tag == .l_paren) {
+                        _ = self.advance();
+                        const n = try self.expect(.number);
+                        arm = std.fmt.parseInt(usize, self.text(n), 10) catch
+                            return self.fail("`definition(N)` takes a clause NUMBER (zero-indexed)", .{});
+                        _ = try self.expect(.r_paren);
+                    }
+                    definition_arm = arm;
+                }
                 // refs cite proof labels, which may be kebab-case
                 var refs: std.ArrayList(Token) = .empty;
                 while (self.tok.tag == .identifier or self.tok.tag == .kebab_identifier) {
@@ -1019,6 +1039,7 @@ pub const Parser = struct {
                     .args = args,
                     .refs = try refs.toOwnedSlice(self.arena),
                     .fallback = fallback,
+                    .definition_arm = definition_arm,
                 } } };
             },
         }

@@ -1,0 +1,42 @@
+// A DEFINITION BLOCK's clause set discharges a source definition's, ARM FOR ARM.
+//
+// `base.nadd <- madd` names two SYMBOLS, not two axioms: a definition's clauses have no
+// user-facing name, so the symbol stands for the whole obligation set and clause 0
+// discharges clause 0, clause 1 clause 1. A definitional axiom is overloadable ONLY by
+// another definition — the rule that makes the arm-for-arm pairing meaningful.
+//
+// The pairing is NOT shape-checked at the model: a mismatched pair is caught at the first
+// citation, where the diagnostic can show both formulas. See `model_definition_bad.b4m`.
+import base <<< "model_definition_source.b4m"
+
+sort M
+const MZ: M
+func msucc(a: M) => M
+
+func madd(a: M, b: M) => M:
+  madd(MZ, b) = b;
+  madd(msucc(k), b) = msucc(madd(k, b))
+
+model Mod {
+  base.N: M
+  base.NZ: MZ
+  base.nsucc: msucc
+  base.nadd: madd
+  base.nadd <- madd
+}
+
+// Transfers resting on EACH arm, so a wrongly-paired discharge fails rather than passing.
+theorem theZeroArmTransfers: forall b: M; madd(MZ, b) = b
+proof
+  @conclusion |
+    forall b: M; madd(MZ, b) = b
+    [using model(Mod) base.addAtZero]
+qed
+
+theorem theStepArmTransfers: forall b: M; forall k: M;
+  madd(msucc(k), b) = msucc(madd(k, b))
+proof
+  @conclusion |
+    forall b: M; forall k: M; madd(msucc(k), b) = msucc(madd(k, b))
+    [using model(Mod) base.addSteps]
+qed

@@ -2606,7 +2606,13 @@ fn demandTransfer(self: *Prove, c: ast.Step.Claim) Allocator.Error!InstanceOutco
     // the source file IS the citing file. The transferred fact's identity ns is (M, src_file),
     // DISTINCT from the citing proof's own (universe, self.file) fact, so no collision.
     const rtok = c.refs[0];
-    const base = tokName(rtok);
+    // `definition(N) src.f` cites the clause axiom the source's definition block published
+    // under a mangled name — re-derived here, so from this point the transfer machinery sees
+    // an ordinary fact name and needs no further special case.
+    const base = if (c.definition_arm) |arm|
+        self.ctx.interner.definitionClauseName(self.ctx.arena, self.ctx.interner.stringBytes(tokName(rtok)), arm) catch return error.OutOfMemory
+    else
+        tokName(rtok);
     const src_file = if (rtok.qualifier == InternPool.Index.none) self.file else blk: {
         const qtext = self.ctx.interner.stringBytes(rtok.qualifier);
         // the qualifier is an IMPORT of the citing file; like every other qualified
@@ -2706,6 +2712,7 @@ fn demandTransfer(self: *Prove, c: ast.Step.Claim) Allocator.Error!InstanceOutco
 /// `.blocked` while the import or its parse is pending (the read pass suspends).
 fn transfersSchema(self: *Prove, c: ast.Step.Claim) Allocator.Error!union(enum) { yes, no, blocked: Engine.TaskIndex } {
     if (c.refs.len != 1) return .no;
+    if (c.definition_arm != null) return .no; // a definition clause is a ground fact
     const rtok = c.refs[0];
     var src_file = self.file;
     if (rtok.qualifier != InternPool.Index.none) {
@@ -2759,7 +2766,15 @@ fn lowerModel(self: *Prove, kb: kernel.BlockId, goal: TermId, c: ast.Step.Claim)
         const instance = try self.pool.copyIn(self.ctx.interner, self.ctx.interner.keyOf(inst).fact.formula);
         return self.withGuardPremises(kb, c.rule.start, instance, goal, try self.ctx.arena.alloc(kernel.SRef, 0));
     }
-    return .{ .theorem_ref = .{ .stmt = fact, .loc = c.refs[0].start } };
+    // Emit the justification matching the RESOLVED fact's kind, not the rule word — a
+    // transferred DEFINITION CLAUSE (or a source axiom whose discharge the overlay did not
+    // remap) is an axiom, and the kernel's kind gate would reject the theorem arm. The kernel
+    // re-matches the formula either way; the kind is the only thing it would wrongly refuse.
+    const loc = c.refs[0].start;
+    return switch (self.ctx.interner.keyOf(fact).fact.kind) {
+        .axiom => .{ .axiom_ref = .{ .stmt = fact, .loc = loc } },
+        else => .{ .theorem_ref = .{ .stmt = fact, .loc = loc } },
+    };
 }
 
 /// The instance a transferred SCHEMA citation stands for. `[using model(M) src.sch]` where
@@ -9676,8 +9691,7 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
                     return self.fail(a.start, "`[by definition(N) …]` takes a clause NUMBER (zero-indexed); got '{s}'", .{txt});
                 };
             } else 0;
-            const mangled = std.fmt.allocPrint(self.ctx.arena, "definition{{{s}}}{{{d}}}", .{ self.text(rtok), arm }) catch return error.OutOfMemory;
-            const mangled_id = self.ctx.interner.internString(mangled) catch return error.OutOfMemory;
+            const mangled_id = self.ctx.interner.definitionClauseName(self.ctx.arena, self.text(rtok), arm) catch return error.OutOfMemory;
             var lookup = rtok;
             lookup.name = mangled_id;
             const stmt = self.resolveFactRef(lookup) catch |err| switch (err) {

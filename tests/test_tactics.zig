@@ -356,7 +356,24 @@ pub fn addTests(
     // `:` on an axiom obligation → error, directing to `<-`.
     ctx.fail(&.{ "check", "tests/cases/model_axiom_colon_bad.b4m" }, "tests/cases/model_axiom_colon_bad.b4m:21:3: error: 'source.opUnitLeft' is an axiom obligation, not a sort/symbol — discharge it with `<-` (`source.opUnitLeft <- <local fact>`), not `:`\n");
     // `<-` on a sort/symbol → error, directing to `:`.
-    ctx.fail(&.{ "check", "tests/cases/model_symbol_arrow_bad.b4m" }, "tests/cases/model_symbol_arrow_bad.b4m:19:3: error: 'source.op' is a sort or symbol, not an axiom — map it with `:` (`source.op: <target>`), not `<-`\n");
+    ctx.fail(&.{ "check", "tests/cases/model_symbol_arrow_bad.b4m" }, "tests/cases/model_symbol_arrow_bad.b4m:19:3: error: 'source.op' is a symbol with no definition clauses, so there is nothing to discharge — map it with `:` (`source.op: <target>`), not `<-`\n");
+
+    // DEFINITIONAL DISCHARGE: a definition block's clauses have no user-facing name, so a
+    // `<-` whose SOURCE is a definition symbol discharges the whole clause set arm for arm
+    // (`base.nadd <- madd`). This is what lets a concrete layer state its operations as
+    // definitions — `--axioms` then reports them as DEFINITION rather than as assumptions —
+    // while still modelling an abstract theory whose operations are likewise definitions.
+    // The fixture transfers a theorem resting on EACH arm, so a mis-paired discharge fails.
+    ctx.okSilent(&.{ "check", "tests/cases/model_definition_discharge.b4m" });
+    // A definitional axiom is overloadable ONLY by a definition: a bare `func` plus a named
+    // axiom has no arms to pair.
+    ctx.fail(&.{ "check", "tests/cases/model_definition_bad.b4m" }, "tests/cases/model_definition_bad.b4m:19:16: error: 'madd' discharges the definition 'base.nadd', so it must itself be a definition block (a definitional axiom is overloadable only by a definition)\n");
+    // ...and the two clause sets must be the same size, since the pairing is positional.
+    ctx.fail(&.{ "check", "tests/cases/model_definition_arity_bad.b4m" }, "tests/cases/model_definition_arity_bad.b4m:18:16: error: 'madd' has 1 definition clause(s) but 'base.nadd' has 2 — a definitional discharge pairs them arm for arm\n");
+    // The CITATION direction: `[using model(M) definition(N) src.f]` cites one clause of a
+    // source definition, for a target that does NOT overload it (an opaque local func). The
+    // clause is then an assumption this file inherits, and `--axioms` says so.
+    ctx.okSilent(&.{ "check", "tests/cases/model_definition_cite.b4m" });
 
     // ACCELERANT-THROUGH-GUARDED-MODEL boundary (RED characterization, one per
     // accelerant). Transferring a source theorem whose proof USES an accelerant

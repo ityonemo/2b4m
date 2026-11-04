@@ -107,8 +107,7 @@ pub fn scanStep(self: *Scanner, step: *const ast.Step) Allocator.Error![]const R
                         std.fmt.parseInt(usize, self.source[a.start..a.end], 10) catch 0
                     else
                         0;
-                    const text = std.fmt.allocPrint(self.arena, "definition{{{s}}}{{{d}}}", .{ self.interner.stringBytes(r.name), arm }) catch return error.OutOfMemory;
-                    const id = self.interner.internString(text) catch return error.OutOfMemory;
+                    const id = self.interner.definitionClauseName(self.arena, self.interner.stringBytes(r.name), arm) catch return error.OutOfMemory;
                     try self.add(.{ .ns = null, .name = id, .domain = .fact, .loc = r.start });
                 },
                 .instantiate => if (c.schema) |s| try self.addTok(s, .schema), // the schema

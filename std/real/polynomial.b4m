@@ -27,26 +27,25 @@ const NAT_ZERO = peano.ZERO
 sort RPoly
 func rcoeff(p: RPoly, i: Nat) => Real
 const RZEROP: RPoly
-func raddP(p: RPoly, q: RPoly) => RPoly
-func rnegP(p: RPoly) => RPoly
-func rmulP(p: RPoly, q: RPoly) => RPoly
-func rmonomial(a: Real, k: Nat) => RPoly
+func raddP(p: RPoly, q: RPoly) => RPoly:
+  rcoeff(raddP(p, q), i) = real.add(rcoeff(p, i), rcoeff(q, i))
+func rnegP(p: RPoly) => RPoly:
+  rcoeff(rnegP(p), i) = real.neg(rcoeff(p, i))
+func rmulP(p: RPoly, q: RPoly) => RPoly:
+  rcoeff(rmulP(p, q), i) = rconvolution(p, q, NAT_ZERO, i)
+func rmonomial(a: Real, k: Nat) => RPoly:
+  rcoeff(rmonomial(a, k), k) = a;
+  (not (i = k)) -> rcoeff(rmonomial(a, k), i) = ZERO
 pred rdegreeAtMost(p: RPoly, n: Nat)
 func rdegree(p: RPoly) => Nat
-func rconvolution(p: RPoly, q: RPoly, j: Nat, m: Nat) => Real
+func rconvolution(p: RPoly, q: RPoly, j: Nat, m: Nat) => Real:
+  rconvolution(p, q, j, NAT_ZERO) = real.mul(rcoeff(p, j), rcoeff(q, NAT_ZERO));
+  rconvolution(p, q, j, peano.succ(m)) = real.add(real.mul(rcoeff(p, j), rcoeff(q, peano.succ(m))), rconvolution(p, q, peano.succ(j), m))
 
 // the coefficient equations: ℝ[x]'s own primitives
 axiom rPolyExtensionality: forall p, q: RPoly;
   (forall i: Nat; rcoeff(p, i) = rcoeff(q, i)) -> p = q
 axiom rZeroPolyCoeff: forall i: Nat; rcoeff(RZEROP, i) = ZERO
-axiom rAddPolyCoeff: forall p, q: RPoly; forall i: Nat;
-  rcoeff(raddP(p, q), i) = real.add(rcoeff(p, i), rcoeff(q, i))
-axiom rNegPolyCoeff: forall p: RPoly; forall i: Nat;
-  rcoeff(rnegP(p), i) = real.neg(rcoeff(p, i))
-axiom rMonomialCoeffAtItsIndex: forall a: Real; forall k: Nat;
-  rcoeff(rmonomial(a, k), k) = a
-axiom rMonomialCoeffElsewhere: forall a: Real; forall k, i: Nat;
-  (not (i = k)) -> rcoeff(rmonomial(a, k), i) = ZERO
 axiom rDegreeAtMostMeaning: forall p: RPoly; forall n: Nat;
   rdegreeAtMost(p, n) iff
   (forall i: Nat; peano.less_than(n, i) -> rcoeff(p, i) = ZERO)
@@ -57,28 +56,15 @@ axiom rDegreeBoundsTheCoefficients: forall p: RPoly;
 
 // the convolution, reindexed as F[x] states it: a BASE and a LENGTH whose sum is invariant,
 // so no index is ever subtracted.
-axiom rConvolutionZero: forall p, q: RPoly; forall j: Nat;
-  rconvolution(p, q, j, NAT_ZERO) =
-  real.mul(rcoeff(p, j), rcoeff(q, NAT_ZERO))
-axiom rConvolutionSucc: forall p, q: RPoly; forall j, m: Nat;
-  rconvolution(p, q, j, peano.succ(m)) =
-  real.add(real.mul(rcoeff(p, j), rcoeff(q, peano.succ(m))),
-  rconvolution(p, q, peano.succ(j), m))
-axiom rMulPolyCoeff: forall p, q: RPoly; forall i: Nat;
-  rcoeff(rmulP(p, q), i) = rconvolution(p, q, NAT_ZERO, i)
 
 // -- evaluation ----------------------------------------------------------------------------
-func rpower(a: Real, n: Nat) => Real
-axiom rPowerZero: forall a: Real; rpower(a, NAT_ZERO) = real.ONE
-axiom rPowerSucc: forall a: Real; forall n: Nat;
+func rpower(a: Real, n: Nat) => Real:
+  rpower(a, NAT_ZERO) = real.ONE;
   rpower(a, peano.succ(n)) = real.mul(a, rpower(a, n))
 
-func revalUpTo(p: RPoly, a: Real, k: Nat) => Real
-axiom rEvalZero: forall p: RPoly; forall a: Real;
-  revalUpTo(p, a, NAT_ZERO) = ZERO
-axiom rEvalSucc: forall p: RPoly; forall a: Real; forall k: Nat;
-  revalUpTo(p, a, peano.succ(k)) =
-  real.add(revalUpTo(p, a, k), real.mul(rcoeff(p, k), rpower(a, k)))
+func revalUpTo(p: RPoly, a: Real, k: Nat) => Real:
+  revalUpTo(p, a, NAT_ZERO) = ZERO;
+  revalUpTo(p, a, peano.succ(k)) = real.add(revalUpTo(p, a, k), real.mul(rcoeff(p, k), rpower(a, k)))
 
 // `p(a)`: the sum over every index up to AND INCLUDING the degree.
 define revaluate(p, a) = revalUpTo(p, a, peano.succ(rdegree(p)))
@@ -93,87 +79,48 @@ axiom rIsZeroOfMeaning: forall a: Real; forall p: RPoly;
 // every symbol a transferred proof names, so ℝ[x] declares them too. None involves a
 // subtraction: each decrementing index is a `succ` pattern, and the index arithmetic the
 // triple sums need is NAMED (`rtheGapTo`, `rtheCofactorIndex`).
-func rtailConvolution(p: RPoly, q: RPoly, j: Nat, m: Nat) => Real
-axiom rTailConvolutionZero: forall p, q: RPoly; forall m: Nat;
-  rtailConvolution(p, q, NAT_ZERO, m) =
-  real.mul(rcoeff(p, NAT_ZERO), rcoeff(q, m))
-axiom rTailConvolutionSucc: forall p, q: RPoly; forall j, m: Nat;
-  rtailConvolution(p, q, peano.succ(j), m) =
-  real.add(real.mul(rcoeff(p, peano.succ(j)), rcoeff(q, m)),
-  rtailConvolution(p, q, j, peano.succ(m)))
+func rtailConvolution(p: RPoly, q: RPoly, j: Nat, m: Nat) => Real:
+  rtailConvolution(p, q, NAT_ZERO, m) = real.mul(rcoeff(p, NAT_ZERO), rcoeff(q, m));
+  rtailConvolution(p, q, peano.succ(j), m) = real.add(real.mul(rcoeff(p, peano.succ(j)), rcoeff(q, m)), rtailConvolution(p, q, j, peano.succ(m)))
 
-func rsegmentOf(p: RPoly, q: RPoly, j: Nat, c: Nat, n: Nat) => Real
-axiom rSegmentZero: forall p, q: RPoly; forall j, c: Nat;
-  rsegmentOf(p, q, j, c, NAT_ZERO) = real.mul(rcoeff(p, j), rcoeff(q, c))
-axiom rSegmentSucc: forall p, q: RPoly; forall j, c, n: Nat;
-  rsegmentOf(p, q, peano.succ(j), c, peano.succ(n)) =
-  real.add(real.mul(rcoeff(p, peano.succ(j)), rcoeff(q, c)),
-  rsegmentOf(p, q, j, peano.succ(c), n))
+func rsegmentOf(p: RPoly, q: RPoly, j: Nat, c: Nat, n: Nat) => Real:
+  rsegmentOf(p, q, j, c, NAT_ZERO) = real.mul(rcoeff(p, j), rcoeff(q, c));
+  rsegmentOf(p, q, peano.succ(j), c, peano.succ(n)) = real.add(real.mul(rcoeff(p, peano.succ(j)), rcoeff(q, c)), rsegmentOf(p, q, j, peano.succ(c), n))
 
-func rrsegmentOf(p: RPoly, q: RPoly, j: Nat, c: Nat, n: Nat) => Real
-axiom rRsegmentZero: forall p, q: RPoly; forall j, c: Nat;
-  rrsegmentOf(p, q, j, c, NAT_ZERO) = real.mul(rcoeff(p, j), rcoeff(q, c))
-axiom rRsegmentSucc: forall p, q: RPoly; forall j, c, n: Nat;
-  rrsegmentOf(p, q, j, peano.succ(c), peano.succ(n)) =
-  real.add(real.mul(rcoeff(p, j), rcoeff(q, peano.succ(c))),
-  rrsegmentOf(p, q, peano.succ(j), c, n))
+func rrsegmentOf(p: RPoly, q: RPoly, j: Nat, c: Nat, n: Nat) => Real:
+  rrsegmentOf(p, q, j, c, NAT_ZERO) = real.mul(rcoeff(p, j), rcoeff(q, c));
+  rrsegmentOf(p, q, j, peano.succ(c), peano.succ(n)) = real.add(real.mul(rcoeff(p, j), rcoeff(q, peano.succ(c))), rrsegmentOf(p, q, peano.succ(j), c, n))
 
-func rtheGapTo(i: Nat, j: Nat) => Nat
-axiom rTheGapToAtZero: forall i: Nat; rtheGapTo(i, NAT_ZERO) = i
-axiom rTheGapToSteps: forall i, j: Nat;
+func rtheGapTo(i: Nat, j: Nat) => Nat:
+  rtheGapTo(i, NAT_ZERO) = i;
   rtheGapTo(peano.succ(i), peano.succ(j)) = rtheGapTo(i, j)
 
-func rtheCofactorIndex(i: Nat, j: Nat, k: Nat) => Nat
-axiom rTheCofactorIndexAtZero: forall i, j: Nat;
-  rtheCofactorIndex(i, j, NAT_ZERO) = rtheGapTo(i, j)
-axiom rTheCofactorIndexSteps: forall i, j, k: Nat;
-  rtheCofactorIndex(i, j, peano.succ(k)) =
-  rtheGapTo(rtheGapTo(i, j), peano.succ(k))
+func rtheCofactorIndex(i: Nat, j: Nat, k: Nat) => Nat:
+  rtheCofactorIndex(i, j, NAT_ZERO) = rtheGapTo(i, j);
+  rtheCofactorIndex(i, j, peano.succ(k)) = rtheGapTo(rtheGapTo(i, j), peano.succ(k))
 
-func rcappedRun(q: RPoly, r: RPoly, g: Nat, n: Nat) => Real
-axiom rCappedRunZero: forall q, r: RPoly; forall g: Nat;
-  rcappedRun(q, r, g, NAT_ZERO) = ZERO
-axiom rCappedRunSucc: forall q, r: RPoly; forall g, n: Nat;
-  rcappedRun(q, r, g, peano.succ(n)) =
-  real.add(rcappedRun(q, r, g, n),
-  real.mul(rcoeff(q, n), rcoeff(r, rtheGapTo(g, n))))
+func rcappedRun(q: RPoly, r: RPoly, g: Nat, n: Nat) => Real:
+  rcappedRun(q, r, g, NAT_ZERO) = ZERO;
+  rcappedRun(q, r, g, peano.succ(n)) = real.add(rcappedRun(q, r, g, n), real.mul(rcoeff(q, n), rcoeff(r, rtheGapTo(g, n))))
 
-func rtripleTerm(p: RPoly, q: RPoly, r: RPoly, i: Nat, j: Nat, k: Nat) => Real
-axiom rTripleTermMeaning: forall p, q, r: RPoly; forall i, j, k: Nat;
-  rtripleTerm(p, q, r, i, j, k) =
-  real.mul(real.mul(rcoeff(p, j), rcoeff(q, k)),
-  rcoeff(r, rtheCofactorIndex(i, j, k)))
+func rtripleTerm(p: RPoly, q: RPoly, r: RPoly, i: Nat, j: Nat, k: Nat) => Real:
+  rtripleTerm(p, q, r, i, j, k) = real.mul(real.mul(rcoeff(p, j), rcoeff(q, k)), rcoeff(r, rtheCofactorIndex(i, j, k)))
 
-func rtripleRow(p: RPoly, q: RPoly, r: RPoly, i: Nat, j: Nat, n: Nat) => Real
-axiom rTripleRowZero: forall p, q, r: RPoly; forall i, j: Nat;
-  rtripleRow(p, q, r, i, j, NAT_ZERO) = ZERO
-axiom rTripleRowSucc: forall p, q, r: RPoly; forall i, j, n: Nat;
-  rtripleRow(p, q, r, i, j, peano.succ(n)) =
-  real.add(rtripleRow(p, q, r, i, j, n), rtripleTerm(p, q, r, i, j, n))
+func rtripleRow(p: RPoly, q: RPoly, r: RPoly, i: Nat, j: Nat, n: Nat) => Real:
+  rtripleRow(p, q, r, i, j, NAT_ZERO) = ZERO;
+  rtripleRow(p, q, r, i, j, peano.succ(n)) = real.add(rtripleRow(p, q, r, i, j, n), rtripleTerm(p, q, r, i, j, n))
 
-func rtripleDiag(p: RPoly, q: RPoly, r: RPoly, i: Nat, m: Nat, c: Nat) => Real
-axiom rTripleDiagZero: forall p, q, r: RPoly; forall i, m: Nat;
-  rtripleDiag(p, q, r, i, m, NAT_ZERO) = ZERO
-axiom rTripleDiagSucc: forall p, q, r: RPoly; forall i, m, c: Nat;
-  rtripleDiag(p, q, r, i, m, peano.succ(c)) =
-  real.add(rtripleDiag(p, q, r, i, m, c),
-  rtripleTerm(p, q, r, i, c, rtheGapTo(m, c)))
+func rtripleDiag(p: RPoly, q: RPoly, r: RPoly, i: Nat, m: Nat, c: Nat) => Real:
+  rtripleDiag(p, q, r, i, m, NAT_ZERO) = ZERO;
+  rtripleDiag(p, q, r, i, m, peano.succ(c)) = real.add(rtripleDiag(p, q, r, i, m, c), rtripleTerm(p, q, r, i, c, rtheGapTo(m, c)))
 
-func rtripleTri(p: RPoly, q: RPoly, r: RPoly, i: Nat, n: Nat) => Real
-axiom rTripleTriZero: forall p, q, r: RPoly; forall i: Nat;
-  rtripleTri(p, q, r, i, NAT_ZERO) = ZERO
-axiom rTripleTriSucc: forall p, q, r: RPoly; forall i, n: Nat;
-  rtripleTri(p, q, r, i, peano.succ(n)) =
-  real.add(rtripleTri(p, q, r, i, n),
-  rtripleDiag(p, q, r, i, n, peano.succ(n)))
+func rtripleTri(p: RPoly, q: RPoly, r: RPoly, i: Nat, n: Nat) => Real:
+  rtripleTri(p, q, r, i, NAT_ZERO) = ZERO;
+  rtripleTri(p, q, r, i, peano.succ(n)) = real.add(rtripleTri(p, q, r, i, n), rtripleDiag(p, q, r, i, n, peano.succ(n)))
 
-func rtripleRows(p: RPoly, q: RPoly, r: RPoly, i: Nat, m: Nat, n: Nat) => Real
-axiom rTripleRowsZero: forall p, q, r: RPoly; forall i, n: Nat;
-  rtripleRows(p, q, r, i, NAT_ZERO, n) = ZERO
-axiom rTripleRowsSucc: forall p, q, r: RPoly; forall i, m, n: Nat;
-  rtripleRows(p, q, r, i, peano.succ(m), n) =
-  real.add(rtripleRows(p, q, r, i, m, n),
-  rtripleRow(p, q, r, i, m, rtheGapTo(n, m)))
+func rtripleRows(p: RPoly, q: RPoly, r: RPoly, i: Nat, m: Nat, n: Nat) => Real:
+  rtripleRows(p, q, r, i, NAT_ZERO, n) = ZERO;
+  rtripleRows(p, q, r, i, peano.succ(m), n) = real.add(rtripleRows(p, q, r, i, m, n), rtripleRow(p, q, r, i, m, rtheGapTo(n, m)))
 
 // The unit polynomial, as its OWN constant with its own coefficient axioms — the shape
 // `ring_poly.ONEP` maps onto. F[x] instead derives it from `monomial(oneF, ZERO)`, which
@@ -309,42 +256,28 @@ model RealPolynomials {
   // the polynomial layer
   fieldpoly.polyExtensionality <- rPolyExtensionality
   fieldpoly.zeroPolyCoeff <- rZeroPolyCoeff
-  fieldpoly.addPolyCoeff <- rAddPolyCoeff
-  fieldpoly.negPolyCoeff <- rNegPolyCoeff
-  fieldpoly.monomialCoeffAtItsIndex <- rMonomialCoeffAtItsIndex
-  fieldpoly.monomialCoeffElsewhere <- rMonomialCoeffElsewhere
+  fieldpoly.addP <- raddP
+  fieldpoly.negP <- rnegP
+  fieldpoly.monomial <- rmonomial
   fieldpoly.degreeAtMostMeaning <- rDegreeAtMostMeaning
   fieldpoly.degreeIsALeadingIndex <- rDegreeIsALeadingIndex
   fieldpoly.degreeBoundsTheCoefficients <- rDegreeBoundsTheCoefficients
-  fieldpoly.convolutionZero <- rConvolutionZero
-  fieldpoly.convolutionSucc <- rConvolutionSucc
-  fieldpoly.mulPolyCoeff <- rMulPolyCoeff
-  fieldpoly.powerZero <- rPowerZero
-  fieldpoly.powerSucc <- rPowerSucc
-  fieldpoly.evalZero <- rEvalZero
-  fieldpoly.evalSucc <- rEvalSucc
+  fieldpoly.convolution <- rconvolution
+  fieldpoly.mulP <- rmulP
+  fieldpoly.power <- rpower
+  fieldpoly.evalUpTo <- revalUpTo
   fieldpoly.isZeroOfMeaning <- rIsZeroOfMeaning
-  fieldpoly.tailConvolutionZero <- rTailConvolutionZero
-  fieldpoly.tailConvolutionSucc <- rTailConvolutionSucc
-  fieldpoly.segmentZero <- rSegmentZero
-  fieldpoly.segmentSucc <- rSegmentSucc
-  fieldpoly.rsegmentZero <- rRsegmentZero
-  fieldpoly.rsegmentSucc <- rRsegmentSucc
-  fieldpoly.theGapToAtZero <- rTheGapToAtZero
-  fieldpoly.theGapToSteps <- rTheGapToSteps
-  fieldpoly.theCofactorIndexAtZero <- rTheCofactorIndexAtZero
-  fieldpoly.theCofactorIndexSteps <- rTheCofactorIndexSteps
-  fieldpoly.cappedRunZero <- rCappedRunZero
-  fieldpoly.cappedRunSucc <- rCappedRunSucc
-  fieldpoly.tripleTermMeaning <- rTripleTermMeaning
-  fieldpoly.tripleRowZero <- rTripleRowZero
-  fieldpoly.tripleRowSucc <- rTripleRowSucc
-  fieldpoly.tripleDiagZero <- rTripleDiagZero
-  fieldpoly.tripleDiagSucc <- rTripleDiagSucc
-  fieldpoly.tripleTriZero <- rTripleTriZero
-  fieldpoly.tripleTriSucc <- rTripleTriSucc
-  fieldpoly.tripleRowsZero <- rTripleRowsZero
-  fieldpoly.tripleRowsSucc <- rTripleRowsSucc
+  fieldpoly.tailConvolution <- rtailConvolution
+  fieldpoly.segment <- rsegmentOf
+  fieldpoly.rsegment <- rrsegmentOf
+  fieldpoly.theGapTo <- rtheGapTo
+  fieldpoly.theCofactorIndex <- rtheCofactorIndex
+  fieldpoly.cappedRun <- rcappedRun
+  fieldpoly.tripleTerm <- rtripleTerm
+  fieldpoly.tripleRow <- rtripleRow
+  fieldpoly.tripleDiag <- rtripleDiag
+  fieldpoly.tripleTri <- rtripleTri
+  fieldpoly.tripleRows <- rtripleRows
 }
 
 // -- the transferred ring structure, named locally -----------------------------------------
@@ -422,20 +355,16 @@ model RealPolynomialsOverARing {
   ring_poly.zeroPolyCoeff <- rZeroPolyCoeff
   ring_poly.onePolyCoeffZero <- rOnePolyCoeffZero
   ring_poly.onePolyCoeffHigher <- rOnePolyCoeffHigher
-  ring_poly.addPolyCoeff <- rAddPolyCoeff
-  ring_poly.negPolyCoeff <- rNegPolyCoeff
+  ring_poly.addP <- raddP
+  ring_poly.negP <- rnegP
   ring_poly.degreeAtMostMeaning <- rDegreeAtMostMeaning
   ring_poly.degreeIsALeadingIndex <- rDegreeIsALeadingIndex
   ring_poly.degreeBoundsTheCoefficients <- rDegreeBoundsTheCoefficients
-  ring_poly.convolutionZero <- rConvolutionZero
-  ring_poly.convolutionSucc <- rConvolutionSucc
-  ring_poly.tailConvolutionZero <- rTailConvolutionZero
-  ring_poly.tailConvolutionSucc <- rTailConvolutionSucc
-  ring_poly.segmentZero <- rSegmentZero
-  ring_poly.segmentSucc <- rSegmentSucc
-  ring_poly.rsegmentZero <- rRsegmentZero
-  ring_poly.rsegmentSucc <- rRsegmentSucc
-  ring_poly.mulPolyCoeff <- rMulPolyCoeff
+  ring_poly.convolution <- rconvolution
+  ring_poly.tailConvolution <- rtailConvolution
+  ring_poly.segment <- rsegmentOf
+  ring_poly.rsegment <- rrsegmentOf
+  ring_poly.mulP <- rmulP
 }
 
 theorem rMulOneLeft: forall p: RPoly; rmulP(RONEP, p) = p
@@ -443,4 +372,374 @@ proof
   @conclusion |
     forall p: RPoly; rmulP(RONEP, p) = p
     [using model(RealPolynomialsOverARing) ring_poly.polyMulOneLeft]
+qed
+
+// -- definition-clause shims ---------------------------------------------------------------
+//
+// The symbols above are DEFINITION BLOCKS, so `--axioms` reports their clauses as
+// definitions rather than as assumptions to weigh. A clause has no user-facing name,
+// though, and a model's `<-` and `specialize` both resolve BY NAME — so each clause keeps a
+// one-line theorem under the name it had as an axiom. These add no assumption: every one is
+// proved `[by definition(N) <symbol>]`.
+
+theorem rAddPolyCoeff:
+  forall p, q: RPoly; forall i: Nat;
+  rcoeff(raddP(p, q), i) = real.add(rcoeff(p, i), rcoeff(q, i))
+proof
+  @conclusion |
+    forall p, q: RPoly; forall i: Nat;
+      rcoeff(raddP(p, q), i) = real.add(rcoeff(p, i), rcoeff(q, i))
+    [by definition raddP]
+qed
+
+theorem rNegPolyCoeff:
+  forall p: RPoly; forall i: Nat;
+  rcoeff(rnegP(p), i) = real.neg(rcoeff(p, i))
+proof
+  @conclusion |
+    forall p: RPoly; forall i: Nat;
+      rcoeff(rnegP(p), i) = real.neg(rcoeff(p, i))
+    [by definition rnegP]
+qed
+
+theorem rMulPolyCoeff:
+  forall p, q: RPoly; forall i: Nat;
+  rcoeff(rmulP(p, q), i) = rconvolution(p, q, NAT_ZERO, i)
+proof
+  @conclusion |
+    forall p, q: RPoly; forall i: Nat;
+      rcoeff(rmulP(p, q), i) = rconvolution(p, q, NAT_ZERO, i)
+    [by definition rmulP]
+qed
+
+theorem rMonomialCoeffAtItsIndex:
+  forall a: Real; forall k: Nat;
+  rcoeff(rmonomial(a, k), k) = a
+proof
+  @conclusion |
+    forall a: Real; forall k: Nat;
+      rcoeff(rmonomial(a, k), k) = a
+    [by definition(0) rmonomial]
+qed
+
+theorem rMonomialCoeffElsewhere:
+  forall a: Real; forall k, i: Nat;
+  (not (i = k)) -> rcoeff(rmonomial(a, k), i) = ZERO
+proof
+  @conclusion |
+    forall a: Real; forall k, i: Nat;
+      (not (i = k)) -> rcoeff(rmonomial(a, k), i) = ZERO
+    [by definition(1) rmonomial]
+qed
+
+theorem rConvolutionZero:
+  forall p, q: RPoly; forall j: Nat;
+  rconvolution(p, q, j, NAT_ZERO) =
+  real.mul(rcoeff(p, j), rcoeff(q, NAT_ZERO))
+proof
+  @conclusion |
+    forall p, q: RPoly; forall j: Nat;
+      rconvolution(p, q, j, NAT_ZERO) =
+      real.mul(rcoeff(p, j), rcoeff(q, NAT_ZERO))
+    [by definition(0) rconvolution]
+qed
+
+theorem rConvolutionSucc:
+  forall p, q: RPoly; forall j, m: Nat;
+  rconvolution(p, q, j, peano.succ(m)) =
+  real.add(real.mul(rcoeff(p, j), rcoeff(q, peano.succ(m))),
+  rconvolution(p, q, peano.succ(j), m))
+proof
+  @conclusion |
+    forall p, q: RPoly; forall j, m: Nat;
+      rconvolution(p, q, j, peano.succ(m)) =
+      real.add(real.mul(rcoeff(p, j), rcoeff(q, peano.succ(m))),
+      rconvolution(p, q, peano.succ(j), m))
+    [by definition(1) rconvolution]
+qed
+
+theorem rPowerZero:
+  forall a: Real; rpower(a, NAT_ZERO) = real.ONE
+proof
+  @conclusion |
+    forall a: Real; rpower(a, NAT_ZERO) = real.ONE
+    [by definition(0) rpower]
+qed
+
+theorem rPowerSucc:
+  forall a: Real; forall n: Nat;
+  rpower(a, peano.succ(n)) = real.mul(a, rpower(a, n))
+proof
+  @conclusion |
+    forall a: Real; forall n: Nat;
+      rpower(a, peano.succ(n)) = real.mul(a, rpower(a, n))
+    [by definition(1) rpower]
+qed
+
+theorem rEvalZero:
+  forall p: RPoly; forall a: Real;
+  revalUpTo(p, a, NAT_ZERO) = ZERO
+proof
+  @conclusion |
+    forall p: RPoly; forall a: Real;
+      revalUpTo(p, a, NAT_ZERO) = ZERO
+    [by definition(0) revalUpTo]
+qed
+
+theorem rEvalSucc:
+  forall p: RPoly; forall a: Real; forall k: Nat;
+  revalUpTo(p, a, peano.succ(k)) =
+  real.add(revalUpTo(p, a, k), real.mul(rcoeff(p, k), rpower(a, k)))
+proof
+  @conclusion |
+    forall p: RPoly; forall a: Real; forall k: Nat;
+      revalUpTo(p, a, peano.succ(k)) =
+      real.add(revalUpTo(p, a, k), real.mul(rcoeff(p, k), rpower(a, k)))
+    [by definition(1) revalUpTo]
+qed
+
+theorem rTailConvolutionZero:
+  forall p, q: RPoly; forall m: Nat;
+  rtailConvolution(p, q, NAT_ZERO, m) =
+  real.mul(rcoeff(p, NAT_ZERO), rcoeff(q, m))
+proof
+  @conclusion |
+    forall p, q: RPoly; forall m: Nat;
+      rtailConvolution(p, q, NAT_ZERO, m) =
+      real.mul(rcoeff(p, NAT_ZERO), rcoeff(q, m))
+    [by definition(0) rtailConvolution]
+qed
+
+theorem rTailConvolutionSucc:
+  forall p, q: RPoly; forall j, m: Nat;
+  rtailConvolution(p, q, peano.succ(j), m) =
+  real.add(real.mul(rcoeff(p, peano.succ(j)), rcoeff(q, m)),
+  rtailConvolution(p, q, j, peano.succ(m)))
+proof
+  @conclusion |
+    forall p, q: RPoly; forall j, m: Nat;
+      rtailConvolution(p, q, peano.succ(j), m) =
+      real.add(real.mul(rcoeff(p, peano.succ(j)), rcoeff(q, m)),
+      rtailConvolution(p, q, j, peano.succ(m)))
+    [by definition(1) rtailConvolution]
+qed
+
+theorem rSegmentZero:
+  forall p, q: RPoly; forall j, c: Nat;
+  rsegmentOf(p, q, j, c, NAT_ZERO) = real.mul(rcoeff(p, j), rcoeff(q, c))
+proof
+  @conclusion |
+    forall p, q: RPoly; forall j, c: Nat;
+      rsegmentOf(p, q, j, c, NAT_ZERO) = real.mul(rcoeff(p, j), rcoeff(q, c))
+    [by definition(0) rsegmentOf]
+qed
+
+theorem rSegmentSucc:
+  forall p, q: RPoly; forall j, c, n: Nat;
+  rsegmentOf(p, q, peano.succ(j), c, peano.succ(n)) =
+  real.add(real.mul(rcoeff(p, peano.succ(j)), rcoeff(q, c)),
+  rsegmentOf(p, q, j, peano.succ(c), n))
+proof
+  @conclusion |
+    forall p, q: RPoly; forall j, c, n: Nat;
+      rsegmentOf(p, q, peano.succ(j), c, peano.succ(n)) =
+      real.add(real.mul(rcoeff(p, peano.succ(j)), rcoeff(q, c)),
+      rsegmentOf(p, q, j, peano.succ(c), n))
+    [by definition(1) rsegmentOf]
+qed
+
+theorem rRsegmentZero:
+  forall p, q: RPoly; forall j, c: Nat;
+  rrsegmentOf(p, q, j, c, NAT_ZERO) = real.mul(rcoeff(p, j), rcoeff(q, c))
+proof
+  @conclusion |
+    forall p, q: RPoly; forall j, c: Nat;
+      rrsegmentOf(p, q, j, c, NAT_ZERO) = real.mul(rcoeff(p, j), rcoeff(q, c))
+    [by definition(0) rrsegmentOf]
+qed
+
+theorem rRsegmentSucc:
+  forall p, q: RPoly; forall j, c, n: Nat;
+  rrsegmentOf(p, q, j, peano.succ(c), peano.succ(n)) =
+  real.add(real.mul(rcoeff(p, j), rcoeff(q, peano.succ(c))),
+  rrsegmentOf(p, q, peano.succ(j), c, n))
+proof
+  @conclusion |
+    forall p, q: RPoly; forall j, c, n: Nat;
+      rrsegmentOf(p, q, j, peano.succ(c), peano.succ(n)) =
+      real.add(real.mul(rcoeff(p, j), rcoeff(q, peano.succ(c))),
+      rrsegmentOf(p, q, peano.succ(j), c, n))
+    [by definition(1) rrsegmentOf]
+qed
+
+theorem rTheGapToAtZero:
+  forall i: Nat; rtheGapTo(i, NAT_ZERO) = i
+proof
+  @conclusion |
+    forall i: Nat; rtheGapTo(i, NAT_ZERO) = i
+    [by definition(0) rtheGapTo]
+qed
+
+theorem rTheGapToSteps:
+  forall i, j: Nat;
+  rtheGapTo(peano.succ(i), peano.succ(j)) = rtheGapTo(i, j)
+proof
+  @conclusion |
+    forall i, j: Nat;
+      rtheGapTo(peano.succ(i), peano.succ(j)) = rtheGapTo(i, j)
+    [by definition(1) rtheGapTo]
+qed
+
+theorem rTheCofactorIndexAtZero:
+  forall i, j: Nat;
+  rtheCofactorIndex(i, j, NAT_ZERO) = rtheGapTo(i, j)
+proof
+  @conclusion |
+    forall i, j: Nat;
+      rtheCofactorIndex(i, j, NAT_ZERO) = rtheGapTo(i, j)
+    [by definition(0) rtheCofactorIndex]
+qed
+
+theorem rTheCofactorIndexSteps:
+  forall i, j, k: Nat;
+  rtheCofactorIndex(i, j, peano.succ(k)) =
+  rtheGapTo(rtheGapTo(i, j), peano.succ(k))
+proof
+  @conclusion |
+    forall i, j, k: Nat;
+      rtheCofactorIndex(i, j, peano.succ(k)) =
+      rtheGapTo(rtheGapTo(i, j), peano.succ(k))
+    [by definition(1) rtheCofactorIndex]
+qed
+
+theorem rCappedRunZero:
+  forall q, r: RPoly; forall g: Nat;
+  rcappedRun(q, r, g, NAT_ZERO) = ZERO
+proof
+  @conclusion |
+    forall q, r: RPoly; forall g: Nat;
+      rcappedRun(q, r, g, NAT_ZERO) = ZERO
+    [by definition(0) rcappedRun]
+qed
+
+theorem rCappedRunSucc:
+  forall q, r: RPoly; forall g, n: Nat;
+  rcappedRun(q, r, g, peano.succ(n)) =
+  real.add(rcappedRun(q, r, g, n),
+  real.mul(rcoeff(q, n), rcoeff(r, rtheGapTo(g, n))))
+proof
+  @conclusion |
+    forall q, r: RPoly; forall g, n: Nat;
+      rcappedRun(q, r, g, peano.succ(n)) =
+      real.add(rcappedRun(q, r, g, n),
+      real.mul(rcoeff(q, n), rcoeff(r, rtheGapTo(g, n))))
+    [by definition(1) rcappedRun]
+qed
+
+theorem rTripleTermMeaning:
+  forall p, q, r: RPoly; forall i, j, k: Nat;
+  rtripleTerm(p, q, r, i, j, k) =
+  real.mul(real.mul(rcoeff(p, j), rcoeff(q, k)),
+  rcoeff(r, rtheCofactorIndex(i, j, k)))
+proof
+  @conclusion |
+    forall p, q, r: RPoly; forall i, j, k: Nat;
+      rtripleTerm(p, q, r, i, j, k) =
+      real.mul(real.mul(rcoeff(p, j), rcoeff(q, k)),
+      rcoeff(r, rtheCofactorIndex(i, j, k)))
+    [by definition rtripleTerm]
+qed
+
+theorem rTripleRowZero:
+  forall p, q, r: RPoly; forall i, j: Nat;
+  rtripleRow(p, q, r, i, j, NAT_ZERO) = ZERO
+proof
+  @conclusion |
+    forall p, q, r: RPoly; forall i, j: Nat;
+      rtripleRow(p, q, r, i, j, NAT_ZERO) = ZERO
+    [by definition(0) rtripleRow]
+qed
+
+theorem rTripleRowSucc:
+  forall p, q, r: RPoly; forall i, j, n: Nat;
+  rtripleRow(p, q, r, i, j, peano.succ(n)) =
+  real.add(rtripleRow(p, q, r, i, j, n), rtripleTerm(p, q, r, i, j, n))
+proof
+  @conclusion |
+    forall p, q, r: RPoly; forall i, j, n: Nat;
+      rtripleRow(p, q, r, i, j, peano.succ(n)) =
+      real.add(rtripleRow(p, q, r, i, j, n), rtripleTerm(p, q, r, i, j, n))
+    [by definition(1) rtripleRow]
+qed
+
+theorem rTripleDiagZero:
+  forall p, q, r: RPoly; forall i, m: Nat;
+  rtripleDiag(p, q, r, i, m, NAT_ZERO) = ZERO
+proof
+  @conclusion |
+    forall p, q, r: RPoly; forall i, m: Nat;
+      rtripleDiag(p, q, r, i, m, NAT_ZERO) = ZERO
+    [by definition(0) rtripleDiag]
+qed
+
+theorem rTripleDiagSucc:
+  forall p, q, r: RPoly; forall i, m, c: Nat;
+  rtripleDiag(p, q, r, i, m, peano.succ(c)) =
+  real.add(rtripleDiag(p, q, r, i, m, c),
+  rtripleTerm(p, q, r, i, c, rtheGapTo(m, c)))
+proof
+  @conclusion |
+    forall p, q, r: RPoly; forall i, m, c: Nat;
+      rtripleDiag(p, q, r, i, m, peano.succ(c)) =
+      real.add(rtripleDiag(p, q, r, i, m, c),
+      rtripleTerm(p, q, r, i, c, rtheGapTo(m, c)))
+    [by definition(1) rtripleDiag]
+qed
+
+theorem rTripleTriZero:
+  forall p, q, r: RPoly; forall i: Nat;
+  rtripleTri(p, q, r, i, NAT_ZERO) = ZERO
+proof
+  @conclusion |
+    forall p, q, r: RPoly; forall i: Nat;
+      rtripleTri(p, q, r, i, NAT_ZERO) = ZERO
+    [by definition(0) rtripleTri]
+qed
+
+theorem rTripleTriSucc:
+  forall p, q, r: RPoly; forall i, n: Nat;
+  rtripleTri(p, q, r, i, peano.succ(n)) =
+  real.add(rtripleTri(p, q, r, i, n),
+  rtripleDiag(p, q, r, i, n, peano.succ(n)))
+proof
+  @conclusion |
+    forall p, q, r: RPoly; forall i, n: Nat;
+      rtripleTri(p, q, r, i, peano.succ(n)) =
+      real.add(rtripleTri(p, q, r, i, n),
+      rtripleDiag(p, q, r, i, n, peano.succ(n)))
+    [by definition(1) rtripleTri]
+qed
+
+theorem rTripleRowsZero:
+  forall p, q, r: RPoly; forall i, n: Nat;
+  rtripleRows(p, q, r, i, NAT_ZERO, n) = ZERO
+proof
+  @conclusion |
+    forall p, q, r: RPoly; forall i, n: Nat;
+      rtripleRows(p, q, r, i, NAT_ZERO, n) = ZERO
+    [by definition(0) rtripleRows]
+qed
+
+theorem rTripleRowsSucc:
+  forall p, q, r: RPoly; forall i, m, n: Nat;
+  rtripleRows(p, q, r, i, peano.succ(m), n) =
+  real.add(rtripleRows(p, q, r, i, m, n),
+  rtripleRow(p, q, r, i, m, rtheGapTo(n, m)))
+proof
+  @conclusion |
+    forall p, q, r: RPoly; forall i, m, n: Nat;
+      rtripleRows(p, q, r, i, peano.succ(m), n) =
+      real.add(rtripleRows(p, q, r, i, m, n),
+      rtripleRow(p, q, r, i, m, rtheGapTo(n, m)))
+    [by definition(1) rtripleRows]
 qed
