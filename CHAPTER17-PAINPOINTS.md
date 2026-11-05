@@ -43,11 +43,11 @@ from the model block:
   transfer, demanding the inner layer too. `polyMulIsCommutative` is deliberately *not* carried
   into ℤ[x] for this reason — R[x] proves it through `tailConvolution` and `segment`.
 
-**And the hard version: a nested transfer cannot COMPOSE.** 2b4m re-checks an inner transfer
-rather than composing two models, so ℕ → ℤ's `NonNeg` cut → ℚ's `isInteger` cut is
-inexpressible. Concretely `lattice.gcdExists` and `int_order.signTrichotomy` both route through
-`integer.nonnegCases`, itself a transfer, so neither reaches ℚ's cut:
-`std/peano.b4m:857: expected sort 'Int', got 'Q'`.
+**A transfer whose own source theorem transferred demands the inner layer too.** That is not a
+wall — models compose, and `std` relies on it (see `NESTED-MODEL-COMPOSITION-ISSUE.md`); it
+means the outer model must discharge every axiom the INNER proof reaches, not only the ones its
+statement mentions. The failure surfaces as a sort error inside the source file, which is the
+diagnostics defect that file records.
 
 **Workaround that worked every time:** reprove the fact on the cut. It needs only the target's
 own axioms plus any UNGUARDED model (ℚ as a whole is an ordered field, so
@@ -55,7 +55,8 @@ own axioms plus any UNGUARDED model (ℚ as a whole is an ordered field, so
 *finished* theorem whose proof itself transferred. `anIntegerDividingOneIsAUnit`,
 `aPositiveIntegerIsAtLeastOne` and the well-ordering pair were all obtained this way.
 
-**Worth fixing properly:** model composition. Everything above is a workaround for its absence.
+**Worth fixing properly:** the DIAGNOSTIC. The workarounds above are for not being told which
+mapping is missing.
 
 ---
 
@@ -116,55 +117,25 @@ Worth a sweep.
 
 ---
 
-## 7b. Sequence and polynomial were two worlds with NO bridge between them
-
-All of 17.12's machinery is over `QSeq` entries (`qat`); `isTheIntegerDecomposition` is over
-`QPoly` coefficients (`qcoeff`). **Zero theorems in the corpus mentioned both**, and there was
-no construction of a polynomial from a sequence at all — `grep -c 'exists p: QPoly'` returned 0
-across both files.
-
-Three theorems closed it: `coprimeEntriesMakeCoprimeCoefficients` and
-`integerEntriesMakeIntegerCoefficients` transfer properties across a coefficient-matches-entry
-hypothesis, and `aPolynomialMatchesASequence` (`f5053f1`) finally *supplies* that hypothesis by
-building the polynomial monomial-by-monomial.
-
-**What made the bridges possible at all:** `qpoly.dividesOnTheCut` is a `define` whose body is
-character-for-character `dividesIntegrallyMeaning`'s right-hand side. Two predicates, two
-files, same meaning, no stated relationship. Checked that before writing rather than trusting
-the similar names.
-
-**The lesson is about ORDER of discovery:** this was found by auditing whether the seven
-conjuncts' theorems actually *compose* — matching each one's demanded hypotheses against what
-the construction supplies — not by writing more theorems. Six conjuncts "had their machinery"
-while the machinery could not be joined up.
-
----
-
 ## 8. Smaller things that each cost a round or more
 
-- **`simplify` WILL NOT CHAIN TWO SUBSTITUTIONS** — easily the most frequent single friction in
-  the whole chapter, hit at a dozen-plus sites across `integer-product.b4m`,
+- **`simplify` CANNOT CONSUME A CITED EQUATION AS A PREMISE** — it proves identities, not
+  consequences. A rearrangement like `0 = X + r·t ⟹ X = r·(−t)` is not a `simplify` goal at
+  all, however simple it looks; measured, it reports
+  `normal forms differ: 'X' vs 'mul(R, neg(T))'`. Easily the most frequent single friction in
+  the chapter, hit at a dozen-plus sites across `integer-product.b4m`,
   `integer-division.b4m`, `polynomial.b4m` and `integer-polynomial.b4m`.
-  The failure is always the same shape: a step wants "substitute equation A, then collapse with
-  equation B", and `simplify` reports the two sides it could not reconcile
-  (`normal forms differ: 'X' vs 'Y'`) or hits the rewrite limit.
 
-  **Rule, now firm: `simplify` is for ONE shared normal form. The moment two different
-  equations have to be applied in sequence, write the explicit `rewrite` chain.** Each
-  `rewrite EQ TARGET` is bidirectional and does exactly one substitution, so an N-step
-  rearrangement is N `rewrite`s with a named intermediate at each stage. Writing those
-  intermediates out is not verbosity — it is the only form the tactic accepts, and the labels
-  document the algebra.
+  Note `simplify` DOES chain substitutions — `A = B`, `B = C` ⊢ `f(A) = f(C)` passes. The
+  boundary is consequence-vs-identity above, plus the rewrite limit on long chains.
 
-  Representative instances: a rewrite-limit loop (`theDenominatorCancels`'s precursor);
-  `'ZERO' vs 'qcoeff(p, qdegree(p))'`; `'b' vs 'c'`;
-  `'mul(g, mul(s, coefficient))' vs 'mul(g, mul(r, entry))'` (three-equation chain);
-  `'coefficient' vs 'mul(mul(r, recip(s)), entry)'`; `'add(ZERO, ZERO)' vs 'qcls(add(…))'`
-  (needed the two vanishing classes substituted one at a time).
-
-  **Related, same tactic, different cause:** `simplify` also cannot CONSUME a cited equation as
-  a premise — it proves identities, not consequences. A rearrangement like
-  `0 = X + r·t ⟹ X = r·(−t)` is not a `simplify` goal at all, however simple it looks.
+  **When it does fail, write the explicit `rewrite` chain.** Each `rewrite EQ TARGET` is
+  bidirectional and does one substitution, so an N-step rearrangement is N `rewrite`s with a
+  named intermediate at each stage; since the one-ref form landed, a congruence needs no
+  reflexive scaffold. Representative failures: a rewrite-limit loop
+  (`theDenominatorCancels`'s precursor); `'ZERO' vs 'qcoeff(p, qdegree(p))'`; `'b' vs 'c'`;
+  `'mul(g, mul(s, coefficient))' vs 'mul(g, mul(r, entry))'`;
+  `'add(ZERO, ZERO)' vs 'qcls(add(…))'`.
 - **An admitted `specialize` SHRINKS the proof `--fast` examines, masking sibling steps.**
   Hit on `theConstantMonomialProductAgreesCoefficientwise` (2026-11-02). `--fast` passed the
   lemma; strict rejected it with `simplify: normal forms differ`. But `simplify` KEEPS its
@@ -298,8 +269,8 @@ while the machinery could not be joined up.
 - **ℚ has `addSuccLeft` but no `addSuccRight`** — proofs commute both sides instead.
 - **Lemma-name guessing**, still: `lessThanSucc` (actually `lessThanSelf`), `nothingBelowZero`
   (`notLessThanZero`), `succReflectsLessThan` (`succReflectsOrder`), `recipMulLeft`
-  (`fieldInverse` + commutativity). `std/` has 1888 theorems and no index; grep the statement
-  SHAPE, never the name you'd expect.
+  (`fieldInverse` + commutativity). `std/` has no index; grep the statement SHAPE, never the
+  name you'd expect.
 - **`unpack` syntax is `unpack v: Sort from step`**, not `unpack step as v`. Cost one round.
 - **Nested `proof` blocks for a base case are not a thing** — use `@base-case-proof` + export.
 - **A nullary `func` needs no parens; `theSubject` not `theSubject()`** — but a nullary `pred`
@@ -310,19 +281,12 @@ while the machinery could not be joined up.
 
 ---
 
-## 8b. "Packaging" was never pure assembly — three real theorems hid inside it
+## 8b. A predicate whose conjuncts are each provable can still be unreachable
 
-Each time I called the remaining work "threading the pieces together", tracing it turned up
-something unproved. Logged because the estimate was wrong three times in the same way.
+Each time the remaining work looked like "threading the pieces together", tracing it turned
+up something unproved. One is still open:
 
-1. **Nothing constructed a polynomial from a sequence** (entry 7b) — the bridges took the
-   coefficient match as a hypothesis and nothing supplied it.
-2. **`isAMaximalCommonDivisorOfThePair` had no existence proof.** Every occurrence in
-   `std/rational/integer-product.b4m` is a HYPOTHESIS, never a conclusion. Step 4 had always
-   taken it on faith. A pair is a two-element sequence
-   (`aTwoElementSequenceExists`, `ebcb8ac`) so the sequence descent covers it — but that is
-   still a theorem, not assembly.
-3. **The descent step and coprimality do not line up**, and this one is still open:
+**The descent step and coprimality do not line up:**
 
        coprimality needs:  forall e; isInteger(e) -> (e divides q BELOW n)
                                      -> e divides ONE
@@ -354,23 +318,11 @@ Related: `polynomial` also cannot CONSUME a cited equation as an input (it prove
 not consequences), so a rearrangement like `0 = X + r·t ⟹ X = r·(−t)` must be done by explicit
 `rewrite` steps.
 
-## 13. The accelerant param-guard gap, half fixed (ENGINE)
+## 13. `polynomial`'s hardcoded rules cite source-space formulas under a transfer (ENGINE)
 
-**FIXED (`f41c60f`):** a `simplify` whose rewrite set mentions a lemma quantified over a
-MODEL-REFINED sort could not transfer at all — `simplify` abstracts the caller's `fix n` into
-a schema param, the relativized lemma leaks `good(p1)`, and a param sits in no `fix`'s scope
-so nothing can discharge it. `paramGuards`/`wrapParamGuards` exist for exactly this but were
-wired only into `finishReorder`; `produceSimplify` never called them. Also `paramGuards` read
-the SOURCE binder's refinement, which is `none` precisely when the model introduces it.
-
-**STILL OPEN, same family:** `polynomial`'s hardcoded rule set cites ring lemmas by well-known
-name with SOURCE-SPACE formulas, so under a transfer the cite claims a guard-free universal
-while the resolved theorem is relativized. Different mechanism — a citation, not a param guard
-— and the hardcoded rule set makes it a design question rather than a one-line fix.
-
-**Process note:** I mis-diagnosed the fixed half twice (wrong refinement lookup, then wrong
-accelerant path) by reasoning from the code's own comments, which described the mechanism as
-if it were already wired everywhere. One `std.debug.print` settled it. Instrument first.
+`polynomial`'s hardcoded rule set cites ring lemmas by well-known NAME with SOURCE-SPACE
+formulas, so under a transfer the cite claims a guard-free universal while the resolved theorem
+is relativized. The hardcoded rule set makes this a design question rather than a one-line fix.
 
 ## 14. `theSubject` is a model PARAMETER, not a fixed value
 
@@ -394,66 +346,23 @@ uninterpreted `func` is as good as a parameter, because `model` is exactly the m
 fixing parameters. Before concluding that a `theSubject`-style encoding has painted you into a
 corner, write the two-model probe; it takes minutes.
 
-## 16. A model can transfer a theorem REMOTE FROM ITS ROOT
-
-**The single most useful thing I learned in this chapter, and I learned it by being corrected
-(user, 2026-11-02).**
-
-I had assumed a `model(M) X.thm` transfer required `X` to be the model's own source namespace.
-It does not. The only requirement is that **every symbol the SOURCE PROOF touches is mapped** —
-the theorem may live arbitrarily far downstream of the mapped theories.
-
-**What this cost me before I knew it.** The Gauss reduction needs `mulP` associativity on ℚ[x].
-`polyMulIsAssociative` is 1352 lines in `std/field/polynomial-associativity.b4m`, and my first
-probe failed, so I concluded the no-composition wall (pain point 2) applied and that the fix
-was to RELOCATE the whole file to `std/ring/polynomial*.b4m` — a refactor with five consumers.
-I wrote that up here as a live blocker.
-
-It was none of those things. `qMulIsAssociative` transfers in one theorem, once the model maps:
-
-- the five triple-family helper funcs the proof inducts on, with their eleven clauses, declared
-  on ℚ[x] as `qtriple*` — the pattern already used for `qtailConvolution` and `qsegment`;
-- the `field` namespace itself, which the proof cites directly as `field.*`, discharged from
-  ℚ's own field axioms.
-
-**How to read a failing transfer**, which is the reusable part: the error names the exact
-missing mapping and the line that needs it. Mine failed twice — line 836 (unmapped
-`tripleTri`), then line 290 (unmapped `field.*`) — and each was a mapping to add, not a wall.
-**A sort mismatch deep inside a source file means "you have not mapped this symbol", not
-"this cannot transfer".** I read the first one as the latter and spent the next stretch costing
-a refactor.
-
-**Still true, now just a cleanup note:** the file uses nothing field-specific (`--axioms` shows
-six `std/field.b4m` axioms, all of them RING axioms; zero uses of `recipF`/`fieldInverse` in
-1352 lines), so it would sit more honestly in the ring layer. Queue item 5, and no longer
-blocking anything.
-
 ## 15. A conclusion that is TRUE but harmless is the hardest defect to see
 
-Three times in this chapter I wrote a theorem whose conclusion followed from fewer hypotheses
-than it listed, and twice the name claimed more than the statement.
+A theorem whose conclusion follows from fewer hypotheses than it lists checks green forever,
+and the name usually claims more than the statement. Seen three times in this chapter — a
+conclusion that was immediate from one hypothesis while four others sat unused; a name
+promising it "rules out a factorization" when the contradiction needed degree bookkeeping it
+never did; and a hypothesis constraining one modulus while the conclusion spoke of an
+independent one.
 
-- `eisensteinOnTheCut` (deleted): concluded "not every coefficient is divisible", which under
-  Eisenstein's own hypotheses is *immediate* from `N ∤ a_n`. The dead-step lint caught it —
-  four unused hypotheses including the factorization itself.
-- `eisensteinRulesOutAnIntegerFactorization` (committed, then found wanting): same conclusion,
-  same problem. It does not rule out a factorization; the contradiction needs the DEGREE
-  bookkeeping (both factors' degree bounds summing below n, so `N | a_i` for `i < n` plus
-  vanishing above the degree sum forces `N` to divide *every* coefficient). The strict check
-  and the dead-step lint both passed, because every step was valid — the statement was just
-  weaker than its name.
-- `theModulusCannotDivideEveryProductCoefficient` (fixed in `8bf3251`): hypothesis constrained
-  `mod_n.N` while the conclusion spoke of an independent `QN`. `--axioms` showed BOTH
-  congruence axioms in the base, which was the tell, in output I had already run.
+**The checker verifies that the steps prove the stated formula. It cannot tell you the formula
+is weaker than what you meant, or that the name oversells it.** Three tools do:
 
-**The pattern:** the checker verifies that the steps prove the stated formula. It cannot tell
-you the formula is weaker than what you meant, or that the name oversells it. Three tools do:
-the **dead-step lint** (unused hypotheses are the loudest signal), **`--axioms`** (two
-independent constants where one was intended shows up as two axioms), and **asking what the
-conclusion rules out** before naming it. I used the first two only after being surprised.
+- the **dead-step lint** — unused hypotheses are the loudest signal;
+- **`--axioms`** — two independent constants where one was intended shows up as two axioms;
+- **asking what the conclusion rules out** before naming it.
 
-**The same root cause runs through §14 and the costing errors in §11: reasoning from the SHAPE
-of a declaration or a statement instead of probing it.** Every one of these was settled in
-minutes by a scratch file, a `--axioms` run, or a `std.debug.print` — and in each case I
-produced a confident wrong answer first. The corpus has cheap instruments; the failure is not
+**The same root cause runs through §14: reasoning from the SHAPE of a declaration or a
+statement instead of probing it.** Each of these was settled in minutes by a scratch file, an
+`--axioms` run, or a `std.debug.print`. The corpus has cheap instruments; the failure is not
 reaching for them before forming a view.

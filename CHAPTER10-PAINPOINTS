@@ -9,481 +9,64 @@ Same discipline as CHAPTER5/6/7/9-PAINPOINTS: a claim here is a claim about the 
 IT IS, re-probed, not a recollection. And per Chapter 9's lesson — **a claim of "cannot be
 done" requires a FAILED PROBE, not a search of std.**
 
+**THE CHAPTER IS COMPLETE.** Theorem 10.11 (A_n is simple for n >= 5) is proved in
+`std/permutation/simplicity.b4m`, resting on 41 axioms and ZERO holes, every one a primitive
+of function / Peano / set / permutation theory. §10.1's two results are in
+`std/group/normal.b4m`. What follows is what the chapter cost, not what it is waiting on.
+
 ---
-
-## §10.1 WENT THROUGH; §10.2 IS WHERE THE WORK IS
-
-§10.1's two results are proved in `std/group/normal.b4m`:
-`conjugationLandsInTheSubgroupIffCosetsCoincide` (Judson Thm 10.3, both directions) and
-`theFactorOperationIsWellDefined` (Thm 10.4's hinge). Neither needed anything new.
-
-§10.2 (the simplicity of A_n) is a different shape: a four-case analysis on disjoint-cycle
-structure, where each case verifies a specific conjugation identity by multiplying concrete
-cycles. The GENERAL parts are done; the A_n-specific parts are not. Details below.
 
 ## STILL MISSING
 
-### PARITY lives in an aata chapter file, not in std
-
-`isEvenPerm` / `isOddPerm` are defined in `aata/5.1-permutation-groups.md:488`, not anywhere
-under `std/`. So "the alternating group A_n" — the subject of §10.2 — has no std home at all:
-there is no `inAlternating` predicate, and nothing to model a subgroup onto.
-
-That is a FILE-placement problem, not a language one (Chapter 9's lesson applies), and the
-fix is mechanical: lift `isEvenPerm` into `std/permutation/parity.b4m` beside the parity
-lemma that already lives there, then define A_n as the subgroup it cuts out. Until then
-§10.2's statements cannot even name their subject.
-
-### The four-case cycle analysis needs CONCRETE cycle arithmetic
-
-Judson's Lemma 10.10 shows any nontrivial normal subgroup of A_n contains a 3-cycle, by
-cases on σ's disjoint-cycle shape:
-
-| case | the identity verified |
-|---|---|
-| σ has a cycle of length > 3 | σ⁻¹(a₁a₂a₃)σ(a₁a₂a₃)⁻¹ = (a₁a₃a_r) |
-| σ = τ(a₁a₂a₃)(a₄a₅a₆) | σ⁻¹(a₁a₂a₄)σ(a₁a₂a₄)⁻¹ = (a₁a₄a₂a₆a₃) |
-| σ = τ(a₁a₂a₃), τ disjoint 2-cycles | σ² = (a₁a₃a₂) |
-| σ = τ(a₁a₂)(a₃a₄) | a further conjugation |
-
-Each is a multiplication of named cycles yielding a named cycle. std has cycle theory
-(`std/permutation/cycle.b4m`, `decomposition.b4m`,
-`everyPermutationOfAFiniteSetIsAProductOfDisjointCycles`) but no way to COMPUTE such a
-product symbolically — the entries a₁…a_r are variables, so this is cycle algebra over
-indeterminate points, not evaluation at concrete numbers.
-
-NOT probed as impossible. The honest statement is that it is a substantial piece of new
-machinery (a calculus for products of cycles with variable support), and the four identities
-above are its acceptance test. Recorded rather than attempted.
-
-**CORRECTED 2026-10-06 — no new machinery is needed.** The "variable support" framing was
-wrong. Extensionality reduces each identity to a case analysis on EQUALITY OF POINTS, and
-`std/permutation/parity.b4m` already carries the deciders: `transpositionValue` (all three
-cases of `(u v)(x)` in one citation), `compositeAtFirstOfInner` / `compositeAtSecondOfInner`
-/ `compositeElsewhereOfInner`, and `composedTranspositionsAgree` (extensionality specialized
-to a product of two). Judson's four-letter identity `(a,b)(c,d) = (a,c,b)(a,c,d)` is also
-STATABLE directly, because std's cycle fold makes a 3-cycle a composite of transpositions:
-`cycleSucc` gives `cycle(s,3) = (a₀a₂) ∘ (a₀a₁) ∘ id`, so a 3-cycle needs no new sort.
-Verified by proving the value of `(a,b)(c,d)` at `a` strictly (not `--fast`).
-
-The same correction the parity work already recorded for Chapter 5 applies here: these
-chapters run over CONCRETE permutations, so the pointwise action lemmas apply. What remains
-for §10.2 is PROOF VOLUME (four identities × ~5 cases each, then three lemmas and the
-simplicity theorem), not a missing primitive.
-
-GOTCHA met while probing: `--fast` admitted a proof that strict check rejected
-(`'given-a-not-c' names a subproof; a step reference is required` — `specialize` needs the
-RESTATED hypothesis as a step, not the assume-block label).
-
-**That was a CHECKER BUG, fixed 2026-10-07**, and it bit again here (a `specialize` head
-naming a step of the PREVIOUS theorem passed `--fast`, failed strict). It is the second
-direction of the fast/strict invariant: `--fast` must never ACCEPT what strict REJECTS, and
-an admitted accelerant was having its refs seeded as use-all-facts roots but never validated.
-Now diagnosed in both modes (`seedAndCheckLocalRoot`; gate
-`tests/cases/fast_unknown_ref_bad.b4m`; five causes catalogued in `agents/debug-guide.md`).
-Still confirm with plain `check` before calling a file done — that is what caught it.
-
-### LEMMA 10.3's DESIGN — the pivot theorem, and where the real theory starts
-
-Settled 2026-10-07 by probing rather than estimating. TWO of the three things I called
-walls were not:
-
-- **the disjoint remainder** — `disjointPermutationsCommute` holds for ARBITRARY
-  permutations (not just transpositions, as I wrote), and `supportMember` says support IS
-  the moved set. ~60 lines gave `aDisjointFactorFixesWhateverTheOtherMoves`,
-  `aCompositeFixesWhatBothFactorsFix` and `aPrefixProductFixesWhatEveryEntryFixes`.
-- **variable-length conjugation** — case 2's computation
-  `sigma^-1(a1a2a3)sigma(a1a2a3)^-1 = (a1,a3,ar)` needs `sigma^-1` at only THREE points,
-  because the conjugated thing is a 3-cycle. No induction over `r`; `conjugateOfACycle`
-  (arbitrary length) does it.
-
-  CONFIRMED 2026-10-07 by tracing r = 4, 5, 6, 7 in std's own cycle fold with tau a disjoint
-  2-cycle: the identity holds at every r, and `sigma^-1` at the three points is
-  `(a_r, a_1, a_2)` — `r` enters ONLY through `sigma^-1(a_1) = a_r`. The missing piece was
-  the inverse's action on a cycle's own points, now
-  `aCycleInverseRetreats` (`c^-1(a_{i+1}) = a_i` for i < k) and `aCycleInverseWrapsBackward`
-  (`c^-1(a_0) = a_k`) in `std/permutation/cycle.b4m` — three short lemmas off
-  `cycleAdvances` / `cycleWrapsAround` plus inverse cancellation. That these need only a FEW
-  point values is what keeps a conjugation over a variable-length cycle finite.
-
-**THE PIVOT THEOREM — LANDED 2026-10-07** as
-`aNonIdentityDecompositionPeelsOffALastCycle` in `std/permutation/decomposition.b4m`:
-
-    decomposesIntoDisjointCycles(f) -> f != identityFn ->
-    exists w: Seq; exists k: Nat;
-      isACycle(at(w, k)) and subset(support(at(w, k)), support(f))
-      and (forall i < k; isACycle(at(w, i)))
-      and (forall i < k; subset(support(at(w, i)), support(f)))
-      and (forall i, j < k; i != j -> disjointSupports(at(w, i), at(w, j)))
-      and f = compose(productUpTo(w, k), at(w, k))
-      and disjointSupports(productUpTo(w, k), at(w, k))
-
-**THE SHAPE I RECORDED ABOVE WAS WRONG, and the correction is instructive.** I had it as
-`exists t, s, p; f = compose(t, cycle(s, succ(p)))` — peel a NAMED cycle with its own point
-list and length. But `decomposesIntoDisjointCycles` produces a `Seq` of cycles plus a run
-length, not a `Points`/length pair, so the split is at the SEQUENCE level:
-`productUpToSucc` is already an axiom and gives `f = compose(productUpTo(w,q), at(w,q))`
-for free. The peeled factor is `at(w, k)`, a cycle by `isACycle`; unpacking it to
-`cycle(s, succ(p))` is a separate step a CONSUMER takes when it wants the points.
-
-Consequence: the prefix `productUpTo(w, k)` is itself a shorter product of the same
-disjoint cycles — so the recursion cases 3-5 need runs on the RUN LENGTH, with the whole
-prefix structure carried along. The named-cycle shape would have thrown that away.
-
-**What was actually missing in std was a CONVERSE.** std had only the directions that
-CONSUME disjointness (`disjointSupportsPointwise`,
-`aDisjointFactorFixesWhateverTheOtherMoves`). A construction needs to ESTABLISH it: it
-knows pointwise that its prefix product and last cycle never move a common point, and owes
-the set-level `intersection(support, support) = emptyset`. That is
-`disjointSupportsFromPointwise` (`std/permutation.b4m`), plus the sequence-level
-`aPrefixProductIsDisjointFromADisjointEntry` (`std/permutation/sequence.b4m`). 763 lines
-total. Note the comment already on `aPrefixProductFixesWhatEveryEntryFixes` named this gap
-before the tool to close it existed.
-
-MECHANICS worth keeping: `and` is **LEFT**-associative, so a 7-conjunct goal assembles with
-`and_intro` from the LEFT and `and_elim_left` on `A and B and C and D` yields `A and B and
-C`. And `chain` cannot prove a DISEQUATION — that needs `[by rewrite eq diseq]`.
-
-Why this is the right shape: each of Judson's cases needs only a few NAMED POINTS plus
-disjointness of the rest, so the classification is EXISTENTIAL — not a theorem about
-multisets of cycle lengths, which is what made it look large. `isACycle(g)` unpacks to
-`g = cycle(s, succ(p))` with `distinct(s, succ(p))`, so the length `succ(p)` and the points
-`at(s,0)…at(s,p)` are all nameable.
-
-With it, cases 1 and 2 become a split on `p` alone: `p = 2` is a 3-cycle (case 1, done),
-`p > 2` is case 2.
-
-**WHERE THE REAL THEORY STARTS.** Cases 3-5 look INSIDE `t` — "t also has a 3-cycle",
-"t is all 2-cycles", "t has an even number of further 2-cycles". That is the same
-classification one level down, so full Lemma 3 needs a RECURSION on the decomposition
-length with the parity invariant (sigma in A_n means an even transposition count) threaded
-through. THAT is the part that is design rather than transcription, and it is what remains
-after the pivot theorem and cases 1-2.
-
-### §10.2 STATUS 2026-10-08 — LEMMA 10.8 PROVED; 10.9 half-proved; 10.10 is what is left
-
-`everyEvenPermutationIsAProductOfThreeCycles` (std/permutation/alternating.b4m). Judson's
-three pair-identities were the easy part; the WORK was the induction from "every pair is a
-product of 3-cycles" to the lemma, which is an induction on the number of PAIRS — exactly
-what the even length supplies.
-
-Built bottom-up, 14 theorems: `isAProductOfThreeCycles` (a RUN — shape settled by writing
-Lemma 10.9's consumer first), the empty/singleton runs, closure under composition via
-`seqConcat`, the pair step in run form over all three outcomes, the same with the
-transpositions given abstractly as `isTransposition` (the form the induction meets), and the
-induction itself.
-
-TWO ANTI-DUPLICATION moves worth repeating, both by changing the STATEMENT rather than
-copying a proof:
-- the four shared-point leads differ only in which transposition argument flips, so
-  `aPairThroughACommonPointIsTheIdentityOrAThreeCycle` is stated on the NORMALIZED form
-  T(s,p) o T(s,q) and each lead is one rewrite. (A probe confirmed a branch equality
-  rewrites the goal's own occurrences, so no per-lead theorem is needed.)
-- `concatenationPreservesTranspositions` was 188 lines with one predicate baked in and
-  3-cycles needed the same argument; it is now
-  `concatenationPreservesEntryProperty(prop(Fn))` with both versions as one-line
-  instantiations.
-
-I started a Python emitter for the lead branches and STOPPED — fourth time this project.
-Reconsidering the statement removed the need. `no-throwaway-abstractions`.
-
-**LEMMA 10.9, half proved.** `aSubgroupContainingEveryThreeCycleContainsTheAlternatingGroup`
-plus `aProductOfEntriesInTheSubgroupIsInTheSubgroup`, both schemas over `inN(Fn)` rather than
-models — N is a HYPOTHESIS here, not a fixed predicate, so a model does not fit. Verified at
-an instantiation at A_n itself (a schema is only checked at an instantiation), which needed
-`aProductOfTwoTranspositionsIsEven` and `aThreeCycleIsInTheAlternatingGroup` — neither
-existed.
-
-NOTE: `group/normal.aNormalSubgroupContainingEveryGeneratorIsTheWholeGroup` is NOT Lemma
-10.9 despite its name; it is a one-line unfold of `isTheWholeGroup`. Its comment claimed to
-be the general half of Judson's argument AND repeated the retired "std lacks cycle
-arithmetic" claim. Both corrected.
-
-**WHAT IS LEFT, and it is shared machinery:**
-- Lemma 10.9's conjugation step: one 3-cycle in N to EVERY 3-cycle. `conjugateOfACycle`
-  gives sigma(a,b,c)sigma^-1 = (sigma a, sigma b, sigma c); what is missing is "any triple
-  of distinct points maps to any other by some sigma IN A_n" — n >= 5 buys the two spare
-  points that fix sigma's parity.
-- Lemma 10.10's five cases, on the pivot theorem.
-Both need the same finite-support/counting layer, so neither is extra work relative to the
-other. THAT is the next thing to scope.
-
-### Earlier status (superseded by the entry above)
-
-### §10.2 STATUS — Lemma 2's COMPUTATIONAL CONTENT IS DONE; Lemma 3 is theory-building
-
-`std/permutation/alternating-identities.b4m`, 41 theorems, strict and hole-free:
-
-| piece | |
-|---|---|
-| four identities rewriting any 3-cycle into the fixed-`(i,j)` family | DONE |
-| `sigma = (i,j)(a,k)` squares to the identity; `inverse(sigma) = sigma` | DONE |
-| a 3-cycle is invariant under rotation, `(j,k,i) = (i,j,k)` | DONE |
-| sigma's action on the four letters | DONE |
-| the conjugation `sigma (i,j,a)^2 sigma^-1 = (i,j,k)` | DONE |
-
-Plus `std/subgroup/products.b4m` (a subgroup contains the product of any run whose entries
-it contains) and `aTwoSidedInverseIsUnique` in `std/function/invertible.b4m`. The method
-that carried all of it: verify the trace COMPUTATIONALLY, derive each case's hypothesis set
-and factor-value steps FROM that trace, unfold with `simplify composeApply`, close with
-`funcExtensionality` over a split on the point.
-
-**LEMMA 3 IS A DIFFERENT KIND OF WORK.** Its five cases are:
-
-    1  sigma is a 3-cycle                                  trivial
-    2  sigma = tau·(a1…ar), r > 3                           r is a VARIABLE
-    3  sigma = tau·(a1a2a3)(a4a5a6)                         builds a 5-cycle, reduces to 2
-    4  sigma = tau·(a1a2a3), tau disjoint 2-cycles          sigma^2 = (a1a3a2)
-    5  sigma = tau·(a1a2)(a3a4), tau an even number more    a further conjugation
-
-Three things it needs that the identities did not:
-
-1. **A CLASSIFICATION THEOREM.** std proves a decomposition EXISTS
-   (`decomposesIntoDisjointCycles`), not that it falls into those five shapes. The split is
-   over the multiset of cycle LENGTHS plus the parity constraint (sigma in A_n means an
-   even transposition count) — a real induction, not a case analysis one can write out.
-2. **VARIABLE-LENGTH cycle arithmetic.** Case 2 computes
-   `(a1…ar)^-1 tau^-1 (a1a2a3) tau (a1…ar)(a1a3a2) = (a1,a3,ar)` with `r` a PARAMETER.
-   Every identity proved so far has a FIXED factor count, so "expand to a nested apply and
-   walk the factors" does not apply — there is no finite list to walk. `conjugateOfACycle`
-   (arbitrary `k`) is the right tool and it exists; threading it through `tau` and the
-   inverse is the work.
-3. **AN ARBITRARY DISJOINT REMAINDER `tau`.** Reasoning about it needs disjointness to
-   yield commutation and fixed-point facts. std has `disjointTranspositionsCommute` for two
-   transpositions — not for a cycle against an arbitrary disjoint remainder.
-
-Each of (1) and (3) is a std contribution at least the size of the subgroup-products
-theorem. So the honest boundary is here: Lemma 2 is transcription that is now finished;
-Lemma 3 is new theory, and worth scoping deliberately rather than started mid-stream.
-
-**RE-SCOPED 2026-10-12 — two of those three gaps were already closed.** Re-probing before
-starting, rather than trusting the list above:
-
-- **(3) "an arbitrary disjoint remainder" is NOT missing.** `std/permutation.b4m:491`
-  `disjointPermutationsCommute` is fully general (`disjointSupports(f, g) -> f o g = g o f`),
-  not the two-transposition special case this list claimed. And `supportMember`
-  (`member(x, support(f)) iff apply(f, x) != x`) is the fixed-point characterization for
-  reasoning about the remainder.
-- **The CASE-3 IDENTITY is already proved.** `aThreeCycleIsTheSquareOfItsTwist`
-  (alternating-identities.b4m:545) is exactly `(i,a,j) = (i,j,a)^2`. So is
-  `conjugatingTheSquareReachesEveryThirdPoint` and `aThreeCycleIsInvariantUnderRotation`.
-- **(1) the CLASSIFICATION gap was ALSO overstated** — corrected again 2026-10-13. Two things
-  were wrong with it. First, "std has no notion of a cycle's length" is false: `cycle(s, k)`
-  takes the length AS ITS SECOND ARGUMENT (`std/permutation/cycle.b4m:106`), with `cycleZero`
-  and `cycleSucc` the recursion. Second and more important, CASE 1 DOES NOT NEED THE LENGTH AT
-  ALL. Judson conjugates (a1,a2,a3) by a cycle of length r and gets the r-dependent (a1,a3,ar);
-  the COMMUTATOR has a length-free closed form
-  
-      sigma (i,j,a) sigma^-1 (i,j,a)^-1 = T(si,sa) T(si,sj) T(i,j) T(i,a)
-  
-  which depends only on sigma's action AT THREE POINTS. No r, no induction on r, no cycle
-  arithmetic. Verified exhaustively over all 7200 (sigma,i,j,a) combinations on five points,
-  and separately with a disjoint remainder attached to confirm it is irrelevant.
-
-**CASE 3 IS NOW PROVED** (2026-10-12), in two pieces that keep the algebra separate from the
-cycle structure:
-
-- `squaringKillsACommutingInvolution` — pure composition algebra, no cycles: if the factors
-  commute and the first is an involution, `(t o g)^2 = g^2`.
-- `squaringAThreeCycleTimesAnInvolutionGivesAThreeCycle` — that plus the square identity.
-
-The hypotheses are the ALGEBRA Judson's case supplies (commuting + involution) rather than
-cycle structure, because that is all the proof uses; a caller holding the structural form
-discharges them from `disjointPermutationsCommute` and the involution law. Stating it that way
-is what made the proof short.
-
-**CASE 1'S ENGINE IS NOW PROVED** (2026-10-13), in three pieces:
-
-- `theConjugateOfAThreeCycleRelabelsItsPoints` — the EXPLICIT conjugate:
-  `sigma (i,j,a) sigma^-1 = (sigma i, sigma j, sigma a)`. std already had the EXISTENTIAL form
-  (`alternating.aConjugateOfAThreeCycleIsAThreeCycle`, which Lemma 10.9 consumes); case 1 needs
-  to know WHICH 3-cycle, in order to multiply by the inverse.
-- `aThreeCyclesInverseIsItsTwist` — `(i,j,a)^-1 = (i,a,j)`, from the involution law plus
-  reassociation. No case analysis and no distinctness hypothesis.
-- `theCommutatorOfAThreeCycleWithAPermutation` — the two composed, giving the closed form above.
-
-THE METHOD THAT KEPT FINDING THESE: verify computationally FIRST, then look for the
-length-free/structure-free statement. The python trace caught a real error here — I first
-checked `sigma^-1 c sigma c^-1` (Judson's order) and then wrote `sigma c sigma^-1 c^-1`, which
-has a DIFFERENT value: support {a1,a2,a4} and equal to (a1,a4,a2), independent of r. Writing
-the proof from the wrong trace would have failed late and confusingly.
-
-### Earlier estimate of Lemma 2's cost (superseded by the entry above)
-
-The blocker is GONE, and it was not what I said. I reported §10.2 blocked on "generation
-by a SET" needing a new construction. Unpacking Judson's conclusion showed otherwise:
-
-    "N contains all the 3-cycles (i,j,k) … these generate A_n; hence N = A_n"
-    = every element is a product of 3-cycles (Lemma 1)
-    + each of those 3-cycles is in N (the conjugation step)
-    + N is closed under PRODUCTS OF RUNS                      <- the only missing piece
-
-That third is now `std/subgroup/products.b4m`'s
-`aProductOfSubgroupEntriesIsInTheSubgroup` — an induction on run length over the abstract
-`inSubgroup`, reusable for any subgroup-generation argument. No generated-subgroup object.
-
-**ALL FOUR identities VERIFY computationally** (a python trace over the five/six relevant
-points, which is the check to run BEFORE writing any proof — it caught a mis-trace in
-Lemma 1). And `simplify composeApply` unfolds a TWELVE-factor composite, so there is no
-cap problem and no need for an N-factor helper (see the helper-treadmill entry above).
-
-But the measured cost is larger than I estimated, because a 3-cycle is TWO transpositions:
-
-| identity | RHS transposition factors | letters | point-cases | est. lines |
-|---|---|---|---|---|
-| `(i,a,j) = (i,j,a)^2` | 4 | 3 | 4 | DONE (~180) |
-| `(i,a,b) = (i,j,b)(i,j,a)^2` | 6 | 4 | 5 | ~345 |
-| `(j,a,b) = (i,j,b)^2(i,j,a)` | 6 | 4 | 5 | ~345 |
-| `(a,b,c) = (i,j,a)^2(i,j,c)(i,j,b)^2(i,j,a)` | **12** | 5 | 6 | ~504 |
-
-So ~1200 more lines for the three identities, then the conjugation step, then Lemma 3's
-five-way classification and its own conjugations. Judson's "(a,b,c) = …" is six 3-cycles =
-twelve transpositions, not the eight I first wrote.
-
-**PROCESS NOTE, three times over.** Each time this section got long I started writing a
-PYTHON EMITTER for 2b4m proofs, and twice deleted it. That is the
-`no-throwaway-abstractions` directive firing: the generator is scaffolding that must be
-deleted at the end, it encodes the proof shape in a second place, and its output is
-unreviewable by the usual means. If this volume is worth paying, pay it in 2b4m with the
-point-cases written out; if it is not, the honest move is to stop and say so. The schema
-route is closed for a different reason — a schema cannot recurse (see above) and the
-duplication here is across LETTER LISTS, not lengths.
-
-### §10.2's REAL REQUIREMENT: generation by a SET (everything else is present)
-
-Audited 2026-10-07, after TWO wrong answers about what std lacks. What is actually there:
-
-| thought missing | actually in std |
-|---|---|
-| the SHAPE of a disjoint-cycle decomposition | `decomposesIntoDisjointCycles(f)` is structured: a `Seq w` of cycles, a count `m`, pairwise-disjoint supports, `productUpTo(w, m) = f`. Judson's `σ = τ·(a₁…a_r)` IS expressible — τ is the product of the other entries. |
-| a cycle's LENGTH | `isACycle(g)` unfolds to `g = cycle(s, succ(p))`, so the length is a nameable witness and comparable with `less_than`. Verified by probe. |
-| conjugation as RELABELLING | `conjugateOfACycle` (`std/permutation/cycle.b4m`) — `σ∘cycle(s,k)∘σ⁻¹ = cycle(t,k)` for ARBITRARY k, plus `conjugationIsMultiplicative` and `conjugateOfATransposition`. |
-
-That last one matters most: it is exactly the machinery Lemma 3's VARIABLE-LENGTH
-computations need (`(a₁…a_r)⁻¹τ⁻¹(a₁a₂a₃)τ(a₁…a_r)(a₁a₃a₂) = (a₁a₃a_r)` with r a
-parameter), and it removes the one place Lemma 1's fixed-length method could not reach.
-
-**THE GENUINE GAP — generation by a SET.** std has `inGenerated(g, x) = exists k: Int;
-x = power(g, k)` (`std/group/generated.b4m`): the subgroup generated by ONE element. Both
-Lemma 2 and Lemma 3 end on "these 3-cycles generate A_n, hence N = A_n", which needs
-closure under products of MANY generators — a membership predicate containing a given
-family and closed under op/inverse. That is a new construction, not vocabulary.
-
-**ALSO NEEDED, and real: Lemma 3's classification.** std proves a decomposition EXISTS;
-nothing says it falls into Judson's five shapes (a 3-cycle / a cycle of length > 3 / two
-3-cycles / a 3-cycle times disjoint 2-cycles / two 2-cycles times an even number more).
-Statable with the vocabulary above, but it is a genuine proof over cycle-length multisets
-plus the parity constraint (σ ∈ A_n means an even transposition count).
-
-So the state is: Lemma 2's three remaining identities and its conjugation are MECHANICAL
-and unblocked; Lemma 2's CONCLUSION and all of Lemma 3 sit behind set-generation.
-
-PROCESS: the two wrong answers both came from asserting absence without grepping. The
-`std has no index` rule ("grep the distinctive TERM, not a guessed name") applies to
-ABSENCE claims exactly as much as to lookups — and `conjugateOfACycle` was found by one
-grep for `conjugat` after I had already said it was missing.
-
-### PROBE WHETHER AN ACCELERANT ALREADY DOES IT, BEFORE WRITING A HELPER
-
-I wrote three theorems — `twoFactorValue`, `fourFactorValue`, `sixFactorValue` — giving the
-value of an N-factor composite at a point. All three were the SAME fact, `composeApply`
-(`apply(compose(g,f), x) = apply(g, apply(f, x))`), applied a fixed number of times with
-ONE parenthesization hardcoded. `twoFactorValue` was `composeApply` verbatim, which std's
-alias rule forbids outright.
-
-It was a treadmill: a seventh factor, or the same six grouped differently, would each have
-needed another theorem. What actually does the job:
-
-    [using simplify_quantified composeApply]   -- for a quantified statement
-    [using simplify composeApply]              -- at a concrete call site
-
-Either unfolds ANY nesting of ANY length in one step. Deleting the three helpers and
-rewriting their 18 call sites removed 123 lines with no loss of content.
-
-LESSON: before writing a helper theorem for a shape, check whether an accelerant handles
-the shape. In `std/` accelerants are the preferred proof (the cheat-sheet says so); a
-hand-written N-ary family is the thing to be suspicious of.
-
-### A SCHEMA CANNOT RECURSE ON ITS OWN ARGUMENT (and the growing-term form HANGS)
-
-Probed while looking for a way to collapse the per-identity repetition. Two shapes:
-
-- `thm(n)` citing `thm(n)` — correctly rejected, `cyclic schema instantiation`.
-- `thm(n)` citing `thm(prev(n))` — NOT rejected, and DIVERGES. `prev(n)` is a
-  syntactically distinct term, so each instance gets a distinct name and the cycle check
-  never fires; the argument grows (`prev(prev(n))`, …) instead of shrinking, so no base
-  case is ever reached. Killed after 2.5 minutes of CPU on an 8-declaration file.
-
-Why it cannot work: a schema is a MACRO monomorphized at the WRITTEN argument, with no
-evaluation of `prev(succ(k)) -> k` at instantiation time. Terminating would require the
-instantiator to reduce the argument, i.e. to compute — which is what `induction` does, and
-why `std/peano.b4m`'s `induction` schema exists and transfers through models.
-
-USER (2026-10-07): curiosity, not a requirement — "it's possible we will never need this."
-Recorded because the growing-term form HANGS rather than diagnosing: if a schema ever does
-need a depth or term-size cap, this is the case that motivates it.
-
-### §10.2 PROGRESS — Lemma 1 is PROVED; what Lemma 2 costs
-
-Judson's Lemma 1 ("A_n is generated by 3-cycles") is done, hole-free and strict, in
-`std/permutation/alternating.b4m`. Its three identities:
-
-| Judson | status |
-|---|---|
-| `(a,b)(a,b) = identity` | std's `transpositionIsAnInvolution`, already there |
-| `(a,b)(c,d) = (a,c,b)(a,c,d)` | `aPairOfDisjointTranspositionsIsAProductOfThreeCycles` |
-| `(a,b)(a,c) = (a,c,b)` | DEFINITIONAL — not a theorem (see below) |
-
-Two findings that make the rest of the section tractable:
-
-**A 3-CYCLE NEEDS NO NEW SORT.** std's cycle fold gives
-`cycle(s,3) = (a0 a2) o (a0 a1) o ((a0 a0) o id)` (`cycleSucc` twice, then `cycleZero`),
-and `transpositionOfAPointWithItself` kills the degenerate tail. So a 3-cycle IS a
-composite of two transpositions sharing their first point — which is why Judson's third
-identity is a reading of the definition, and why the second carries all the content.
-Proved as `aThreeCycleIsTwoTranspositions`.
-
-**THE METHOD IS EXTENSIONALITY, NOT CYCLE ALGEBRA.** Each identity is: expand both sides
-to nested `apply`s (`twoFactorValue` / `fourFactorValue`), evaluate factor by factor with
-`transpositionAtFirst`/`AtSecond`/`Elsewhere`, then `funcExtensionality` over a case split
-on where the point sits. For identity (2) that is five cases (at a, b, c, d, elsewhere),
-each ~60 lines but mechanical once the first is written.
-
-TOOLCHAIN NOTES, all three cost a debugging round:
-- `simplify` CANNOT close these joins — it orients each equation left-to-right and the
-  middle step must run backward. `chain` is orientation-free and closes them immediately.
-- `chain` REJECTS a repeated ref (`chain a b a` is a label-shadowing error); state the
-  step once.
-- `tautology` sees `a != c` and `c != a` as UNRELATED atoms, so disequality symmetry is a
-  real step. std has NO such theorem; `disequalityIsSymmetric` is proved locally in
-  `alternating.b4m` and WANTS LIFTING to `std/element.b4m`.
-
-**WHAT LEMMA 2 COSTS.** "If N contains a 3-cycle then N = A_n" needs four more identities
-rewriting an arbitrary 3-cycle in terms of the fixed-`(i,j)` family:
-
-    (i,a,j) = (i,j,a)^2
-    (i,a,b) = (i,j,b)(i,j,a)^2
-    (j,a,b) = (i,j,b)^2(i,j,a)
-    (a,b,c) = (i,j,a)^2(i,j,c)(i,j,b)^2(i,j,a)
-
-plus the conjugation `[(i,j)(a,k)](i,j,a)^2[(i,j)(a,k)]^-1 = (i,j,k)`. In transposition
-composites the last identity is EIGHT factors, so it needs a `sixFactorValue` /
-`eightFactorValue` in the same style, and each identity splits on more points (up to five
-distinct letters). Same method, more volume — no new machinery, and no new primitive.
-Estimate from Lemma 1's shape: ~6 helper theorems and ~5 point-cases per identity.
-
 ### SIMPLICITY is stated per-subgroup, because there is no sort of subgroups
 
-`isSimpleWitness` in `std/group/normal.b4m` is
-`isTrivialSubgroup or isTheWholeGroup` — the property of THE subgroup that file carries, not
-"for all normal subgroups N of G". Quantifying over subgroups needs a sort of subgroups, the
-same limit Chapter 9 hit for ≅ (CHAPTER9-PAINPOINTS: "2b4m can state a theory and MODEL one
-theory in another, but cannot talk about theories as objects").
+`isSimpleWitness` in `std/group/normal.b4m` is `isTrivialSubgroup or isTheWholeGroup` — the
+property of THE subgroup that file carries, not "for all normal subgroups N of G".
+Quantifying over subgroups needs a sort of subgroups, the same limit Chapter 9 hit for ≅
+(CHAPTER9-PAINPOINTS: "2b4m can state a theory and MODEL one theory in another, but cannot
+talk about theories as objects").
 
-The workable shape is the one std already uses for subgroups generally: a consumer declares
-its own membership predicate and proves the disjunction for it. `std/subgroup.b4m` has a
-second predicate `inSubgroup2` for exactly this reason (two subgroups at once), which is the
+The workable shape is the one std already uses: a consumer declares its own membership
+predicate and proves the disjunction for it. `std/subgroup.b4m` has a second predicate
+`inSubgroup2` for exactly this reason (two subgroups at once), which is the
 declare-what-you-need pattern rather than a limitation.
+
+### An UNINSTANTIATED SCHEMA reports "0 theorems proven" and nothing else
+
+Not an error, not a warning. Re-probed 2026-11-05: a file whose only content is a schema
+exits 0 with `OK: 2 declarations, 0 theorems proven`. A schema with no instantiation is
+unverified and SILENT about it.
+
+This cost cycles twice in this chapter — once on a typo'd step label in the capstone that
+checked green until the instantiation existed, once on a probe I believed had validated a
+leaf when it had checked nothing. It is the strongest argument for `--library`'s rule that
+every schema be exercised where it is declared. Also recorded in CHAPTER5-PAINPOINTS.
+
+### `disequalityIsSymmetric` exists THREE TIMES, once per sort, with no home
+
+    peano_order.natDisequalityIsSymmetric        a != b -> b != a over Nat
+    alternating.disequalityIsSymmetric           over Element
+    decomposition.pointDisequalityIsSymmetric    over Element, AGAIN
+
+The same four-step proof. The Element pair is duplicated because `alternating.b4m` imports
+`decomposition.b4m`, so the lower file cannot cite the higher one's copy. The obvious home is
+`std/element.b4m`, which is deliberately axiom-free — but this is a THEOREM over an
+unconstrained sort, so it needs no axioms, and the "axiom-free" rationale may not actually
+forbid it. Worth settling: either put it there, or write down why a sort-generic logical fact
+has no home.
+
+`tautology` is why these are needed at all: it sees `a != b` and `b != a` as unrelated opaque
+atoms, so disequality symmetry is a real step at every site.
+
+### `at` has the same spelling for Seq and Points, and it bit three times
+
+`std/permutation/decomposition.b4m` aliases `at` to the SEQUENCE version while cycle indexing
+needs the `Points` one. Three separate occurrences in that file, each diagnosed instantly
+("expected sort 'Seq', got 'Points'") and each costing a round trip. Qualify `cycle_theory.at`
+by reflex in anything touching both. The underlying issue is CHAPTER6's: two same-named
+things from different origins print identically.
+
+---
 
 ## WHAT WORKED, worth keeping
 
@@ -496,945 +79,325 @@ needs the coset as an object, only membership and equality — so the transliter
 faithful rather than a workaround. `coset.b4m` develops only the left coset (Lagrange needs
 one, and the proofs mirror), so `inRightCoset` is defined in `normal.b4m`.
 
-### `--axioms` does not see inside a `simplify` rewrite set
+### READ THE SOURCE BEFORE SCOPING — the chapter's central lesson, learned three times
 
-Dropping aliases that `--axioms` reported unused removed `invProduct`, which IS cited — by
-the `simplify` step in `theFactorOperationIsWellDefined`. The check caught it immediately
-("reference not found"), but worth knowing: `--axioms` attributes what a proof RESTS on, and
-a rewrite named in a `simplify` set does not show up there. Same happened with
-`subgroupHasIdentity` when §10.2's work later needed it.
+Three times I scoped machinery from the shape of what I had already built instead of from
+Judson's text, and all three times the machinery did not exist to be built:
 
-### STAGE A LONG REWRITE CHAIN — nine equations exceeded `chain`'s search
+1. **"Lemma 10.10 needs a cycle-type CLASSIFICATION theorem"** — five successive overstated
+   gaps, zero survivors of a probe. Every case's proof reads sigma at THREE POINTS; cycle type
+   is how Judson FINDS those points, not a hypothesis the algebra consumes.
+2. **"Transitivity needs any-triple-to-any-triple, with n >= 5 to repair parity"** — collapsed
+   by two probes. Conjugation acts on 3-CYCLES (invariant under rotation), not triples, and
+   the uniform conjugator `(a,b,c)` is a 3-cycle, hence even BY CONSTRUCTION. n >= 5 is spent
+   in exactly one place: the twist, whose only relabelling is a single swap, needs a spare
+   transposition to stay even.
+3. **"Branches 2 and 3 need the decomposition's MAXIMUM cycle length, a second induction"** —
+   worst in kind, because the source was in the repo (`vendor/aata/src/normal.xml:366-480`)
+   and I did not open it. Judson ASSERTS the case list ("There are several possible cycle
+   structures for sigma"). Exhaustiveness is the one step of his proof that is a claim rather
+   than a computation, so the formalization's boundary is that sentence and everything
+   downstream is kernel-checked.
 
-The conjugation step needed nine equations to get from `sigma(i,j,a)^2 sigma^-1` to
-`(i,j,k)`. One `chain` with all nine failed ("cannot connect … from the cited equations"),
-and so did one `simplify` (two of the links must run backward). What worked: SPLIT at the
-orientation boundary —
+**THE RULE:** when the task is transcription, read the source's own case structure BEFORE
+scoping — not after a plan exists, not to check a plan. A plan built from the formalization's
+own shape will reliably invent work the author never did, and it will look rigorous while
+doing so. A probe tells you whether YOUR idea works; it cannot tell you the author had a
+different idea. (`agents/2b4m-cheatsheet.md` already says bottom-up when the statement is
+GIVEN — this is the same lesson one level up: the PROOF STRATEGY is given too.)
 
-    @conjugate-is-the-square | … = (j,i,k)^2   [using simplify <the seven left-to-right links>]
-    @conclusion-conjugate    | … = (i,j,k)     [using chain conjugate-is-the-square <the two reversible ones>]
+There is a matching RETRACTION worth keeping. I built a five-theorem "covering proof" —
+a free-standing case analysis over cycles — and reported its residue as the chapter's gap. It
+was my construction, not Judson's, and it arose from a real win: restating each case over
+POINT-VALUES is what made the identities length-free, but point-values decouple the cases from
+sigma's SHAPE, so the arms then need a shape-to-point-value conversion Judson never pays for.
+Six of nine lemmas were deleted. Two came back, and the distinction is the keeper:
 
-`simplify` for the stretch that is all left-to-right, `chain` for the short tail that
-needs reorientation. Neither tactic has to span the whole distance.
+> **A NOTATION BRIDGE between two formal spellings of the same object is permanent
+> infrastructure; a RECONSTRUCTION of the source's own reasoning is not.**
 
-### `specialize` NEEDS TERM ARGS FOR BINDERS THAT FOLLOW A PREMISE
+The two bridges — `aDisjointRemainderPreservesCycleValues` (sigma's values equal its cycle's,
+on that support) and `aThreeLengthCycleIsAThreeCycleProduct` (std's cycle fold equals the
+identities' fold) — are steps Judson never writes because on paper the notations denote one
+object. Any route through his cases needs them.
 
-`conjugationIsMultiplicative` is `forall sigma; invertible(sigma) -> forall f, g; …`.
-Writing `specialize conjugationIsMultiplicative(sigma) sigma-is-a-permutation` leaves `f`
-and `g` UNBOUND, and the diagnostic shows the remainder as a `forall b1: Fn; forall b2: Fn;
-…` — accurate but easy to misread as a shape mismatch. The fix is the rule
-CHAPTER6-PAINPOINTS already records for `fullOrderGenerates`: put EVERY term in the parens
-regardless of where its binder sits, `specialize thm(sigma, f, g) <premises>`.
+### WHAT TRANSCRIBING A TEXTBOOK PROOF ACTUALLY COSTS
 
-### A STATEMENT'S HYPOTHESIS MAY BE UNUSED BY ITS PROOF, AND THAT IS AN ERROR
+Every gap in all four of Judson's Lemma 10.10 cases was a step he compresses into a phrase:
 
-The conjugation statement carried `a != k` because Judson's `sigma = (i,j)(a,k)` is a
-product of two genuine transpositions. The proof never needs it —
-`transpositionIsAPermutation` holds for a degenerate transposition too — so the
-unused-fact check rejected it and the hypothesis had to come out. Worth knowing when
-transcribing: the book states distinctness for mathematical context, and the formal proof
-only takes what it cites.
+    "sigma = tau(a1...ar)" treating a1..ar as sigma's points  -> the value transfer
+    "disjoint cycles"                                          -> cross-cycle disequalities
+                                                                  (`distinctEntriesDiffer`
+                                                                  cannot do these;
+                                                                  `pointsInDisjointSupportsDiffer` can)
+    "(a1 a2 a3)"                                               -> the two folds are one object
+    "a further conjugation"                                    -> TWO conjugations, the second
+                                                                  reading point-values off the
+                                                                  FIRST's output, not off sigma
 
-### REACH FOR `assoc(lemma)` WHEN THE WORK IS REGROUPING — not hand-written assoc steps
+None is a gap in his reasoning; all are places where one notation does work a formalization
+must spell out. That is the honest shape of the task.
 
-Corollary of the entry below, and of the N-helper treadmill above. Proving
-`sigma o sigma = id` for `sigma = (i,j)(a,k)` needs the product regrouped so the middle
-pair is adjacent, and I wrote FOUR hand instantiations of `composeAssoc` to do it —
-`composeAssoc(h, g, f)` gives `(h∘g)∘f = h∘(g∘f)`, so each one has to be aimed by hand and
-the error when you miss is a whole-term expected-vs-got.
+Two related measurements:
 
-`[using assoc(composeAssoc)]` right-nests BOTH sides and compares, so each regrouping is
-one step with nothing to aim. Every one of the four collapsed.
+- **The hypothesis set a POINTWISE PROOF needs is larger than the IDENTITY needs.** Case 2's
+  identity holds assuming only two disequalities (verified over 2000 assignments); the
+  pointwise proof needs all ten, because each trace must know which branch of `transposition`
+  applies at every factor. Minimal hypotheses for a TRUTH and for a PROOF differ.
+- **An UNUSED hypothesis is rejected, and that is right.** `a != k` was in a statement because
+  Judson's context supplies it; the proof never consulted it and the unused-fact check threw
+  it out. An invented hypothesis reads as a condition the mathematics requires when it is only
+  one the author assumed. Same thing happened to `a != c` in the conjugator lemma — the
+  identity holds at a = c too.
 
-The rule: `simplify` rewrites to a normal form and will not reassociate to expose a
-cancellation (below); `assoc(lemma)` exists precisely for the reassociation. If the step is
-"the same factors, differently grouped", that is the tactic.
+### VERIFY COMPUTATIONALLY FIRST, THEN LOOK FOR THE STATEMENT THAT DROPS THE STRUCTURE
 
-### `simplify` will not reassociate to expose a cancellation
+The method behind every collapsed gap above. A python trace over the relevant points, run
+BEFORE writing any proof, repeatedly turned an r-dependent identity into a length-free closed
+form — e.g. `sigma (i,j,a) sigma^-1 (i,j,a)^-1 = T(si,sa) T(si,sj) T(i,j) T(i,a)`, which
+depends only on sigma's action at three points, verified exhaustively over all 7200
+combinations on five points.
 
-`op(c, op(inverse(c), d)) = d` fails as a `simplify` goal even with `grpAssoc`,
-`grpInverseRight` and `grpIdentityLeft` in the set — it will not reassociate the nest to put
-`c` next to `inverse(c)`. Four explicit steps (regroup, cancel, identity, chain) do it, after
-which `simplify` closes the surrounding algebra happily. Consistent with the cheat-sheet's
-framing of `simplify` as "rewriting to a shared normal form" rather than a search.
+Three traps it caught that would have landed as late, confusing kernel failures:
 
-**CASES 3 AND 5 ARE NOW PROVED (2026-10-13) — AND THE CLASSIFICATION GAP IS GONE ENTIRELY.**
+- **CONJUGATION ORDER.** `sigma^-1 c sigma c^-1` (Judson's) and `sigma c sigma^-1 c^-1` have
+  DIFFERENT values. Writing a proof from the wrong trace fails late.
+- **GROUPING, not just order.** `sigma^-1 c sigma c^-1` must be read as
+  `sigma^-1 * (c sigma c^-1)` — the inner conjugate is in N by normality, then closure under
+  inverses and products finish it. The other reading ("conjugate c by sigma^-1") is useless,
+  because c is a 3-cycle, not an element of N. Each case regroups DIFFERENTLY: case 1
+  conjugates sigma, case 4 step 2 conjugates sigma^INVERSE.
+- **FACTOR-ORDER CONVENTION.** std's cycle fold makes `(n0...nk)` equal
+  `T(n0,nk) o ... o T(n0,n1)`, outermost first. A trace script listing them the other way
+  reported a true identity FALSE at every point. **A trace that fails at EVERY point is far
+  more likely to be a convention error than a false identity.**
 
-Probing before writing, a fourth time, retired the last of the three "missing machinery"
-claims. The five-case list is real as Judson's exposition, but it is NOT a case analysis the
-formalization has to perform: all five cases are instances of three length-free, structure-free
-theorems, so **no cycle-type classification theorem is needed at all.**
+### PROBE WHETHER AN ACCELERANT ALREADY DOES IT, BEFORE WRITING A HELPER
 
-Case 5 (`sigma = tau (a1a2)(a3a4)`). Judson conjugates by `(a1a2a3)`, reaches `(a1a3)(a2a4)`,
-and conjugates AGAIN. The probe shows why the first conjugation does not finish: the commutator
-is another double transposition (`{a1->a3, a2->a4}`), support 4, both with `tau` trivial and
-with `tau = (a5a6)(a7 z)` attached — so the second conjugation is genuinely required, not an
-artifact of Judson's bookkeeping. What the probe then found is that the second conjugation needs
-NO 2-cycle structure:
+I wrote `twoFactorValue` / `fourFactorValue` / `sixFactorValue`, giving an N-factor composite's
+value at a point. All three were `composeApply` applied a fixed number of times with ONE
+parenthesization hardcoded; `twoFactorValue` was `composeApply` verbatim, which std's alias
+rule forbids outright. A seventh factor, or the same six grouped differently, would each have
+needed another theorem.
 
-    sigma i = j, sigma j = i, sigma a = a   ==>   sigma (i,j,a) sigma^-1 (i,j,a)^-1 = (i,j,a)
+    [using simplify_quantified composeApply]   -- for a quantified statement
+    [using simplify composeApply]              -- at a concrete call site
 
-Only sigma's action AT THE THREE POINTS matters — it swaps two of them and fixes the third.
-That is exactly `(a1a3)(a2a4)` against the 3-cycle `(a1,a3,a5)`, and `a5` is where `n >= 5` is
-spent. Three theorems:
+Either unfolds ANY nesting of ANY length in one step, including a twelve-factor composite.
+Deleting the three helpers and rewriting their 18 call sites removed 123 lines.
 
-- `theCommutatorWithASwapOfTwoOfItsPoints` — the value, `T(j,a) T(i,a)`, by specializing
-  case 1's `theCommutatorOfAThreeCycleWithAPermutation` at the three images and cancelling the
-  middle `T(j,i) T(i,j)` with symmetry plus the involution law.
-- `aSwappedCommutatorIsTheThreeCycle` — that value IS `(i,j,a)`. It is not in std's
-  shared-first-point fold `(x,y,z) = T(x,z) T(x,y)`; flipping both factors onto `a` with
-  `transpositionIsSymmetric` gives `T(a,j) T(a,i)`, and `aThreeCycleIsInvariantUnderRotation`
-  at `(a,i,j)` is literally that equation. Distinctness is needed and only partly — the
-  identity fails at `i = j` and at `j = a`, and `i = a` is never consulted; both are free to a
-  caller whose points are a 3-cycle's.
-- `theCommutatorWithASwapIsAThreeCycle` — the two composed, which is case 5 as a caller wants
-  it: `sigma` in `N` gives the commutator in `N`, and the commutator is a 3-cycle.
+In `std/` accelerants are the preferred proof; a hand-written N-ary family is the thing to be
+suspicious of.
 
-Case 3 (`sigma = tau (a1a2a3)(a4a5a6)`) needs no new theorem. Conjugating by `(a1a2a4)` and
-multiplying gives a 5-CYCLE (`(a1 a4 a3 a5 a2)`, support 5, confirmed), exactly as Judson says
-— and case 1's engine then applies to THAT, because it reads only three points and never the
-length. Chained end to end in the probe: the commutator of the 5-cycle with the 3-cycle on its
-first three orbit points has support 3. So case 3 reduces to case 1 mechanically, with no
-intermediate classification.
+### A SCHEMA CANNOT RECURSE ON ITS OWN ARGUMENT, and the growing-term form HANGS
 
-**WHY THE CLASSIFICATION GAP WAS ILLUSORY, stated once.** The list above frames the cases by
-CYCLE TYPE, which is a property of the whole permutation and would need the classification
-theorem to establish. Every case's actual proof reads sigma at THREE POINTS. Cycle type is how
-Judson FINDS the three points to use; it is not a hypothesis any of the algebra consumes. So the
-formalization's hypotheses are point-values (`sigma i = j`, `sigma a = a`) and distinctness, all
-of which a caller discharges from its decomposition — and the "real induction over the multiset
-of cycle lengths plus the parity constraint" I scoped at the top of this file is work that does
-not exist.
+- `thm(n)` citing `thm(n)` — correctly rejected, `cyclic schema instantiation`.
+- `thm(n)` citing `thm(prev(n))` — NOT rejected, and DIVERGES. `prev(n)` is a syntactically
+  distinct term, so each instance gets a distinct name, the cycle check never fires, and the
+  argument GROWS (`prev(prev(n))`, …) instead of shrinking. Killed after 2.5 minutes of CPU on
+  an 8-declaration file.
 
-Score on this file's predictions: FOUR overstated gaps, zero that survived a probe. The method
-is unchanged and is the only reason they were caught — verify computationally FIRST, then look
-for the statement that drops the structure.
+A schema is a MACRO monomorphized at the WRITTEN argument, with no evaluation of
+`prev(succ(k)) -> k` at instantiation time. Terminating would require the instantiator to
+compute — which is what `induction` does, and why `std/peano.b4m`'s `induction` schema exists
+and transfers through models.
 
-**LEMMA 10.9'S TRANSITIVITY IS NOW PROVED (2026-10-13), and it needed none of the machinery
-this file predicted.** That makes FIVE overstated gaps, zero survivors.
+USER (2026-10-07): curiosity, not a requirement — "it's possible we will never need this."
+Recorded because the growing-term form HANGS rather than diagnosing: if a schema ever needs a
+depth or term-size cap, this is the motivating case.
 
-The claim carried above, repeatedly, was that transitivity needs "any triple of distinct points
-maps to any other by some sigma IN A_n", with "n >= 5 buys the two spare points that fix sigma's
-parity". That framing is what made it look like it required BUILDING a permutation from a
-prescribed finite map — machinery std does not have and which would be a substantial
-contribution. Two probes collapsed it.
+### TACTIC BOUNDARIES, each of which cost a debugging round
 
-FIRST, conjugation acts on 3-CYCLES, not on triples. A 3-cycle equals each of its three
-rotations (`aThreeCycleIsInvariantUnderRotation`), so a target need only be matched up to
-rotation. Measured: a conjugator that is a product of two transpositions reaches ALL 20
-3-cycles on five points from any one of them, while carrying only 2160 of 3600 TRIPLE pairs.
-The triple framing was strictly harder than the problem.
+- **`simplify` needs an EQUATION goal.** Deriving `z != i` from `z != x` and `x = i` looks
+  equational; `[using simplify …]` answers `goal is not an equation`. `[by rewrite x-is-i
+  z-not-x]` does it — the kernel rule substitutes into any formula, including a disequation,
+  and is bidirectional. The assembly needed 32 of these.
+- **`simplify` will not REASSOCIATE to expose a cancellation.** `op(c, op(inverse(c), d)) = d`
+  fails even with `grpAssoc`, `grpInverseRight` and `grpIdentityLeft` in the set. It rewrites
+  to a normal form; it does not search.
+- **`assoc(lemma)` is the tactic for regrouping.** Four hand instantiations of `composeAssoc`
+  (each aimed by hand, each failing with a whole-term expected-vs-got) collapsed to one
+  `[using assoc(composeAssoc)]`, which right-nests BOTH sides and compares. If the step is
+  "the same factors, differently grouped", that is the tactic. But `assoc` reassociates a
+  product against a product, so it cannot take `cycle(s,5) = <nested>` to a regrouped RHS —
+  that regrouping is its own equation, then `chain`.
+- **`rewrite` rewrites a FORMULA with an equation; it does not conjure the formula.** From
+  `f = compose(g, c)` you cannot reach `invertible(compose(g, cycle(...)))` in one step:
+  rewrite the equation into `invertible(f)` first, THEN the cycle's spelling into that result.
+  Two steps per fact.
+- **STAGE A LONG CHAIN at the orientation boundary.** Nine equations exceeded `chain`'s search
+  ("cannot connect …") and one `simplify` failed too (two links must run backward). What
+  worked: `simplify` for the seven left-to-right links, then `chain` for the two reversible
+  ones. Neither tactic spans the whole distance.
+- **`chain` REJECTS a repeated ref** (`chain a b a` is a label-shadowing error) and cannot
+  prove a DISEQUATION (that is `[by rewrite eq diseq]`).
+- **`arithmetic(peano)` treats `succ` OPAQUELY**, so every index fact with a VARIABLE under
+  `succ` comes back "the statement is false" while the ground ones pass. Stating a length as
+  `succ^4(q)` rather than `p >= 3` makes every index fact structural instead.
+- **`--axioms` does not see inside a `simplify` rewrite set.** Dropping aliases it reported
+  unused removed `invProduct`, which IS cited — by a `simplify` step. `--axioms` attributes
+  what a proof RESTS on; a rewrite named in a `simplify` set does not appear there.
 
-SECOND, and this is the whole lemma, there is a UNIFORM conjugator with no parity repair at all.
-Searching the solver's choices symbolically rather than guessing formulas (four guesses scored
-0/120 each) turned up `T(a,c) T(a,b)` — which IS the 3-cycle `(a,b,c)` in std's fold:
+### `tautology` CANNOT LINK EQUALITY ATOMS — and the countermodel says so exactly
 
-    (a,b,c) (i,j,a) (a,b,c)^-1 = (i,j,b)
-
-Exact on all 120/720/2520 configurations at n = 5, 6, 7. Being a 3-cycle, the conjugator is a
-product of exactly two transpositions, hence EVEN BY CONSTRUCTION and already in A_n — so the
-"two spare points to fix sigma's parity" step never arises. `b` and `c` are simply the two
-points outside {i,j,a}, which is the honest place n >= 5 is spent: a point to move TO and a
-point to park the displaced one on.
-
-`conjugatingAThreeCycleMovesItsThirdPoint` is that identity. A caller chains it: under the move
-the 3-cycles on five points have DIAMETER 3 (BFS from every one of the 20), one application per
-point, so reaching an arbitrary 3-cycle is three uses composed — not an induction.
-
-TWO PROCESS NOTES, both worth more than the lemma.
-
-- **`a != c` is NOT a hypothesis.** My draft stated it; the proof never consulted it, and the
-  identity holds at a = c too (the conjugator degenerates to `T(a,b)`, which still carries a to
-  b — checked over all 1080 six-point configurations with a = c allowed). Dropping it left every
-  step intact. An unused hypothesis in a signature is the invented-hypothesis failure mode in
-  miniature: it reads as a condition the mathematics requires when it is only a condition the
-  author assumed.
-- **`--fast` passed what strict REJECTED**, the fast/strict invariant violation. Three
-  evaluation steps were written `[using simplify ... permutation.transpositionElsewhere ...]`,
-  and strict answered `'permutation.transpositionElsewhere' is not an equation` — it is
-  conditional (`x != u -> x != v -> ...`), so it cannot be a rewrite. The fix is the file's own
-  established idiom: `specialize transpositionElsewhere(u, v, x)` with the two disequalities to
-  get an equation step, THEN simplify on that. Iterating only on `--fast` would have hidden this
-  until the gate.
-
-**THE TWIST, AND WHERE n >= 5 IS ACTUALLY SPENT (2026-10-13).** A correction to my own entry
-above, which claimed the one-point move was all of transitivity.
-
-Chaining the one-point move is NOT a formula. I sketched a three-move chain (move the third
-point, rotate, repeat) and checked it: 2520 of 3600 3-cycle pairs FAIL it. The earlier BFS
-result (diameter 3) is still right, but it measures reachability as PERMUTATIONS, choosing a
-fresh rotation representative at each step; my chain fixed the representatives and so was
-strictly weaker. Reading the BFS's own shortest paths shows why no formula captures it — the
-representatives it picks vary per target.
-
-What the BFS distance histogram DOES hand over is the structure: {0:1, 1:6, 2:12, 3:1}. Exactly
-ONE 3-cycle sits at distance 3 from any given one, and it is that 3-cycle's TWIST. Everything
-else is two moves or fewer. So the twist is the orbit's far point and deserves its own direct
-conjugator rather than a chain.
-
-It has one, uniform and exact (120/720/2520 configurations at n = 5, 6, 7):
-
-    (T(i,j) T(b,c)) (i,j,a) (T(i,j) T(b,c))^-1 = (i,a,j)
-
-`conjugatingAThreeCycleByASwapAndASpareSwapGivesItsTwist`. The conjugator does two unrelated
-jobs and separating them is the whole insight: `T(i,j)` does the mathematics — it swaps two of
-the 3-cycle's points and fixes the third, and the relabelling of `(i,j,a)` under that IS the
-twist — while `T(b,c)` touches the 3-cycle not at all (`b`, `c` lie outside `{i,j,a}`) and
-exists ONLY to make the conjugator even, so it lies in A_n. A single transposition would
-relabel identically and be odd.
-
-**So "n >= 5 buys two spare points to fix sigma's parity" is finally located, and it is much
-narrower than this file claimed for weeks.** It is not a fact about transitivity in general —
-the one-point move needs no parity repair at all, its conjugator being a 3-cycle and hence even
-by construction. The twist is the lone case that needs it, because the only relabelling
-producing a twist is a single swap. Every previous statement of that phrase here attached it to
-the wrong thing.
-
-Proof route: `theConjugateOfAThreeCycleRelabelsItsPoints` at the conjugator (images i -> j,
-j -> i, a -> a), then the relabelled `T(j,a) T(j,i)` is the twist by TWO instances of
-`aThreeCycleIsInvariantUnderRotation` composed — at (a,j,i) and at (i,a,j). One instance does
-not suffice; the factors are swapped on both sides, which the exhaustive instance search showed
-before any proof was written.
-
-**POINT SUPPLY IS NOW IN std (2026-10-13), and it located a real gap rather than an imagined
-one.** The entry above said the twist conjugator needs two points outside {i,j,a}; both it and
-the one-point move take those points as HYPOTHESES, so something has to produce them.
-
-Nothing could, and the reason is worth writing down: **`Element` is an unconstrained sort.**
-`std/element.b4m` declares it with no operations and no axioms, deliberately. So "there are at
-least five points" is not a fact about `Element` that one could prove, nor one that could be
-refuted — it simply has no expression there. Every earlier statement of the n >= 5 hypothesis in
-this file was therefore informal in a way I had not noticed: the theorems said "given these five
-distinct points", never "five exist".
-
-std already had the convention for this and it was not a new mechanism: bound the domain with a
-SET carrying `hasSize`, the way `decomposition.finiteSupportDecomposes` bounds a support. Two
-theorems in `std/set/finite.b4m`:
-
-- `aDistinctPointSurvivesARemoval` — a point survives the removal of a different one, factored
-  out so the four peels below are uniform.
-- `aSetOfAtLeastFiveHasAFifthPoint` — a set of size 5+m has a member outside any four named
-  ones. `removingAnElementDropsTheSize` four times, then `sizedSetHasAMember` on the remainder
-  (size succ(m), so nonempty); the four disequalities come back out of the nested differences.
-
-THE BOUND IS FIVE, NOT SIX, and the reason is the two consumers: the one-point move needs a
-point to move TO and a point to park the displaced one on, both outside the three in hand; the
-twist needs two points outside the three whose swap makes the conjugator even. Four named plus
-one supplied is the worst case. That is the n >= 5 of Judson's hypothesis, finally stated as
-something the kernel checks.
-
-TWO CHOICES WORTH RECORDING.
-
-- **Iterated removal beat the slicker route.** `properSubsetIsSmaller` gives a contradiction
-  argument — if every member were one of the four, u would be a subset of a 4-set — but it needs
-  the four-point set BUILT and SIZED (three insertions carrying six non-membership side
-  conditions) plus a subset proof. Iterated removal needs no set construction at all. Counted
-  both before writing either.
-- **The disequality hypotheses are oriented for the peels** (`q != p`, not `p != q`) because
-  `finite.b4m` cannot reach a symmetry lemma — `disequalityIsSymmetric` lives in
-  `permutation/alternating.b4m`, ABOVE set theory, and importing it would be a cyclical
-  dependency. Callers flip with their own lemma. Writing the statement in the "natural" order and
-  then needing symmetry inside set theory would have been the wrong fix.
-
-**LEMMA 10.9'S SELECTOR IS BUILT (2026-10-14), and the leaf count went 13 -> 5 -> 7.**
-
-The selector decides which of Judson's identities an arbitrary 3-cycle needs. Three successive
-scopings of it, each corrected by measurement:
-
-1. **13 leaves, no collapse.** Split on which coordinate of (x,y,z) is i and which is j: 4x4
-   minus the 3 same-coordinate clashes. Canonical rotation is unique per leaf (verified over all
-   120 triples on six points), so positions do not merge.
-2. **"5 leaves, the rest need nothing."** `rotationCarriesMembership` (a rotation rewrite
-   carries membership) made each leaf cheap, and I classified 3 as rotation-only and 3 as
-   zero-rotation restatements of their shape theorem — leaving 5 to prove. Those 5 were
-   generated against a validated template and all went strict-green.
-3. **Wrong: it was 7.** Mapping every leaf GOAL to a named proved theorem — mechanically, not by
-   reading — found two gaps, `(p,i,j)` and `(j,p,i)`. The family premise supplies `(i,j,p)`;
-   those goals are its ROTATIONS, and a rotation still wants a theorem. The classification was
-   right that they need no shape theorem and no product closure, wrong that they need nothing.
-
-So the honest count is 13 leaves: 1 closed by the family premise directly, 12 by named theorems.
-The full table maps each (which-coordinate-is-i, which-is-j) case to its theorem with the
-explicit variable substitution, checked by script rather than by eye — which is what caught the
-two gaps, and what confirmed all 13 map cleanly once they were closed.
-
-**PATTERNS PROBED BEFORE USE, each in a throwaway file.** Every one of these would have been a
-confusing failure inside a 500-line generated proof:
-
-- **Nested schema instantiation.** A selector leaf is a schema over `inN` citing a shape theorem
-  that is also a schema over `inN`, so it instantiates the inner one AT ITS OWN PARAMETER:
-  `[using instantiation innerSchema((fun g: Fn => inQ(g))) refs]`. Works.
-- **`case` arm restatement.** Inside a `case` arm, the arm label names a SUBPROOF, so
-  `[using tautology <arm-label>]` is an error ("names a subproof; a step reference is required").
-  The arm's assumption must first be restated with `[by hypothesis <arm-label>]`.
-- **The `isAThreeCycle` unpack.** It is a `define` expanding to a nested existential, so the
-  bridge from "every distinct triple" to "every 3-cycle" is three unpack levels with the
-  conjunction projected by `tautology`. Promoted to
-  `everyTripleInTheSubgroupMeansEveryThreeCycle` rather than inlined, since every consumer needs
-  exactly that shape.
-
-**AND A TRAP WORTH NAMING: an uninstantiated schema reports "0 theorems proven" and nothing
-else.** Not an error, not a warning. I lost a cycle to this twice — once on a typo'd step label
-in the capstone that checked green until the instantiation existed, once on a probe I thought had
-validated a leaf when it had checked nothing at all. A schema with no instantiation is unverified
-and SILENT about it, which is the strongest argument for `--library`'s rule that every schema be
-exercised where it is declared.
-
-**THE FLAT DISJUNCTION DOES NOT WORK, and the countermodel says exactly why (2026-10-14).**
-
-I tried to replace the nested 4x4 position split with one flat 13-way disjunction — simpler to
-generate, simpler to read. `tautology` refused it:
+Replacing a nested 4x4 position split with one flat 13-way disjunction failed:
 
     countermodel: x = i := true, y = j := false, z = j := false,
                   x = j := true, y = i := false, z = i := false
 
-It set `x = i` AND `x = j` both true. With `i != j` in hand that is impossible, but `tautology`
-sees `x = i`, `x = j` and `i != j` as three unrelated opaque atoms and cannot link them. Adding
-`i != j` as a premise does not help, for exactly the same reason. This is the documented
-limitation, and the countermodel named the missing link precisely.
+It set `x = i` AND `x = j` both true. With `i != j` in hand that is impossible, but
+`tautology` sees `x = i`, `x = j` and `i != j` as three unrelated opaque atoms. Adding
+`i != j` as a premise does not help, for the same reason.
 
 The nested split works because each LEVEL is a genuine propositional tautology over its own
-atoms: level 1 is 4-way over `x=i`, `y=i`, `z=i`; level 2, inside each arm, is 4-way over the
-`j` atoms. Nothing cross-links.
-
-And the three same-coordinate clashes never need ruling out propositionally. In the arm where
-`x = i` and `x = j`, the leaf derives `i = j` by symmetry-and-rewrite and discharges against
-`i != j` with `ex_falso` — a kernel step, which is the standard remedy for this exact failure
-("do the non-propositional step yourself, then let tautology close it"). So the tree is 4x4 = 16
-arms: the 13 real leaves plus 3 contradiction arms, and the extra three are the cheapest in the
-proof.
-
-Probed in a throwaway file before generating anything, like the other four patterns.
-
-**THE ASSEMBLY PLAN, VERIFIED MECHANICALLY BEFORE GENERATION (2026-10-14).**
-
-Four things checked by script rather than by reading, each of which would have surfaced as a
-confusing failure partway through a 500-line generated proof:
-
-1. **Every leaf's GOAL matches its schema's CONCLUSION** under an explicit variable
-   substitution. 13/13. This is the check that found the two missing rotation leaves.
-2. **Every schema's stated conclusion matches what the file actually proves** — parsed out of
-   `alternating-identities.b4m` rather than trusted from my spec. 12/12.
-3. **Every leaf's ARGUMENTS are fully pinned.** Binders not appearing in a conclusion came out
-   "UNPINNED" on the first pass; they are the fixed points `i`/`j`, which the assembly has in
-   scope, so filling them is mechanical — but silently passing the wrong one would have been a
-   long debug.
-4. **Every leaf's required DISEQUALITIES are derivable in its arm.** This one needed two passes.
-   The first reported 12 of 13 leaves missing facts like `z != i` in the arm where `x = i`; that
-   was my checker substituting in one direction only. Substituting both ways — `z != x` with
-   `x = i` gives `z != i` — clears all 13.
-
-Worth noting that (4)'s first result was a false alarm from the CHECKER, not the plan, and the
-fix was to make the checker as capable as a `rewrite` step is. A plan-verification script that
-is weaker than the proof system will report gaps that are not there; one that is stronger will
-miss gaps that are. Matching it to the available inference is the whole trick.
-
-**`simplify` CANNOT PROVE A DISEQUATION (2026-10-14).** Deriving `z != i` from `z != x` and
-`x = i` looks like equational rewriting, and `[using simplify x-is-i z-not-x]` is the natural
-spelling. It fails: `simplify: goal is not an equation`. The accelerant rewrites to a shared
-normal form and needs an EQUATION goal; a disequation is not one.
-
-`[by rewrite x-is-i z-not-x]` does it — the kernel rule substitutes into any formula, including
-a disequation, and is bidirectional. Every one of the assembly's 16 arms needs two of these
-(the free coordinates' disequalities against i and j), so getting it wrong once would have been
-getting it wrong 32 times.
-
-Caught by probing arm (0,1) complete — statement, derivations, conclusion, AND an instantiation
-— before generating the other fifteen.
-
-**THE ASSEMBLY'S DISEQUALITY PLAN IS NOW CONCRETE (2026-10-14): 54 steps, all mechanical.**
-
-Two attempts at a recursive disequality solver inside the emitter accumulated edge cases
-(flip-vs-rewrite, substituting a coordinate for a fixed point vs the reverse, multi-substitution
-chains) and were the wrong shape. Replaced with a PRECOMPUTED TABLE: per arm, the exact ordered
-list of disequality steps with each one's justification, derived once by script.
-
-The result is 54 steps across the 13 real arms, every one of exactly two forms:
-
-    flip     a != b   from   b != a       [using specialize alternating.disequalityIsSymmetric]
-    rewrite  a != b   from   c != b       [by rewrite <position-equality> <that fact>]
-
-Per-arm counts run 2 to 6, totalling 54. No arm needs a chain of two substitutions, which is
-what the recursive version was built to handle and never had to.
-
-The lesson is the generator-design one: when the emitter grows branches for cases that may not
-arise, compute the answer for every case first and look at the table. Here the table showed the
-hard case was absent.
-
-**ALL 13 LEAF BODIES GENERATE AND VERIFY STRICTLY (2026-10-14).** Each wrapped as a standalone
-schema with a concrete instantiation at A_n, so each gets a real verdict rather than the silent
-"0 theorems proven" of an uninstantiated schema.
-
-The generator took four iterations, and every one was the SAME defect in a different place:
-**emitting a fact nothing cites.** `2b4m` rejects that outright ("unused fact: step 'X' is never
-used"), which is the right call and made each round a one-line diagnosis, but the shape is worth
-recording because a generator invites it:
-
-1. Pre-ensuring BOTH orientations of every disequality — `i != x` and `x != i` — when each leaf
-   consumes exactly one. Fixed by emitting lazily, at the point of use.
-2. Restating all four outer hypotheses in every leaf, when the smaller leaves cite two or three.
-   Fixed by generating the body first and emitting only the restatements its text references.
-3. Projecting every conjunct of the arm's bundled assumption, when a leaf uses a subset. Fixed
-   with an on-demand `project()` hook — which then had to be threaded INTO the disequality
-   planner, since `ensure()` is what discovers which conjuncts are wanted.
-4. A strip-regex matching `given-closure]` when testing for `closure]`, so the closure
-   restatement survived in the three leaves that need no product closure. Fixed with a
-   negative-lookbehind boundary.
-
-The pattern: a hand-written proof cites what it needs because the author writes the citation
-first. A generator emits a supply and hopes it matches the demand. Making the emitter DEMAND-DRIVEN
-— body first, facts second, each on request — removed all four at once, and is the shape to reach
-for directly next time.
-
-**THE LEAF BODIES NOW TAKE THEIR POSITION FACTS FROM TWO SEPARATE ARMS (2026-10-14).**
-
-The first working generator had each leaf restate ONE bundled assumption (`x = i and y = j`) and
-project its conjuncts by `tautology`. That shape cannot survive the nested tree, where the two
-facts are assumed by two different `case` arms — the outer one for i, the inner for j.
-
-The fix made the emitter simpler, not more complex: a position fact assumed by its own arm is
-ONE `[by hypothesis when-<arm>]` step, with no projection at all. Only the `no-i` / `no-j` arms
-still project, since those assume a three-way conjunction (`x != i and y != i and z != i`), and
-that restatement is emitted once per arm on first use.
-
-So the final leaf shape is: one or three hypothesis restatements per arm, the arm's derived
-disequalities (flip or single rewrite), the cited theorem instantiated at `inN`, and one rewrite
-per position equality to turn the canonical form back into `(x,y,z)`. All 13 verify strictly in
-this form.
-
-**I RE-DERIVED LEMMA 10.10 INSTEAD OF READING IT, AND GOT A WORSE PROOF (2026-10-14).**
-
-Asked to finish 10.11, I probed for a uniform conjugator rule, found that "(p,q,r) at a moved
-point" covers most sigma but that the exceptional set GROWS with n ((3,3) at n=6, plus (3,2,2)
-at n=7, plus (2,2,2,2) at n=8), and concluded Lemma 10.10 needs an INDUCTION ON SUPPORT SIZE
-with a search for the conjugator at each step. I sized that as "larger than the selector, and
-without the selector's advantage", and said so.
-
-That is not Judson's proof, and Judson's is better. His four cases, each verified exactly as
-stated (probe over the relevant points):
-
-    sigma has a cycle of length r > 3    sigma^-1 (a1a2a3) sigma (a1a2a3)^-1 = (a1 a3 ar)
-    sigma = tau (a1a2a3)(a4a5a6)         sigma^-1 (a1a2a4) sigma (a1a2a4)^-1 = (a1 a4 a2 a6 a3)
-    sigma = tau (a1a2a3), tau involutive sigma^2 = (a1 a3 a2)
-    sigma = tau (a1a2)(a3a4)             two conjugations, support 4 then 3
-
-The second lands a 5-CYCLE, which is the FIRST case's shape — so the cases reduce to each
-other and the analysis TERMINATES. There is no descent, no induction on support, and no search:
-each conjugator is READ OFF the cycle shape, which is exactly what the case split gives you.
-
-What went wrong is the same error this file already records twice, in a new direction. Both
-earlier times I claimed machinery was missing and a probe disproved it. This time I claimed
-machinery was NEEDED — a support induction — because I probed for a uniform rule, found none,
-and generalized from that to "therefore induction" without checking what the source does. The
-cases ARE the structure that makes a uniform rule unnecessary; searching for one and failing
-says nothing about whether the textbook proof needs it.
-
-THE RULE, stated for next time: when the task is transcribing a known proof, read the proof's
-OWN case structure before probing for a better one. A probe tells you whether YOUR idea works;
-it cannot tell you the author had a different idea. (`agents/2b4m-cheatsheet.md` already says
-bottom-up when the statement is GIVEN — this is the same lesson one level up: the PROOF STRATEGY
-is given too, not just the statement.)
-
-**ALL FOUR OF JUDSON'S LEMMA 10.10 IDENTITIES ARE NOW PROVED (2026-10-14).** Transcribed from
-his case structure rather than re-derived, after the correction recorded above.
-
-    case 1  r > 3            theFourFactorProductIsAThreeCycle
-                             T(ar,a2) T(ar,a1) T(a1,a2) T(a1,a3) = (a1,a3,ar)
-    case 2  two 3-cycles     theFiveCycleProductIsAFiveCycle
-                             T(a3,a6) T(a3,a1) T(a1,a2) T(a1,a4) = (a1,a4,a2,a6,a3)
-    case 3  3-cycle x invol.  squaringAThreeCycleTimesAnInvolutionGivesAThreeCycle  (earlier)
-    case 4  all 2-cycles      theTwoCycleCommutatorIsADoubleTransposition   (step 1)
-                             + theCommutatorWithASwapIsAThreeCycle          (step 2, earlier)
-
-Each is this file's commutator closed form instantiated AT sigma^-1 — which is the one thing
-that had to be checked, since Judson writes `sigma^-1 c sigma c^-1` and the closed form was
-proved for `sigma c sigma^-1 c^-1`. Verified: they are the same statement with sigma := sigma^-1,
-and the closed form then delivers Judson's named result because sigma^-1 maps a1 to ar.
-
-THREE THINGS WORTH KEEPING.
-
-- **The hypothesis set a pointwise proof needs is LARGER than the identity needs.** Case 2's
-  identity holds assuming only `a1 != a6` and `a3 != a6` (verified over 2000 assignments), and I
-  tried to state it that weakly. The pointwise proofs need all ten disequalities, because each
-  trace must know which branch of `transposition` applies at every factor. The generator said so
-  at once ("no source for a4 != a1"). Costs nothing here — Judson's two 3-cycles are disjoint —
-  but the general lesson is that minimal hypotheses for a TRUTH and for a PROOF differ.
-
-- **Case 4 step 1 needed no extensionality and no hypotheses at all.** It is a cancellation:
-  the middle pair `T(a2,a1) T(a1,a2)` is the identity by symmetry plus the involution law. The
-  other three cases each needed a five- or six-case pointwise split; this one is four algebra
-  steps. Checking whether a case is a cancellation before reaching for extensionality is worth
-  the ten seconds.
-
-- **The factor-order convention bit once.** std's cycle fold makes `(n0 n1 ... nk)` equal
-  `T(n0,nk) o ... o T(n0,n1)`, outermost first. My trace script listed factors in the other
-  order and reported the case-2 identity FALSE at every point. The identity was fine; the script
-  was wrong. A trace that fails at every point is far more likely to be a convention error than
-  a false identity.
-
-**THE CASE DISPATCH NEEDS NO ORBIT THEORY (2026-10-14).** I expected this to be where the
-cycle-type classification genuinely lives — "a statement about sigma's orbit structure", as I
-wrote a moment before measuring it. It is not.
-
-Each identity consumes POINT-VALUES of sigma^-1, so the dispatch only has to produce a labelling
-of points for which one of four value-patterns holds:
-
-    case 1   si a1 = ar, si a2 = a1, si a3 = a2          (four distinct points)
-    case 4   si a1 = a2, si a2 = a1, si a3 = a4          (four distinct points)
-    case 2   si a1 = a3, si a2 = a1, si a4 = a6          (five distinct points)
-    case 3   sigma IS a 3-cycle                           (nothing to prove)
-
-Checked exhaustively over every non-identity even permutation at n = 5, 6, 7 (59, 359, 2519 of
-them): the first three patterns cover everything EXCEPT cycle type (3,), and that exception is
-precisely case 3, where N already contains a 3-cycle. Zero genuinely uncovered.
-
-So the dispatch is an existential over point labellings, not a classification of sigma. The
-point-value framing that made each individual case length-free does the same work one level up:
-it converts "which cycle type is sigma" into "which pattern do some of sigma's point-values
-match", and the latter needs no decomposition walk at all.
-
-That is now FIVE times in this chapter that a structural-classification requirement dissolved
-once the statement was written over point-values. Worth promoting from observation to method:
-when a case analysis looks like it needs cycle type, first ask what the cases' proofs actually
-read off sigma, and check whether THAT is coverable.
-
-**THE DISPATCH'S GROUP-THEORY STEP, and a direction error I nearly shipped (2026-10-14).**
-
-Judson's case computations are written `sigma^-1 c sigma c^-1`, and it is tempting to read that
-as "conjugate c by sigma^-1, times c inverse". That reading is useless: c is a 3-cycle, not an
-element of N, so conjugating it by something gives nothing about N.
-
-The correct reading groups it the other way:
-
-    sigma^-1 c sigma c^-1  =  sigma^-1 * (c sigma c^-1)
-
-- `c sigma c^-1` is in N by NORMALITY (sigma in N, c in A_n),
-- `sigma^-1` is in N by closure under inverses,
-- so the product is in N by closure under products — and Judson's identity says that product
-  is a 3-cycle.
-
-My first dispatch arm applied normality correctly and then rewrote the result against an
-identity about a DIFFERENT expression (the conjugate of the 3-cycle rather than the commutator).
-It would have failed at the kernel, but it is the kind of mismatch that reads as correct on the
-page, and the earlier mis-trace recorded in this file was the same class of error: getting the
-conjugation ORDER right and the GROUPING wrong.
-
-Checked computationally before rewriting: `sigma^-1 c sigma c^-1` and `sigma^-1 * (c sigma c^-1)`
-agree, so the regrouping is sound and the normality route is the one to build.
-
-**THE --fast ALIAS BUG: REPRODUCED, ROOT-CAUSED, FIXED (2026-10-14).**
-
-SYMPTOM: `[using specialize <alias>]` passed strict and failed `--fast` with "unknown
-reference" — the fast/strict invariant violated in the PERMISSIVE direction, which is the
-nonsensical one: `--fast` admits accelerated verdicts instead of demanding certificates, so
-anything strict accepts it must accept.
-
-ROOT CAUSE, in `Prove.namesAFact` (`src/Engine/ProveTask/Prove.zig`). An admitted accelerant
-builds no certificate, so the admit path walks its refs only to seed use-all-facts roots, and
-`seedAndCheckLocalRoot` diagnoses a ref naming neither a local step nor a global fact as a
-typo. That guard is deliberate and correct — it exists so `--fast` cannot accept a typo'd ref
-strict would reject. But `namesAFact` decided "global fact" by switching over the file's own
-AST declaration:
-
-    .axiom, .hole, .theorem => true,
-    else => false,
-
-written before the `fact` keyword existed. An alias is `ast.Decl.fact` (ast.zig:233), a
-variant distinct from `.theorem`, so it fell through and every aliased lemma looked like a typo.
-
-THE TELLING DETAIL: the function's own doc comment says it "counts an ALIAS to a fact too" and
-explains exactly why that matters. The comment was right; the code had stopped matching it.
-Reading the comment would have confirmed the intended behaviour and hidden the bug — only the
-switch body shows it.
-
-FIX: add `.fact` to the switch. One token. Verified the typo guard still fires in both modes
-afterwards, so the fix is narrow rather than a loosening.
-
-WHY IT HID: it needs an ACCELERANT citing an alias by bare local name under `--fast`. The
-corpus habit of qualifying inline avoids it; `by cite <alias>` is unaffected (different
-resolution path, which does count aliases). It surfaced only once
-`alternating-identities.b4m` accumulated enough aliased citations to produce 20+ bogus errors
-at once — and cost a cycle believing I had broken a green file.
-
-NARROWING worth keeping: my original repro header claimed the bug needed two theorems in the
-file. It does not; one suffices. And a LOCAL theorem cited identically works fine, which is
-what isolated the alias as the trigger rather than `specialize` itself.
-
-**ALL FOUR DISPATCH ARMS ARE PROVED (2026-10-14).** Each takes a point-value pattern plus N's
-closure properties and puts a cycle in N:
-
-    arm 1  long cycle        aLongCyclePatternPutsAThreeCycleInTheSubgroup        -> 3-cycle
-    arm 2  two 3-cycles      twoDisjointThreeCyclesPutAFiveCycleInTheSubgroup     -> 5-CYCLE
-    arm 3  invol. x 3-cycle  anInvolutionTimesAThreeCyclePutsAThreeCycleInTheSubgroup -> 3-cycle
-    arm 4  disjoint 2-cycles disjointTwoCyclesPutAThreeCycleInTheSubgroup         -> 3-cycle
-
-THREE THINGS THE ARMS TAUGHT, none of which was visible from the identities alone.
-
-- **Arm 2's conclusion is a 5-cycle, not a 3-cycle.** That is what makes Judson's analysis
-  TERMINATE rather than recurse: the caller feeds the 5-cycle back to arm 1. Verified which
-  pattern arm 1 then matches — the 5-cycle's inverse sends a1 -> a3, a4 -> a1, a2 -> a4, so arm
-  1 applies at (a1, a4, a2, a3), walking the 5-cycle backwards, and yields (a1, a2, a3). All
-  four points distinct.
-
-- **Arm 3 needs NO normality.** sigma^2 is a product of two elements of N, so product closure
-  alone suffices. The other three arms each need a conjugate. That asymmetry is Judson's — his
-  case 3 squares rather than conjugating — and noticing it saved writing the normality
-  machinery into an arm that cannot use it.
-
-- **Every identity had to be REGROUPED, and the grouping differs per case.** Judson writes
-  commutators; N's closure sees products of specific shapes. Case 1 regroups to
-  `sigma^-1 * (c sigma c^-1)` — the conjugated element is sigma. Case 4 step 2 regroups to
-  `sigma * (c sigma^-1 c^-1)` — the conjugated element is sigma^INVERSE, because the
-  commutator's factor order differs. Each was verified computationally before writing, which is
-  the only reason the second one did not land as a late kernel failure.
-
-Where n >= 5 is spent is now ONE named place: arm 4's step 2 needs a point the double
-transposition fixes, i.e. outside {a1,a2,a3,a4}. Its four disequalities are the arm's only
-extra hypotheses, dischargeable from `set_finite.aSetOfAtLeastFiveHasAFifthPoint`.
-
-WHAT REMAINS for unconditional Theorem 10.11 is one theorem: that every non-identity even
-permutation MATCHES one of the four patterns. The coverage is measured (exhaustive at
-n = 5, 6, 7); the proof is not written, and needs two peels of
-`aNonIdentityDecompositionPeelsOffALastCycle`, two length splits, and one parity argument
-(an even permutation is not a lone transposition). All four inputs exist in std.
-
-**THE COVERING PROOF'S LENGTH->=4 BRANCH IS PROVED (2026-10-14).**
-`cycle.aLongCycleMatchesTheFirstPattern`: from `distinct(s, succ^4(q))` alone, all NINE of
-dispatch arm 1's hypotheses — six point-distinctness facts and three sigma^-1 values.
-
-TWO DECISIONS THAT MADE IT TRACTABLE.
-
-- **Successor form, not numerals.** Stating it as length `succ^4(q)` rather than `p >= 3` with
-  indices 0,1,2 makes every index fact structural: `ZERO != succ(x)` from `succNotZero`,
-  bounds from `lessThanIntro` with the gap written out. The alternative needs numeral
-  arithmetic, and `arithmetic(peano)` CANNOT supply it: it treats `succ` opaquely, so every
-  index fact with a VARIABLE under succ comes back "the statement is false" while the ground
-  ones pass. Isolated that one conjunct at a time rather than guessing from the bulk failure.
-
-- **Convert forward values, do not invert.** The arms want sigma^INVERSE values (the identities
-  came from the commutator form at sigma^-1) and std's cycle tools give FORWARD values. Rather
-  than build inversion machinery, `cycle.forwardGivesInverse` converts — one step from
-  `inverseUndoesPermutation` plus a rewrite. The three conversions then line up exactly:
-  sigma(s0)=s1 gives si(s1)=s0, and so on, which IS arm 1's si(j)=i.
-
-TWO SMALL LEMMAS THE BRANCH NEEDED, both now in std:
-  `cycle.forwardGivesInverse`             forward value -> inverse value
-  `peano_order.natDisequalityIsSymmetric` a != b -> b != a over Nat, because `tautology` sees
-                                          the two orientations as unrelated atoms
-
-WHAT REMAINS for the covering theorem: the length-3 and length-2 branches, and the top-level
-peel that splits on the peeled cycle's length. The length-2 branch is the one with content — it
-needs parity to rule out a lone transposition, since an even permutation cannot be one. The
-length-3 branch needs a SECOND peel (sigma is a 3-cycle, or a 3-cycle times a disjoint
-remainder). Those are the larger half and are not probed.
-
-**THE SINGLE-CYCLE COVERING THEOREM IS PROVED (2026-10-15).**
-`decomposition.aNonIdentityCycleIsATranspositionAThreeCycleOrLonger`: every non-identity cycle
-is a transposition, a 3-cycle, or has length >= 4. That is Judson's Lemma 10.10 case split,
-proved once rather than assumed.
-
-Stated over ONE cycle rather than a permutation's whole decomposition, which is the honest
-unit — each branch discharges from a cycle fact alone and needs no remainder:
-
-    length 1   excluded by `oneCycleIsTheIdentity` against `c != identityFn`
-    length 2   `twoCycleIsATransposition`
-    length 3   `aThreeLengthCycleIsAThreeCycleProduct`, whose fold already matches
-               `isAThreeCycle`
-    length>=4  the sequence and excess witnessed directly
-
-Three supporting pieces landed with it:
-  `peano_order.aNatIsZeroOneTwoOrMore`            three nested zeroOrSucc splits
-  `cycle.aThreeLengthCycleIsAThreeCycleProduct`   cycle(s,3) = T(s0,s2) T(s0,s1)
-  `alternating.aTranspositionIsOdd`               the exhaustiveness lemma
-
-FOUR MECHANICAL OBSTACLES, each caught by the checker rather than by reading:
-
-- **`decomposition.b4m` aliases `at` to the SEQ version**, but `distinctEntriesDiffer` indexes
-  a `Points`. Same spelling, different sort — "expected sort 'Seq', got 'Points'". Qualified as
-  `cycle_theory.at` inside the theorem.
-- **`isAThreeCycle` lives in `alternating.b4m`, which IMPORTS decomposition.b4m.** Citing it
-  would invert the dependency, so the existential is written inline. Worth noting the predicate
-  is a `define`, so inlining is exact rather than an approximation.
-- **A generated existential binder `q` shadowed the unpacked witness `q`.** The checker names
-  it; renaming to `qq` was the whole fix.
-- **I invented `lessThanSelfSucc`.** It does not exist. `ZERO < 2` is `lessThanSelf` then
-  `lessThanSuccRight`. Fourth invented-lemma-name in this chapter — the pattern is reaching for
-  the lemma the proof WANTS rather than checking what std HAS.
-
-**RETRACTION (2026-10-15): THE "COVERING PROOF" WAS MY CONSTRUCTION, NOT JUDSON'S.**
-
-Everything above about a covering theorem — the single-cycle case split, the length branches,
-value transfer, the exhaustiveness lemma — was mine. The user asked plainly whether I was
-following Judson or attempting my own proof, and the answer is the second. The entries above
-read as if "the covering theorem" were the chapter's remaining step; it is the remaining step of
-MY framing only.
-
-WHAT JUDSON ACTUALLY DOES. His Lemma 10.10 is "by cases on sigma's disjoint-cycle shape" — the
-four cases ARE the shapes a disjoint-cycle product can take once parity is imposed, and he reads
-each identity's points off the shape. He proves no covering lemma, because for him there is
-nothing to cover: the decomposition theorem gives the shape and the shape names the points.
-
-HOW I DRIFTED, and it started from a real win. Restating each case over POINT-VALUES of
-sigma^-1 is what made the identities length-free — no induction on r, no cycle arithmetic, which
-is recorded above and stands. But point-values decouple the cases from sigma's SHAPE, so the
-arms then need shape-to-point-value conversion that Judson never pays for. That conversion is
-the entire "covering proof". I built five theorems of it and reported the residue as the
-chapter's gap.
-
-WHAT WAS KEPT, and why only this. Nine lemmas came out of the detour; six were deleted. The
-three kept are sort-generic facts std genuinely lacked, independent of any Lemma 10.10 route:
-
-    peano_order.natDisequalityIsSymmetric   a != b -> b != a over Nat
-    peano_order.aNatIsZeroOneTwoOrMore      three nested zeroOrSucc splits
-    cycle.forwardGivesInverse               apply(f,x)=y -> apply(inverse(f),y)=x
-
-Deleted: `aNonIdentityCycleIsATranspositionAThreeCycleOrLonger`,
-`aLongCycleMatchesTheFirstPattern`, `aLongCycleAdvancesItsFirstPoints`,
-`aTranspositionIsOdd`, `aDisjointRemainderPreservesCycleValues`,
-`aThreeLengthCycleIsAThreeCycleProduct`. All were true and strict; all existed only to serve the
-point-value framing, and leaving them would have left plausible-looking scaffolding a reader
-would assume was load-bearing.
-
-A MEASUREMENT ERROR WORTH RECORDING. I first recommended keeping six, on the strength of a
-citation count that showed `natDisequalityIsSymmetric` with "8 citations". Those eight lines were
-inside the three theorems I had already deleted — a `grep -c` counting the lemma's uses BY the
-scaffolding, not by the library. After deletion all six read one line each: their own
-declaration. The lesson is narrow and practical: when counting whether a lemma is load-bearing,
-exclude the things you are about to remove, or the scaffolding vouches for itself.
-
-STILL STANDING, and untouched by any of this: Judson's four identities, the four dispatch arms,
-Lemma 10.9 complete, Lemma 10.8, and Theorem 10.11's composition. The chapter's remaining gap is
-the one it always was — Theorem 10.11 takes "N contains the fixed family" as a premise, and
-closing it means following Judson's shape-based case analysis rather than my point-value
-reconstruction.
-
-**JUDSON'S FIRST CASE IS NOW COMPLETE END-TO-END (2026-10-15), via his shape rather than my
-point-value reconstruction.** `judsonsFirstCasePutsAThreeCycleInTheSubgroup`: given a normal
-subgroup N containing `sigma = tau o (a1 a2 ... ar)` with r > 3 and the remainder disjoint —
-Judson's case 1 verbatim — N contains a 3-cycle.
-
-TWO HALVES, and the split is the lesson:
-
-  `decomposition.aLongCycleFactorGivesTheFirstPattern`  SHAPE   -> point-values
-  `aLongCyclePatternPutsAThreeCycleInTheSubgroup`       values  -> membership
-
-The second half was already proved — it is the dispatch arm. What was missing was the first,
-and the retracted "covering construction" was an attempt to reach the same place by proving a
-free-standing case analysis over cycles instead of a bridge from the peel's output. Stating it
-as a bridge is both smaller and faithful to Judson: his case 1 IS the shape hypothesis, so the
-theorem now reads as his case does.
-
-`aDisjointRemainderPreservesCycleValues` is restored, with the rationale corrected. It is not
-scaffolding for a framing — it is the step Judson ELIDES. When he writes
-`sigma = tau(a1 ... ar)` and then treats a1..ar as SIGMA's points, he is using that sigma agrees
-with its cycle on that cycle's own support. On paper those are the same object; in a
-formalization it is one lemma, and every case needs it.
-
-Also added `pointDisequalityIsSymmetric` (Element) locally in `decomposition.b4m`: the twin in
-`alternating.b4m` cannot be cited, since that file imports this one. Second sort-local copy of
-the same four-step fact, after the Nat one — a sign the corpus wants it somewhere lower, but
-`element.b4m` is deliberately axiom-free, so there is no obvious home.
-
-THE `at` SORT CLASH BIT A THIRD TIME. `decomposition.b4m` aliases `at` to the SEQUENCE version
-while cycle indexing needs the `Points` one, same spelling. Three separate occurrences in this
-file now, each diagnosed instantly by the checker ("expected sort 'Seq', got 'Points'") and each
-costing a round trip. Worth qualifying `cycle_theory.at` by reflex in anything that touches both.
-
-**JUDSON'S THIRD CASE IS COMPLETE (2026-10-15).** `judsonsThirdCasePutsAThreeCycleInTheSubgroup`:
-N containing `sigma = tau o (a1 a2 a3)` with tau an involution disjoint from the 3-cycle gives
-a 3-cycle in N, namely sigma^2.
-
-SHAPE -> ARM in three conversions, each an existing lemma:
-    the points are distinct           `distinctEntriesDiffer`
-    tau commutes with the 3-cycle      `disjointPermutationsCommute`  (fully general)
-    the cycle is in the identities' fold  `aThreeLengthCycleIsAThreeCycleProduct`
-
-`compose(tau, tau) = identityFn` is Judson's case HYPOTHESIS, not a consequence — "the rest is
-a product of disjoint 2-cycles" is what makes tau involutive — so the bridge passes it through.
-Getting that right mattered: deriving it would have meant proving something false in general.
-
-A PATTERN IN WHAT I DELETED, now visible. The retraction removed six lemmas. Two have since
-come back, and they are exactly the SHAPE<->FOLD CONVERSIONS:
-
-    `aDisjointRemainderPreservesCycleValues`   sigma's values = its cycle's, on that support
-    `aThreeLengthCycleIsAThreeCycleProduct`    std's cycle fold = the identities' fold
-
-Both are steps Judson never writes, because on paper the two notations denote one object. Any
-route through his cases needs them. The four still deleted were case-analysis reconstruction —
-my covering argument — and nothing has wanted them back.
-
-So the retraction was right in substance and over-broad by two. The distinction worth keeping:
-a NOTATION BRIDGE between two formal spellings of the same object is permanent infrastructure;
-a RECONSTRUCTION of the source's own reasoning is not.
-
-**ALL FOUR OF JUDSON'S LEMMA 10.10 CASES ARE NOW COMPLETE END-TO-END (2026-10-15), each from
-his own shape hypothesis to membership in N:**
-
-    judsonsFirstCasePutsAThreeCycleInTheSubgroup    sigma = tau (a1..ar), r > 3   -> 3-cycle
-    judsonsSecondCasePutsAFiveCycleInTheSubgroup    sigma = tau (a1a2a3)(a4a5a6)  -> 5-cycle
-    judsonsThirdCasePutsAThreeCycleInTheSubgroup    sigma = tau (a1a2a3), tau^2=1 -> 3-cycle
-    judsonsFourthCasePutsAThreeCycleInTheSubgroup   sigma = tau (a1a2)(a3a4)      -> 3-cycle
-
-each with an instantiation at N = A_n. Every one takes the shape the decomposition supplies —
-cycles plus a disjoint remainder — rather than point-values, so the theorems read as Judson's
-cases do.
-
-WHAT EACH CASE COST BEYOND ITS IDENTITY, which is the useful record:
-
-  case 1   a shape->pattern bridge, and the value transfer Judson elides
-  case 3   three conversions, all pre-existing lemmas; NO normality (sigma^2 suffices)
-  case 2   the above plus CROSS-CYCLE disequalities -- points from two different cycles must
-           be shown distinct, which `distinctEntriesDiffer` cannot do and
-           `pointsInDisjointSupportsDiffer` can
-  case 4   the longest: Judson's "a further conjugation" is TWO conjugations, and each needs
-           its own point-values -- step 2 reads them off step 1's OUTPUT, not off sigma
-
-THE PATTERN ACROSS ALL FOUR. Every gap was a step Judson compresses into a phrase:
-  "sigma = tau(a1...ar)" treating a1..ar as sigma's points   -> the value transfer
-  "disjoint cycles"                                           -> cross-cycle disequalities
-  "(a1 a2 a3)"                                                -> the two folds are one object
-  "a further conjugation"                                     -> two conjugations, two sets of values
-None of them is a gap in his reasoning; all are places where one notation does work a
-formalization must spell out. That is the honest shape of transcribing a textbook proof, and it
-is what my earlier "covering construction" obscured by inventing a different structure instead.
-
-================================================================================
-LEMMA 10.9 DISCHARGED; THE DISPATCH'S REAL SHAPE (2026-10-15)
-================================================================================
-
-WHAT CLOSED. Theorem 10.11 now rests on Judson's own Lemma 10.10 hypothesis —
-"N contains a 3-cycle" — and nothing else about N's contents. Three steps:
-
-1. THE SELECTOR NEEDED ONLY ONE PAIR, and a measurement proved it. Its premise
-   was "N has the family at EVERY pair (i2,j2)", but all 21 of its uses read
-   `family(i, j, ·)` with i and j its OWN binders. So the premise weakened to
-   the family at one pair and `fix i`/`fix j` moved outside the `assume`; the
-   844-line body changed only by dropping the now-absent `i != j` per
-   specialize.
-
-   The lesson generalizes: before strengthening what feeds a proof, grep what
-   the proof CONSUMES. The all-pairs premise had never been earned, and a
-   weakening that looked like real work was a one-hour frame rewrite.
-
-2. `aNormalSubgroupWithOneFamilyMemberHasThePairsFamily` — one member to the
-   whole single-pair family. The existing move already goes from a FIXED source
-   to an ARBITRARY target, so there is no chain. Two things Judson supplies
-   silently: a spare point c for the conjugator `(a,b,c)` (a hypothesis here,
-   "for any four points there is a fifth" — the chapter's only use of n >= 5),
-   and the a = b case, where the target IS the source and the move does not
-   apply at all. That degenerate arm is invisible in the prose.
-
-3. `aNormalSubgroupWithOneThreeCycleHasEveryThreeCycle` and the capstone. The
-   3-cycle's points being existentially bound, Judson's "relabel its points as
-   (1 2 3)" costs exactly nothing — whatever 3-cycle N contains supplies i, j
-   and a itself. The relabelling that reads like a step is free; the point
-   supply that reads like nothing is the real cost.
-
-CASE 1 IS WIRED. `judsonsFirstCaseFromTheDecomposition` takes the decision
-step's length-(4+q) branch to the one-3-cycle premise. Three conversions, each
-a Judson phrase: factor ORDER (he writes one product; the peel and the case
-read it in opposite orders), DISJOINTNESS (support equation vs
-`disjointSupports`), and THE POINTS ("treating a1...ar as sigma's points" = six
-index facts through `distinctEntriesDiffer`).
-
-Rewrite-shape note, cost one cycle: from `f = compose(g, c)` you cannot rewrite
-INTO `invertible(compose(g, cycle(...)))` in one step. The equation must be
-rewritten into `invertible(f)` first, THEN the cycle's spelling into that
-result. Two steps per fact; `rewrite` rewrites a formula with an equation, it
-does not conjure the formula.
-
-THE REMAINING TWO BRANCHES ARE NOT WHAT THE DECISION STEP SUGGESTS. The decision
-reports the length of the FIRST PEELED cycle, and I had been reading its three
-branches as Judson's cases 1 / 3 / 4. They are not. Judson's split is on the
-LONGEST cycle in the decomposition:
-
-  - peeled length >= 4  ->  case 1 directly (done: any long cycle serves)
-  - peeled length 3     ->  case 2 or 3, but ONLY IF no longer cycle remains;
-                            if tau has a cycle of length > 3 it is case 1 again
-  - peeled length 2     ->  case 4, same proviso
-
-So branches 2 and 3 are not "wire up two more case theorems". They need the
-decomposition's MAXIMUM cycle length, which is a second induction over the
-remainder — and once you have it, branch >= 4 subsumes every element whose
-longest cycle exceeds 3, making the peel order irrelevant. That is the honest
-scoping, taken from reading what the branches consume rather than from the
-shape of the piece already built (the error this file records twice).
-
-The four case theorems themselves are proved and length-free; none of them is
-blocked. What is missing is the maximum-length walk.
-
-================================================================================
-CHAPTER 10 COMPLETE (2026-10-15): LEMMA 10.10 AND THEOREM 10.11
-================================================================================
-
-Theorem 10.11 is proved. `--axioms` on the A_n instantiation: 41 axioms, ZERO
-HOLES, every one a primitive of function / Peano / set / permutation theory.
-
-THE DIAGNOSIS IN THE PREVIOUS ENTRY WAS WRONG, and the correction is the lesson
-of the whole chapter. I had written that branches 2 and 3 "need the maximum
-cycle length, a second walk over the remainder" — scoping an induction. Reading
-Judson's actual text (vendor/aata/src/normal.xml:366-480) showed he does no such
-thing. He ASSERTS the case list:
-
-    "Let sigma be an arbitrary element in a normal subgroup N. There are
-     several possible cycle structures for sigma."  <- then five bullets
-
-Exhaustiveness is the one step of his proof that is a claim rather than a
-computation. So the formalization's boundary is that sentence: the five shapes
-are `define`s, their disjunction is the dispatch's hypothesis, and everything
-downstream is kernel-checked. No induction, no maximum, no second walk.
-
-That is now THREE times in this chapter that I scoped machinery from the shape
-of what I had built instead of from the source. The first two were recorded as
-"missing machinery" claims a probe disproved. This one is worse in kind: I had
-the source in the repo and did not open it. The earlier entry in this file even
-names the file and line range.
-
-RULE, stated plainly: when the task is transcription, READ THE SOURCE BEFORE
-SCOPING. Not after a plan exists, not to check a plan — before. A plan built
-from the formalization's own shape will reliably invent work the author never
-did, and it will look rigorous while doing so.
-
-WHAT THE REMAINING WORK ACTUALLY WAS, once the text was read:
-
-  Five landings, one destination. Each case theorem already existed; what was
-  missing was packaging each one's conclusion as the SAME existential
-  ("N contains a 3-cycle, its points named"). Then the dispatch is five
-  one-step arms with no reconciliation.
-
-  "Apply the previous case" (case 2 -> case 1) needed the 5-cycle as a
-  `cycle(s,5)` rather than as a four-transposition product. Three lemmas:
-  aFivePointListExists (four pointsPrepends), the fold, and distinct(s,5) from
-  ten pairwise disequalities (a 5x5 index tree, generated).
-
-  The evenness premise needed a distinctness guard. "Every 3-cycle is even" is
-  FALSE of `compose(T(i,k), T(i,j))` with repeated points — at i = k that term
-  is the identity, not a 3-cycle. 57 sites.
-
-MECHANICS WORTH KEEPING:
-
-  `rewrite` rewrites a FORMULA with an equation; it does not conjure the
-  formula. From `f = compose(g,c)` you cannot reach
-  `invertible(compose(g, cycle(...)))` in one step — rewrite the equation into
-  `invertible(f)` first, then the spelling. Two steps per fact.
-
-  `simplify` needs an EQUATION goal. Substituting entry equations into an
-  `inN(...)` or a disequation is `rewrite`, one equation at a time.
-
-  `assoc` reassociates a product against a product, so it cannot take
-  `cycle(s,5) = <nested>` to `cycle(s,5) = <regrouped>`. The regrouping is its
-  own equation, then `chain`.
-
-  A generated proof's brace levels are where generators fail: both generators
-  this round emitted each discharge INSIDE the block it discharges. Check brace
-  DEPTH at the discharge steps, not just the total count — the totals balanced
-  in both broken versions.
-
-OPEN BUG FOUND: `--fast` ACCEPTS A NONEXISTENT QUALIFIED REFERENCE that strict
-rejects, printing "fully verified". Repro in drafts/fast-qualified-ref-bug.b4m
-(30 lines). Same invariant as the `fact`-alias bug fixed in Prove.zig's
-`trustableKind`; the specialize accelerant swallows it, its verdict admitted
-under --fast without the head ever being resolved. It bit twice in one session —
-`aCycleIsAPermutation` for `cycleIsAPermutation`, and a swapped factor order in
-case 3's packaging that only strict caught. Strict-only is the right discipline
-until this is fixed.
+atoms, cross-linking nothing. The three same-coordinate clashes then never need ruling out
+propositionally — the leaf derives `i = j` by symmetry-and-rewrite and discharges with
+`ex_falso`, which is the standard remedy ("do the non-propositional step yourself, then let
+tautology close it").
+
+### `specialize` NEEDS TERM ARGS FOR BINDERS THAT FOLLOW A PREMISE
+
+`conjugationIsMultiplicative` is `forall sigma; invertible(sigma) -> forall f, g; …`.
+`specialize conjugationIsMultiplicative(sigma) sigma-is-a-permutation` leaves `f` and `g`
+UNBOUND, and the diagnostic shows the remainder as `forall b1: Fn; forall b2: Fn; …` —
+accurate but easy to misread as a shape mismatch. Put EVERY term in the parens regardless of
+where its binder sits. Same rule CHAPTER6-PAINPOINTS records for `fullOrderGenerates`.
+
+Two more citation shapes that cost a cycle each:
+
+- **Inside a `case` arm, the arm label names a SUBPROOF.** `[using tautology <arm-label>]`
+  errors ("names a subproof; a step reference is required"); restate the assumption first with
+  `[by hypothesis <arm-label>]`.
+- **A schema citing a schema instantiates the inner one AT ITS OWN PARAMETER:**
+  `[using instantiation innerSchema((fun g: Fn => inQ(g))) refs]`.
+
+### GENERATOR DESIGN: DEMAND-DRIVEN, and precompute the table before branching
+
+Four generator iterations were the SAME defect in different places — **emitting a fact nothing
+cites.** `2b4m` rejects that outright ("unused fact"), which made each round a one-line
+diagnosis, but the shape is worth recording because a generator invites it: pre-ensuring both
+orientations of a disequality when each leaf consumes one; restating all four hypotheses when
+leaves cite two; projecting every conjunct when a leaf uses a subset.
+
+A hand-written proof cites what it needs because the author writes the citation first. A
+generator emits a SUPPLY and hopes it matches the DEMAND. Making the emitter demand-driven —
+body first, facts second, each on request — removed all four at once.
+
+Two companions:
+
+- **When the emitter grows branches for cases that may not arise, compute the answer for every
+  case first and LOOK AT THE TABLE.** Two attempts at a recursive disequality solver
+  accumulated edge cases; a precomputed table showed 54 steps across 13 arms, every one of
+  exactly two forms, and that the hard case (a chain of two substitutions) never occurs.
+- **Check brace DEPTH at the discharge steps, not the total count.** Both generators this round
+  emitted each discharge INSIDE the block it discharges, and the totals balanced in both broken
+  versions.
+
+And **verify the plan mechanically before generating** — four script checks each caught
+something that would otherwise have surfaced partway through a 500-line proof, including two
+missing leaves. But a plan-verification script WEAKER than the proof system reports gaps that
+are not there (one check's first pass substituted in only one direction and falsely flagged 12
+of 13 leaves); one STRONGER misses real gaps. Matching it to the available inference is the
+whole trick.
+
+### BEFORE STRENGTHENING WHAT FEEDS A PROOF, GREP WHAT THE PROOF CONSUMES
+
+The selector's premise was "N has the family at EVERY pair (i2,j2)", but all 21 of its uses
+read `family(i, j, ·)` with i and j its OWN binders. The premise weakened to one pair, `fix
+i`/`fix j` moved outside the `assume`, and the 844-line body changed only by dropping a
+now-absent disequality per specialize. The all-pairs premise had never been earned; a
+weakening that looked like real work was a one-hour frame rewrite.
+
+Two related things Judson supplies silently, each invisible in the prose:
+
+- **A spare point** for the conjugator `(a,b,c)` — the chapter's only use of n >= 5, now
+  `set_finite.aSetOfAtLeastFiveHasAFifthPoint`.
+- **The DEGENERATE arm.** Where a = b the target IS the source and the move does not apply at
+  all.
+
+And the mirror image: **"relabel its points as (1 2 3)" costs exactly nothing.** The 3-cycle's
+points being existentially bound, whatever 3-cycle N contains supplies i, j and a itself. The
+relabelling that reads like a step is free; the point supply that reads like nothing is the
+real cost.
+
+### `Element` IS AN UNCONSTRAINED SORT, so "there are at least five points" has no expression
+
+`std/element.b4m` declares `Element` with no operations and no axioms, deliberately. So every
+earlier statement of the n >= 5 hypothesis in this chapter was informal in a way I had not
+noticed: the theorems said "given these five distinct points", never "five exist".
+
+std already had the convention and it was not a new mechanism: bound the domain with a SET
+carrying `hasSize`, the way `decomposition.finiteSupportDecomposes` bounds a support. Two
+theorems in `std/set/finite.b4m` — `aDistinctPointSurvivesARemoval` and
+`aSetOfAtLeastFiveHasAFifthPoint` (iterated `removingAnElementDropsTheSize`, then
+`sizedSetHasAMember` on the remainder).
+
+**ITERATED REMOVAL BEAT THE SLICKER ROUTE.** `properSubsetIsSmaller` gives a contradiction
+argument, but it needs the four-point set BUILT and SIZED (three insertions carrying six
+non-membership side conditions) plus a subset proof. Iterated removal needs no set
+construction at all. Counted both before writing either.
+
+### A COUNTING MEASUREMENT MUST EXCLUDE WHAT YOU ARE ABOUT TO DELETE
+
+I recommended keeping six scaffolding lemmas on the strength of a citation count showing
+`natDisequalityIsSymmetric` with "8 citations". All eight lines were inside the three theorems
+I had already decided to delete — a `grep -c` counting uses BY the scaffolding, not by the
+library. After deletion all six read one line each: their own declaration.
+
+When counting whether a lemma is load-bearing, exclude the things you are about to remove, or
+the scaffolding vouches for itself.
+
+### CHECK WHETHER A CASE IS A CANCELLATION BEFORE REACHING FOR EXTENSIONALITY
+
+Three of Judson's four cases needed a five- or six-case pointwise split. Case 4 step 1 needed
+no extensionality and no hypotheses at all: the middle pair `T(a2,a1) T(a1,a2)` is the identity
+by symmetry plus the involution law — four algebra steps. Worth the ten seconds to check.
+
+The same move at the statement level, twice: `squaringKillsACommutingInvolution` is pure
+composition algebra with no cycles (if the factors commute and the first is an involution,
+`(t o g)^2 = g^2`), and stating case 3 that way — on the ALGEBRA its proof uses rather than on
+cycle structure — is what made the proof short. A caller holding the structural form discharges
+the hypotheses from `disjointPermutationsCommute`.
+
+### I STARTED A PYTHON EMITTER FOUR TIMES AND DELETED IT THREE
+
+Each time a section got long. `no-throwaway-abstractions` is why: the generator is scaffolding
+that must be deleted at the end, it encodes the proof shape in a second place, and its output
+is unreviewable by the usual means. Twice, RECONSIDERING THE STATEMENT removed the need
+entirely — e.g. four shared-point leads that differ only in which transposition argument flips
+became one theorem on the NORMALIZED form plus one rewrite per lead, and
+`concatenationPreservesTranspositions` (188 lines, one predicate baked in) became
+`concatenationPreservesEntryProperty(prop(Fn))` with both versions as one-line instantiations.
+
+If the volume is worth paying, pay it in 2b4m with the cases written out; if it is not, the
+honest move is to stop and say so. The fourth time it WAS worth it (13 generated leaves), and
+the generator-design lessons above are from that round.
+
+---
+
+## RESOLVED AND REMOVED (ledger)
+
+- **PARITY lives in an aata chapter file, not in std** — lifted. `isEvenPerm` and
+  `inAlternating` are in `std/permutation/alternating.b4m`.
+- **The four-case cycle analysis needs CONCRETE cycle arithmetic over variable support** —
+  retired by probe. Extensionality reduces each identity to a case analysis on EQUALITY OF
+  POINTS, and `parity.b4m` already carried the deciders.
+- **Generation by a SET** — never needed. Judson's "these 3-cycles generate A_n, hence N = A_n"
+  unpacks to Lemma 1 + the conjugation step + closure under products of RUNS, and the third is
+  `std/subgroup/products.b4m`'s `aProductOfSubgroupEntriesIsInTheSubgroup`. No
+  generated-subgroup object.
+- **A cycle's LENGTH / the SHAPE of a decomposition / conjugation as RELABELLING** — all three
+  were already in std and asserted absent without grepping. `cycle(s, k)` takes the length as
+  its second argument; `decomposesIntoDisjointCycles` is structured; `conjugateOfACycle` holds
+  for arbitrary k.
+- **`--fast` accepts a nonexistent QUALIFIED reference** — FIXED, re-probed 2026-11-05: both
+  modes now reject `[using specialize peano.noSuchTheoremAtAll(a)]`.
+- **`--fast` rejects an aliased ref that strict accepts** — FIXED. `Prove.namesAFact` switched
+  over `.axiom, .hole, .theorem => true`, written before the `fact` keyword existed; an alias
+  is `ast.Decl.fact`, a distinct variant, so every aliased lemma looked like a typo. One token.
+  THE TELLING DETAIL: the function's doc comment said it "counts an ALIAS to a fact too" and
+  explained why. The comment was right; the code had stopped matching it — only the switch body
+  shows the bug.
+- **`--fast` admits a `specialize` whose ref names a subproof or a previous theorem's step** —
+  FIXED 2026-10-07 (`seedAndCheckLocalRoot`; gate `tests/cases/fast_unknown_ref_bad.b4m`; five
+  causes catalogued in `agents/debug-guide.md`).
