@@ -9983,6 +9983,23 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
             return .{ .symmetry = try self.resolveStepRef(w, c.refs[0]) };
         },
         .rewrite => {
+            // ONE REF = CONGRUENCE. `[by rewrite EQ]` on a claim `lhs = rhs` means "the target
+            // is this claim's own reflexive instance": synthesize `lhs = lhs` by reflexivity
+            // and rewrite in THAT. Hand-rolling it costs two steps, the first of which asserts
+            // nothing — 265 of std's 376 `reflexivity` steps exist only to serve a following
+            // `rewrite`. The TWO-ref form stays: rewriting inside an ALREADY-PROVED fact is a
+            // different move.
+            if (c.refs.len == 1) {
+                const gnode = self.pool.get(goal);
+                if (gnode != .eq)
+                    return self.fail(c.rule.start, "one-ref 'rewrite' proves a congruence, so the claim must be an equation; got '{s}'", .{try self.renderTerm(goal)});
+                const refl = try self.pool.add(.{ .eq = .{ .lhs = gnode.eq.lhs, .rhs = gnode.eq.lhs } });
+                const target = try self.emitSynthetic(kb, c.rule.start, refl, .reflexivity);
+                return .{ .rewrite = .{
+                    .equation = try self.resolveStepRef(w, c.refs[0]),
+                    .target = target,
+                } };
+            }
             try self.wantRefs(c, 2);
             return .{ .rewrite = .{
                 .equation = try self.resolveStepRef(w, c.refs[0]),

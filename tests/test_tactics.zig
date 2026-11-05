@@ -261,6 +261,11 @@ pub fn addTests(
     // the boundary — not because a named theorem was aliased (the pattern that had masked the
     // limitation: std/ring.b4m proves off `AdditiveGroup`, and consumers alias those theorems).
     ctx.okSilent(&.{ "check", "tests/cases/model_cited_across_files_user.b4m" });
+    // ONE-REF `rewrite` = CONGRUENCE: `[by rewrite EQ]` takes the claim's own reflexive
+    // instance as its target, so `f(A) = f(B)` from `A = B` is ONE step instead of two. The
+    // two-ref form is unchanged — rewriting inside an already-proved fact is a different move.
+    ctx.okSilent(&.{ "check", "tests/cases/rewrite/one-ref-congruence.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/rewrite/two-ref-still-works.b4m" });
     // A SCHEMA TRANSFERRED THROUGH A MODEL, at a predicate of the citer's own. Two theorems over
     // one model differing ONLY in whether the cited theorem takes a predicate parameter: the
     // plain one always transferred, the schema did not. A schema instance runs passes in BOTH

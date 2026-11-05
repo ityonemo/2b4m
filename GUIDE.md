@@ -1167,6 +1167,7 @@ partition**: every `RULE:` leaf is a `by` word and every `TACTIC:` leaf is a
 | `double_negation STEP` | from `not not P`, conclude `P` |
 | `reflexivity` | `t = t` |
 | `symmetry STEP` | from a proven `x = y`, conclude `y = x` |
+| `rewrite EQ` | ONE ref — a CONGRUENCE: the target is the claim's own reflexive instance, so `f(a) = f(b)` follows from `a = b` in one step. The claim must be an equation |
 | `rewrite EQ TARGET` | replace occurrences of the equation's left side with its right side in `TARGET` |
 | `equiv_rewrite BICOND TARGET` | the propositional analogue of `rewrite`: from `P iff Q`, replace the sub-proposition `P` by `Q` at any position in `TARGET` (under connectives and quantifiers). A kernel-checked rule, no accelerant taint |
 | `using instantiation NAME(args) refs...` | monomorphize a schema; refs discharge its leading antecedents |
@@ -1368,6 +1369,19 @@ of a term with itself).
 `[by symmetry STEP]` — one ref proving `x = y`; concludes `y = x`.
 
 ### RULE: rewrite
+
+`[by rewrite EQ]` — ONE ref, a CONGRUENCE: the target is the claim's own reflexive
+instance, so from `a = b` the claim `f(a) = f(b)` is one step. Use it whenever you would
+otherwise write a `t = t` by `reflexivity` purely to have something to rewrite in.
+
+```2b4m
+@congruent |
+  f(a) = f(b)
+  [by rewrite eq-a-b]
+```
+
+The claim must be an EQUATION (there is nothing else for a congruence to mean); a
+non-equation claim with one ref is a diagnosed error.
 
 `[by rewrite EQ TARGET]` — two refs: an equation `a = b` and a target step; replaces
 occurrences of `a` with `b` — **or** `b` with `a` — in the target. **Bidirectional:**
