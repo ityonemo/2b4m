@@ -38,10 +38,18 @@ fn fmtCommand(arena: std.mem.Allocator, rest: []const [:0]const u8) !u8 {
     };
     // A `.md` is a literate document: reformat only the ```2b4m blocks, leaving
     // prose verbatim. A `.b4m` is formatted whole.
-    const formatted = if (std.mem.endsWith(u8, p, ".md"))
-        try b4m.literate.formatLiterate(arena, source)
+    const result = if (std.mem.endsWith(u8, p, ".md"))
+        try b4m.literate.checkLiterate(arena, source)
     else
-        try b4m.fmt.format(arena, source);
+        try b4m.fmt.check(arena, source);
+    // Braces that do not balance are a hard error in BOTH modes: fmt decides
+    // indentation from nesting depth, so it cannot format what it cannot nest.
+    // Rewriting the file would be worse than refusing — `check` diagnoses the
+    // same file properly, so point there.
+    if (result.diagnostic) |d| {
+        return fail("{s}:{s}\n", .{ p, d.message });
+    }
+    const formatted = result.text;
     if (std.mem.eql(u8, source, formatted)) return 0;
     if (check_only) {
         return fail("{s}: not formatted\n", .{p});
