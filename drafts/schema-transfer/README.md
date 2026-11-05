@@ -27,7 +27,7 @@ Run `2b4m check drafts/schema-transfer/binders-only-consumer.b4m` to see it.
 So: a transferred schema whose body is pure kernel steps works; one whose body uses an
 accelerant does not. Since nearly every real schema in std uses accelerants
 (`std/group/listing.b4m`'s five, `std/permutation/listing.b4m`'s four), this is the gap that
-still blocks the duplicated-proof consolidation — see `CONTAINER-THEORY.md`.
+still blocks the duplicated-proof consolidation — see `the container theory (`std/indexed.b4m`)`.
 
 ## Why it is not a small fix — the source-space design has no room for a consumer symbol
 

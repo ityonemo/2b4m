@@ -33,7 +33,7 @@ consumer contributing the fact, which is exactly what unpainted production canno
 
 Corroborating: `arithmetic` is documented as receiving its domain facts FROM THE THEORY — memory
 `arithmetic-pure-integer-engine`, "ℕ nonnegativity is theory-supplied via a well-known `nonneg`
-predicate injected per variable", and `ARITHMETIC-SORT-AGNOSTIC-DESIGN.md`'s "integrality is a
+predicate injected per variable", and `the sort-agnostic arithmetic design (landed; see memory `arithmetic-pure-integer-engine`)`'s "integrality is a
 declared capability, not a sort". A neutral producer asks the WRONG THEORY for those facts.
 
 ## What the patch does, and what it fixes
@@ -55,15 +55,13 @@ but apply_at derives
   'notMinusOne(starInverse(a)) -> forall b1: Real; notMinusOne(b1) -> …'
 ```
 
-A GUARD PREMISE appearing where the claim is unguarded — verbatim the symptom pinned in
-the then-open `ACCELERANT-ON-GUARDED-SETS.md` (since deleted; it listed three candidate
-root-cause readings and stated none
-is established. Painted production arrives at that blocker from the opposite side, which is
-evidence it and the accelerant-namespace question are one issue rather than two.
+A GUARD PREMISE appearing where the claim is unguarded. Painted production arrives at this
+blocker from the opposite side, which is evidence it and the accelerant-namespace question
+are one issue rather than two.
 
 Also unresolved and likely the same: `group.invProduct` is omitted from
 `tests/cases/model_subgroup_transfer.b4m` because its proof cites the `assoc` accelerant (the
-fixture calls it "a known separate boundary"), and the month-old memory note
+fixture calls it "a known separate boundary"), and the memory note
 `accelerants-not-model-aware`.
 
 ## Sequencing (user, 2026-10-04)
