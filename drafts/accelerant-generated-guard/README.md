@@ -15,7 +15,7 @@ suppressed, because each is a SEPARATE and already-documented issue:
 
 - **The proof is GROUND** — no `fix`, no `assume`, one block. So the DISCHARGED-CONCLUSION
   rule cannot be implicated (that one is resolved as NOT A BUG in
-  `ACCELERANT-GUARD-DISCHARGE-ISSUE.md`: a guard in a conclusion elaborated in the parent
+  SIMPLIFY-ISSUES.md's "separate authoring rule": a guard in a conclusion elaborated in the parent
   block must come from the antecedent).
 - **`theClosedForm` binds `f` at the REFINED sort `OkFn`**, so `inv(inv(f))` is defined at
   every instance and the statement owes nothing of its own. An axiom written
@@ -103,6 +103,6 @@ while writing a proof is fine. See `fast-strict-invariant-and-rummage-rule`.
 ## Related
 
 - `SIMPLIFY-ISSUES.md` — the author-facing symptom and the `[by rewrite …]` workaround.
-- `ACCELERANT-GUARD-DISCHARGE-ISSUE.md` — the discharged-conclusion rule these fixtures
+- `SIMPLIFY-ISSUES.md` — the defect these fixtures demonstrate, plus the discharged-conclusion rule they
   deliberately avoid, plus the `guard_trace` instrumentation recipe.
 - `drafts/accelerant-guard-discharge/` — the earlier `specialize`-at-a-refined-binder repro.

@@ -5,52 +5,34 @@ standard library lacked at the moment it blocked a proof. Entries that are ADDRE
 get removed rather than annotated — what remains is what is still missing. Plain
 markdown without a `.md` extension so the literate checker never parses it.
 
-Same discipline as CHAPTER5/6/7-PAINPOINTS: a claim here is a claim about the CHECKER
-AS IT IS, re-probed, not a recollection.
-
 ---
 
-## THE REAL LIMIT, after three wrong guesses about it
+## THE REAL LIMIT
 
-My first draft of this file claimed four results were UNSTATABLE because "an isomorphism
-relates two theories and 2b4m cannot quantify over theories". Three of the four claims
-were wrong, and the pattern behind all three is the entry worth keeping.
+**2b4m has no sort of GROUPS.** A group is a theory — a sort plus operations plus axioms — so
+`forall G: Group` is unwritable. Identity-by-origin sharpens it: `import group` twice names ONE
+theory, so two abstract groups must be DECLARED independently (the choice
+`std/group/product.b4m` documents).
 
-**What is actually true.** 2b4m has no sort of *groups*: a group is a theory (a sort
-plus operations plus axioms), and you cannot write `forall G: Group`. Identity-by-origin
-sharpens it — `import group` twice names ONE theory, so two abstract groups must be
-DECLARED independently (the choice `std/group/product.b4m` documents).
+**What does NOT follow:** "cannot quantify over theories" does not mean "cannot state theorems
+about several theories". It means you must FIX the arity by declaring that many, and declaring
+is cheap. Cayley's Theorem needs six declarations (`PermG`, `applyP`, `composeP`, `idP`,
+extensionality, `lam`) and then proves — 13 theorems in `std/group/isomorphism.b4m`.
+Transitivity of ≅ declares a third group and a second isomorphism, 16 declarations, and the
+composite's operation-preservation proves in one `rewrite`.
 
-**What does NOT follow, which is what I got wrong.** "Cannot quantify over theories"
-does not mean "cannot state theorems about several theories". It means you must FIX the
-arity by declaring that many. And declaring them is cheap:
+So Theorem 9.10 is not blocked: `reflexivityOfIsomorphism`, `symmetryOfIsomorphism` and
+`transitivityOfIsomorphism` are all proved, plus `compositePreservesIdentity` so the
+transitivity witness is an isomorphism of GROUPS and not merely a bijection preserving `op`.
 
-- **Cayley's Theorem** — I said the permutations of an abstract G had no home because
-  `std/permutation.b4m`'s `Fn` is single-sorted. Six declarations (`PermG`, `applyP`,
-  `composeP`, `idP`, extensionality, `lam`) and the whole theorem proves. Now in
-  `std/group/isomorphism.b4m`, 13 theorems. See the ledger.
-- **Transitivity of ≅** — I said it "needs THREE groups and two maps", as though that
-  settled it. Declaring three groups and two maps takes 16 declarations, and the
-  composite's operation-preservation proves in one `rewrite`. Probed 2026-10-06.
-- **Reflexivity of ≅** — the identity map on a declared group; trivial.
+What remains blocked is narrower: the *relation* ≅ cannot be NAMED, because naming it would
+quantify over pairs of theories. Every instance you declare is provable; "for all groups G, H"
+is not.
 
-So Theorem 9.10 is not blocked by any of its three ingredients — and all three are now
-PROVED (`reflexivityOfIsomorphism`, `symmetryOfIsomorphism`,
-`transitivityOfIsomorphism`, plus `compositePreservesIdentity` so the transitivity
-witness is an isomorphism of GROUPS and not merely a bijection preserving `op`).
-Transitivity declares a third group K and a second isomorphism χ : H → K; that is the
-whole cost of "needs three groups".
-
-What remains blocked is narrower: the *relation* ≅ cannot be NAMED, because naming it
-would quantify over pairs of theories. You can prove every instance you declare; you
-cannot say "for all groups G, H, ...". The mathematical content of Theorem 9.10 is
-complete; only the quantification is out of reach.
-
-**THE ERROR PATTERN.** All three guesses came from reasoning about what `std` HAS rather
-than what the language can EXPRESS, and all three were settled in minutes by writing the
-declarations and running the checker. The same pattern cost me real work twice more
-today (see the ledger: `splittingAPrefix` "threads the fold"). **Probe by writing the
-file, not by reading the library.**
+**THE RULE:** treat "std has no X" as a fact about a FILE, never about the language. A claim of
+"unstatable" requires a failed probe, not a search — and the probe is usually to write the
+5–10 lines that declare the structure, then ask what is missing. DECLARE, THEN MODEL: a fresh
+sort plus three axioms plus one `model` block inherits an entire corpus.
 
 ## STILL MISSING
 
@@ -128,120 +110,28 @@ pressure.
 
 ---
 
-## RESOLVED AND REMOVED (ledger, 2026-10-06)
+## Mechanical frictions worth knowing
 
-### ~~Cayley's target — "the permutations OF G" — has no home~~ — WRONG, and instructive
-
-I recorded that Cayley's Theorem was UNSTATABLE: `std/permutation.b4m`'s `Fn` acts on a
-fixed `Element` sort, so "the group of permutations of an abstract G" supposedly had
-nowhere to live, and only the ingredients of Judson's proof were checkable.
-
-That was a false inference, and the theorem is now fully proved in
-`std/group/isomorphism.b4m` (13 theorems): `cayleyPreservesOp` (the map is a
-homomorphism — the hard part, via extensionality), `cayleyIsInjective`,
-`cayleyIdentity`, `imageHasIdentity`, `imageClosedUnderComposition`. Six declarations
-were all it took:
-
-```
-sort PermG
-func applyP(s: PermG, a: G) => G
-func composeP(s: PermG, t: PermG) => PermG
-const idP: PermG
-axiom permExtensionality: forall s, t: PermG;
-  (forall a: G; applyP(s, a) = applyP(t, a)) -> s = t
-func lam(g: G) => PermG
-axiom lamApply: forall g, a: G; applyP(lam(g), a) = opG(g, a)
-```
-
-**THE ERROR PATTERN, which is the valuable part.** I reasoned from what `std` HAS to
-what the LANGUAGE can express. Those are different questions. `std/permutation.b4m`
-genuinely cannot represent permutations of an abstract sort — but nothing stopped me
-from declaring the sort, and extensionality then does all the work (it is what turns
-pointwise agreement into equality of permutations, which is the step the homomorphism
-property needs).
-
-This is the SECOND time today the same pattern cost real work: I also claimed
-`splittingAPrefix`/`extendingASublisting` "thread the fold" and so could not live in
-`std/indexed.b4m`, on the strength of a grep that was counting `prop(` as `op(`. Both
-times the fix was to write the declarations and run the checker rather than to search
-for existing machinery. **Probe by writing the file, not by reading the library.**
-
-Three mechanical frictions showed up while building it, all small and all worth knowing:
-
-- a DEFINITION BLOCK cannot infer a clause variable's sort when it appears only inside
-  an existential: `pred inImage(s: PermG): inImage(s) iff (exists g: G; s = lam(g))`
-  fails with "cannot infer the sort of 'g'". A declared `pred` plus a named `axiom`
-  works, and is what a model would need anyway (a definition clause's name is mangled).
-- `specialize` on a `forall`-quantified AXIOM treats the binder as a premise to
-  discharge ("cannot discharge the guard premise"). `forall_elim` is the right rule.
+- a DEFINITION BLOCK cannot infer a clause variable's sort when it appears only inside an
+  existential: `pred inImage(s: PermG): inImage(s) iff (exists g: G; s = lam(g))` fails with
+  "cannot infer the sort of 'g'". A declared `pred` plus a named `axiom` works, and is what a
+  model would need anyway (a definition clause's name is mangled).
+- `specialize` on a `forall`-quantified AXIOM treats the binder as a premise to discharge
+  ("cannot discharge the guard premise"). `apply_at` is the right rule.
 - an `iff` axiom needs explicit elimination before either direction is usable —
   `[using tautology <hyp> <the-iff-at-the-point>]`, not a direct cite.
+- a model-transferred theorem keeps the SOURCE's binder order. `group.cancelRight` is
+  `forall b, a, c` with the shared factor as `a`; writing the transferred statement as
+  `forall a, b, c` fails. Read the source statement, do not guess.
 
+### THEOREM NUMBERS: cite by content, not by a derived number
 
-### THEOREM NUMBERS: do not derive them, and prefer citing by content
+PreTeXt auto-numbers, so no number appears in the XML, and DERIVING one by counting
+`<theorem|proposition|corollary|lemma|example|definition>` blocks is unreliable three ways:
+numbering is per CHAPTER not per section; some blocks have no `xml:id` at all, so a regex keyed
+on it silently shifts every later number; and `<example>`s share the sequence, so they must be
+counted but not cited. Chapter 6's eleven citations were all wrong from this, and two results
+cannot be numbered at all because their blocks have no id.
 
-Chapter 9 exposed a process bug that had been silently producing wrong citations since
-Chapter 3. PreTeXt auto-numbers, so no number appears in the XML — I was DERIVING them
-by counting `<theorem|proposition|corollary|lemma|example|definition>` blocks in
-document order. Three things break that:
-
-1. Numbering is per CHAPTER, not per section. My first attempt restarted at each
-   `<section>` and produced §9.2 numbers that were all wrong.
-2. Some blocks have NO `xml:id` (`isomorph.xml` has three, `permute.xml` at least one),
-   and a regex keyed on `xml:id=` skips them — shifting every later number. My "fix" to
-   §9.2 was still wrong for exactly this reason, twice.
-3. `\begin{array}`-style blocks and `<example>`s share the sequence, so examples must be
-   counted but not cited.
-
-Corrected in this pass: Chapter 6's eleven citations were ALL wrong (Lemma 6.1→6.3,
-Theorem 6.2→6.4, 6.3→6.7, Lemma 6.4→6.8, Theorem 6.5→6.9, Corollaries 6.6→6.10,
-6.7→6.11, 6.9→6.12, Theorems 6.16→6.15, 6.17→6.16, 6.18→6.17); Chapter 9's §9.2 ones
-(Proposition 9.18→9.13, Theorems 9.21→9.17, 9.24→9.21). §9.1's (9.6, 9.10, 9.12) were
-right by luck — the id-less blocks are all in §9.2.
-
-Two citations could not be numbered at all because the block has no `xml:id`:
-§5.1's "any permutation of a finite set is a product of transpositions" and §3.3's
-one-step subgroup test. Both are now cited BY CONTENT ("§5.1's
-transposition-decomposition proposition", "§3.3's one-step subgroup test"), which is
-robust and arguably better for a reader anyway.
-
-RULE: cite a numbered result by its STATEMENT, not by a number, unless the number is
-verified against the rendered book. A derived number is a guess that looks like a fact.
-
-## PROCESS: I needed prompting to try things, and the diagnosis is NOT `model`
-
-The user observed that these results only got attempted after being asked, and proposed a
-cause: a weak grasp of `model`, or reading `model` in the category-theoretic sense (it is
-not that — it is structure interpretation, an overlay of symbol maps plus axiom discharges).
-
-Tested, and that is NOT the cause. None of the three language-level wrong calls involved
-`model`:
-
-| wrong call | what it actually needed | `model` involved? |
-|---|---|---|
-| "Cayley is unstatable" | `sort PermG`, `applyP`, `composeP`, extensionality | no |
-| "transitivity of ≅ is blocked" | `sort K` + a second isomorphism | no |
-| "`splittingAPrefix` threads the fold" | porting a schema | `model` was ALREADY the route |
-
-And `model` was used freely throughout: 5 citations in `std/group/isomorphism.b4m`
-(including `GIsAGroup`/`HIsAGroup`, which buy two complete group corpora for six axioms of
-boilerplate), 4 in `std/integer/mod-n-listing.b4m`. There was no reluctance to reach for it.
-
-**THE ACTUAL PATTERN: I did not DECLARE SORTS.** Every one of the three was a case where
-the answer was "write `sort X` plus two or three axioms". I treated the existing std
-vocabulary as the boundary of what is expressible, searched it, found nothing that fit, and
-reported a limitation. `std/permutation.b4m` genuinely cannot represent permutations of an
-abstract G — but that was never the question; the question was whether 2b4m can, and it can.
-
-The two ARE related, which may be why the user's instinct pointed at `model`: `model` is
-what makes declaring cheap. A fresh sort + three axioms + one `model` block inherits an
-entire corpus. So the rule is **DECLARE, THEN MODEL** — and I was skipping step one.
-
-What a future session should do differently, concretely:
-
-1. When a theorem seems to need a structure std lacks, FIRST write the 5–10 lines that
-   declare it (sort, operations, the characterising axioms — extensionality if it is a
-   function-like sort). Only then ask whether anything is missing.
-2. Treat "std has no X" as a fact about a FILE, never about the language.
-3. A claim of "unstatable" requires a failed probe, not a search. The probes that settled
-   all three of these took under five minutes each.
+RULE: cite a numbered result by its STATEMENT unless the number is verified against the
+rendered book. A derived number is a guess that looks like a fact.

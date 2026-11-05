@@ -1,6 +1,7 @@
 # Decoding `Schema{<hash>}` back into meaningful information
 
-**Status: DESIGNED, not built.** User direction 2026-10-11: being able to reverse a hash into
+**Status: DESIGNED, not built.** Code references re-verified 2026-11-05 (every site named
+below exists; line numbers refreshed). User direction 2026-10-11: being able to reverse a hash into
 meaningful, deterministic information is wanted; it need not be solved immediately, and a slow
 linear search is acceptable because *the error path does not need to be fast*.
 
@@ -9,7 +10,7 @@ linear search is acceptable because *the error path does not need to be fast*.
 A schema instance is named by hashing its arguments:
 
 ```zig
-// Prove.zig ~2072
+// Prove.zig ~2409
 const hash = Schema.instanceHash(interner, pool, schema_name, pnames, args);
 const inst_name_bytes = try std.fmt.allocPrint(arena, "{s}{{{x}}}", .{ schema_name_bytes, hash });
 ```
@@ -35,7 +36,7 @@ Everything the hash is computed from is still live at the naming site and is **r
 immediately after:
 
 ```zig
-// Prove.zig ~2094
+// Prove.zig ~2431
 const durable = try self.reifyArgs(pnames, args);
 _ = try self.h.rackIndexed(try ProveTask.new(arena, .{
     .name = inst_name,
@@ -96,10 +97,13 @@ being an instance minted under a model transfer, where `args_source` differs fro
 - **Model transfers.** The payload keeps BOTH `args` and `args_source`; the hash is over
   `args`. A decoder reporting only one of them would mislead on a transferred instance.
 - **`freeFvarParams`.** Under a model, `pnames` is EXTENDED beyond the schema's declared
-  params (Prove.zig ~2064) by the args' free variables of refined image sort. Any re-derivation
+  params (Prove.zig ~2397) by the args' free variables of refined image sort. Any re-derivation
   must reproduce that extension or it will hash the wrong parameter list.
 - **Reserved slots.** `hashEntity` treats non-named Items (`Index.none`, `SortId.prop`) as
   fixed values rather than resolving a name. A decoder must mirror that, not assume every
   entity has a name.
 - **`termHash` has the same shape** and names synthetic accelerant schemas. Whatever decodes
-  one should decode the other; the two sites are `Prove.zig` ~2073 and ~2570.
+  one should decode the other; it is called at THREE sites (`Prove.zig` ~3484, ~3925, ~4650),
+  and the first mixes in an arg count and a head-local flavour on top of the term hash — a
+  decoder must reproduce that or it will not match. (That flavour is there because omitting it
+  caused the keep-first collision fixed in `[[schema-instance-crosstalk]]`.)

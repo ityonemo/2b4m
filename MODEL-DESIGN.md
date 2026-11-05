@@ -241,11 +241,19 @@ without the model accounting for it* (which would be "using something unknowingl
   interpretation and nothing discharges it → error, naming the axiom. The author
   must map it (to a theorem that proves it, or to a foundational axiom that IS it).
 
-The "affected by the substitution" test is `Remap.affects` (term.zig): does the
-formula mention any sort/sym the remap substitutes. This is what lets a genuine
-shared fact (unaffected) be cited freely while a shifted-but-unmapped one is
-caught. It is why discharging obligations is uniform (axiom-or-theorem, both are
-facts) yet a synthesized proof can never lean on an axiom *unknowingly*.
+The "affected by the substitution" test is: does the formula mention any sort/sym the
+remap substitutes. This is what lets a genuine shared fact (unaffected) be cited freely
+while a shifted-but-unmapped one is caught. It is why discharging obligations is uniform
+(axiom-or-theorem, both are facts) yet a synthesized proof can never lean on an axiom
+*unknowingly*.
+
+> **The spelled-out helper is NOT what ships.** `Remap.affects` (`src/term.zig:711`) is
+> defined and **never called** — `grep '\.affects('` returns only its definition. What
+> enforces the rule in practice is that `applyModel` returns the SOURCE unchanged for an
+> unmapped fact (`InternPool.zig:981`, "universe fixpoint: unmapped ⇒ identity"), so an
+> undischarged abstract axiom fails by STATEMENT MISMATCH at the citing step rather than
+> by an abstractness test. Same outcome, different diagnostic — and worth knowing when
+> reading a failure, because the error names a formula, not a missing obligation.
 
 Why this is right: the obligation set is NOT the source theory's declared axioms
 (that universe is unbounded and cross-file — a group-powers proof may lean on an
@@ -370,49 +378,26 @@ UNIFORMLY in both directions:
   checker). The predicated target sort (`Rat where nonzero`) is what tells
   `remapFormula` to inject; the same pass keeps IN and OUT symmetric.
 
-## MVP staging (accelerant pattern, as with Cooper-replay/assoc)
+## Where it is used in std
 
-1. **`--fast` transfer first** — parse `model` block, build the id→id mapping,
-   `remapFormula` the cited source theorem (unguarded case), check it matches the
-   goal, taint. NO dependency analysis, NO obligation check — a partial model
-   transfers just fine here (that's the whole point / the WARNING). This alone
-   proves the mechanism (sort-map + theorem-remap). Test: `Rat`/`Int` gets
-   `cancelLeft`/`inverseUnique`/etc. under `--fast`.
-2. **default-mode obligation discharge** — the strict path: for a transferred
-   theorem, check every source axiom its proof DEPENDS ON is discharged by a mapped
-   local fact (remap-and-match); reject naming any unmapped/mismatched obligation.
-   Needs source-theorem→axiom dependency info. Then sound transfers are un-tainted.
-3. **guarded models** — relativization pass; `where nonzero`; ℚ∖{0} mult-group and
-   nonneg-ℤ-is-a-ℕ.
+- **Abstract divisibility** — `std/divisibility.b4m`, modelled by
+  `std/integer/divides.b4m`. The first real in-library `model` over duplicated code.
+- **`std/group.b4m` and `std/set.b4m`** as importable theories each aata transcription
+  aliases back to. Moving them to std is what made them modelable.
+- **`std/ring.b4m` models group additively** — the first TWO-LEVEL model (a `model`
+  inside a modelable theory). Judson's first ring proposition (a·0 = 0·a = 0;
+  a(-b) = (-a)b = -(ab); (-a)(-b) = ab) is the additive group's
+  cancelRight/inverseUnique/invInvolution transferred.
+- **`model IntegerRing`** in `std/integer.b4m` — the THREE-LEVEL chain
+  ℤ → ring → group materialized. It needed two discharge lemmas ℤ did not have
+  (`addNegLeft` from addNegRight + commutativity, and right-distributivity), which is
+  the shape of the work a thin model costs.
+- **Guarded models** are live: `std/rational/units.b4m` carries four, over
+  `Rat where nonzero`.
 
-## Applications (std reuse candidates)
-
-- **Abstract divisibility — DONE.** `std/divisibility.b4m`; `std/integer/divides.b4m`
-  models it. First real in-library `model` on duplicated std code.
-- **Group / set corpora moved to importable std — DONE.** `std/group.b4m` (10
-  theorems + opt-in `opCommutative`), `std/set.b4m` (19 identities). Each aata
-  transcription aliases back. This is what makes them modelable (locally, on
-  demand, by any consumer).
-- **`std/ring.b4m` models group additively — DONE.** The first TWO-LEVEL model
-  (a `model` inside a modelable theory). Judson's first ring proposition
-  (a·0=0·a=0; a(-b)=(-a)b=-(ab); (-a)(-b)=ab) proved by transferring the
-  additive-group cancelRight/inverseUnique/invInvolution through the AdditiveGroup
-  model.
-
-- **ℤ thin model over ring — NEXT (the payoff / three-level chain).** Make
-  `std/integer-ring.b4m` (or a new consumer) declare a `model IntegerRing { … }`
-  over `std/ring.b4m` (its ring-sort mapping targeting `Int`), so ℤ inherits the
-  ring corpus instead of hand-deriving it, and
-  the ℤ→ring→group THREE-level materialization is exercised. Discharge audit: ℤ
-  already has 7 of the 9 ring axioms as facts (addIsAssociative, addZeroLeft,
-  addZeroRight axiom, addNegRight, addIsCommutative, mulIsAssociative,
-  mulAddDistribLeft). **Missing 2-3 discharge lemmas ℤ must first prove:**
-  `addNegLeft` (add(neg(n),n)=ZERO, from addNegRight + addIsCommutative);
-  `mulDistributesRightOverAdd` (from a NEW `mulIsCommutative` + mulAddDistribLeft,
-  or by direct induction). Then the model transfers negMulNeg/mulNegLeft/etc.
-  Note: prefer ADDITIVE retrofit (add the model + transfers) over DELETING
-  integer-ring's hand-proofs — downstream files cite negNeg/negAdd by name; a
-  rename/removal ripples. The group-corpus-in-std prerequisite is already met.
+Note the retrofit preference that made the ℤ case land cleanly: ADD the model and the
+transfers rather than DELETING the hand-proofs it supersedes. Downstream files cite
+`negNeg`/`negAdd` by name, so a removal ripples.
 
 ## Still open (not yet decided)
 

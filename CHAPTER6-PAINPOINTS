@@ -44,14 +44,15 @@ Not a defect — the listing idiom is a deliberate choice and it carries the con
 But it means each §6.2 corollary is its own piece of work, not a one-liner off the
 theorem, and the chapter should say so rather than imply the corollaries are free.
 
-### `Seq` is re-postulated per carrier — five copies and counting
+### `Seq` is re-postulated per carrier — six copies and counting
 
 `std/sequence.b4m` has the abstract fold, but each concrete sequence theory must
 RESTATE the sequence-EXISTENCE postulates over its own carrier, because a model
 transfers THEOREMS and must DISCHARGE axioms — and `seqSingleton`/`seqConcat`/… are
-axioms. So `std/group/sequence.b4m`, `std/integer/sequence.b4m`,
-`std/permutation/sequence.b4m`, `std/integer/mod-n-listing.b4m` and
-`std/set/subsets.b4m` each carry their own copy, each with a comment explaining why.
+axioms. Six files postulate their own `seq*` set — `std/sequence.b4m`,
+`std/group/sequence.b4m`, `std/integer/sequence.b4m`, `std/integer/product.b4m`,
+`std/permutation/sequence.b4m` and `std/permutation/parity.b4m` — each with a comment
+explaining why.
 
 This is what FIXED THE BASE SORT for Chapter 6. `std/group/sequence.b4m` postulates
 `Seq`/`at` over `std/group.b4m`'s `Grp`, so anything that counts group elements must
@@ -127,86 +128,35 @@ model. `std/` already has the convention that a library demonstrates its own axi
 model-source section, and `--library` does NOT catch it, because it flags unused AXIOMS,
 not an unused development. A fixed-constant section wants its example.
 
-### std has no INDEX, so a differently-named twin is invisible
+### std has no STRUCTURAL query, so a differently-shaped twin is invisible
 
-I wrote 90 lines of a `powerSequenceExists` for Corollary 6.11 before discovering
-`counting.powersAreListed` is exactly that theorem, already proved. Grep on the name
-I had chosen found nothing, because the existing one is named differently; what would
-have found it is a search by STATEMENT SHAPE ("exists v: Seq; … at(v, i) = power(…)"),
-which nothing supports.
+2378 theorems across 151 files is past the size where a reader can hold the inventory,
+and twice this chapter that cost a theorem written twice: 90 lines of a
+`powerSequenceExists` before discovering `counting.powersAreListed` is exactly it, and
+three confident claims that std lacked things it has (a decomposition-shape predicate,
+a cycle's length, conjugation-as-relabelling — the last is `conjugateOfACycle` in
+`std/permutation/cycle.b4m`, for arbitrary length).
 
-1086 theorems across 91 files is past the size where a reader can hold the inventory.
-A per-theory "what this file proves" index (one line per takeaway result) would catch
-this; the std-file-layout convention already asks each parent to forward its
-sub-theories' takeaway results, which is half the mechanism. `2b4m query` could
-plausibly do the other half (search declarations by statement shape).
-
-**STRONGER EVIDENCE, 2026-10-07 (§10.2 audit) — a name index would NOT have been enough.**
-Asked what §10.2 still needs, I answered twice that std lacked something it has, and the
-failure was not that I guessed the wrong name. It was that I had the SHAPE in hand and no
-way to look it up:
-
-| I asserted absent | what was there |
-|---|---|
-| a predicate for a decomposition's SHAPE | `decomposesIntoDisjointCycles` already carries the cycle `Seq`, the count, disjointness, and the product |
-| a cycle's LENGTH | `isACycle(g)` unfolds to `g = cycle(s, succ(p))` — the length is a nameable witness |
-| conjugation as RELABELLING, `σ∘c∘σ⁻¹` relabels c's points | **`conjugateOfACycle`** in `std/permutation/cycle.b4m`, for ARBITRARY length, plus `conjugationIsMultiplicative` and `conjugateOfATransposition` |
-
-The third is the sharp case. I knew exactly the statement I wanted —
-`compose(compose(sigma, cycle(s, k)), inverse(sigma)) = cycle(t, k)` with `t` the image
-list — and declared it missing. One grep for the substring `conjugat` found it. A NAME
-index does not help here either: I would have had to already suspect "conjugate" as the
-word. What finds it is a query over statement STRUCTURE: "an equation whose left side is
-`compose(compose(?, ?), inverse(?))`".
-
-**BUG FOUND AND FIXED WHILE PROBING THIS: `query search <dir>` DID NOT RECURSE.**
-`2b4m query search std conjugate` reports "no theorem or axiom matching", while
-`2b4m query search std/permutation conjugate` returns `conjugateOfACycle`,
-`conjugateOfATransposition` and a third immediately. Same term, broader scope, FEWER
-results. Every hit `query search std <term>` can produce comes from `std/*.b4m` — it never
-descends into `std/group/`, `std/permutation/`, `std/peano/`, …, which is most of the
-library. GUIDE documents `<path>` as "a directory (search every `.b4m` under it — corpus
-discovery)", so the documented corpus-discovery scope was the one that could not see two
-thirds of the corpus. THAT is why I declared `conjugateOfACycle` absent: I searched `std`.
-
-Cause: `collectSearchFiles` in `main.zig` used a single-level `dir.iterate()` and dropped
-every `entry.kind != .file`, so subdirectories were discarded — while `collectCheckFiles`
-right above it already used the recursive `dir.walk()`. Fixed by using the same walk. The
-query that failed all conversation now works:
-
-    $ 2b4m query search std "compose inverse cycle"
-    std/permutation/cycle.b4m:1471  theorem conjugateOfACycle: … compose(compose(sigma,
-      cycle(s, k)), inverseFn(sigma)) = cycle(t, k)
-
-one hit, the theorem I had declared missing. So TEXTUAL search over statements is far
-stronger than it appeared — it was not weak, it was blind.
-
-**THE ASK STILL STANDS, but narrower: a STRUCTURAL query the model can point at std.**
-`query search` matches name and statement TEXT by token overlap (its "fuzzy" was
-aspirational — a vector search was considered and never attached). With the recursion bug
-fixed, a well-chosen token query often suffices, so this is now an ergonomics upgrade
-rather than a hole. What it still cannot do is match a SHAPE: ask for a pattern with holes
-and get back statements equal up to alpha-renaming, sort aliasing and binder order —
+**A NAME index would not have helped.** In the sharpest case I had the statement in
+hand — `compose(compose(sigma, cycle(s, k)), inverse(sigma)) = cycle(t, k)` — and still
+declared it missing, because finding it required already suspecting the word
+"conjugate". `query search` matches name and statement TEXT by token overlap, and a
+well-chosen token query often suffices now (`query search std "compose inverse cycle"`
+returns the one theorem). What it cannot do is match a SHAPE: ask for a pattern with
+holes and get statements equal up to alpha-renaming, sort aliasing and binder order —
 
     2b4m query shape std "compose(compose(?s, ?f), inverse(?s)) = ?"
       -> std/permutation/cycle.b4m:1471  theorem conjugateOfACycle: …
          std/permutation/cycle.b4m:990   theorem conjugateOfATransposition: …
          std/group/order.b4m:964         theorem conjugatePower: …
 
-with `?x` binding and `?` wild. Token search gets there when the operator names happen to
-be distinctive (`compose inverse cycle` did); it does not when the shape matters and the
-vocabulary is common (`op`, `add`, `mul` appear everywhere), nor when the match is up to a
-sort alias. A name index would not have helped either: I would have had to already suspect
-the word "conjugate".
+with `?x` binding and `?` wild. Token search gets there when the operator names happen
+to be distinctive; it does not when the shape matters and the vocabulary is common
+(`op`, `add`, `mul` appear everywhere), nor when the match is up to a sort alias. Both
+failures this chapter would have been one query each.
 
-Both failures this chapter would have been one query each: the 90-line
-`powerSequenceExists` twin (shape `exists v: Seq; … at(v, i) = power(…)`) and today's
-three. At std's size the cost is no longer minutes — it is theorems written twice, and
-confidently wrong claims about what the library contains.
-
-Related: the memory note `std-has-no-index` now records that its "grep the distinctive
-TERM" rule governs ABSENCE claims too — but that is a discipline patch over a missing
-tool, not a fix.
+The std-file-layout convention already asks each parent to forward its sub-theories'
+takeaway results, which covers the name half. This is the other half.
 
 ### A definition-block clause is UNIVERSALLY QUANTIFIED
 
@@ -227,19 +177,27 @@ form puts every term in the parens regardless of where its binder sits:
 `fullOrderGenerates(n, gl, gen) hyp1 hyp2 hyp3`. The message is accurate but describes
 the symptom, not the rule.
 
-### `2b4m fmt` CRASHES on an unbalanced proof brace
+### `2b4m fmt` ACCEPTS an unbalanced proof brace and reformats it
+
+The integer-overflow panic at `fmt.zig:191` is gone. What replaced it is not a
+diagnostic: `fmt` and `fmt --check` both exit 0 on a file with one too many `}` in a
+proof, and `fmt` rewrites it — re-indenting around the stray brace as though the
+nesting were intentional:
 
 ```
-thread N panic: integer overflow
-src/fmt.zig:191:43 in render     if (in_proof) extra_depth -= 1;
+proof
+  {
+      @a |
+        C = C
+        [by reflexivity]
+    }
+}
+qed
 ```
 
-`extra_depth` is unsigned and decremented past zero. One too many `}` in a proof
-core-dumps the formatter instead of diagnosing, which violates the repo's
-hard-errors-not-warnings rule and tells the author nothing about WHERE. `check`
-diagnoses the same file fine, so the workaround is to run `check` first; the useful
-locator in the meantime is a one-liner printing running brace depth at each `qed`
-(a nonzero value names the offending theorem).
+`check` on the same file says `error: expected a step label '@name', got '{'`. So the
+formatter does not share the parser's view of the file, and `fmt --check` cannot be
+trusted as a syntax gate — which is how it tends to get used. Run `check` first.
 
 ### `case` is a step's JUSTIFICATION, not a step of its own
 
@@ -267,13 +225,11 @@ j<m" — with NO permutation content, but they are declared in
 `std/permutation/count.b4m`. They belong in `std/peano/order.b4m` (or a
 `std/peano/block-index.b4m`). Mechanical move.
 
-RE-PROBED 2026-10-06 and it has got WORSE, not better: they are now PROVED (not
-aliased) in FOUR files — `std/permutation/count.b4m`, `std/permutation/dihedral.b4m`,
-`std/integer/mod-n-generators.b4m` and `std/group/lagrange.b4m`. Every new block
-decomposition re-proves them rather than importing the permutation counting theory,
-which is the predictable outcome of leaving them in a file nobody wants to depend on.
-Lifting them is the same move that worked for `zeroBelowSucc` / `zeroIsNotSucc` /
-`succIsNotSuccSucc` (commit fb58e11).
+The four-way duplication this entry recorded is GONE — re-probed 2026-11-05, only
+`std/permutation/count.b4m` proves them; `dihedral`, `mod-n-generators` and `lagrange`
+now reach them by import. So the cost is just the misleading dependency: a block
+decomposition over any carrier imports the permutation counting theory for three
+Peano facts.
 
 ---
 
@@ -348,9 +304,10 @@ the resolution lives, so a reader does not re-derive them.
   the N-way eliminator" is correct.
 - **`Points` was missing a CONCAT postulate** — was already marked RESOLVED in place.
 
-Still open and re-probed 2026-10-06: the `fmt` brace crash (still panics,
-`fmt.zig:191`), schema-checked-only-at-instantiation (a bogus schema body still passes
-with "0 theorems proven"), `by definition` yielding the universal rather than the
-instance, and `Seq` re-postulation (seven carriers, 26 axioms — today's `indexed`
-models share THEOREMS, not postulates, so the copy cost is unchanged).
+Still open, re-probed 2026-11-05: `fmt` on an unbalanced proof brace (no longer a
+panic — now silently accepted and reformatted),
+schema-checked-only-at-instantiation (a bogus schema body still passes with "0 theorems
+proven"), `by definition` yielding the universal rather than the instance, and `Seq`
+re-postulation (six carriers — `indexed` models share THEOREMS, not postulates, so the
+copy cost is unchanged).
 

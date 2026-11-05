@@ -14,10 +14,10 @@ two things block the multi-layer case.
 
 ### 1. A model-transfer citation is not inspectable at all
 
-`std/rational/units.b4m:155` is
+`std/rational/units.b4m:100` is
 
 ```2b4m
-[using model(RationalUnits) field_order.recipMulLeft]
+[using model(RationalUnits) field_units.oneIsNonzero]
 ```
 
 and the inspector answers:
@@ -30,15 +30,15 @@ It *is* a `[using …]` step. `model` is a citation rule rather than a producing
 nothing lands in `synthetic_at` for it — but it is exactly the step a reader most wants
 expanded, because what the kernel checked is the source theorem RE-PROVED under the mapping.
 
-**This case is already a two-layer tower**, which is why it is the right test: the transferred
-theorem's own proof at `std/field/order.b4m:303` is itself
-`[using model(FieldIsOrdered) field.recipMulLeft]`. So ℚ ← `RationalUnits` ← ordered field ←
-`FieldIsOrdered` ← field. Reading what was checked at the bottom means composing two mappings.
+**Two-layer towers are the right test**, and `std/field/order.b4m` is full of them — e.g. its
+line 142 is `[using model(FieldIsOrdered) field.addNegRight]`, so a ℚ-level citation of an
+ordered-field theorem reads ℚ ← `RationalUnits` ← ordered field ← `FieldIsOrdered` ← field.
+Reading what was checked at the bottom means composing two mappings.
 
 ### 2. The registry cannot hold more than one space per step
 
 Generation IS model-aware — a synthetic produced under a model is renamed
-(`Prove.zig` ~2752):
+(`Prove.zig` ~3113):
 
 ```zig
 if (self.model != .none and self.model != .universe) {
@@ -96,9 +96,8 @@ move between runs; expect to give the model the same `(name, loc)` treatment.
   theorems RELATIVIZE — a guard premise per binder. An inspection that prints the unrelativized
   statement would misreport what was checked.
 - **`sourceSpaceAccelerants()` is `self.underModel()`** — true when the CITING proof is under a
-  model. A model named at the CITE makes that guard false (noted in the `prop-demotion` plan's
-  item 4). Any inspection that reconstructs the producer's space has to distinguish "under a
-  model" from "citing through one".
+  model. A model named at the CITE makes that guard false. Any inspection that reconstructs
+  the producer's space has to distinguish "under a model" from "citing through one".
 - **Accelerants build in SOURCE space** (`[[accelerants-not-model-aware]]`, resolved
   2026-09-11): the producer emits source-space AST and the mapping applies afterwards. So the
   honest reprint may want BOTH — what the producer emitted, and what the kernel checked after
