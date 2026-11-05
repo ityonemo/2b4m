@@ -120,6 +120,70 @@ proof
     [by generalize generalize-a]
 qed
 
+// -- the CONCRETE gcd is A gcd ---------------------------------------------------------------
+// This file states gcd-hood RELATIONALLY (`isGcd`) while `int_divides` also ships a total
+// FUNCTION `gcd`. Without a bridge the two never meet: `isGcd` demands `less_than(ZERO, d)`,
+// so `isGcd(0, 0, 0)` is FALSE and the relation excludes the function's own convention
+// `gcd(0, 0) = 0`. That convention is correct (greatest in the DIVISIBILITY order), so the
+// guard here is a CONVENTION boundary, not a mathematical one.
+//
+// Guarded on `less_than(ZERO, b)` and not `b != ZERO`, because positivity of the result is
+// what `gcdPositive` gives: for b < 0 the function returns `gcd(a, abs(b))` by `gcdAbs`, so a
+// caller with a negative b bridges through that first.
+//
+// With this, a nested-gcd statement can be written over TERMS instead of carrying one
+// relational hypothesis per gcd — `gcdOfGcdsDividesGcdWithGcd` needs five hypotheses and
+// eight quantified variables relationally, and is one line as terms.
+func gcd = int_divides.gcd
+fact gcdPositive = int_divides.gcdPositive
+fact gcdDividesBoth = int_divides.gcdDividesBoth
+fact gcdGreatest = int_divides.gcdGreatest
+
+theorem theConcreteGcdIsAGcd: forall a, b: Int; less_than(ZERO, b) -> isGcd(gcd(a, b), a, b)
+proof
+  @generalize-a |
+    fix a: Int {
+      @generalize-b |
+        fix b: Int {
+          @given-b-positive |
+            assume less_than(ZERO, b) {
+              @b-positive |
+                less_than(ZERO, b)
+                [by hypothesis given-b-positive]
+              @the-gcd-is-positive |
+                less_than(ZERO, gcd(a, b))
+                [using specialize gcdPositive(a, b) b-positive]
+              @the-gcd-divides-both |
+                divides(gcd(a, b), a) and divides(gcd(a, b), b)
+                [using specialize gcdDividesBoth(a, b)]
+              // `gcdGreatest` binds `forall d, a, b` — the common divisor FIRST — so it
+              // cannot be specialized at (a, b). Fix `e` and apply it at (e, a, b).
+              @generalize-e |
+                fix e: Int {
+                  @conclusion-at-e |
+                    divides(e, a) -> divides(e, b) -> divides(e, gcd(a, b))
+                    [using specialize gcdGreatest(e, a, b)]
+                }
+              @every-common-divisor-divides-it |
+                forall e: Int; divides(e, a) -> divides(e, b) -> divides(e, gcd(a, b))
+                [by generalize generalize-e]
+              @conclusion-is-a-gcd |
+                isGcd(gcd(a, b), a, b)
+                [using tautology the-gcd-is-positive the-gcd-divides-both every-common-divisor-divides-it]
+            }
+          @conclusion-at-b |
+            less_than(ZERO, b) -> isGcd(gcd(a, b), a, b)
+            [by discharge given-b-positive]
+        }
+      @discharge-b |
+        forall b: Int; less_than(ZERO, b) -> isGcd(gcd(a, b), a, b)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Int; less_than(ZERO, b) -> isGcd(gcd(a, b), a, b)
+    [by generalize generalize-a]
+qed
+
 // -- small divisibility and sign facts -------------------------------------------------------
 // a positive x is not ZERO.
 theorem positiveIsNonzero: forall x: Int; less_than(ZERO, x) -> x != ZERO
