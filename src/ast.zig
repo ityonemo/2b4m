@@ -233,7 +233,7 @@ pub const Decl = union(enum) {
     /// unproved, `hole … cites` = assumed on an external authority). The kind of an alias is
     /// the TARGET's property, which the alias cannot know and nothing checked — so restating
     /// it was redundant and went stale (it was wrong in 10 of std/'s 2345 aliases). See
-    /// FACT-ALIAS-PLAN.md. `--axioms` resolves every fact to its origin and reports the true
+    /// `--axioms` resolves every fact to its origin and reports the true
     /// kind there, so nothing is lost.
     fact: Alias,
     axiom: Axiom,

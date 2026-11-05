@@ -78,49 +78,6 @@ the mapping", the other says "add the mapping". Neither says "a theorem-schema c
 
 ---
 
-## 4. A schema-arg lambda could not bind two sorts (FIXED)
-
-`fun i: Nat, v: Q => …` was a parse error: the binder grammar was
-`binders := ident (',' ident)* ':' ident` — one sort for the whole list. Every pre-existing
-caller used the same sort twice (`fun y, z: Element =>` against `functionFromGraph`'s
-`spec(Element, Element)`), so the gap had never been hit.
-
-**It blocked the whole minimality assembly.** `anIndexPinnedChoiceIsRealized(spec(Nat, Q))`
-could only be instantiated at a bare predicate name, which forces the subject pinned as a
-file-scope nullary func — usable at exactly ONE divisor, while the descent needs it at `d·e`
-with both bound inside the proof.
-
-**Fixed** in `2f9c535` (comma-separated binder groups, each with its own sort).
-`drafts/mixed-sort-schema-lambda/` has the repro and the dead-end analysis.
-
-**Residual:** the `theSubject` workaround it forced is still in
-`std/rational/integer-product.b4m` (`aDenominatorExistsForEveryIndex` reads its polynomial
-through a nullary func). Now unnecessary; worth removing when that file is next touched.
-
----
-
-## 5. Guarded models transferred NOTHING, for three independent reasons (FIXED)
-
-Before 2026-10-30 **no guarded model in the corpus had ever transferred a theorem**.
-`IntegersInRational` had been declared and documented for months with its only consumer in
-`scratch-needswork/`. Three causes:
-
-1. **No membership dischargers nominated** (`6478118`, a `std/` fix). A guarded model needs a
-   ground fact per const and a closure per func. Without them a transferred proof's own
-   `apply_at` leaks guards. **Nominations are load-bearing, not decoration.**
-2. **`withGuardPremises` assumed guards form a LEADING run** (`2302392`). They do not: guards
-   are injected in PARAM order and `freeFvarParams` *appends* the args' free variables, so a
-   local-head `specialize` gives `head -> guard(freevar) -> hyp -> goal`.
-3. **`projectBlockGuard` ignored `.unpack` blocks** (`61ead93`). A relativized `∃x: H` opens as
-   `inH(w) and <body>`, so a `[by hypothesis]` restating `<body>` must and_elim past the guard.
-
-**What this says about the gate:** a `model` block with no transfer through it is **dead code
-that gates green** — obligations are checked per *transfer*, not at declaration.
-`NaturalsInRational` is in the same position today. A `--library` check for an unconsumed model
-would have caught all of this years earlier.
-
----
-
 ## 6. A discharger's BINDER ORDER is part of its interface, and nothing checks it
 
 `aNonnegGapMakesItLess` was declared `forall a, b, d` while `std/integer/order.b4m`'s
@@ -384,59 +341,6 @@ thing that found any of these, and it found one every time it was run.
 
 ---
 
-## 9. Process lessons (mine, not the tool's)
-
-- **Probe each mechanism on a scratch file BEFORE writing the proof around it.** The first
-  attempt at the minimality assembly wrote large hypothesis-threading wrappers and dead-ended
-  at exactly the point a 30-line probe would have exposed in a minute. The second attempt
-  probed first and landed.
-- **Two nested wrappers threading nine identical hypotheses to reach one step** is the
-  throwaway-abstraction smell. Caught and collapsed once; watch for it, because
-  existential-heavy statements invite it.
-- **Red/green is for ENGINE work.** I wrote the lambda fix implementation-first, added tests
-  that passed immediately, then *deliberately broke one* to check it ran at all. That
-  contortion is the tell: needing to sabotage a test to prove it runs means it was never red.
-  (User correction; red/green does **not** apply to aata/std content, where `check` is already
-  the loop.)
-- **Probe before deferring.** Two "this cannot be expressed" notes I wrote in this chapter were
-  both wrong: ℤ[x]↪ℚ[x] "needs an embedding" (ℚ carries its integers as a *cut*), and the
-  denominator product "has no relational substitute" (`std/integer/product.b4m` has
-  `productUpTo` with a real corpus, and `std/sequence.b4m` instantiates at ℚ cleanly because
-  `Value: Q` is unguarded). Both were reasoned rather than measured.
-
-## 11. The cut had no division algorithm, so no Bézout, so no Euclid (RESOLVED 2026-11-01)
-
-**This was chapter 17's last blocker, and it is now closed** — `std/rational/integer-division.b4m`,
-20 theorems. Recording it because the DIAGNOSIS took three tries and two of them were wrong.
-
-**What was actually true:** ℤ's `divisionAlgorithmExists` and `coprimeBezout` cannot transfer
-onto the cut — each reaches `nonnegCases`, itself a transfer of `peano.zeroOrSucc` through ℤ's
-NonNeg cut, so composing ℕ → ℤ's NonNeg → ℚ's isInteger wants `Nat` to be both `Int` and `Q`
-(`std/peano.b4m:857`). That is pain point 2 (no model COMPOSITION) biting again, and it is
-structural.
-
-**What I wrongly believed first:** that `euclidFromBezout` needed `div`, `mod`, `gcd`, `order`
-and `wellordering` mapped, making the whole thing wait for the de-totalization. It needs 15
-axioms, every one already mapped by `IntegersInRational`, and its `divides` is a `define` —
-a macro, nothing to map. **I had read the FILE's symbol table instead of the theorem's
-dependency set.** `check --axioms <file> <theorem>` answers that in one command, and I should
-have run it before costing the route.
-
-**What I also wrongly believed:** that `lessThanIntro`/`lessThanElim` blocked the cut.
-`IntegerOrderOnTheCut` had discharged both on 2026-10-30 — the genuinely hard part was already
-done, and a stale comment in that file still said it blocked 17.13/17.14/17.15.
-
-**The resolution** was to prove the CONSTRUCTIONS natively on `naturalWellOrdering` and keep
-Euclid taking the certificate as a HYPOTHESIS. That last choice is the load-bearing one: it
-keeps the whole development off `gcd`/`div`/`mod`, so nothing here rests on what queue item 2
-deletes.
-
-**The process lesson, which is the reusable part:** a deferral note that names a DEPENDENCY
-("waits on Gauss") rather than a measured missing theorem will keep being wrong, because the
-dependency is the first thing that changes. Three successive versions of 17.14's note blamed
-Gauss's open half; when Gauss closed it turned out the corollary never needed it at all. Name
-the theorem, and measure it with `--axioms`.
-
 ## 12. `polynomial` cannot see inside a term with a Nat subterm (LIVE)
 
 `[using polynomial(rational)]` fails with `expected sort 'Q', got 'Nat'` when the goal holds a
@@ -468,7 +372,7 @@ while the resolved theorem is relativized. Different mechanism — a citation, n
 accelerant path) by reasoning from the code's own comments, which described the mechanism as
 if it were already wired everywhere. One `std.debug.print` settled it. Instrument first.
 
-## 14. `theSubject` is a PARAMETER, not a fixed value — and I got this backwards
+## 14. `theSubject` is a model PARAMETER, not a fixed value
 
 **I claimed (2026-11-02) that `theSubject` blocked Lemma 17.12 from ever being applied to two
 polynomials, making irreducibility over ℚ structurally unreachable. That was WRONG, and the
@@ -490,7 +394,7 @@ uninterpreted `func` is as good as a parameter, because `model` is exactly the m
 fixing parameters. Before concluding that a `theSubject`-style encoding has painted you into a
 corner, write the two-model probe; it takes minutes.
 
-## 16. A MODEL CAN TRANSFER A THEOREM REMOTE FROM ITS ROOT — I did not know this
+## 16. A model can transfer a theorem REMOTE FROM ITS ROOT
 
 **The single most useful thing I learned in this chapter, and I learned it by being corrected
 (user, 2026-11-02).**
@@ -553,8 +457,3 @@ of a declaration or a statement instead of probing it.** Every one of these was 
 minutes by a scratch file, a `--axioms` run, or a `std.debug.print` — and in each case I
 produced a confident wrong answer first. The corpus has cheap instruments; the failure is not
 reaching for them before forming a view.
-
-## Numbering
-
-There is no §10 — the list grew by insertion and the gap is left rather than renumber
-references in commit messages that cite these by number.
