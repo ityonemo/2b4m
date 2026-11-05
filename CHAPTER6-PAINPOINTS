@@ -177,28 +177,6 @@ form puts every term in the parens regardless of where its binder sits:
 `fullOrderGenerates(n, gl, gen) hyp1 hyp2 hyp3`. The message is accurate but describes
 the symptom, not the rule.
 
-### `2b4m fmt` ACCEPTS an unbalanced proof brace and reformats it
-
-The integer-overflow panic at `fmt.zig:191` is gone. What replaced it is not a
-diagnostic: `fmt` and `fmt --check` both exit 0 on a file with one too many `}` in a
-proof, and `fmt` rewrites it — re-indenting around the stray brace as though the
-nesting were intentional:
-
-```
-proof
-  {
-      @a |
-        C = C
-        [by reflexivity]
-    }
-}
-qed
-```
-
-`check` on the same file says `error: expected a step label '@name', got '{'`. So the
-formatter does not share the parser's view of the file, and `fmt --check` cannot be
-trusted as a syntax gate — which is how it tends to get used. Run `check` first.
-
 ### `case` is a step's JUSTIFICATION, not a step of its own
 
 Minor, but it cost two cycles. `case <disj> { … }` goes in the justification slot of
@@ -303,10 +281,17 @@ the resolution lives, so a reader does not re-derive them.
   no `tautology` shortcut masking the shape requirement). The cheat-sheet's "`case` is
   the N-way eliminator" is correct.
 - **`Points` was missing a CONCAT postulate** — was already marked RESOLVED in place.
+- **`2b4m fmt` CRASHES on an unbalanced proof brace** — FIXED. `fmt` now balances
+  braces before rendering and reports `<line>:<col>: error: unbalanced '}' …` (or
+  `N blocks left open at 'qed'` / `at end of file`), leaving the file untouched;
+  exit 1 in both `fmt` and `fmt --check`. Note the first diagnosis of this was
+  WRONG in an instructive way: a ReleaseFast binary made it look as though the
+  panic had been fixed and replaced by silent acceptance, because the unsigned
+  `extra_depth -= 1` WRAPPED instead of trapping. The crash was still there in
+  Debug the whole time. **Probe a safety-check claim on a Debug build** — release
+  turns a trap into undefined behaviour, which reads like a behaviour change.
 
-Still open, re-probed 2026-11-05: `fmt` on an unbalanced proof brace (no longer a
-panic — now silently accepted and reformatted),
-schema-checked-only-at-instantiation (a bogus schema body still passes with "0 theorems
+Still open, re-probed 2026-11-05: schema-checked-only-at-instantiation (a bogus schema body still passes with "0 theorems
 proven"), `by definition` yielding the universal rather than the instance, and `Seq`
 re-postulation (six carriers — `indexed` models share THEOREMS, not postulates, so the
 copy cost is unchanged).

@@ -58,15 +58,25 @@ pub fn extract(arena: Allocator, source: []const u8) Allocator.Error![]const u8 
 /// the code is reflowed), so this is for `fmt`, never for error mapping.
 ///
 /// Each block is formatted independently (a block is a self-contained chunk of
-/// declarations/one proof; `fmt.format` handles a partial file). A block whose
+/// declarations/one proof; `fmt.check` handles a partial file). A block whose
 /// content does not lex is left verbatim rather than dropped, so a malformed
 /// block never silently loses content.
+///
+/// A block whose BRACES do not balance is reported (with the line translated into
+/// the enclosing document's numbering) rather than reflowed, because indentation
+/// is a function of nesting depth — see `fmt.check`.
 pub fn formatLiterate(arena: Allocator, source: []const u8) Allocator.Error![]const u8 {
+    return (try checkLiterate(arena, source)).text;
+}
+
+pub fn checkLiterate(arena: Allocator, source: []const u8) Allocator.Error!fmt.Result {
     var out: std.ArrayList(u8) = .empty;
     try out.ensureTotalCapacity(arena, source.len);
 
     var block: std.ArrayList(u8) = .empty; // accumulates the current block's content
     var in_block = false;
+    var block_first_line: u32 = 0; // document line of the block's first CONTENT line
+    var line_no: u32 = 0; // 1-based document line of the line being read
 
     var i: usize = 0;
     while (i < source.len) {
@@ -75,16 +85,33 @@ pub fn formatLiterate(arena: Allocator, source: []const u8) Allocator.Error![]co
         while (line_end < source.len and source[line_end] != '\n') line_end += 1;
         const has_nl = line_end < source.len;
         const line = source[line_start..line_end];
+        line_no += 1;
 
         if (!in_block and isFenceOpen(line)) {
             // emit the opening fence verbatim, start collecting the block
             in_block = true;
             block.clearRetainingCapacity();
+            block_first_line = line_no + 1;
             try out.appendSlice(arena, line);
             if (has_nl) try out.append(arena, '\n');
         } else if (in_block and isFenceClose(line)) {
             // block done: format its collected content, emit, then the fence
-            const formatted = fmt.format(arena, block.items) catch block.items;
+            const r = try fmt.check(arena, block.items);
+            if (r.diagnostic) |d| {
+                // the block's line 1 is `block_first_line` in the document
+                const doc_line = block_first_line + d.line - 1;
+                return .{ .text = source, .diagnostic = .{
+                    .line = doc_line,
+                    .col = d.col,
+                    .message = try std.fmt.allocPrint(arena, "{d}:{d}: error: {s}", .{
+                        doc_line,
+                        d.col,
+                        // re-render from the body, past the block-local "L:C: error: " prefix
+                        d.message[std.mem.indexOf(u8, d.message, "error: ").? + "error: ".len ..],
+                    }),
+                } };
+            }
+            const formatted = r.text;
             try out.appendSlice(arena, formatted);
             in_block = false;
             try out.appendSlice(arena, line);
@@ -105,7 +132,7 @@ pub fn formatLiterate(arena: Allocator, source: []const u8) Allocator.Error![]co
     // verbatim so nothing is lost.
     if (in_block) try out.appendSlice(arena, block.items);
 
-    return out.items;
+    return .{ .text = out.items, .diagnostic = null };
 }
 
 /// A ```` ```2b4m ```` opening fence: ``` (or more backticks) immediately

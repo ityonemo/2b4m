@@ -31,7 +31,27 @@ const lexer = @import("lexer.zig");
 const Token = lexer.Token;
 const Tag = Token.Tag;
 
-pub fn format(arena: Allocator, source: []const u8) Allocator.Error![]const u8 {
+/// What a `}` closes. fmt tracks brace nesting to decide indentation, so it must
+/// reject a file whose nesting is incoherent rather than drive `extra_depth`
+/// negative (a panic in Debug, a wrapped counter and garbage indent in release).
+pub const Diagnostic = struct {
+    /// 1-based, as diagnostics everywhere else in the project are
+    line: u32,
+    col: u32,
+    /// `<line>:<col>: error: <what>`, ready to print
+    message: []const u8,
+};
+
+pub const Result = struct {
+    /// the formatted source — only when `diagnostic == null`
+    text: []const u8,
+    diagnostic: ?Diagnostic,
+};
+
+/// Format `source`, or report the first brace imbalance. `fmt` is token-based and
+/// does not need the file to PARSE, but it does need the braces to BALANCE, since
+/// indentation is a function of nesting depth.
+pub fn check(arena: Allocator, source: []const u8) Allocator.Error!Result {
     // tokenize fully (with comments) for one-token lookahead
     var toks: std.ArrayList(Token) = .empty;
     var lex: lexer.Lexer = .init(source);
@@ -42,9 +62,62 @@ pub fn format(arena: Allocator, source: []const u8) Allocator.Error![]const u8 {
         if (t.tag == .eof) break;
     }
 
+    if (try braceImbalance(arena, source, toks.items)) |d|
+        return .{ .text = source, .diagnostic = d };
+
     var out: std.Io.Writer.Allocating = .init(arena);
     render(&out.writer, source, toks.items) catch return error.OutOfMemory;
-    return out.toOwnedSlice();
+    return .{ .text = try out.toOwnedSlice(), .diagnostic = null };
+}
+
+/// Walk the token stream counting braces, so `render` can assume they balance.
+/// Reports the FIRST problem: an unmatched `}`, or blocks still open at the `qed`
+/// that ends a proof (or at end of file). Returns null when the file is sound.
+fn braceImbalance(arena: Allocator, source: []const u8, toks: []const Token) Allocator.Error!?Diagnostic {
+    var depth: u32 = 0;
+    for (toks) |tok| switch (tok.tag) {
+        .l_brace => depth += 1,
+        .r_brace => {
+            if (depth == 0) return try diagnose(arena, source, tok.start, "unbalanced '}}' — no open block to close", .{});
+            depth -= 1;
+        },
+        // `qed` ends a proof, so every block it opened must be closed by now.
+        // Reported here rather than at EOF because this is where the author can see it.
+        .keyword_qed => {
+            if (depth != 0) return try diagnose(arena, source, tok.start, "{d} block{s} left open at 'qed'", .{ depth, plural(depth) });
+        },
+        .eof => if (depth != 0) return try diagnose(arena, source, tok.start, "{d} block{s} left open at end of file", .{ depth, plural(depth) }),
+        else => {},
+    };
+    return null;
+}
+
+fn plural(n: u32) []const u8 {
+    return if (n == 1) "" else "s";
+}
+
+/// Render one diagnostic at a byte offset, resolving it to a 1-based line and column.
+fn diagnose(arena: Allocator, source: []const u8, at: u32, comptime what: []const u8, args: anytype) Allocator.Error!Diagnostic {
+    var line: u32 = 1;
+    var line_start: u32 = 0;
+    for (source[0..@min(at, source.len)], 0..) |c, i| {
+        if (c == '\n') {
+            line += 1;
+            line_start = @intCast(i + 1);
+        }
+    }
+    const col = at - line_start + 1;
+    return .{
+        .line = line,
+        .col = col,
+        .message = try std.fmt.allocPrint(arena, "{d}:{d}: error: " ++ what, .{ line, col } ++ args),
+    };
+}
+
+/// Back-compatible shim: format, or return the source unchanged if the braces do
+/// not balance. Prefer `check`, which reports WHY.
+pub fn format(arena: Allocator, source: []const u8) Allocator.Error![]const u8 {
+    return (try check(arena, source)).text;
 }
 
 fn render(w: *std.Io.Writer, source: []const u8, toks: []const Token) std.Io.Writer.Error!void {
@@ -476,6 +549,103 @@ test "author line breaks within statements survive; continuation re-indents to +
         \\  @conclusion |
         \\    forall n: Nat; is_zero(n)
         \\    [by instantiate induction((fun k: Nat => is_zero(k))) base step]
+        \\qed
+        \\
+    );
+}
+
+// An unbalanced proof brace is a SYNTAX error, and fmt cannot indent a file whose
+// nesting is incoherent — `extra_depth` would go negative. It must say so, with a
+// location, rather than panicking (Debug) or wrapping the counter and emitting
+// garbage indentation (ReleaseFast). See `no-warnings-hard-errors`.
+
+fn expectFmtError(input: []const u8, expected_msg: []const u8) !void {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const r = try check(arena, input);
+    const d = r.diagnostic orelse {
+        std.debug.print("expected a diagnostic, got formatted output\n", .{});
+        return error.TestExpectedError;
+    };
+    try testing.expectEqualStrings(expected_msg, d.message);
+}
+
+test "an extra `}` in a proof is reported with its location, not a panic" {
+    try expectFmtError(
+        \\sort T
+        \\const C: T
+        \\theorem triv: C = C
+        \\proof {
+        \\  @a | C = C [by reflexivity]
+        \\  }
+        \\} qed
+        \\
+    ,
+        // `proof {` opens one block; the `}` at 6:3 closes it, so the extra is 7:1
+        "7:1: error: unbalanced '}' — no open block to close",
+    );
+}
+
+test "a proof whose block is never closed is reported at `qed`" {
+    try expectFmtError(
+        \\pred p()
+        \\theorem t: p() -> p()
+        \\proof
+        \\  @outer |
+        \\    assume p() {
+        \\      @inner |
+        \\        p()
+        \\        [by hypothesis outer]
+        \\qed
+        \\
+    ,
+        "9:1: error: 1 block left open at 'qed'",
+    );
+}
+
+test "an unclosed block at end of file is reported at EOF" {
+    try expectFmtError(
+        \\pred p()
+        \\theorem t: p() -> p()
+        \\proof
+        \\  @outer |
+        \\    assume p() {
+        \\      @inner |
+        \\        p()
+        \\        [by hypothesis outer]
+        \\
+    ,
+        "9:1: error: 1 block left open at end of file",
+    );
+}
+
+test "a top-level `}` with no open declaration block is reported" {
+    try expectFmtError("sort T\n}\n", "2:1: error: unbalanced '}' — no open block to close");
+}
+
+test "a balanced file still formats (the guard does not fire on good input)" {
+    try expectFmt(
+        \\pred p()
+        \\theorem t: p() -> p()
+        \\proof
+        \\  outer| assume p() { inner| p() [by hypothesis outer] }
+        \\  conclusion| p() -> p() [by discharge outer]
+        \\qed
+        \\
+    ,
+        \\pred p()
+        \\theorem t: p() -> p()
+        \\proof
+        \\  @outer |
+        \\    assume p() {
+        \\      @inner |
+        \\        p()
+        \\        [by hypothesis outer]
+        \\    }
+        \\  @conclusion |
+        \\    p() -> p()
+        \\    [by discharge outer]
         \\qed
         \\
     );
