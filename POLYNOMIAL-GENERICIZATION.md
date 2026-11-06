@@ -113,7 +113,7 @@ double-sum reindexing that nothing automates.
 A tempting fix is to make `polynomial` accept an operation-name mapping. I have not costed
 that, and it interacts with the `--fast` trust boundary (the tactic's decision binds vocabulary
 by name precisely so a misbound operator is caught by the certificate, not the decision — see
-`ACCELERATION.md`). Flagging it, not proposing it.
+`design/acceleration.md`). Flagging it, not proposing it.
 
 ## What is genuinely carrier-specific
 

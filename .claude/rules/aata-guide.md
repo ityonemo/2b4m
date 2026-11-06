@@ -9,7 +9,7 @@ The `aata/` files are literate transliterations of Judson's *Abstract Algebra:
 Theory and Applications* — the book's prose and development reproduced in order,
 each stated result followed by a machine-checked ` ```2b4m ` proof. These rules
 govern how those proofs are written. (For proof-label/naming conventions see
-`CONVENTIONS.md` and `agents/style-guide.md`.)
+`design/conventions.md` and `agents/style-guide.md`.)
 
 ## The import horizon — what a main-text proof may lean on
 

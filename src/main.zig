@@ -409,7 +409,7 @@ pub fn main(init: std.process.Init) !u8 {
             \\
             \\lint reports convention violations check ignores (they don't affect
             \\validity) — currently canonical binder order (a leading forall
-            \\must bind in first-appearance order). See CONVENTIONS.md.
+            \\must bind in first-appearance order). See design/conventions.md.
             \\
             \\debug accelerant reprints the synthetic theorem an accelerated step
             \\produced (statement + proof, as valid 2b4m that round-trips through

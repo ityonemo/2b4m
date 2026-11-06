@@ -1,6 +1,6 @@
 # `--fast` accepts false statements: three probes
 
-Repros for the `--fast` trust boundary (catalogued in `ACCELERATION.md`). Each passes `--fast` and fails
+Repros for the `--fast` trust boundary (catalogued in `design/acceleration.md`). Each passes `--fast` and fails
 strict, which violates the both-ways agreement the `--fast` contract claims.
 
 | file | `--fast` | strict |

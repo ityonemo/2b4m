@@ -134,7 +134,7 @@ the listed words, `--fast-except W…` all but the listed). Re-run plain
 `2b4m check` to finalize. `fmt` normalizes whitespace and indentation in place
 (`--check` reports instead of rewriting). `lint` reports convention violations `check`
 ignores because they don't affect validity — currently canonical binder order
-(a leading `forall` must bind in first-appearance order); see `CONVENTIONS.md`.
+(a leading `forall` must bind in first-appearance order); see `design/conventions.md`.
 
 ### Literate proofs (`.md`)
 
@@ -346,8 +346,7 @@ disclosed and `--fast`-gated, so the trusted surface is always disclosed.
 | `examples/openai-wiles/` | **a real audit** ([own repo](https://github.com/ityonemo/openai-wiles), submodule): OpenAI's withdrawn *"Algebraicity of Weil classes on split abelian eightfolds"*, formalized as two chains differing in one sign — one passing, one failing at the step the withdrawal notice names. Shows `hole … cites` carrying 36 borrowed results, and doubles as the LLM-ergonomics exercise the citation mechanism came out of. Needs `git submodule update --init` |
 | `std/` | the standard library: arithmetic (`peano`), the integers (`integer`), abstract group theory (`group`), set algebra over a universe (`set`), the theory of mappings (`function`), and the number tower above them. A theory that outgrows one file becomes `std/X.b4m` beside a directory `std/X/` of sub-theories (`std/integer/divides.b4m`), and the parent forwards their headline results — so `import integer` reaches the order, the division algorithm and gcd/Bézout directly |
 | `aata/` | **literate transliterations of an abstract-algebra textbook** (Judson's AATA, GFDL) verified in 2b4m — the book's prose reproduced in order, each stated result followed by a checked proof; see `aata/README` |
-| `agents/` | agent-facing assets, symlinked into `.claude/`: `2b4m-query-skill/` (a Skill teaching when to reach for `2b4m query` over `grep`), `debug-guide.md` (the diagnostic flags — `--trace-facts`, `--axioms`, `debug accelerant`/`taint` — and which symptom calls for which) and `style-guide.md` (a path-scoped `.claude/rules/` file surfacing the drift-prone proof-label conventions freshly when a `.b4m`/proof `.md` is edited — the on-demand companion to `CONVENTIONS.md`) |
-| `tests/` | the integration suite: `zig build test` spawns the built `2b4m` on each corpus file and asserts its exact stdout/stderr/exit. Gates live in subject-grouped `tests/test_*.zig` (cli, tactics, std, aata, examples, query, imports), each a one-line `ctx.ok`/`ctx.fail` (see `tests/Ctx.zig`); `build.zig` stays build configuration |
+| `agents/` | agent-facing assets, symlinked into `.claude/`: `2b4m-query-skill/` (a Skill teaching when to reach for `2b4m query` over `grep`), `debug-guide.md` (the diagnostic flags — `--trace-facts`, `--axioms`, `debug accelerant`/`taint` — and which symptom calls for which) and `style-guide.md` (a path-scoped `.claude/rules/` file surfacing the drift-prone proof-label conventions freshly when a `.b4m`/proof `.md` is edited — the on-demand companion to `design/conventions.md`) |
+| `tests/` | the integration suite: `zig build test` spawns the built `2b4m` on each corpus file and asserts its exact stdout/stderr/exit. Gates live in subject-grouped `tests/test_*.zig` (cli, tactics, std, aata, examples, query, imports), each a one-line `ctx.ok`/`ctx.fail` (see `tests/Ctx.zig`); fixtures are grouped by what they test under `tests/cases/` (see its README); `build.zig` stays build configuration |
 | `GUIDE.md` | every keyword, the kernel design, the built-in accelerated tactics |
-| `CONVENTIONS.md` | naming and proof-writing style |
-| `ACCELERATION.md` | the accelerated-tactic registry and trust disclosure |
+| `design/` | how the mechanisms work, described as they are: `model-design.md` (the `model` universe-of-discourse mechanism), `namespaces.md` (the `{model, file}` pair), `lazy-eval.md` (the demand-driven engine), `acceleration.md` (the accelerated-tactic registry and trust disclosure), `conventions.md` (naming and proof-writing style) |

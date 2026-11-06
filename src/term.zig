@@ -703,11 +703,14 @@ pub const Pool = struct {
         }
 
         /// Does `formula` mention any sort or symbol this remap substitutes?
-        /// ("Is it affected by the substitution?") A fact that is NOT affected is
-        /// substitution-invariant — a materialized proof may cite it as-is (the
-        /// remap is the identity on it). A fact that IS affected must be
-        /// accounted for by the mapping, or citing it is the forbidden case.
-        /// See MODEL-DESIGN.md (materialization citation rule).
+        /// ("Is it affected by the substitution?")
+        ///
+        /// UNUSED — nothing calls this (`grep '.affects('` finds only this definition).
+        /// The citation rule it was written for is enforced instead by `applyModel`'s
+        /// universe fixpoint: an un-overloaded entity remaps to ITSELF, so citing an
+        /// undischarged abstract axiom fails by statement mismatch rather than by an
+        /// explicit affected-ness test. Delete this, or wire it in to get the better
+        /// diagnostic. See design/model-design.md.
         pub fn affects(self: Remap, pool: *const Pool, formula: TermId) bool {
             // iterative single-tree predicate (was native recursion) — depth-safe. A node "affects"
             // if it mentions a mapped sort (fvar sort, quant sort) or a mapped sym (app/pred head).
@@ -737,7 +740,7 @@ pub const Pool = struct {
     /// STRUCTURE (de Bruijn indices, nesting) is preserved exactly; only the
     /// sorts/syms decorating it change. This is the `model` transfer engine —
     /// run OUT (remap a source theorem to the target goal) and IN (remap a
-    /// source axiom to check the discharging local fact). See MODEL-DESIGN.md.
+    /// source axiom to check the discharging local fact). See design/model-design.md.
     ///
     /// NOTE the `carrier` in `guard` is the SOURCE sort (pre-remap): the guard
     /// fires on a `quant` whose (source) sort is the carrier, so we test before

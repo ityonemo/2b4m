@@ -6,7 +6,7 @@
 //! emit a certificate, falls back to a decision-procedure verdict the kernel
 //! does not re-derive (and that `2b4m check` rejects by default, admitting only
 //! under `--fast`). Those rules are `arithmetic`, `tautology`, `polynomial`,
-//! `assoc_commut`, and `assoc` (the ACCELERATION.md registry) plus the
+//! `assoc_commut`, and `assoc` (the design/acceleration.md registry) plus the
 //! quantified variants `assoc_commut_quantified` / `assoc_quantified`, which run
 //! the same accelerated core. (`simplify` and `simplify_quantified` emit kernel
 //! steps by construction — the certificate IS the rewrite chain — so they
@@ -35,7 +35,7 @@ pub const Result = struct {
     ok: bool,
 };
 
-/// The accelerated tactics (ACCELERATION.md registry). A step citing one of
+/// The accelerated tactics (design/acceleration.md registry). A step citing one of
 /// these is a potential acceleration site; every other rule is always
 /// kernel-checked.
 const accelerated_rules = [_][]const u8{

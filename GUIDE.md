@@ -2,8 +2,8 @@
 
 This guide covers the whole surface: every keyword, the proof rules, how
 the kernel establishes trust, and the built-in automation. For naming and
-style conventions see `CONVENTIONS.md`; for the accelerated-tactic registry see
-`ACCELERATION.md`.
+style conventions see `design/conventions.md`; for the accelerated-tactic registry see
+`design/acceleration.md`.
 
 ## Index (how to extract one rule/tactic/keyword)
 
@@ -216,7 +216,7 @@ Both escape the boundary the same way: by **what a name denotes**. Name things s
 an operator that does not obey its namesake's laws, a local alias colliding with a sibling
 theory's — and `--fast` has no way to notice, because noticing is the certificate's job.
 
-`ACCELERATION.md` tabulates, under "Where the `--fast` trust boundary falls, per word", exactly
+`design/acceleration.md` tabulates, under "Where the `--fast` trust boundary falls, per word", exactly
 what `--fast` keeps and what it drops for every trustable word. Two cases there are worth knowing before relying on a `--fast` green:
 `specialize` is the one word where `--fast` admits a goal strict REFUTES (gated, with the
 reason recorded), and `model` keeps the statement α-match but drops the per-axiom
@@ -870,7 +870,7 @@ relativized.
 > (Isabelle), and module functors (Rocq) do — but explicit and search-free: you
 > name the instance at every use, the mapping is one level deep, and the transfer
 > is a checked source-to-source rewrite that never enters the kernel. No instance
-> resolution, no coherence machinery. (See `MODEL-DESIGN.md`.)
+> resolution, no coherence machinery. (See `design/model-design.md`.)
 
 ### SET SIZE vs SORT SIZE — how to count anything
 
@@ -1896,7 +1896,7 @@ reports `'mul(a, b)' is outside linear arithmetic` rather than a countermodel.
 > everything in 2b4m).
 
 The full trust statement for each accelerated tactic — module, verdict semantics,
-certificate coverage — lives in `ACCELERATION.md`.
+certificate coverage — lives in `design/acceleration.md`.
 
 ## Query commands (read-only inspection)
 
@@ -1931,7 +1931,7 @@ first-appearance order (`forall a, b, c; add(add(a, b), c) = …`, never `forall
 b, a`). A permuted order is logically identical but fails α-matching, which breaks
 `model`'s axiom discharge (forcing a hand-written reordering adapter). Reads `.md`
 too; naming/casing rules (future) are suspended for literate transliterations,
-which mirror their source's notation. See `CONVENTIONS.md`.
+which mirror their source's notation. See `design/conventions.md`.
 
 ## Debug (inspect an accelerant's output)
 
@@ -1939,7 +1939,7 @@ which mirror their source's notation. See `CONVENTIONS.md`.
 accelerated step produced — statement + proof, as valid 2b4m. In strict mode every
 `[by <tactic> …]` wraps its certificate into a kernel-checked, count-suppressed
 theorem (`<tactic>$n`, context-free — it cites nothing from the environment; see
-`ACCELERATION.md`); `debug` materializes and prints it. The selector is a **line
+`design/acceleration.md`); `debug` materializes and prints it. The selector is a **line
 number** or an enclosing **theorem + step-label** pair.
 
 ```
