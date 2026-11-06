@@ -9,8 +9,9 @@
 //! will shrink this trust surface without changing the surface rule.
 //!
 //! Engine: compiles premises AND not(goal) into a formula over linear
-//! integer atoms — Nat is the nonnegative integers, so every variable
-//! carries an implicit >= 0 constraint — then eliminates quantifiers
+//! integer atoms — pure Z unless the theory declares a well-known `nonneg`
+//! predicate, which is its request to constrain variables >= 0 (see
+//! `Symbols.nonneg`) — then eliminates quantifiers
 //! innermost-first with Cooper's algorithm (atoms L >= 0 and
 //! modulus | L; equalities and negations are compiled away up front).
 //! The ground residue decides satisfiability: SAT means the goal does not

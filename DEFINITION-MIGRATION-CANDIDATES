@@ -1,19 +1,16 @@
-# Which std/aata constructs should become DEFINITION BLOCKS
+# Which std constructs should become DEFINITION BLOCKS
 
-Survey after `definition` landed (2026-09-24). The test is the one settled during
-the design: **a DEFINITION introduces a symbol by giving its meaning in terms of
-others; a THEORY AXIOM constrains a primitive that has no meaning beyond its
-axioms.** Syntax cannot tell these apart — both are `func f(…) => U` plus an
-equation — so every candidate below is judged on that question.
+**Status: nothing migrated yet.** Re-probed — `peano.add`, `peano.mul`, `integer.neg` and
+`sequence.foldUpTo` are all still two separate axioms.
 
----
+## The test
 
-## TIER 1 — clear definitions, should migrate
+**A DEFINITION introduces a symbol by giving its meaning in terms of others; a THEORY AXIOM
+constrains a primitive that has no meaning beyond its axioms.** Syntax cannot tell these
+apart — both are `func f(…) => U` plus an equation — so every candidate is judged on that
+question.
 
-Each builds its symbol out of ALREADY-MEANINGFUL parts. Nothing is being
-assumed; the equation IS the symbol's meaning.
-
-### Recursive definitions (multi-clause — the form definition blocks exist for)
+## MIGRATE: recursive definitions (the form definition blocks exist for)
 
 | file | symbol | clauses |
 |---|---|---|
@@ -26,98 +23,55 @@ assumed; the equation IS the symbol's meaning.
 | `std/integer/divides.b4m` | `pow` | `powZero` + `powSucc` |
 | `std/group/power.b4m` | `power` | `powerZero` + `powerSucc` + `powerPrev` |
 | `std/sequence.b4m` | `foldUpTo` | `foldZero` + `foldSucc` |
-| `std/group/sequence.b4m` | `productUpTo` | `productUpToZero` + `productUpToSucc` |
-| `std/group/sequence.b4m` | `revProductUpTo` | `revProductZero` + `revProductSucc` |
+| `std/group/sequence.b4m` | `productUpTo`, `revProductUpTo` | zero + succ each |
 | `std/integer/product.b4m` | `productUpTo` | `productUpToZero` + `productUpToSucc` |
 | `std/integer/sum.b4m` | `sumUpTo` | `sumUpToZero` + `sumUpToSucc` |
 
-**These are the flagship cases.** `add(ZERO,b) = b; add(succ(a),b) = succ(add(a,b))`
-is *the* definition of addition, and today it is two separately-named axioms that
-a reader must notice belong together. A definition block says so.
+`add(ZERO,b) = b; add(succ(a),b) = succ(add(a,b))` is *the* definition of addition, and
+today it is two separately-named axioms a reader must notice belong together.
 
-### Single-clause definitions
+## MIGRATE: single-clause, and the `iff` sites
 
-| file | symbol | axiom |
-|---|---|---|
-| `std/integer.b4m` | `sub` | `definitionOfSubtraction` — `sub(a,b) = add(a, neg(b))` |
-| `std/rational.b4m` | `sub` / `succ` / `prev` | `subDefinition` / `succDefinition` / `prevDefinition` |
-| `std/real.b4m` | `sub` / `succ` / `prev` | same three |
-| `std/complex.b4m` | `conj` | `conjDef` |
-| `std/integer/mod-n.b4m` | `znPower` | `znPowerDef` |
+Their names already say it (`…Definition`, `…Def`):
 
-The names already say it (`…Definition`, `…Def`).
+- `std/integer.b4m` `sub`; `std/rational.b4m` and `std/real.b4m` `sub`/`succ`/`prev`;
+  `std/complex.b4m` `conj`; `std/integer/mod-n.b4m` `znPower`
+- `std/function.b4m` `invertible` (`invertibleDef`); `std/integer/mod-n.b4m` `isUnit`
+  (`isUnitCharacterization`) — both introduce the predicate and nothing else constrains it
 
-### Predicate definitions (the `iff` sites)
+## MIGRATE, second: the MEMBERSHIP style
 
-| file | symbol | axiom |
-|---|---|---|
-| `std/function.b4m` | `invertible` | `invertibleDef` |
-| `std/integer/mod-n.b4m` | `isUnit` | `isUnitCharacterization` |
+`std/set.b4m`'s `unionMember`/`intersectionMember`/`differenceMember`/`complementMember`,
+`std/collection.b4m`'s four `…Contains`, `std/set/finite.b4m`'s `segmentMember`,
+`std/integer/mod-n.b4m`'s `clsCongruent`. These ARE definitions — `union` means exactly
+"membership is disjunction" — but the clause's head is `member(x, union(a,b))`, not
+`union(a,b)`:
 
-Both introduce the predicate and nothing else constrains it.
+```2b4m
+func union(a: Set, b: Set) => Set:
+  member(x, union(a, b)) iff (member(x, a) or member(x, b))
+```
 
----
+This checks (`tests/cases/define/definition_clause_variables.b4m`): a clause variable's sort
+is inferred from its USE — `member`'s first argument pins `x : Element`.
 
-## TIER 2 — the MEMBERSHIP style: defines a FUNCTION via an existing predicate
+## NEVER: every abstract-theory axiom
 
-`std/set.b4m`'s `unionMember`, `intersectionMember`, `differenceMember`,
-`complementMember`; `std/collection.b4m`'s four `…Contains`; `std/set/finite.b4m`'s
-`segmentMember`; `std/integer/mod-n.b4m`'s `clsCongruent`.
+`std/{ring,field,group,subgroup,rational,real,complex,divisibility}.b4m` and
+`std/field/order.b4m` — `addIsAssociative`, `opAssoc`, `iSquared`, `lessThanTrichotomy`, the
+homomorphism laws, `inverseLeft`/`Right`, `succInjective`, and the rest.
 
-These ARE definitions — `union` means exactly "membership is disjunction" — but
-the clause's head is `member(x, union(a,b))`, not `union(a,b)`.
+In these theories the symbol is a PRIMITIVE. `add` in a ring is not built from anything —
+commutativity is part of what it MEANS to be a ring, an assumption a reader must weigh. The
+library already reflects this exactly: **`addIsCommutative` is a THEOREM in `std/peano.b4m`
+(where `add` has a definition) and an AXIOM in ring/field/real/rational/complex (where it
+does not).**
 
-**UNBLOCKED 2026-09-27.** This now checks (fixture
-`tests/cases/definition_clause_variables.b4m`):
+Migrating these would be WRONG: `--axioms` would stop reporting them as assumptions, which
+is the one thing that report exists to do.
 
-    func union(a: Set, b: Set) => Set:
-      member(x, union(a, b)) iff (member(x, a) or member(x, b))
+## Doing it
 
-A clause variable's sort is inferred from its USE (`member`'s first argument sort
-pins `x : Element`) — the elaborator settles clause variables, the parser only
-collects them (see GUIDE.md "What a clause quantifies"). The same fix made a
-DECLARED lower-case name on a clause's right-hand side (`identityFn`) resolve as
-the global, gave mixed-sort params their own sorts, and stopped quantifying params
-a clause does not mention. TIER 2 can migrate; nothing has been migrated yet.
-
----
-
-## TIER 3 — NOT definitions, leave alone
-
-**Every abstract-theory axiom.** `std/{ring,field,group,subgroup,rational,real,
-complex,divisibility}.b4m` and `std/field/order.b4m`: `addIsAssociative`,
-`addIsCommutative`, `mulOneLeft`, `opAssoc`, `opCommutative`, `iSquared`,
-`lessThanTrichotomy`, the `fromReal*` homomorphism laws, `re*`/`im*`, the
-`mod-n` homomorphism laws (`addHom`, `mulHom`, `negHom`), `inverseLeft/Right`,
-`lessThanElim`, `succInjective`, `numeralInjective`, `gcdZero`/`gcdAbs`,
-`prevSucc`/`succPrev`, `composeApply`/`identityApply`, `unitInverseLeft`.
-
-In these theories the symbol is a PRIMITIVE. `add` in a ring is not built from
-anything — commutativity is part of what it MEANS to be a ring, an assumption a
-reader must weigh. The library already reflects this exactly: `addIsCommutative`
-is a THEOREM in `std/peano.b4m` (where `add` has a definition) and an AXIOM in
-ring/field/real/rational/complex (where it does not).
-
-Turning these into definitions would be WRONG: `--axioms` would stop reporting
-them as assumptions, which is the one thing that report exists to do.
-
----
-
-## Recommendation
-
-Migrate TIER 1 — 13 recursive definitions and 9 single-clause ones. That is where
-the feature pays: the reader sees the clauses as one definition, `--axioms` stops
-listing 30+ construction equations beside genuine assumptions, and nobody invents
-another `…Def` name.
-
-TIER 2 is unblocked (2026-09-27: clause variables take their sort from USE) and
-can follow TIER 1, one theory per commit.
-
-TIER 3 never — and the `--axioms` report is the reason to be careful: its value
-is that it lists what a result ASSUMES, which TIER 1 migrations sharpen (fewer
-false entries) and a TIER 3 migration would destroy.
-
-**Caveat on TIER 1:** migrating changes `--axioms` output for anything resting on
-those symbols, and several suite goldens quote it. Expect golden churn
-proportional to the migration, and do it in reviewable chunks — one theory per
-commit — rather than all at once.
+One theory per commit. **Migrating changes `--axioms` output for anything resting on those
+symbols, and several suite goldens quote it** — expect golden churn proportional to the
+migration, so keep the chunks reviewable.

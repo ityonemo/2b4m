@@ -22,7 +22,7 @@ Checked 2026-10-26 across all 17 trustable words (`Verify.Word`):
 
 `instantiation` is not trustable at all, so it has no `--fast` behaviour to check.
 
-## The `specialize` violation
+## The `specialize` violation (UNSOUND — see SPECIALIZE-FAST-UNSOUND.md)
 
 `[using specialize succInjective(ZERO, ZERO)]` claiming `succ(ZERO) = ZERO` passes `--fast`
 and fails strict. Whether the instance's conclusion matches the claim is checked by

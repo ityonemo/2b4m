@@ -3366,9 +3366,12 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
     // `fvar_binds` only after the producer returns, so a local head's abstracted params become
     // unresolvable — "reference not found: 'k'" across std/subgroup/products.b4m.)
     //
-    // KNOWN GAP, deliberately left: `--fast` accepts a `specialize` whose instance conclusion
-    // differs from the claim. Gated by `tests/cases/tactics/specialize/specialize_claim_mismatch_fast.b4m`, which
-    // pins today's behaviour so a future fix is noticed. See design/acceleration.md.
+    // UNSOUND, TO FIX: `--fast` accepts a `specialize` whose instance conclusion differs from
+    // the claim — so a FALSE goal is admitted (`succ(ZERO) = ZERO`). Every other trustable word
+    // runs its decision or α-matches; this one checks only that a head is present. Gated by
+    // `tests/cases/tactics/specialize/specialize_claim_mismatch_fast.b4m`, which pins today's
+    // behaviour so the fix is noticed. See SPECIALIZE-FAST-UNSOUND.md for why the two obvious
+    // fixes do not work.
     if (self.admit_mode) {
         self.admit_ok = true;
         return null;
