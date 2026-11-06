@@ -53,7 +53,7 @@ cannot CERTIFY — that is the permission `--fast` exists to grant, not an oblig
 word decides for itself what its own `--fast` criterion is. Admitting a goal a decision
 procedure REFUTES is a soundness bug. Swept 2026-10-26 across all 17 trustable words with one
 refuted-goal probe each; `specialize` is the single violation, gated by
-`tests/cases/specialize_claim_mismatch_fast.b4m`. Every other word has a regression fixture
+`tests/cases/tactics/specialize/specialize_claim_mismatch_fast.b4m`. Every other word has a regression fixture
 named `*_false_fast.b4m` beside it.
 
 So a decision word admits on exactly ONE outcome: the goal is TRUE. A refutation fails, and a
@@ -144,7 +144,7 @@ modes. The fix splits the two kinds of "no"; `gauss.b4m` is the regression gate.
 ## The two residuals
 
 **`specialize` — `--fast` admits what strict REFUTES.** The only such case in the corpus, gated
-by `tests/cases/specialize_claim_mismatch_fast.b4m`. The claim-vs-instance match happens in
+by `tests/cases/tactics/specialize/specialize_claim_mismatch_fast.b4m`. The claim-vs-instance match happens in
 `withGuardPremises`, AFTER the instance is proven, which `--fast` skips. It cannot move into the
 producer: the consequent is in PARAM space — `forall a, b; a = b` is literally `p1 = p2` — so
 matching it against the goal with the params as pattern variables succeeds for ANY equation goal
@@ -200,7 +200,7 @@ argument on each tactic:
   in the AMBIENT namespace and their synthetics stamp symbols FINAL, so a model is applied
   ONCE per `using model(M)` citation instead of a second time on re-elaboration. That second
   fix also removed `no_relativize`, which had papered over the guard-doubling face of the
-  same bug. Fixtures: `tests/cases/model_overlap_{refinement,shift}.b4m`.
+  same bug. Fixtures: `tests/cases/model/model_overlap_{refinement,shift}.b4m`.
 - **`model`** overrides a whole signature at once — the industrial-strength
   version of the same idea (see `MODEL-DESIGN.md`). Aliasing remaps one name; a
   `model` remaps an entire structure's worth of names, so a structure that spells
@@ -301,7 +301,7 @@ regressions.
   **kernel-checked** (not accelerated), and any accelerated-tactic names `<thm>`
   itself carries are inherited. This is for goals the Presburger procedure
   *decides* but no certifier can *emit* — e.g. multi-fixed-variable `∀∀∃`
-  (`tests/cases/cooper_gap.b4m`: `sumParity` reduces to the cooper-certified
+  (`tests/cases/tactics/cooper/cooper_gap.b4m`: `sumParity` reduces to the cooper-certified
   single-variable `evenOrOddArith` via a hand proof, and `fallback` cites it).
   The matcher accepts `<thm>` in either of two forms — **every goal `arithmetic`
   can decide is fallback-supportable**:
@@ -313,7 +313,7 @@ regressions.
      matches it (order-independent; the step's other refs are the `arithmetic`
      decision premises), and EMITS a `theorem_ref → apply_at(x⃗) →
      modus_ponens(refs)` chain the KERNEL re-checks — so a mis-inferred witness
-     can never pass. (`tests/cases/arithmetic_fallback_specialize.b4m`;
+     can never pass. (`tests/cases/tactics/arithmetic/arithmetic_fallback_specialize.b4m`;
      `std/integer/divides.b4m`'s `modDifferenceIsMultiple`, cited at `b:=n, a:=r`
      from `aata/2.2-division-algorithm-exercises.md`.)
   `fallback` is a contextual modifier on `arithmetic` only (not a keyword —
@@ -424,7 +424,7 @@ regressions.
   not to hand-prove around it. So there is no decision-vs-certification gap for
   `polynomial` to bridge, and it carries no `fallback`. (The audit also
   surfaced — and fixed — a stale-slice OOB crash in the accelerated normalizer
-  on large expansions: `tests/cases/polynomial_oob.b4m`.)
+  on large expansions: `tests/cases/tactics/polynomial/polynomial_oob.b4m`.)
 
 ### `extensionality` — extensionality-reduction
 

@@ -14,7 +14,7 @@ a different axis.
 **FIX:** mix the head flavour into the hash (one line). Verified: the repro and both controls
 pass; the 2026-10-10 repro passes (under `--draft` — it has an unrelated dead step of its own
 that the crosstalk had masked); the 400-line parent is 10/10 green at `-j1` where it was an
-8/2 split of two different errors. Regression: `tests/cases/schema_instance_crosstalk/`.
+8/2 split of two different errors. Regression: `tests/cases/schema/instance_crosstalk/`.
 
 The `--chaos=<seed>` non-replay noted below is a SEPARATE defect and is still open.
 

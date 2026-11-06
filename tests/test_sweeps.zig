@@ -25,8 +25,8 @@ pub fn addTests(
     // WAIT for it, not fall through to the untransferred copy. Order-dependent — this small
     // shape happens to pass either way, so the std sweep above is the gate that catches a
     // regression; this documents the shape and keeps the path exercised.
-    ctx.okSilent(&.{ "check", "tests/cases/transfer_race" });
-    for ([_][]const u8{ "tests/cases/transfer_race/base.b4m", "tests/cases/transfer_race/theory.b4m", "tests/cases/transfer_race/concrete.b4m" }) |path| {
+    ctx.okSilent(&.{ "check", "tests/cases/model/transfer_race" });
+    for ([_][]const u8{ "tests/cases/model/transfer_race/base.b4m", "tests/cases/model/transfer_race/theory.b4m", "tests/cases/model/transfer_race/concrete.b4m" }) |path| {
         ctx.okSilent(&.{ "fmt", "--check", path });
     }
 
@@ -39,31 +39,31 @@ pub fn addTests(
     // TARGET terms while any fact the model does not map stays in SOURCE terms. A rejection
     // therefore compares two vocabularies, reported at a line in the SOURCE file — which read
     // as a remapping BUG until the `Model@theorem` prefix made the transfer visible. Pin it.
-    ctx.fail(&.{ "check", "tests/cases/model_transfer_label/transfer.b4m" },
-        \\tests/cases/model_transfer_label/source.b4m:12:4: error: M@srcPlain: step claims 'forall x: Grp; op(x, E) = x' but the axiom derives 'forall x: SrcVal; scomb(x, SRCE) = x'
+    ctx.fail(&.{ "check", "tests/cases/model/transfer_label/transfer.b4m" },
+        \\tests/cases/model/transfer_label/source.b4m:12:4: error: M@srcPlain: step claims 'forall x: Grp; op(x, E) = x' but the axiom derives 'forall x: SrcVal; scomb(x, SRCE) = x'
         \\
     );
 
-    ctx.okSilent(&.{ "check", "tests/cases/transfer_race", "--sync-io" });
-    ctx.okSilent(&.{ "check", "tests/cases/transfer_race", "--io-threads=1" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/transfer_race", "--sync-io" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/transfer_race", "--io-threads=1" });
     // `--io-delay` is honoured on every path (the ring spends it as a linked timeout whose
     // expiry must not break the chain — it did, once); a small delay so the gate stays quick.
-    ctx.okSilent(&.{ "check", "tests/cases/transfer_race", "--io-delay=1000" });
-    ctx.okSilent(&.{ "check", "tests/cases/transfer_race", "--io-delay=1000", "--io-threads=2" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/transfer_race", "--io-delay=1000" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/transfer_race", "--io-delay=1000", "--io-threads=2" });
     // ...and a missing import is diagnosed identically whichever thread met the error (the
     // pool thread records it as data; the resumed task diagnoses at the import token).
     const import_missing_diag =
-        \\tests/cases/imports/missing_import.b4m:4:18: error: cannot open 'tests/cases/imports/nope.b4m': file not found
-        \\tests/cases/imports/missing_import.b4m:10:26: error: reference not found: 'reflexive'
+        \\tests/cases/namespaces/imports/missing_import.b4m:4:18: error: cannot open 'tests/cases/namespaces/imports/nope.b4m': file not found
+        \\tests/cases/namespaces/imports/missing_import.b4m:10:26: error: reference not found: 'reflexive'
         \\
     ;
-    ctx.fail(&.{ "check", "tests/cases/imports/missing_import.b4m", "--sync-io" }, import_missing_diag);
-    ctx.fail(&.{ "check", "tests/cases/imports/missing_import.b4m", "--io-threads=1" }, import_missing_diag);
+    ctx.fail(&.{ "check", "tests/cases/namespaces/imports/missing_import.b4m", "--sync-io" }, import_missing_diag);
+    ctx.fail(&.{ "check", "tests/cases/namespaces/imports/missing_import.b4m", "--io-threads=1" }, import_missing_diag);
 
     // `--trace-facts` runs to completion and leaves the verdict alone. Its text carries task
     // numbers, so the stdout verdict is pinned exactly and the stderr trace only by its
     // footer (a checked run must state SOME expectation for a stream it writes to).
-    const traced = ctx.run(&.{ "check", "--trace-facts", "tests/cases/single_theorem.b4m", "good" });
+    const traced = ctx.run(&.{ "check", "--trace-facts", "tests/cases/cli/single_theorem.b4m", "good" });
     traced.expectStdOutEqual("OK: 5 declarations, 1 theorems proven\n");
     traced.expectStdErrMatch("--- end trace ---\n");
     traced.expectExitCode(0);
@@ -80,16 +80,16 @@ pub fn addTests(
     const holes_report =
         \\OK: 12 declarations, 4 theorems proven
         \\  — rests on 4 axiom(s):
-        \\      holeAlpha  (tests/cases/holes_many.b4m:18)  — HOLE
-        \\      holeBravo  (tests/cases/holes_many.b4m:19)  — HOLE
-        \\      holeCharlie  (tests/cases/holes_many.b4m:20)  — HOLE
-        \\      holeDelta  (tests/cases/holes_many.b4m:21)  — HOLE
+        \\      holeAlpha  (tests/cases/namespaces/holes_many.b4m:18)  — HOLE
+        \\      holeBravo  (tests/cases/namespaces/holes_many.b4m:19)  — HOLE
+        \\      holeCharlie  (tests/cases/namespaces/holes_many.b4m:20)  — HOLE
+        \\      holeDelta  (tests/cases/namespaces/holes_many.b4m:21)  — HOLE
         \\  — DRAFT — 4 hole(s) unfilled (aspirational; the result is conditional on them): holeAlpha holeBravo holeCharlie holeDelta; re-run `2b4m check` (no --draft) once filled.
         \\
     ;
-    ctx.ok(&.{ "check", "tests/cases/holes_many.b4m", "--draft", "--axioms" }, holes_report);
+    ctx.ok(&.{ "check", "tests/cases/namespaces/holes_many.b4m", "--draft", "--axioms" }, holes_report);
     for ([_][]const u8{ "--chaos=1", "--chaos=7", "--chaos=42", "--chaos=99" }) |seed| {
-        ctx.ok(&.{ "check", seed, "tests/cases/holes_many.b4m", "--draft", "--axioms" }, holes_report);
+        ctx.ok(&.{ "check", seed, "tests/cases/namespaces/holes_many.b4m", "--draft", "--axioms" }, holes_report);
     }
     // …and A SEED MUST REPLAY. The sweep above pins the VERDICT across seeds, which is the
     // determinism contract, but it cannot see whether a given seed reproduces its own
@@ -107,29 +107,29 @@ pub fn addTests(
     // than merely asserting a constant. A regression that reintroduces async reads or extra
     // workers under chaos makes this flaky, which is the intended signal.
     for (0..3) |_| {
-        const r = ctx.run(&.{ "check", "--chaos=7", "--trace-facts", "tests/cases/chaos_replay.b4m", "--axioms" });
+        const r = ctx.run(&.{ "check", "--chaos=7", "--trace-facts", "tests/cases/cli/chaos_replay.b4m", "--axioms" });
         r.expectStdErrMatch("--- fact resolution trace (2418 citations) ---");
         r.expectExitCode(0);
     }
-    ctx.okSilent(&.{ "fmt", "--check", "tests/cases/holes_many.b4m" });
+    ctx.okSilent(&.{ "fmt", "--check", "tests/cases/namespaces/holes_many.b4m" });
 
     // A CITATION CYCLE is a hard error naming every participant. Before this, the engine
     // parked both proofs, drained its queue and returned as if quiescent — `OK: 0 theorems
     // proven`, exit 0 — so a theorem that could never be proved read as success.
-    ctx.fail(&.{ "check", "tests/cases/cycle_two.b4m" },
-        \\tests/cases/cycle_two.b4m:13:9: error: 'first' is part of a citation cycle (first, second) — each proof waits on the next, so none can be proved
-        \\tests/cases/cycle_two.b4m:20:9: error: 'second' is part of a citation cycle (first, second) — each proof waits on the next, so none can be proved
+    ctx.fail(&.{ "check", "tests/cases/kernel/cycle_two.b4m" },
+        \\tests/cases/kernel/cycle_two.b4m:13:9: error: 'first' is part of a citation cycle (first, second) — each proof waits on the next, so none can be proved
+        \\tests/cases/kernel/cycle_two.b4m:20:9: error: 'second' is part of a citation cycle (first, second) — each proof waits on the next, so none can be proved
         \\
     );
-    ctx.fail(&.{ "check", "tests/cases/cycle_three.b4m" },
-        \\tests/cases/cycle_three.b4m:7:9: error: 'one' is part of a citation cycle (one, two, three) — each proof waits on the next, so none can be proved
-        \\tests/cases/cycle_three.b4m:14:9: error: 'two' is part of a citation cycle (one, two, three) — each proof waits on the next, so none can be proved
-        \\tests/cases/cycle_three.b4m:21:9: error: 'three' is part of a citation cycle (one, two, three) — each proof waits on the next, so none can be proved
+    ctx.fail(&.{ "check", "tests/cases/kernel/cycle_three.b4m" },
+        \\tests/cases/kernel/cycle_three.b4m:7:9: error: 'one' is part of a citation cycle (one, two, three) — each proof waits on the next, so none can be proved
+        \\tests/cases/kernel/cycle_three.b4m:14:9: error: 'two' is part of a citation cycle (one, two, three) — each proof waits on the next, so none can be proved
+        \\tests/cases/kernel/cycle_three.b4m:21:9: error: 'three' is part of a citation cycle (one, two, three) — each proof waits on the next, so none can be proved
         \\
     );
     // ...but cyclic FILE IMPORTS stay legal — only the PROOF graph must be acyclic.
-    ctx.okSilent(&.{ "check", "tests/cases/imports/cycle_a.b4m" });
-    for ([_][]const u8{ "tests/cases/cycle_two.b4m", "tests/cases/cycle_three.b4m" }) |path| {
+    ctx.okSilent(&.{ "check", "tests/cases/namespaces/imports/cycle_a.b4m" });
+    for ([_][]const u8{ "tests/cases/kernel/cycle_two.b4m", "tests/cases/kernel/cycle_three.b4m" }) |path| {
         ctx.okSilent(&.{ "fmt", "--check", path });
     }
 }

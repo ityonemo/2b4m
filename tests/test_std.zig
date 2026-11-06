@@ -160,7 +160,7 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "std/integer/sum.b4m" });
     // ONE sequence carries BOTH folds: the sort is shared, so a single `s` has a
     // product and a sum. Two sorts would make this file ill-typed.
-    ctx.okSilent(&.{ "check", "tests/cases/integer_seq_both_folds.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/cli/integer_seq_both_folds.b4m" });
 
     // subgroups (std/subgroup.b4m, Judson §3.3): a STANDALONE theory (declares its own
     // parent group) — the subgroup criteria, the one-step test (both directions), the
@@ -392,7 +392,7 @@ pub fn addTests(
     // of std/group/sequence.b4m onto Perm transfers the product laws. The transferred
     // inverse-of-a-product proof cites std/group.b4m's inverseUnique/invProduct through
     // group_sequence's ALIASES — the overlay-over-the-universe case
-    // (tests/cases/model_alias_borrowed.b4m), on real std theories. What aata/5.1's
+    // (tests/cases/model/alias/model_alias_borrowed.b4m), on real std theories. What aata/5.1's
     // parity theory runs on.
     ctx.okSilent(&.{ "check", "std/permutation/sequence.b4m" });
     // ... and the worked examples that unpack its three sequence-building postulates.

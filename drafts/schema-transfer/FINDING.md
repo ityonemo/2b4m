@@ -1,4 +1,4 @@
-RESOLVED 2026-10-03 — see tests/cases/model_schema_transfer.b4m for the regression guard and
+RESOLVED 2026-10-03 — see tests/cases/model/schema/model_schema_transfer.b4m for the regression guard and
 README.md for what remains (the accelerant path). The original analysis is kept below because
 the reasoning was partly WRONG and the correction is the useful part.
 

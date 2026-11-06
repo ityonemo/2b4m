@@ -193,7 +193,7 @@ trusted, everything is kernel-checked. `2b4m debug accelerant` reprints it, as t
 2b4m a person would have written:
 
 ```
-$ 2b4m debug accelerant tests/cases/farkas.b4m belowBothWaysIsAbsurd conclusion
+$ 2b4m debug accelerant tests/cases/tactics/farkas/farkas.b4m belowBothWaysIsAbsurd conclusion
 theorem arithmetic: forall a: Nat; forall b: Nat; less_than(a, b) -> less_than(b, a) -> less_than(a, a)
 proof
   @b2 |

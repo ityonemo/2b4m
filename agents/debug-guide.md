@@ -200,12 +200,12 @@ applied head (which may be a local step, so it must resolve); for `polynomial(pe
 a fact. Validating it unconditionally broke 19 files across `std/`, `aata/` and `examples/`.
 Hence two functions: `seedLocalRoot` (silent, for the overloaded slot) and
 `seedAndCheckLocalRoot` (validating, for `refs` and for `specialize`'s head).
-Gate: `tests/cases/fast_unknown_ref_bad.b4m`, asserted in BOTH modes.
+Gate: `tests/cases/fast/fast_unknown_ref_bad.b4m`, asserted in BOTH modes.
 
 **FIXED — a `specialize` head that is a local step.** `specialize HEAD(args)` carries its head
 in the claim's `schema` slot, NOT `refs`, and the head may be a local step label. The admit path
 seeds cited steps as roots but walked `refs` only. (`std/permutation/listing.b4m`, 3 steps.)
-Gate: `tests/cases/fast_specialize_head_root.b4m`.
+Gate: `tests/cases/fast/fast_specialize_head_root.b4m`.
 
 **FIXED — a qualified ref leaked a diagnostic.** `localName` rejects a `ns.`-qualified token by
 DIAGNOSING it and returning an error; the seeding loop caught the error and continued, which
@@ -219,7 +219,7 @@ none — identity is by ORIGIN. Fix: `factOrigin` follows the chain (as strict d
 `ProveTask.factAlias`), and the read pass drives the whole admission into a scratch pool so
 every demand it raises is settled while suspending is still legal. NOTE the suspension was in
 `resolveRefs` on the ORIGIN's formula, not in the parse — two wrong diagnoses before a
-`std.debug.print` at the failing point settled it. Gate: `tests/cases/fast_import_alias/`.
+`std.debug.print` at the failing point settled it. Gate: `tests/cases/fast/import_alias/`.
 
 **FIXED — a guarded-sort obligation's discharger.** Specializing a lemma whose binder is a
 REFINED sort (`forall f: Perm`, i.e. `Fn where invertible`) owes `invertible(arg)`. Strict meets
@@ -247,7 +247,7 @@ those are what the inference consumes and are always named, as a plain list afte
 arguments: `[using accelerant accelerator_args(...) input1 input2 …]`. The engine already draws
 this line (`withGuardPremises` searches only the leading antecedents `wrapObligations` hoisted).
 
-Minimal repro (8 declarations, no imports) — `tests/cases/guarded_sort_obligation_root.b4m`,
+Minimal repro (8 declarations, no imports) — `tests/cases/sorts/guarded_sort_obligation_root.b4m`,
 gated both ways:
 
 ```2b4m

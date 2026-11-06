@@ -6,7 +6,7 @@
 //! single call:
 //!
 //!   ctx.okSilent(&.{ "check", "std/peano.b4m" });               // checks OK, exit 0
-//!   ctx.fail(&.{ "check", "tests/cases/mp_bad.b4m" }, "…:16:22: error: …\n");
+//!   ctx.fail(&.{ "check", "tests/cases/kernel/modus_ponens_bad.b4m" }, "…:16:22: error: …\n");
 //!
 //! Prefer `okSilent` for "this file checks" gates — do NOT pin declaration/theorem
 //! COUNTS in the golden (they churn on every edit and are noise, not a regression

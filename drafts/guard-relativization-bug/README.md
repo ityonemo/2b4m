@@ -177,7 +177,7 @@ local-head `specialize` under a guarded model yields
 with the guard at index 1. It now walks the whole chain, taking the next cited ref where it
 matches and synthesizing a discharge otherwise.
 
-**`IntegersInRational` now transfers.** `tests/cases/model_guarded_local_head_specialize.b4m`
+**`IntegersInRational` now transfers.** `tests/cases/model/guarded/model_guarded_local_head_specialize.b4m`
 pins it (`integer.negNeg` onto the cut) and fails without the change. `std --library` 1824 and
 `aata` 495 both green; `zig build test` has 12 failures before AND after, all pre-existing
 (missing arithmetic countermodel lines).
@@ -261,7 +261,7 @@ explicit `[by hypothesis]` takes — handled only `.fix` and `.assume`, returnin
 `.unpack`. That broke every ℤ-order theorem citing `lessThanElim`.
 
 Fixed by giving `.unpack` its hypothesis formula (the opened existential body) in that switch.
-`tests/cases/model_guarded_unpack_hypothesis.b4m` pins it.
+`tests/cases/model/guarded/model_guarded_unpack_hypothesis.b4m` pins it.
 
 ### Where this leaves it
 

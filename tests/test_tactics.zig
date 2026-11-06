@@ -14,109 +14,109 @@ pub fn addTests(
     const ctx = Ctx.init(b, exe, test_step);
     // `by cite`: the KIND-AGNOSTIC fact citation (cites an axiom OR a theorem; the kernel
     // picks its arm by the resolved kind). The word generated accelerant certs emit.
-    ctx.okSilent(&.{ "check", "tests/cases/cite.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/kernel/cite.b4m" });
 
     // Milestone A: simplify — certificate-producing rewrite tactic
-    ctx.okSilent(&.{ "check", "tests/cases/simplify.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/simplify/simplify.b4m" });
 
     // simplify always emits kernel steps (never accelerates): the default check accepts it
-    ctx.okSilent(&.{ "check", "tests/cases/simplify.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/simplify/simplify.b4m" });
 
     // unjoinable normal forms: the diagnostic shows both, copy-pasteable
-    ctx.fail(&.{ "check", "tests/cases/simplify_bad.b4m" }, "tests/cases/simplify_bad.b4m:14:16: error: simplify: normal forms differ: 'add(n, ZERO)' vs 'n'\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/simplify/simplify_bad.b4m" }, "tests/cases/tactics/simplify/simplify_bad.b4m:14:16: error: simplify: normal forms differ: 'add(n, ZERO)' vs 'n'\n");
 
     // cycling rules hit the hard rewrite cap instead of hanging
-    ctx.fail(&.{ "check", "tests/cases/simplify_loop.b4m" }, "tests/cases/simplify_loop.b4m:13:12: error: simplify: rewrite limit reached (looping rule set?)\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/simplify/simplify_loop.b4m" }, "tests/cases/tactics/simplify/simplify_loop.b4m:13:12: error: simplify: rewrite limit reached (looping rule set?)\n");
 
     // ac: associative-commutative sum reordering over opaque atoms, emits kernel steps
-    ctx.okSilent(&.{ "check", "tests/cases/ac.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/ac/ac.b4m" });
 
     // ac over multiplication: same bubble-sort machinery, mul lemma triple
     // (mulIsAssociative/mulIsCommutative/mulLeftSwap), emits kernel steps
-    ctx.okSilent(&.{ "check", "tests/cases/ac_mul.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/ac/ac_mul.b4m" });
 
     // ac_quantified: peel the forall prefix then run the ac core (add + mul)
-    ctx.okSilent(&.{ "check", "tests/cases/ac_quantified.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/ac/ac_quantified.b4m" });
 
     // distributivity: ac_quantified with a cited distributivity lemma
     // pre-normalizes (distributes) each side before the AC bubble-sort
-    ctx.okSilent(&.{ "check", "tests/cases/distribute.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/kernel/distribute.b4m" });
 
     // `polynomial(theory)`: nonlinear identities canonicalize, emitting kernel
     // steps (no accelerated tactic) via distribute → sort monomials → sort sum → fold.
-    ctx.okSilent(&.{ "check", "tests/cases/polynomial.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/polynomial/polynomial.b4m" });
 
     // sides with different expansions → located error, exit 1 (not accelerated)
-    ctx.fail(&.{ "check", "tests/cases/polynomial_bad.b4m" }, "tests/cases/polynomial_bad.b4m:18:12: error: polynomial: sides expand differently: 'add(mul(a, a), add(mul(a, b), add(mul(a, b), mul(b, b))))' vs 'add(mul(a, a), mul(b, b))'\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/polynomial/polynomial_bad.b4m" }, "tests/cases/tactics/polynomial/polynomial_bad.b4m:18:12: error: polynomial: sides expand differently: 'add(mul(a, a), add(mul(a, b), add(mul(a, b), mul(b, b))))' vs 'add(mul(a, a), mul(b, b))'\n");
 
     // `polynomial` expands sub/neg (definitionOfSubtraction + neg-folds push neg
     // to the leaves), cancels additive inverses (t + neg(t) → 0), and folds
     // numeral coefficients (q+q → 2·q, 2q+2q → 4q) — strict cert + --fast parity.
-    ctx.okSilent(&.{ "check", "tests/cases/polynomial_neg.b4m" });
-    ctx.okSilent(&.{ "check", "tests/cases/polynomial_inverse.b4m" });
-    ctx.okSilent(&.{ "check", "tests/cases/polynomial_coeff.b4m" });
-    ctx.okSilent(&.{ "check", "--fast", "tests/cases/polynomial_neg.b4m" });
-    ctx.okSilent(&.{ "check", "--fast", "tests/cases/polynomial_inverse.b4m" });
-    ctx.okSilent(&.{ "check", "--fast", "tests/cases/polynomial_coeff.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/polynomial/polynomial_neg.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/polynomial/polynomial_inverse.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/polynomial/polynomial_coeff.b4m" });
+    ctx.okSilent(&.{ "check", "--fast", "tests/cases/tactics/polynomial/polynomial_neg.b4m" });
+    ctx.okSilent(&.{ "check", "--fast", "tests/cases/tactics/polynomial/polynomial_inverse.b4m" });
+    ctx.okSilent(&.{ "check", "--fast", "tests/cases/tactics/polynomial/polynomial_coeff.b4m" });
     // a ring identity in ONE operator is still a polynomial identity: an ADD-ONLY goal
     // (neg-push, regroup, cancellation to ZERO — no mul anywhere) and a MUL-ONLY goal (a
     // single monomial: neg-push through mul, regroup — no add anywhere). The op reader must
     // not demand both operators be present; the rules/phases needing the absent one are
     // simply not applicable.
-    ctx.okSilent(&.{ "check", "tests/cases/polynomial_add_only.b4m" });
-    ctx.okSilent(&.{ "check", "tests/cases/polynomial_mul_only.b4m" });
-    ctx.okSilent(&.{ "check", "--fast", "tests/cases/polynomial_add_only.b4m" });
-    ctx.okSilent(&.{ "check", "--fast", "tests/cases/polynomial_mul_only.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/polynomial/polynomial_add_only.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/polynomial/polynomial_mul_only.b4m" });
+    ctx.okSilent(&.{ "check", "--fast", "tests/cases/tactics/polynomial/polynomial_add_only.b4m" });
+    ctx.okSilent(&.{ "check", "--fast", "tests/cases/tactics/polynomial/polynomial_mul_only.b4m" });
     // a CROSS-TERM inverse pair (`a·b + neg(b·a)`) cancels: the monomial inside `neg(…)` is
     // factor-sorted like any other (its sort trace lifted through the neg context).
-    ctx.okSilent(&.{ "check", "tests/cases/polynomial_cross_term.b4m" });
-    ctx.okSilent(&.{ "check", "--fast", "tests/cases/polynomial_cross_term.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/polynomial/polynomial_cross_term.b4m" });
+    ctx.okSilent(&.{ "check", "--fast", "tests/cases/tactics/polynomial/polynomial_cross_term.b4m" });
 
     // a cited premise the CERTIFIER never uses (its rewrite rule never fires) must not become
     // a schema antecedent: the generated schema would carry a restated hypothesis nothing
     // cites, tripping its own use-all-facts pass ("unused fact: step 'prem-N'"). The producer
     // drops it from the antecedents AND from the call-site discharge list, in lockstep.
-    ctx.okSilent(&.{ "check", "tests/cases/arithmetic_unused_premise.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/arithmetic/arithmetic_unused_premise.b4m" });
     // the additive canonicalizer sorts + inverse-cancels UNDER a succ tower (premise combination).
-    ctx.okSilent(&.{ "check", "tests/cases/arithmetic_sub_from_add.b4m" });
-    ctx.okSilent(&.{ "check", "tests/cases/simplify_unused_premise.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/arithmetic/arithmetic_sub_from_add.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/simplify/simplify_unused_premise.b4m" });
 
     // a schema instantiated at a lambda CAPTURING an enclosing `fix b`: the schema's own
     // accelerant steps then run over a body mentioning a free `b` belonging to the
     // INSTANTIATING file. Every accelerant that abstracts free fvars must carry the
     // caller-scope binding (Synthetic.fvar_binds — only `specialize` did), or the
     // re-elaborated synthetic fails "unknown identifier 'b'" against the schema's file.
-    ctx.okSilent(&.{ "check", "tests/cases/schema_inherited_fvar.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/schema/schema_inherited_fvar.b4m" });
 
     // polynomial(field): the accelerant over a FIELD theory (bare ONE constant,
     // not the ℤ succ-tower). Guards field.b4m's ring-lemma shims + swaps resolving
     // by bare name in field's scope, and the additive-inverse cancellation of the
     // bare ONE atom (ONE + neg(ONE) → 0). Strict cert + --fast parity.
-    ctx.okSilent(&.{ "check", "tests/cases/polynomial_field.b4m" });
-    ctx.okSilent(&.{ "check", "--fast", "tests/cases/polynomial_field.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/polynomial/polynomial_field.b4m" });
+    ctx.okSilent(&.{ "check", "--fast", "tests/cases/tactics/polynomial/polynomial_field.b4m" });
     // a wrong coefficient (q+q claimed = 3·q) is still rejected: q+q expands to
     // add(q, q), 3·q to add(q, add(q, q)) — real repeated-addition arithmetic.
-    ctx.fail(&.{ "check", "tests/cases/polynomial_coeff_bad.b4m" }, "tests/cases/polynomial_coeff_bad.b4m:15:12: error: polynomial: sides expand differently: 'add(q, q)' vs 'add(q, add(q, q))'\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/polynomial/polynomial_coeff_bad.b4m" }, "tests/cases/tactics/polynomial/polynomial_coeff_bad.b4m:15:12: error: polynomial: sides expand differently: 'add(q, q)' vs 'add(q, add(q, q))'\n");
 
     // `ext(theory)`: the extensionality tactic, one tactic over two models —
     // reduce an equation to its pointwise obligation via the theory's
     // extensionality lemma, unfold the operators, close the residue. SET model
     // (propositional residue → tautology); emits kernel steps.
-    ctx.okSilent(&.{ "check", "tests/cases/extensionality_set.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/extensionality/extensionality_set.b4m" });
     // FUNCTION model (equational residue → rewrite join) — same `ext` tactic.
-    ctx.okSilent(&.{ "check", "tests/cases/extensionality_function.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/extensionality/extensionality_function.b4m" });
     // a FALSE set identity: the pointwise residue has a countermodel, so ext
     // declines with a located error (exit 1) — never accepts a false equation.
-    ctx.fail(&.{ "check", "tests/cases/extensionality_bad.b4m" }, "tests/cases/extensionality_bad.b4m:18:12: error: extensionality: could not close the pointwise obligation propositionally (is the identity true?)\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/extensionality/extensionality_bad.b4m" }, "tests/cases/tactics/extensionality/extensionality_bad.b4m:18:12: error: extensionality: could not close the pointwise obligation propositionally (is the identity true?)\n");
 
     // `model`: structure reuse. The source theory (a carrier + op + left-unit +
     // one proven theorem) is modeled by a concrete sort, and its theorem
     // transfers, remapped through the model.
-    ctx.okSilent(&.{ "check", "tests/cases/model_source.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/model_source.b4m" });
 
     // --fast trusts the transfer wholesale (remap the source theorem, α-match the
     // goal, taint accelerated: model) — checks nothing about the source proof.
-    ctx.ok(&.{ "check", "--fast", "tests/cases/model_transfer.b4m" },
+    ctx.ok(&.{ "check", "--fast", "tests/cases/model/model_transfer.b4m" },
         \\OK: 14 declarations, 1 theorems proven
         \\  — NOT FULLY VERIFIED: 1 theorem(s) accelerated (admitted, not proved): model
         \\
@@ -124,16 +124,16 @@ pub fn addTests(
     // default (strict) MATERIALIZES the remapped source proof as a synthetic
     // kernel-checked theorem (suppressed from the count) and cites it — so it
     // passes with NO taint. The transfer is genuinely kernel-verified.
-    ctx.okSilent(&.{ "check", "tests/cases/model_transfer.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/model_transfer.b4m" });
 
     // DEPENDENCY WALK: transferring a source theorem whose proof cites ANOTHER
     // source theorem forces strict materialization to recurse into it (memoized —
     // the shared dependency materializes once across both cites). Kernel-checked.
-    ctx.okSilent(&.{ "check", "tests/cases/model_recurse.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/model_recurse.b4m" });
     // `--fast-only model` ADMITS the transfer (its statement α-matches the claim; the source
     // proof is NOT re-materialized), disclosed via the NOT-FULLY-VERIFIED banner. Scoped to
     // `model` so the banner lists just that word.
-    ctx.ok(&.{ "check", "--fast-only", "model", "tests/cases/model_recurse.b4m" },
+    ctx.ok(&.{ "check", "--fast-only", "model", "tests/cases/model/model_recurse.b4m" },
         \\OK: 15 declarations, 2 theorems proven
         \\  — NOT FULLY VERIFIED: 2 theorem(s) accelerated (admitted, not proved): model
         \\
@@ -144,25 +144,25 @@ pub fn addTests(
     // ends); or a substituted axiom mapped (to a theorem OR an axiom). It may NOT
     // cite a fact the substitution AFFECTS but the model doesn't map.
     // OK exercises invariant-theorem + invariant-axiom + axiom→theorem + axiom→axiom:
-    ctx.okSilent(&.{ "check", "tests/cases/model_cite_ok.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/model_cite_ok.b4m" });
     // BAD leaves an affected axiom (opUnitRight, cited by the transferred proof) unmapped →
     // rejected. In the demand path an unmapped source axiom stays the SOURCE axiom under the
     // transfer (applyModel = identity), so its formula fails to match the transferred step's
     // relativized claim — the rejection surfaces at that source citation.
-    ctx.fail(&.{ "check", "tests/cases/model_cite_bad.b4m" }, "tests/cases/model_cite_source.b4m:43:8: error: ThingModel@unitCollapsesAndMarks: step claims 'forall b: Thing; combine(b, NEUTRAL) = b' but the axiom derives 'forall a: Sort; op(a, UNIT) = a'\n");
+    ctx.fail(&.{ "check", "tests/cases/model/model_cite_bad.b4m" }, "tests/cases/model/model_cite_source.b4m:43:8: error: ThingModel@unitCollapsesAndMarks: step claims 'forall b: Thing; combine(b, NEUTRAL) = b' but the axiom derives 'forall a: Sort; op(a, UNIT) = a'\n");
     // a model maps only the source theory's AXIOMS; mapping a source THEOREM (which
     // materializes through the mapped axioms) is misuse and rejected at that mapping.
-    ctx.fail(&.{ "check", "tests/cases/model_maps_theorem_bad.b4m" }, "tests/cases/model_maps_theorem_bad.b4m:22:3: error: model maps only axioms; 'src.leftUnit' is a theorem — it materializes through the mapped axioms, so drop this mapping\n");
+    ctx.fail(&.{ "check", "tests/cases/model/model_maps_theorem_bad.b4m" }, "tests/cases/model/model_maps_theorem_bad.b4m:22:3: error: model maps only axioms; 'src.leftUnit' is a theorem — it materializes through the mapped axioms, so drop this mapping\n");
 
     // a transparent (`define`d) symbol cannot be a model mapping source/target — it
     // rides along on the primitives in its body (which the model maps); nominally
     // remapping its NAME would ignore the definition (definition-blind, unsound).
-    ctx.fail(&.{ "check", "tests/cases/model_define_source_bad.b4m" }, "tests/cases/model_define_source_bad.b4m:19:3: error: 'source.TWICE' is a transparent (`define`d) symbol — it rides along on the primitives in its body and cannot be a model mapping source; map those primitives instead\n");
+    ctx.fail(&.{ "check", "tests/cases/model/model_define_source_bad.b4m" }, "tests/cases/model/model_define_source_bad.b4m:19:3: error: 'source.TWICE' is a transparent (`define`d) symbol — it rides along on the primitives in its body and cannot be a model mapping source; map those primitives instead\n");
 
     // …but a define'd TARGET is legitimate: mapping a source symbol ONTO a defined
     // target EXPRESSION works — the target expands to its body during transfer, so
     // `source.UNIT: DOUBLED` yields combine(ZED, ZED) in the materialized theorem.
-    ctx.okSilent(&.{ "check", "tests/cases/model_define_target.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/model_define_target.b4m" });
 
     // GUARDED model (`model … where <pred>`): the transfer is RELATIVIZED — every
     // carrier ∀ gains `guard(x) ->` — and strict materialization discharges the
@@ -170,42 +170,42 @@ pub fn addTests(
     // the instantiation term: constant → base closure fact; eigenvariable → the
     // in-scope `assume guard(a)`; composite → a closure fact + recursion). Fully
     // kernel-checked, no taint.
-    ctx.okSilent(&.{ "check", "tests/cases/model_guarded_source.b4m" });
-    ctx.okSilent(&.{ "check", "tests/cases/model_guarded.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/guarded/model_guarded_source.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/guarded/model_guarded.b4m" });
     // clean-error boundary: a guarded transfer whose proof instantiates at a term
     // with no closure fact in scope fails with an actionable message (the graceful
     // fallback point for future author-supplied obligations).
     // (demand path: no discharger nominated for good(ZED), so the transferred proof's
     // apply_at(ZED) leaks the guard and the step fails to match its claim — a sound rejection.)
-    ctx.fail(&.{ "check", "tests/cases/model_guarded_noclose.b4m" }, "tests/cases/model_guarded_source.b4m:20:4: error: ThingModel@opUnitAtUnit: step claims 'combine(ZED, ZED) = ZED' but apply_at derives 'good(ZED) -> combine(ZED, ZED) = ZED'\n");
+    ctx.fail(&.{ "check", "tests/cases/model/guarded/model_guarded_noclose.b4m" }, "tests/cases/model/guarded/model_guarded_source.b4m:20:4: error: ThingModel@opUnitAtUnit: step claims 'combine(ZED, ZED) = ZED' but apply_at derives 'good(ZED) -> combine(ZED, ZED) = ZED'\n");
     // BOUNDARY fixtures (all now handled): a guarded transfer of a proof that
     // unpacks an existential witness surfaces `guard(w)` from the relativized
     // `∃x; guard(x) and P(x)` conjunct (and re-guards a matching `witness`);
     // a case split re-emits common_conclusion + arm hypotheses. (Sources check fine too.)
-    ctx.okSilent(&.{ "check", "tests/cases/model_guarded_witness_source.b4m" });
-    ctx.okSilent(&.{ "check", "tests/cases/model_guarded_witness.b4m" });
-    ctx.okSilent(&.{ "check", "tests/cases/model_guarded_case_source.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/guarded/model_guarded_witness_source.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/guarded/model_guarded_witness.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/guarded/model_guarded_case_source.b4m" });
     // case split (common_conclusion + hypothesis) now materializes guardedly.
-    ctx.okSilent(&.{ "check", "tests/cases/model_guarded_case.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/guarded/model_guarded_case.b4m" });
     // SAME-FILE guarded model: the source theory and the model share one file (the
     // paradigm subgroup case — H ⊆ G on one carrier). Mapping sources are bare
     // (unqualified) names resolved locally; no import/two-file split required.
-    ctx.okSilent(&.{ "check", "tests/cases/model_guarded_samefile.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/guarded/model_guarded_samefile.b4m" });
     // AUTO-WEAKENING: a source axiom that holds unconditionally on the carrier,
     // mapped to ITSELF, has its relativized obligation (`inH(a) -> P(a)`)
     // synthesized by the materializer as a free weakening — no hand-written
     // relativized copy. (∀a;P(a) ⊢ ∀a; guard(a)->P(a).)
-    ctx.okSilent(&.{ "check", "tests/cases/model_guarded_weaken_source.b4m" });
-    ctx.okSilent(&.{ "check", "tests/cases/model_guarded_weaken.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/guarded/model_guarded_weaken_source.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/guarded/model_guarded_weaken.b4m" });
     // MULTI-BINDER auto-weakening: an unconditional axiom over N carrier binders
     // (here 2), mapped to itself, weakened by nested fix/assume with one chained
     // apply_at at the core. Needed for group axioms like opAssoc (3 binders).
-    ctx.okSilent(&.{ "check", "tests/cases/model_guarded_weaken_multi_source.b4m" });
-    ctx.okSilent(&.{ "check", "tests/cases/model_guarded_weaken_multi.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/guarded/model_guarded_weaken_multi_source.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/guarded/model_guarded_weaken_multi.b4m" });
     // the paradigm case end to end: a SUBGROUP modeling its own group's carrier —
     // same-file guarded model + auto-weakening (opIdentityLeft mapped to itself) +
     // inH(E) proved by contradiction from the definitional subgroup axioms.
-    ctx.okSilent(&.{ "check", "tests/cases/model_guarded_subgroup.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/guarded/model_guarded_subgroup.b4m" });
     // THE MODEL STACK end to end over std/group + std/subgroup:
     //  - a subgroup inH of a group; the 8-theorem group corpus transfers onto H
     //    through HSubGroup→HGroup (each `group.X` discharged via a `@`-projection
@@ -215,7 +215,7 @@ pub fn addTests(
     //    on existing machinery (flattened single-guard K = Grp where inK, inK ⊆ inH).
     // Exercises the DIRECT-MAPPED-axiom transfer (group.opAssoc, an axiom, discharged
     // through a `@`-projection → cite the mapped discharge, not materialize a proof).
-    ctx.okSilent(&.{ "check", "tests/cases/model_subgroup_transfer.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/model_subgroup_transfer.b4m" });
     // GUARD-ARITY PROJECTION: the same subgroup theory modeled onto a target whose BASE SORT
     // IS ITSELF REFINED. `Sub = Grp where inSubgroup` has one qualifier and its proofs claim
     // that one guard; `EvenPerm = Perm where inAlternating` over `Perm = Fn where invertible`
@@ -224,7 +224,7 @@ pub fn addTests(
     // 'inAlternating(g)' but the hypothesis derives 'inAlternating(g) and invertible(g)'"), so
     // a source theory could only be modeled onto a universal base. Complements the fixture
     // above, which works precisely BECAUSE its base sort is universal.
-    ctx.okSilent(&.{ "check", "tests/cases/model_guarded_refined_base.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/guarded/model_guarded_refined_base.b4m" });
     // THE SUBSUMED-ANTECEDENT ARM of auto-weakening, the converse of the projection above.
     // `std/permutation/symmetric.b4m` models the normal-subgroup theory onto A_n with the
     // ambient sort `SymPerm = Perm where hasFiniteSupport` over `Perm = Fn where invertible`.
@@ -240,13 +240,13 @@ pub fn addTests(
     // onto a local element and its order and discharges those axioms from a `hasOrder`
     // hypothesis, so the corpus transfers. This fixture IS the entry point — without it the
     // section looks like dead code (nothing in std cites it) and gets re-proved by hand.
-    ctx.okSilent(&.{ "check", "tests/cases/model_element_order.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/model_element_order.b4m" });
     // LAGRANGE AT AN ARBITRARY SUBGROUP. std/group/coset.b4m and std/group/lagrange.b4m are
     // written over ONE predicate `inSubgroup` with the three criteria as axioms — which is a
     // MODEL SOURCE, not a restriction to one subgroup. Mapping it onto the CYCLIC subgroup
     // (criteria from std/group/generated.b4m) transfers the coset algebra AND the counting
     // theorem in one line each. The fixture is the entry point the chapter lacked.
-    ctx.okSilent(&.{ "check", "tests/cases/model_lagrange_at_a_subgroup.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/model_lagrange_at_a_subgroup.b4m" });
     // A SOURCE SCHEMA AT THE CITER'S OWN PREDICATE. `[using model(M) src.sch(args)]` now parses
     // (a model-cited schema takes its instantiation args after the cited name, the same slot
     // `instantiation NAME(args)` uses), and a PROVEN source schema may be discharged with `<-`
@@ -254,18 +254,18 @@ pub fn addTests(
     // instantiation is per-instance proof). What the citer gets is the DISCHARGING schema's
     // statement instantiated — the claim is matched against the instance, so a weaker discharge
     // yields only the weaker fact, and --axioms names the discharge, never the source schema.
-    ctx.okSilent(&.{ "check", "tests/cases/model_schema_at_a_chosen_predicate.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/schema/model_schema_at_a_chosen_predicate.b4m" });
     // A MODEL CITED FROM ANOTHER FILE. A qualified model name (`I.M`) resolves the qualifier to
     // an import and looks M up in THAT file's namespace. The owner file deliberately proves
     // NOTHING off its model, so the user's theorem exists only because the model itself crossed
     // the boundary — not because a named theorem was aliased (the pattern that had masked the
     // limitation: std/ring.b4m proves off `AdditiveGroup`, and consumers alias those theorems).
-    ctx.okSilent(&.{ "check", "tests/cases/model_cited_across_files_user.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/model_cited_across_files_user.b4m" });
     // ONE-REF `rewrite` = CONGRUENCE: `[by rewrite EQ]` takes the claim's own reflexive
     // instance as its target, so `f(A) = f(B)` from `A = B` is ONE step instead of two. The
     // two-ref form is unchanged — rewriting inside an already-proved fact is a different move.
-    ctx.okSilent(&.{ "check", "tests/cases/rewrite/one-ref-congruence.b4m" });
-    ctx.okSilent(&.{ "check", "tests/cases/rewrite/two-ref-still-works.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/kernel/rewrite/one-ref-congruence.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/kernel/rewrite/two-ref-still-works.b4m" });
     // A SCHEMA TRANSFERRED THROUGH A MODEL, at a predicate of the citer's own. Two theorems over
     // one model differing ONLY in whether the cited theorem takes a predicate parameter: the
     // plain one always transferred, the schema did not. A schema instance runs passes in BOTH
@@ -273,29 +273,29 @@ pub fn addTests(
     // bound TWICE — once per space. Binding once and reusing that map made a generator param's
     // `arg_sorts` say `Thing` while the body's binder said `Elem`, and the rejection landed
     // inside the SOURCE file.
-    ctx.okSilent(&.{ "check", "tests/cases/model_schema_transfer.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/schema/model_schema_transfer.b4m" });
     // WHAT IS NOT A SORT. `Prop` was demoted from a sort (a sort is a domain of individuals;
     // propositions are not), and `pred`/`func` declare CALLABLES, which have signatures rather
     // than sorts. All three are rejected in binder position, each naming the actual rule —
     // first-orderness is exactly "a binder's sort must be a term sort", which is why schemas
     // exist. `Prop` stays legal as a schema parameter's RESULT.
     ctx.fail(
-        &.{ "check", "tests/cases/sorts_reject_prop_binder.b4m" },
-        "tests/cases/sorts_reject_prop_binder.b4m:16:44: error: a binder cannot range over 'Prop': propositions are asserted about individuals, not quantified over (only a schema PARAMETER may be predicate-shaped)\n",
+        &.{ "check", "tests/cases/sorts/sorts_reject_prop_binder.b4m" },
+        "tests/cases/sorts/sorts_reject_prop_binder.b4m:16:44: error: a binder cannot range over 'Prop': propositions are asserted about individuals, not quantified over (only a schema PARAMETER may be predicate-shaped)\n",
     );
     ctx.fail(
-        &.{ "check", "tests/cases/sorts_reject_callable_as_sort.b4m" },
-        "tests/cases/sorts_reject_callable_as_sort.b4m:13:36: error: 'marks' is not a sort\n",
+        &.{ "check", "tests/cases/sorts/sorts_reject_callable_as_sort.b4m" },
+        "tests/cases/sorts/sorts_reject_callable_as_sort.b4m:13:36: error: 'marks' is not a sort\n",
     );
     ctx.fail(
-        &.{ "check", "tests/cases/sorts_reject_func_as_sort.b4m" },
-        "tests/cases/sorts_reject_func_as_sort.b4m:9:36: error: 'f' is not a sort\n",
+        &.{ "check", "tests/cases/sorts/sorts_reject_func_as_sort.b4m" },
+        "tests/cases/sorts/sorts_reject_func_as_sort.b4m:9:36: error: 'f' is not a sort\n",
     );
     // ...and the bare form, OUTSIDE a schema body, is an authoring error: there is nothing to
     // instantiate at. Diagnosed with both fixes named.
     ctx.fail(
-        &.{ "check", "tests/cases/model_schema_bare_cite_rejected.b4m" },
-        "tests/cases/model_schema_bare_cite_rejected.b4m:30:31: error: 'specialIsWitnessed' transfers as a SCHEMA, so it must be instantiated: either name the arguments at the cite (`[using model(M) specialIsWitnessed(<arg>…)]`) or cite it from inside a schema body whose own parameters stand in for its\n",
+        &.{ "check", "tests/cases/model/schema/model_schema_bare_cite_rejected.b4m" },
+        "tests/cases/model/schema/model_schema_bare_cite_rejected.b4m:30:31: error: 'specialIsWitnessed' transfers as a SCHEMA, so it must be instantiated: either name the arguments at the cite (`[using model(M) specialIsWitnessed(<arg>…)]`) or cite it from inside a schema body whose own parameters stand in for its\n",
     );
     // A MODEL IS AN OVERLAY OVER THE WHOLE UNIVERSE, not scoped to one file (user ruling
     // 2026-09-26): the block names entities from THREE namespaces (top's, mid's and base's
@@ -305,30 +305,30 @@ pub fn addTests(
     // keyed on the ORIGIN file, re-proved there. Regression: an alias used to bind to the
     // universe origin, handing the transferred proof base's untransferred `op(U, U) = U`
     // against a target-sort claim (found modeling std/group/sequence onto Perm).
-    ctx.okSilent(&.{ "check", "tests/cases/model_alias_borrowed.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/alias/model_alias_borrowed.b4m" });
     // ... and a cite whose namespace is otherwise UNTOUCHED: `[using model(M) mid.unitThrice]`
     // where `mid` re-exports base by alias only, so the model block never names it. The cite
     // DEMANDS the import (racked FetchTask, suspend), like every other qualified reference.
     // Regression: a passive ident lookup → "unknown namespace 'mid'" (found citing
     // std/group/listing.b4m, an alias-only re-export, from std/integer/mod-n-listing.b4m).
-    ctx.okSilent(&.{ "check", "tests/cases/model_cite_untouched_namespace.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/alias/model_cite_untouched_namespace.b4m" });
     // ... a GUARDED transfer of a theorem proved by integer induction whose predicate mentions
     // the fixed element: the induction instance's lambda arg carries the guarded variable, so the
     // instance gets `assume good(x)` wrappers for the args' free variables too (freeFvarParams) —
     // its body's inner `specialize` needs that guard. Regression: "cannot discharge the guard
     // premise 'good(x)'" inside std/integer.b4m's induction body.
-    ctx.okSilent(&.{ "check", "tests/cases/model_guarded_instance_free_var.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/guarded/model_guarded_instance_free_var.b4m" });
     // ... and a transferred proof whose step cites another file's theorem with
     // `[using import(I) thm]`: the import cite resolves to the TRANSFERRED copy, as `by cite` does.
     // Regression: it handed the kernel the untransferred source statement.
-    ctx.okSilent(&.{ "check", "tests/cases/model_import_cite.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/model_import_cite.b4m" });
     // a schema instantiated by QUALIFIED name from another file: its parameter sorts are
     // demanded in the SCHEMA's namespace first. Regression: "unknown sort" at the declaration.
-    ctx.okSilent(&.{ "check", "tests/cases/schema_qualified_instantiation.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/schema/schema_qualified_instantiation.b4m" });
     // ... and the overlay's CONSISTENCY condition: a model that maps the symbols but leaves
     // base's axiom undischarged is REJECTED when the transfer reaches it two hops down —
     // the unmapped axiom stays in source terms and fails to match the relativized claim.
-    ctx.fail(&.{ "check", "tests/cases/model_alias_borrowed_bad.b4m" }, "tests/cases/model_alias_borrowed_base.b4m:9:4: error: Undischarged@unitTwice: step claims 'forall a: T; add(Z, a) = a' but the axiom derives 'forall a: S; op(U, a) = a'\n");
+    ctx.fail(&.{ "check", "tests/cases/model/alias/model_alias_borrowed_bad.b4m" }, "tests/cases/model/alias/model_alias_borrowed_base.b4m:9:4: error: Undischarged@unitTwice: step claims 'forall a: T; add(Z, a) = a' but the axiom derives 'forall a: S; op(U, a) = a'\n");
 
     // SCHEMA TRANSFER through a guarded model: a source induction SCHEMA (elemInduction) is
     // discharged by a local guard-relativized schema (goodInduction); a local schema cites it
@@ -336,32 +336,32 @@ pub fn addTests(
     // the discharging schema's instance at the same argument (kernel-checked against the
     // claim). A transferred schema is an instantiation in disguise, so it stays strict under
     // `--fast model` (the summary reports no trusted word used).
-    ctx.okSilent(&.{ "check", "tests/cases/model_schema_source.b4m" });
-    ctx.okSilent(&.{ "check", "tests/cases/model_schema.b4m" });
-    ctx.ok(&.{ "check", "--fast-only", "model", "tests/cases/model_schema.b4m" },
+    ctx.okSilent(&.{ "check", "tests/cases/model/schema/model_schema_source.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/schema/model_schema.b4m" });
+    ctx.ok(&.{ "check", "--fast-only", "model", "tests/cases/model/schema/model_schema.b4m" },
         \\OK: 14 declarations, 2 theorems proven
         \\  — (--fast set given, but no step used a trusted word — fully verified)
         \\
     );
     // RED: the transferring schema claims MORE than the discharging schema's instance gives
     // (the unguarded conclusion) — rejected as a claim/instance mismatch at the transfer step.
-    ctx.fail(&.{ "check", "tests/cases/model_schema_claim_bad.b4m" },
-        \\tests/cases/model_schema_claim_bad.b4m:42:12: error: the claim does not match the instance's conclusion:
+    ctx.fail(&.{ "check", "tests/cases/model/schema/model_schema_claim_bad.b4m" },
+        \\tests/cases/model/schema/model_schema_claim_bad.b4m:42:12: error: the claim does not match the instance's conclusion:
         \\  claim:      good(ZED) -> (forall k: Number; good(k) -> good(k) -> good(next(k))) -> forall n: Number; good(n)
         \\  instance:   good(ZED) -> (forall k: Number; good(k) -> good(k) -> good(next(k))) -> forall n: Number; good(n) -> good(n)
         \\
     );
     // RED: a schema source must be discharged by a SCHEMA (matching predicate
     // parameter); a plain axiom cannot, and the model decl rejects it.
-    ctx.fail(&.{ "check", "tests/cases/model_schema_bad.b4m" }, "tests/cases/model_schema_bad.b4m:20:27: error: 'notASchema' discharges a schema, so it must itself be a schema (with a matching predicate parameter)\n");
+    ctx.fail(&.{ "check", "tests/cases/model/schema/model_schema_bad.b4m" }, "tests/cases/model/schema/model_schema_bad.b4m:20:27: error: 'notASchema' discharges a schema, so it must itself be a schema (with a matching predicate parameter)\n");
 
     // MODEL SYNTAX: `:` interprets a sort/symbol, `<-` discharges an axiom
     // obligation. The happy path uses both; the two rejection paths are hard errors.
-    ctx.okSilent(&.{ "check", "tests/cases/model_obligation_arrow.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/model_obligation_arrow.b4m" });
     // `:` on an axiom obligation → error, directing to `<-`.
-    ctx.fail(&.{ "check", "tests/cases/model_axiom_colon_bad.b4m" }, "tests/cases/model_axiom_colon_bad.b4m:21:3: error: 'source.opUnitLeft' is an axiom obligation, not a sort/symbol — discharge it with `<-` (`source.opUnitLeft <- <local fact>`), not `:`\n");
+    ctx.fail(&.{ "check", "tests/cases/model/model_axiom_colon_bad.b4m" }, "tests/cases/model/model_axiom_colon_bad.b4m:21:3: error: 'source.opUnitLeft' is an axiom obligation, not a sort/symbol — discharge it with `<-` (`source.opUnitLeft <- <local fact>`), not `:`\n");
     // `<-` on a sort/symbol → error, directing to `:`.
-    ctx.fail(&.{ "check", "tests/cases/model_symbol_arrow_bad.b4m" }, "tests/cases/model_symbol_arrow_bad.b4m:19:3: error: 'source.op' is a symbol with no definition clauses, so there is nothing to discharge — map it with `:` (`source.op: <target>`), not `<-`\n");
+    ctx.fail(&.{ "check", "tests/cases/model/model_symbol_arrow_bad.b4m" }, "tests/cases/model/model_symbol_arrow_bad.b4m:19:3: error: 'source.op' is a symbol with no definition clauses, so there is nothing to discharge — map it with `:` (`source.op: <target>`), not `<-`\n");
 
     // DEFINITIONAL DISCHARGE: a definition block's clauses have no user-facing name, so a
     // `<-` whose SOURCE is a definition symbol discharges the whole clause set arm for arm
@@ -369,16 +369,16 @@ pub fn addTests(
     // definitions — `--axioms` then reports them as DEFINITION rather than as assumptions —
     // while still modelling an abstract theory whose operations are likewise definitions.
     // The fixture transfers a theorem resting on EACH arm, so a mis-paired discharge fails.
-    ctx.okSilent(&.{ "check", "tests/cases/model_definition_discharge.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/definition/model_definition_discharge.b4m" });
     // A definitional axiom is overloadable ONLY by a definition: a bare `func` plus a named
     // axiom has no arms to pair.
-    ctx.fail(&.{ "check", "tests/cases/model_definition_bad.b4m" }, "tests/cases/model_definition_bad.b4m:19:16: error: 'madd' discharges the definition 'base.nadd', so it must itself be a definition block (a definitional axiom is overloadable only by a definition)\n");
+    ctx.fail(&.{ "check", "tests/cases/model/definition/model_definition_bad.b4m" }, "tests/cases/model/definition/model_definition_bad.b4m:19:16: error: 'madd' discharges the definition 'base.nadd', so it must itself be a definition block (a definitional axiom is overloadable only by a definition)\n");
     // ...and the two clause sets must be the same size, since the pairing is positional.
-    ctx.fail(&.{ "check", "tests/cases/model_definition_arity_bad.b4m" }, "tests/cases/model_definition_arity_bad.b4m:18:16: error: 'madd' has 1 definition clause(s) but 'base.nadd' has 2 — a definitional discharge pairs them arm for arm\n");
+    ctx.fail(&.{ "check", "tests/cases/model/definition/model_definition_arity_bad.b4m" }, "tests/cases/model/definition/model_definition_arity_bad.b4m:18:16: error: 'madd' has 1 definition clause(s) but 'base.nadd' has 2 — a definitional discharge pairs them arm for arm\n");
     // The CITATION direction: `[using model(M) definition(N) src.f]` cites one clause of a
     // source definition, for a target that does NOT overload it (an opaque local func). The
     // clause is then an assumption this file inherits, and `--axioms` says so.
-    ctx.okSilent(&.{ "check", "tests/cases/model_definition_cite.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/definition/model_definition_cite.b4m" });
 
     // ACCELERANT-THROUGH-GUARDED-MODEL boundary (RED characterization, one per
     // accelerant). Transferring a source theorem whose proof USES an accelerant
@@ -394,11 +394,11 @@ pub fn addTests(
     // gate), so the demand engine never checks this dead schema — the file passes. Consistent with
     // "uncited code isn't checked"; a future --library mode would catch it. Both modes pass (no
     // step is admitted → --fast adds only the "no trusted word used" note).
-    ctx.ok(&.{ "check", "tests/cases/schema_wellformed_bad.b4m" },
+    ctx.ok(&.{ "check", "tests/cases/schema/schema_wellformed_bad.b4m" },
         \\OK: 11 declarations, 1 theorems proven
         \\
     );
-    ctx.ok(&.{ "check", "--fast", "tests/cases/schema_wellformed_bad.b4m" },
+    ctx.ok(&.{ "check", "--fast", "tests/cases/schema/schema_wellformed_bad.b4m" },
         \\OK: 11 declarations, 1 theorems proven
         \\  — (--fast set given, but no step used a trusted word — fully verified)
         \\
@@ -406,32 +406,32 @@ pub fn addTests(
     // the positive counterpart: a WELL-FORMED schema (proper `case` split)
     // passes the strict declaration-time check — the new pass must not reject
     // legitimate schemas.
-    ctx.okSilent(&.{ "check", "tests/cases/schema_wellformed_ok.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/schema/schema_wellformed_ok.b4m" });
 
     // ACCELERANT-SYNTHETIC transfer through a GUARDED model: the accelerant emits a
     // CONTEXT-FREE synthetic theorem in source space; the guarded materializer now
     // re-emits its citation cluster GUARD-BLIND (matching the unguarded synthetic)
     // and, when the whole proof is one such cluster concluding a carrier universal,
     // weakens that conclusion to the relativized statement. All seven transfer GREEN.
-    ctx.okSilent(&.{ "check", "tests/cases/model_accel_simplify.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/accel/model_accel_simplify.b4m" });
     // ...and the case the above does NOT cover: the leaked guard sits on the accelerant's own
     // ABSTRACTED PARAM, not on a composite term, so closure recursion dead-ends. `paramGuards`
     // must emit it as an outermost antecedent — and must decide that by the param's sort UNDER
     // THE MODEL, since the source sort is unrefined when the model introduces the refinement.
-    ctx.okSilent(&.{ "check", "tests/cases/model_accel_simplify_param_guard.b4m" });
-    ctx.okSilent(&.{ "check", "tests/cases/model_accel_assoc.b4m" });
-    ctx.okSilent(&.{ "check", "tests/cases/model_accel_assoc_commut.b4m" });
-    ctx.okSilent(&.{ "check", "tests/cases/model_accel_tautology.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/accel/model_accel_simplify_param_guard.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/accel/model_accel_assoc.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/accel/model_accel_assoc_commut.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/accel/model_accel_tautology.b4m" });
     // SOURCE/TARGET OVERLAP: a model whose target is also one of its sources. A synthetic is
     // built from TARGET-space terms, so its stamped symbols must be FINAL — re-interpreting
     // them doubles the mapping (`Thing: Part` with `Part = Thing where inPart` re-refines a
     // binder and doubles its guard; `Item: Bag`, `Bag: Box` carries a shifted `Bag` on to
     // `Box`). Both failed before `Accelerant.Builder` stamped `.universe`.
-    ctx.okSilent(&.{ "check", "tests/cases/model_overlap_refinement.b4m" });
-    ctx.okSilent(&.{ "check", "tests/cases/model_overlap_shift.b4m" });
-    ctx.okSilent(&.{ "check", "tests/cases/model_accel_polynomial.b4m" });
-    ctx.okSilent(&.{ "check", "tests/cases/model_accel_arithmetic.b4m" });
-    ctx.okSilent(&.{ "check", "tests/cases/model_accel_extensionality.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/model_overlap_refinement.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/model_overlap_shift.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/accel/model_accel_polynomial.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/accel/model_accel_arithmetic.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/accel/model_accel_extensionality.b4m" });
 
     // A GUARDED model transferring a theorem whose proof `specialize`s a LOCAL universal step.
     // The instance's param guards are injected in PARAM order and the args' free variables are
@@ -441,45 +441,56 @@ pub fn addTests(
     // model in the corpus could transfer such a theorem (which is nearly every inductive ℤ
     // proof). `withGuardPremises` now matches each antecedent by POSITION: take the next cited
     // ref when it matches, else synthesize a discharge. drafts/guard-relativization-bug/.
-    ctx.okSilent(&.{ "check", "tests/cases/model_guarded_local_head_specialize.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/guarded/model_guarded_local_head_specialize.b4m" });
 
     // And a guarded model transferring a proof that restates an UNPACK block's opened body with
     // `[by hypothesis]`. A relativized `∃x: H` opens as `inH(w) and <body>`, so the restatement
     // must and_elim past the guard conjunct — `projectBlockGuard` handled `.fix`/`.assume` but
     // returned null for `.unpack`, breaking every ℤ-order theorem citing `lessThanElim`.
-    ctx.okSilent(&.{ "check", "tests/cases/model_guarded_unpack_hypothesis.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/guarded/model_guarded_unpack_hypothesis.b4m" });
 
     // A schema-arg lambda binding two DIFFERENT sorts (`fun i: Nat, v: Q => …`). The binder
     // grammar forced one sort for the whole list, so a spec over two sorts had no lambda form
     // — only instantiation at a bare predicate name, which forces pinning the varying
     // arguments as file-scope nullary funcs. drafts/mixed-sort-schema-lambda/.
-    ctx.okSilent(&.{ "check", "tests/cases/schema_lambda_mixed_sorts.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/schema/schema_lambda_mixed_sorts.b4m" });
 
     // PREDICATED SORT `sort H = G where inH` — binder positions: ∀/∃
     // inject the guard (implies/and), `fix h: H` carries it on the block (surfaced
     // by `[by predicate <lbl>]`, made the generalize antecedent), `unpack h: H`
     // gets it from the ∃'s conjunct. Pure sugar over the carrier; kernel-checked.
-    ctx.okSilent(&.{ "check", "tests/cases/predicated_sort_binders.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/sorts/predicated_sort_binders.b4m" });
     // PREDICATED SORT — func RESULT closure: `func op2(a: H, b: H): H`
     // surfaces `inH(op2(x,y))` at each use, so `f(op2(h,h))` composes (the
     // subgroup-closure pattern). Gated by the arg-obligations; equivalent to an
     // explicit closure axiom. Kernel-checked.
-    ctx.okSilent(&.{ "check", "tests/cases/predicated_sort_closure.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/sorts/predicated_sort_closure.b4m" });
     // PREDICATED SORT chain: C = B where inC over B = A where inB — carrierOf walks
     // to the root A, qualifiers accumulate into the CANONICAL conjoined guard, so
     // ∀c: C desugars to ∀c: A; (inC(c) and inB(c)) -> ….
-    ctx.okSilent(&.{ "check", "tests/cases/predicated_sort_chain.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/sorts/predicated_sort_chain.b4m" });
+    // REFINED-SORT GUARD DISCHARGE at an `apply_at` witness, model-free. The guard
+    // `good(t)` an elim over `forall h: H` owes is discharged from a PRIOR STEP or a
+    // `fix` eigenvariable's block guard (local), from an axiom at a CONSTANT witness,
+    // or RECURSIVELY at a COMPOSITE witness whose closure axiom is itself refined.
+    // These landed as a set in `8bd72be` and were never wired to a gate; the negative
+    // is the one that matters — an undischarged guard must stay rejected, since
+    // `forall h: H` may not be eliminated at a witness not shown to be in H.
+    ctx.okSilent(&.{ "check", "tests/cases/sorts/refined_discharge_local.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/sorts/refined_discharge_const.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/sorts/refined_discharge_composite.b4m" });
+    ctx.fail(&.{ "check", "tests/cases/sorts/refined_discharge_bad.b4m" }, "tests/cases/sorts/refined_discharge_bad.b4m:21:4: error: step claims 'f(c) = c' but apply_at derives 'good(c) -> f(c) = c'\n");
     // H ∩ K ≤ G (the 13e acceptance stress test): a MULTI-GUARD model — the intersection
     // as `Grp where inH and inK`, base facts via the parens list, per-predicate closures
     // via the `-|` comma list, auto-weakening over the conjoined guard, and composite-
     // witness discharge recursing through BOTH closures to the fix guard's conjuncts.
-    ctx.okSilent(&.{ "check", "tests/cases/model_intersection.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/model_intersection.b4m" });
 
     // SOUNDNESS: even under --fast, the remapped source theorem must α-match the
     // goal — a flipped-equation goal is rejected (you can't prove what the source
     // theorem doesn't say).
-    ctx.fail(&.{ "check", "--fast", "tests/cases/model_bad.b4m" },
-        \\tests/cases/model_bad.b4m:24:12: error: the claim does not match the model transfer of 'source.opUnitLeftTwice':
+    ctx.fail(&.{ "check", "--fast", "tests/cases/model/model_bad.b4m" },
+        \\tests/cases/model/model_bad.b4m:24:12: error: the claim does not match the model transfer of 'source.opUnitLeftTwice':
         \\  claim:      forall a: Thing; combine(ZED, a) = combine(ZED, combine(ZED, a))
         \\  transfer:   forall a: Thing; combine(ZED, combine(ZED, a)) = combine(ZED, a)
         \\
@@ -488,9 +499,9 @@ pub fn addTests(
     // the polynomial tactic on a thin theory (no ring lemmas): it EMITS the certificate citing
     // the well-known lemmas by name (no produce-time lookup); the generated schema's ProveTask
     // then can't resolve them, failing "reference not found" at the `polynomial` step.
-    ctx.fail(&.{ "check", "tests/cases/polynomial_oracle.b4m" }, "tests/cases/polynomial_oracle.b4m:22:12: error: the generated proof of this step cites 'mulAddDistribRight', which is not in scope here; alias it from the theory that states it (`theorem mulAddDistribRight = <module>.mulAddDistribRight`)\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/polynomial/polynomial_oracle.b4m" }, "tests/cases/tactics/polynomial/polynomial_oracle.b4m:22:12: error: the generated proof of this step cites 'mulAddDistribRight', which is not in scope here; alias it from the theory that states it (`theorem mulAddDistribRight = <module>.mulAddDistribRight`)\n");
 
-    ctx.ok(&.{ "check", "--fast", "tests/cases/polynomial_oracle.b4m" },
+    ctx.ok(&.{ "check", "--fast", "tests/cases/tactics/polynomial/polynomial_oracle.b4m" },
         \\OK: 6 declarations, 1 theorems proven
         \\  — NOT FULLY VERIFIED: 1 theorem(s) accelerated (admitted, not proved): polynomial_quantified
         \\
@@ -500,33 +511,33 @@ pub fn addTests(
     // power (256 monomials); building each product reallocates the term pool,
     // which pool.args aliases — the old code read a dangling arg slice and
     // panicked. Must check clean under --fast (never crash).
-    ctx.ok(&.{ "check", "--fast", "tests/cases/polynomial_oob.b4m" },
+    ctx.ok(&.{ "check", "--fast", "tests/cases/tactics/polynomial/polynomial_oob.b4m" },
         \\OK: 6 declarations, 1 theorems proven
         \\  — NOT FULLY VERIFIED: 1 theorem(s) accelerated (admitted, not proved): polynomial_quantified
         \\
     );
 
     // ac on different multisets reports the mismatch (emits kernel steps, not accelerated)
-    ctx.fail(&.{ "check", "tests/cases/ac_bad.b4m" }, "tests/cases/ac_bad.b4m:18:20: error: assoc_commut: sides have different summands: 'add(b, add(a, a))' vs 'add(b, a)'\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/ac/ac_bad.b4m" }, "tests/cases/tactics/ac/ac_bad.b4m:18:20: error: assoc_commut: sides have different summands: 'add(b, add(a, a))' vs 'add(b, a)'\n");
 
     // assoc_commut(assoc, comm, swap): the explicit-triple form on a CUSTOM
     // operator (emits kernel steps — the triple is kernel-checked).
-    ctx.okSilent(&.{ "check", "tests/cases/assoc_commut_custom.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/assoc/assoc_commut_custom.b4m" });
 
     // no partials: 1 or 2 args is an error (either bare or exactly three). (Column 12: the
     // rule word sits after `[using `.)
-    ctx.fail(&.{ "check", "tests/cases/assoc_commut_bad_arity.b4m" }, "tests/cases/assoc_commut_bad_arity.b4m:12:12: error: assoc_commut takes either no arguments (well-known add/mul) or exactly three (assoc, comm, swap); got 2\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/assoc/assoc_commut_bad_arity.b4m" }, "tests/cases/tactics/assoc/assoc_commut_bad_arity.b4m:12:12: error: assoc_commut takes either no arguments (well-known add/mul) or exactly three (assoc, comm, swap); got 2\n");
 
     // the bare assoc_commut form on a thin theory (no AC lemmas): it EMITS the certificate
     // citing the well-known AC triple by name (no produce-time lookup); the generated schema's
     // ProveTask can't resolve them, failing "reference not found" at the `assoc_commut` step.
     // (--fast is SUSPENDED during the demand rebuild — strict-only, so it errors identically.)
-    ctx.fail(&.{ "check", "tests/cases/assoc_commut_oracle.b4m" }, "tests/cases/assoc_commut_oracle.b4m:16:12: error: the generated proof of this step cites 'addIsAssociative', which is not in scope here; alias it from the theory that states it (`theorem addIsAssociative = <module>.addIsAssociative`)\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/assoc/assoc_commut_oracle.b4m" }, "tests/cases/tactics/assoc/assoc_commut_oracle.b4m:16:12: error: the generated proof of this step cites 'addIsAssociative', which is not in scope here; alias it from the theory that states it (`theorem addIsAssociative = <module>.addIsAssociative`)\n");
     // `--fast-only assoc_commut_all` ADMITS the step: `assoc_commut` accepts it on its own fast
     // check and never RESOLVES the cited lemma, so the strict-only "reference not found" is not
     // raised. Trusting the accelerant means accepting its steps unproved — the missing lemma
     // surfaces only in a strict run. Disclosed via the banner.
-    ctx.ok(&.{ "check", "--fast-only", "assoc_commut_all", "tests/cases/assoc_commut_oracle.b4m" },
+    ctx.ok(&.{ "check", "--fast-only", "assoc_commut_all", "tests/cases/tactics/assoc/assoc_commut_oracle.b4m" },
         \\OK: 4 declarations, 1 theorems proven
         \\  — NOT FULLY VERIFIED: 1 theorem(s) accelerated (admitted, not proved): assoc_commut_quantified
         \\
@@ -534,86 +545,86 @@ pub fn addTests(
 
     // `assoc(assocLemma)`: associativity-only reorder on a CUSTOM operator
     // (no add/mul assumption). Emits kernel steps.
-    ctx.okSilent(&.{ "check", "tests/cases/assoc.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/assoc/assoc.b4m" });
 
     // sides differ by more than associativity (operands permuted) → error
-    ctx.fail(&.{ "check", "tests/cases/assoc_bad.b4m" }, "tests/cases/assoc_bad.b4m:11:12: error: assoc: sides differ by more than associativity: 'op(a, b)' vs 'op(b, a)'\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/assoc/assoc_bad.b4m" }, "tests/cases/tactics/assoc/assoc_bad.b4m:11:12: error: assoc: sides differ by more than associativity: 'op(a, b)' vs 'op(b, a)'\n");
 
     // the required-arg contract: bare `assoc` is an error
-    ctx.fail(&.{ "check", "tests/cases/assoc_missing_arg.b4m" }, "tests/cases/assoc_missing_arg.b4m:10:12: error: assoc requires an associativity lemma: assoc(<assocLemma>); got 0 argument(s)\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/assoc/assoc_missing_arg.b4m" }, "tests/cases/tactics/assoc/assoc_missing_arg.b4m:10:12: error: assoc requires an associativity lemma: assoc(<assocLemma>); got 0 argument(s)\n");
 
     // the assoc tactic certifies by default. (The --fast accelerated verdict is SUSPENDED —
     // strict-only during the rebuild — so --fast just re-certifies, no acceleration banner.)
-    ctx.okSilent(&.{ "check", "tests/cases/assoc_oracle.b4m" });
-    ctx.okSilent(&.{ "check", "--fast", "tests/cases/assoc_oracle.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/assoc/assoc_oracle.b4m" });
+    ctx.okSilent(&.{ "check", "--fast", "tests/cases/tactics/assoc/assoc_oracle.b4m" });
 
     // simplify_quantified: peel forall over an equation, emits kernel steps
-    ctx.okSilent(&.{ "check", "tests/cases/simplify_quantified.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/simplify/simplify_quantified.b4m" });
 
     // simplify_quantified on a bare equation redirects to simplify
-    ctx.fail(&.{ "check", "tests/cases/simplify_quantified_bad.b4m" }, "tests/cases/simplify_quantified_bad.b4m:12:12: error: simplify_quantified expects a quantified goal; did you mean simplify?\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/simplify/simplify_quantified_bad.b4m" }, "tests/cases/tactics/simplify/simplify_quantified_bad.b4m:12:12: error: simplify_quantified expects a quantified goal; did you mean simplify?\n");
 
     // plain simplify on a quantified goal redirects to simplify_quantified
-    ctx.fail(&.{ "check", "tests/cases/simplify_on_quantified.b4m" }, "tests/cases/simplify_on_quantified.b4m:12:12: error: simplify proves equations; did you mean simplify_quantified?\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/simplify/simplify_on_quantified.b4m" }, "tests/cases/tactics/simplify/simplify_on_quantified.b4m:12:12: error: simplify proves equations; did you mean simplify_quantified?\n");
 
     // symmetry: y = x from x = y in one step, emits kernel steps
-    ctx.okSilent(&.{ "check", "tests/cases/symmetry.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/kernel/symmetry.b4m" });
 
     // Milestone B2: tautology emits certificates — kernel-checked steps,
     // emits kernel steps, not accelerated (the accelerated path remains as the over-budget fallback)
-    ctx.okSilent(&.{ "check", "tests/cases/tautology.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/tautology/tautology.b4m" });
 
     // certificates check with every step kernel-checked by default (no accelerated tactic)
-    ctx.okSilent(&.{ "check", "tests/cases/tautology.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/tautology/tautology.b4m" });
 
     // non-consequence: the diagnostic carries the countermodel
-    ctx.fail(&.{ "check", "tests/cases/tautology_bad.b4m" }, "tests/cases/tautology_bad.b4m:10:12: error: tautology: not a propositional consequence; countermodel: p() := true, q() := false\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/tautology/tautology_bad.b4m" }, "tests/cases/tactics/tautology/tautology_bad.b4m:10:12: error: tautology: not a propositional consequence; countermodel: p() := true, q() := false\n");
 
     // the atom cap is a hard, honest limit
-    ctx.fail(&.{ "check", "tests/cases/tautology_cap.b4m" }, "tests/cases/tautology_cap.b4m:25:12: error: tautology: 17 distinct atoms exceeds the limit of 16\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/tautology/tautology_cap.b4m" }, "tests/cases/tactics/tautology/tautology_cap.b4m:25:12: error: tautology: 17 distinct atoms exceeds the limit of 16\n");
 
     // `iff` surface sugar: `P iff Q` desugars to `(P -> Q) and (Q -> P)` (never
     // reaches the kernel). make_equivalence/equiv_forward/equiv_converse are thin
     // renames of the `and` rules; crucially `tautology` DECIDES iff goals and
     // CONSUMES iff hypotheses for free (it sees the desugared conjunction) — the
     // property the set/collection membership-axiom corpus relies on.
-    ctx.okSilent(&.{ "check", "tests/cases/iff.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/kernel/iff.b4m" });
 
     // SOUNDNESS negative: an iff must not license an unrelated conclusion —
     // tautology rejects `A iff B, A ⊢ C` with a countermodel that respects the iff.
-    ctx.fail(&.{ "check", "tests/cases/iff_bad.b4m" }, "tests/cases/iff_bad.b4m:19:27: error: tautology: not a propositional consequence; countermodel: A() := true, B() := true, C() := false\n");
+    ctx.fail(&.{ "check", "tests/cases/kernel/iff_bad.b4m" }, "tests/cases/kernel/iff_bad.b4m:19:27: error: tautology: not a propositional consequence; countermodel: A() := true, B() := true, C() := false\n");
 
     // GUARD: the biconditional shape `(X -> Y) and (Y -> X)` is canonically an
     // iff — `both` is forbidden from producing it (must use `make_equivalence`)…
-    ctx.fail(&.{ "check", "tests/cases/iff_and_intro_bad.b4m" }, "tests/cases/iff_and_intro_bad.b4m:15:51: error: this goal is a biconditional '(X -> Y) and (Y -> X)' — use `make_equivalence` (which is the same rule, named for what it proves)\n");
+    ctx.fail(&.{ "check", "tests/cases/kernel/iff_and_intro_bad.b4m" }, "tests/cases/kernel/iff_and_intro_bad.b4m:15:51: error: this goal is a biconditional '(X -> Y) and (Y -> X)' — use `make_equivalence` (which is the same rule, named for what it proves)\n");
 
     // …and conversely `make_equivalence` requires that shape — a plain conjunction is rejected.
-    ctx.fail(&.{ "check", "tests/cases/iff_intro_bad.b4m" }, "tests/cases/iff_intro_bad.b4m:14:33: error: make_equivalence's goal must be a biconditional (from `P iff Q`); this goal is not of the form '(X -> Y) and (Y -> X)' — did you mean `both`?\n");
+    ctx.fail(&.{ "check", "tests/cases/kernel/iff_intro_bad.b4m" }, "tests/cases/kernel/iff_intro_bad.b4m:14:33: error: make_equivalence's goal must be a biconditional (from `P iff Q`); this goal is not of the form '(X -> Y) and (Y -> X)' — did you mean `both`?\n");
 
     // `equiv_rewrite`: the propositional analogue of `=`-rewrite. From `P iff Q`,
     // replace the sub-proposition P by Q at any position (subformula congruence,
     // under connectives AND quantifiers), reusing the `=`-rewrite walker. A
     // kernel-checked rule (no --fast taint), sound because iff is a congruence.
-    ctx.okSilent(&.{ "check", "tests/cases/iff_rewrite.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/kernel/iff_rewrite.b4m" });
 
     // it is SOUND: the claim must be reachable by replacing P with Q (or Q with P
     // — equiv_rewrite is bidirectional) — an unrelated claim is rejected in BOTH.
-    ctx.fail(&.{ "check", "tests/cases/iff_rewrite_bad.b4m" }, "tests/cases/iff_rewrite_bad.b4m:17:12: error: equiv_rewrite cannot derive 'R()' from 'P()' using '(P() -> Q()) and (Q() -> P())' (tried both orientations)\n");
+    ctx.fail(&.{ "check", "tests/cases/kernel/iff_rewrite_bad.b4m" }, "tests/cases/kernel/iff_rewrite_bad.b4m:17:12: error: equiv_rewrite cannot derive 'R()' from 'P()' using '(P() -> Q()) and (Q() -> P())' (tried both orientations)\n");
 
     // …and its first argument must be a biconditional, not a plain implication.
-    ctx.fail(&.{ "check", "tests/cases/iff_rewrite_notbicond.b4m" }, "tests/cases/iff_rewrite_notbicond.b4m:14:30: error: equiv_rewrite expects a biconditional '(P -> Q) and (Q -> P)', got 'P() -> Q()'\n");
+    ctx.fail(&.{ "check", "tests/cases/kernel/iff_rewrite_notbicond.b4m" }, "tests/cases/kernel/iff_rewrite_notbicond.b4m:14:30: error: equiv_rewrite expects a biconditional '(P -> Q) and (Q -> P)', got 'P() -> Q()'\n");
 
     // BIDIRECTIONAL rewrite: an equation / biconditional cited in the "wrong"
     // orientation for the goal still rewrites — no preceding `symmetry` needed.
     // The kernel tries lhs->rhs then rhs->lhs (sound: equality/iff are symmetric).
-    ctx.okSilent(&.{ "check", "tests/cases/rewrite_reverse.b4m" });
-    ctx.okSilent(&.{ "check", "tests/cases/iff_rewrite_reverse.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/kernel/rewrite_reverse.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/kernel/iff_rewrite_reverse.b4m" });
     // …but a claim reachable in NEITHER orientation is still rejected (the change
     // is a superset of acceptance, not a hole).
-    ctx.fail(&.{ "check", "tests/cases/rewrite_bad.b4m" }, "tests/cases/rewrite_bad.b4m:23:4: error: rewrite cannot derive 'B = D' from 'A = C' using 'A = B' (tried both orientations)\n");
+    ctx.fail(&.{ "check", "tests/cases/kernel/rewrite_bad.b4m" }, "tests/cases/kernel/rewrite_bad.b4m:23:4: error: rewrite cannot derive 'B = D' from 'A = C' using 'A = B' (tried both orientations)\n");
 
     // Milestone C: arithmetic accelerated tactic — Presburger quantifier elimination
-    ctx.ok(&.{ "check", "--fast", "tests/cases/arithmetic.b4m" },
+    ctx.ok(&.{ "check", "--fast", "tests/cases/tactics/arithmetic/arithmetic.b4m" },
         \\OK: 10 declarations, 4 theorems proven
         \\  — NOT FULLY VERIFIED: 4 theorem(s) accelerated (admitted, not proved): arithmetic
         \\
@@ -624,21 +635,21 @@ pub fn addTests(
     // cancellations outside a ℕ fragment — decide. (--fast gate: the bare
     // fixture has no ring lemmas in scope to certify with; strict certification
     // is exercised over the real integer theory in the std corpus.)
-    ctx.ok(&.{ "check", "--fast", "tests/cases/arithmetic_integer.b4m" },
+    ctx.ok(&.{ "check", "--fast", "tests/cases/tactics/arithmetic/arithmetic_integer.b4m" },
         \\OK: 17 declarations, 8 theorems proven
         \\  — NOT FULLY VERIFIED: 8 theorem(s) accelerated (admitted, not proved): arithmetic
         \\
     );
 
     // false statement: the diagnostic carries countermodel values
-    ctx.fail(&.{ "check", "tests/cases/arithmetic_bad.b4m" }, "tests/cases/arithmetic_bad.b4m:17:20: error: arithmetic: false at a := 0, b := 0\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/arithmetic/arithmetic_bad.b4m" }, "tests/cases/tactics/arithmetic/arithmetic_bad.b4m:17:20: error: arithmetic: false at a := 0, b := 0\n");
 
     // a relation opaque only because it hides a nonlinear term is
     // reported honestly as outside the fragment, not as a false countermodel
-    ctx.fail(&.{ "check", "tests/cases/arithmetic_frag.b4m" }, "tests/cases/arithmetic_frag.b4m:15:12: error: the generated proof of this step cites 'mulIsCommutative', which is not in scope here; alias it from the theory that states it (`theorem mulIsCommutative = <module>.mulIsCommutative`)\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/arithmetic/arithmetic_frag.b4m" }, "tests/cases/tactics/arithmetic/arithmetic_frag.b4m:15:12: error: the generated proof of this step cites 'mulIsCommutative', which is not in scope here; alias it from the theory that states it (`theorem mulIsCommutative = <module>.mulIsCommutative`)\n");
 
     // Milestone D: the SMT combination — mixed goals, one accelerated-tactic name
-    ctx.ok(&.{ "check", "--fast", "tests/cases/smt.b4m" },
+    ctx.ok(&.{ "check", "--fast", "tests/cases/tactics/smt/smt.b4m" },
         \\OK: 9 declarations, 2 theorems proven
         \\  — NOT FULLY VERIFIED: 2 theorem(s) accelerated (admitted, not proved): arithmetic
         \\
@@ -646,75 +657,75 @@ pub fn addTests(
 
     // Milestone C2b: universal linear goals replay as kernel-checked certificates
     // (sorted-sum normalization + synthesized order witnesses)
-    ctx.okSilent(&.{ "check", "tests/cases/arithmetic_cert2.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/arithmetic/arithmetic_cert2.b4m" });
 
     // Farkas: difference-logic infeasibility (combine several order
     // hypotheses into a transitivity cycle) certifies purely under the
     // DEFAULT, via `arithmetic(<theory>)` resolving the order lemmas
     // against the named module — no local aliasing of the vocabulary.
-    ctx.okSilent(&.{ "check", "tests/cases/farkas.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/farkas/farkas.b4m" });
 
     // Farkas extensions: order composition (a<b -> b<c -> a<c, no cycle)
     // and the infeasibility cap (contradictory order hyps prove an
     // arbitrary conclusion via lessThanIrreflexive + ex_falso).
-    ctx.okSilent(&.{ "check", "tests/cases/farkas_ext.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/farkas/farkas_ext.b4m" });
 
     // Farkas coefficient scaling: a hypothesis scaled by a literal
     // via multiplicationPreservesOrder before the infeasibility fold.
-    ctx.okSilent(&.{ "check", "tests/cases/farkas_scale.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/farkas/farkas_scale.b4m" });
 
     // Farkas sum path: sum two order hypotheses over distinct
     // variables via additionPreservesOrder + commutativity + transitivity.
-    ctx.okSilent(&.{ "check", "tests/cases/farkas_sum.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/farkas/farkas_sum.b4m" });
 
     // Milestone C2a: ground goals replay as kernel-checked simplify certificates
     // over the well-known peano axioms — the default check accepts them
-    ctx.okSilent(&.{ "check", "tests/cases/arithmetic_cert.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/arithmetic/arithmetic_cert.b4m" });
 
     // additive-inverse cancellation across a separated summand: `add(a, sub(b,a))
     // = b` normalizes to a {a, b, neg(a)} multiset that reduces to {b} — the
     // equation certifier must cancel a with neg(a) (a `neg`-leaf tower).
-    ctx.okSilent(&.{ "check", "tests/cases/arithmetic_cert_neg_cancel.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/arithmetic/arithmetic_cert_neg_cancel.b4m" });
 
     // numeral summand: `add(ONE, sub(b, ONE)) = b` — the ONE / neg(ONE) inverse
     // pair must cancel even though ONE is a `succ(ZERO)` tower sitting as an inner
     // summand (not the top-level succ prefix). parseTower folds the numeral into
     // the tower's constant offset so the pair meets and cancels.
-    ctx.okSilent(&.{ "check", "tests/cases/arithmetic_cert_numeral_leaf.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/arithmetic/arithmetic_cert_numeral_leaf.b4m" });
 
     // diagnostic: the SAME goal with `addLeftSwap` omitted from scope must report
     // the specific missing rewrite lemma ("theory lacks lemma 'addLeftSwap'"), not
     // the generic "form not in certification scope" (which reads as "wrong shape"
     // and hides the one-alias fix). Guards the equation certifier's decline reason.
     ctx.fail(
-        &.{ "check", "tests/cases/arithmetic_missing_lemma_diagnostic.b4m" },
-        "tests/cases/arithmetic_missing_lemma_diagnostic.b4m:37:20: error: the generated proof of this step cites 'addLeftSwap', which is not in scope here; alias it from the theory that states it (`theorem addLeftSwap = <module>.addLeftSwap`)\n",
+        &.{ "check", "tests/cases/tactics/arithmetic/arithmetic_missing_lemma_diagnostic.b4m" },
+        "tests/cases/tactics/arithmetic/arithmetic_missing_lemma_diagnostic.b4m:37:20: error: the generated proof of this step cites 'addLeftSwap', which is not in scope here; alias it from the theory that states it (`theorem addLeftSwap = <module>.addLeftSwap`)\n",
     );
 
     // opaque compound leaves: `add(f(x), sub(g(y), f(x))) = g(y)` — foreign
     // apps f(x)/g(y) ride the sorted-tower join as atoms and the f(x)/neg(f(x))
     // pair cancels (bubbled to the tail so addNeg matches an innermost subterm).
-    ctx.okSilent(&.{ "check", "tests/cases/arithmetic_cert_opaque_leaf.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/arithmetic/arithmetic_cert_opaque_leaf.b4m" });
 
     // Cooper-replay layer 2 (witness direction): a `forall x; exists y; …`
     // goal with a period-1 Cooper trace elaborates fully — the cooper link
     // picks a boundary witness and emits witness over an or-intro arm.
-    ctx.okSilent(&.{ "check", "tests/cases/cooper_witness.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/cooper/cooper_witness.b4m" });
 
     // Cooper-replay layer 3 (periodicity direction): a period-2 (parity) ∀∃
     // goal elaborates fully via a SYNTHESIZED induction — the cooper link builds
     // predicate P(k), proves base P(ZERO) and step P(k)->P(succ(k)) (unpacking
     // the IH witness and shifting it per parity arm), then instantiates the
     // `induction` schema. This is `evenOrOdd` (add-form), fully accelerated-free.
-    ctx.okSilent(&.{ "check", "tests/cases/cooper_parity.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/cooper/cooper_parity.b4m" });
 
     // The cooper link's DECLARED BOUNDARY: a multi-fixed-variable ∀∀∃
     // (`forall a, b; exists c; …`) is decided valid by Presburger but declines
     // — cooperInduction synthesizes an induction on a SINGLE variable. Without
     // a fallback, default mode is a hard error listing every link's decline
     // (the "solvable by arithmetic, not yet certifiable" gap)...
-    ctx.fail(&.{ "check", "tests/cases/cooper_gap_raw.b4m" },
-        \\tests/cases/cooper_gap_raw.b4m:25:12: error: 'arithmetic' is valid but no certifier could prove it here:
+    ctx.fail(&.{ "check", "tests/cases/tactics/cooper/cooper_gap_raw.b4m" },
+        \\tests/cases/tactics/cooper/cooper_gap_raw.b4m:25:12: error: 'arithmetic' is valid but no certifier could prove it here:
         \\  - equation/order/exists: form not in certification scope
         \\  - mixed-skeleton: form not in certification scope
         \\  - farkas: theory lacks symbol 'less_than'
@@ -723,7 +734,7 @@ pub fn addTests(
         \\
     );
     // ...and --fast accepts the accelerated verdict, marking the theorem accelerated.
-    ctx.ok(&.{ "check", "--fast", "tests/cases/cooper_gap_raw.b4m" },
+    ctx.ok(&.{ "check", "--fast", "tests/cases/tactics/cooper/cooper_gap_raw.b4m" },
         \\OK: 15 declarations, 1 theorems proven
         \\  — NOT FULLY VERIFIED: 1 theorem(s) accelerated (admitted, not proved): arithmetic
         \\
@@ -732,27 +743,27 @@ pub fn addTests(
     // mode: the chain declines, so the cited manual theorem (which reduces the
     // ∀∀∃ to the cooper-certified single-variable evenOrOddArith) stands as the
     // certificate — no --fast, no acceleration.
-    ctx.okSilent(&.{ "check", "tests/cases/cooper_gap.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/cooper/cooper_gap.b4m" });
 
     // negative ℤ witness: `exists y; x = succ(y)` certifies STRICT with y = prev(x)
     // (built as a prev-tower, discharged via succPrev) — a witness the ℕ-only
     // succ-tower builder could not construct.
-    ctx.okSilent(&.{ "check", "tests/cases/cooper_negative_witness.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/cooper/cooper_negative_witness.b4m" });
 
     // Case D: a `fallback(<thm>)` on a goal the arithmetic CERTIFIER CHAIN can
     // discharge itself is REDUNDANT — strict `check` rejects it. (Distinct from
     // cooper_gap, where the certifier DECLINES so the fallback is legitimate.)
-    ctx.fail(&.{ "check", "tests/cases/arithmetic_fallback_redundant_bad.b4m" }, "tests/cases/arithmetic_fallback_redundant_bad.b4m:31:32: error: 'arithmetic' certifies this goal on its own — the fallback 'twoTimesTwoManual' is unnecessary; drop `fallback(twoTimesTwoManual)`\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/arithmetic/arithmetic_fallback_redundant_bad.b4m" }, "tests/cases/tactics/arithmetic/arithmetic_fallback_redundant_bad.b4m:31:32: error: 'arithmetic' certifies this goal on its own — the fallback 'twoTimesTwoManual' is unnecessary; drop `fallback(twoTimesTwoManual)`\n");
     // `--fast` suppresses it structurally (the certifier chain never runs).
-    ctx.okSilent(&.{ "check", "--fast", "tests/cases/arithmetic_fallback_redundant_bad.b4m" });
+    ctx.okSilent(&.{ "check", "--fast", "tests/cases/tactics/arithmetic/arithmetic_fallback_redundant_bad.b4m" });
     // `--draft` suppresses it (WIP: don't nag about redundant fallbacks yet).
-    ctx.okSilent(&.{ "check", "--draft", "tests/cases/arithmetic_fallback_redundant_bad.b4m" });
+    ctx.okSilent(&.{ "check", "--draft", "tests/cases/tactics/arithmetic/arithmetic_fallback_redundant_bad.b4m" });
 
     // a `fallback(<axiom-or-hole>)` is accepted (not only theorems): the goal has
     // an opaque subterm the certifier can't discharge, so the arithmetic step
     // falls back to a `hole` (an axiom-kind statement). The proof rests on the
     // hole → rejected strict, accepted under --draft with the hole disclosed.
-    ctx.okSilent(&.{ "check", "--draft", "tests/cases/arithmetic_fallback_axiom.b4m" });
+    ctx.okSilent(&.{ "check", "--draft", "tests/cases/tactics/arithmetic/arithmetic_fallback_axiom.b4m" });
 
     // a `fallback(<forall-theorem>)` on a SPECIALIZED goal (an instance of the
     // theorem, not alpha-equal): the matcher peels the ∀ prefix (inferring the
@@ -760,7 +771,7 @@ pub fn addTests(
     // leading `->` antecedents from the step's refs, emitting a kernel-certified
     // apply_at+modus_ponens chain. Verifies STRICT (the fallback targets are
     // axiom-proven, no holes) — so the emitted specialization really re-checks.
-    ctx.okSilent(&.{ "check", "tests/cases/arithmetic_fallback_specialize.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/arithmetic/arithmetic_fallback_specialize.b4m" });
 
     // `--fast` RUNS THE DECISION — it declines only to EMIT the certificate. A FALSE goal is
     // therefore rejected in BOTH modes, with the same diagnostic. This regressed when
@@ -774,8 +785,8 @@ pub fn addTests(
     // fragment, and without it `less_than(a, add(a, succ(b)))` decides false over ℤ — so
     // `trustedReadPass` demands them too, not just the untrusted read pass.
     // See ACCELERATION.md.
-    ctx.fail(&.{ "check", "--fast", "tests/cases/arithmetic_false_fast.b4m" }, "tests/cases/arithmetic_false_fast.b4m:12:12: error: arithmetic: the statement is false\n");
-    ctx.fail(&.{ "check", "tests/cases/arithmetic_false_fast.b4m" }, "tests/cases/arithmetic_false_fast.b4m:12:12: error: arithmetic: the statement is false\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/arithmetic/arithmetic_false_fast.b4m" }, "tests/cases/tactics/arithmetic/arithmetic_false_fast.b4m:12:12: error: arithmetic: the statement is false\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/arithmetic/arithmetic_false_fast.b4m" }, "tests/cases/tactics/arithmetic/arithmetic_false_fast.b4m:12:12: error: arithmetic: the statement is false\n");
     // and a TRUE goal no certifier can certify is ADMITTED under `--fast` (strict reports the
     // certification gap) — the `arithmetic.b4m` fixture above covers exactly that pair.
 
@@ -785,21 +796,21 @@ pub fn addTests(
     // direction (the 2026-10-26 sweep only probed the other one). The fixture's goal is true
     // over ℕ and false over ℤ, and the certifier can prove it from ℕ lemmas while the
     // sort-agnostic decision refutes it, so it separates the two paths exactly.
-    ctx.fail(&.{ "check", "tests/cases/arithmetic_strict_runs_the_gate.b4m" }, "tests/cases/arithmetic_strict_runs_the_gate.b4m:26:12: error: arithmetic: the statement is false\n");
-    ctx.fail(&.{ "check", "--fast", "tests/cases/arithmetic_strict_runs_the_gate.b4m" }, "tests/cases/arithmetic_strict_runs_the_gate.b4m:26:12: error: arithmetic: the statement is false\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/arithmetic/arithmetic_strict_runs_the_gate.b4m" }, "tests/cases/tactics/arithmetic/arithmetic_strict_runs_the_gate.b4m:26:12: error: arithmetic: the statement is false\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/arithmetic/arithmetic_strict_runs_the_gate.b4m" }, "tests/cases/tactics/arithmetic/arithmetic_strict_runs_the_gate.b4m:26:12: error: arithmetic: the statement is false\n");
 
     // `simplify` runs its decision under `--fast` too — the normal-form comparison — and
     // declines only to EMIT the join certificate. A FALSE equation is rejected in both modes
     // with the same diagnostic. (It used to admit before normalizing, so `--fast` reported
     // `OK` for `add(ZERO, succ(ZERO)) = succ(succ(ZERO))`.)
-    ctx.fail(&.{ "check", "--fast", "tests/cases/simplify_false_fast.b4m" }, "tests/cases/simplify_false_fast.b4m:11:12: error: simplify: normal forms differ: 'succ(ZERO)' vs 'succ(succ(ZERO))'\n");
-    ctx.fail(&.{ "check", "tests/cases/simplify_false_fast.b4m" }, "tests/cases/simplify_false_fast.b4m:11:12: error: simplify: normal forms differ: 'succ(ZERO)' vs 'succ(succ(ZERO))'\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/simplify/simplify_false_fast.b4m" }, "tests/cases/tactics/simplify/simplify_false_fast.b4m:11:12: error: simplify: normal forms differ: 'succ(ZERO)' vs 'succ(succ(ZERO))'\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/simplify/simplify_false_fast.b4m" }, "tests/cases/tactics/simplify/simplify_false_fast.b4m:11:12: error: simplify: normal forms differ: 'succ(ZERO)' vs 'succ(succ(ZERO))'\n");
     // The decision reads each cited rule's STATEMENT (no proof demand). For a `fact X = ns.y`
     // RE-EXPORT that means the alias chase must resolve the import name; `factOrigin` used to
     // give up when it was not fetched yet, and `--fast` then failed with "'X' has no stated
     // formula" where strict passed. Both modes must agree on a re-exported rule.
-    ctx.okSilent(&.{ "check", "--fast", "tests/cases/simplify_alias_fast.b4m" });
-    ctx.okSilent(&.{ "check", "tests/cases/simplify_alias_fast.b4m" });
+    ctx.okSilent(&.{ "check", "--fast", "tests/cases/tactics/simplify/simplify_alias_fast.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/simplify/simplify_alias_fast.b4m" });
 
     // The same contract for the rest of the decision accelerants: each runs its OWN decision
     // under `--fast` and declines only to emit the certificate, so a goal its decision refutes
@@ -807,18 +818,18 @@ pub fn addTests(
     // SHAPE alone — `polynomial` accepted any add/mul-shaped equation, `tautology` any goal with
     // premises (its own comment said "no --fast escape", which the early admit undid), `chain`
     // any equation goal with a cited equation. See ACCELERATION.md.
-    ctx.fail(&.{ "check", "--fast", "tests/cases/polynomial_false_fast.b4m" }, "tests/cases/polynomial_false_fast.b4m:10:12: error: polynomial: sides expand differently: 'add(mul(a, a), add(mul(a, b), add(mul(a, b), mul(b, b))))' vs 'add(mul(a, a), mul(b, b))'\n");
-    ctx.fail(&.{ "check", "tests/cases/polynomial_false_fast.b4m" }, "tests/cases/polynomial_false_fast.b4m:10:12: error: polynomial: sides expand differently: 'add(mul(a, a), add(mul(a, b), add(mul(a, b), mul(b, b))))' vs 'add(mul(a, a), mul(b, b))'\n");
-    ctx.fail(&.{ "check", "--fast", "tests/cases/tautology_false_fast.b4m" }, "tests/cases/tautology_false_fast.b4m:14:12: error: tautology: not a propositional consequence; countermodel: p(ZERO) := true\n");
-    ctx.fail(&.{ "check", "tests/cases/tautology_false_fast.b4m" }, "tests/cases/tautology_false_fast.b4m:14:12: error: tautology: not a propositional consequence; countermodel: p(ZERO) := true\n");
-    ctx.fail(&.{ "check", "--fast", "tests/cases/chain_false_fast.b4m" }, "tests/cases/chain_false_fast.b4m:24:12: error: chain: cannot connect 'succ(ZERO)' to 'add(succ(ZERO), succ(ZERO))' from the cited equations\n");
-    ctx.fail(&.{ "check", "tests/cases/chain_false_fast.b4m" }, "tests/cases/chain_false_fast.b4m:24:12: error: chain: cannot connect 'succ(ZERO)' to 'add(succ(ZERO), succ(ZERO))' from the cited equations\n");
-    ctx.fail(&.{ "check", "--fast", "tests/cases/assoc_false_fast.b4m" }, "tests/cases/assoc_false_fast.b4m:12:12: error: assoc: sides differ by more than associativity: 'add(a, b)' vs 'add(b, succ(a))'\n");
-    ctx.fail(&.{ "check", "tests/cases/assoc_false_fast.b4m" }, "tests/cases/assoc_false_fast.b4m:12:12: error: assoc: sides differ by more than associativity: 'add(a, b)' vs 'add(b, succ(a))'\n");
-    ctx.fail(&.{ "check", "--fast", "tests/cases/assoc_commut_false_fast.b4m" }, "tests/cases/assoc_commut_false_fast.b4m:10:12: error: assoc_commut: sides have different summands: 'add(a, b)' vs 'add(a, succ(b))'\n");
-    ctx.fail(&.{ "check", "tests/cases/assoc_commut_false_fast.b4m" }, "tests/cases/assoc_commut_false_fast.b4m:10:12: error: assoc_commut: sides have different summands: 'add(a, b)' vs 'add(a, succ(b))'\n");
-    ctx.fail(&.{ "check", "--fast", "tests/cases/extensionality_false_fast.b4m" }, "tests/cases/extensionality_false_fast.b4m:15:12: error: extensionality: could not close the pointwise obligation propositionally (is the identity true?)\n");
-    ctx.fail(&.{ "check", "tests/cases/extensionality_false_fast.b4m" }, "tests/cases/extensionality_false_fast.b4m:15:12: error: extensionality: could not close the pointwise obligation propositionally (is the identity true?)\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/polynomial/polynomial_false_fast.b4m" }, "tests/cases/tactics/polynomial/polynomial_false_fast.b4m:10:12: error: polynomial: sides expand differently: 'add(mul(a, a), add(mul(a, b), add(mul(a, b), mul(b, b))))' vs 'add(mul(a, a), mul(b, b))'\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/polynomial/polynomial_false_fast.b4m" }, "tests/cases/tactics/polynomial/polynomial_false_fast.b4m:10:12: error: polynomial: sides expand differently: 'add(mul(a, a), add(mul(a, b), add(mul(a, b), mul(b, b))))' vs 'add(mul(a, a), mul(b, b))'\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/tautology/tautology_false_fast.b4m" }, "tests/cases/tactics/tautology/tautology_false_fast.b4m:14:12: error: tautology: not a propositional consequence; countermodel: p(ZERO) := true\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/tautology/tautology_false_fast.b4m" }, "tests/cases/tactics/tautology/tautology_false_fast.b4m:14:12: error: tautology: not a propositional consequence; countermodel: p(ZERO) := true\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/chain/chain_false_fast.b4m" }, "tests/cases/tactics/chain/chain_false_fast.b4m:24:12: error: chain: cannot connect 'succ(ZERO)' to 'add(succ(ZERO), succ(ZERO))' from the cited equations\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/chain/chain_false_fast.b4m" }, "tests/cases/tactics/chain/chain_false_fast.b4m:24:12: error: chain: cannot connect 'succ(ZERO)' to 'add(succ(ZERO), succ(ZERO))' from the cited equations\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/assoc/assoc_false_fast.b4m" }, "tests/cases/tactics/assoc/assoc_false_fast.b4m:12:12: error: assoc: sides differ by more than associativity: 'add(a, b)' vs 'add(b, succ(a))'\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/assoc/assoc_false_fast.b4m" }, "tests/cases/tactics/assoc/assoc_false_fast.b4m:12:12: error: assoc: sides differ by more than associativity: 'add(a, b)' vs 'add(b, succ(a))'\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/assoc/assoc_commut_false_fast.b4m" }, "tests/cases/tactics/assoc/assoc_commut_false_fast.b4m:10:12: error: assoc_commut: sides have different summands: 'add(a, b)' vs 'add(a, succ(b))'\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/assoc/assoc_commut_false_fast.b4m" }, "tests/cases/tactics/assoc/assoc_commut_false_fast.b4m:10:12: error: assoc_commut: sides have different summands: 'add(a, b)' vs 'add(a, succ(b))'\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/extensionality/extensionality_false_fast.b4m" }, "tests/cases/tactics/extensionality/extensionality_false_fast.b4m:15:12: error: extensionality: could not close the pointwise obligation propositionally (is the identity true?)\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/extensionality/extensionality_false_fast.b4m" }, "tests/cases/tactics/extensionality/extensionality_false_fast.b4m:15:12: error: extensionality: could not close the pointwise obligation propositionally (is the identity true?)\n");
 
     // THE INVARIANT, swept across all 17 trustable words (drafts/fast-soundness/README.md):
     // `--fast` must never ADMIT a goal the strict path REFUTES. (Distinct from the legitimate
@@ -831,8 +842,8 @@ pub fn addTests(
     // skips. The producer only has the consequent in PARAM space — for `forall a, b; a = b`
     // literally `p1 = p2` — and the arguments are AST exprs that only the instance pass
     // elaborates, so a pattern match there succeeds for ANY equation goal.
-    ctx.okSilent(&.{ "check", "--fast", "tests/cases/specialize_claim_mismatch_fast.b4m" });
-    ctx.fail(&.{ "check", "tests/cases/specialize_claim_mismatch_fast.b4m" }, "tests/cases/specialize_claim_mismatch_fast.b4m:11:12: error: the claim does not match the instance's conclusion:\n  claim:      succ(ZERO) = ZERO\n  instance:   succ(ZERO) = succ(ZERO) -> ZERO = ZERO\n");
+    ctx.okSilent(&.{ "check", "--fast", "tests/cases/tactics/specialize/specialize_claim_mismatch_fast.b4m" });
+    ctx.fail(&.{ "check", "tests/cases/tactics/specialize/specialize_claim_mismatch_fast.b4m" }, "tests/cases/tactics/specialize/specialize_claim_mismatch_fast.b4m:11:12: error: the claim does not match the instance's conclusion:\n  claim:      succ(ZERO) = ZERO\n  instance:   succ(ZERO) = succ(ZERO) -> ZERO = ZERO\n");
 
     // Two theorems `specialize` ONE shared fact by DIFFERENT access paths — one by its
     // declared name, the other via a local step that `[by cite]`s it. The synthetic
@@ -843,9 +854,9 @@ pub fn addTests(
     // flavour's body against its own premise list. Scheduling-dependent: each theorem
     // passed alone, and which one failed in the same pass varied run to run. The two
     // uniform-access files are the controls that always passed.
-    ctx.okSilent(&.{ "check", "tests/cases/schema_instance_crosstalk/mixed_access_paths.b4m" });
-    ctx.okSilent(&.{ "check", "tests/cases/schema_instance_crosstalk/both_declared_names.b4m" });
-    ctx.okSilent(&.{ "check", "tests/cases/schema_instance_crosstalk/both_local_labels.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/schema/instance_crosstalk/mixed_access_paths.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/schema/instance_crosstalk/both_declared_names.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/schema/instance_crosstalk/both_local_labels.b4m" });
 
     // linear-equation-combination certifier: an equation goal that follows by
     // CANCELLING an equality PREMISE (sub(a,r) = mul(b,q) from the premise
@@ -853,29 +864,29 @@ pub fn addTests(
     // the premise as a rewrite, but the goal is a linear combination of it: the
     // certifier proves the identity add(P_l,G_l)=add(P_r,G_r), rewrites the
     // premise, and cancels — a kernel-checked chain. Verifies STRICT.
-    ctx.okSilent(&.{ "check", "tests/cases/arithmetic_linear_equation_premise.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/arithmetic/arithmetic_linear_equation_premise.b4m" });
 
     // arithmetic × SCHEMA: Case D fires from inside a schema body too — the
     // declaration-time wellformedness self-check (instantiate at opaque params,
     // run the proof) exercises arithmeticJustification, so a redundant `fallback`
     // in a schema's proof is rejected. `--fast`/`--draft` suppress it as usual.
-    ctx.fail(&.{ "check", "tests/cases/schema_arithmetic_fallback_bad.b4m" }, "tests/cases/schema_arithmetic_fallback_bad.b4m:30:32: error: 'arithmetic' certifies this goal on its own — the fallback 'twoTwo' is unnecessary; drop `fallback(twoTwo)`\n");
-    ctx.okSilent(&.{ "check", "--fast", "tests/cases/schema_arithmetic_fallback_bad.b4m" });
-    ctx.okSilent(&.{ "check", "--draft", "tests/cases/schema_arithmetic_fallback_bad.b4m" });
+    ctx.fail(&.{ "check", "tests/cases/schema/schema_arithmetic_fallback_bad.b4m" }, "tests/cases/schema/schema_arithmetic_fallback_bad.b4m:30:32: error: 'arithmetic' certifies this goal on its own — the fallback 'twoTwo' is unnecessary; drop `fallback(twoTwo)`\n");
+    ctx.okSilent(&.{ "check", "--fast", "tests/cases/schema/schema_arithmetic_fallback_bad.b4m" });
+    ctx.okSilent(&.{ "check", "--draft", "tests/cases/schema/schema_arithmetic_fallback_bad.b4m" });
 
     // arithmetic over a SCHEMA VALUE PARAMETER: the demand engine checks a schema per
     // instance at the citer's actual arguments (no opaque-param self-check), so `k` is an
     // ordinary term there and the step certifies. (The eager engine rejected this — "cannot
     // yet decide this goal over the schema parameter 'k'" — an artifact of its opaque
     // reification; the fixture keeps its historical name.)
-    ctx.okSilent(&.{ "check", "tests/cases/schema_arithmetic_param_bad.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/schema/schema_arithmetic_param_bad.b4m" });
 
     // Milestone D2: mixed skeletons replay as kernel-checked certificates
-    ctx.okSilent(&.{ "check", "tests/cases/smt_cert.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/smt/smt_cert.b4m" });
 
     // mixed countermodel: arithmetic values plus opaque truth values
-    ctx.fail(&.{ "check", "tests/cases/smt_bad.b4m" }, "tests/cases/smt_bad.b4m:12:12: error: arithmetic: false at a := 0, p() := false\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/smt/smt_bad.b4m" }, "tests/cases/tactics/smt/smt_bad.b4m:12:12: error: arithmetic: false at a := 0, p() := false\n");
 
     // instantiating strongInduction re-checks its full stored proof
-    ctx.okSilent(&.{ "check", "tests/cases/strong_induction.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/kernel/strong_induction.b4m" });
 }
