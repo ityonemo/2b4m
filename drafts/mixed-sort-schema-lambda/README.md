@@ -81,7 +81,7 @@ The blocking case is confirmed resolved, not merely assumed: `theQuotientSequenc
 (`0d49aca`) instantiates the choice schema at a divisor bound by an enclosing `fix`, which is
 exactly what this note said was impossible. Strict-green.
 
-`tests/cases/schema_lambda_mixed_sorts.b4m` pins it and fails without the parser change with
+`tests/cases/schema/schema_lambda_mixed_sorts.b4m` pins it and fails without the parser change with
 the original `expected '=>', got ','`.
 
 **PROCESS NOTE, user correction (2026-10-31):** this fix was written implementation-first, with

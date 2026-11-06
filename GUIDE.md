@@ -776,7 +776,7 @@ model SubgroupIsGroup {
 
 A `<- OtherModel@src.thm` projection discharges an obligation by transferring a
 theorem THROUGH another model — the composition that layers `subgroup`-is-a-group
-onto `group`-is-a-group (see `tests/cases/model_subgroup_transfer.b4m`).
+onto `group`-is-a-group (see `tests/cases/model/model_subgroup_transfer.b4m`).
 
 A model **may leave some axioms unmapped**. Citing a transferred theorem whose
 proof depends on an unmapped axiom is **rejected**: under the transfer the unmapped
@@ -1943,7 +1943,7 @@ theorem (`<tactic>$n`, context-free — it cites nothing from the environment; s
 number** or an enclosing **theorem + step-label** pair.
 
 ```
-$ 2b4m debug accelerant tests/cases/farkas.b4m belowBothWaysIsAbsurd conclusion
+$ 2b4m debug accelerant tests/cases/tactics/farkas/farkas.b4m belowBothWaysIsAbsurd conclusion
 theorem arithmetic: forall a: Nat; forall b: Nat; less_than(a, b) -> less_than(b, a) -> less_than(a, a)
 proof
   ...

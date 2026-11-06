@@ -14,7 +14,7 @@ pub fn addTests(
     const ctx = Ctx.init(b, exe, test_step);
     // `query outline <file> <theorem>`: the proof skeleton — bare labels,
     // with a header on each block opener (fix / assume / unpack / case).
-    ctx.ok(&.{ "query", "outline", "tests/cases/outline.b4m", "everyoneIsQ" },
+    ctx.ok(&.{ "query", "outline", "tests/cases/cli/outline.b4m", "everyoneIsQ" },
         \\theorem everyoneIsQ
         \\  generalize-n  fix n
         \\    cases
@@ -32,7 +32,7 @@ pub fn addTests(
     );
 
     // no theorem argument: outline every proof in the file (here, the one)
-    ctx.ok(&.{ "query", "outline", "tests/cases/outline.b4m" },
+    ctx.ok(&.{ "query", "outline", "tests/cases/cli/outline.b4m" },
         \\theorem everyoneIsQ
         \\  generalize-n  fix n
         \\    cases
@@ -50,12 +50,12 @@ pub fn addTests(
     );
 
     // a missing theorem is a located error on stderr (exit 1)
-    ctx.fail(&.{ "query", "outline", "tests/cases/outline.b4m", "noSuchThing" }, "error: no theorem 'noSuchThing' in this file\n");
+    ctx.fail(&.{ "query", "outline", "tests/cases/cli/outline.b4m", "noSuchThing" }, "error: no theorem 'noSuchThing' in this file\n");
 
     // `query claims <file> <theorem>`: the SAME skeleton as outline, but each
     // step shows its CLAIM FORMULA instead of its label (block openers keep their
     // fix / assume / case headers). Same proof as the outline gate above.
-    ctx.ok(&.{ "query", "claims", "tests/cases/outline.b4m", "everyoneIsQ" },
+    ctx.ok(&.{ "query", "claims", "tests/cases/cli/outline.b4m", "everyoneIsQ" },
         \\theorem everyoneIsQ
         \\  fix n
         \\    forall m: Nat; p(m) or q(m)
@@ -75,7 +75,7 @@ pub fn addTests(
     // `query claims` on a proof-carrying SCHEMA (`theorem name(param): …`): it is
     // rendered like any proof (labeled `schema`), with the claim formulas of the
     // steps inside its `fix` block — proving `claims` handles schematic theorems.
-    ctx.ok(&.{ "query", "claims", "tests/cases/query_claims_schema.b4m", "everythingP" },
+    ctx.ok(&.{ "query", "claims", "tests/cases/cli/query_claims_schema.b4m", "everythingP" },
         \\schema everythingP
         \\  fix n
         \\    forall m: Nat; P(m)
@@ -88,19 +88,19 @@ pub fn addTests(
     // `claims` reproduces the source token span, and a zero-argument call spans only
     // its callee, so the `()` must be taken explicitly (a paren-balance count cannot
     // see them: they sit outside the span).
-    ctx.ok(&.{ "query", "claims", "tests/cases/nullary_pred_parens.b4m", "aNullaryPredChainsThroughModusPonens" },
+    ctx.ok(&.{ "query", "claims", "tests/cases/syntax/nullary_pred_parens.b4m", "aNullaryPredChainsThroughModusPonens" },
         \\theorem aNullaryPredChainsThroughModusPonens
         \\  base() -> other()
         \\
     );
 
     // a missing theorem is the same located error as outline (exit 1).
-    ctx.fail(&.{ "query", "claims", "tests/cases/outline.b4m", "noSuchThing" }, "error: no theorem 'noSuchThing' in this file\n");
+    ctx.fail(&.{ "query", "claims", "tests/cases/cli/outline.b4m", "noSuchThing" }, "error: no theorem 'noSuchThing' in this file\n");
 
     // `query uses <file>`: per-proof rule tally + external citations. The
     // refs that are the proof's OWN labels are excluded from `cites`; the
     // axioms/theorems it pulls in are listed.
-    ctx.ok(&.{ "query", "uses", "tests/cases/outline.b4m" },
+    ctx.ok(&.{ "query", "uses", "tests/cases/cli/outline.b4m" },
         \\theorem everyoneIsQ
         \\  rules: cite×2 apply_at×2 hypothesis×2 modus_ponens generalize
         \\  cites: either pImpliesQ
@@ -109,20 +109,20 @@ pub fn addTests(
 
     // `debug taint <file>`: a proof with no accelerated tactic reports that
     // every step is kernel-checked.
-    ctx.ok(&.{ "debug", "taint", "tests/cases/outline.b4m" }, "no accelerated tactics — every step is kernel-checked\n");
+    ctx.ok(&.{ "debug", "taint", "tests/cases/cli/outline.b4m" }, "no accelerated tactics — every step is kernel-checked\n");
 
     // `debug taint <file>`: accelerated tactics flagged at file:line:col with
     // the rule name — here both `assoc_quantified` and `assoc` (the quantified
     // variant runs the same accelerated core).
-    ctx.ok(&.{ "debug", "taint", "tests/cases/assoc.b4m" },
+    ctx.ok(&.{ "debug", "taint", "tests/cases/tactics/assoc/assoc.b4m" },
         \\theorem reassoc1
-        \\  tests/cases/assoc.b4m:19:12: assoc_quantified
+        \\  tests/cases/tactics/assoc/assoc.b4m:19:12: assoc_quantified
         \\
         \\theorem reassoc2
-        \\  tests/cases/assoc.b4m:28:12: assoc_quantified
+        \\  tests/cases/tactics/assoc/assoc.b4m:28:12: assoc_quantified
         \\
         \\theorem reassoc3
-        \\  tests/cases/assoc.b4m:45:28: assoc
+        \\  tests/cases/tactics/assoc/assoc.b4m:45:28: assoc
         \\
     );
 
@@ -210,23 +210,23 @@ pub fn addTests(
     // eigenvariables or premises, so its synthetic theorem's statement is the
     // bare equation; the proof is the reflexivity+rewrite chain simplify built.
     // The reprint is re-parseable: appending it to the fixture's declarations checks clean.
-    ctx.ok(&.{ "debug", "accelerant", "tests/cases/debug_accelerant.b4m", "15" }, debug_accelerant_text);
+    ctx.ok(&.{ "debug", "accelerant", "tests/cases/cli/debug_accelerant.b4m", "15" }, debug_accelerant_text);
 
     // `debug accelerant` resolves a step inside a proof-carrying SCHEMA (not just plain
     // theorems) and reprints its accelerant synthetic — the schema's INSTANCE proof (the
     // only gate; there is no decl-time self-check) produced it. Exit 0 = the selector
     // found the schema step and reprinted.
-    ctx.okSilent(&.{ "debug", "accelerant", "tests/cases/schema_accelerant_polynomial.b4m", "polySchema", "poly-step" });
+    ctx.okSilent(&.{ "debug", "accelerant", "tests/cases/schema/schema_accelerant_polynomial.b4m", "polySchema", "poly-step" });
 
     // `debug accelerant` on an `arithmetic … fallback(<thm>)` step (certifiers
     // DECLINED, so the manual theorem is the proof): there is no synthetic to
     // reprint — say so and NAME the fallback, not the generic "no accelerant here".
-    ctx.fail(&.{ "debug", "accelerant", "tests/cases/cooper_gap.b4m", "sumParity", "conclusion" }, "error: proof by fallback: this `arithmetic` step is discharged by the manual theorem 'provedHere' (the certifiers declined), so there is no accelerant synthetic to reprint\n");
+    ctx.fail(&.{ "debug", "accelerant", "tests/cases/tactics/cooper/cooper_gap.b4m", "sumParity", "conclusion" }, "error: proof by fallback: this `arithmetic` step is discharged by the manual theorem 'provedHere' (the certifiers declined), so there is no accelerant synthetic to reprint\n");
 
     // `debug accelerant` on a file whose check FAILS passes the check's own located
     // diagnostic through (root path as given on the command line), rather than reprinting
     // anything — here a redundant `fallback(...)` the certifier didn't need.
-    ctx.fail(&.{ "debug", "accelerant", "tests/cases/arithmetic_fallback_redundant_bad.b4m", "twoTimesTwoRedundant", "conclusion" }, "tests/cases/arithmetic_fallback_redundant_bad.b4m:31:32: error: 'arithmetic' certifies this goal on its own — the fallback 'twoTimesTwoManual' is unnecessary; drop `fallback(twoTimesTwoManual)`\n");
+    ctx.fail(&.{ "debug", "accelerant", "tests/cases/tactics/arithmetic/arithmetic_fallback_redundant_bad.b4m", "twoTimesTwoRedundant", "conclusion" }, "tests/cases/tactics/arithmetic/arithmetic_fallback_redundant_bad.b4m:31:32: error: 'arithmetic' certifies this goal on its own — the fallback 'twoTimesTwoManual' is unnecessary; drop `fallback(twoTimesTwoManual)`\n");
 
     // an ALIAS (`theorem addZeroRight = peano.addZeroRight` in subtraction)
     // resolves across files to the real proof — identical output.
@@ -266,14 +266,14 @@ pub fn addTests(
 
     // `query search <file> <query>`: fuzzy match over theorem/axiom names +
     // statements. Both "cancel"-named decls match; ranked, one-line sigs.
-    ctx.ok(&.{ "query", "search", "tests/cases/search_target.b4m", "cancel" },
-        \\tests/cases/search_target.b4m:13:  axiom cancelAxiom: forall c, a, b: Nat; add(c, a) = add(c, b) -> a = b
-        \\tests/cases/search_target.b4m:16:  theorem addCancelLeft: forall c, a, b: Nat; add(c, a) = add(c, b) -> a = b
+    ctx.ok(&.{ "query", "search", "tests/cases/cli/search_target.b4m", "cancel" },
+        \\tests/cases/cli/search_target.b4m:13:  axiom cancelAxiom: forall c, a, b: Nat; add(c, a) = add(c, b) -> a = b
+        \\tests/cases/cli/search_target.b4m:16:  theorem addCancelLeft: forall c, a, b: Nat; add(c, a) = add(c, b) -> a = b
         \\
     );
 
     // no match: message + exit 1
-    ctx.fail(&.{ "query", "search", "tests/cases/search_target.b4m", "zzznope" }, "no theorem or axiom matching 'zzznope'\n");
+    ctx.fail(&.{ "query", "search", "tests/cases/cli/search_target.b4m", "zzznope" }, "no theorem or axiom matching 'zzznope'\n");
 
     // `query search <dir>` RECURSES. `sub/uses_base.b4m` appears only if the walk
     // descends — a single-level `iterate()` saw just the top-level files, which made
@@ -281,10 +281,10 @@ pub fn addTests(
     // library) while the same term found hits in those subdirectories directly. GUIDE
     // advertises "every `.b4m` under it — corpus discovery", so that scope was the one
     // scope that could not see the corpus.
-    ctx.ok(&.{ "query", "search", "tests/cases/dir_ok", "even" },
-        \\tests/cases/dir_ok/base.b4m:5:  axiom zeroEven: even(ZERO)
-        \\tests/cases/dir_ok/base.b4m:7:  theorem zeroIsEven: even(ZERO)
-        \\tests/cases/dir_ok/sub/uses_base.b4m:7:  theorem stillEven: even(ZERO)
+    ctx.ok(&.{ "query", "search", "tests/cases/cli/directory-mode/ok", "even" },
+        \\tests/cases/cli/directory-mode/ok/base.b4m:5:  axiom zeroEven: even(ZERO)
+        \\tests/cases/cli/directory-mode/ok/base.b4m:7:  theorem zeroIsEven: even(ZERO)
+        \\tests/cases/cli/directory-mode/ok/sub/uses_base.b4m:7:  theorem stillEven: even(ZERO)
         \\
     );
 }

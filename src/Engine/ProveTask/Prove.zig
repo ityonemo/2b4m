@@ -3367,7 +3367,7 @@ fn produceSpecialize(self: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Cla
     // unresolvable — "reference not found: 'k'" across std/subgroup/products.b4m.)
     //
     // KNOWN GAP, deliberately left: `--fast` accepts a `specialize` whose instance conclusion
-    // differs from the claim. Gated by `tests/cases/specialize_claim_mismatch_fast.b4m`, which
+    // differs from the claim. Gated by `tests/cases/tactics/specialize/specialize_claim_mismatch_fast.b4m`, which
     // pins today's behaviour so a future fix is noticed. See ACCELERATION.md.
     if (self.admit_mode) {
         self.admit_ok = true;

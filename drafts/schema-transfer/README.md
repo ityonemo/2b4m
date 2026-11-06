@@ -10,7 +10,7 @@ The original question — *a plain theorem transfers through a model, so why not
 answered and the fix landed. A schema instance runs passes in BOTH spaces (its statement in
 target terms, a source-space pass over its body), so its arguments must be bound twice, once per
 space; the no-discharge transfer path bound them once. Regression guard:
-`tests/cases/model_schema_transfer.b4m` (+ `_source.b4m`).
+`tests/cases/model/schema/model_schema_transfer.b4m` (+ `_source.b4m`).
 
 ## What remains here
 
@@ -109,5 +109,5 @@ concretely.
 
 Related: this is a sibling of the known "accelerants not model-aware" boundary already recorded
 for guarded transfers (memory `accelerants-not-model-aware`, and the omitted
-`group.invProduct` in `tests/cases/model_subgroup_transfer.b4m`, which cites the `assoc`
+`group.invProduct` in `tests/cases/model/model_subgroup_transfer.b4m`, which cites the `assoc`
 accelerant). Worth checking whether one fix covers both.

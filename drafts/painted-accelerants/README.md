@@ -60,7 +60,7 @@ blocker from the opposite side, which is evidence it and the accelerant-namespac
 are one issue rather than two.
 
 Also unresolved and likely the same: `group.invProduct` is omitted from
-`tests/cases/model_subgroup_transfer.b4m` because its proof cites the `assoc` accelerant (the
+`tests/cases/model/model_subgroup_transfer.b4m` because its proof cites the `assoc` accelerant (the
 fixture calls it "a known separate boundary"), and the memory note
 `accelerants-not-model-aware`.
 

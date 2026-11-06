@@ -1512,7 +1512,7 @@ test "dedup: lock-free readers never see a torn slot while a writer interns" {
     // `std.HashMapUnmanaged` while `intern` inserted into it on another thread; a rehash
     // swaps the map's header non-atomically and slots are written non-atomically, so a
     // reader could pull a torn `Index` out of a slot and fault inside `keyOf` — 2 runs in 6
-    // on `check tests/cases/iff.b4m -j8`, debug build. Release hid it (no safety checks).
+    // on `check tests/cases/kernel/iff.b4m -j8`, debug build. Release hid it (no safety checks).
     //
     // Readers spin on keys interned BEFORE they started and must always get the same Index
     // back; meanwhile the writer interns thousands of fresh keys, forcing several growths.
