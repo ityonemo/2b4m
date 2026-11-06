@@ -2,27 +2,23 @@
 
 An **accelerated tactic** is a decision procedure whose verdict can be provisionally
 accepted without a kernel derivation.  This primarily serves to prune the evaluation
-tree in --fast modes.  In strict mode, an accelerated tactic should be able to 
+tree in `--fast` mode.  In strict mode, an accelerated tactic should be able to
 generate a "certificate", which is a inspectable, machine generated theorem that
-gets placed in the internal pool of facts.
+gets checked and placed in the internal pool of facts.
 
-
-
-. Accelerated tactics are the deliberate
-exception to 2b4m's otherwise-closed trust story: the kernel checks every
-ordinary step, but an `.accelerated` step stands on the named procedure being
-correct. Each invocation either **emits kernel steps** (a full chain of
-kernel steps, staying kernel-checked) or **accelerates** (it trusted the procedure without a chain).
+For each tactic's surface syntax, examples and errors, see `../GUIDE.md`. This file is
+about the trust boundary.
 
 The trust is disclosed, never silent:
 
-- every accelerated step **marks** its theorem accelerated with the tactic's
-  name;
 - citing an accelerated theorem (directly, via `simplify` rules, as a
   `tautology` premise, or through a schema instantiation whose proof cites one)
   inherits the accelerated-tactic names **transitively**;
-- the summary line reports the split, e.g.
-  `OK: 9 declarations, 5 theorems proven (4 accelerated: tautology)`;
+- the summary reports the split on its own line:
+
+      OK: 9 declarations, 5 theorems proven
+        — NOT FULLY VERIFIED: 3 theorem(s) accelerated (admitted, not proved): tautology
+
 - by default `2b4m check` **rejects every accelerated step with a located
   error** — the goal must be kernel-checked. The accelerated verdict is accepted only
   under `--fast` (which then discloses it under a loud accelerated banner).
@@ -33,93 +29,38 @@ statement, disclosed alongside any accelerant admissions. This trusts the
 citation shape only — a demanded imported theorem is still re-checked in its
 own file.
 
-Tactics are **certificate-first**: an invocation that can emit ordinary
-kernel steps does so and stays kernel-checked. Certificates are produced by an
-ordered **certifier chain** (equation/order/exists → mixed-skeleton → Farkas →
-future Cooper-replay/manual), walked first-success-wins; each link either
-emits kernel steps or **declines with a reason**. When every link declines,
-the default is a hard error listing each link's reason (so a valid goal on a
-thin theory names the missing symbol/lemma to add — an actionable fix, not
-"write a manual proof"); `--fast` accepts the accelerated verdict for that
-goal, marking that use accelerated only. Certificate stages grow over time,
-monotonically shrinking what needs `--fast` with no surface change.
+Tactics are **certificate-first**: an invocation that can emit ordinary kernel steps does
+so and stays kernel-checked. Certificates come from an ordered **certifier chain**
+(equation/order/exists → mixed-skeleton → Farkas → Cooper), walked first-success-wins;
+each link either emits kernel steps or **declines with a reason**. When every link
+declines, the default is a hard error listing each reason, so a valid goal on a thin
+theory names the missing symbol or lemma to add:
 
-The same elaborate-by-default / `--fast`-accelerated split applies to the
-equational tactics `polynomial` and `assoc_commut` (below): their default path
-emits kernel-checked rewrites citing the theory's proven ring/AC lemmas, and
-only `--fast` presumes the vocabulary's algebra structurally and accelerates. A
-tactic is acceleration-shaped precisely when it depends on a well-known stdlib
+    error: 'arithmetic' is valid but no certifier could prove it here:
+      - equation/order/exists: form not in certification scope
+      - mixed-skeleton: form not in certification scope
+      - farkas: theory lacks symbol 'less_than'
+      - cooper: form not in certification scope
+    use --fast to accept the accelerated verdict
+
+Certificate stages grow over time, monotonically shrinking what needs `--fast` with no
+surface change.
+
+A tactic is acceleration-shaped precisely when it depends on a well-known stdlib
 function and presumes its behavior — the acceleration discloses that
 presumption; the theory argument (`polynomial(peano)`, `arithmetic(peano)`)
 pins it to a vetted theory.
 
-## The invariant, and how to keep it
+## Rules for `--fast` evaluation truncation
 
-**`--fast` must never ADMIT a goal the strict path REFUTES.** It MAY admit a goal strict
-cannot CERTIFY — that is the permission `--fast` exists to grant, not an obligation, and each
-word decides for itself what its own `--fast` criterion is. Admitting a goal a decision
-procedure REFUTES is a soundness bug. Swept across all 17 trustable words with one
-refuted-goal probe each; `specialize` is the single violation, gated by
-`tests/cases/tactics/specialize/specialize_claim_mismatch_fast.b4m`. Every other word has a regression fixture
-named `*_false_fast.b4m` beside it.
+`--fast` may succeed where strict fails in exactly these cases:
 
-So a decision word admits on exactly ONE outcome: the goal is TRUE. A refutation fails, and a
-shape the procedure cannot handle also fails — "I can't decide this" is not a verdict. A
-`fallback(thm)` is never consulted under `--fast`.
+- **No certifier covers the goal.** The decision procedure determines the goal is true but
+  no certifier can build a proof of it. (Resolved by naming a manual `fallback(thm)`.)
+- **A trusted fact is incorrect.** A cited, well-known, or `fallback` fact is trusted on its
+  STATEMENT but not checked; strict demands the proof behind it and may find it does not hold.
 
-### Where admit must land in a producer
-
-Four rules, each learned by breaking it:
-
-1. **Admit AFTER the decision, not before.** This is the whole invariant. Eight of the nine
-   decision words were fixed this way (`arithmetic`, `simplify`, `polynomial`, `assoc`,
-   `assoc_commut`, `tautology`, `chain`, `extensionality`). Clear
-   `producer_premise_refs` when you do, or the admitted path resolves global rule names as
-   step labels.
-2. **But admit BEFORE a `fallback(thm)` resolves.** A fallback names a proven theorem standing
-   in where no certifier can build a cert, and resolving it needs that fact DEMANDED, which
-   admit mode has not done. The certifiers already declined; what adjudicates the goal is the
-   cited theorem, whose own proof the strict pass checks.
-3. **Demand in the READ PASS, never from inside the producer.** `trustedReadPass` is the only
-   place with a free park channel. Parking from a producer via `error.Recover` reads as a
-   diagnosed REJECTION, and rejecting a step DROPS ITS LABEL from the walk — surfacing much
-   later as "unknown reference" at the next step that cited it. It silently lost a theorem
-   (4 proven → 3) before this was understood.
-4. **Read a statement with the right-weight tool.** `elaborateFactStatement` reads a fact's
-   STATEMENT and racks NO ProveTask, which is exactly what a decision needs. Do NOT use it to
-   PROBE readability: it writes diagnostics on failure, so `--fast` would report errors strict
-   never gives. Demand the thing properly in the read pass instead.
-
-Some decisions hide INSIDE the emitter — `extensionality`'s pointwise obligation is closed by
-an `smt.tautology` call buried in `emitExtSetResidue`. There, admit means running the emitter
-and discarding its steps. A sweep found this; reading the code had concluded, wrongly, that
-the word had no separable decision.
-
-**The cost objection does not survive measurement.** `--fast` over `std` is 16.8s against
-strict's 233.7s. The decision is far cheaper than the certificate it replaces, which is why
-the certify-first ordering exists at all.
-
-## Where the `--fast` trust boundary falls, per word
-
-`--fast` is a structural check **up to a trust boundary**: it runs the proof's shape checks and
-each accelerant's own interface — including its DECISION — and declines only to EMIT and
-kernel-check the certificate. The table below says, for every trustable word, exactly what is
-KEPT and what is DROPPED, measured from the admit site in `src/Engine/ProveTask/Prove.zig`
-The invariant sweep behind it lives in `drafts/fast-soundness/`.
-
-**The one-line rule: the decision is a FILTER, the certificate is the AUTHORITY, and `--fast`
-keeps every filter and drops the authority.**
-
-**The invariant is ONE-DIRECTIONAL, and the direction matters:**
-
-- **`--fast` must NEVER reject what strict can certify.** A certificate is kernel-checked proof
-  the statement is true, so rejecting it is simply wrong — and `--fast` is the *weaker* check.
-- **`--fast` MAY accept what strict rejects.** Strict rejects for want of a CERTIFICATE, which
-  is a fact about the certifier's reach, not about the statement. That asymmetry is the whole
-  point of the mode.
-- **Neither mode may accept something FALSE.** This is the floor, and the only hard constraint.
-
-So a decision's "no" must be read for WHAT IT ESTABLISHED. A genuine countermodel adjudicated
+A decision's "no" must be read for WHAT IT ESTABLISHED. A genuine countermodel adjudicated
 the statement and found it false — both modes reject. A refutation resting on an **abstracted
 opaque subterm** (`sumTo(succ(k))`, `mul(a, b)`) adjudicated *nothing*: the decision replaced
 the subterm with a fresh variable free to range, so the "countermodel" is an artifact of that
@@ -130,374 +71,250 @@ abstraction, and a cited premise may well pin the subterm's value. That is an **
 rejection** — doing so lowers strict to the decision's reach and fails goals that are true
 and certifiable. `examples/gauss.b4m` is the gate for exactly that.
 
+## Where the boundary falls, per word
+
+`--fast` runs the proof's shape checks and each accelerant's own interface — including its
+DECISION — and declines only to EMIT and kernel-check the certificate.
+
+**The one-line rule: the decision is a FILTER, the certificate is the AUTHORITY, and
+`--fast` keeps every filter and drops the authority.**
 
 | word | KEPT under `--fast` | DROPPED |
 |---|---|---|
-| `arithmetic` (+`_q`) | premise resolution; well-known symbol binding (incl. `nonneg`, which picks the ℕ-vs-ℤ fragment); the Presburger/mixed **decision** — admits only on `.valid`, fails on a countermodel or an undecidable shape | the certifier chain (equation/order/Farkas/Cooper/mixed) and its kernel certificate; `fallback(thm)` is never consulted |
+| `arithmetic` (+`_q`) | premise resolution; well-known symbol binding (incl. `nonneg`, which picks the ℕ-vs-ℤ fragment); the Presburger/mixed **decision** — admits only on `.valid`, fails on a countermodel or an undecidable shape | the certifier chain and its kernel certificate; `fallback(thm)` is never consulted |
 | `simplify` (+`_q`) | cited rule STATEMENTS (via `elaborateFactStatement`, no ProveTask); rule orientation; **both sides normalized to a shared normal form** | the `EqCert` join certificate |
 | `polynomial` (+`_q`) | goal has add/mul structure; ring vocabulary completion (`completePolyOps`, demanded in the read pass); **both sides canonicalized to one form** | `finishReorder`'s certificate |
 | `assoc` (+`_q`) | the lemma ARGUMENT's statement and its `f(f(a,b),c) = f(a,f(b,c))` shape; **both sides right-nested to one normal form** | `finishReorder`'s certificate |
 | `assoc_commut` (+`_q`) | arg count (0 or 3); cited rule statements; distribution pre-pass; **both sides sorted to the same summand multiset** | `finishReorder`'s certificate |
-| `tautology` | premise step resolution; **`smt.tautology` — the goal is a propositional consequence** (its own source comment says "no --fast escape") | the `TautAst` certificate |
+| `tautology` | premise step resolution; **`smt.tautology` — the goal is a propositional consequence** | the `TautAst` certificate |
 | `chain` | goal is an equation; ≥1 cited equation; each equation's statement and eq-shape; **the BFS connects the goal's two sides** | the path's rewrite-step certificate |
 | `extensionality` (+`_q`) | the ext lemma and every unfold lemma resolve; **`emitExtSetResidue`'s `smt.tautology` closes the pointwise obligation** — reached by running the emitter and discarding its steps, since the decision lives inside it | packaging the emitted steps as the synthetic schema |
-| `model` | the model name resolves and is a model; exactly one cited theorem; **the transferred statement α-matches the claim** | the per-axiom OBLIGATION COVERAGE check — whether the mapping discharges every axiom the source theorem's proof rests on (`drafts/accelerant-pruning/model-partial-accepted.b4m`) |
+| `model` | the model name resolves and is a model; exactly one cited theorem; **the transferred statement α-matches the claim** | the per-axiom OBLIGATION COVERAGE check (below) |
 | `import` | the import resolves; exactly one cited theorem; **the imported statement α-matches the claim** | nothing further — citing a proven fact IS the justification, so there is no certificate to emit |
-| `specialize` | a head is present | **everything else**, including whether the instance's conclusion matches the claim — see below |
-| `instantiation` | — | **nothing. Never trustable at all**: an instantiation's content IS the body's proof at the args, which is the only soundness gate (#93) |
+| `specialize` | a head is present | **everything else**, including whether the instance's conclusion matches the claim. This is a BUG, not a boundary — see `../SPECIALIZE-FAST-UNSOUND.md` |
+| `instantiation` | — | **nothing. Never trustable at all**: an instantiation's content IS the body's proof at the args, which is the only soundness gate |
 
-## The two residuals
+## `model` — unchecked obligation coverage
 
-**`specialize` — `--fast` admits what strict REFUTES.** The only such case in the corpus, gated
-by `tests/cases/tactics/specialize/specialize_claim_mismatch_fast.b4m`. The claim-vs-instance match happens in
-`withGuardPremises`, AFTER the instance is proven, which `--fast` skips. It cannot move into the
-producer: the consequent is in PARAM space — `forall a, b; a = b` is literally `p1 = p2` — so
-matching it against the goal with the params as pattern variables succeeds for ANY equation goal
-(measured: `succ(ZERO) = ZERO` matched and was admitted). A real check needs the elaborated args,
-i.e. the instance. Moving admit past the ∀-peel is separately wrong: `fvar_binds` are installed
-after the producer returns.
+Strict rejects a partial model whose cited theorem needs an unmapped axiom (the guard at
+`Prove.zig:403`: "giving an axiom a free transferred leaf would let an unmapped axiom
+through"). `--fast` does not reach that check, so a consumer can be handed, say, an
+equivalence relation whose transitivity nothing supplied.
 
-**`model` — unchecked obligation coverage.** Strict rejects a partial model whose cited theorem
-needs an unmapped axiom (the guard at `Prove.zig:403`: "giving an axiom a free transferred leaf
-would let an unmapped axiom through"). `--fast` does not reach that check, so a consumer can be
-handed, say, an equivalence relation whose transitivity nothing supplied.
+## Building a producer's admit path
 
-## What no word checks, in either mode's decision
+A decision word admits on exactly ONE outcome: **the goal is TRUE.** A refutation fails,
+and a shape the procedure cannot handle also fails — "I can't decide this" is not a
+verdict. Each word has a regression fixture named `*_false_fast.b4m` beside it, asserting
+a false goal is still refused.
 
-A decision binds its vocabulary by well-known NAME — `add`, `mul`, `ZERO`, `succ`, `less_than`,
-`nonneg`, the ext lemma, the associativity lemma — and never verifies the bound symbol OBEYS the
-laws it assumes. Over a theory whose `add` is not associative, Presburger can return `.valid`.
+Four rules for where the admit goes:
 
-**Strict still rejects such a goal**, because its certificate must discharge against the theory's
-DECLARED AXIOMS and a misbound operator has no axiom to license the rewrite. That is the
-certificate earning its keep. But from inside `--fast` this is indistinguishable from the
-benign "decided true, no certifier covers the shape" case — both are a true verdict with no
-certificate — so **naming things strangely is how shenanigans escape the boundary**, and only
-strict notices.
+1. **Admit AFTER the decision, not before.** Clear `producer_premise_refs` when you do, or
+   the admitted path resolves global rule names as step labels.
+2. **But admit BEFORE a `fallback(thm)` resolves.** Resolving it needs that fact DEMANDED,
+   which admit mode has not done. What adjudicates the goal is the cited theorem, whose own
+   proof the strict pass checks.
+3. **Demand in the READ PASS, never from inside the producer.** `trustedReadPass` is the
+   only place with a free park channel. Parking from a producer via `error.Recover` reads as
+   a diagnosed REJECTION, and rejecting a step DROPS ITS LABEL from the walk — surfacing
+   later as "unknown reference" at the next step that cited it.
+4. **Read a statement with the right-weight tool.** `elaborateFactStatement` reads a fact's
+   STATEMENT and racks NO ProveTask, which is what a decision needs. Do NOT use it to PROBE
+   readability: it writes diagnostics on failure, so `--fast` would report errors strict
+   never gives. Demand the thing properly in the read pass instead.
+
+Some decisions hide INSIDE the emitter — `extensionality`'s pointwise obligation is closed
+by an `smt.tautology` call inside `emitExtSetResidue`. There, admit means running the
+emitter and discarding its steps.
+
+**The cost objection does not survive measurement.** `--fast` over `std` is 16.8s against
+strict's 233.7s. The decision is far cheaper than the certificate it replaces, which is why
+the certify-first ordering exists at all.
 
 ## Naming couplings — hardcoded defaults are fine, but MUST be overridable
 
-Accelerators routinely *expect* conventional names: `arithmetic`/`polynomial`
-presume a well-known `add`/`mul`/`succ`/`ZERO` vocabulary; a schema-driven tactic
-may expect an `induction`. (`extensionality` sidesteps this entirely — its
-lemmas are named EXPLICITLY as args, so there is no expected name to couple on.)
-**Hardcoding such a default name is fine** — it keeps the common case terse. The
-invariant is not "no hardcoded strings"; it is:
+Accelerators routinely *expect* conventional names: `arithmetic`/`polynomial` presume a
+well-known `add`/`mul`/`succ`/`ZERO` vocabulary. **Hardcoding such a default name is fine** —
+it keeps the common case terse. The invariant is not "no hardcoded strings"; it is:
 
-> **Every name an accelerator expects MUST be overridable — the user must be
-> able to satisfy the expectation from a 2b4m file, never from editing the
-> checker.** A hardcoded name that is *neither* overridable *nor* structurally
-> derivable is a silent, unescapable coupling, and is forbidden.
+> **Every name an accelerator expects MUST be overridable — the user must be able to satisfy
+> the expectation from a 2b4m file, never from editing the checker.** A hardcoded name that
+> is *neither* overridable *nor* structurally derivable is a silent, unescapable coupling,
+> and is forbidden.
 
-The override mechanism is **the language's own remapping**, not a bespoke
-argument on each tactic:
+The override mechanism is **the language's own remapping**, not a bespoke argument on each
+tactic:
 
 - **`alias`** overrides a single name. Your theory proves set-equality as `setEq`?
-  `theorem addZeroLeft = mytheory.zeroPlus` and `arithmetic` finds it. (This is exactly
-  what the `aata/*.md` files do — aliasing the book's notation onto the std
-  names — and what `set.b4m` did aliasing the element sort.)
-- **GUARDED cuts and accelerants.** An abstract theory whose
-  laws are proved BY an accelerant can fail at a predicated-cut target when the axioms
-  transferred relativized while the generated proof dropped the guard premise. Two causes,
-  both fixed: (1) an accelerant abstracts a goal's free caller-locals into schema params,
-  which discarded the guard the binder carried — the synthetic now states each abstracted
-  param's guard as an antecedent, discharged at the call site; (2) accelerants now produce
-  in the AMBIENT namespace and their synthetics stamp symbols FINAL, so a model is applied
-  ONCE per `using model(M)` citation instead of a second time on re-elaboration. That second
-  fix also removed `no_relativize`, which had papered over the guard-doubling face of the
-  same bug. Fixtures: `tests/cases/model/model_overlap_{refinement,shift}.b4m`.
-- **`model`** overrides a whole signature at once — the industrial-strength
-  version of the same idea (see `model-design.md`). Aliasing remaps one name; a
-  `model` remaps an entire structure's worth of names, so a structure that spells
-  everything its own way can satisfy an accelerator's expectations wholesale.
-- The **theory argument** (`arithmetic(peano)`) already pins *which* vetted
-  theory's names to use — itself a form of override/selection.
+  `theorem addZeroLeft = mytheory.zeroPlus` and `arithmetic` finds it. (This is exactly what
+  the `aata/*.md` files do — aliasing the book's notation onto the std names.)
+- **`model`** overrides a whole signature at once — the industrial-strength version of the
+  same idea (see `model-design.md`). Aliasing remaps one name; a `model` remaps an entire
+  structure's worth, so a structure that spells everything its own way can satisfy an
+  accelerator's expectations wholesale.
+- the **theory argument** (`arithmetic(peano)`) pins *which* vetted theory's names to use —
+  itself a form of override.
 
-**Prefer structural derivation when the entity is recoverable from a cited
-lemma's shape**, and prefer **explicit citation** when the entity is a lemma the
-proof can name. `extensionality` takes its extensionality lemma + per-operator
-unfold lemmas as EXPLICIT args, and reads the element sort off the cited lemma's
-obligation binder — so there is no expected name to override at all (the
-strongest form: zero coupling). This is preferred where available; a
+**Prefer structural derivation when the entity is recoverable from a cited lemma's shape**,
+and prefer **explicit citation** when the entity is a lemma the proof can name.
+`extensionality` takes its extensionality lemma and per-operator unfold lemmas as EXPLICIT
+args, and reads the element sort off the cited lemma's obligation binder — so there is no
+expected name to override at all (the strongest form: zero coupling). A
 hardcoded-but-overridable default is the acceptable fallback.
 
 Two shapes this rule forbids, both of which `extensionality` is built to avoid: looking a
 sort up by a LITERAL NAME (a rename then breaks the tactic), and ENUMERATING a theory scope
 to find unfold lemmas by shape (a scope scan cannot survive the fetch-only demand engine,
 and derives wrong names for irregular symbols — `identityFn` would want `identityFnApply`,
-not `identityApply`). Hence: take the lemmas as EXPLICIT args and read the element sort off
-the cited lemma.
+not `identityApply`).
 
 ## Inputs are named; guard obligations are searched for
 
-A design rule for every accelerant.
-
-**An accelerant NEVER searches for its logical inputs.** Whatever the inference consumes
-is a named ref in the claim: `[using <tactic> <tactic_args>(…) input1 input2 …]`. The
-tactic reads that list and nothing else — no scanning the proof for a premise of the
-right shape, no scanning the scope for a usable lemma. (A tactic may resolve *well-known
-names* from scope — `arithmetic`'s `addZeroRight` and friends — which is name resolution,
-not search, and is governed by the naming-couplings rule above.)
+**An accelerant NEVER searches for its logical inputs.** Whatever the inference consumes is
+a named ref in the claim: `[using <tactic> <tactic_args>(…) input1 input2 …]`. The tactic
+reads that list and nothing else — no scanning the proof for a premise of the right shape,
+no scanning the scope for a usable lemma. (A tactic may resolve *well-known names* from
+scope — `arithmetic`'s `addZeroRight` and friends — which is name resolution, not search,
+and is governed by the naming-couplings rule above.)
 
 **A GUARD OBLIGATION, by contrast, is searched for, and should be.** When an accelerant
-restates a term that owes a side condition — a `requires` guard, or a refined-sort
-qualifier at an argument — the obligation is hoisted onto the generated synthetic as a
-leading antecedent (`wrapObligations`), and the citing site discharges it from what the
-proof knows in scope (`withGuardPremises` → `dischargeGoal` → `refForKnown`, which
-consults the `known` table of propositions established so far). That is correct: the
-proposition is fully determined by the term plus its declaration, so the only question is
-whether it holds here, and that is the same question whether the term was hand-written or
-restated by a tactic. There is exactly ONE search primitive in the engine
-(`Elab.Known.lookup`) and every path into it is a guard obligation.
+restates a term that owes a side condition — a `requires` guard, or a refined-sort qualifier
+at an argument — the obligation is hoisted onto the generated synthetic as a leading
+antecedent (`wrapObligations`), and the citing site discharges it from what the proof knows
+in scope (`withGuardPremises` → `dischargeGoal` → `refForKnown`, which consults the `known`
+table of propositions established so far). That is correct: the proposition is fully
+determined by the term plus its declaration, so the only question is whether it holds here,
+and that is the same question whether the term was hand-written or restated by a tactic.
+There is exactly ONE search primitive in the engine (`Elab.Known.lookup`) and every path
+into it is a guard obligation.
 
-Do not be tempted to make the author name the discharger instead. The steps that meet
-these obligations are typically hypothesis restatements the checker can and must find
-anyway; and a guard could not simply join the input list, because it is not an antecedent
-of the cited fact. A step can owe several guards AND supply hypothesis refs, so one list
-could not separate the two roles without a positional convention the reader would have to
-know — the very thing the named-input rule exists to avoid.
+A guard could not simply join the input list, because it is not an antecedent of the cited
+fact. A step can owe several guards AND supply hypothesis refs, so one list could not
+separate the two roles without a positional convention the reader would have to know.
 
-**Consequence for admitted steps.** The search's hit is what records that the supplying
-step was consumed. An admitted (`--fast`) step builds no certificate and, in admit mode,
-never computes its obligations — so it contributes no such record, and the use-all-facts
-lint must not run on a proof containing one (it could only false-positive). The standing
-invariant: `--fast` never reports an error strict does not. See
-`agents/debug-guide.md` for the four causes that violated it and the sweep that detects
-regressions.
+**Consequence for admitted steps.** The search's hit is what records that the supplying step
+was consumed. An admitted step builds no certificate and never computes its obligations, so
+it contributes no such record — which is why the dead-step lint is gated on the file's TRUST
+SET (`verify.trusted.count() == 0`), not on whether a particular step was admitted. The rule
+is one sentence: **`--fast` does not dead-check.** The standing invariant it protects:
+`--fast` never reports an error strict does not.
 
-## Registered accelerated tactics
+## What no word checks, in either mode's decision
 
-### `tautology` — propositional consequence
+A decision binds its vocabulary by well-known NAME — `add`, `mul`, `ZERO`, `succ`,
+`less_than`, `nonneg`, the ext lemma, the associativity lemma — and never verifies the bound
+symbol OBEYS the laws it assumes. Over a theory whose `add` is not associative, Presburger
+can return `.valid`.
 
-- **Module**: `src/smt.zig`
-- **Surface rule**: `[using tautology ref1 ... refN]` (refs are premise steps or
-  statements; the goal must follow propositionally)
-- **Verdict semantics**: atoms are the maximal subformulas that are not
-  `and`/`or`/`not`/`->` (predicates, equations, quantified formulas — all
-  opaque). `.valid` means premises AND not(goal) has no truth assignment over
-  those atoms. Failures are located errors, never accelerated: a satisfiable
-  skeleton reports its countermodel; more than 16 distinct atoms reports the
-  cap.
-- **Certificate status**: certificate-first (B2). Every valid goal within
-  the step budget replays as ordinary kernel steps — an inline excluded
-  middle plus common_conclusion per split atom, structural derivation at the leaves —
-  so typical uses stay kernel-checked and check green by default. The accelerated
-  verdict is admitted only under `--fast` as the over-budget fallback, marking
-  that use accelerated only.
+**Strict still rejects such a goal**, because its certificate must discharge against the
+theory's DECLARED AXIOMS and a misbound operator has no axiom to license the rewrite. That
+is the certificate earning its keep. But from inside `--fast` this is indistinguishable from
+the benign "decided true, no certifier covers the shape" case — both are a true verdict with
+no certificate — so **naming things strangely is how shenanigans escape the boundary**, and
+only strict notices.
 
-### `arithmetic` — linear (Presburger) arithmetic over Nat
+## Registered tactics
 
-- **Module**: `src/presburger.zig` (decision), `src/farkas.zig` (refutation
-  search for the Farkas link)
-- **Surface rule**: `[using arithmetic ref1 ... refN]`, or
-  `[using arithmetic(<theory>) ref...]` naming a theory module. Refs are premise
-  steps or statements. **Theory resolution**: bare `arithmetic` resolves the
-  vocabulary + certificate lemmas by well-known name in **local scope** (the
-  self-contained case). `arithmetic(<theory>)` resolves them against an
-  imported module's scope regardless of local aliases — so a downstream or
-  subdomain file elaborates without dragging the arithmetic vocabulary into its
-  namespace. A **named** theory must provide every symbol the goal uses (a gap
-  is a hard error naming it); a missing certificate *lemma* makes the relevant
-  certifier decline (soft), surfaced at the terminal.
-- **Fallback**: `[using arithmetic ... fallback(<thm>)]` names a manually-proven
-  theorem to cite when the certifier chain declines a valid goal — instead of
-  the hard error (default) or the accelerated verdict (`--fast`). The step stays
-  **kernel-checked** (not accelerated), and any accelerated-tactic names `<thm>`
-  itself carries are inherited. This is for goals the Presburger procedure
-  *decides* but no certifier can *emit* — e.g. multi-fixed-variable `∀∀∃`
-  (`tests/cases/tactics/cooper/cooper_gap.b4m`: `sumParity` reduces to the cooper-certified
-  single-variable `evenOrOddArith` via a hand proof, and `fallback` cites it).
-  The matcher accepts `<thm>` in either of two forms — **every goal `arithmetic`
-  can decide is fallback-supportable**:
-  1. **α-equal**: `<thm>`'s statement IS the goal → cite it directly.
-  2. **specialized instance**: the goal is `<thm>` instantiated —
-     `<thm> = ∀x⃗; A₁ -> … -> Aₘ -> C`, and `C` at some witnesses `x⃗` α-equals
-     the goal. The matcher infers `x⃗` by first-order-matching `C` against the
-     goal, discharges each antecedent `Aᵢ(x⃗)` from a supplied ref whose formula
-     matches it (order-independent; the step's other refs are the `arithmetic`
-     decision premises), and EMITS a `theorem_ref → apply_at(x⃗) →
-     modus_ponens(refs)` chain the KERNEL re-checks — so a mis-inferred witness
-     can never pass. (`tests/cases/tactics/arithmetic/arithmetic_fallback_specialize.b4m`;
-     `std/integer/divides.b4m`'s `modDifferenceIsMultiple`, cited at `b:=n, a:=r`
-     from `aata/2.2-division-algorithm-exercises.md`.)
-  `fallback` is a contextual modifier on `arithmetic` only (not a keyword —
-  `fallback` is an ordinary identifier elsewhere); it is the
-  decision-vs-certification escape hatch for a decision-backed procedure, so
-  the structural presumers (`assoc`/`assoc_commut`) will never carry it.
-- **Fragment**: terms over `ZERO`, `ONE`, `succ`, `add`, and `mul` where one
-  side folds to a literal — all resolved by those well-known names in the
-  theory scope; atoms `=`, `!=`, and `less_than`; the propositional
-  connectives; `forall`/`exists` over Nat. Anything else — foreign
-  predicates, nonlinear terms, quantified subformulas that are not wholly
-  arithmetic — is an **opaque propositional atom** in an SMT combination
-  (DPLL over the mixed skeleton in `src/smt.zig`, with the Presburger
-  engine as the theory solver; refuted skeleton models are skipped).
-  Opaque atoms are never instantiated: a goal needing a quantified opaque
-  subformula's internals simply reports a countermodel naming it.
-- **Verdict semantics**: Nat is modeled as the nonnegative integers (every
-  variable carries an implicit `>= 0`). `.valid` means premises AND
-  not(goal) is unsatisfiable, decided by Cooper's quantifier elimination
-  (complete for Presburger arithmetic; divisibility atoms handle the
-  periodicity, i128 arithmetic is overflow-checked, and elimination blowup
-  hits an explicit work budget — both are honest errors). A satisfiable
-  negation reports countermodel values for the fixed variables when a small
-  witness exists.
-- **Certificate status**: certificate-first (C2a–C2c, premise handling,
-  D2). Goals replay as kernel steps when the well-known peano lemmas
-  resolve in the use site's scope: ground and universally-quantified
-  linear *equations* normalize to succ-towers over sorted sums (recursion
-  axioms plus `addZeroRight`/`addSuccRight`/`mulZeroRight`/`mulSuccRight`/
-  `addIsAssociative`; the residual permutation is a chain of
-  `addIsCommutative`/`addLeftSwap` rewrites); *order* goals synthesize the
-  difference witness d, certify `add(a, succ(d)) = b`, and close with a
-  `lessThanIntro` instance; *existentials* search a constant witness tower
-  and reduce via `witness`. *Hypotheses* (cited `less_than`/`=`
-  steps) enter by witness substitution: each order premise is
-  `lessThanElim`-unpacked and its flipped witness equation becomes a
-  ground rewrite rule, so difference-logic chains (including transitivity)
-  certify; the conclusion exports back through `unpacked`. When the
-  rewrite-normalizer declines an equation goal that nonetheless follows by
-  CANCELLING an equality premise — the premise's sides don't occur literally in
-  the goal, so no rewrite fires, but the goal is a linear COMBINATION of it (e.g.
-  `sub(a, r) = mul(b, q)` from `add(mul(b,q), r) = a`) — the *premise-combination*
-  path (`premiseCombinationCert`) certifies it: for a premise `P_l = P_r` and goal
-  `G_l = G_r` it proves the pure identity `add(P_l, G_l) = add(P_r, G_r)` via the
-  ordinary equation join, rewrites `P_l→P_r` with the premise, and closes with
-  `addCancelLeft` — all kernel-checked, so a wrong combination fails the join.
-  Needs `addIsCommutative`/`addLeftSwap`/`addCancelLeft` in scope. *Mixed
-  skeletons* (D2) replay as tautology-style case splits whose boolean dead
-  ends close by deriving the conflicting arithmetic literal from the
-  branch's assumptions, then `ex_falso`. *Farkas* (`src/farkas.zig`) certifies
-  difference-logic constraint combinations — combining SEVERAL hypotheses,
-  which the single-atom order cert cannot: an infeasible cycle `x < ... < x`
-  (folded with `lessThanTransitive`), order composition (`a<b -> b<c -> a<c`, a
-  path fold), an arbitrary/`false`-shaped conclusion (fold a cycle, contradict
-  with `lessThanIrreflexive`, `ex_falso`), COEFFICIENT SCALING (`mul`-by-literal
-  bounds scaled via `multiplicationPreservesOrder`), and SUMS of distinct-
-  variable bounds (`a<b ∧ c<d -> add(a,c)<add(b,d)`, via
-  `additionPreservesOrder` + `addIsCommutative` + transitivity). *Cooper-replay*
-  (the `cooper` link, `src/Engine/ProveTask/presburger.zig` trace + `src/Engine/ProveTask/Prove.zig`
-  `cooperInduction`) closes the **quantifier-alternation tail**: a
-  `forall x…; exists y; body` goal replays its Cooper elimination as
-  kernel steps — for a period-1 trace, a boundary witness under an `either_left`/`either_right`;
-  for a period-D trace (e.g. the parity `evenOrOdd`, `forall x; exists y; x=2y ∨
-  x=2y+1`), a SYNTHESIZED induction on the fixed variable (predicate `P(k)` =
-  the body, base `P(ZERO)`, step `P(k)→P(succ(k))` by unpacking the IH witness
-  and shifting it per residue-class arm, then `instantiate induction`). Still
-  accelerated when it cannot elaborate, honestly disclosed: quantified
-  arithmetic subformulas used as skeleton atoms, and multi-variable / nested
-  (`∀∃∀`) alternation (the cooper link declines these, so they fall to
-  `--fast`).
+| word | module | default (kernel-checked) path | what `--fast` presumes |
+|---|---|---|---|
+| `tautology` | `src/Engine/ProveTask/smt.zig` | replay as kernel steps — an inline excluded middle plus `common_conclusion` per split atom, structural derivation at the leaves | nothing but the step budget: past the 16-atom cap the certificate is skipped and the verdict admitted |
+| `arithmetic` | `src/Engine/ProveTask/presburger.zig` (decision), `farkas.zig` (refutation search) | the certifier chain below | the peano lemmas it would otherwise cite |
+| `polynomial` | `src/Engine/ProveTask/Polynomial.zig`, `Prove.zig` (`producePolynomial`) | distribute, right-nest and bubble-sort each monomial, sort the outer sum, fold identities — emitting rewrites that cite the theory's ring lemmas | the vocabulary's ring algebra, structurally |
+| `extensionality` | `Prove.zig` (`produceExtensionality`) | reduce to a pointwise residue, closed by `smt.tautology` inside `emitExtSetResidue` | packaging only — the decision still runs |
+| `assoc_commut` | `Prove.zig` (`produceAssocCommut`, `acPlan`) | sort both sides to the same summand multiset, emit the rewrite chain | the operator is associative *and* commutative |
+| `assoc` | `Prove.zig` (`produceAssoc`) | right-nest both sides by the cited lemma (confluent + terminating, so right-nesting is canonical), emit the chain | the operator is associative. The lemma is still resolved, since it identifies the operator |
+| `simplify` | `Prove.zig` | normalize both sides by the cited rules to a shared form, emit the `EqCert` join | the cited rules hold — statements are read, proofs are not |
+| `chain` | `Prove.zig` | BFS a rewrite path between the goal's two sides, emit it | as `simplify` |
+| `specialize` | `Prove.zig` | instantiate the head at the args, emit `theorem_ref → apply_at → modus_ponens` | **unsound — see the table above** |
+| `model` / `import` | engine words, not term builders | re-prove the source under the mapping / cite the imported fact | the α-match only |
 
-### `polynomial` — nonlinear ring identities
+### `arithmetic` — the fragment, and `fallback`
 
-- **Module**: `src/Engine/ProveTask/Polynomial.zig` + `Prove.zig` (`producePolynomial`) for the
-  kernel-checked path; `polyNormForm` for the accelerated path)
-- **Surface rule**: `[using polynomial(<theory>)]` / `[using
-  polynomial_quantified(<theory>)]`. Theory-parameterized exactly like
-  `arithmetic` (bare = local scope; `(theory)` = that imported module).
-- **Elaborated path is the DEFAULT and is NOT accelerated.** Under the default,
-  `polynomial` canonicalizes both sides to a sorted sum of sorted monomials by
-  *resolving the theory's ring lemmas* (`mulAddDistrib*`, `mulIsAssociative`,
-  `mulLeftSwap`, one/zero folds) and emitting a rewrite chain that CITES them —
-  every step kernel-rechecked. Sound relative to the theory's proofs;
-  kernel-checked; not accelerated. A theory too thin (lemmas absent) is a located
-  decline, not an acceleration.
-- **Accelerated verdict (only under `--fast`)**: skip the lemmas entirely and
-  compare the *bare syntactic semiring normal forms* (`polyNormForm` —
-  flatten/sort add/mul trees assuming commutativity, associativity,
-  distributivity, 0/1 identities). `.valid` = the two normal forms are
-  `alphaEq`. A false identity is still REJECTED (the procedure decides). What
-  is accelerated (not kernel-checked) is the **presumption that `add`/`mul` form a
-  commutative semiring** — the theory's own laws are never checked, so a
-  pathological/wrong `add`/`mul` could make the presumed identity false.
-  Accelerated-tactic name: `polynomial`.
-- **Why an accelerated tactic at all**: it decides on theories too thin to
-  kernel-check, and it trusts the ring structure of symbols it does not control —
-  the honest, accelerated counterpart to the default's kernel-discharged trust.
-- **No `fallback`, by design.** Unlike `arithmetic` (whose
-  Cooper decision genuinely exceeds what the certifier can emit — the ∀∀∃ /
-  nested-alternation tail — so `fallback` bridges a real gap), `polynomial`'s
-  kernel-checked path and accelerated path decide the *same* fragment: semiring
-  identities over `add`/`mul`. **When the ring lemmas are present, the
-  kernel-checked path always succeeds** on a true identity (terminating
-  normalization, every rewrite cites a present lemma) — stress-tested to a
-  wide-sum 4th power (256 monomials), 100-factor reversed products,
-  `succ`-atoms, and 0/1 folds. The only case the accelerated path "wins" is a
-  **thin theory** (`needs <lemma> in scope`), whose fix is to *add the lemma*,
-  not to hand-prove around it. So there is no decision-vs-certification gap for
-  `polynomial` to bridge, and it carries no `fallback`. (The audit also
-  surfaced — and fixed — a stale-slice OOB crash in the accelerated normalizer
-  on large expansions: `tests/cases/tactics/polynomial/polynomial_oob.b4m`.)
+**Fragment**: terms over `ZERO`, `ONE`, `succ`, `add`, and `mul` where one side folds to a
+literal; atoms `=`, `!=`, `less_than`; the propositional connectives; `forall`/`exists`.
+Anything else — foreign predicates, nonlinear terms, quantified subformulas that are not
+wholly arithmetic — becomes an **opaque propositional atom** in an SMT combination (DPLL
+over the mixed skeleton, with Presburger as the theory solver). Opaque atoms are never
+instantiated: a goal needing one's internals reports a countermodel naming it.
 
-### `extensionality` — extensionality-reduction
+**`nonneg` is opt-in.** Declaring a well-known `nonneg(x)` predicate is a theory's request
+to constrain its variables: the engine then reads `nonneg(x)` hypotheses as `x >= 0`, and
+the elaborator injects one per bound variable. **Absent, the fragment is pure ℤ** — no
+nonnegativity is assumed anywhere. This is what picks the ℕ-vs-ℤ reading of one goal.
 
-- **Module**: `src/Engine/ProveTask/Prove.zig` (`produceExtensionality` /
-  `produceExtensionalityQuantified`).
-- **Surface rule**: `[using extensionality(<extLemma>) <unfold lemmas…>]` for a bare
-  `LHS = RHS`, or `[using extensionality_quantified(<extLemma>) …]` for
-  `forall …; LHS = RHS`. The extensionality lemma and the per-operator unfold lemmas
-  are EXPLICIT citations (no theory scan, no well-known names).
-- **A STRUCTURE tactic**: the structure is *extensionality*; the SAME tactic proves
-  set equations (`extensionality(extensionality) unionMember …`) and function
-  equations (`extensionality(funcExtensionality) composeApply …`), and any future
-  extensional theory. Prior art: Lean's `ext`.
-- **What it does (emits kernel steps)**: reads the element sort **structurally** off
-  the cited extensionality lemma's pointwise binder (`forall x: <elementSort>; …`);
-  instantiates the lemma at (LHS, RHS) to reduce `LHS = RHS` to its pointwise
-  obligation(s); for each obligation `fix x: <elementSort>`, unfolds the operators
-  with the cited characterization lemmas, and closes the residue by its shape:
-  - **set / predicate model**: the residue is propositional over `member(x, ·)`
-    atoms → closed by `tautology`'s certificate (replayed as kernel steps).
-  - **function / equational model**: the residue is an equation
-    `apply(f, x) = apply(g, x)` → closed by the rewrite join (the `simplify`
-    machinery over the cited `<op>Apply` lemmas).
-  Then `generalize` each obligation and `modus_ponens` the chain to the equation.
-  Like every accelerant it is a generated schema the kernel re-checks; `2b4m debug
-  accelerant` prints it.
+**Decision**: Cooper's quantifier elimination, complete for Presburger arithmetic.
+Divisibility atoms carry the periodicity, i128 arithmetic is overflow-checked, and
+elimination blowup hits an explicit work budget — both limits are honest located errors,
+never verdicts. A satisfiable negation reports countermodel values for the fixed variables
+when a small witness exists.
 
-### `assoc_commut` — associative-commutative reordering
+**`fallback(<thm>)`** names a manually-proven theorem to cite when the chain declines a
+valid goal — instead of the hard error (default) or the accelerated verdict (`--fast`). The
+step stays **kernel-checked**, inheriting any accelerated names `<thm>` itself carries. It
+is for goals Presburger *decides* but no certifier can *emit*, e.g. multi-fixed-variable
+`∀∀∃`. Two accepted forms, so **every goal `arithmetic` can decide is fallback-supportable**:
 
-- **Module**: `src/Engine/ProveTask/Prove.zig` (`produceAssocCommut` / `acPlan`)
-- **Surface rule**: bare `[using assoc_commut]` / `[using assoc_commut_quantified]`
-  (well-known `add`/`mul` triple), or the explicit form `[using
-  assoc_commut(assoc, comm, swap)]` supplying the AC lemmas for a **custom
-  operator** (operator recovered from the commutativity lemma's shape). Trailing
-  refs are distributivity/pre-normalization lemmas. Exactly 0 or 3 args.
-- **Kernel-checked path is the DEFAULT and is NOT accelerated.** Re-associate +
-  bubble-sort by the operator's assoc/comm/swap lemmas, emitting kernel-checked
-  swaps that cite them. The **explicit-triple form ALWAYS emits kernel steps** (the
-  triple is checkable) — it has no accelerated path.
-- **Accelerated verdict (only under `--fast`, bare form only)**: compare sorted
-  multisets of summands structurally, resolving NO assoc/comm/swap lemma.
-  `.valid` = same sorted multiset. A different multiset is still rejected. What
-  is accelerated (not kernel-checked) is the **presumption that the operator is
-  associative-commutative** — never checked, so an operator that is not
-  (subtraction, function composition, matrix mul, …) could make the presumed
-  reordering false. Accelerated-tactic name: `assoc_commut`.
-- **Relation to `polynomial`**: `assoc_commut` is the single-operator special
-  case; `polynomial` additionally distributes `mul` over `add`. Same trust
-  story — both presume the vocabulary's algebra where the kernel-checked path
-  proves it.
+1. **α-equal** — `<thm>`'s statement IS the goal; cite it directly.
+2. **specialized instance** — `<thm> = ∀x⃗; A₁ -> … -> Aₘ -> C`, and `C` at some witnesses
+   `x⃗` α-equals the goal. The matcher infers `x⃗` by first-order-matching `C` against the
+   goal, discharges each antecedent `Aᵢ(x⃗)` from a supplied ref whose formula matches it
+   (order-independent; the step's other refs are the decision premises), and emits a
+   `theorem_ref → apply_at(x⃗) → modus_ponens(refs)` chain the KERNEL re-checks — so a
+   mis-inferred witness can never pass.
+   (`tests/cases/tactics/arithmetic/arithmetic_fallback_specialize.b4m`.)
 
-### `assoc` — associativity-only reordering
+`fallback` is a contextual modifier on `arithmetic` only — elsewhere it is an ordinary
+identifier. It is the decision-vs-certification escape hatch for a decision-backed
+procedure, so the structural presumers (`assoc`/`assoc_commut`) will never carry one.
 
-- **Module**: `src/Engine/ProveTask/Prove.zig` (`produceAssoc`)
-- **Surface rule**: `[using assoc(assocLemma)]` / `[using assoc_quantified(assocLemma)]`.
-  The associativity lemma is **REQUIRED** (exactly one arg — no bare form, no
-  `add`/`mul` assumption); the operator is recovered from the lemma's shape
-  `f(f(a,b),c) = f(a,f(b,c))`. The non-commutative sibling of `assoc_commut`
-  (for group theory etc.), where reordering is forbidden — only re-nesting.
-- **Kernel-checked path is the DEFAULT and is NOT accelerated.** Right-nest each
-  side by the cited associativity rule (confluent + terminating → canonical
-  form), `alphaEq`-compare, and emit a kernel-checked rewrite chain that cites
-  the lemma. Sides that differ by more than associativity are a located error.
-- **Accelerated verdict (only under `--fast`)**: structurally right-nest both
-  sides over the operator and compare, WITHOUT emitting/kernel-checking the
-  rewrite chain. A shape that isn't associativity-equal is still rejected. What
-  is accelerated (not kernel-checked) is the **presumption that the operator is
-  associative** — the rewrite is not discharged against the kernel.
-  Accelerated-tactic name: `assoc`. (Unlike `assoc_commut`, the lemma is always
-  resolved even in the accelerated path, since it's required to identify the
-  operator; the acceleration is for the *undischarged rewrite*, not for an
-  unresolved lemma.)
+**The certifier chain**, in order, each link declining with a reason:
+
+- **equation/order/exists** — linear equations normalize to succ-towers over sorted sums
+  (recursion axioms plus `addZeroRight`/`addSuccRight`/`addIsAssociative`, with the residual
+  permutation a chain of `addIsCommutative`/`addLeftSwap` rewrites); order goals synthesize
+  the difference witness `d`, certify `add(a, succ(d)) = b`, and close with `lessThanIntro`;
+  existentials search a constant witness tower. Cited `less_than`/`=` steps enter by witness
+  substitution — each order premise is `lessThanElim`-unpacked and its flipped witness
+  equation becomes a ground rewrite rule — so difference-logic chains including transitivity
+  certify.
+- **premise-combination** (`premiseCombinationCert`) — when an equation goal follows by
+  CANCELLING an equality premise whose sides do not occur literally in the goal
+  (`sub(a, r) = mul(b, q)` from `add(mul(b,q), r) = a`): prove the pure identity
+  `add(P_l, G_l) = add(P_r, G_r)` by the ordinary join, rewrite `P_l→P_r` with the premise,
+  and close with `addCancelLeft`. Needs
+  `addIsCommutative`/`addLeftSwap`/`addCancelLeft` in scope.
+- **mixed-skeleton** — tautology-style case splits whose boolean dead ends close by deriving
+  the conflicting arithmetic literal from the branch's assumptions, then `ex_falso`.
+- **Farkas** — combines SEVERAL hypotheses, which the single-atom order cert cannot: an
+  infeasible cycle `x < … < x` (folded with `lessThanTransitive`), order composition,
+  coefficient scaling (`mul`-by-literal bounds via `multiplicationPreservesOrder`), and sums
+  of distinct-variable bounds (via `additionPreservesOrder` plus transitivity).
+- **Cooper-replay** — the quantifier-alternation tail. A `forall x…; exists y; body` goal
+  replays its Cooper elimination as kernel steps: for a period-1 trace, a boundary witness
+  under `either_left`/`either_right`; for a period-D trace (the parity
+  `forall x; exists y; x=2y ∨ x=2y+1`), a SYNTHESIZED induction on the fixed variable.
+  Multi-variable and nested (`∀∃∀`) alternation decline, and fall to `--fast`.
+
+### `polynomial` — honest limits
+
+Identities only (`=`), not inequalities. Whole-number coefficients. **No cancellation** —
+`x·a = x·b ⊢ a = b` is not an identity; that stays with `arithmetic`/`mulCancel`. A
+subtraction- or division-like shape is out of fragment and gives a located error rather than
+a false countermodel. **`succ` is kept opaque**, a deliberate non-privileging decision.
+
+It is a **scalar-layer** tactic: it binds `add`/`mul`/`ZERO`/`succ` by well-known name, so
+over a carrier whose operations are `addP`/`mulP` it reports "the goal has no add/mul
+structure". Polynomial-ring identities are therefore written by hand — budget for stating
+distributivity, identity, associativity and negation lemmas yourself.
+
+## Deliberately out of scope
+
+- **Nonlinear inequalities** (SOS / Positivstellensatz): incomplete, so it would be a
+  *disclosed* accelerant rather than certificate-first. A real but separate, later decision.
+- **Gröbner-basis equality entailment** — proving an equation *from* other nonlinear
+  equations rather than as an identity. Medium effort, certificate-producing (the reduction
+  chain), worth it once a concrete need appears.
+- **Full nonlinear decision**: impossible. Nonlinear integer arithmetic is undecidable
+  (Hilbert's 10th / MRDP), so the goal is useful incomplete fragments, disclosed honestly
+  where they fall back.

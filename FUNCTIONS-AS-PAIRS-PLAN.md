@@ -1,9 +1,10 @@
-# Functions as sets of pairs — the payoff plan (future work)
+# Functions as sets of pairs — the payoff plan
 
-The two Chapter-1 ontology walls (collections / sets-of-sets, and choice /
-definite description) are both closed: `std/collection.b4m` handles collections,
-and `functionFromGraph` (the tame ι) in `std/function.b4m` handles definite
-description. What remains is the payoff those unlocks enable.
+**Status: not started** (`std/pair.b4m` does not exist).
+
+The prerequisites are in place: `std/collection.b4m` handles collections/sets-of-sets, and
+`functionFromGraph` (the tame ι) in `std/function.b4m` handles definite description. What
+remains is the payoff those unlock.
 
 ## The plan
 
@@ -48,10 +49,9 @@ Build order (each layer additive, no kernel change):
 - **The load-bearing foundation (definite description) is already in place.**
   `applyPair` is an ι-term, and `functionFromGraph` provides exactly that — so the
   non-reversible prerequisite that would otherwise need a spike is done. The
-  element-extraction form (`theElement(pred)` = the unique `x` with `pred(x)`) is a
-  narrow variant of the same schema shape; confirm it states cleanly against the
-  current N-ary schema machinery when §3 needs it, but this is no longer a
-  gating unknown.
+  element-extraction form (`theElement(pred)` = the unique `x` with `pred(x)`) is a narrow
+  variant of the same schema shape; confirm it states cleanly against the N-ary schema
+  machinery when §3 needs it. Not a gating unknown.
 
 Net: architecturally sound and worth doing; the model layer needs no up-front
 proof (roll back if it fails). Pick it up when a chapter makes functions-as-pairs

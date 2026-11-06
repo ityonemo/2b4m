@@ -89,10 +89,6 @@ for an operation clause (165 uses in the corpus), `[by definition p]` with no in
 single-clause predicate. A definition clause is a **ground fact**, so `definition` is a
 `by` rule, never `[using …]`.
 
-(The combined `model(M) definition(N)` spelling is exercised only by the fixture above —
-std and aata do not use it yet — so treat it as supported-and-gated rather than
-well-trodden.)
-
 ### A model's universe is referable from anywhere
 
 The named universe is not private to the file that declares it. A model is referred to
@@ -113,28 +109,14 @@ downstream cites that universe rather than re-declaring an identical model of it
 
 ### The overlay chain, and the universe fixpoint
 
-Mechanically a model is an **overlay** with a parent, and resolution walks the chain
-(`InternPool.applyModel`):
+Mechanically a model is an **overlay with a parent**, and resolving a name in a model
+namespace means: resolve it to its source `Index` in the source file's universe namespace,
+then walk the chain (`InternPool.applyModel`) for a mapping. **An un-overloaded entity
+returns UNCHANGED** — the universe fixpoint, and the load-bearing line: it is what makes
+citing an undischarged abstract axiom fail (see below).
 
-```zig
-pub fn applyModel(self: *const InternPool, model: Index, source: Index) Index {
-    var cur = model;
-    while (true) {
-        const m = self.keyOf(cur).model;
-        for (m.overlay) |e| if (e.src == source) return e.tgt;
-        if (cur == m.parent) return source; // universe fixpoint: unmapped ⇒ identity
-        cur = m.parent;
-    }
-}
-```
-
-Resolving a name in a model namespace means: resolve it to its source `Index` in the
-source file's universe namespace, then `applyModel`. The `.universe` model is the empty
-overlay, so it is the identity — which is why an ordinary proof and a transferred proof
-run the same code path, with `model = .universe` in the ordinary case.
-
-**The fixpoint line is load-bearing and is the subject of its own section below:** an
-unmapped source entity comes back *unchanged*.
+`.universe` is the empty overlay, hence the identity, which is why an ordinary proof and a
+transferred proof run the same code path with `model = .universe` in the ordinary case.
 
 ### Citing a transferred theorem
 
@@ -234,9 +216,10 @@ That is also why an incomplete discharge can surface far from its cause — see
 itself as a sort mismatch inside the source theory's own proof.
 
 **The corollary for authors:** a fixed const/pred + axioms section IS a model source, and
-is indistinguishable from dead code until some fixture demonstrates the model. Both
-`std/group/order.b4m`'s `A`/`N` section and `coset.b4m`'s `inSubgroup` were read as
-restrictions before anyone wrote the model that reaches them.
+is indistinguishable from dead code — or from a restriction — until some fixture
+demonstrates the model. `std/group/order.b4m`'s `A`/`N` section and `coset.b4m`'s
+`inSubgroup` are both of this shape: each looks like one fixed subject and transfers to
+any.
 
 ## Partial models are legal — at the prover's risk
 
@@ -253,39 +236,27 @@ an undischarged obligation, and the MODE decides the consequence:
 
 ### Partial models as a reverse-mathematics probe
 
-The asymmetry is also a feature. Because strict rejects *precisely* the transferred
-theorems whose proofs reached a missing axiom, commenting out one obligation line and
-re-running strict names exactly the theorems that genuinely used it:
+The asymmetry is also a feature: comment out one obligation line, re-run strict, and the
+checker names exactly the transferred theorems that genuinely used that axiom — "does
+`cancelLeft` need inverses, or only associativity and identity?" It is sound as a probe
+because a strict rejection means the proof really did cite the missing axiom.
 
-- "does `cancelLeft` need inverses, or only associativity and identity?" Unmap
-  `group.opInverseLeft` and check. If it still passes, its proof never touched inverses.
-- Unmap obligations one at a time to reconstruct the dependency lattice empirically, with
-  no hand proof-tracing.
+## The design invariant
 
-Sound as a probe because a strict rejection means the proof really did cite the missing
-axiom — no false positives from the checker's side.
+**Stay comptime-shaped: explicit at the cite, structural not nominal, resolved-to-concrete
+and done, no dictionary, no search.** Test any proposed extension by asking whether it is a
+comptime transform or needs a resolution mechanism.
 
-## Design philosophy — comptime structural transfer
+- the cite always NAMES its universe — no instance search, no action at a distance;
+- a carrier never *declares conformance*; you assert a mapping and the checker verifies the
+  shape, failing at the use site;
+- the remap emits the concrete statement and is done — no dictionary passing, no residual
+  machinery at checking time;
+- the kernel never learns what a "structure" is.
 
-The *capability* (prove over an abstract theory, transfer by discharging axioms) is what
-Lean typeclasses, Isabelle locales, and Rocq functors already do. 2b4m is not claiming
-otherwise. The distinctiveness is the SHAPE:
-
-> `model` is to typeclasses/locales what Zig `comptime` is to C++ templates + concepts.
-> Same expressive target; opposite implementation values.
-
-- **Explicit over implicit — no resolution engine.** Lean *searches* for the instance;
-  `model` is NAMED at the cite. The named cite is the Zig answer to instance resolution:
-  refuse action-at-a-distance.
-- **Structural over nominal.** `Rat` never *declares conformance* to `Grp`; you assert a
-  mapping and the checker verifies the shape, failing at the use site. No subtype
-  hierarchy, no `instance` the theory must know about.
-- **Monomorphize-and-forget.** The remap emits the concrete statement and is done. No
-  dictionary passing, no vtable, no residual machinery at checking time.
-- **Tiny kernel, power beside it.** The kernel never learns what a "structure" is.
-- **LLM-authorable.** A model block is a flat mapping table a language model can write and
-  read; implicit instance resolution is hard to author without a feedback loop. Legibility
-  is 2b4m's reason to exist.
+Three things would break this and are NON-GOALS: automatic model discovery, transitive
+chains resolved by search, and coherence machinery to reconcile two paths to one theorem
+(there are no paths — there is one named cite).
 
 ## See also
 
