@@ -1,5 +1,5 @@
 //! TRUSTED ACCELERATED TACTIC: linear (Presburger) arithmetic over Nat (surface
-//! rule `arithmetic`; registry entry in ACCELERATION.md).
+//! rule `arithmetic`; registry entry in design/acceleration.md).
 //!
 //! Trust surface: a `.valid` verdict becomes an `.accelerated` kernel step the
 //! kernel accepts without a derivation — a bug here can admit a false

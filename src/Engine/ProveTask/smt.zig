@@ -1,5 +1,5 @@
 //! Propositional tautology decider — the pure boolean core of the `tautology`
-//! accelerant (surface rule `tautology`; registry entry in ACCELERATION.md).
+//! accelerant (surface rule `tautology`; registry entry in design/acceleration.md).
 //!
 //! This is the DECISION half: it settles whether a goal follows propositionally
 //! from its premises (a real, cheap oracle) and, on a non-consequence, hands back

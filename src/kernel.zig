@@ -105,7 +105,7 @@ pub const Justification = union(enum) {
     /// is disclosed rather than established — the elaborator marks the
     /// enclosing theorem accelerated under this tactic name (transitively,
     /// through citations), the summary reports it, and --pure rejects the
-    /// step. Registry: ACCELERATION.md.
+    /// step. Registry: design/acceleration.md.
     accelerated: StrId,
 };
 

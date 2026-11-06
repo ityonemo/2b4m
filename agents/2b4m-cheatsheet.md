@@ -89,7 +89,7 @@ Both escape the same way: through **what a name denotes**. Name things strangely
 operator that does not obey its namesake's laws, a local alias colliding with a sibling
 theory's — and `--fast` cannot notice, because noticing is the certificate's job.
 
-**Where the boundary falls for each word is catalogued in `ACCELERATION.md`** — "Where the
+**Where the boundary falls for each word is catalogued in `design/acceleration.md`** — "Where the
 `--fast` trust boundary falls, per word" (kept vs dropped, per `using` word). Two residuals worth carrying in head: `specialize` is
 the one word where `--fast` admits what strict REFUTES (its claim-vs-instance match happens
 only after the instance is proven), and `model` keeps the statement α-match but drops the

@@ -7,7 +7,7 @@ paths:
 
 # Writing 2b4m proofs — the drift-prone conventions
 
-`CONVENTIONS.md` is canonical. This rule surfaces the parts that erode over a
+`design/conventions.md` is canonical. This rule surfaces the parts that erode over a
 long generation session — chiefly **proof labels**. When writing or reviewing a
 `.b4m` proof (or a ```2b4m block in a literate `.md`), hold these in mind.
 
@@ -83,7 +83,7 @@ write and check that it reads.
 (When a lemma's own name is already an assertion — `addIsCommutative` — its kebab
 form is a fine content label: `@add-is-commutative`.)
 
-## The other conventions — quick reminders (CONVENTIONS.md has the detail)
+## The other conventions — quick reminders (design/conventions.md has the detail)
 
 - **Strategy comment** before every theorem (one or two lines: the proof idea).
   In a literate `.md`, the prose paragraph above the block serves this role.

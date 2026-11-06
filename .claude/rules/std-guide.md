@@ -7,7 +7,7 @@ paths:
 
 `std/` is reusable production infrastructure, not pedagogy. The demonstrative spellings
 live in `examples/` and the `aata/*.md` transliterations; here the goal is the shortest
-kernel-checked proof and a vocabulary a caller can trust. `CONVENTIONS.md` governs layout
+kernel-checked proof and a vocabulary a caller can trust. `design/conventions.md` governs layout
 and labels corpus-wide; `agents/style-guide.md` covers the drift-prone parts. This file is
 what is specific to `std/`.
 

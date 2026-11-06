@@ -252,7 +252,7 @@ pub const Decl = union(enum) {
     /// theory. The `:` symbol/sort interpretations and the `<-` obligation discharges are
     /// SPLIT into two lists (they resolve against different tables — idents vs facts). NO
     /// carrier/guard header: the model is GUARDED exactly when a sort mapping's TARGET is a
-    /// predicated sort. See MODEL-DESIGN.md.
+    /// predicated sort. See design/model-design.md.
     model: struct {
         name: Token,
         identifiers: []const IdentMapping,

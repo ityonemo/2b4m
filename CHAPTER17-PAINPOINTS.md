@@ -139,7 +139,7 @@ Worth a sweep.
 - **An admitted `specialize` SHRINKS the proof `--fast` examines, masking sibling steps.**
   Hit on `theConstantMonomialProductAgreesCoefficientwise` (2026-11-02). `--fast` passed the
   lemma; strict rejected it with `simplify: normal forms differ`. But `simplify` KEEPS its
-  decision under `--fast` (`ACCELERATION.md`'s per-word table: "both sides normalized to a
+  decision under `--fast` (`design/acceleration.md`'s per-word table: "both sides normalized to a
   shared normal form"), so the step should have failed in both modes.
 
   It didn't because `--fast` never REACHED it: the enclosing `specialize` is admitted on

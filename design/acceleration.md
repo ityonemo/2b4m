@@ -1,7 +1,14 @@
 # Accelerated-tactic registry
 
-An **accelerated tactic** is a decision procedure whose verdict the checker can
-accept without a kernel derivation. Accelerated tactics are the deliberate
+An **accelerated tactic** is a decision procedure whose verdict can be provisionally
+accepted without a kernel derivation.  This primarily serves to prune the evaluation
+tree in --fast modes.  In strict mode, an accelerated tactic should be able to 
+generate a "certificate", which is a inspectable, machine generated theorem that
+gets placed in the internal pool of facts.
+
+
+
+. Accelerated tactics are the deliberate
 exception to 2b4m's otherwise-closed trust story: the kernel checks every
 ordinary step, but an `.accelerated` step stands on the named procedure being
 correct. Each invocation either **emits kernel steps** (a full chain of
@@ -51,7 +58,7 @@ pins it to a vetted theory.
 **`--fast` must never ADMIT a goal the strict path REFUTES.** It MAY admit a goal strict
 cannot CERTIFY — that is the permission `--fast` exists to grant, not an obligation, and each
 word decides for itself what its own `--fast` criterion is. Admitting a goal a decision
-procedure REFUTES is a soundness bug. Swept 2026-10-26 across all 17 trustable words with one
+procedure REFUTES is a soundness bug. Swept across all 17 trustable words with one
 refuted-goal probe each; `specialize` is the single violation, gated by
 `tests/cases/tactics/specialize/specialize_claim_mismatch_fast.b4m`. Every other word has a regression fixture
 named `*_false_fast.b4m` beside it.
@@ -98,13 +105,12 @@ the certify-first ordering exists at all.
 each accelerant's own interface — including its DECISION — and declines only to EMIT and
 kernel-check the certificate. The table below says, for every trustable word, exactly what is
 KEPT and what is DROPPED, measured from the admit site in `src/Engine/ProveTask/Prove.zig`
-(2026-10-26). The invariant sweep behind it lives in `drafts/fast-soundness/`.
+The invariant sweep behind it lives in `drafts/fast-soundness/`.
 
 **The one-line rule: the decision is a FILTER, the certificate is the AUTHORITY, and `--fast`
 keeps every filter and drops the authority.**
 
-**The invariant is ONE-DIRECTIONAL, and the direction matters** (settled 2026-11-04, after a
-regression in the other direction):
+**The invariant is ONE-DIRECTIONAL, and the direction matters:**
 
 - **`--fast` must NEVER reject what strict can certify.** A certificate is kernel-checked proof
   the statement is true, so rejecting it is simply wrong — and `--fast` is the *weaker* check.
@@ -120,10 +126,9 @@ the subterm with a fresh variable free to range, so the "countermodel" is an art
 abstraction, and a cited premise may well pin the subterm's value. That is an **abstention** —
 `--fast` accepts it and strict proceeds to the certifier.
 
-`e884a17` made the `arithmetic` decision gate run in strict as well as `--fast`, which was
-right, but treated an abstention as a rejection — so strict was lowered to the decision's reach
-and `examples/gauss.b4m` (true, certifiable, and previously passing) started failing in both
-modes. The fix splits the two kinds of "no"; `gauss.b4m` is the regression gate.
+**So the decision gate runs in BOTH modes, but an abstention must not be treated as a
+rejection** — doing so lowers strict to the decision's reach and fails goals that are true
+and certifiable. `examples/gauss.b4m` is the gate for exactly that.
 
 
 | word | KEPT under `--fast` | DROPPED |
@@ -191,8 +196,8 @@ argument on each tactic:
   `theorem addZeroLeft = mytheory.zeroPlus` and `arithmetic` finds it. (This is exactly
   what the `aata/*.md` files do — aliasing the book's notation onto the std
   names — and what `set.b4m` did aliasing the element sort.)
-- **GUARDED cuts and accelerants** — RESOLVED 2026-10-05 (PR #7). An abstract theory whose
-  laws are proved BY an accelerant used to fail at a predicated-cut target: the axioms
+- **GUARDED cuts and accelerants.** An abstract theory whose
+  laws are proved BY an accelerant can fail at a predicated-cut target when the axioms
   transferred relativized while the generated proof dropped the guard premise. Two causes,
   both fixed: (1) an accelerant abstracts a goal's free caller-locals into schema params,
   which discarded the guard the binder carried — the synthetic now states each abstracted
@@ -202,7 +207,7 @@ argument on each tactic:
   fix also removed `no_relativize`, which had papered over the guard-doubling face of the
   same bug. Fixtures: `tests/cases/model/model_overlap_{refinement,shift}.b4m`.
 - **`model`** overrides a whole signature at once — the industrial-strength
-  version of the same idea (see `MODEL-DESIGN.md`). Aliasing remaps one name; a
+  version of the same idea (see `model-design.md`). Aliasing remaps one name; a
   `model` remaps an entire structure's worth of names, so a structure that spells
   everything its own way can satisfy an accelerator's expectations wholesale.
 - The **theory argument** (`arithmetic(peano)`) already pins *which* vetted
@@ -216,17 +221,16 @@ obligation binder — so there is no expected name to override at all (the
 strongest form: zero coupling). This is preferred where available; a
 hardcoded-but-overridable default is the acceptable fallback.
 
-Historical note: `ext` (now `extensionality`) once looked the element sort up by
-the literal name `"Universe"`, and once ENUMERATED the theory scope to find its
-`<op>Member`/`<op>Apply` unfold lemmas by shape. Renaming the sort broke it; the
-scope-scan couldn't survive the fetch-only demand engine and mis-derived
-irregular names (`identityFn` → `identityApply`, not `identityFnApply`). Both were
-fixed by making the couplings explicit/structural — the canonical example of this
-rule.
+Two shapes this rule forbids, both of which `extensionality` is built to avoid: looking a
+sort up by a LITERAL NAME (a rename then breaks the tactic), and ENUMERATING a theory scope
+to find unfold lemmas by shape (a scope scan cannot survive the fetch-only demand engine,
+and derives wrong names for irregular symbols — `identityFn` would want `identityFnApply`,
+not `identityApply`). Hence: take the lemmas as EXPLICIT args and read the element sort off
+the cited lemma.
 
 ## Inputs are named; guard obligations are searched for
 
-A design rule for every accelerant, settled 2026-10-07.
+A design rule for every accelerant.
 
 **An accelerant NEVER searches for its logical inputs.** Whatever the inference consumes
 is a named ref in the claim: `[using <tactic> <tactic_args>(…) input1 input2 …]`. The
@@ -411,7 +415,7 @@ regressions.
 - **Why an accelerated tactic at all**: it decides on theories too thin to
   kernel-check, and it trusts the ring structure of symbols it does not control —
   the honest, accelerated counterpart to the default's kernel-discharged trust.
-- **No `fallback` (settled — don't relitigate).** Unlike `arithmetic` (whose
+- **No `fallback`, by design.** Unlike `arithmetic` (whose
   Cooper decision genuinely exceeds what the certifier can emit — the ∀∀∃ /
   nested-alternation tail — so `fallback` bridges a real gap), `polynomial`'s
   kernel-checked path and accelerated path decide the *same* fragment: semiring

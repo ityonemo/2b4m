@@ -2,7 +2,7 @@
 
 **USER INVARIANT (2026-10-28):** "one of the promises of 2b4m is that its stdlib never has
 totalizing operations." The invariant is not currently written down anywhere — not in
-`GUIDE.md`, not in `CONVENTIONS.md`, not in `agents/`. That is the first gap.
+`GUIDE.md`, not in `design/conventions.md`, not in `agents/`. That is the first gap.
 
 ## Three things that look alike and are not
 
