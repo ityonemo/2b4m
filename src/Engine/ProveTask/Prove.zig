@@ -2500,7 +2500,7 @@ fn demandUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step
     // the generated theorem STATES the preconditions of the terms it restates (see
     // `wrapObligations`); deterministic per step, so the keep-first registration is stable.
     var wb: Accelerants.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
-    const obligations = self.syntheticObligations(w, syn.seen) catch |err| switch (err) {
+    const obligations = self.syntheticObligations(w, syn) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.Recover => return .failed,
     };
@@ -2722,24 +2722,101 @@ fn accelerantPremises(self: *Prove, w: *const Walk, c: ast.Step.Claim) Error![]c
 /// each guarded application's required proposition (a refined param's qualifier at the arg, a
 /// `requires` guard at the args) — deduplicated by identity, in first-seen order. Only locally
 /// closed subterms count (a proposition over a bound variable is a statement's business).
-fn syntheticObligations(self: *Prove, w: *const Walk, seen: []const TermId) Error![]const TermId {
+fn syntheticObligations(self: *Prove, w: *const Walk, syn: Accelerants.Synthetic) Error![]const TermId {
     var e = self.elab(w);
     e.known = null;
     var all: std.ArrayList(TermId) = .empty;
-    for (seen) |t| try e.collectObligations(t, &all, true);
-    // an obligation the synthetic CONTAINS as a conjunct of one of its formulas (a premise
-    // `is_nonneg(m) and (… at(t, m) …)`, whose assumption teaches every conjunct; a goal it
-    // proves) is its own business — a producer that delaborates a premise's atoms one by one
-    // loses that context, so it is recovered here. It is NOT the caller's; the caller may not
-    // even be able to name it.
+    for (syn.seen) |t| try e.collectObligations(t, &all, true);
+    // A proof does not owe what it ASSUMES. Each `assumeTerm` hypothesis teaches its whole
+    // and-tree inside the synthetic (`teachAll`), so an obligation among those members is the
+    // synthetic's own business — the caller may not even be able to name it.
+    //
+    // ONLY the assumed set is subtracted. Testing against every DELABORATED term instead
+    // (`Builder.seen`) silently dropped a real obligation whenever it coincided with some
+    // intermediate step's formula: `specialize invIsOk(s)` delaborates `ok(s)` as a step of
+    // its own certificate, so the `ok(s)` that `inv(s)` REQUIRES matched it and never became
+    // an antecedent — leaving the guard owed where nothing could teach it. Mentioning a
+    // proposition is not proving it.
     var internal: std.ArrayList(TermId) = .empty;
-    for (seen) |t| try e.conjuncts(t, &internal);
+    for (syn.assumed) |t| try e.conjuncts(t, &internal);
     var out: std.ArrayList(TermId) = .empty;
     for (all.items) |p| {
         const contained = for (internal.items) |x| (if (x == p) break true) else false;
         if (!contained) try out.append(self.ctx.arena, p);
     }
-    return out.items;
+    // …UNLESS A SURVIVOR STILL OWES IT. An assumed obligation is subtracted because the
+    // synthetic's own proof teaches it — but the statement's ANTECEDENTS are elaborated before
+    // any proof step runs, and `wrapObligations` prepends these AHEAD of the body's own. So a
+    // surviving obligation that owes a subtracted one would sit before the antecedent that
+    // teaches it and re-owe it. `specialize invIsOk(s)` assumes `ok(s)` (the head's refined
+    // binder) and owes `ok(s)` + `ok(inv(s))`: dropping `ok(s)` leaves `ok(inv(s)) -> ok(s) ->
+    // …`, whose leading antecedent mentions the guarded `inv(s)` and re-owes `ok(s)`. Keeping
+    // it restores `ok(s) -> ok(inv(s)) -> …`; the call site discharges the extra copy from the
+    // same step in scope that the assumption would have used (`withGuardPremises` discharges
+    // each antecedent independently, so the duplicate costs a step, not a proof).
+    for (internal.items) |dropped| {
+        var needed = false;
+        for (out.items) |survivor| {
+            var owes: std.ArrayList(TermId) = .empty;
+            try e.collectObligations(survivor, &owes, true);
+            for (owes.items) |o| if (o == dropped) {
+                needed = true;
+            };
+        }
+        if (!needed) continue;
+        const already = for (out.items) |x| (if (x == dropped) break true) else false;
+        if (!already) try out.append(self.ctx.arena, dropped);
+    }
+    // ORDER THEM BY DEPENDENCY. `wrapObligations` emits these as nested antecedents
+    // `o0 -> o1 -> … -> goal`, and an antecedent is KNOWN only while what FOLLOWS it
+    // elaborates (`Elab`'s `local_known`). So an obligation that itself owes another must come
+    // after it: `ok(inv(s))` mentions the guarded `inv(s)` and therefore owes `ok(s)`, so
+    // `ok(s) -> ok(inv(s)) -> …` elaborates while the reverse order re-owes `ok(s)` at the
+    // leading antecedent, where nothing has been taught yet. `collectObligations` returns
+    // post-order over an unordered scan, so the dependency order is not automatic.
+    //
+    // A selection sort that PRESERVES relative order among independent obligations: repeatedly
+    // take the first not-yet-placed obligation none of whose own obligations is still pending.
+    // The order must be deterministic — it reaches the synthetic's statement, whose hash names
+    // the schema (`Schema.instanceHash`), so an unstable order would mint a new instance per
+    // run. Sets here are tiny (one or two guards) and a cycle is impossible: an obligation's
+    // own obligations are over strict SUBTERMS.
+    const ordered = try self.ctx.arena.alloc(TermId, out.items.len);
+    const done = try self.ctx.arena.alloc(bool, out.items.len);
+    @memset(done, false);
+    var placed: usize = 0;
+    while (placed < ordered.len) {
+        var progress = false;
+        for (out.items, 0..) |cand, k| {
+            if (done[k]) continue;
+            var owes: std.ArrayList(TermId) = .empty;
+            try e.collectObligations(cand, &owes, true);
+            var blocked = false;
+            for (owes.items) |o| {
+                for (out.items, 0..) |other, oi| {
+                    if (oi != k and !done[oi] and other == o) blocked = true;
+                }
+            }
+            if (blocked) continue;
+            ordered[placed] = cand;
+            placed += 1;
+            done[k] = true;
+            progress = true;
+            break;
+        }
+        if (!progress) {
+            // nothing placeable (a dependency cycle, which subterm ordering forbids): append
+            // the remainder in their original order rather than looping.
+            for (out.items, 0..) |cand, k| {
+                if (done[k]) continue;
+                ordered[placed] = cand;
+                placed += 1;
+                done[k] = true;
+            }
+            break;
+        }
+    }
+    return ordered;
 }
 
 /// Prepend a synthetic's obligations as LEADING ANTECEDENTS of its schema body, `assume`d around

@@ -180,6 +180,7 @@ pub fn produceTautology(site: *Site, w: *const Walk, e: *Elab, goal: TermId, c: 
         .args = abs.args,
         .premises = c.refs,
         .seen = b.seen.items,
+        .assumed = b.assumed.items,
         .fvar_binds = try common.fvarBinds(site, w, abs),
     };
 }

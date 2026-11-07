@@ -83,6 +83,11 @@ pub const Synthetic = struct {
     /// these terms owe (a guarded application's required proposition) and prepends them to the
     /// schema body as antecedents the call site discharges (`Prove.wrapObligations`).
     seen: []const TermId = &.{},
+    /// The propositions the synthetic's own proof ASSUMES (`Builder.assumed`) — every
+    /// `assumeTerm` hypothesis. A proof does not owe what it assumes, so the shared plumbing
+    /// subtracts these from the obligations `seen` collects. Anything else stays owed and
+    /// becomes a leading antecedent the CALL SITE discharges (`Prove.wrapObligations`).
+    assumed: []const TermId = &.{},
 
     pub const FvarBind = struct { name: StrId, fvar: StrId, sort: SortId };
 };
@@ -96,6 +101,10 @@ pub const Builder = struct {
     loc: u32,
     /// the terms `termExpr` delaborated, in order (see `Synthetic.seen`)
     seen: std.ArrayList(TermId) = .empty,
+    /// the terms the synthetic ASSUMES — every `assumeTerm` hypothesis (see `Synthetic.assumed`).
+    /// A proposition the proof assumes is one it does not owe: `Prove.syntheticObligations`
+    /// subtracts these, and only these, from what the delaborated terms require.
+    assumed: std.ArrayList(TermId) = .empty,
 
     pub fn tok(self: *Builder, name: StrId) Token {
         return .{ .tag = .identifier, .start = self.loc, .end = self.loc, .name = name };
@@ -160,6 +169,13 @@ pub const Builder = struct {
     /// An `assume <formula> { steps }` block step.
     pub fn assumeStep(self: *Builder, label: StrId, formula: *const ast.Expr, steps: []const ast.Step) Allocator.Error!ast.Step {
         return .{ .label = self.tok(label), .body = .{ .assume = .{ .formula = formula, .steps = steps } } };
+    }
+
+    /// `assume <term> { steps }` — the form every producer wants: it RECORDS `term` as assumed
+    /// (so the synthetic does not re-owe what it hypothesizes) and delaborates it.
+    pub fn assumeTerm(self: *Builder, label: StrId, term_id: TermId, steps: []const ast.Step) Allocator.Error!ast.Step {
+        try self.assumed.append(self.arena, term_id);
+        return self.assumeStep(label, try self.termExpr(term_id), steps);
     }
 };
 
