@@ -831,19 +831,30 @@ pub fn addTests(
     ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/extensionality/extensionality_false_fast.b4m" }, "tests/cases/tactics/extensionality/extensionality_false_fast.b4m:15:12: error: extensionality: could not close the pointwise obligation propositionally (is the identity true?)\n");
     ctx.fail(&.{ "check", "tests/cases/tactics/extensionality/extensionality_false_fast.b4m" }, "tests/cases/tactics/extensionality/extensionality_false_fast.b4m:15:12: error: extensionality: could not close the pointwise obligation propositionally (is the identity true?)\n");
 
-    // THE INVARIANT, swept across all 17 trustable words (drafts/fast-soundness/README.md):
-    // `--fast` must never ADMIT a goal the strict path REFUTES. (Distinct from the legitimate
-    // case where strict decides the goal TRUE but can build no certificate — `--fast` admits
-    // that, by design.) Ten of the eleven distinct words reject correctly; `specialize` is the
-    // ONE violation, and this gate pins today's wrong behaviour so a fix is noticed.
+    // Swept across all 17 trustable words (drafts/fast-soundness/README.md): a word must not
+    // ADMIT a goal the strict path REFUTES. (Distinct from the legitimate case where strict
+    // decides the goal TRUE but can build no certificate — `--fast` admits that, by design.)
     //
-    // Why it cannot be fixed in the producer: whether the instance's conclusion matches the
-    // claim is checked by `withGuardPremises` AFTER the instance is proven, which `--fast`
-    // skips. The producer only has the consequent in PARAM space — for `forall a, b; a = b`
-    // literally `p1 = p2` — and the arguments are AST exprs that only the instance pass
-    // elaborates, so a pattern match there succeeds for ANY equation goal.
-    ctx.okSilent(&.{ "check", "--fast", "tests/cases/tactics/specialize/specialize_claim_mismatch_fast.b4m" });
-    ctx.fail(&.{ "check", "tests/cases/tactics/specialize/specialize_claim_mismatch_fast.b4m" }, "tests/cases/tactics/specialize/specialize_claim_mismatch_fast.b4m:11:12: error: the claim does not match the instance's conclusion:\n  claim:      succ(ZERO) = ZERO\n  instance:   succ(ZERO) = succ(ZERO) -> ZERO = ZERO\n");
+    // A `specialize` whose head cannot yield the claim at those args must fail in BOTH modes.
+    // Admitting the head on its STATEMENT is fine (a trusted fact may turn out false — that is
+    // one of the two sanctioned ways `--fast` outruns strict); admitting a claim the head does
+    // not YIELD is not, so the claim-vs-instance α-match runs in admit mode too.
+    //
+    // Two shapes, caught at two different strict sites:
+    //   - an instance WITH antecedents, where the claim is not reachable by stripping them
+    //     (`withGuardPremises` runs out of antecedents);
+    //   - an antecedent-FREE instance whose conclusion is simply a different formula (the
+    //     kernel's instantiation check).
+    const mismatch = "tests/cases/tactics/specialize/specialize_claim_mismatch_fast.b4m";
+    const mismatch_diag = "tests/cases/tactics/specialize/specialize_claim_mismatch_fast.b4m:11:12: error: the claim does not match the instance's conclusion:\n  claim:      succ(ZERO) = ZERO\n  instance:   succ(ZERO) = succ(ZERO) -> ZERO = ZERO\n";
+    ctx.fail(&.{ "check", mismatch }, mismatch_diag);
+    ctx.fail(&.{ "check", "--fast", mismatch }, mismatch_diag);
+
+    // Strict reports the antecedent-free shape from the KERNEL, at the step label; --fast
+    // reports it from the tactic's decide, at the justification. Same rejection, two sites.
+    const unrelated = "tests/cases/tactics/specialize/specialize_claim_unrelated_bad.b4m";
+    ctx.fail(&.{ "check", unrelated }, "tests/cases/tactics/specialize/specialize_claim_unrelated_bad.b4m:22:4: error: step claims 'q(ZERO)' but instantiate derives 'p(ZERO)'\n");
+    ctx.fail(&.{ "check", "--fast", unrelated }, "tests/cases/tactics/specialize/specialize_claim_unrelated_bad.b4m:24:12: error: the claim does not match the instance's conclusion:\n  claim:      q(ZERO)\n  instance:   p(ZERO)\n");
 
     // Two theorems `specialize` ONE shared fact by DIFFERENT access paths — one by its
     // declared name, the other via a local step that `[by cite]`s it. The synthetic

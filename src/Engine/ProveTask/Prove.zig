@@ -740,27 +740,39 @@ fn demandCitedStatements(self: *Prove, w: *const Walk, tactic: Tactic, c: ast.St
     try toks.appendSlice(self.ctx.arena, c.refs);
     for (toks.items) |t| {
         if (w.findStep(tokName(t)) != null) continue; // a local step, not a fact
-        const file = if (t.qualifier == InternPool.Index.none) self.file else blk: {
-            const st = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = t.qualifier }) orelse continue;
-            const ix = switch (st) {
-                .done => |x| x,
-                .in_flight => continue,
-            };
-            if (self.ctx.interner.keyOf(ix) != .import) continue;
-            break :blk self.ctx.interner.keyOf(self.ctx.interner.keyOf(ix).import.namespace).namespace.file;
-        };
-        // A name the file does not declare is a TYPO. Leave it to the process pass, which
+        // A name its file does not declare is a TYPO. Leave it to the process pass, which
         // diagnoses it with position and context (`seedAndCheckLocalRoot`) — elaborating it
         // here would add a second, worse-located diagnostic, and `--fast` must report exactly
         // what strict does.
-        const fid = self.ctx.fileOf(file) orelse continue;
-        if (self.ctx.declOf(fid, tokName(t)) == null) continue;
+        const file = self.citedFactFile(t) orelse continue;
+        if (!self.citationDeclared(t)) continue;
         switch (try elaborateFactStatement(self.ctx, self.h, file, tokName(t), self.model, self.pool)) {
             .ready, .failed => {},
             .suspended => return self.h.blocked_on,
         }
     }
     return null;
+}
+
+/// The file a cited fact token names: its own file when unqualified, else the import's file.
+/// Null when the qualifier does not (yet) resolve to an import — the process pass diagnoses.
+pub fn citedFactFile(self: *Prove, t: lexer.Token) ?InternPool.Index {
+    if (t.qualifier == InternPool.Index.none) return self.file;
+    const st = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = t.qualifier }) orelse return null;
+    const ix = switch (st) {
+        .done => |x| x,
+        .in_flight => return null,
+    };
+    if (self.ctx.interner.keyOf(ix) != .import) return null;
+    return self.ctx.interner.keyOf(self.ctx.interner.keyOf(ix).import.namespace).namespace.file;
+}
+
+/// Does the file a cited fact token names DECLARE that name? A trusted decision reads a cited
+/// statement only when so — a name nothing declares is a typo for the process pass to report.
+pub fn citationDeclared(self: *Prove, t: lexer.Token) bool {
+    const file = self.citedFactFile(t) orelse return false;
+    const fid = self.ctx.fileOf(file) orelse return false;
+    return self.ctx.declOf(fid, tokName(t)) != null;
 }
 
 /// The read pass for a TRUSTED `using` step: make the AST that `process` will SHAPE-CHECK

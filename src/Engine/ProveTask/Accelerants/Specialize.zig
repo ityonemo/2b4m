@@ -47,8 +47,83 @@ pub fn read(self: @This(), prove: *Prove, w: *const Walk, c: ast.Step.Claim) All
     return null;
 }
 
+/// Phase 2: does this head, at these args, YIELD the claim? Strict answers that only after the
+/// instance is PROVEN (`withGuardPremises`, or the kernel's instantiation check), which admit
+/// mode skips — so the check runs here, on the head's STATEMENT: open one ∀ per arg at the
+/// ELABORATED argument, strip the antecedents the refs discharge, and α-match the remainder
+/// against the goal. The head is trusted on its statement — a trusted fact that turns out false
+/// is a sanctioned way `--fast` outruns strict; admitting a claim the head cannot yield is not.
+///
+/// The consequent cannot be matched in PARAM space (`forall a, b; a = b` is literally
+/// `p1 = p2`, which matches ANY equation goal), hence the elaborated args. They elaborate in the
+/// caller's scope with the head's free eigenvars bound — exactly what the instance does.
 pub fn decide(self: @This(), prove: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step.Claim) Error!void {
-    return common.decideFused(self, prove, w, e, goal, c);
+    _ = self;
+    const head = c.schema orelse return prove.fail(c.rule.start, "specialize requires a head theorem/axiom or local step", .{});
+    const head_local = w.findStep(tokName(head)) != null;
+    // A head that names nothing is a TYPO, not a mismatch: the scaffolding's root check
+    // diagnoses it with position after decide returns, and `--fast` must report exactly what
+    // strict does — reading it here would diagnose it first, badly located.
+    if (!head_local and !prove.citationDeclared(head)) return;
+    const head_formula = if (head_local)
+        prove.producerPremiseFormula(try prove.resolveStepRef(w, head))
+    else
+        try common.factStatement(prove, head);
+
+    // a LOCAL head carries the enclosing `fix` eigenvars free; bind them so an arg naming one
+    // elaborates back to the very fvar (sort is part of its identity — bind at the carrier).
+    var free_fvars: std.ArrayList(term.Node.Fvar) = .empty;
+    try prove.collectFreeFvars(head_formula, &free_fvars);
+    const mark = e.scopeMark();
+    defer e.scopeTruncate(mark);
+    for (free_fvars.items) |fv| {
+        const sort_ix: InternPool.Index = @enumFromInt(@intFromEnum(fv.sort));
+        const carrier: SortId = @enumFromInt(@intFromEnum(prove.ctx.interner.carrierOf(sort_ix)));
+        try e.pushBinder(fv.name, carrier, fv.name);
+    }
+
+    var instance = head_formula;
+    for (c.args) |arg| {
+        const typed = try e.elaborateExpr(arg);
+        instance = try openForallAt(prove, instance, typed.id) orelse
+            return prove.fail(c.rule.start, "specialize: head is not universally quantified enough for {d} argument(s)", .{c.args.len});
+    }
+    // The claim is the instance's CONCLUSION: some suffix of its `->` chain. The antecedents
+    // before it are what the refs discharge plus the refined-binder GUARDS the opening injected
+    // (`invertible(g) ->` for a `forall g: Perm`), which strict discharges from the caller's
+    // context at certify time — the same walk `withGuardPremises` does to count them.
+    var rest = instance;
+    while (true) {
+        if (prove.pool.alphaEq(rest, goal)) return;
+        const n = prove.pool.get(rest);
+        if (n != .bin or n.bin.op != .implies) break;
+        rest = n.bin.rhs;
+    }
+    return prove.fail(c.rule.start, "the claim does not match the instance's conclusion:\n  claim:      {s}\n  instance:   {s}", .{ try prove.renderTerm(goal), try prove.renderTerm(instance) });
+}
+
+/// Open the next `forall` AT a term: walk any leading `->` chain to the binder, open its body at
+/// `at`, and rebuild the `->` prefix around the result. Null when no `forall` is left.
+fn openForallAt(prove: *Prove, formula: TermId, at: TermId) Error!?TermId {
+    var ants: std.ArrayList(TermId) = .empty;
+    var t = formula;
+    while (true) {
+        const node = prove.pool.get(t);
+        if (node == .quant and node.quant.q == .forall) {
+            var opened = try prove.pool.open(node.quant.body, at);
+            var i = ants.items.len;
+            while (i > 0) : (i -= 1) {
+                opened = try prove.pool.add(.{ .bin = .{ .op = .implies, .lhs = ants.items[i - 1], .rhs = opened } });
+            }
+            return opened;
+        }
+        if (node == .bin and node.bin.op == .implies) {
+            try ants.append(prove.ctx.arena, node.bin.lhs);
+            t = node.bin.rhs;
+            continue;
+        }
+        return null;
+    }
 }
 
 pub fn certify(self: @This(), prove: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {

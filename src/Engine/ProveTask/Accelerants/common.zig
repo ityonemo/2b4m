@@ -586,12 +586,18 @@ pub fn citedFactFormula(prove: *Prove, ref: lexer.Token) Error!struct { formula:
             .is_axiom = key.kind == .axiom,
         };
     }
+    return .{ .formula = try factStatement(prove, ref), .is_axiom = false };
+}
+
+/// A cited fact's STATEMENT, read without demanding its proof — what a trusted decision reads.
+/// Parks (`producer_blocker`) if it is not yet resolvable, which means phase 1 missed it.
+pub fn factStatement(prove: *Prove, ref: lexer.Token) Error!TermId {
     const sfile = if (ref.qualifier == InternPool.Index.none) prove.file else blk: {
         const ns = try prove.resolveQualifier(ref);
         break :blk prove.ctx.interner.keyOf(ns).namespace.file;
     };
     switch (try Prove.elaborateFactStatement(prove.ctx, prove.h, sfile, Prove.tokName(ref), prove.model, prove.pool)) {
-        .ready => |stmt| return .{ .formula = stmt, .is_axiom = false },
+        .ready => |stmt| return stmt,
         .suspended => {
             prove.producer_blocker = prove.h.blocked_on;
             return error.Recover;
