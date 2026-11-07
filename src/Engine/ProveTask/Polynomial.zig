@@ -23,6 +23,7 @@ const Context = @import("../../Context.zig");
 const Engine = @import("../../Engine.zig");
 const InternPool = @import("../../InternPool.zig");
 const lexer = @import("../../lexer.zig");
+const common = @import("Accelerants/common.zig");
 
 const Error = error{OutOfMemory};
 
@@ -475,7 +476,7 @@ pub fn polyCanon(self: *Prove, pr: PolyRules, x: TermId) Error!?simplify_mod.Res
     //    (right-nested) whole-sum context so the chain stays whole-term. Without `mul` a
     //    monomial is an atom (nothing to sort).
     var monos: std.ArrayList(TermId) = .empty;
-    if (ops.add) |add| try narrow(self.flattenSum(add, nested, &monos)) else try monos.append(self.ctx.arena, nested);
+    if (ops.add) |add| try narrow(common.flattenSum(self, add, nested, &monos)) else try monos.append(self.ctx.arena, nested);
     var sorted_monos: std.ArrayList(TermId) = .empty;
     for (monos.items, 0..) |m, i| {
         if (pr.mul_assoc == null) {
@@ -495,7 +496,7 @@ pub fn polyCanon(self: *Prove, pr: PolyRules, x: TermId) Error!?simplify_mod.Res
             }
         }
         // Prove.acPlan reads symbols.add.? as the reordered operator — pass mul in that slot.
-        const mp = (try narrow(self.acPlan(mul_symbols, pr.rules, pr.mul_assoc.?, pr.mul_comm.?, pr.mul_swap.?, body))) orelse return null;
+        const mp = (try narrow(common.acPlan(self, mul_symbols, pr.rules, pr.mul_assoc.?, pr.mul_comm.?, pr.mul_swap.?, body))) orelse return null;
         if (mp.trace.len > 0) {
             // lifted into the whole-sum context (a one-leaf comb when there is no `add`).
             const lifted = try liftMonoTrace(self, add_symbols, sorted_monos.items, monos.items[i + 1 ..], wrap, mp.trace, &trace);
@@ -508,7 +509,7 @@ pub fn polyCanon(self: *Prove, pr: PolyRules, x: TermId) Error!?simplify_mod.Res
 
     // 4) bubble-sort the sum of monomials (already right-nested → sort phase only).
     var leaves: std.ArrayList(TermId) = .empty;
-    try narrow(self.flattenSum(ops.add.?, mono_sum, &leaves));
+    try narrow(common.flattenSum(self, ops.add.?, mono_sum, &leaves));
     var sorted = (try sortTraceTower(self, add_symbols, pr.rules, pr.add_comm.?, pr.add_swap.?, .{ .offset = 0, .leaves = leaves.items }, &trace)) orelse return null;
 
     // 5) cancel additive-inverse monomials (m + neg(m) → 0) in the sorted sum. `one` is
