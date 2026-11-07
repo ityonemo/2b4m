@@ -258,6 +258,7 @@ pub fn produceChain(site: *Site, w: *const Walk, e: *Elab, goal: TermId, c: ast.
         .args = abs.args,
         .premises = kept_refs, // the cited premises, discharged at the call site
         .seen = b.seen.items,
+        .assumed = b.assumed.items,
         .fvar_binds = try common.fvarBinds(site, w, abs),
     };
 }

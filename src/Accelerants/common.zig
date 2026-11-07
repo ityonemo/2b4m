@@ -101,7 +101,7 @@ pub fn buildSpecializeProof(site: *Site, b: *Accelerants.Builder, head: lexer.To
             blk_body = bb.items;
         }
         var lvl: std.ArrayList(ast.Step) = .empty;
-        try lvl.append(site.ctx.arena, try b.assumeStep(ablk[i], try b.termExpr(ants[i]), blk_body));
+        try lvl.append(site.ctx.arena, try b.assumeTerm(ablk[i], ants[i], blk_body));
         // export this level: `ants[i] -> <what the block concluded>`.
         const exported = try impliesFrom(b, ants[i..ants.len], consequent);
         try lvl.append(site.ctx.arena, try b.claimStep(
@@ -160,7 +160,7 @@ pub fn wrapTautologyPremises(site: *Site, b: *Accelerants.Builder, prems: []cons
         blk_body.appendAssumeCapacity(try b.claimStep(prems[i].label, try b.termExpr(prems[i].formula), .by, try site.internStr("hypothesis"), &.{}, try b.oneRef(prems[i].blk_label)));
         blk_body.appendSliceAssumeCapacity(body_steps);
         var lvl: std.ArrayList(ast.Step) = .empty;
-        try lvl.append(site.ctx.arena, try b.assumeStep(prems[i].blk_label, try b.termExpr(prems[i].formula), blk_body.items));
+        try lvl.append(site.ctx.arena, try b.assumeTerm(prems[i].blk_label, prems[i].formula, blk_body.items));
         // export: `prem_i -> prem_{i+1} -> … -> goal`.
         var exported = try b.termExpr(goal);
         var j: usize = prems.len;
@@ -245,7 +245,7 @@ pub const TautAst = struct {
 
     /// Wrap a filled OpenBlock as `assume formula { body } @label` in `parent`.
     pub fn finishBlock(self: *TautAst, parent: *std.ArrayList(ast.Step), blk: *OpenBlock, formula: TermId) CertError!void {
-        try parent.append(self.p.ctx.arena, try self.b.assumeStep(blk.label, try self.b.termExpr(formula), blk.body.items));
+        try parent.append(self.p.ctx.arena, try self.b.assumeTerm(blk.label, formula, blk.body.items));
     }
 
     /// Restate an assume block's hypothesis `formula` as `[by hypothesis <blk>]`.
@@ -808,6 +808,7 @@ pub fn buildSimplify(site: *Site, w: *const Walk, e: *Elab, c: ast.Step.Claim, e
         .args = abs.args,
         .premises = kept_refs, // the cited premises, discharged at the call site
         .seen = b.seen.items,
+        .assumed = b.assumed.items,
         .fvar_binds = try fvarBinds(site, w, abs),
     };
 }
@@ -926,7 +927,7 @@ pub fn wrapSimplifyPremises(site: *Site, b: *Accelerants.Builder, cites_in: []co
         blk_body.appendAssumeCapacity(try b.claimStep(hyp_label, try b.termExpr(formulae[i]), .by, try site.internStr("hypothesis"), &.{}, try b.oneRef(blk_label)));
         blk_body.appendSliceAssumeCapacity(body_steps);
         var lvl: std.ArrayList(ast.Step) = .empty;
-        try lvl.append(site.ctx.arena, try b.assumeStep(blk_label, try b.termExpr(formulae[i]), blk_body.items));
+        try lvl.append(site.ctx.arena, try b.assumeTerm(blk_label, formulae[i], blk_body.items));
         // export: `prem_i -> … -> (s = t)`.
         const exported = try impliesChain(site, eq_prop, formulae[i..]);
         try lvl.append(site.ctx.arena, try b.claimStep(
@@ -957,7 +958,7 @@ fn wrapParamGuards(site: *Site, b: *Accelerants.Builder, guards: []const TermId,
         i -= 1;
         const blk_label = try site.freshNamed("assume-guard");
         var lvl: std.ArrayList(ast.Step) = .empty;
-        try lvl.append(site.ctx.arena, try b.assumeStep(blk_label, try b.termExpr(guards[i]), steps));
+        try lvl.append(site.ctx.arena, try b.assumeTerm(blk_label, guards[i], steps));
         prop = try site.pool.add(.{ .bin = .{ .op = .implies, .lhs = guards[i], .rhs = prop } });
         try lvl.append(site.ctx.arena, try b.claimStep(
             if (i == 0) try b.intern("conclusion") else try site.freshNamed("export-guard"),
@@ -992,7 +993,7 @@ pub fn wrapSimplifyForall(site: *Site, b: *Accelerants.Builder, eigen: []const t
         if (i < site.quant_guards.len) if (site.quant_guards[i]) |g| {
             const blk_label = try site.freshNamed("assume-guard");
             var gsteps: std.ArrayList(ast.Step) = .empty;
-            try gsteps.append(site.ctx.arena, try b.assumeStep(blk_label, try b.termExpr(g), steps));
+            try gsteps.append(site.ctx.arena, try b.assumeTerm(blk_label, g, steps));
             prop = try site.pool.add(.{ .bin = .{ .op = .implies, .lhs = g, .rhs = prop } });
             try gsteps.append(site.ctx.arena, try b.claimStep(try site.freshNamed("export-guard"), try b.termExpr(prop), .by, try site.internStr("discharge"), &.{}, try b.oneRef(blk_label)));
             steps = try gsteps.toOwnedSlice(site.ctx.arena);
@@ -1376,6 +1377,7 @@ pub fn finishReorder(
         .args = abs.args,
         .premises = kept_refs, // the cited premises, discharged at the call site
         .seen = b.seen.items,
+        .assumed = b.assumed.items,
         .fvar_binds = try fvarBinds(site, w, abs),
     };
 }
@@ -1433,7 +1435,7 @@ test "usedPremiseCites: a citation NESTED in an assume/fix block still counts" {
         try b.claimStep(try internStrRt(p, "deep"), try b.termExpr(a), .by, try internStrRt(p, "rewrite"), &.{}, refs),
     };
     const outer = [_]ast.Step{
-        try b.assumeStep(try internStrRt(p, "blk"), try b.termExpr(a), &inner),
+        try b.assumeTerm(try internStrRt(p, "blk"), a, &inner),
     };
     const mask = try usedPremiseCites(p, &cites, &outer);
     try testing.expect(mask[0]);

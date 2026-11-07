@@ -587,6 +587,7 @@ fn packageArith(site: *Site, w: *const Walk, b: *Accelerants.Builder, comptime p
         .args = abs.args,
         .premises = kept_refs,
         .seen = b.seen.items,
+        .assumed = b.assumed.items,
         .fvar_binds = try common.fvarBinds(site, w, abs),
     };
 }
@@ -847,7 +848,7 @@ fn arithFarkasCert(site: *Site, cert: *ArithCert, out: *std.ArrayList(ast.Step),
         blk_body.appendSliceAssumeCapacity(carry_steps);
 
         var lvl: std.ArrayList(ast.Step) = .empty;
-        try lvl.append(site.ctx.arena, try cert.b.assumeStep(blk_label, try cert.b.termExpr(ante_formulae.items[k]), blk_body.items));
+        try lvl.append(site.ctx.arena, try cert.b.assumeTerm(blk_label, ante_formulae.items[k], blk_body.items));
         const exported = try site.pool.add(.{ .bin = .{ .op = .implies, .lhs = ante_formulae.items[k], .rhs = carry_formula } });
         _ = try cert.claim(&lvl, exported, "discharge", &.{}, &.{blk_label});
         carry_formula = exported;
@@ -1198,7 +1199,7 @@ fn arithMixedCert(site: *Site, cert: *ArithCert, out: *std.ArrayList(ast.Step), 
         try blk_body.append(site.ctx.arena, try cert.b.claimStep(strip_labels[i], try cert.b.termExpr(strip_assumes.items[i]), .by, try site.internStr("hypothesis"), &.{}, try common.oneRef(site, cert.b, strip_blocks[i])));
         try blk_body.appendSlice(site.ctx.arena, wrapped_body);
         var lvl: std.ArrayList(ast.Step) = .empty;
-        try lvl.append(site.ctx.arena, try cert.b.assumeStep(strip_blocks[i], try cert.b.termExpr(strip_assumes.items[i]), blk_body.items));
+        try lvl.append(site.ctx.arena, try cert.b.assumeTerm(strip_blocks[i], strip_assumes.items[i], blk_body.items));
         residual = try site.pool.add(.{ .bin = .{ .op = .implies, .lhs = strip_assumes.items[i], .rhs = residual } });
         _ = try cert.claim(&lvl, residual, "discharge", &.{}, &.{strip_blocks[i]});
         wrapped_body = lvl.items;
@@ -1387,7 +1388,7 @@ const MixedAst = struct {
     }
 
     pub fn finishBlock(self: *MixedAst, parent: *std.ArrayList(ast.Step), blk: *OpenBlock, formula: TermId) Error!void {
-        try parent.append(self.p.ctx.arena, try self.cert.b.assumeStep(blk.label, try self.cert.b.termExpr(formula), blk.body.items));
+        try parent.append(self.p.ctx.arena, try self.cert.b.assumeTerm(blk.label, formula, blk.body.items));
     }
 
     pub fn hyp(self: *MixedAst, blk: *OpenBlock, formula: TermId) Error!StrId {
@@ -1727,7 +1728,7 @@ fn arithCooperInduction(site: *Site, cert: *ArithCert, out: *std.ArrayList(ast.S
     try assume_body.append(site.ctx.arena, unpack_step);
     // export P(succ(k)) out of the unpack (unpacked).
     _ = try cert.claim(&assume_body, p_succ_k, "unpacked", &.{}, &.{unpack_block_label});
-    const assume_step = try cert.b.assumeStep(assume_block_label, try cert.b.termExpr(p_k), assume_body.items);
+    const assume_step = try cert.b.assumeTerm(assume_block_label, p_k, assume_body.items);
 
     // the fix k block: assume P(k), conclude P(succ(k)), export the implication.
     var fix_body: std.ArrayList(ast.Step) = .empty;
@@ -1825,7 +1826,7 @@ fn arithEmitInductionCases(site: *Site, cert: *ArithCert, block: *std.ArrayList(
         try left_body.append(site.ctx.arena, try cert.b.claimStep(left_hyp, try cert.b.termExpr(node.bin.lhs), .by, try site.internStr("hypothesis"), &.{}, try common.oneRef(site, cert.b, left_label)));
         const lprem = try site.ctx.arena.dupe(ArithPremise, &.{.{ .formula = node.bin.lhs, .local = true, .hyp = left_hyp, .head = undefined, .is_axiom = false }});
         if (!try arithEmitExistsWitness(site, cert, &left_body, goal, candidates, lprem, symbols)) return null;
-        try cur_block.append(site.ctx.arena, try cert.b.assumeStep(left_label, try cert.b.termExpr(node.bin.lhs), left_body.items));
+        try cur_block.append(site.ctx.arena, try cert.b.assumeTerm(left_label, node.bin.lhs, left_body.items));
 
         // right arm: the rhs disjunct (possibly itself an `or`, descended into).
         const right_label = try site.freshNamed("arm-right");
@@ -1851,7 +1852,7 @@ fn arithEmitInductionCases(site: *Site, cert: *ArithCert, block: *std.ArrayList(
     // level's common_conclusion label (the last popped) is the result.
     var result: StrId = undefined;
     while (levels.pop()) |lvl| {
-        try lvl.block.append(site.ctx.arena, try cert.b.assumeStep(lvl.right_label, try cert.b.termExpr(lvl.rhs), lvl.right_body.items));
+        try lvl.block.append(site.ctx.arena, try cert.b.assumeTerm(lvl.right_label, lvl.rhs, lvl.right_body.items));
         result = try cert.claim(lvl.block, goal, "common_conclusion", &.{}, &.{ lvl.disj_label, lvl.left_label, lvl.right_label });
     }
     return result;

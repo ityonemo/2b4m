@@ -158,6 +158,7 @@ fn buildExtensionality(site: *Site, w: *const Walk, e: *Elab, c: ast.Step.Claim,
         .args = abs.args,
         .premises = try common.localRefTokens(site, w, c.refs), // a LOCAL unfold/ext cite, if any
         .seen = b.seen.items,
+        .assumed = b.assumed.items,
         .fvar_binds = try common.fvarBinds(site, w, abs),
     };
 }

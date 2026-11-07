@@ -1,0 +1,69 @@
+// REGRESSION: an accelerant must not re-owe a guard that its own generated terms require.
+//
+// `chain` joins two equations THROUGH it, so its synthetic restates terms mentioning the guarded `inv(s)`. Those
+// obligations (`ok(s)`, `ok(inv(s))`) belong to the CALL SITE: the synthetic states them as
+// leading antecedents and the citing step discharges them from the steps in scope. Two
+// defects made this fail with `unproved obligation: 'ok(s)'`:
+//
+//   1. the obligation was subtracted as "internal" because it coincided with a term the
+//      producer had DELABORATED (mentioning a proposition is not proving it); and
+//   2. the antecedents were emitted in collection order, so `ok(inv(s)) -> ok(s) -> …` put
+//      the dependent guard FIRST, where the `inv(s)` it names re-owed `ok(s)`.
+//
+// The proof is GROUND (no `fix`, no `assume`, one block), so the discharged-conclusion
+// authoring rule cannot be implicated, and `theClosedForm` binds `f` at the REFINED sort so
+// the cited statement owes nothing of its own.
+
+sort Point
+sort Fn
+pred ok(f: Fn)
+sort OkFn = Fn where ok
+func inv(f: Fn) => Fn requires ok(f)
+func compose(f: Fn, g: Fn) => Fn
+func at(f: Fn, p: Point) => Point
+func swap(p: Point, q: Point) => Fn
+
+const s: Fn
+const a: Point
+const b: Point
+const c: Point
+
+axiom sIsOk: ok(s)
+axiom invIsOk: forall f: Fn; ok(f) -> ok(inv(f))
+
+// `f` at the REFINED sort, so the double inverse is defined at every instance.
+axiom theClosedForm: forall f: OkFn; forall p: Point; forall q: Point;
+  compose(compose(inv(f), swap(p, q)), inv(inv(f)))
+  = swap(at(inv(f), p), at(inv(f), q))
+
+axiom theFirstImage: at(inv(s), a) = c
+axiom theSecondImage: at(inv(s), b) = c
+
+theorem theImagesCollapseToOnePoint:
+  compose(compose(inv(s), swap(a, b)), inv(inv(s))) = swap(c, c)
+proof
+  @s-is-ok |
+    ok(s)
+    [by cite sIsOk]
+  @the-inverse-is-ok |
+    ok(inv(s))
+    [using specialize invIsOk(s) s-is-ok]
+  @the-closed-form |
+    forall f: OkFn; forall p: Point; forall q: Point;
+      compose(compose(inv(f), swap(p, q)), inv(inv(f)))
+      = swap(at(inv(f), p), at(inv(f), q))
+    [by cite theClosedForm]
+  @the-closed-form-at-s |
+    compose(compose(inv(s), swap(a, b)), inv(inv(s)))
+      = swap(at(inv(s), a), at(inv(s), b))
+    [by apply_at(s, a, b) the-closed-form]
+  @first-image |
+    at(inv(s), a) = c
+    [by cite theFirstImage]
+  @second-image |
+    at(inv(s), b) = c
+    [by cite theSecondImage]
+  @conclusion |
+    compose(compose(inv(s), swap(a, b)), inv(inv(s))) = swap(c, c)
+    [using chain the-closed-form-at-s first-image second-image]
+qed

@@ -81,6 +81,15 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/tactics/arithmetic/arithmetic_sub_from_add.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/tactics/simplify/simplify_unused_premise.b4m" });
 
+    // An accelerant's generated terms may REQUIRE a guard; the synthetic states it as a
+    // leading antecedent and the call site discharges it from a step in scope. Regression for
+    // both halves: the obligation must not be dropped as "internal" merely because the
+    // producer delaborated the same proposition, and the antecedents must be ordered so a
+    // dependent guard follows the one it needs. Strict only — `--fast` emits no certificate,
+    // so it never built the terms that owe these.
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/guard/simplify_generated_guard.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/tactics/guard/chain_generated_guard.b4m" });
+
     // a schema instantiated at a lambda CAPTURING an enclosing `fix b`: the schema's own
     // accelerant steps then run over a body mentioning a free `b` belonging to the
     // INSTANTIATING file. Every accelerant that abstracts free fvars must carry the

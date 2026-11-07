@@ -1,6 +1,7 @@
 # A substituting tactic re-owes a guard that a step in scope has proved
 
-**Status: OPEN.**
+**Status: FIXED for `simplify` and `chain`** (`Prove.syntheticObligations`). `specialize` at a
+REFINED binder remains open — see "What remains" below.
 
 ## The symptom
 
@@ -18,9 +19,9 @@ an intermediate term containing the guarded application.
 
 | word | verdict | why |
 |---|---|---|
-| `simplify` | **RED** | rewrites INSIDE the guarded application |
-| `chain` | **RED** | joins two equations THROUGH it |
-| `specialize` | **RED** | instantiates a binder UNDER it |
+| `simplify` | **FIXED** | rewrites INSIDE the guarded application |
+| `chain` | **FIXED** | joins two equations THROUGH it |
+| `specialize` | partly — see below | instantiates a binder UNDER it |
 | `assoc` / `assoc_commut` | green | reorder, never rebuild |
 | `polynomial` / `arithmetic` | green | the guarded application is an opaque atom |
 | `extensionality` | green | reduces to a pointwise residue |
@@ -31,64 +32,94 @@ guard. `tautology` sees every non-propositional subformula as opaque and so cann
 manufacture a guarded term. `model`/`import` are engine words, not term builders, and
 discharge guards through `withGuardPremises`.
 
-## Why it happens
+## Why it happened (two defects, both in `syntheticObligations`)
 
-The obligation DOES reach `Elab.requireKnown` — but in the synthetic's own ProveTask, where
-`e.known = null` is set deliberately: a synthetic schema is registered globally and
-instantiated by name, so it must not depend on one call site's context.
+The relativization machinery was right; the obligation SET handed to it was wrong.
 
-So the guard is never missing. It is raised in the synthetic's space, where by design
-nothing can answer it, instead of being carried out to the call site as an antecedent.
+1. **A real obligation was subtracted as "internal."** The filter dropped any obligation that
+   appeared among the terms the producer had DELABORATED (`Builder.seen`). The intent was
+   narrower — a premise the synthetic ASSUMES teaches its own and-tree, so it does not owe it
+   — but `seen` holds every goal, premise and intermediate step formula alike. A
+   `specialize invIsOk(s)` certificate delaborates `ok(s)` as a step of its own, so the
+   `ok(s)` that `inv(s)` REQUIRES matched it and was never stated. Mentioning a proposition
+   is not proving it. Fixed by tracking the assumed set explicitly: `Builder.assumeTerm`
+   records each hypothesis into `Synthetic.assumed`, and only that set is subtracted.
 
-## The target behaviour
+2. **The antecedents were emitted in collection order.** `wrapObligations` nests them as
+   `o0 -> o1 -> … -> goal`, and an antecedent is known only while what FOLLOWS it elaborates
+   (`Elab`'s `local_known`). `collectObligations` returns post-order, which put the dependent
+   guard first: `ok(inv(s)) -> ok(s) -> …`, whose leading antecedent names the guarded
+   `inv(s)` and re-owes `ok(s)` where nothing is yet known. Fixed by ordering the obligations
+   by dependency (an obligation's own obligations are over strict subterms, so no cycle), and
+   by re-adding a subtracted obligation that a SURVIVOR still owes — otherwise the survivor
+   sits ahead of the body antecedent that would have taught it.
 
-An accelerant relativizes its own generated statement to `guard(...) -> <statement>` and
-emits the invocation so the guard is discharged at the call site by citing a step in scope.
+## The behaviour, as built
 
-The machinery exists and is already uniform: `Builder.termExpr` records every delaborated
-term in `Synthetic.seen`, `syntheticObligations` reads what those terms owe,
-`wrapObligations` prepends them as antecedents, `withGuardPremises` discharges them at the
-call site, and the single call site `demandUsing` covers every accelerant. So the gap is
-narrower than "some words have the mechanism and some do not".
+An accelerant relativizes its own generated statement to `guard(...) -> <statement>` and emits
+the invocation so the guard is discharged at the call site by citing a step in scope. The
+pipeline is uniform and unchanged: `Builder.termExpr` records every delaborated term in
+`Synthetic.seen`, `Builder.assumeTerm` records every hypothesis in `Synthetic.assumed`,
+`syntheticObligations` reads what the seen terms owe MINUS what the assumed ones teach and
+orders the remainder by dependency, `wrapObligations` states them as antecedents,
+`withGuardPremises` discharges them at the call site — and `demandUsing` is the single call
+site covering every accelerant.
 
-**A fix must preserve `e.known = null` in `syntheticObligations`** — for the reason above.
-The obligation has to remain an ANTECEDENT of the synthetic, discharged where the caller's
-context is legitimately available.
+`e.known = null` in `syntheticObligations` is preserved: a synthetic schema is registered
+globally and instantiated by name, so it must not depend on one call site's context. The
+obligation stays an ANTECEDENT, discharged where the caller's context legitimately is.
 
-**The constraint on any fix:** the only thing an accelerant may go digging for is a GUARD.
+**The constraint on the engine:** the only thing an accelerant may go digging for is a GUARD.
 Logical inputs stay named in the citation — a guard has one possible answer, so searching
 for it cannot change what the proof proves, while a tactic silently choosing a premise
 could. The rule governs the ENGINE, not the author; manual rummaging while writing a proof
 is fine. (`design/acceleration.md`, "Inputs are named; guard obligations are searched for".)
 
+## What remains
+
+`specialize` at a REFINED binder (`drafts/accelerant-guard-discharge/specialize-refined-arg.b4m`)
+no longer reports a spurious `unproved obligation`; it now reports the honest
+
+    cannot discharge the guard premise 'invertible(inverse(f))' at this call site
+
+The synthetic correctly states what it needs, and the call site genuinely cannot answer it:
+`invertible(inverse(f))` would follow from the involution lemma being cited, which is the
+lemma being applied. Whether a specialize at a refined binder should instead relativize over
+the binder's own guard is a design question, not this defect.
+
+`drafts/accelerant-generated-guard/specialize-guard-in-scope.b4m` is MIS-WRITTEN and should be
+corrected or dropped: its claim is `… = swap(c, c)`, but `theClosedForm(s, a, b)` yields
+`… = swap(at(inv(s), a), at(inv(s), b))`, with no step rewriting the images. The README claims
+the three files differ "only in the final justification"; that is not true of this one, and its
+`the claim does not match the instance's conclusion` is correct behaviour.
+
 ## Fixtures
 
-`drafts/accelerant-generated-guard/` — one ~80-line ground proof per affected word,
-differing only in the final justification; its README records what each suppresses.
-`drafts/accelerant-guard-discharge/specialize-refined-arg.b4m` — 30 lines, the `specialize`
-case at a refined binder. Both still fail.
+`tests/cases/tactics/guard/{simplify,chain}_generated_guard.b4m` — the two fixed words, now
+regression gates in `zig build test` (strict only: `--fast` emits no certificate, so it never
+builds the terms that owe these).
+
+`drafts/accelerant-generated-guard/` — the originals, plus `wrapped-shape-by-hand.b4m` (green).
+`drafts/accelerant-guard-discharge/specialize-refined-arg.b4m` — the remaining specialize case.
 
 **The trap that costs the most time:** an axiom written `forall f: Fn; inv(inv(f)) = f` is
 genuinely ILL-FORMED — it asserts something about `inv(f)` where `inv(f)` may be undefined —
 and its error is reported against the CITING step, looking exactly like this defect. Check
 the cited statement's own well-formedness before believing a fixture.
 
-## Author-side workarounds
+## Author-side workaround (still needed for `specialize` only)
 
-- substitute the equations one at a time with `[by rewrite …]` instead of one
-  `simplify`/`chain`. A one-ref `[by rewrite EQ]` handles congruence, so this costs fewer
-  steps than it used to;
-- for a `specialize` at a REFINED binder, `[by cite …]` then `[by apply_at(t) …]`.
+For a `specialize` at a REFINED binder, `[by cite …]` then `[by apply_at(t) …]`.
 
-Cost: a 1-line tactic call becomes 2–6 steps, at every site whose intermediate terms mention
-a guarded application.
+`simplify` and `chain` need no workaround now; the one-at-a-time `[by rewrite …]` expansion
+that used to be required can be collapsed back into a single tactic call.
 
-## Why this matters
+## Why this mattered
 
 De-totalization makes guarded functions normal rather than exceptional. Any proof that
-substitutes over terms built from `sub`, `div`, `mod`, `recip` or `inverse` can hit this, and
-the error points at the tactic rather than the cause — so the natural response, *"but I
-proved that two steps ago"*, is correct and unhelpful.
+substitutes over terms built from `sub`, `div`, `mod`, `recip` or `inverse` could hit this, and
+the error pointed at the tactic rather than the cause — so the natural response, *"but I
+proved that two steps ago"*, was correct and unhelpful.
 
 **Not to be confused with** the authoring rule that a guard in a DISCHARGED CONCLUSION must
 come from the antecedent (the conclusion is elaborated in the PARENT block, outside the

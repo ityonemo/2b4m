@@ -253,6 +253,7 @@ pub fn produceSpecialize(site: *Site, w: *const Walk, e: *Elab, goal: TermId, c:
         .args = args,
         .premises = c.refs,
         .seen = b.seen.items,
+        .assumed = b.assumed.items,
         .fvar_binds = fbinds,
     };
 }
