@@ -1,20 +1,16 @@
-//! The `simplify` tactic's MATH CORE: first-order matching and innermost rewriting over
-//! kernel terms. PURE and certificate-producing — this module only computes the normal
-//! forms + the rewrite trace; the accelerant producer (`Prove.produceSimplify` via the
-//! shared `EqCert`) turns the trace into ordinary AST proof steps the kernel re-checks.
-//! Nothing here is trusted.
-//!
-//! DEMAND-WORLD PORT: the old core imported `env.zig` (deleted) — only to read an app's
-//! RESULT sort in `termSort`. That single dependency is now `InternPool.symResult`; a
-//! `term.SymId` is the same integer as its InternPool `Index` (the pool stores minted
-//! symbol Indexes verbatim), so the map is a bit-cast. `Source` is retired: a rule's
-//! origin lives in the producer (a resolved SRef / fact Index), not here.
+//! The REWRITE ENGINE: first-order matching and innermost rewriting over kernel terms,
+//! producing a normal form plus a replayable trace. PURE and certificate-producing — the
+//! tactics that use it (`simplify`, `chain`, `assoc`, `polynomial`, `arithmetic`, …) turn the
+//! trace into ordinary AST proof steps through the shared `EqCert`, and the kernel re-checks
+//! those. Nothing here is trusted. A leaf module: it reads an app's result sort through
+//! `InternPool.symResult` (a `term.SymId` is the same integer as its InternPool `Index`) and
+//! imports no accelerant.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const InternPool = @import("../../InternPool.zig");
+const InternPool = @import("../../../InternPool.zig");
 const StrId = InternPool.StrId;
-const term = @import("../../term.zig");
+const term = @import("../../../term.zig");
 const TermId = term.TermId;
 const SortId = term.SortId;
 

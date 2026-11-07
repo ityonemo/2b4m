@@ -12,26 +12,26 @@ const TermId = term.TermId;
 const SortId = term.SortId;
 const kernel = @import("../../../kernel.zig");
 const Engine = @import("../../../Engine.zig");
-const Context = @import("../../../Context.zig");
 const Walk = @import("../Walk.zig");
 const RefScan = @import("../RefScan.zig");
 const Elab = @import("../Elab.zig");
 const Schema = @import("../Schema.zig");
 const Accelerant = @import("../Accelerant.zig");
-const Verify = @import("../../../Verify.zig");
 const EqCert = @import("../EqCert.zig");
-const Polynomial = @import("../Polynomial.zig");
-const simplify_mod = @import("../simplify.zig");
-const presburger_mod = @import("../presburger.zig");
+const polycanon = @import("polycanon.zig");
+const rewrite = @import("rewrite.zig");
+const presburger = @import("presburger.zig");
 const smt = @import("../smt.zig");
-const farkas = @import("../farkas.zig");
+const farkas = @import("farkas.zig");
 const FactKV = @import("../../../FactKV.zig");
-const FetchTask = @import("../../../Engine/FetchTask.zig");
 const Prove = @import("../Prove.zig");
 const Error = Prove.Error;
 const tokName = Prove.tokName;
 const testing = std.testing;
 const common = @import("common.zig");
+const ac = @import("ac.zig");
+const testrig = @import("testrig.zig");
+const Symbols = @import("symbols.zig").Symbols;
 
 pub const schema_slot: Accelerant.SchemaSlot = .theory_selector;
 pub const premise_shape: Accelerant.PremiseShape = .local_refs_kept;
@@ -88,8 +88,8 @@ fn symName(prove: *const Prove, sym: term.SymId) []const u8 {
 /// — like `readPolyOps`. An absent symbol stays null (shrinking the fragment), matching the
 /// old `wellKnownSym` semantics. `c.schema` only qualifies the emitted lemma CITES; symbols
 /// come off the terms.
-fn readArithSymbols(prove: *Prove, goal: TermId, premises: []const TermId) Error!presburger_mod.Symbols {
-    var s: presburger_mod.Symbols = .{};
+fn readArithSymbols(prove: *Prove, goal: TermId, premises: []const TermId) Error!Symbols {
+    var s: Symbols = .{};
     try collectArithSyms(prove, goal, &s);
     for (premises) |p| try collectArithSyms(prove, p, &s);
     // Fill any core operator ABSENT from the goal by IDENT lookup (best-effort, no
@@ -165,7 +165,7 @@ fn collectArithNonneg(prove: *Prove, id: TermId, nat: term.SortId, nn: term.SymI
     }
 }
 
-fn collectArithSyms(prove: *Prove, id: TermId, s: *presburger_mod.Symbols) Error!void {
+fn collectArithSyms(prove: *Prove, id: TermId, s: *Symbols) Error!void {
     // resolve the arithmetic vocabulary by well-known name over the whole term. Iterative work-
     // stack; field-setting is order-independent (a name maps to one sym).
     var scratch: std.heap.ArenaAllocator = .init(prove.ctx.gpa);
@@ -752,7 +752,7 @@ const OrderHyp = struct { lo: TermId, hi: TermId, ref: StrId };
 /// Stage 1 (scaling) lifts a hypothesis by a literal coefficient via
 /// `multiplicationPreservesOrder`; stage 2 (sum) combines two edges over distinct variables via
 /// `additionPreservesOrder`. Declines (false) on any out-of-fragment shape.
-fn arithFarkasCert(prove: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step), goal_p: TermId, proved_prop: *TermId, symbols_in: presburger_mod.Symbols) Error!bool {
+fn arithFarkasCert(prove: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step), goal_p: TermId, proved_prop: *TermId, symbols_in: Symbols) Error!bool {
     var symbols = symbols_in;
     const less_than = symbols.less_than orelse return false;
 
@@ -781,7 +781,7 @@ fn arithFarkasCert(prove: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step
         if (node != .bin or node.bin.op != .implies) break;
         const ante = node.bin.lhs;
         const an = prove.pool.get(ante);
-        if (an != .pred or !common.symIs(prove, an.pred.sym, less_than) or an.pred.args.len != 2) return false;
+        if (an != .pred or !ac.symIs(an.pred.sym, less_than) or an.pred.args.len != 2) return false;
         const args = prove.pool.args(an.pred);
         const blk_label = try prove.freshNamed("given-order");
         const restate_label = try prove.freshNamed("order-hyp"); // the OrderHyp ref (the fold cites this)
@@ -817,7 +817,7 @@ fn arithFarkasCert(prove: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step
     //     derive a summed edge from a pair of base hypotheses.
     if (symbols.add != null) {
         const cn0 = prove.pool.get(body);
-        const wants_sum = cn0 == .pred and common.symIs(prove, cn0.pred.sym, less_than) and cn0.pred.args.len == 2 and
+        const wants_sum = cn0 == .pred and ac.symIs(cn0.pred.sym, less_than) and cn0.pred.args.len == 2 and
             isFarkasAddSum(prove, symbols, prove.pool.args(cn0.pred)[0]);
         if (wants_sum and base_count >= 2) {
             if (!try emitFarkasSumEdge(prove, cert, &inner, symbols, body, base_count, &edges, &hyps, &node_ids)) return false;
@@ -872,9 +872,9 @@ fn farkasNodeId(prove: *Prove, list: *std.ArrayList(TermId), t: TermId) Error!us
 /// decline). (a)/(b): if `body` is an order atom `less_than(s, t)`, compose a chain s < … < t
 /// (a cycle when s == t). (c): otherwise fold ANY cycle to `less_than(x, x)`, contradict with
 /// `lessThanIrreflexive`, and `ex_falso` proves the (arbitrary) conclusion.
-fn emitFarkasConclusion(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), symbols: presburger_mod.Symbols, less_than: term.SymId, body: TermId, edges: []const farkas.Edge, hyps: []const OrderHyp, node_ids: *std.ArrayList(TermId)) Error!?StrId {
+fn emitFarkasConclusion(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), symbols: Symbols, less_than: term.SymId, body: TermId, edges: []const farkas.Edge, hyps: []const OrderHyp, node_ids: *std.ArrayList(TermId)) Error!?StrId {
     const cn = prove.pool.get(body);
-    const is_order = cn == .pred and common.symIs(prove, cn.pred.sym, less_than) and cn.pred.args.len == 2;
+    const is_order = cn == .pred and ac.symIs(cn.pred.sym, less_than) and cn.pred.args.len == 2;
 
     if (is_order) {
         const cargs = prove.pool.args(cn.pred);
@@ -904,7 +904,7 @@ fn emitFarkasConclusion(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(a
 /// `less_than(chain-first-lo, chain-last-hi)` by composing consecutive hypotheses with
 /// `lessThanTransitive`. Returns the label of that proof (the sole hypothesis for a one-edge
 /// chain).
-fn emitFarkasFold(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), symbols: presburger_mod.Symbols, chain: []const usize, hyps: []const OrderHyp) Error!StrId {
+fn emitFarkasFold(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), symbols: Symbols, chain: []const usize, hyps: []const OrderHyp) Error!StrId {
     var acc_label = hyps[chain[0]].ref;
     const acc_lo = hyps[chain[0]].lo;
     var acc_hi = hyps[chain[0]].hi;
@@ -926,23 +926,23 @@ fn emitFarkasFold(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Ste
 }
 
 /// If `t` is a ground successor tower `succ^k(ZERO)`, return k, else 0.
-fn farkasLiteral(prove: *Prove, symbols: presburger_mod.Symbols, t: TermId) usize {
+fn farkasLiteral(prove: *Prove, symbols: Symbols, t: TermId) usize {
     var k: usize = 0;
     var cur = t;
     while (true) {
         const node = prove.pool.get(cur);
-        if (node == .app and common.symIs(prove, node.app.sym, symbols.succ) and node.app.args.len == 1) {
+        if (node == .app and ac.symIs(node.app.sym, symbols.succ) and node.app.args.len == 1) {
             k += 1;
             cur = prove.pool.args(node.app)[0];
             continue;
         }
-        if (node == .app and common.symIs(prove, node.app.sym, symbols.zero) and node.app.args.len == 0) return k;
+        if (node == .app and ac.symIs(node.app.sym, symbols.zero) and node.app.args.len == 0) return k;
         return 0;
     }
 }
 
 /// Scan `t` for `mul(<literal>, x)` subterms, collecting distinct literal coefficients k >= 2.
-fn collectFarkasScaleLiterals(prove: *Prove, symbols: presburger_mod.Symbols, t: TermId, out: *std.ArrayList(usize)) Error!void {
+fn collectFarkasScaleLiterals(prove: *Prove, symbols: Symbols, t: TermId, out: *std.ArrayList(usize)) Error!void {
     // collect the distinct scale literals k>=2 from `mul(k, _)` subterms. Iterative work-stack; the
     // `out` dedup makes order-independent.
     var scratch: std.heap.ArenaAllocator = .init(prove.ctx.gpa);
@@ -954,7 +954,7 @@ fn collectFarkasScaleLiterals(prove: *Prove, symbols: presburger_mod.Symbols, t:
         const node = prove.pool.get(cur);
         switch (node) {
             .app, .pred => |a| {
-                if (common.symIs(prove, a.sym, symbols.mul) and a.args.len == 2) {
+                if (ac.symIs(a.sym, symbols.mul) and a.args.len == 2) {
                     const args = prove.pool.args(a);
                     const k = farkasLiteral(prove, symbols, args[0]);
                     if (k >= 2) {
@@ -972,16 +972,16 @@ fn collectFarkasScaleLiterals(prove: *Prove, symbols: presburger_mod.Symbols, t:
 }
 
 /// Is `t` an `add(_, _)` application?
-fn isFarkasAddSum(prove: *Prove, symbols: presburger_mod.Symbols, t: TermId) bool {
+fn isFarkasAddSum(prove: *Prove, symbols: Symbols, t: TermId) bool {
     const node = prove.pool.get(t);
-    return node == .app and common.symIs(prove, node.app.sym, symbols.add) and node.app.args.len == 2;
+    return node == .app and ac.symIs(node.app.sym, symbols.add) and node.app.args.len == 2;
 }
 
 /// For each base hypothesis and literal k, emit a SCALED edge `less_than(mul(k,lo), mul(k,hi))`
 /// via `multiplicationPreservesOrder` (k = succ(c), so apply_at at c = succ^{k-1}(ZERO)),
 /// appending it to `edges`/`hyps`/`node_ids`. Returns false (declines) if the lemma or the
 /// mul/succ/zero symbols are absent.
-fn emitFarkasScaledEdges(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), symbols: presburger_mod.Symbols, literals: []const usize, base_count: usize, edges: *std.ArrayList(farkas.Edge), hyps: *std.ArrayList(OrderHyp), node_ids: *std.ArrayList(TermId)) Error!bool {
+fn emitFarkasScaledEdges(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), symbols: Symbols, literals: []const usize, base_count: usize, edges: *std.ArrayList(farkas.Edge), hyps: *std.ArrayList(OrderHyp), node_ids: *std.ArrayList(TermId)) Error!bool {
     const succ = symbols.succ orelse return false;
     const zero_sym = symbols.zero orelse return false;
     const mpo_stmt = (try arithLemmaFormula(prove, "multiplicationPreservesOrder", symbols)) orelse return false;
@@ -1014,7 +1014,7 @@ fn emitFarkasScaledEdges(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(
 /// The conclusion is `less_than(add(A,B), add(C,D))`. Find base hypotheses proving A<C and B<D,
 /// derive the summed edge `less_than(add(A,B), add(C,D))`, and append it. Returns false
 /// (declines) when the matching hypotheses or the needed lemmas are absent.
-fn emitFarkasSumEdge(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), symbols: presburger_mod.Symbols, body: TermId, base_count: usize, edges: *std.ArrayList(farkas.Edge), hyps: *std.ArrayList(OrderHyp), node_ids: *std.ArrayList(TermId)) Error!bool {
+fn emitFarkasSumEdge(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), symbols: Symbols, body: TermId, base_count: usize, edges: *std.ArrayList(farkas.Edge), hyps: *std.ArrayList(OrderHyp), node_ids: *std.ArrayList(TermId)) Error!bool {
     const add = symbols.add orelse return false;
     const less_than = symbols.less_than orelse return false;
     const cargs = prove.pool.args(prove.pool.get(body).pred);
@@ -1105,7 +1105,7 @@ fn mixedCertShape(prove: *const Prove, body: TermId) bool {
     return prove.pool.get(body) != .quant;
 }
 
-fn arithMixedCert(prove: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step), goal_p: TermId, proved_prop: *TermId, prems: []const ArithPremise, symbols: presburger_mod.Symbols) Error!bool {
+fn arithMixedCert(prove: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step), goal_p: TermId, proved_prop: *TermId, prems: []const ArithPremise, symbols: Symbols) Error!bool {
     const peel = try arithPeel(prove, goal_p);
     // strip the body's leading `->` antecedents into local hypotheses (assume blocks); each
     // becomes a theory/prop premise available to the skeleton + theory leaves.
@@ -1222,7 +1222,7 @@ const MixedAst = struct {
     assignment: []?bool,
     /// per atom: the assume-block LABEL whose hypothesis is the (positive/negative) literal
     lit_blocks: []?StrId,
-    symbols: presburger_mod.Symbols,
+    symbols: Symbols,
     /// premises (cited + stripped antecedents) usable as theory-leaf rewrite rules: formula +
     /// the label of a step/hypothesis proving it.
     premise_labels: std.ArrayList(struct { formula: TermId, label: StrId }) = .empty,
@@ -1239,7 +1239,7 @@ const MixedAst = struct {
     pub fn isTheory(self: *const MixedAst, atom: TermId) bool {
         return switch (self.pool().get(atom)) {
             .eq => true,
-            .pred => |pr| common.symIs(self.p, pr.sym, self.symbols.less_than),
+            .pred => |pr| ac.symIs(pr.sym, self.symbols.less_than),
             else => false,
         };
     }
@@ -1618,13 +1618,13 @@ const MixedAst = struct {
 /// provable arm (equation/order under the fix vars), lifting through the or-intro path with an
 /// `witness`. Wraps in the `fix`/`generalize` shell. Declines on period>1 (induction —
 /// not ported) or a nested/multi-var shape.
-fn arithCooperCert(prove: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step), goal_p: TermId, proved_prop: *TermId, symbols: presburger_mod.Symbols) Error!bool {
+fn arithCooperCert(prove: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step), goal_p: TermId, proved_prop: *TermId, symbols: Symbols) Error!bool {
     if (symbols.nat == null) return false;
     const peel = try arithPeel(prove, goal_p);
     const bn = prove.pool.get(peel.body);
     if (bn != .quant or bn.quant.q != .exists) return false;
 
-    const traced = presburger_mod.trace(prove.ctx.arena, prove.pool, symbols, &.{}, peel.body) catch return error.OutOfMemory;
+    const traced = presburger.trace(prove.ctx.arena, prove.pool, symbols, &.{}, peel.body) catch return error.OutOfMemory;
     if (traced != .replay) return false;
     const replay = traced.replay;
     if (replay.period != 1) return arithCooperInduction(prove, cert, out, peel, goal_p, proved_prop, symbols);
@@ -1660,7 +1660,7 @@ fn arithCooperCert(prove: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step
 /// emitted step is kernel-checked (an `instantiation induction(…)` step the generated
 /// ProveTask re-demands + the kernel re-checks). The instance concludes `forall n; P(n)` =
 /// the goal, so no ∀-re-generalization shell is needed.
-fn arithCooperInduction(prove: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step), peel: ArithPeel, goal_p: TermId, proved_prop: *TermId, symbols: presburger_mod.Symbols) Error!bool {
+fn arithCooperInduction(prove: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step), peel: ArithPeel, goal_p: TermId, proved_prop: *TermId, symbols: Symbols) Error!bool {
     if (peel.eigen.len != 1) return false; // layer 3 = single induction variable
     const nat = symbols.nat orelse return false;
     const zero = symbols.zero orelse return false;
@@ -1767,16 +1767,16 @@ fn arithCooperInduction(prove: *Prove, cert: *ArithCert, out: *std.ArrayList(ast
 /// (`succ^0..3(ZERO)`, and over ℤ `prev^1..3(ZERO)`) and, in the step, the shifted IH witness
 /// `y0` (`y0`, `succ(y0)`, `succ(succ(y0))`, and over ℤ `prev`-shifts). One of these proves the
 /// residue-class arm at succ(k) (the bounded realization of the arbitrary-period shift table).
-fn arithWitnessCandidates(prove: *Prove, symbols: presburger_mod.Symbols, ih_witness: ?TermId) Error![]const TermId {
+fn arithWitnessCandidates(prove: *Prove, symbols: Symbols, ih_witness: ?TermId) Error![]const TermId {
     var out: std.ArrayList(TermId) = .empty;
     const zero = symbols.zero orelse return out.items;
     const zero_t = try prove.pool.addApp(.app, zero, &.{});
     for ([_]i128{ 0, 1, 2, 3, -1, -2, -3 }) |off| {
-        if (try common.buildArithTowerSigned(prove, off, zero_t, symbols)) |w| try out.append(prove.ctx.arena, w);
+        if (try ac.buildArithTowerSigned(prove, off, zero_t, symbols)) |w| try out.append(prove.ctx.arena, w);
     }
     if (ih_witness) |y0| {
         for ([_]i128{ 0, 1, 2, -1, -2 }) |off| {
-            if (try common.buildArithTowerSigned(prove, off, y0, symbols)) |w| try out.append(prove.ctx.arena, w);
+            if (try ac.buildArithTowerSigned(prove, off, y0, symbols)) |w| try out.append(prove.ctx.arena, w);
         }
     }
     return out.items;
@@ -1793,7 +1793,7 @@ fn arithWitnessCandidates(prove: *Prove, symbols: presburger_mod.Symbols, ih_wit
 /// right body as its assume block and claims the level's `common_conclusion` — the same emission
 /// order the recursion produced. Scratch stacks on the pool's GPA; the right bodies are
 /// scratch-heap-allocated so their pointers stay stable across levels.
-fn arithEmitInductionCases(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), disj: TermId, disj_label: StrId, goal: TermId, candidates: []const TermId, symbols: presburger_mod.Symbols) Error!?StrId {
+fn arithEmitInductionCases(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), disj: TermId, disj_label: StrId, goal: TermId, candidates: []const TermId, symbols: Symbols) Error!?StrId {
     const root = prove.pool.get(disj);
     if (root != .bin or root.bin.op != .or_op) return null;
 
@@ -1891,7 +1891,7 @@ fn closeForallVar(prove: *Prove, body: TermId, name: StrId, sort: term.SortId) E
 /// Prove `exists y; disj` in `block` at one of `candidates`: open the body at the witness,
 /// prove a provable arm of the (possibly disjunctive) instance, lift through the or-intro
 /// path, and emit `witness`. Returns false if no candidate closes.
-fn arithEmitExistsWitness(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), exists_body: TermId, candidates: []const TermId, prems: []const ArithPremise, symbols: presburger_mod.Symbols) Error!bool {
+fn arithEmitExistsWitness(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), exists_body: TermId, candidates: []const TermId, prems: []const ArithPremise, symbols: Symbols) Error!bool {
     const en = prove.pool.get(exists_body);
     if (en != .quant or en.quant.q != .exists) return false;
     for (candidates) |wtn| {
@@ -1927,7 +1927,7 @@ const ArithArm = struct { label: StrId, formula: TermId, path: []const bool };
 
 /// Prove one arm of a right/left `or`-nest `instance` via the equation/order body cert; return
 /// the arm's step label + formula + the or-intro path to it, or null if no arm is provable.
-fn arithProveDisjArm(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), instance: TermId, prems: []const ArithPremise, symbols: presburger_mod.Symbols) Error!?ArithArm {
+fn arithProveDisjArm(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), instance: TermId, prems: []const ArithPremise, symbols: Symbols) Error!?ArithArm {
     var path: std.ArrayList(bool) = .empty;
     var cur = instance;
     while (true) {
@@ -1967,7 +1967,7 @@ fn arithDisjAt(prove: *Prove, instance: TermId, path: []const bool) Error!TermId
 /// Reconstruct a boundary witness `boundaries[i] + j` (a linear form over the fix vars) as a
 /// term: coeff 0 → a constant tower over ZERO; coeff 1 on the single eigenvariable → a tower
 /// over it. Higher coeff / 2+ vars → null. Port of the old `buildWitness`.
-fn arithBuildWitness(prove: *Prove, replay: presburger_mod.Replay, dump: presburger_mod.LinearDump, j: i128, fix_vars: []const term.Node.Fvar, symbols: presburger_mod.Symbols) Error!?TermId {
+fn arithBuildWitness(prove: *Prove, replay: presburger.Replay, dump: presburger.LinearDump, j: i128, fix_vars: []const term.Node.Fvar, symbols: Symbols) Error!?TermId {
     var fix_index: ?usize = null;
     for (dump.coeffs, 0..) |co, id| {
         if (co == 0) continue;
@@ -1987,7 +1987,7 @@ fn arithBuildWitness(prove: *Prove, replay: presburger_mod.Replay, dump: presbur
         const zero = symbols.zero orelse return null;
         break :blk try prove.pool.addApp(.app, zero, &.{});
     };
-    return try common.buildArithTowerSigned(prove, offset, base, symbols);
+    return try ac.buildArithTowerSigned(prove, offset, base, symbols);
 }
 
 /// Peel `goal`'s ∀ prefix into fresh eigenvariables (outermost first); return the body + the
@@ -2045,7 +2045,7 @@ fn wrapArithForall(prove: *Prove, cert: *ArithCert, eigen: []const term.Node.Fva
 ///     -> less_than(a,b)`).
 /// Wraps the body proof in the `fix`/`generalize` shell. Returns false (declines) on any
 /// shape/normal-form mismatch — the caller tries the next certifier.
-fn arithEquationCert(prove: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step), goal_p: TermId, proved_prop: *TermId, prems: []const ArithPremise, symbols: presburger_mod.Symbols) Error!bool {
+fn arithEquationCert(prove: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.Step), goal_p: TermId, proved_prop: *TermId, prems: []const ArithPremise, symbols: Symbols) Error!bool {
     const peel = try arithPeel(prove, goal_p);
     var body_steps: std.ArrayList(ast.Step) = .empty;
     const ok = try arithBodyEqCert(prove, cert, &body_steps, peel.body, prems, symbols);
@@ -2067,12 +2067,12 @@ fn arithEquationCert(prove: *Prove, cert: *ArithCert, out: *std.ArrayList(ast.St
 /// On a leaf success the leaf steps + one `witness` per level (innermost→outermost,
 /// each citing the previous last label) flatten into `block` — the same step sequence the
 /// recursive appendSlice chain produced. Scratch on the pool's GPA.
-fn arithBodyEqCert(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), body: TermId, prems: []const ArithPremise, symbols: presburger_mod.Symbols) Error!bool {
+fn arithBodyEqCert(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), body: TermId, prems: []const ArithPremise, symbols: Symbols) Error!bool {
     const node = prove.pool.get(body);
     if (node == .eq) {
         return arithEmitEquation(prove, cert, block, node.eq.lhs, node.eq.rhs, prems, symbols);
     }
-    if (node == .pred and common.symIs(prove, node.pred.sym, symbols.less_than) and node.pred.args.len == 2) {
+    if (node == .pred and ac.symIs(node.pred.sym, symbols.less_than) and node.pred.args.len == 2) {
         return arithEmitOrder(prove, cert, block, body, prems, symbols);
     }
     if (node != .quant or node.quant.q != .exists) return false;
@@ -2100,7 +2100,7 @@ fn arithBodyEqCert(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.St
             _ = stack.pop();
             continue;
         }
-        const witness = (try common.buildArithTowerSigned(prove, @intCast(f.k), zero_t, symbols)) orelse {
+        const witness = (try ac.buildArithTowerSigned(prove, @intCast(f.k), zero_t, symbols)) orelse {
             // tower construction failing stops the search at this level (the recursive `break`).
             _ = stack.pop();
             continue;
@@ -2118,7 +2118,7 @@ fn arithBodyEqCert(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.St
         var probe: std.ArrayList(ast.Step) = .empty;
         const ok = if (in == .eq)
             try arithEmitEquation(prove, cert, &probe, in.eq.lhs, in.eq.rhs, prems, symbols)
-        else if (in == .pred and common.symIs(prove, in.pred.sym, symbols.less_than) and in.pred.args.len == 2)
+        else if (in == .pred and ac.symIs(in.pred.sym, symbols.less_than) and in.pred.args.len == 2)
             try arithEmitOrder(prove, cert, &probe, instance, prems, symbols)
         else
             false;
@@ -2151,7 +2151,7 @@ fn arithBodyEqCert(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.St
 /// whether the goal has `mul` (ring `Polynomial` canonicalizer) or is additive-only (AC +
 /// inverse elimination), plus a PREMISE-COMBINATION fallback (goal = ±1·premise). The cited
 /// premises join as ground rewrite rules where their sides occur literally.
-pub fn arithEmitEquation(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), s: TermId, t: TermId, prems: []const ArithPremise, symbols: presburger_mod.Symbols) Error!bool {
+pub fn arithEmitEquation(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), s: TermId, t: TermId, prems: []const ArithPremise, symbols: Symbols) Error!bool {
     if (prove.pool.alphaEq(s, t)) {
         _ = try cert.claim(block, try prove.pool.add(.{ .eq = .{ .lhs = s, .rhs = t } }), "reflexivity", &.{}, &.{});
         return true;
@@ -2159,7 +2159,7 @@ pub fn arithEmitEquation(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(
     const eq_goal = try prove.pool.add(.{ .eq = .{ .lhs = s, .rhs = t } });
 
     // build the ring/additive rule set (well-known lemmas cited by name) + premise rules.
-    var rules: std.ArrayList(simplify_mod.Rule) = .empty;
+    var rules: std.ArrayList(rewrite.Rule) = .empty;
     var cites: std.ArrayList(EqCert.RuleCite) = .empty;
     const have_mul = symbols.mul != null and (usesSym(prove, symbols.mul.?, s) or usesSym(prove, symbols.mul.?, t));
     const qualifier: StrId = if (cert.c.schema) |sel| sel.name else InternPool.Index.none;
@@ -2168,10 +2168,10 @@ pub fn arithEmitEquation(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(
         // symbolic ring identities like `mul(2, n) = add(n, n)`. If the NFs disagree it may
         // still be a GROUND numeric identity (`mul(2, 2) = 4`) the ring form can't evaluate —
         // fall through to the additive path (which carries the mul RECURSION rules).
-        if (try common.readPolyOps(prove, eq_goal)) |ops| {
-            const pr = try Polynomial.polyRules(prove, ops, qualifier, cert.c.rule.start);
-            if (try Polynomial.polyCanon(prove, pr, s)) |rs| {
-                if (try Polynomial.polyCanon(prove, pr, t)) |rt| {
+        if (try polycanon.readPolyOps(prove, eq_goal)) |ops| {
+            const pr = try polycanon.polyRules(prove, ops, qualifier, cert.c.rule.start);
+            if (try polycanon.polyCanon(prove, pr, s)) |rs| {
+                if (try polycanon.polyCanon(prove, pr, t)) |rt| {
                     if (prove.pool.alphaEq(rs.nf, rt.nf)) {
                         var ec: EqCert = .{ .b = cert.b, .pool = prove.pool, .rules = pr.rules, .cites = pr.cites, .fresh_ctx = prove, .freshFn = common.eqCertFresh };
                         _ = try ec.emitJoin(block, s, t, rs, rt);
@@ -2191,17 +2191,17 @@ pub fn arithEmitEquation(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(
     try pushPremiseRules(prove, &rules, &cites, prems);
     const pre_count = rules.items.len;
     const sort: term.SortId = @enumFromInt(@intFromEnum(prove.termSort(s)));
-    try common.pushACTriple(prove, &rules, &cites, add_sym, sort, "addIsAssociative", "addIsCommutative", "addLeftSwap", cert.c.rule.start);
+    try ac.pushACTriple(prove, &rules, &cites, add_sym, sort, "addIsAssociative", "addIsCommutative", "addLeftSwap", cert.c.rule.start);
     const assoc_idx = pre_count;
     const comm_idx = pre_count + 1;
     const swap_idx = pre_count + 2;
     const pre_rules = rules.items[0..pre_count];
 
-    const s_pre = simplify_mod.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, pre_rules, s, 1000) catch |e| switch (e) {
+    const s_pre = rewrite.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, pre_rules, s, 1000) catch |e| switch (e) {
         error.Limit => return false,
         error.OutOfMemory => return error.OutOfMemory,
     };
-    const t_pre = simplify_mod.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, pre_rules, t, 1000) catch |e| switch (e) {
+    const t_pre = rewrite.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, pre_rules, t, 1000) catch |e| switch (e) {
         error.Limit => return false,
         error.OutOfMemory => return error.OutOfMemory,
     };
@@ -2229,22 +2229,22 @@ pub fn arithEmitEquation(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(
 /// AC-sort (`acPlan`) and pre-rule normalize (elim + adjacent inverse-cancel + ZERO-drop),
 /// concatenating every trace. The sort places an inverse pair adjacent so the next normalize's
 /// addNegRight/Left cancels it. Returns the final `Result` (NF + full trace), null on decline.
-fn arithCanon(prove: *Prove, symbols: presburger_mod.Symbols, rules: []const simplify_mod.Rule, pre_rules: []const simplify_mod.Rule, assoc_idx: usize, comm_idx: usize, swap_idx: usize, pre: simplify_mod.Result) Error!?simplify_mod.Result {
+fn arithCanon(prove: *Prove, symbols: Symbols, rules: []const rewrite.Rule, pre_rules: []const rewrite.Rule, assoc_idx: usize, comm_idx: usize, swap_idx: usize, pre: rewrite.Result) Error!?rewrite.Result {
     // the pre-rules float succ/prev to the root (`succ(add(…))`), so both the AC sort and the
     // inverse-cancel work UNDER that tower: acPlan strips it, cancelInverses parses it.
     var nf = pre.nf;
-    var trace: std.ArrayList(simplify_mod.Rewrite) = .empty;
+    var trace: std.ArrayList(rewrite.Rewrite) = .empty;
     try trace.appendSlice(prove.ctx.arena, pre.trace);
     var iter: usize = 0;
     while (iter < 6) : (iter += 1) {
-        const plan = (try common.acPlan(prove, symbols, rules, assoc_idx, comm_idx, swap_idx, nf)) orelse return null;
+        const plan = (try ac.acPlan(prove, symbols, rules, assoc_idx, comm_idx, swap_idx, nf)) orelse return null;
         try trace.appendSlice(prove.ctx.arena, plan.trace);
         // BUBBLE-cancel non-adjacent inverse pairs (`x … neg(x)` separated by other summands):
         // reuse Polynomial's cancelInverses, which moves the pair together before applying
         // addNegRight/Left — sort adjacency alone (the re-normalize below) misses separated pairs.
-        const cancelled = (try Polynomial.cancelInverses(prove, symbols, rules, comm_idx, swap_idx, plan.sorted, &trace)) orelse plan.sorted;
+        const cancelled = (try ac.cancelInverses(prove, symbols, rules, comm_idx, swap_idx, plan.sorted, &trace)) orelse plan.sorted;
         // re-normalize the (bubble-cancelled) sorted form (drop any residual ZERO, fold).
-        const renorm = simplify_mod.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, pre_rules, cancelled, 1000) catch |e| switch (e) {
+        const renorm = rewrite.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, pre_rules, cancelled, 1000) catch |e| switch (e) {
             error.Limit => return null,
             error.OutOfMemory => return error.OutOfMemory,
         };
@@ -2263,7 +2263,7 @@ fn arithCanon(prove: *Prove, symbols: presburger_mod.Symbols, rules: []const sim
 /// apply_at at (s, d, t), and modus_ponens the equation. Declines (false) when the towers
 /// don't yield a nonneg difference or the equation can't join. (Peano shape; the ℤ nonneg-
 /// antecedent variant is not needed by the fixtures.)
-fn arithEmitOrder(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), body: TermId, prems: []const ArithPremise, symbols: presburger_mod.Symbols) Error!bool {
+fn arithEmitOrder(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), body: TermId, prems: []const ArithPremise, symbols: Symbols) Error!bool {
     const succ = symbols.succ orelse return false;
     const add = symbols.add orelse return false;
     const pred = prove.pool.get(body).pred;
@@ -2303,7 +2303,7 @@ fn arithEmitOrder(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Ste
 /// proving the goal via `lessThanIntro` (the difference equation reduced under the witness
 /// equation), and `unpacked` exporting `less_than(s, t)`. Declines when no premise anchors
 /// `s`, the goal→premise difference isn't a ground tower, or a lemma is absent.
-fn arithEmitOrderFromPremise(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), s: TermId, t: TermId, prems: []const ArithPremise, symbols: presburger_mod.Symbols) Error!bool {
+fn arithEmitOrderFromPremise(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), s: TermId, t: TermId, prems: []const ArithPremise, symbols: Symbols) Error!bool {
     const less_than = symbols.less_than orelse return false;
     const succ = symbols.succ orelse return false;
     const add = symbols.add orelse return false;
@@ -2311,7 +2311,7 @@ fn arithEmitOrderFromPremise(prove: *Prove, cert: *ArithCert, block: *std.ArrayL
     const intro_stmt = (try arithLemmaFormula(prove, "lessThanIntro", symbols)) orelse return false;
     for (prems) |p| {
         const pn = prove.pool.get(p.formula);
-        if (pn != .pred or !common.symIs(prove, pn.pred.sym, less_than) or pn.pred.args.len != 2) continue;
+        if (pn != .pred or !ac.symIs(pn.pred.sym, less_than) or pn.pred.args.len != 2) continue;
         const pargs = prove.pool.args(pn.pred);
         const pl = pargs[0];
         const pr = pargs[1]; // premise: less_than(pl, pr)
@@ -2371,13 +2371,13 @@ fn arithEmitOrderFromPremise(prove: *Prove, cert: *ArithCert, block: *std.ArrayL
 /// Synthesize the difference `d` with `add(s, succ(d)) = t` for a valid `less_than(s, t)`.
 /// Uses the additive-tower parse: t-tower minus s-tower (leaves + offset), minus one for the
 /// `succ`. Returns null if the difference isn't a nonneg tower over the shared leaves.
-fn arithOrderDiff(prove: *Prove, s: TermId, t: TermId, symbols: presburger_mod.Symbols) Error!?TermId {
+fn arithOrderDiff(prove: *Prove, s: TermId, t: TermId, symbols: Symbols) Error!?TermId {
     // canonicalize both sides additively (fold sub/neg, sort) so the tower parse is clean.
-    var rules: std.ArrayList(simplify_mod.Rule) = .empty;
+    var rules: std.ArrayList(rewrite.Rule) = .empty;
     var cites: std.ArrayList(EqCert.RuleCite) = .empty;
     try pushAdditiveElim(prove, &rules, &cites, symbols, .none, 0);
-    const rs = simplify_mod.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, rules.items, s, 1000) catch return null;
-    const rt = simplify_mod.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, rules.items, t, 1000) catch return null;
+    const rs = rewrite.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, rules.items, s, 1000) catch return null;
+    const rt = rewrite.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, rules.items, t, 1000) catch return null;
     const tower_s = (try parseArithTower(prove, rs.nf, symbols)) orelse return null;
     const tower_t = (try parseArithTower(prove, rt.nf, symbols)) orelse return null;
     if (tower_t.offset < tower_s.offset + 1) return null;
@@ -2391,24 +2391,24 @@ fn arithOrderDiff(prove: *Prove, s: TermId, t: TermId, symbols: presburger_mod.S
         _ = remaining.swapRemove(found);
     }
     const comb = (try buildArithComb(prove, remaining.items, symbols)) orelse return null;
-    return try common.buildArithTowerSigned(prove, tower_t.offset - tower_s.offset - 1, comb, symbols);
+    return try ac.buildArithTowerSigned(prove, tower_t.offset - tower_s.offset - 1, comb, symbols);
 }
 
 const ArithTower = struct { offset: i128, leaves: []const TermId };
 
 /// Parse `succ^j(prev^k(right-nested add of leaves))`, folding numeral summands into a signed
 /// offset. Anything else → null (out of the additive fragment). Port of the old `parseTower`.
-fn parseArithTower(prove: *Prove, t: TermId, symbols: presburger_mod.Symbols) Error!?ArithTower {
+fn parseArithTower(prove: *Prove, t: TermId, symbols: Symbols) Error!?ArithTower {
     var offset: i128 = 0;
     var cur = t;
     while (true) {
         const node = prove.pool.get(cur);
-        if (node == .app and common.symIs(prove, node.app.sym, symbols.succ) and node.app.args.len == 1) {
+        if (node == .app and ac.symIs(node.app.sym, symbols.succ) and node.app.args.len == 1) {
             offset += 1;
             cur = prove.pool.args(node.app)[0];
             continue;
         }
-        if (node == .app and common.symIs(prove, node.app.sym, symbols.prev) and node.app.args.len == 1) {
+        if (node == .app and ac.symIs(node.app.sym, symbols.prev) and node.app.args.len == 1) {
             offset -= 1;
             cur = prove.pool.args(node.app)[0];
             continue;
@@ -2427,7 +2427,7 @@ fn parseArithTower(prove: *Prove, t: TermId, symbols: presburger_mod.Symbols) Er
         }
         const node = prove.pool.get(cur);
         if (node != .app) return null;
-        if (common.symIs(prove, node.app.sym, symbols.add) and node.app.args.len == 2) {
+        if (ac.symIs(node.app.sym, symbols.add) and node.app.args.len == 2) {
             const a = try prove.ctx.arena.dupe(TermId, prove.pool.args(node.app));
             if (arithNumeral(prove, a[0], symbols)) |v| {
                 offset += v;
@@ -2445,12 +2445,12 @@ fn parseArithTower(prove: *Prove, t: TermId, symbols: presburger_mod.Symbols) Er
 }
 
 /// Signed numeral value of `t` (`succ^n(ZERO)`→+n, `prev^n(ZERO)`→−n, `neg` flips), else null.
-fn arithNumeral(prove: *Prove, t: TermId, symbols: presburger_mod.Symbols) ?i128 {
+fn arithNumeral(prove: *Prove, t: TermId, symbols: Symbols) ?i128 {
     var cur = t;
     var sign: i128 = 1;
     while (true) {
         const node = prove.pool.get(cur);
-        if (node == .app and common.symIs(prove, node.app.sym, symbols.neg) and node.app.args.len == 1) {
+        if (node == .app and ac.symIs(node.app.sym, symbols.neg) and node.app.args.len == 1) {
             sign = -sign;
             cur = prove.pool.args(node.app)[0];
             continue;
@@ -2460,12 +2460,12 @@ fn arithNumeral(prove: *Prove, t: TermId, symbols: presburger_mod.Symbols) ?i128
     var mag: i128 = 0;
     while (true) {
         const node = prove.pool.get(cur);
-        if (node == .app and common.symIs(prove, node.app.sym, symbols.succ) and node.app.args.len == 1) {
+        if (node == .app and ac.symIs(node.app.sym, symbols.succ) and node.app.args.len == 1) {
             mag += 1;
             cur = prove.pool.args(node.app)[0];
             continue;
         }
-        if (node == .app and common.symIs(prove, node.app.sym, symbols.prev) and node.app.args.len == 1) {
+        if (node == .app and ac.symIs(node.app.sym, symbols.prev) and node.app.args.len == 1) {
             mag -= 1;
             cur = prove.pool.args(node.app)[0];
             continue;
@@ -2473,17 +2473,17 @@ fn arithNumeral(prove: *Prove, t: TermId, symbols: presburger_mod.Symbols) ?i128
         break;
     }
     const node = prove.pool.get(cur);
-    if (node == .app and common.symIs(prove, node.app.sym, symbols.zero) and node.app.args.len == 0) return sign * mag;
+    if (node == .app and ac.symIs(node.app.sym, symbols.zero) and node.app.args.len == 0) return sign * mag;
     return null;
 }
 
 /// A tower leaf: an fvar, an opaque atom, or `neg` of a leaf (so inverse pairs can cancel).
-fn isArithLeaf(prove: *Prove, t0: TermId, symbols: presburger_mod.Symbols) bool {
+fn isArithLeaf(prove: *Prove, t0: TermId, symbols: Symbols) bool {
     // linear neg-peel recursion → loop.
     var t = t0;
     const node = while (true) {
         const n = prove.pool.get(t);
-        if (n == .app and common.symIs(prove, n.app.sym, symbols.neg) and n.app.args.len == 1) {
+        if (n == .app and ac.symIs(n.app.sym, symbols.neg) and n.app.args.len == 1) {
             t = prove.pool.args(n.app)[0];
             continue;
         }
@@ -2492,13 +2492,13 @@ fn isArithLeaf(prove: *Prove, t0: TermId, symbols: presburger_mod.Symbols) bool 
     if (node == .fvar) return true;
     if (node != .app) return false;
     const sym = node.app.sym;
-    return !(common.symIs(prove, sym, symbols.add) or common.symIs(prove, sym, symbols.succ) or
-        common.symIs(prove, sym, symbols.prev) or common.symIs(prove, sym, symbols.neg) or
-        common.symIs(prove, sym, symbols.sub) or common.symIs(prove, sym, symbols.zero) or common.symIs(prove, sym, symbols.one));
+    return !(ac.symIs(sym, symbols.add) or ac.symIs(sym, symbols.succ) or
+        ac.symIs(sym, symbols.prev) or ac.symIs(sym, symbols.neg) or
+        ac.symIs(sym, symbols.sub) or ac.symIs(sym, symbols.zero) or ac.symIs(sym, symbols.one));
 }
 
 /// Right-nested `add`-comb of `leaves` (ZERO for empty).
-fn buildArithComb(prove: *Prove, leaves: []const TermId, symbols: presburger_mod.Symbols) Error!?TermId {
+fn buildArithComb(prove: *Prove, leaves: []const TermId, symbols: Symbols) Error!?TermId {
     if (leaves.len == 0) {
         const zero = symbols.zero orelse return null;
         return try prove.pool.addApp(.app, zero, &.{});
@@ -2516,22 +2516,22 @@ fn buildArithComb(prove: *Prove, leaves: []const TermId, symbols: presburger_mod
 /// Append the well-known ℤ elimination rules (sub/neg/prev folding toward an add-of-atoms
 /// form) as hardcoded shapes cited by name, gated on the theory providing each symbol. These
 /// let an additive goal over sub/neg normalize before the AC sort (e.g. `add(a, sub(b,a))`).
-pub fn pushAdditiveElim(prove: *Prove, rules: *std.ArrayList(simplify_mod.Rule), cites: *std.ArrayList(EqCert.RuleCite), symbols: presburger_mod.Symbols, qualifier: StrId, loc: u32) Error!void {
+pub fn pushAdditiveElim(prove: *Prove, rules: *std.ArrayList(rewrite.Rule), cites: *std.ArrayList(EqCert.RuleCite), symbols: Symbols, qualifier: StrId, loc: u32) Error!void {
     const add = symbols.add orelse return;
     const sort: term.SortId = @enumFromInt(@intFromEnum(prove.ctx.interner.symResult(@enumFromInt(@intFromEnum(add)))));
     // succ FLOAT: addSuccLeft add(succ(a),b)=succ(add(a,b)); addSuccRight add(a,succ(b))=
     // succ(add(a,b)) — lift succ to the tower prefix so the tower parse is clean.
     if (symbols.succ) |succ| {
         {
-            const a = try common.freshACFvar(prove, sort);
-            const bb = try common.freshACFvar(prove, sort);
+            const a = try ac.freshACFvar(prove, sort);
+            const bb = try ac.freshACFvar(prove, sort);
             const lhs = try prove.pool.addApp(.app, add, &.{ try prove.pool.addApp(.app, succ, &.{a.t}), bb.t });
             const rhs = try prove.pool.addApp(.app, succ, &.{try prove.pool.addApp(.app, add, &.{ a.t, bb.t })});
             try pushQualified(prove, rules, cites, &.{ .{ .fvar = a.name, .sort = sort }, .{ .fvar = bb.name, .sort = sort } }, lhs, rhs, "addSuccLeft", qualifier, loc);
         }
         {
-            const a = try common.freshACFvar(prove, sort);
-            const bb = try common.freshACFvar(prove, sort);
+            const a = try ac.freshACFvar(prove, sort);
+            const bb = try ac.freshACFvar(prove, sort);
             const lhs = try prove.pool.addApp(.app, add, &.{ a.t, try prove.pool.addApp(.app, succ, &.{bb.t}) });
             const rhs = try prove.pool.addApp(.app, succ, &.{try prove.pool.addApp(.app, add, &.{ a.t, bb.t })});
             try pushQualified(prove, rules, cites, &.{ .{ .fvar = a.name, .sort = sort }, .{ .fvar = bb.name, .sort = sort } }, lhs, rhs, "addSuccRight", qualifier, loc);
@@ -2541,12 +2541,12 @@ pub fn pushAdditiveElim(prove: *Prove, rules: *std.ArrayList(simplify_mod.Rule),
     if (symbols.zero) |zero| {
         const z = try prove.pool.addApp(.app, zero, &.{});
         {
-            const bb = try common.freshACFvar(prove, sort);
+            const bb = try ac.freshACFvar(prove, sort);
             const lhs = try prove.pool.addApp(.app, add, &.{ z, bb.t });
             try pushQualified(prove, rules, cites, &.{.{ .fvar = bb.name, .sort = sort }}, lhs, bb.t, "addZeroLeft", qualifier, loc);
         }
         {
-            const a = try common.freshACFvar(prove, sort);
+            const a = try ac.freshACFvar(prove, sort);
             const lhs = try prove.pool.addApp(.app, add, &.{ a.t, z });
             try pushQualified(prove, rules, cites, &.{.{ .fvar = a.name, .sort = sort }}, lhs, a.t, "addZeroRight", qualifier, loc);
         }
@@ -2564,13 +2564,13 @@ pub fn pushAdditiveElim(prove: *Prove, rules: *std.ArrayList(simplify_mod.Rule),
     if (symbols.mul) |mul| if (symbols.zero) |zero| if (symbols.succ) |succ| {
         const z = try prove.pool.addApp(.app, zero, &.{});
         {
-            const bb = try common.freshACFvar(prove, sort);
+            const bb = try ac.freshACFvar(prove, sort);
             const lhs = try prove.pool.addApp(.app, mul, &.{ z, bb.t });
             try pushQualified(prove, rules, cites, &.{.{ .fvar = bb.name, .sort = sort }}, lhs, z, "mulZeroLeft", qualifier, loc);
         }
         {
-            const a = try common.freshACFvar(prove, sort);
-            const bb = try common.freshACFvar(prove, sort);
+            const a = try ac.freshACFvar(prove, sort);
+            const bb = try ac.freshACFvar(prove, sort);
             const lhs = try prove.pool.addApp(.app, mul, &.{ try prove.pool.addApp(.app, succ, &.{a.t}), bb.t });
             const rhs = try prove.pool.addApp(.app, add, &.{ try prove.pool.addApp(.app, mul, &.{ a.t, bb.t }), bb.t });
             try pushQualified(prove, rules, cites, &.{ .{ .fvar = a.name, .sort = sort }, .{ .fvar = bb.name, .sort = sort } }, lhs, rhs, "mulSuccLeft", qualifier, loc);
@@ -2578,13 +2578,13 @@ pub fn pushAdditiveElim(prove: *Prove, rules: *std.ArrayList(simplify_mod.Rule),
         // mulZeroRight mul(n,ZERO)=ZERO; mulSuccRight mul(a,succ(b))=add(mul(a,b),a) — the right
         // mirrors, so a numeral on EITHER factor expands.
         {
-            const a = try common.freshACFvar(prove, sort);
+            const a = try ac.freshACFvar(prove, sort);
             const lhs = try prove.pool.addApp(.app, mul, &.{ a.t, z });
             try pushQualified(prove, rules, cites, &.{.{ .fvar = a.name, .sort = sort }}, lhs, z, "mulZeroRight", qualifier, loc);
         }
         {
-            const a = try common.freshACFvar(prove, sort);
-            const bb = try common.freshACFvar(prove, sort);
+            const a = try ac.freshACFvar(prove, sort);
+            const bb = try ac.freshACFvar(prove, sort);
             const lhs = try prove.pool.addApp(.app, mul, &.{ a.t, try prove.pool.addApp(.app, succ, &.{bb.t}) });
             const rhs = try prove.pool.addApp(.app, add, &.{ try prove.pool.addApp(.app, mul, &.{ a.t, bb.t }), a.t });
             try pushQualified(prove, rules, cites, &.{ .{ .fvar = a.name, .sort = sort }, .{ .fvar = bb.name, .sort = sort } }, lhs, rhs, "mulSuccRight", qualifier, loc);
@@ -2592,8 +2592,8 @@ pub fn pushAdditiveElim(prove: *Prove, rules: *std.ArrayList(simplify_mod.Rule),
     };
     // definitionOfSubtraction: sub(a,b) = add(a, neg(b))
     if (symbols.sub != null and symbols.neg != null) {
-        const a = try common.freshACFvar(prove, sort);
-        const bb = try common.freshACFvar(prove, sort);
+        const a = try ac.freshACFvar(prove, sort);
+        const bb = try ac.freshACFvar(prove, sort);
         const lhs = try prove.pool.addApp(.app, symbols.sub.?, &.{ a.t, bb.t });
         const rhs = try prove.pool.addApp(.app, add, &.{ a.t, try prove.pool.addApp(.app, symbols.neg.?, &.{bb.t}) });
         try pushQualified(prove, rules, cites, &.{ .{ .fvar = a.name, .sort = sort }, .{ .fvar = bb.name, .sort = sort } }, lhs, rhs, "definitionOfSubtraction", qualifier, loc);
@@ -2601,15 +2601,15 @@ pub fn pushAdditiveElim(prove: *Prove, rules: *std.ArrayList(simplify_mod.Rule),
     if (symbols.neg) |neg| {
         // negAdd: neg(add(a,b)) = add(neg(a), neg(b))
         {
-            const a = try common.freshACFvar(prove, sort);
-            const bb = try common.freshACFvar(prove, sort);
+            const a = try ac.freshACFvar(prove, sort);
+            const bb = try ac.freshACFvar(prove, sort);
             const lhs = try prove.pool.addApp(.app, neg, &.{try prove.pool.addApp(.app, add, &.{ a.t, bb.t })});
             const rhs = try prove.pool.addApp(.app, add, &.{ try prove.pool.addApp(.app, neg, &.{a.t}), try prove.pool.addApp(.app, neg, &.{bb.t}) });
             try pushQualified(prove, rules, cites, &.{ .{ .fvar = a.name, .sort = sort }, .{ .fvar = bb.name, .sort = sort } }, lhs, rhs, "negAdd", qualifier, loc);
         }
         // negNeg: neg(neg(a)) = a
         {
-            const a = try common.freshACFvar(prove, sort);
+            const a = try ac.freshACFvar(prove, sort);
             const lhs = try prove.pool.addApp(.app, neg, &.{try prove.pool.addApp(.app, neg, &.{a.t})});
             try pushQualified(prove, rules, cites, &.{.{ .fvar = a.name, .sort = sort }}, lhs, a.t, "negNeg", qualifier, loc);
         }
@@ -2618,12 +2618,12 @@ pub fn pushAdditiveElim(prove: *Prove, rules: *std.ArrayList(simplify_mod.Rule),
         if (symbols.zero) |zero| {
             const z = try prove.pool.addApp(.app, zero, &.{});
             {
-                const a = try common.freshACFvar(prove, sort);
+                const a = try ac.freshACFvar(prove, sort);
                 const lhs = try prove.pool.addApp(.app, add, &.{ a.t, try prove.pool.addApp(.app, neg, &.{a.t}) });
                 try pushQualified(prove, rules, cites, &.{.{ .fvar = a.name, .sort = sort }}, lhs, z, "addNegRight", qualifier, loc);
             }
             {
-                const a = try common.freshACFvar(prove, sort);
+                const a = try ac.freshACFvar(prove, sort);
                 const lhs = try prove.pool.addApp(.app, add, &.{ try prove.pool.addApp(.app, neg, &.{a.t}), a.t });
                 try pushQualified(prove, rules, cites, &.{.{ .fvar = a.name, .sort = sort }}, lhs, z, "addNegLeft", qualifier, loc);
             }
@@ -2637,13 +2637,13 @@ pub fn pushAdditiveElim(prove: *Prove, rules: *std.ArrayList(simplify_mod.Rule),
         // through succ/prev toward the leaves so a `neg`-of-numeral becomes a prev/succ tower.
         if (symbols.succ) |succ| if (symbols.prev) |prev| {
             {
-                const a = try common.freshACFvar(prove, sort);
+                const a = try ac.freshACFvar(prove, sort);
                 const lhs = try prove.pool.addApp(.app, neg, &.{try prove.pool.addApp(.app, succ, &.{a.t})});
                 const rhs = try prove.pool.addApp(.app, prev, &.{try prove.pool.addApp(.app, neg, &.{a.t})});
                 try pushQualified(prove, rules, cites, &.{.{ .fvar = a.name, .sort = sort }}, lhs, rhs, "negSucc", qualifier, loc);
             }
             {
-                const a = try common.freshACFvar(prove, sort);
+                const a = try ac.freshACFvar(prove, sort);
                 const lhs = try prove.pool.addApp(.app, neg, &.{try prove.pool.addApp(.app, prev, &.{a.t})});
                 const rhs = try prove.pool.addApp(.app, succ, &.{try prove.pool.addApp(.app, neg, &.{a.t})});
                 try pushQualified(prove, rules, cites, &.{.{ .fvar = a.name, .sort = sort }}, lhs, rhs, "negPrev", qualifier, loc);
@@ -2655,25 +2655,25 @@ pub fn pushAdditiveElim(prove: *Prove, rules: *std.ArrayList(simplify_mod.Rule),
     // lift prev to the tower prefix (mirror of the succ float) so the tower parse is clean.
     if (symbols.prev) |prev| if (symbols.succ) |succ| {
         {
-            const a = try common.freshACFvar(prove, sort);
+            const a = try ac.freshACFvar(prove, sort);
             const lhs = try prove.pool.addApp(.app, prev, &.{try prove.pool.addApp(.app, succ, &.{a.t})});
             try pushQualified(prove, rules, cites, &.{.{ .fvar = a.name, .sort = sort }}, lhs, a.t, "prevSucc", qualifier, loc);
         }
         {
-            const a = try common.freshACFvar(prove, sort);
+            const a = try ac.freshACFvar(prove, sort);
             const lhs = try prove.pool.addApp(.app, succ, &.{try prove.pool.addApp(.app, prev, &.{a.t})});
             try pushQualified(prove, rules, cites, &.{.{ .fvar = a.name, .sort = sort }}, lhs, a.t, "succPrev", qualifier, loc);
         }
         {
-            const a = try common.freshACFvar(prove, sort);
-            const bb = try common.freshACFvar(prove, sort);
+            const a = try ac.freshACFvar(prove, sort);
+            const bb = try ac.freshACFvar(prove, sort);
             const lhs = try prove.pool.addApp(.app, add, &.{ try prove.pool.addApp(.app, prev, &.{a.t}), bb.t });
             const rhs = try prove.pool.addApp(.app, prev, &.{try prove.pool.addApp(.app, add, &.{ a.t, bb.t })});
             try pushQualified(prove, rules, cites, &.{ .{ .fvar = a.name, .sort = sort }, .{ .fvar = bb.name, .sort = sort } }, lhs, rhs, "addPrevLeft", qualifier, loc);
         }
         {
-            const a = try common.freshACFvar(prove, sort);
-            const bb = try common.freshACFvar(prove, sort);
+            const a = try ac.freshACFvar(prove, sort);
+            const bb = try ac.freshACFvar(prove, sort);
             const lhs = try prove.pool.addApp(.app, add, &.{ a.t, try prove.pool.addApp(.app, prev, &.{bb.t}) });
             const rhs = try prove.pool.addApp(.app, prev, &.{try prove.pool.addApp(.app, add, &.{ a.t, bb.t })});
             try pushQualified(prove, rules, cites, &.{ .{ .fvar = a.name, .sort = sort }, .{ .fvar = bb.name, .sort = sort } }, lhs, rhs, "addPrevRight", qualifier, loc);
@@ -2683,7 +2683,7 @@ pub fn pushAdditiveElim(prove: *Prove, rules: *std.ArrayList(simplify_mod.Rule),
 
 /// `pushHardcoded` but with the theory-selector `qualifier` stamped onto the cite (so
 /// `arithmetic(theory)` resolves the lemma in the theory's namespace).
-fn pushQualified(prove: *Prove, rules: *std.ArrayList(simplify_mod.Rule), cites: *std.ArrayList(EqCert.RuleCite), binders_in: []const simplify_mod.Binder, lhs: TermId, rhs: TermId, name_text: []const u8, qualifier: StrId, loc: u32) Error!void {
+fn pushQualified(prove: *Prove, rules: *std.ArrayList(rewrite.Rule), cites: *std.ArrayList(EqCert.RuleCite), binders_in: []const rewrite.Binder, lhs: TermId, rhs: TermId, name_text: []const u8, qualifier: StrId, loc: u32) Error!void {
     // Skip a rule whose lemma this file does NOT declare (unqualified only): pushing it would
     // let `normalize` cite an absent lemma, failing the generated proof. A qualified cite
     // (theory selector) targets another namespace we can't check here, so it's kept.
@@ -2693,7 +2693,7 @@ fn pushQualified(prove: *Prove, rules: *std.ArrayList(simplify_mod.Rule), cites:
         if (prove.ctx.declOf(fid, name) == null) return;
     }
     // dupe onto the arena — callers pass inline `&.{…}` literals (stack temporaries).
-    const binders = try prove.ctx.arena.dupe(simplify_mod.Binder, binders_in);
+    const binders = try prove.ctx.arena.dupe(rewrite.Binder, binders_in);
     var formula = try prove.pool.add(.{ .eq = .{ .lhs = lhs, .rhs = rhs } });
     var i = binders.len;
     while (i > 0) {
@@ -2708,7 +2708,7 @@ fn pushQualified(prove: *Prove, rules: *std.ArrayList(simplify_mod.Rule), cites:
 /// Push each equation premise `P_l = P_r` as a ground rewrite rule (`P_l -> P_r`) with its
 /// citation (LOCAL restated-hypothesis label / GLOBAL fact cite). A prove-embedding rule
 /// (`P_l` a subterm of `P_r`) is skipped — it would loop the normalizer.
-fn pushPremiseRules(prove: *Prove, rules: *std.ArrayList(simplify_mod.Rule), cites: *std.ArrayList(EqCert.RuleCite), prems: []const ArithPremise) Error!void {
+fn pushPremiseRules(prove: *Prove, rules: *std.ArrayList(rewrite.Rule), cites: *std.ArrayList(EqCert.RuleCite), prems: []const ArithPremise) Error!void {
     for (prems) |p| {
         const pn = prove.pool.get(p.formula);
         if (pn != .eq) continue;
@@ -2739,7 +2739,7 @@ fn containsSubterm(prove: *Prove, hay: TermId, needle: TermId) bool {
 /// `add(P_l, s) = add(P_r, t)` is a pure additive identity. Emit that identity, rewrite the
 /// premise (P_l→P_r), then cancel with addCancelLeft. Every step kernel-checked. Only fires
 /// for a LOCAL/GLOBAL premise cited at this scope.
-fn arithPremiseCombination(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), s: TermId, t: TermId, prems: []const ArithPremise, symbols: presburger_mod.Symbols) Error!bool {
+fn arithPremiseCombination(prove: *Prove, cert: *ArithCert, block: *std.ArrayList(ast.Step), s: TermId, t: TermId, prems: []const ArithPremise, symbols: Symbols) Error!bool {
     const add = symbols.add orelse return false;
     for (prems) |p| {
         const pn = prove.pool.get(p.formula);
@@ -2786,7 +2786,7 @@ fn arithLastLabel(prove: *Prove, steps: []const ast.Step) Error!StrId {
 /// it against the resolved fact, and apply_at opens it at the arguments). The shapes match
 /// the std peano/integer statements: a mis-shape simply fails the generated ProveTask's
 /// kernel check. `null` when a needed symbol is absent.
-fn arithLemmaFormula(prove: *Prove, name: []const u8, symbols: presburger_mod.Symbols) Error!?TermId {
+fn arithLemmaFormula(prove: *Prove, name: []const u8, symbols: Symbols) Error!?TermId {
     const sort = symbols.nat orelse return null;
     const mkfv = struct {
         fn f(p: *Prove, s: term.SortId, hint: []const u8) Error!ArithVar {
@@ -2841,8 +2841,8 @@ fn arithLemmaFormula(prove: *Prove, name: []const u8, symbols: presburger_mod.Sy
         const cc = try mkfv(prove, sort, "c");
         const ab = try prove.pool.addApp(.pred, less_than, &.{ a.t, bb.t });
         const bc = try prove.pool.addApp(.pred, less_than, &.{ bb.t, cc.t });
-        const ac = try prove.pool.addApp(.pred, less_than, &.{ a.t, cc.t });
-        const body = try prove.pool.add(.{ .bin = .{ .op = .implies, .lhs = ab, .rhs = try prove.pool.add(.{ .bin = .{ .op = .implies, .lhs = bc, .rhs = ac } }) } });
+        const a_lt_c = try prove.pool.addApp(.pred, less_than, &.{ a.t, cc.t });
+        const body = try prove.pool.add(.{ .bin = .{ .op = .implies, .lhs = ab, .rhs = try prove.pool.add(.{ .bin = .{ .op = .implies, .lhs = bc, .rhs = a_lt_c } }) } });
         return try closeForallChain(prove, body, &.{ a, bb, cc }, sort);
     }
     if (std.mem.eql(u8, name, "lessThanIrreflexive")) {
@@ -2916,7 +2916,7 @@ test "mixedCertShape: a bare equation/order atom is in scope for the mixed skele
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     var threaded: std.Io.Threaded = .init(arena, .{});
-    const rig = try Polynomial.Rig.init(arena, threaded.io());
+    const rig = try testrig.Rig.init(arena, threaded.io());
     const p = rig.prove;
     const a = try rig.v("a");
     const b = try rig.v("b");
@@ -2935,7 +2935,7 @@ test "mixedCertShape: a QUANTIFIED body is not a skeleton (its binders are peele
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     var threaded: std.Io.Threaded = .init(arena, .{});
-    const rig = try Polynomial.Rig.init(arena, threaded.io());
+    const rig = try testrig.Rig.init(arena, threaded.io());
     const p = rig.prove;
     const a = try rig.v("a");
     const body = try rig.eq(a, a);
@@ -2949,8 +2949,8 @@ test "arithCanon: sort + inverse-cancel both act UNDER the succ tower — succ(a
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     var threaded: std.Io.Threaded = .init(arena, .{});
-    const rig = try Polynomial.Rig.init(arena, threaded.io());
-    const tr = try common.towerRules(rig);
+    const rig = try testrig.Rig.init(arena, threaded.io());
+    const tr = try towerRules(rig);
     const x = try rig.v("x");
     const y = try rig.v("y");
     const d = try rig.v("d");
@@ -2960,4 +2960,62 @@ test "arithCanon: sort + inverse-cancel both act UNDER the succ tower — succ(a
     const rs = (try arithCanon(rig.prove, tr.symbols, tr.rules, pre_rules, tr.assoc, tr.comm, tr.swap, .{ .nf = lhs, .trace = &.{} })).?;
     const rt = (try arithCanon(rig.prove, tr.symbols, tr.rules, pre_rules, tr.assoc, tr.comm, tr.swap, .{ .nf = rhs, .trace = &.{} })).?;
     try testing.expect(rig.prove.pool.alphaEq(rs.nf, rt.nf));
+}
+
+/// The additive normalizer's rule set over the rig's ring + succ, exactly as arithEmitEquation
+/// builds it: the ℤ elimination pre-rules (qualified, so the rig file needn't declare the
+/// lemmas) followed by the add AC triple at assoc/comm/swap.
+const TowerRules = struct { rules: []const rewrite.Rule, assoc: usize, comm: usize, swap: usize, symbols: Symbols };
+
+fn towerRules(rig: testrig.Rig) !TowerRules {
+    const symbols: Symbols = .{ .nat = rig.int, .zero = rig.zero, .succ = rig.succ, .add = rig.add, .neg = rig.neg };
+    var rules: std.ArrayList(rewrite.Rule) = .empty;
+    var cites: std.ArrayList(EqCert.RuleCite) = .empty;
+    try pushAdditiveElim(rig.prove, &rules, &cites, symbols, try rig.ctx.interner.internString("T"), 0);
+    const pre = rules.items.len;
+    try ac.pushACTriple(rig.prove, &rules, &cites, rig.add, rig.int, "addIsAssociative", "addIsCommutative", "addLeftSwap", 0);
+    return .{ .rules = rules.items, .assoc = pre, .comm = pre + 1, .swap = pre + 2, .symbols = symbols };
+}
+
+test "acPlan: a succ-tower root sorts the sum UNDER the tower — succ(add(y, x)) ≡ succ(add(x, y))" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const rig = try testrig.Rig.init(arena, threaded.io());
+    const tr = try towerRules(rig);
+    const x = try rig.v("x");
+    const y = try rig.v("y");
+    const yx = try rig.a1(rig.succ, try rig.a2(rig.add, y, x));
+    const xy = try rig.a1(rig.succ, try rig.a2(rig.add, x, y));
+    const ps = (try ac.acPlan(rig.prove, tr.symbols, tr.rules, tr.assoc, tr.comm, tr.swap, yx)).?;
+    const pt = (try ac.acPlan(rig.prove, tr.symbols, tr.rules, tr.assoc, tr.comm, tr.swap, xy)).?;
+    try testing.expect(rig.prove.pool.alphaEq(ps.sorted, pt.sorted));
+    // exactly one side moved, by ONE commutativity rewrite whose before/after are the whole towers.
+    const moved = if (ps.trace.len > 0) ps else pt;
+    const moved_start = if (ps.trace.len > 0) yx else xy;
+    try testing.expectEqual(@as(usize, 1), moved.trace.len);
+    try testing.expect(rig.prove.pool.alphaEq(moved.trace[0].before, moved_start));
+    try testing.expect(rig.prove.pool.alphaEq(moved.trace[0].after, moved.sorted));
+}
+
+test "cancelInverses: an inverse pair UNDER a succ tower cancels and the tower survives — succ(add(x, add(d, neg(x)))) ≡ succ(d)" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded: std.Io.Threaded = .init(arena, .{});
+    const rig = try testrig.Rig.init(arena, threaded.io());
+    const tr = try towerRules(rig);
+    const x = try rig.v("x");
+    const d = try rig.v("d");
+    const whole = try rig.a1(rig.succ, try rig.a2(rig.add, x, try rig.a2(rig.add, d, try rig.a1(rig.neg, x))));
+    var trace: std.ArrayList(rewrite.Rewrite) = .empty;
+    const out = (try ac.cancelInverses(rig.prove, tr.symbols, tr.rules, tr.comm, tr.swap, whole, &trace)).?;
+    try testing.expect(rig.prove.pool.alphaEq(out, try rig.a1(rig.succ, d)));
+    // the rewrites chain: the first starts at the whole tower, each next at the previous after,
+    // the last lands on the result — every step names the WHOLE term (kernel `rewrite` shape).
+    try testing.expect(trace.items.len > 0);
+    try testing.expect(rig.prove.pool.alphaEq(trace.items[0].before, whole));
+    for (trace.items[1..], 0..) |rw, i| try testing.expect(rig.prove.pool.alphaEq(rw.before, trace.items[i].after));
+    try testing.expect(rig.prove.pool.alphaEq(trace.items[trace.items.len - 1].after, out));
 }

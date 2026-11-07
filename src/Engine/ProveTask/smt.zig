@@ -25,7 +25,8 @@ const Allocator = std.mem.Allocator;
 const term = @import("../../term.zig");
 const TermId = term.TermId;
 const Pool = term.Pool;
-const presburger = @import("presburger.zig");
+const presburger = @import("Accelerants/presburger.zig");
+const Symbols = @import("Accelerants/symbols.zig").Symbols;
 
 pub const atom_limit = 16;
 
@@ -258,7 +259,7 @@ pub const MixedVerdict = union(enum) {
 
 /// Decide whether `goal` follows from `premises` in the combination of
 /// propositional logic and linear arithmetic.
-pub fn decideMixed(arena: Allocator, pool: *Pool, symbols: presburger.Symbols, premises: []const TermId, goal: TermId) Allocator.Error!MixedVerdict {
+pub fn decideMixed(arena: Allocator, pool: *Pool, symbols: Symbols, premises: []const TermId, goal: TermId) Allocator.Error!MixedVerdict {
     var atoms: std.ArrayList(TermId) = .empty;
     for (premises) |p| try collectAtoms(arena, pool, &atoms, p);
     try collectAtoms(arena, pool, &atoms, goal);
@@ -297,7 +298,7 @@ pub fn decideMixed(arena: Allocator, pool: *Pool, symbols: presburger.Symbols, p
 const Mixed = struct {
     arena: Allocator,
     pool: *Pool,
-    symbols: presburger.Symbols,
+    symbols: Symbols,
     atoms: []const TermId,
     is_theory: []const bool,
     premises: []const TermId,
@@ -492,7 +493,7 @@ test "mixed skeleton: theory literals decide, opaque atoms report" {
     const nat: term.SortId = @enumFromInt(1);
     const sym_succ: term.SymId = @enumFromInt(10);
     const sym_less: term.SymId = @enumFromInt(11);
-    const symbols: presburger.Symbols = .{ .nat = nat, .succ = sym_succ, .less_than = sym_less };
+    const symbols: Symbols = .{ .nat = nat, .succ = sym_succ, .less_than = sym_less };
     const p = try r.atom(0);
     const a = try r.pool.add(.{ .fvar = .{ .name = @enumFromInt(1), .sort = nat } });
     const succ_a = try r.pool.addApp(.app, sym_succ, &.{a});

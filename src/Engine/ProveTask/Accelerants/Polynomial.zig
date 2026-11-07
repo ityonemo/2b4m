@@ -9,29 +9,19 @@ const InternPool = @import("../../../InternPool.zig");
 const StrId = InternPool.StrId;
 const term = @import("../../../term.zig");
 const TermId = term.TermId;
-const SortId = term.SortId;
-const kernel = @import("../../../kernel.zig");
 const Engine = @import("../../../Engine.zig");
-const Context = @import("../../../Context.zig");
 const Walk = @import("../Walk.zig");
 const RefScan = @import("../RefScan.zig");
 const Elab = @import("../Elab.zig");
-const Schema = @import("../Schema.zig");
 const Accelerant = @import("../Accelerant.zig");
-const Verify = @import("../../../Verify.zig");
-const EqCert = @import("../EqCert.zig");
-const Polynomial = @import("../Polynomial.zig");
-const simplify_mod = @import("../simplify.zig");
-const presburger_mod = @import("../presburger.zig");
-const smt = @import("../smt.zig");
-const farkas = @import("../farkas.zig");
-const FactKV = @import("../../../FactKV.zig");
+const polycanon = @import("polycanon.zig");
 const FetchTask = @import("../../../Engine/FetchTask.zig");
 const Prove = @import("../Prove.zig");
 const Error = Prove.Error;
 const tokName = Prove.tokName;
 const testing = std.testing;
 const common = @import("common.zig");
+const testrig = @import("testrig.zig");
 
 /// the `_quantified` variant: a `forall …; s = t` goal, peeled first
 quantified: bool,
@@ -119,7 +109,7 @@ fn buildPolynomial(prove: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw
     // read the ring operators off the goal (by well-known head NAME — inspecting the goal, not
     // a scope lookup). `add`/`mul` are required; the rest are optional (present iff the goal
     // has them). The theory selector's qualifier is stamped into every emitted cite.
-    const goal_ops = (try common.readPolyOps(prove, eq_goal_raw)) orelse
+    const goal_ops = (try polycanon.readPolyOps(prove, eq_goal_raw)) orelse
         return prove.fail(c.rule.start, "polynomial: the goal has no add/mul structure", .{});
     // `--fast` declines to EMIT the certificate; the CANONICALIZATION DECISION still runs.
     // Admitting here accepted any add/mul-shaped equation, true or not. `completePolyOps`
@@ -131,7 +121,7 @@ fn buildPolynomial(prove: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw
     // have demanded these already; reaching here parked means it did not.
     const ops = (try completePolyOps(prove, c.schema, goal_ops)) orelse return null;
     const qualifier: StrId = if (c.schema) |s| s.name else .none;
-    const pr = try Polynomial.polyRules(prove, ops, qualifier, c.rule.start);
+    const pr = try polycanon.polyRules(prove, ops, qualifier, c.rule.start);
 
     // abstract free caller-local fvars (an enclosing `fix`) into value params, then canonicalize
     // in PARAM space so the trace + schema body speak `p1, p2, …`. Eigenvariables (the peeled ∀
@@ -143,9 +133,9 @@ fn buildPolynomial(prove: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw
     const s0 = gn.lhs;
     const t0 = gn.rhs;
 
-    const rs = (try Polynomial.polyCanon(prove, pr, s0)) orelse
+    const rs = (try polycanon.polyCanon(prove, pr, s0)) orelse
         return prove.fail(c.rule.start, "polynomial: could not canonicalize the left side", .{});
-    const rt = (try Polynomial.polyCanon(prove, pr, t0)) orelse
+    const rt = (try polycanon.polyCanon(prove, pr, t0)) orelse
         return prove.fail(c.rule.start, "polynomial: could not canonicalize the right side", .{});
     if (!prove.pool.alphaEq(rs.nf, rt.nf)) {
         return prove.fail(c.rule.start, "polynomial: sides expand differently: '{s}' vs '{s}'", .{
@@ -172,7 +162,7 @@ fn buildPolynomial(prove: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw
 /// (the selector's import, else this proof's); an unfetched symbol racks its FetchTask and
 /// returns null with `producer_blocker` set (the step suspends; the producer re-runs). A
 /// missing symbol surfaces as that FetchTask's "reference not found" at the step.
-fn completePolyOps(prove: *Prove, selector: ?lexer.Token, goal: Polynomial.Ops) Error!?Polynomial.Ops {
+fn completePolyOps(prove: *Prove, selector: ?lexer.Token, goal: polycanon.Ops) Error!?polycanon.Ops {
     var ops = goal;
     const need_zero = ops.zero == null and (ops.neg != null or ops.sub != null);
     const need_neg = ops.neg == null and ops.sub != null;
@@ -237,10 +227,10 @@ test "completePolyOps: a goal with neg but no ZERO demands ZERO from the theory 
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     var threaded: std.Io.Threaded = .init(arena, .{});
-    const rig = try Polynomial.Rig.init(arena, threaded.io());
+    const rig = try testrig.Rig.init(arena, threaded.io());
     const e = try rig.v("e");
     const goal = try rig.eq(try rig.a2(rig.add, e, try rig.a1(rig.neg, e)), e);
-    var ops = (try common.readPolyOps(rig.prove, goal)).?;
+    var ops = (try polycanon.readPolyOps(rig.prove, goal)).?;
     try testing.expect(ops.zero == null);
     // ZERO is already fetched in the rig's namespace → completes immediately, no blocker.
     const done = (try completePolyOps(rig.prove, null, ops)).?;
@@ -248,7 +238,7 @@ test "completePolyOps: a goal with neg but no ZERO demands ZERO from the theory 
     try testing.expect(rig.prove.producer_blocker == null);
     // a goal with NO neg never asks for ZERO (the vocabulary the goal implies is all we demand).
     const plain = try rig.eq(try rig.a2(rig.add, e, e), try rig.a2(rig.add, e, e));
-    ops = (try common.readPolyOps(rig.prove, plain)).?;
+    ops = (try polycanon.readPolyOps(rig.prove, plain)).?;
     const done2 = (try completePolyOps(rig.prove, null, ops)).?;
     try testing.expect(done2.zero == null);
 }
