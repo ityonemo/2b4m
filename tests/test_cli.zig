@@ -359,12 +359,12 @@ pub fn addTests(
     // congruence (union-find + BFS, emits a rewrite/symmetry certificate).
     // Positive (transitivity, congruence, combined); negative (no path).
     ctx.okSilent(&.{ "check", "tests/cases/namespaces/imports/chain.b4m" });
-    ctx.fail(&.{ "check", "tests/cases/tactics/chain/chain_bad.b4m" }, "tests/cases/tactics/chain/chain_bad.b4m:11:21: error: chain: cannot connect 'a' to 'z' from the cited equations\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/chain/chain_bad.b4m" }, "tests/cases/tactics/chain/chain_bad.b4m:15:12: error: chain: cannot connect 'a' to 'z' from the cited equations\n");
     // over-args (∀ prefix exhausted), extra hyp with no antecedent, and a schema
     // (redirect to instantiate) each fail cleanly.
-    ctx.fail(&.{ "check", "tests/cases/tactics/specialize/specialize_overargs_bad.b4m" }, "tests/cases/tactics/specialize/specialize_overargs_bad.b4m:7:23: error: specialize: head is not universally quantified enough for 2 argument(s)\n");
-    ctx.fail(&.{ "check", "tests/cases/tactics/specialize/specialize_nohyp_bad.b4m" }, "tests/cases/tactics/specialize/specialize_nohyp_bad.b4m:12:50: error: schema instance 'p(ZERO)' has no antecedent left for this premise\n");
-    ctx.fail(&.{ "check", "tests/cases/tactics/specialize/specialize_schema_bad.b4m" }, "tests/cases/tactics/specialize/specialize_schema_bad.b4m:7:45: error: 'sch' is a schema; use `[using instantiation sch(...)]`, not a fact citation\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/specialize/specialize_overargs_bad.b4m" }, "tests/cases/tactics/specialize/specialize_overargs_bad.b4m:9:12: error: specialize: head is not universally quantified enough for 2 argument(s)\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/specialize/specialize_nohyp_bad.b4m" }, "tests/cases/tactics/specialize/specialize_nohyp_bad.b4m:16:39: error: schema instance 'p(ZERO)' has no antecedent left for this premise\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/specialize/specialize_schema_bad.b4m" }, "tests/cases/tactics/specialize/specialize_schema_bad.b4m:9:23: error: 'sch' is a schema; use `[using instantiation sch(...)]`, not a fact citation\n");
 
     // the outline fixture is itself a valid proof
     ctx.okSilent(&.{ "check", "tests/cases/cli/outline.b4m" });
