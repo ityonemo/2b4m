@@ -846,8 +846,8 @@ fn settleMisses(self: *Prove, e: *Elab, kb: kernel.BlockId) Error!void {
         // `lowerJustification` — by which point `known` may already teach the guard from a
         // step in scope. The original code only ever SETTLED a miss under a model transfer
         // and otherwise went straight to the diagnostic, so a guard proved two steps above
-        // was reported as unproved: the symptom written up in SIMPLIFY-ISSUES.md, where a
-        // `simplify` owed `less_or_equal(j, i)` that an earlier step had proved.
+        // was reported as unproved: a `simplify` owed `less_or_equal(j, i)` that an earlier
+        // step had proved.
         //
         // This is a pure RE-CHECK against the same visibility rule `requireKnown` uses
         // (`Known.lookup`'s ancestor-or-self test), so it discharges nothing that was not
