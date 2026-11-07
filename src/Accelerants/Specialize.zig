@@ -240,7 +240,7 @@ pub fn produceSpecialize(site: *Site, w: *const Walk, e: *Elab, goal: TermId, c:
     // antecedent #0 and a DECLARED head's does not, yet a local step that `[by cite]`s a fact
     // has exactly the fact's formula — so without this bit the two flavours hash alike and
     // `registerDecl`'s keep-first lets whichever theorem runs second instantiate the OTHER
-    // flavour's body against its own premise list (drafts/schema-instance-crosstalk/).
+    // flavour's body against its own premise list (tests/cases/schema/instance_crosstalk/).
     const flavour: u64 = if (head_local) 0xA5A5A5A5A5A5A5A5 else 0;
     const hash = Schema.termHash(site.ctx.interner, site.pool, head_formula) ^ (@as(u64, @intCast(nargs)) *% 0x9E3779B97F4A7C15) ^ flavour;
     const name = try b.intern(try std.fmt.allocPrint(site.ctx.arena, "specialize{{{x}}}", .{hash}));

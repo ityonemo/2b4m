@@ -2633,8 +2633,7 @@ fn withGuardPremises(self: *Prove, kb: kernel.BlockId, loc: u32, instance: TermI
         // with the guard in position 1. Walking the first k antecedents as guards then tries
         // to discharge the HEAD and fails ("cannot discharge the guard premise", or a premise
         // mismatch downstream). Instead, walk the whole chain and at each antecedent take the
-        // next caller ref when it MATCHES, else synthesize a discharge. (drafts/
-        // guard-relativization-bug/)
+        // next caller ref when it MATCHES, else synthesize a discharge.
         var gf = instance;
         var pi: usize = 0;
         for (0..total) |i| {
@@ -2868,7 +2867,7 @@ fn wrapObligations(self: *Prove, b: *Accelerants.Builder, decl: ast.Decl, obls: 
 /// every step it licenses was already derivable — the kernel re-checks each `and_lhs`/`and_rhs`
 /// it emits. What the engine does NOT yet check is the converse direction: a model may FORGET
 /// to overload a guard predicate, and nothing here detects that. Those guarantees are future
-/// work (see drafts/normality-as-a-model/).
+/// work (probed 2026-10-15 and NOT adopted: a schema param cannot be a model target).
 fn projectBlockGuard(self: *Prove, kb: kernel.BlockId, bref: kernel.BRef, goal: TermId) Error!?kernel.Justification {
     const b = self.low_blocks.items[@intFromEnum(bref.id)];
     const whole = switch (b.kind) {
@@ -3175,7 +3174,7 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
             // Without this a source theory can only be modeled onto a sort whose base is
             // UNIVERSAL, which is why `std/subgroup.b4m` would not transfer onto `Perm`
             // (= `Fn where invertible`): `Sub = Grp where inSubgroup` has one qualifier,
-            // `Perm where inAlternating` has two. See drafts/normality-as-a-model/.
+            // `Perm where inAlternating` has two.
             if (try self.projectBlockGuard(kb, bref, goal)) |j| return j;
             return .{ .hypothesis = bref };
         },

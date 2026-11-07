@@ -449,7 +449,7 @@ pub fn addTests(
     // (total - prems.len) antecedents as guards tried to discharge the HEAD, and NO guarded
     // model in the corpus could transfer such a theorem (which is nearly every inductive ℤ
     // proof). `withGuardPremises` now matches each antecedent by POSITION: take the next cited
-    // ref when it matches, else synthesize a discharge. drafts/guard-relativization-bug/.
+    // ref when it matches, else synthesize a discharge.
     ctx.okSilent(&.{ "check", "tests/cases/model/guarded/model_guarded_local_head_specialize.b4m" });
 
     // And a guarded model transferring a proof that restates an UNPACK block's opened body with
@@ -461,7 +461,7 @@ pub fn addTests(
     // A schema-arg lambda binding two DIFFERENT sorts (`fun i: Nat, v: Q => …`). The binder
     // grammar forced one sort for the whole list, so a spec over two sorts had no lambda form
     // — only instantiation at a bare predicate name, which forces pinning the varying
-    // arguments as file-scope nullary funcs. drafts/mixed-sort-schema-lambda/.
+    // arguments as file-scope nullary funcs.
     ctx.okSilent(&.{ "check", "tests/cases/schema/schema_lambda_mixed_sorts.b4m" });
 
     // PREDICATED SORT `sort H = G where inH` — binder positions: ∀/∃
@@ -840,7 +840,7 @@ pub fn addTests(
     ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/extensionality/extensionality_false_fast.b4m" }, "tests/cases/tactics/extensionality/extensionality_false_fast.b4m:15:12: error: extensionality: could not close the pointwise obligation propositionally (is the identity true?)\n");
     ctx.fail(&.{ "check", "tests/cases/tactics/extensionality/extensionality_false_fast.b4m" }, "tests/cases/tactics/extensionality/extensionality_false_fast.b4m:15:12: error: extensionality: could not close the pointwise obligation propositionally (is the identity true?)\n");
 
-    // Swept across all 17 trustable words (drafts/fast-soundness/README.md): a word must not
+    // Swept across all 17 trustable words: a word must not
     // ADMIT a goal the strict path REFUTES. (Distinct from the legitimate case where strict
     // decides the goal TRUE but can build no certificate — `--fast` admits that, by design.)
     //
