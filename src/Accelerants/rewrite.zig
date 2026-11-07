@@ -8,9 +8,9 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const InternPool = @import("../../../InternPool.zig");
+const InternPool = @import("../InternPool.zig");
 const StrId = InternPool.StrId;
-const term = @import("../../../term.zig");
+const term = @import("../term.zig");
 const TermId = term.TermId;
 const SortId = term.SortId;
 

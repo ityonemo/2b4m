@@ -34,7 +34,7 @@ const InternPool = @import("../../InternPool.zig");
 const StrId = InternPool.StrId;
 const Walk = @import("Walk.zig");
 const Context = @import("../../Context.zig");
-const Prove = @import("Prove.zig");
+const Accelerants = @import("../../Accelerants.zig");
 
 /// One global name candidate a step references.
 pub const Ref = struct {
@@ -131,7 +131,7 @@ pub fn scanStep(self: *Scanner, step: *const ast.Step) Allocator.Error![]const R
                     // (then resolved locally at process time); a THEORY SELECTOR is an import,
                     // not a fact — the outer proof needn't resolve it (the generated schema's
                     // steps cite the theory's lemmas qualified by it; the instance demands those).
-                    const tactic = Prove.Tactic.ofRule(self.interner, c.rule.name);
+                    const tactic = Accelerants.Tactic.ofRule(self.interner, c.rule.name);
                     if (c.schema) |s| if (tactic) |t| switch (t.schemaSlot()) {
                         .head, .lemma => if (self.walk.findStep(s.name) == null) try self.addTok(s, .fact),
                         .theory_selector, .none => {},
@@ -155,7 +155,7 @@ pub fn scanStep(self: *Scanner, step: *const ast.Step) Allocator.Error![]const R
             // A tactic whose args name LEMMAS (`lemma_args`, off its type) has them demanded as
             // global facts when not live local steps; every other tactic's args are VALUE terms,
             // scanned as idents below.
-            const lemma_args = if (c.kind == .using) (if (Prove.Tactic.ofRule(self.interner, c.rule.name)) |t| t.lemmaArgs() else false) else false;
+            const lemma_args = if (c.kind == .using) (if (Accelerants.Tactic.ofRule(self.interner, c.rule.name)) |t| t.lemmaArgs() else false) else false;
             if (lemma_args) {
                 for (c.args) |a| {
                     if (a.* == .name and

@@ -10,13 +10,13 @@
 //! (`ac.zig`) and the rewrite engine (`rewrite.zig`); nothing above it is imported.
 
 const std = @import("std");
-const term = @import("../../../term.zig");
+const term = @import("../term.zig");
 const TermId = term.TermId;
-const StrId = @import("../../../InternPool.zig").StrId;
+const StrId = @import("../InternPool.zig").StrId;
 const rewrite = @import("rewrite.zig");
-const EqCert = @import("../EqCert.zig");
-const Prove = @import("../Prove.zig");
-const InternPool = @import("../../../InternPool.zig");
+const EqCert = @import("EqCert.zig");
+const Site = @import("Site.zig");
+const InternPool = @import("../InternPool.zig");
 const ac = @import("ac.zig");
 const testrig = @import("testrig.zig");
 const Symbols = @import("symbols.zig").Symbols;
@@ -24,19 +24,19 @@ const testing = std.testing;
 
 const Error = error{OutOfMemory};
 
-/// Narrow a `Prove.Error` (which carries `error.Recover` for diagnostic-emitting call sites) to
-/// this module's OutOfMemory-only set. The reused Prove substrate methods (`freshNamed`,
+/// Narrow a `Site.Error` (which carries `error.Recover` for diagnostic-emitting call sites) to
+/// this module's OutOfMemory-only set. The reused Site methods (`freshNamed`,
 /// `ac.flattenSum`, `ac.acPlan`) never emit a diagnostic — they only allocate — so `Recover` is
 /// unreachable in practice; this keeps polyRules/polyCanon's declared error set OOM-only.
 fn narrow(v: anytype) Error!@typeInfo(@TypeOf(v)).error_union.payload {
-    return v catch |e| switch (e) {
+    return v catch |err| switch (err) {
         error.OutOfMemory => error.OutOfMemory,
         error.Recover => unreachable,
     };
 }
 
 /// The ring operator SymIds read off the goal (then COMPLETED from the theory — see
-/// Prove.completePolyOps) + the operand sort for pattern fvars. `add`/`mul` are each optional:
+/// completePolyOps) + the operand sort for pattern fvars. `add`/`mul` are each optional:
 /// a ring identity in ONE operator (`neg(add(a,b)) = add(neg(a),neg(b))`; `mul(e,k) =
 /// mul(neg(e),neg(k))`) is a polynomial identity whose canonicalization never touches the
 /// other, and the rules/phases mentioning it are simply not applicable. At least one is set.
@@ -72,14 +72,14 @@ pub const PolyRules = struct {
 // -- pattern / rule construction -------------------------------------------------------
 
 /// Mint a fresh pattern fvar term (`p#N` of the operand sort) + return {StrId, TermId}.
-fn freshFvar(self: *Prove, ops: Ops) Error!struct { name: StrId, term: TermId } {
+fn freshFvar(self: *Site, ops: Ops) Error!struct { name: StrId, term: TermId } {
     const name = try narrow(self.freshNamed("p#"));
     const t = try self.pool.add(.{ .fvar = .{ .name = name, .sort = ops.sort } });
     return .{ .name = name, .term = t };
 }
 
 /// Wrap an eq(lhs, rhs) over `binders` (occurrence order) in `forall`s, outermost = binders[0].
-fn quantifyRule(self: *Prove, binders: []const rewrite.Binder, lhs: TermId, rhs: TermId) Error!TermId {
+fn quantifyRule(self: *Site, binders: []const rewrite.Binder, lhs: TermId, rhs: TermId) Error!TermId {
     var body = try self.pool.add(.{ .eq = .{ .lhs = lhs, .rhs = rhs } });
     // close innermost-first (last binder becomes the innermost quant) so the outer quant is
     // binders[0] — matching emitInstance's outermost-first apply_at walk.
@@ -93,7 +93,7 @@ fn quantifyRule(self: *Prove, binders: []const rewrite.Binder, lhs: TermId, rhs:
     return body;
 }
 
-fn app(self: *Prove, sym: term.SymId, args: []const TermId) Error!TermId {
+fn app(self: *Site, sym: term.SymId, args: []const TermId) Error!TermId {
     return self.pool.addApp(.app, sym, args);
 }
 
@@ -105,7 +105,7 @@ const RuleAcc = struct {
     /// lemma cite points at the `polynomial` step (not 1:1).
     loc: u32 = 0,
 
-    fn push(acc: *RuleAcc, self: *Prove, rule: rewrite.Rule, name: StrId, qualifier: StrId) Error!void {
+    fn push(acc: *RuleAcc, self: *Site, rule: rewrite.Rule, name: StrId, qualifier: StrId) Error!void {
         try acc.rules.append(self.ctx.arena, rule);
         try acc.cites.append(self.ctx.arena, .{ .global = .{
             .head = .{ .tag = .identifier, .start = acc.loc, .end = acc.loc, .name = name, .qualifier = qualifier },
@@ -119,12 +119,12 @@ fn binder(name: StrId, ops: Ops) rewrite.Binder {
 }
 
 /// Build the hardcoded ring rule set (patterns constructed from `ops`, fresh pattern fvars via
-/// `Prove.freshNamed`) + the parallel cites, all cited in the theory namespace `qualifier`.
+/// `Site.freshNamed`) + the parallel cites, all cited in the theory namespace `qualifier`.
 /// The index layout (fold_end + the two operator triples) matches the deleted `polyRules`.
-pub fn polyRules(self: *Prove, ops: Ops, qualifier: StrId, loc: u32) Error!PolyRules {
+pub fn polyRules(self: *Site, ops: Ops, qualifier: StrId, loc: u32) Error!PolyRules {
     var acc: RuleAcc = .{ .loc = loc };
     const nm = struct {
-        fn f(p: *Prove, comptime s: []const u8) Error!StrId {
+        fn f(p: *Site, comptime s: []const u8) Error!StrId {
             return p.ctx.interner.internString(s) catch error.OutOfMemory;
         }
     }.f;
@@ -320,9 +320,9 @@ const IdentityFold = enum { mul_one_left, mul_one_right, mul_zero_left, mul_zero
 /// naming a const the goal lacks is simply skipped (the const's absence means the pattern
 /// couldn't occur in the goal anyway; it does NOT shift the required index layout because the
 /// distribution rules [0,1] are always present and the folds run to fixpoint by set).
-fn pushIdentityFold(self: *Prove, acc: *RuleAcc, ops: Ops, qualifier: StrId, which: IdentityFold) Error!void {
+fn pushIdentityFold(self: *Site, acc: *RuleAcc, ops: Ops, qualifier: StrId, which: IdentityFold) Error!void {
     const nm = struct {
-        fn f(p: *Prove, comptime s: []const u8) Error!StrId {
+        fn f(p: *Site, comptime s: []const u8) Error!StrId {
             return p.ctx.interner.internString(s) catch error.OutOfMemory;
         }
     }.f;
@@ -383,13 +383,13 @@ fn pushIdentityFold(self: *Prove, acc: *RuleAcc, ops: Ops, qualifier: StrId, whi
 }
 
 /// Push the [assoc, comm, swap] triple for the `add` or `mul` operator, in that order.
-fn pushTriple(self: *Prove, acc: *RuleAcc, ops: Ops, qualifier: StrId, comptime op: enum { add, mul }) Error!void {
+fn pushTriple(self: *Site, acc: *RuleAcc, ops: Ops, qualifier: StrId, comptime op: enum { add, mul }) Error!void {
     const sym = if (op == .add) ops.add.? else ops.mul.?;
     const assoc_nm = if (op == .add) "addIsAssociative" else "mulIsAssociative";
     const comm_nm = if (op == .add) "addIsCommutative" else "mulIsCommutative";
     const swap_nm = if (op == .add) "addLeftSwap" else "mulLeftSwap";
     const nm = struct {
-        fn f(p: *Prove, s: []const u8) Error!StrId {
+        fn f(p: *Site, s: []const u8) Error!StrId {
             return p.ctx.interner.internString(s) catch error.OutOfMemory;
         }
     }.f;
@@ -432,10 +432,10 @@ fn symsFrom(ops: Ops, comptime which: enum { add, mul }) Symbols {
 
 /// Right-nest `x` under the add-associativity rule alone (a terminating normalization),
 /// appending the re-indexed trace. `x` when there is no `add` (nothing to nest).
-fn rightNestSum(self: *Prove, pr: PolyRules, x: TermId, trace: *std.ArrayList(rewrite.Rewrite)) Error!?TermId {
+fn rightNestSum(self: *Site, pr: PolyRules, x: TermId, trace: *std.ArrayList(rewrite.Rewrite)) Error!?TermId {
     const add_assoc = pr.add_assoc orelse return x;
     const rules = pr.rules[add_assoc .. add_assoc + 1];
-    const rn = rewrite.normalize(self.ctx.arena, self.pool, self.ctx.interner, rules, x, 4000) catch |e| switch (e) {
+    const rn = rewrite.normalize(self.ctx.arena, self.pool, self.ctx.interner, rules, x, 4000) catch |err| switch (err) {
         error.Limit => return null,
         error.OutOfMemory => return error.OutOfMemory,
     };
@@ -449,12 +449,12 @@ fn rightNestSum(self: *Prove, pr: PolyRules, x: TermId, trace: *std.ArrayList(re
 
 /// Canonicalize `x` to a sorted-sum-of-sorted-monomials NF + the replayable trace over
 /// `pr.rules`. Null on cap overflow / unhandled shape (caller then FAILS the accelerant).
-pub fn polyCanon(self: *Prove, pr: PolyRules, x: TermId) Error!?rewrite.Result {
+pub fn polyCanon(self: *Site, pr: PolyRules, x: TermId) Error!?rewrite.Result {
     const ops = pr.ops;
     // 1) distribute + fold to a flat sum of monomials (terminating). Its trace is already
     //    whole-term (normalize over `x`).
     const fold_rules = pr.rules[0..pr.fold_end];
-    const dist = rewrite.normalize(self.ctx.arena, self.pool, self.ctx.interner, fold_rules, x, 4000) catch |e| switch (e) {
+    const dist = rewrite.normalize(self.ctx.arena, self.pool, self.ctx.interner, fold_rules, x, 4000) catch |err| switch (err) {
         error.Limit => return null,
         error.OutOfMemory => return error.OutOfMemory,
     };
@@ -492,7 +492,7 @@ pub fn polyCanon(self: *Prove, pr: PolyRules, x: TermId) Error!?rewrite.Result {
                 body = self.pool.args(mn.app)[0];
             }
         }
-        // Prove.acPlan reads symbols.add.? as the reordered operator — pass mul in that slot.
+        // ac.acPlan reads symbols.add.? as the reordered operator — pass mul in that slot.
         const mp = (try narrow(ac.acPlan(self, mul_symbols, pr.rules, pr.mul_assoc.?, pr.mul_comm.?, pr.mul_swap.?, body))) orelse return null;
         if (mp.trace.len > 0) {
             // lifted into the whole-sum context (a one-leaf comb when there is no `add`).
@@ -532,7 +532,7 @@ pub fn polyCanon(self: *Prove, pr: PolyRules, x: TermId) Error!?rewrite.Result {
 /// monomial sits in the hole between `before` and `after` in the sum comb — wrapped in
 /// `wrap(·)` (a negated summand) when given.
 fn liftMonoTrace(
-    self: *Prove,
+    self: *Site,
     add_symbols: Symbols,
     before: []const TermId,
     after: []const TermId,
@@ -566,7 +566,7 @@ fn liftMonoTrace(
 /// the deleted elaborate.zig `ac.sortTrace` — NOT Prove's leaf-based one). Null when a needed
 /// sort lemma index is absent or a shape assumption fails.
 fn sortTraceTower(
-    self: *Prove,
+    self: *Site,
     symbols: Symbols,
     rules: []const rewrite.Rule,
     comm_idx: ?usize,
@@ -614,12 +614,12 @@ test "polyRules: an add-only op set builds the add triple and neg-folds but NO m
     const arena = arena_state.allocator();
     var threaded: std.Io.Threaded = .init(arena, .{});
     const rig = try testrig.Rig.init(arena, threaded.io());
-    const pr = try polyRules(rig.prove, opsOf(rig, rig.add, null, rig.neg, null), .none, 0);
+    const pr = try polyRules(rig.site, opsOf(rig, rig.add, null, rig.neg, null), .none, 0);
     try testing.expect(pr.add_assoc != null);
     try testing.expect(pr.mul_assoc == null);
     // every rule's pattern mentions only add/neg: no rule head is `mul`.
     for (pr.rules) |r| {
-        const n = rig.prove.pool.get(r.lhs);
+        const n = rig.site.pool.get(r.lhs);
         if (n == .app) try testing.expect(n.app.sym != rig.mul);
     }
 }
@@ -630,14 +630,14 @@ test "polyCanon: an add-only identity canonicalizes — neg(add(a, b)) ≡ add(n
     const arena = arena_state.allocator();
     var threaded: std.Io.Threaded = .init(arena, .{});
     const rig = try testrig.Rig.init(arena, threaded.io());
-    const pr = try polyRules(rig.prove, opsOf(rig, rig.add, null, rig.neg, null), .none, 0);
+    const pr = try polyRules(rig.site, opsOf(rig, rig.add, null, rig.neg, null), .none, 0);
     const a = try rig.v("a");
     const b = try rig.v("b");
     const lhs = try rig.a1(rig.neg, try rig.a2(rig.add, a, b));
     const rhs = try rig.a2(rig.add, try rig.a1(rig.neg, a), try rig.a1(rig.neg, b));
-    const rs = (try polyCanon(rig.prove, pr, lhs)).?;
-    const rt = (try polyCanon(rig.prove, pr, rhs)).?;
-    try testing.expect(rig.prove.pool.alphaEq(rs.nf, rt.nf));
+    const rs = (try polyCanon(rig.site, pr, lhs)).?;
+    const rt = (try polyCanon(rig.site, pr, rhs)).?;
+    try testing.expect(rig.site.pool.alphaEq(rs.nf, rt.nf));
 }
 
 test "polyCanon: a mul-only identity canonicalizes — mul(mul(d, k), m) ≡ mul(k, mul(d, m))" {
@@ -646,16 +646,16 @@ test "polyCanon: a mul-only identity canonicalizes — mul(mul(d, k), m) ≡ mul
     const arena = arena_state.allocator();
     var threaded: std.Io.Threaded = .init(arena, .{});
     const rig = try testrig.Rig.init(arena, threaded.io());
-    const pr = try polyRules(rig.prove, opsOf(rig, null, rig.mul, null, null), .none, 0);
+    const pr = try polyRules(rig.site, opsOf(rig, null, rig.mul, null, null), .none, 0);
     try testing.expect(pr.add_assoc == null);
     const d = try rig.v("d");
     const k = try rig.v("k");
     const m = try rig.v("m");
     const lhs = try rig.a2(rig.mul, try rig.a2(rig.mul, d, k), m);
     const rhs = try rig.a2(rig.mul, k, try rig.a2(rig.mul, d, m));
-    const rs = (try polyCanon(rig.prove, pr, lhs)).?;
-    const rt = (try polyCanon(rig.prove, pr, rhs)).?;
-    try testing.expect(rig.prove.pool.alphaEq(rs.nf, rt.nf));
+    const rs = (try polyCanon(rig.site, pr, lhs)).?;
+    const rt = (try polyCanon(rig.site, pr, rhs)).?;
+    try testing.expect(rig.site.pool.alphaEq(rs.nf, rt.nf));
 }
 
 test "polyCanon: an inverse pair cancels when ZERO is supplied by the theory, not the goal — add(x, add(t, neg(t))) ≡ x" {
@@ -665,13 +665,13 @@ test "polyCanon: an inverse pair cancels when ZERO is supplied by the theory, no
     var threaded: std.Io.Threaded = .init(arena, .{});
     const rig = try testrig.Rig.init(arena, threaded.io());
     // the goal mentions no ZERO; the op set carries the theory's ZERO (completePolyOps' job).
-    const pr = try polyRules(rig.prove, opsOf(rig, rig.add, rig.mul, rig.neg, rig.zero), .none, 0);
+    const pr = try polyRules(rig.site, opsOf(rig, rig.add, rig.mul, rig.neg, rig.zero), .none, 0);
     const x = try rig.v("x");
     const t = try rig.a2(rig.mul, try rig.v("a"), try rig.v("r"));
     const lhs = try rig.a2(rig.add, x, try rig.a2(rig.add, t, try rig.a1(rig.neg, t)));
-    const rs = (try polyCanon(rig.prove, pr, lhs)).?;
-    const rt = (try polyCanon(rig.prove, pr, x)).?;
-    try testing.expect(rig.prove.pool.alphaEq(rs.nf, rt.nf));
+    const rs = (try polyCanon(rig.site, pr, lhs)).?;
+    const rt = (try polyCanon(rig.site, pr, x)).?;
+    try testing.expect(rig.site.pool.alphaEq(rs.nf, rt.nf));
 }
 
 test "polyCanon: a cross-term cancels — the monomial INSIDE neg(…) gets its factors sorted too: add(mul(a, b), neg(mul(b, a))) ≡ ZERO" {
@@ -680,18 +680,18 @@ test "polyCanon: a cross-term cancels — the monomial INSIDE neg(…) gets its 
     const arena = arena_state.allocator();
     var threaded: std.Io.Threaded = .init(arena, .{});
     const rig = try testrig.Rig.init(arena, threaded.io());
-    const pr = try polyRules(rig.prove, opsOf(rig, rig.add, rig.mul, rig.neg, rig.zero), .none, 0);
+    const pr = try polyRules(rig.site, opsOf(rig, rig.add, rig.mul, rig.neg, rig.zero), .none, 0);
     const a = try rig.v("a");
     const b = try rig.v("b");
     const lhs = try rig.a2(rig.add, try rig.a2(rig.mul, a, b), try rig.a1(rig.neg, try rig.a2(rig.mul, b, a)));
-    const zero = try rig.prove.pool.addApp(.app, rig.zero, &.{});
-    const rs = (try polyCanon(rig.prove, pr, lhs)).?;
-    const rt = (try polyCanon(rig.prove, pr, zero)).?;
-    try testing.expect(rig.prove.pool.alphaEq(rs.nf, rt.nf));
+    const zero = try rig.site.pool.addApp(.app, rig.zero, &.{});
+    const rs = (try polyCanon(rig.site, pr, lhs)).?;
+    const rt = (try polyCanon(rig.site, pr, zero)).?;
+    try testing.expect(rig.site.pool.alphaEq(rs.nf, rt.nf));
     // and with NO surrounding sum: neg(mul(b, a)) alone canonicalizes like neg(mul(a, b)).
-    const n1 = (try polyCanon(rig.prove, pr, try rig.a1(rig.neg, try rig.a2(rig.mul, b, a)))).?;
-    const n2 = (try polyCanon(rig.prove, pr, try rig.a1(rig.neg, try rig.a2(rig.mul, a, b)))).?;
-    try testing.expect(rig.prove.pool.alphaEq(n1.nf, n2.nf));
+    const n1 = (try polyCanon(rig.site, pr, try rig.a1(rig.neg, try rig.a2(rig.mul, b, a)))).?;
+    const n2 = (try polyCanon(rig.site, pr, try rig.a1(rig.neg, try rig.a2(rig.mul, a, b)))).?;
+    try testing.expect(rig.site.pool.alphaEq(n1.nf, n2.nf));
 }
 
 /// Read the ring operator SymIds off `eq_goal` (an equation) by scanning for apps whose head
@@ -699,8 +699,8 @@ test "polyCanon: a cross-term cancels — the monomial INSIDE neg(…) gets its 
 /// otherwise — a goal with neither is no polynomial); each is optional on its own, a ring
 /// identity in one operator being a polynomial identity in that operator. The operand sort
 /// (for freshly-built rule-pattern fvars) is the equation's lhs sort.
-pub fn readPolyOps(prove: *Prove, eq_goal: TermId) Error!?Ops {
-    const eqn = prove.pool.get(eq_goal);
+pub fn readPolyOps(site: *Site, eq_goal: TermId) Error!?Ops {
+    const eqn = site.pool.get(eq_goal);
     if (eqn != .eq) return null;
     var found: Ops = .{
         .add = null,
@@ -711,11 +711,11 @@ pub fn readPolyOps(prove: *Prove, eq_goal: TermId) Error!?Ops {
         .sub = null,
         .succ = null,
         .prev = null,
-        .sort = @enumFromInt(@intFromEnum(prove.termSort(eqn.eq.lhs))),
+        .sort = @enumFromInt(@intFromEnum(site.termSort(eqn.eq.lhs))),
     };
     var have_add = false;
     var have_mul = false;
-    try collectPolyOps(prove, eq_goal, &found, &have_add, &have_mul);
+    try collectPolyOps(site, eq_goal, &found, &have_add, &have_mul);
     if (!have_add and !have_mul) return null;
     return found;
 }
@@ -723,34 +723,34 @@ pub fn readPolyOps(prove: *Prove, eq_goal: TermId) Error!?Ops {
 /// A symbol's WELL-KNOWN name for vocabulary matching: under a TRANSFER the goal's syms are
 /// TARGET images (`tadd`), but the well-known vocabulary (add/mul/…) is the SOURCE theory's —
 /// reverse-map through the overlay to the source symbol's name.
-pub fn vocabName(prove: *Prove, ix: InternPool.Index) []const u8 {
-    if (prove.model != InternPool.Index.none and prove.model != .universe) {
-        var cur = prove.model;
+pub fn vocabName(site: *Site, ix: InternPool.Index) []const u8 {
+    if (site.model != InternPool.Index.none and site.model != .universe) {
+        var cur = site.model;
         while (true) {
-            const m = prove.ctx.interner.keyOf(cur).model;
+            const m = site.ctx.interner.keyOf(cur).model;
             for (m.overlay) |mp| if (mp.tgt == ix and mp.src != ix)
-                return prove.ctx.interner.stringBytes(prove.ctx.interner.nameOf(mp.src));
+                return site.ctx.interner.stringBytes(site.ctx.interner.nameOf(mp.src));
             if (cur == m.parent) break;
             cur = m.parent;
         }
     }
-    return prove.ctx.interner.stringBytes(prove.ctx.interner.nameOf(ix));
+    return site.ctx.interner.stringBytes(site.ctx.interner.nameOf(ix));
 }
 
 /// Recursively match each app head's well-known NAME, filling `ops`. Pure goal inspection.
-pub fn collectPolyOps(prove: *Prove, id: TermId, ops: *Ops, have_add: *bool, have_mul: *bool) Error!void {
+pub fn collectPolyOps(site: *Site, id: TermId, ops: *Ops, have_add: *bool, have_mul: *bool) Error!void {
     // iterative single-tree collector (was native recursion). Records the polynomial vocabulary
     // ops by well-known name; field-setting is order-independent so a plain work-stack suffices.
-    var scratch: std.heap.ArenaAllocator = .init(prove.ctx.gpa);
+    var scratch: std.heap.ArenaAllocator = .init(site.ctx.gpa);
     defer scratch.deinit();
     const wa = scratch.allocator();
     var stack: std.ArrayList(TermId) = .empty;
     try stack.append(wa, id);
     while (stack.pop()) |cur| {
-        const node = prove.pool.get(cur);
+        const node = site.pool.get(cur);
         if (node == .app) {
             const a = node.app;
-            const name = vocabName(prove, @enumFromInt(@intFromEnum(a.sym)));
+            const name = vocabName(site, @enumFromInt(@intFromEnum(a.sym)));
             if (std.mem.eql(u8, name, "add")) {
                 ops.add = a.sym;
                 have_add.* = true;
@@ -773,7 +773,7 @@ pub fn collectPolyOps(prove: *Prove, id: TermId, ops: *Ops, have_add: *bool, hav
         }
         // `.pred` is NOT descended (the original had no `.pred` arm — only app/eq/bin/not/quant).
         switch (node) {
-            .app, .eq, .bin, .not, .quant => try prove.pool.pushChildren(&stack, wa, node),
+            .app, .eq, .bin, .not, .quant => try site.pool.pushChildren(&stack, wa, node),
             else => {},
         }
     }
@@ -789,7 +789,7 @@ test "readPolyOps: an add-only goal reads add (and neg), leaves mul absent" {
     const b = try rig.v("b");
     // neg(add(a, b)) = add(neg(a), neg(b))
     const goal = try rig.eq(try rig.a1(rig.neg, try rig.a2(rig.add, a, b)), try rig.a2(rig.add, try rig.a1(rig.neg, a), try rig.a1(rig.neg, b)));
-    const ops = (try readPolyOps(rig.prove, goal)).?;
+    const ops = (try readPolyOps(rig.site, goal)).?;
     try testing.expectEqual(rig.add, ops.add.?);
     try testing.expect(ops.mul == null);
     try testing.expectEqual(rig.neg, ops.neg.?);
@@ -806,10 +806,10 @@ test "readPolyOps: a mul-only goal reads mul, leaves add absent; a goal with nei
     const k = try rig.v("k");
     // mul(e, k) = mul(neg(e), neg(k))
     const goal = try rig.eq(try rig.a2(rig.mul, e, k), try rig.a2(rig.mul, try rig.a1(rig.neg, e), try rig.a1(rig.neg, k)));
-    const ops = (try readPolyOps(rig.prove, goal)).?;
+    const ops = (try readPolyOps(rig.site, goal)).?;
     try testing.expectEqual(rig.mul, ops.mul.?);
     try testing.expect(ops.add == null);
     // neg(e) = neg(k): no ring operator at all → not a polynomial goal.
     const bare = try rig.eq(try rig.a1(rig.neg, e), try rig.a1(rig.neg, k));
-    try testing.expect((try readPolyOps(rig.prove, bare)) == null);
+    try testing.expect((try readPolyOps(rig.site, bare)) == null);
 }

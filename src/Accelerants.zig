@@ -16,15 +16,19 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const ast = @import("../../ast.zig");
-const lexer = @import("../../lexer.zig");
+const ast = @import("ast.zig");
+const lexer = @import("lexer.zig");
 const Token = lexer.Token;
-const InternPool = @import("../../InternPool.zig");
+const InternPool = @import("InternPool.zig");
 const StrId = InternPool.StrId;
-const term = @import("../../term.zig");
+const term = @import("term.zig");
 const TermId = term.TermId;
 const SortId = term.SortId;
-const Delaborate = @import("Delaborate.zig");
+const Delaborate = @import("Engine/ProveTask/Delaborate.zig");
+const Verify = @import("Verify.zig");
+
+pub const Site = @import("Accelerants/Site.zig");
+pub const Error = Site.Error;
 
 /// What rides in `Claim.schema` for an accelerated tactic — the parser's one overloaded slot.
 /// Declared by each tactic as `pub const schema_slot`; the scaffolding reads it at comptime.
@@ -114,6 +118,12 @@ pub const Builder = struct {
         return self.interner.internString(bytes) catch error.OutOfMemory;
     }
 
+    /// A single-token ref slice for a synthetic step's `refs`.
+    pub fn oneRef(self: *Builder, name: StrId) Allocator.Error![]const Token {
+        const r = try self.arena.alloc(Token, 1);
+        r[0] = self.tok(name);
+        return r;
+    }
     /// A `name` expr referencing `name`.
     pub fn nameExpr(self: *Builder, name: StrId) Allocator.Error!*const ast.Expr {
         const e = try self.arena.create(ast.Expr);
@@ -150,5 +160,87 @@ pub const Builder = struct {
     /// An `assume <formula> { steps }` block step.
     pub fn assumeStep(self: *Builder, label: StrId, formula: *const ast.Expr, steps: []const ast.Step) Allocator.Error!ast.Step {
         return .{ .label = self.tok(label), .body = .{ .assume = .{ .formula = formula, .steps = steps } } };
+    }
+};
+
+/// The accelerated-tactic word a `using` rule names, if any (`model`/`import` are engine words).
+/// The trustable ACCELERANT word a rule token names, matched by interned name (no strcmp past
+/// the parser: the rule is already a StrId; each candidate word is interned once per call).
+/// Engine words (`model`/`import`) are RuleStr and never reach here as accelerants.
+pub fn wordOfRule(interner: *InternPool, rule: StrId) ?Verify.Word {
+    inline for (@typeInfo(Verify.Word).@"enum".fields) |f| {
+        const engine_word = comptime (std.mem.eql(u8, f.name, "model") or std.mem.eql(u8, f.name, "import"));
+        if (!engine_word) {
+            const id = interner.internString(f.name) catch return null;
+            if (rule == id) return @field(Verify.Word, f.name);
+        }
+    }
+    return null;
+}
+
+/// THE TACTIC UNION: one variant per trustable `using` word, its payload the tactic's struct
+/// (a `_quantified` variant shares a file and carries `quantified = true`). The driver
+/// dispatches each phase once through `switch (tactic) { inline else => |a| a.<phase>(…) }`
+/// and reads `schema_slot`/`premise_shape`/`lemma_args` off the variant's type.
+pub const Tactic = union(enum) {
+    specialize: @import("Accelerants/Specialize.zig"),
+    tautology: @import("Accelerants/Tautology.zig"),
+    simplify: @import("Accelerants/Simplify.zig"),
+    simplify_quantified: @import("Accelerants/Simplify.zig"),
+    chain: @import("Accelerants/Chain.zig"),
+    assoc: @import("Accelerants/Assoc.zig"),
+    assoc_quantified: @import("Accelerants/Assoc.zig"),
+    assoc_commut: @import("Accelerants/Assoc.zig"),
+    assoc_commut_quantified: @import("Accelerants/Assoc.zig"),
+    polynomial: @import("Accelerants/Polynomial.zig"),
+    polynomial_quantified: @import("Accelerants/Polynomial.zig"),
+    extensionality: @import("Accelerants/Extensionality.zig"),
+    extensionality_quantified: @import("Accelerants/Extensionality.zig"),
+    arithmetic: @import("Accelerants/Arithmetic.zig"),
+    arithmetic_quantified: @import("Accelerants/Arithmetic.zig"),
+
+    /// The tactic a trustable word names, its payload constructed for that word's variant —
+    /// or null for an engine word (`model`/`import`).
+    pub fn of(word: Verify.Word) ?Tactic {
+        return switch (word) {
+            .model, .import => null,
+            .specialize => .{ .specialize = .{} },
+            .tautology => .{ .tautology = .{} },
+            .simplify => .{ .simplify = .{ .quantified = false } },
+            .simplify_quantified => .{ .simplify_quantified = .{ .quantified = true } },
+            .chain => .{ .chain = .{} },
+            .assoc => .{ .assoc = .{ .commut = false, .quantified = false } },
+            .assoc_quantified => .{ .assoc_quantified = .{ .commut = false, .quantified = true } },
+            .assoc_commut => .{ .assoc_commut = .{ .commut = true, .quantified = false } },
+            .assoc_commut_quantified => .{ .assoc_commut_quantified = .{ .commut = true, .quantified = true } },
+            .polynomial => .{ .polynomial = .{ .quantified = false } },
+            .polynomial_quantified => .{ .polynomial_quantified = .{ .quantified = true } },
+            .extensionality => .{ .extensionality = .{ .quantified = false } },
+            .extensionality_quantified => .{ .extensionality_quantified = .{ .quantified = true } },
+            .arithmetic => .{ .arithmetic = .{} },
+            .arithmetic_quantified => .{ .arithmetic_quantified = .{} },
+        };
+    }
+
+    /// The tactic a `using` rule token names, by interned name — for the scanner, which has a
+    /// rule StrId and no claim. Null for an engine word or an unknown word.
+    pub fn ofRule(interner: *InternPool, rule: StrId) ?Tactic {
+        return Tactic.of(wordOfRule(interner, rule) orelse return null);
+    }
+
+    pub fn lemmaArgs(self: Tactic) bool {
+        return switch (self) {
+            inline else => |a| @TypeOf(a).lemma_args,
+        };
+    }
+    pub fn schemaSlot(self: Tactic) SchemaSlot {
+        return switch (self) {
+            inline else => |a| @TypeOf(a).schema_slot,
+        };
+    }
+    pub fn premiseShape(self: Tactic) PremiseShape {
+        return switch (self) {
+            inline else => |a| @TypeOf(a).premise_shape,
+        };
     }
 };
