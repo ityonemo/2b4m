@@ -1581,11 +1581,7 @@ fn emitWeakening(self: *Prove, kb: kernel.BlockId, loc: u32, stmt: InternPool.In
     }
     // innermost: cite the fact, then multi-arg apply_at at all eigenvars → Core.
     const inner = parent;
-    const kind = self.ctx.interner.keyOf(stmt).fact.kind;
-    var cur = try self.emitSynthetic(inner, loc, fact_f, switch (kind) {
-        .axiom => .{ .axiom_ref = .{ .stmt = stmt, .loc = loc } },
-        .theorem => .{ .theorem_ref = .{ .stmt = stmt, .loc = loc } },
-    });
+    var cur = try self.emitSynthetic(inner, loc, fact_f, .{ .cite_ref = .{ .stmt = stmt, .loc = loc } });
     var cur_f = fact_f;
     for (eigen.items) |ev| {
         const fvt = try self.pool.add(.{ .fvar = ev });
@@ -1768,12 +1764,8 @@ fn setupClosure(self: *Prove, kb: kernel.BlockId, loc: u32, g: TermId, a: std.me
     var facts: std.ArrayList(InternPool.Index) = .empty;
     try self.ctx.interner.modelDischargers(self.model, head, &facts, self.ctx.arena);
     for (facts.items) |fact| {
-        const kind = self.ctx.interner.keyOf(fact).fact.kind;
         const formula = try self.pool.copyIn(self.ctx.interner, self.ctx.interner.keyOf(fact).fact.formula);
-        const cite_just: kernel.Justification = switch (kind) {
-            .axiom => .{ .axiom_ref = .{ .stmt = fact, .loc = loc } },
-            .theorem => .{ .theorem_ref = .{ .stmt = fact, .loc = loc } },
-        };
+        const cite_just: kernel.Justification = .{ .cite_ref = .{ .stmt = fact, .loc = loc } };
         // BASE: the fact IS the guard → cite; the kernel re-checks formula == g. The driver pushes
         // the returned SRef onto its results stack.
         if (self.pool.alphaEq(formula, g)) {
@@ -2691,15 +2683,8 @@ fn lowerModel(self: *Prove, kb: kernel.BlockId, goal: TermId, c: ast.Step.Claim)
         const instance = try self.pool.copyIn(self.ctx.interner, self.ctx.interner.keyOf(inst).fact.formula);
         return self.withGuardPremises(kb, c.rule.start, instance, goal, try self.ctx.arena.alloc(kernel.SRef, 0));
     }
-    // Emit the justification matching the RESOLVED fact's kind, not the rule word — a
-    // transferred DEFINITION CLAUSE (or a source axiom whose discharge the overlay did not
-    // remap) is an axiom, and the kernel's kind gate would reject the theorem arm. The kernel
-    // re-matches the formula either way; the kind is the only thing it would wrongly refuse.
     const loc = c.refs[0].start;
-    return switch (self.ctx.interner.keyOf(fact).fact.kind) {
-        .axiom => .{ .axiom_ref = .{ .stmt = fact, .loc = loc } },
-        else => .{ .theorem_ref = .{ .stmt = fact, .loc = loc } },
-    };
+    return .{ .cite_ref = .{ .stmt = fact, .loc = loc } };
 }
 
 /// The instance a transferred SCHEMA citation stands for. `[using model(M) src.sch]` where
@@ -2881,7 +2866,7 @@ fn rekeyArgs(self: *Prove, from: []const StrId, to: []const StrId, args: *const 
 /// citation, which is identical mechanically today; the accelerant is the trust boundary a
 /// future `--fast` scopes to). The read pass resolved `I` (ident) + demanded `thm` in I's
 /// namespace, so both are ready; look up the fact and cite it. Acceptance is SHAPE-only — the
-/// kernel re-matches `thm`'s formula against the claim (as every `theorem_ref` does).
+/// kernel re-matches `thm`'s formula against the claim (as every `cite_ref` does).
 fn lowerImport(self: *Prove, c: ast.Step.Claim) Error!kernel.Justification {
     const itok = c.schema orelse return self.fail(c.rule.start, "import citation requires an import name: `[using import(I) thm]`", .{});
     if (c.refs.len != 1) return self.fail(c.rule.start, "`[using import(I) …]` cites exactly one imported theorem", .{});
@@ -2904,10 +2889,7 @@ fn lowerImport(self: *Prove, c: ast.Step.Claim) Error!kernel.Justification {
     const fact = try self.resolveFactIn(rtok, imp_ns);
     // kind-agnostic like `by cite`: the kernel arm follows the RESOLVED fact's kind (an
     // imported axiom is as citable as an imported theorem).
-    return switch (self.ctx.interner.keyOf(fact).fact.kind) {
-        .axiom => .{ .axiom_ref = .{ .stmt = fact, .loc = rtok.start } },
-        .theorem => .{ .theorem_ref = .{ .stmt = fact, .loc = rtok.start } },
-    };
+    return .{ .cite_ref = .{ .stmt = fact, .loc = rtok.start } };
 }
 
 // -- the `using` accelerant framework --------------------------------------------------
@@ -3710,7 +3692,7 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
                 error.Recover => return self.fail(rtok.start, "'{s}' has no definition clause {d} (a definition block publishes one clause per arm, numbered from 0)", .{ self.text(rtok), arm }),
                 else => return err,
             };
-            return .{ .axiom_ref = .{ .stmt = stmt, .loc = rtok.start } };
+            return .{ .cite_ref = .{ .stmt = stmt, .loc = rtok.start } };
         },
         .axiom, .theorem, .cite => {
             try self.wantRefs(c, 1);
@@ -3726,16 +3708,7 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
                     if (try self.emitWeakening(kb, loc, stmt, fact_f, goal)) |just| return just;
                 }
             }
-            // Emit the justification matching the RESOLVED fact's kind, not the rule word.
-            // Identity in an ordinary proof (a `by axiom` cites an axiom). In a MODEL
-            // transfer a source-axiom citation may remap (via the obligation overlay) to a
-            // discharging THEOREM — so `by axiom srcAx` legitimately lands on a theorem;
-            // pick the kernel arm by the fact's actual kind (the kernel re-matches the
-            // formula regardless — the kind gate is the only thing that'd wrongly reject).
-            return switch (self.ctx.interner.keyOf(stmt).fact.kind) {
-                .axiom => .{ .axiom_ref = .{ .stmt = stmt, .loc = loc } },
-                .theorem => .{ .theorem_ref = .{ .stmt = stmt, .loc = loc } },
-            };
+            return .{ .cite_ref = .{ .stmt = stmt, .loc = loc } };
         },
         .hypothesis, .predicate => {
             try self.wantRefs(c, 1);
@@ -4119,7 +4092,7 @@ fn checkAllStepsUsed(self: *Prove) Allocator.Error!bool {
             },
             .hypothesis => {},
             .schema_instance => |r| for (r.premises) |p| try mark(reached, &work, arena, @intFromEnum(p.id)),
-            .axiom_ref, .theorem_ref, .reflexivity, .accelerated => {},
+            .cite_ref, .reflexivity, .accelerated => {},
         }
     }
     var any_dead = false;
