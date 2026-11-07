@@ -78,8 +78,8 @@ pub const Justification = union(enum) {
     both: struct { left: SRef, right: SRef },
     and_lhs: SRef,
     and_rhs: SRef,
-    either_left: SRef,
-    either_right: SRef,
+    either_lhs: SRef,
+    either_rhs: SRef,
     common_conclusion: struct { disj: SRef, left: BRef, right: BRef },
     contradiction: struct { block: BRef, s1: SRef, s2: SRef },
     ex_falso: struct { s1: SRef, s2: SRef },
@@ -515,7 +515,7 @@ pub const Kernel = struct {
                 const derived = if (step.just == .and_lhs) node.bin.lhs else node.bin.rhs;
                 try self.requireClaim(step, "and_elim", derived);
             },
-            .either_left, .either_right => |r| {
+            .either_lhs, .either_rhs => |r| {
                 const src = try self.checkStepRef(proof, r, i, at);
                 const node = self.pool.get(step.formula);
                 if (node != .bin or node.bin.op != .or_op) {
@@ -523,7 +523,7 @@ pub const Kernel = struct {
                         try self.render(step.formula),
                     });
                 }
-                const side = if (step.just == .either_left) node.bin.lhs else node.bin.rhs;
+                const side = if (step.just == .either_lhs) node.bin.lhs else node.bin.rhs;
                 if (!self.pool.alphaEq(side, src.formula)) {
                     return self.fail(r.loc, "or_intro: expected '{s}', got '{s}'", .{
                         try self.render(side), try self.render(src.formula),

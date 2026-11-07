@@ -1410,10 +1410,10 @@ const MixedAst = struct {
         const hyp_outer = try self.hyp(&outer, not_disj);
         var innerb = try self.openBlock();
         const hyp_inner = try self.hyp(&innerb, atom);
-        const or_left = try self.emit(&innerb.body, disj, "either_left", &.{hyp_inner});
+        const or_left = try self.emit(&innerb.body, disj, "either_lhs", &.{hyp_inner});
         try self.finishBlock(&outer.body, &innerb, atom);
         const derived_not = try self.emit(&outer.body, not_atom, "contradiction", &.{ innerb.label, or_left, hyp_outer });
-        const or_right = try self.emit(&outer.body, disj, "either_right", &.{derived_not});
+        const or_right = try self.emit(&outer.body, disj, "either_rhs", &.{derived_not});
         try self.finishBlock(block, &outer, not_disj);
         const nn = try self.emit(block, not_not, "contradiction", &.{ outer.label, or_right, hyp_outer });
         return self.emit(block, disj, "double_negation", &.{nn});
@@ -1548,11 +1548,11 @@ const MixedAst = struct {
                 },
                 .combine_or_left => |c| {
                     const l = results.pop().?;
-                    try results.append(sa, try self.emit(c.block, c.f, "either_left", &.{l}));
+                    try results.append(sa, try self.emit(c.block, c.f, "either_lhs", &.{l}));
                 },
                 .combine_or_right => |c| {
                     const r = results.pop().?;
-                    try results.append(sa, try self.emit(c.block, c.f, "either_right", &.{r}));
+                    try results.append(sa, try self.emit(c.block, c.f, "either_rhs", &.{r}));
                 },
                 .combine_true_implies => |c| {
                     _ = results.pop().?;
@@ -1907,7 +1907,7 @@ fn arithEmitExistsWitness(prove: *Prove, cert: *ArithCert, block: *std.ArrayList
         while (pi > 0) {
             pi -= 1;
             const disj = try arithDisjAt(prove, instance, found.path[0..pi]);
-            const rule: []const u8 = if (found.path[pi]) "either_right" else "either_left";
+            const rule: []const u8 = if (found.path[pi]) "either_rhs" else "either_lhs";
             arm_label = try cert.claim(block, disj, rule, &.{}, &.{arm_label});
             arm_formula = disj;
         }

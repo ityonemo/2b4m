@@ -3872,13 +3872,13 @@ fn lowerJustification(self: *Prove, w: *const Walk, e: *Elab, kb: kernel.BlockId
             try self.wantRefs(c, 1);
             return .{ .and_rhs = try self.resolveStepRef(w, c.refs[0]) };
         },
-        .either_left => {
+        .either_lhs => {
             try self.wantRefs(c, 1);
-            return .{ .either_left = try self.resolveStepRef(w, c.refs[0]) };
+            return .{ .either_lhs = try self.resolveStepRef(w, c.refs[0]) };
         },
-        .either_right => {
+        .either_rhs => {
             try self.wantRefs(c, 1);
-            return .{ .either_right = try self.resolveStepRef(w, c.refs[0]) };
+            return .{ .either_rhs = try self.resolveStepRef(w, c.refs[0]) };
         },
         .common_conclusion => {
             try self.wantRefs(c, 3);
@@ -4064,7 +4064,7 @@ fn checkAllStepsUsed(self: *Prove) Allocator.Error!bool {
                 try mark(reached, &work, arena, @intFromEnum(r.left.id));
                 try mark(reached, &work, arena, @intFromEnum(r.right.id));
             },
-            .and_lhs, .and_rhs, .either_left, .either_right, .double_negation, .symmetry => |sr| try mark(reached, &work, arena, @intFromEnum(sr.id)),
+            .and_lhs, .and_rhs, .either_lhs, .either_rhs, .double_negation, .symmetry => |sr| try mark(reached, &work, arena, @intFromEnum(sr.id)),
             .rewrite => |r| {
                 try mark(reached, &work, arena, @intFromEnum(r.equation.id));
                 try mark(reached, &work, arena, @intFromEnum(r.target.id));

@@ -331,7 +331,7 @@ procedure, so the structural presumers (`assoc`/`assoc_commut`) will never carry
   of distinct-variable bounds (via `additionPreservesOrder` plus transitivity).
 - **Cooper-replay** — the quantifier-alternation tail. A `forall x…; exists y; body` goal
   replays its Cooper elimination as kernel steps: for a period-1 trace, a boundary witness
-  under `either_left`/`either_right`; for a period-D trace (the parity
+  under `either_lhs`/`either_rhs`; for a period-D trace (the parity
   `forall x; exists y; x=2y ∨ x=2y+1`), a SYNTHESIZED induction on the fixed variable.
   Multi-variable and nested (`∀∃∀`) alternation decline, and fall to `--fast`.
 

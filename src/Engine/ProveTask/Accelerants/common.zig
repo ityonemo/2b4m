@@ -340,13 +340,13 @@ pub const TautAst = struct {
 
         var outer = try self.openBlock();
         const hyp_outer = try self.hyp(&outer, not_disj);
-        // inner: assume atom, derive the disjunction by either_left.
+        // inner: assume atom, derive the disjunction by either_lhs.
         var inner = try self.openBlock();
         const hyp_inner = try self.hyp(&inner, atom);
-        const or_left = try self.emit(&inner.body, disj, "either_left", &.{hyp_inner});
+        const or_left = try self.emit(&inner.body, disj, "either_lhs", &.{hyp_inner});
         try self.finishBlock(&outer.body, &inner, atom);
         const derived_not = try self.emit(&outer.body, not_atom, "contradiction", &.{ inner.label, or_left, hyp_outer });
-        const or_right = try self.emit(&outer.body, disj, "either_right", &.{derived_not});
+        const or_right = try self.emit(&outer.body, disj, "either_rhs", &.{derived_not});
         try self.finishBlock(block, &outer, not_disj);
 
         const nn = try self.emit(block, not_not, "contradiction", &.{ outer.label, or_right, hyp_outer });
@@ -487,11 +487,11 @@ pub const TautAst = struct {
             },
             .combine_or_left => |c| {
                 const l = results.pop().?;
-                try results.append(sa, try self.emit(c.block, c.f, "either_left", &.{l}));
+                try results.append(sa, try self.emit(c.block, c.f, "either_lhs", &.{l}));
             },
             .combine_or_right => |c| {
                 const r = results.pop().?;
-                try results.append(sa, try self.emit(c.block, c.f, "either_right", &.{r}));
+                try results.append(sa, try self.emit(c.block, c.f, "either_rhs", &.{r}));
             },
             .combine_true_implies => |c| {
                 // true-consequent branch: child already emitted into blk.body; discard its label.
