@@ -73,10 +73,17 @@ const ZERO      = integer.ZERO        func add     = integer.add
 const NAT_ZERO  = peano.ZERO          func nat_add = peano.add
 ```
 
-Spell the prefix `nat_`/`NAT_`, `int_`/`INT_`, `real_`/`REAL_`, `complex_`/`COMPLEX_`. The
-corpus drifted into `NZERO`, `nadd`, `imul`, `rless_than` and more — about 4770 uses, cleared
-over eight commits ending `1009499` — because a one-letter prefix also breaks the full-word
-naming rule.
+Spell the prefix `nat_`/`NAT_`, `int_`/`INT_`, `real_`/`REAL_`, `complex_`/`COMPLEX_`, and for
+ℤ_n the file's own `zn_`/`ZN_`. The corpus drifted into `NZERO`, `nadd`, `imul`, `rless_than`
+and more — about 4770 uses, cleared over eight commits ending `1009499`, plus ~1300 more in
+the words that sweep missed (`IONE`, `isub`, `ineg`, `iprev`, `RONE`, `rneg`, `rrecip`,
+`CONE`, `crecip`, `NONE`, `NTWO`, `ITWO`, `nsub`, `zadd`, `zneg`) — because a one-letter
+prefix also breaks the full-word naming rule.
+
+**In `aata/`, follow the names the book uses.** Judson writes ℤ_n, so the ℤ_n visitor prefix
+there is `zn_`/`ZN_` (matching the `ZN_ZERO` already in `4.1-cyclic-subgroups-exercises.md`),
+not the import's module name. A prefix taken from the surrounding file's own convention beats
+one derived from a path.
 
 **Two exceptions, both discovered by auditing rather than assumed:**
 
