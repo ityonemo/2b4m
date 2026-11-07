@@ -41,6 +41,45 @@ pub const premise_shape: Accelerant.PremiseShape = .local_refs_kept;
 /// `Claim.args` name LEMMAS (not value terms): demanded as facts, never elaborated as terms
 pub const lemma_args = false;
 
+/// Phase 1: the vocabulary completion (`completePolyOps`) racks ident FetchTasks for operators
+/// the goal implies the theory has — `ZERO` for a `neg`, `add` for a `mul`+`succ`. Those must be
+/// resolved BEFORE the producer runs, since a park during decide has no channel to propagate.
+/// Demand the well-known ring names in the theory namespace: the selector's import when given,
+/// else this proof's file.
+pub fn read(self: @This(), prove: *Prove, w: *const Walk, c: ast.Step.Claim) Allocator.Error!?Engine.TaskIndex {
+    _ = self;
+    _ = w;
+    const names = [_][]const u8{ "add", "mul", "succ", "prev", "ZERO", "ONE", "neg", "sub" };
+    var tfile = prove.file;
+    if (c.schema) |sel| {
+        const st = prove.ctx.idents.lookup(prove.ctx.io, .{ .namespace = prove.ns, .name = tokName(sel) });
+        if (st == null) {
+            return try prove.h.rackIndexed(try FetchTask.new(prove.ctx.arena, .{
+                .file = prove.file,
+                .name = tokName(sel),
+                .loc = sel.start,
+                .loc_file = prove.file,
+            }));
+        }
+        switch (st.?) {
+            .in_flight => |owner| return owner,
+            .done => |ix| if (prove.ctx.interner.keyOf(ix) == .import) {
+                tfile = prove.ctx.interner.keyOf(prove.ctx.interner.keyOf(ix).import.namespace).namespace.file;
+            },
+        }
+    }
+    const fid = prove.ctx.fileOf(tfile) orelse return null;
+    const tns = try prove.ctx.interner.namespace(.universe, tfile);
+    var refs: std.ArrayList(RefScan.Ref) = .empty;
+    for (names) |nm| {
+        const nid = try prove.ctx.interner.internString(nm);
+        const d = prove.ctx.declOf(fid, nid) orelse continue;
+        if (d.* == .define) continue;
+        try refs.append(prove.ctx.arena, .{ .ns = null, .name = nid, .domain = .ident, .loc = c.rule.start });
+    }
+    return Prove.resolveRefs(prove.ctx, prove.h, tfile, tns, prove.model, prove.self_key, refs.items);
+}
+
 pub fn decide(self: @This(), prove: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step.Claim) Error!void {
     return common.decideFused(self, prove, w, e, goal, c);
 }

@@ -38,6 +38,38 @@ pub const premise_shape: Accelerant.PremiseShape = .local_refs_kept;
 /// `Claim.args` name LEMMAS (not value terms): demanded as facts, never elaborated as terms
 pub const lemma_args = false;
 
+/// Phase 1: the decision binds its well-known operator symbols by name — `add` for the
+/// mul/order certs, `nonneg` to pick the ℕ-vs-ℤ fragment — even when the goal itself does not
+/// mention them (a pure-succ order goal, a ground `mul`). Demand every well-known name DECLARED
+/// in this file so the producer's ident lookups find them done; an absent name is skipped (no
+/// fetch, no error). Without `nonneg` resolved a ℕ goal is read over ℤ and
+/// `less_than(a, add(a, succ(b)))` decides FALSE — which is what the trusted path once did.
+pub fn read(self: @This(), prove: *Prove, w: *const Walk, c: ast.Step.Claim) Allocator.Error!?Engine.TaskIndex {
+    _ = self;
+    _ = w;
+    const loc = c.rule.start;
+    const wk = [_][]const u8{ "add", "mul", "succ", "prev", "ZERO", "ONE", "neg", "sub", "less_than", "nonneg" };
+    const fid = prove.ctx.fileOf(prove.file).?;
+    var refs: std.ArrayList(RefScan.Ref) = .empty;
+    for (wk) |name| {
+        const nid = prove.ctx.interner.internString(name) catch return error.OutOfMemory;
+        const decl = prove.ctx.declOf(fid, nid) orelse continue; // not declared here → skip
+        if (decl.* == .define) continue; // a define is a macro, not an identifier to fetch (`define ONE = succ(ZERO)`)
+        try refs.append(prove.ctx.arena, .{ .ns = null, .name = nid, .domain = .ident, .loc = loc });
+    }
+    // the Cooper induction path instantiates the `induction` schema — demand its `.schema`
+    // locator so the producer's schema lookup finds it `done`. Only when THIS file declares
+    // `induction` as a schema (a parameterized axiom); a bare re-export or a theory-qualified
+    // name is left to the ordinary resolver (the induction path declines if it can't resolve).
+    const induction_id = prove.ctx.interner.internString("induction") catch return error.OutOfMemory;
+    if (c.schema == null) if (prove.ctx.declOf(fid, induction_id)) |d| {
+        if (ast.factOf(d)) |f| if (f.params != null) {
+            try refs.append(prove.ctx.arena, .{ .ns = null, .name = induction_id, .domain = .schema, .loc = loc });
+        };
+    };
+    return Prove.resolveRefs(prove.ctx, prove.h, prove.file, prove.ns, prove.model, prove.self_key, refs.items);
+}
+
 pub fn decide(self: @This(), prove: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step.Claim) Error!void {
     return common.decideFused(self, prove, w, e, goal, c);
 }
