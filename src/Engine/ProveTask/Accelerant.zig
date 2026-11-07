@@ -26,6 +26,34 @@ const TermId = term.TermId;
 const SortId = term.SortId;
 const Delaborate = @import("Delaborate.zig");
 
+/// What rides in `Claim.schema` for an accelerated tactic — the parser's one overloaded slot.
+/// Declared by each tactic as `pub const schema_slot`; the scaffolding reads it at comptime.
+pub const SchemaSlot = enum {
+    /// the word takes nothing in the slot
+    none,
+    /// `specialize HEAD(args)`: a forall-quantified fact OR a local step. Must RESOLVE (a typo
+    /// is a hard error in both modes) and, when local, seeds a use-all-facts root.
+    head,
+    /// `extensionality(lemma)`: a fact or local step the producer reads structurally. Seeds a
+    /// root when local; a miss is left for strict to diagnose.
+    lemma,
+    /// `polynomial(theory)` / `arithmetic(theory)`: an IMPORT naming the module whose
+    /// vocabulary the decision binds. Never a fact; never a root.
+    theory_selector,
+};
+
+/// How a call site's premises line up against the instance's `->` antecedents (phase 3).
+/// Declared by each tactic as `pub const premise_shape`.
+pub const PremiseShape = enum {
+    /// the LOCAL equation refs are the antecedents — minus any the producer DROPPED (recorded
+    /// in `producer_premise_refs`); globals are cited inside the certificate
+    local_refs_kept,
+    /// no head: the antecedents ARE the cited refs, in order (tautology)
+    refs_in_order,
+    /// a LOCAL head is the first antecedent, then the hyp refs (specialize)
+    head_then_refs,
+};
+
 /// What a producer hands back to the shared `using` plumbing: a synthetic schema to prove +
 /// how the call site instantiates and discharges it.
 pub const Synthetic = struct {
