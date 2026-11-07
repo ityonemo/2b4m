@@ -601,14 +601,14 @@ pub fn addTests(
 
     // SOUNDNESS negative: an iff must not license an unrelated conclusion —
     // tautology rejects `A iff B, A ⊢ C` with a countermodel that respects the iff.
-    ctx.fail(&.{ "check", "tests/cases/kernel/iff_bad.b4m" }, "tests/cases/kernel/iff_bad.b4m:19:27: error: tautology: not a propositional consequence; countermodel: A() := true, B() := true, C() := false\n");
+    ctx.fail(&.{ "check", "tests/cases/kernel/iff_bad.b4m" }, "tests/cases/kernel/iff_bad.b4m:25:20: error: tautology: not a propositional consequence; countermodel: A() := true, B() := true, C() := false\n");
 
     // GUARD: the biconditional shape `(X -> Y) and (Y -> X)` is canonically an
     // iff — `both` is forbidden from producing it (must use `make_equivalence`)…
-    ctx.fail(&.{ "check", "tests/cases/kernel/iff_and_intro_bad.b4m" }, "tests/cases/kernel/iff_and_intro_bad.b4m:15:51: error: this goal is a biconditional '(X -> Y) and (Y -> X)' — use `make_equivalence` (which is the same rule, named for what it proves)\n");
+    ctx.fail(&.{ "check", "tests/cases/kernel/iff_and_intro_bad.b4m" }, "tests/cases/kernel/iff_and_intro_bad.b4m:21:9: error: this goal is a biconditional '(X -> Y) and (Y -> X)' — use `make_equivalence` (which is the same rule, named for what it proves)\n");
 
     // …and conversely `make_equivalence` requires that shape — a plain conjunction is rejected.
-    ctx.fail(&.{ "check", "tests/cases/kernel/iff_intro_bad.b4m" }, "tests/cases/kernel/iff_intro_bad.b4m:14:33: error: make_equivalence's goal must be a biconditional (from `P iff Q`); this goal is not of the form '(X -> Y) and (Y -> X)' — did you mean `both`?\n");
+    ctx.fail(&.{ "check", "tests/cases/kernel/iff_intro_bad.b4m" }, "tests/cases/kernel/iff_intro_bad.b4m:20:9: error: make_equivalence's goal must be a biconditional (from `P iff Q`); this goal is not of the form '(X -> Y) and (Y -> X)' — did you mean `both`?\n");
 
     // `equiv_rewrite`: the propositional analogue of `=`-rewrite. From `P iff Q`,
     // replace the sub-proposition P by Q at any position (subformula congruence,
@@ -618,10 +618,10 @@ pub fn addTests(
 
     // it is SOUND: the claim must be reachable by replacing P with Q (or Q with P
     // — equiv_rewrite is bidirectional) — an unrelated claim is rejected in BOTH.
-    ctx.fail(&.{ "check", "tests/cases/kernel/iff_rewrite_bad.b4m" }, "tests/cases/kernel/iff_rewrite_bad.b4m:17:12: error: equiv_rewrite cannot derive 'R()' from 'P()' using '(P() -> Q()) and (Q() -> P())' (tried both orientations)\n");
+    ctx.fail(&.{ "check", "tests/cases/kernel/iff_rewrite_bad.b4m" }, "tests/cases/kernel/iff_rewrite_bad.b4m:21:12: error: equiv_rewrite cannot derive 'R()' from 'P()' using '(P() -> Q()) and (Q() -> P())' (tried both orientations)\n");
 
     // …and its first argument must be a biconditional, not a plain implication.
-    ctx.fail(&.{ "check", "tests/cases/kernel/iff_rewrite_notbicond.b4m" }, "tests/cases/kernel/iff_rewrite_notbicond.b4m:14:30: error: equiv_rewrite expects a biconditional '(P -> Q) and (Q -> P)', got 'P() -> Q()'\n");
+    ctx.fail(&.{ "check", "tests/cases/kernel/iff_rewrite_notbicond.b4m" }, "tests/cases/kernel/iff_rewrite_notbicond.b4m:20:23: error: equiv_rewrite expects a biconditional '(P -> Q) and (Q -> P)', got 'P() -> Q()'\n");
 
     // BIDIRECTIONAL rewrite: an equation / biconditional cited in the "wrong"
     // orientation for the goal still rewrites — no preceding `symmetry` needed.
