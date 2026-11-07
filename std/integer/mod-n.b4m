@@ -39,9 +39,9 @@ import group <<< "std/group.b4m"
 
 sort Int = integer.Int
 func int_add = integer.add
-func ineg = integer.neg
+func int_neg = integer.neg
 const INT_ZERO = integer.ZERO
-func isub = integer.sub
+func int_sub = integer.sub
 pred less_than = int_divides.less_than
 define divides(d, k) = exists j: Int; k = integer.mul(d, j)
 
@@ -56,7 +56,7 @@ func cls(k: Int) => Zn
 // every class has an integer representative.
 axiom clsSurjective: forall z: Zn; exists k: Int; z = cls(k)
 // the quotient identification: cls(a) = cls(b) iff n | (a − b).
-axiom clsCongruent: forall a, b: Int; cls(a) = cls(b) iff divides(N, isub(a, b))
+axiom clsCongruent: forall a, b: Int; cls(a) = cls(b) iff divides(N, int_sub(a, b))
 
 // the induced additive-group structure on ℤ_n (cls is a homomorphism).
 const ZERO: Zn
@@ -64,7 +64,7 @@ func add(x: Zn, y: Zn) => Zn
 func neg(x: Zn) => Zn
 axiom zeroIsClsZero: ZERO = cls(INT_ZERO)
 axiom addHom: forall a, b: Int; add(cls(a), cls(b)) = cls(int_add(a, b))
-axiom negHom: forall a: Int; neg(cls(a)) = cls(ineg(a))
+axiom negHom: forall a: Int; neg(cls(a)) = cls(int_neg(a))
 
 // -- the additive-group axioms on ℤ_n, LIFTED from ℤ ------------------------
 
@@ -255,7 +255,7 @@ proof
             x = cls(a)
             [by hypothesis with-a]
           @neg-hom |
-            neg(cls(a)) = cls(ineg(a))
+            neg(cls(a)) = cls(int_neg(a))
             [using specialize negHom(a)]
           @with-x-right |
             add(neg(x), x) = add(neg(x), cls(a))
@@ -264,16 +264,16 @@ proof
             add(neg(x), x) = add(neg(cls(a)), cls(a))
             [by rewrite x-is-cls-a with-x-right]
           @with-neg |
-            add(neg(x), x) = add(cls(ineg(a)), cls(a))
+            add(neg(x), x) = add(cls(int_neg(a)), cls(a))
             [by rewrite neg-hom with-x-left]
           @sum-hom |
-            add(cls(ineg(a)), cls(a)) = cls(int_add(ineg(a), a))
-            [using specialize addHom(ineg(a), a)]
+            add(cls(int_neg(a)), cls(a)) = cls(int_add(int_neg(a), a))
+            [using specialize addHom(int_neg(a), a)]
           @int-neg-left |
-            int_add(ineg(a), a) = INT_ZERO
+            int_add(int_neg(a), a) = INT_ZERO
             [using specialize integer.addNegLeft(a)]
           @cls-neg-left |
-            cls(int_add(ineg(a), a)) = cls(INT_ZERO)
+            cls(int_add(int_neg(a), a)) = cls(INT_ZERO)
             [by rewrite int-neg-left]
           @zero-is-cls |
             ZERO = cls(INT_ZERO)
@@ -282,7 +282,7 @@ proof
             cls(INT_ZERO) = ZERO
             [by symmetry zero-is-cls]
           @sum-is-zero |
-            add(cls(ineg(a)), cls(a)) = ZERO
+            add(cls(int_neg(a)), cls(a)) = ZERO
             [using chain sum-hom cls-neg-left cls-zero-is-ZERO]
           @conclusion-inverse |
             add(neg(x), x) = ZERO
@@ -331,9 +331,9 @@ qed
 import group_power <<< "std/group.b4m"
 
 func int_succ = integer.succ
-func iprev = integer.prev
+func int_prev = integer.prev
 func int_mul = integer.mul
-const IONE = integer.ONE
+const INT_ONE = integer.ONE
 
 func znPower(x: Zn, k: Int) => Zn
 axiom znPowerDef: forall a, k: Int; znPower(cls(a), k) = cls(int_mul(k, a))
@@ -450,7 +450,7 @@ proof
 qed
 
 // powerPrev: znPower(x, k−1) = znPower(x, k) + (−x). cls((k−1)a) = cls(ka − a) = cls(ka)+cls(−a).
-theorem znPowerPrev: forall x: Zn; forall k: Int; znPower(x, iprev(k)) = add(znPower(x, k), neg(x))
+theorem znPowerPrev: forall x: Zn; forall k: Int; znPower(x, int_prev(k)) = add(znPower(x, k), neg(x))
 proof
   @generalize-x |
     fix x: Zn {
@@ -465,25 +465,25 @@ proof
           @generalize-k |
             fix k: Int {
               @lhs-cls |
-                znPower(x, iprev(k)) = znPower(cls(a), iprev(k))
+                znPower(x, int_prev(k)) = znPower(cls(a), int_prev(k))
                 [by rewrite x-is-cls-a]
               @lhs-def |
-                znPower(cls(a), iprev(k)) = cls(int_mul(iprev(k), a))
-                [using specialize znPowerDef(a, iprev(k))]
+                znPower(cls(a), int_prev(k)) = cls(int_mul(int_prev(k), a))
+                [using specialize znPowerDef(a, int_prev(k))]
               @prev-mul |
-                int_mul(iprev(k), a) = int_add(int_mul(k, a), ineg(a))
+                int_mul(int_prev(k), a) = int_add(int_mul(k, a), int_neg(a))
                 [using specialize integer.mulPrevLeft(k, a)]
               @lhs-split |
-                cls(int_mul(iprev(k), a)) = cls(int_add(int_mul(k, a), ineg(a)))
+                cls(int_mul(int_prev(k), a)) = cls(int_add(int_mul(k, a), int_neg(a)))
                 [by rewrite prev-mul]
               @lhs-is-sum |
-                znPower(x, iprev(k)) = cls(int_add(int_mul(k, a), ineg(a)))
+                znPower(x, int_prev(k)) = cls(int_add(int_mul(k, a), int_neg(a)))
                 [using chain lhs-cls lhs-def lhs-split]
               @power-k-def |
                 znPower(cls(a), k) = cls(int_mul(k, a))
                 [using specialize znPowerDef(a, k)]
               @neg-hom-a |
-                neg(cls(a)) = cls(ineg(a))
+                neg(cls(a)) = cls(int_neg(a))
                 [using specialize negHom(a)]
               @rhs-x |
                 add(znPower(x, k), neg(x)) = add(znPower(cls(a), k), neg(cls(a)))
@@ -492,31 +492,31 @@ proof
                 add(znPower(x, k), neg(x)) = add(cls(int_mul(k, a)), neg(cls(a)))
                 [by rewrite power-k-def rhs-x]
               @rhs-neg |
-                add(znPower(x, k), neg(x)) = add(cls(int_mul(k, a)), cls(ineg(a)))
+                add(znPower(x, k), neg(x)) = add(cls(int_mul(k, a)), cls(int_neg(a)))
                 [by rewrite neg-hom-a rhs-power]
               @sum-hom |
-                add(cls(int_mul(k, a)), cls(ineg(a))) = cls(int_add(int_mul(k, a), ineg(a)))
-                [using specialize addHom(int_mul(k, a), ineg(a))]
+                add(cls(int_mul(k, a)), cls(int_neg(a))) = cls(int_add(int_mul(k, a), int_neg(a)))
+                [using specialize addHom(int_mul(k, a), int_neg(a))]
               @rhs-is-sum |
-                add(znPower(x, k), neg(x)) = cls(int_add(int_mul(k, a), ineg(a)))
+                add(znPower(x, k), neg(x)) = cls(int_add(int_mul(k, a), int_neg(a)))
                 [using chain rhs-neg sum-hom]
               @rhs-sum-flipped |
-                cls(int_add(int_mul(k, a), ineg(a))) = add(znPower(x, k), neg(x))
+                cls(int_add(int_mul(k, a), int_neg(a))) = add(znPower(x, k), neg(x))
                 [by symmetry rhs-is-sum]
               @conclusion-pp |
-                znPower(x, iprev(k)) = add(znPower(x, k), neg(x))
+                znPower(x, int_prev(k)) = add(znPower(x, k), neg(x))
                 [using chain lhs-is-sum rhs-sum-flipped]
             }
           @discharge-k |
-            forall k: Int; znPower(x, iprev(k)) = add(znPower(x, k), neg(x))
+            forall k: Int; znPower(x, int_prev(k)) = add(znPower(x, k), neg(x))
             [by generalize generalize-k]
         }
       @conclusion-with-a |
-        forall k: Int; znPower(x, iprev(k)) = add(znPower(x, k), neg(x))
+        forall k: Int; znPower(x, int_prev(k)) = add(znPower(x, k), neg(x))
         [by unpacked with-a]
     }
   @conclusion |
-    forall x: Zn; forall k: Int; znPower(x, iprev(k)) = add(znPower(x, k), neg(x))
+    forall x: Zn; forall k: Int; znPower(x, int_prev(k)) = add(znPower(x, k), neg(x))
     [by generalize generalize-x]
 qed
 
@@ -539,7 +539,7 @@ model ZnGroupPower {
 // -- HEADLINE: ℤ_n is CYCLIC, generated by cls(1) ------------------------------
 // Every element cls(a) is the a-th power of the generator cls(1): in additive
 // terms, a·(cls 1) = cls(a·1) = cls(a). So ℤ_n = ⟨cls 1⟩ — it is cyclic.
-theorem znIsCyclic: forall z: Zn; exists k: Int; z = znPower(cls(IONE), k)
+theorem znIsCyclic: forall z: Zn; exists k: Int; z = znPower(cls(INT_ONE), k)
 proof
   @generalize-z |
     fix z: Zn {
@@ -553,36 +553,36 @@ proof
             [by hypothesis with-a]
           // znPower(cls 1, a) = cls(a·1) = cls(a) = z.
           @power-def |
-            znPower(cls(IONE), a) = cls(int_mul(a, IONE))
-            [using specialize znPowerDef(IONE, a)]
+            znPower(cls(INT_ONE), a) = cls(int_mul(a, INT_ONE))
+            [using specialize znPowerDef(INT_ONE, a)]
           @a-times-one |
-            int_mul(a, IONE) = a
+            int_mul(a, INT_ONE) = a
             [using specialize integer.mulOneRight(a)]
           @cls-a-one |
-            cls(int_mul(a, IONE)) = cls(a)
+            cls(int_mul(a, INT_ONE)) = cls(a)
             [by rewrite a-times-one]
           @power-is-cls-a |
-            znPower(cls(IONE), a) = cls(a)
+            znPower(cls(INT_ONE), a) = cls(a)
             [using chain power-def cls-a-one]
           @power-is-z |
-            znPower(cls(IONE), a) = z
+            znPower(cls(INT_ONE), a) = z
             [using chain power-is-cls-a z-is-cls-a-flipped]
           @z-is-cls-a-flipped |
             cls(a) = z
             [by symmetry z-is-cls-a]
           @z-is-power |
-            z = znPower(cls(IONE), a)
+            z = znPower(cls(INT_ONE), a)
             [by symmetry power-is-z]
           @conclusion-generated |
-            exists k: Int; z = znPower(cls(IONE), k)
+            exists k: Int; z = znPower(cls(INT_ONE), k)
             [by witness(a) z-is-power]
         }
       @conclusion-with-a |
-        exists k: Int; z = znPower(cls(IONE), k)
+        exists k: Int; z = znPower(cls(INT_ONE), k)
         [by unpacked with-a]
     }
   @conclusion |
-    forall z: Zn; exists k: Int; z = znPower(cls(IONE), k)
+    forall z: Zn; exists k: Int; z = znPower(cls(INT_ONE), k)
     [by generalize generalize-z]
 qed
 
@@ -593,7 +593,7 @@ qed
 
 const ONE: Zn
 func mul(x: Zn, y: Zn) => Zn
-axiom oneIsClsOne: ONE = cls(IONE)
+axiom oneIsClsOne: ONE = cls(INT_ONE)
 axiom mulHom: forall a, b: Int; mul(cls(a), cls(b)) = cls(int_mul(a, b))
 
 // addition commutes: x + y = y + x (cls(a+b) = cls(b+a) by ℤ add-commutativity).
@@ -1080,22 +1080,22 @@ proof
             x = cls(a)
             [by hypothesis with-a]
           @one-is-cls |
-            ONE = cls(IONE)
+            ONE = cls(INT_ONE)
             [by cite oneIsClsOne]
           @with-one |
-            mul(ONE, x) = mul(cls(IONE), x)
+            mul(ONE, x) = mul(cls(INT_ONE), x)
             [by rewrite one-is-cls]
           @with-x |
-            mul(ONE, x) = mul(cls(IONE), cls(a))
+            mul(ONE, x) = mul(cls(INT_ONE), cls(a))
             [by rewrite x-is-cls-a with-one]
           @hom |
-            mul(cls(IONE), cls(a)) = cls(int_mul(IONE, a))
-            [using specialize mulHom(IONE, a)]
+            mul(cls(INT_ONE), cls(a)) = cls(int_mul(INT_ONE, a))
+            [using specialize mulHom(INT_ONE, a)]
           @int-one-left |
-            int_mul(IONE, a) = a
+            int_mul(INT_ONE, a) = a
             [using specialize integer.mulOneLeft(a)]
           @cls-one-left |
-            cls(int_mul(IONE, a)) = cls(a)
+            cls(int_mul(INT_ONE, a)) = cls(a)
             [by rewrite int-one-left]
           @mul-is-cls-a |
             mul(ONE, x) = cls(a)
