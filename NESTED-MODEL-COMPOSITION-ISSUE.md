@@ -34,5 +34,7 @@ A ℤ[x]-onto-a-cut-of-ℚ[x] model (`sort IntPolyCut = QPoly where hasIntegerCo
 the same pattern: the sort mapping is accepted, then failures surface one unmapped symbol at a
 time. Not carried to completion, so `std/rational/gauss-cut.b4m` still duplicates ℤ[x].
 
-Related: `SIMPLIFY-ISSUES.md` — the same family, where the guard is owed by a tactic's
-generated terms rather than by author-written ones.
+Related: the same family of defect, where the guard is owed by a tactic's GENERATED terms
+rather than by author-written ones, was fixed in `Prove.syntheticObligations` (`43f63f3`) —
+the obligation becomes a stated antecedent the call site discharges. Gated by
+`tests/cases/tactics/guard/`.

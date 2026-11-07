@@ -708,7 +708,7 @@ fn conjunctOf(self: *const Elab, k: TermId, prop: TermId) bool {
 }
 
 /// Flip to true to trace every guard-obligation miss (proposition, lookup block, source
-/// offset) plus any same-text fact already taught. See SIMPLIFY-ISSUES.md.
+/// offset) plus any same-text fact already taught.
 const guard_trace = false;
 
 fn requireKnown(self: *Elab, prop: TermId, loc: u32) Error!void {
