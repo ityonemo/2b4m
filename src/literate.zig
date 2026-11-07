@@ -100,16 +100,19 @@ pub fn checkLiterate(arena: Allocator, source: []const u8) Allocator.Error!fmt.R
             if (r.diagnostic) |d| {
                 // the block's line 1 is `block_first_line` in the document
                 const doc_line = block_first_line + d.line - 1;
-                return .{ .text = source, .diagnostic = .{
-                    .line = doc_line,
-                    .col = d.col,
-                    .message = try std.fmt.allocPrint(arena, "{d}:{d}: error: {s}", .{
-                        doc_line,
-                        d.col,
-                        // re-render from the body, past the block-local "L:C: error: " prefix
-                        d.message[std.mem.indexOf(u8, d.message, "error: ").? + "error: ".len ..],
-                    }),
-                } };
+                return .{
+                    .text = source,
+                    .diagnostic = .{
+                        .line = doc_line,
+                        .col = d.col,
+                        .message = try std.fmt.allocPrint(arena, "{d}:{d}: error: {s}", .{
+                            doc_line,
+                            d.col,
+                            // re-render from the body, past the block-local "L:C: error: " prefix
+                            d.message[std.mem.indexOf(u8, d.message, "error: ").? + "error: ".len ..],
+                        }),
+                    },
+                };
             }
             const formatted = r.text;
             try out.appendSlice(arena, formatted);
