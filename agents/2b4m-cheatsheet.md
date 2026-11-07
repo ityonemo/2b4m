@@ -281,7 +281,7 @@ qed
 | `and_lhs STEP` / `and_rhs STEP` | 1 | |
 | `make_equivalence FWD BWD` | 2 | forward `P->Q` then backward `Q->P`; goal must be `P iff Q` shape |
 | `equiv_forward STEP` / `equiv_converse STEP` | 1 | recover `P->Q` / `Q->P` from `P iff Q` |
-| `either_left STEP` / `either_right STEP` | 1 | |
+| `either_lhs STEP` / `either_rhs STEP` | 1 | |
 | **`common_conclusion DISJ LBLOCK RBLOCK`** | **3 (1 step + 2 blocks)** | **BINARY only.** A 3-way split needs `case <disj> { … }` (see below), NOT a 3-ref common_conclusion |
 | `contradiction BLOCK S1 S2` | 3 (1 block + 2 steps) | the block's assumption yielded contradiction S1/S2 |
 | `ex_falso S1 S2` | 2 | from a contradiction, conclude anything |

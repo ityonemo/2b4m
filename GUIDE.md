@@ -53,7 +53,7 @@ below. The overview tables (`### Justification rules (overview table)`,
 | `RULE: and_lhs` / `and_rhs` | project a conjunction |
 | `RULE: make_equivalence` | a biconditional from its two directions |
 | `RULE: equiv_forward` / `equiv_converse` | recover a direction of an iff |
-| `RULE: either_left` / `either_right` | inject into a disjunction |
+| `RULE: either_lhs` / `either_rhs` | inject into a disjunction |
 | `RULE: common_conclusion` | binary case analysis over a disjunction |
 | `RULE: contradiction` | derive a negation from a contradiction |
 | `RULE: ex_falso` | from a contradiction, conclude anything |
@@ -1137,7 +1137,7 @@ partition**: every `RULE:` leaf is a `by` word and every `TACTIC:` leaf is a
 - **`by`** (kernel primitives): `cite`, `hypothesis`, `predicate`, `modus_ponens`,
   `discharge`, `generalize`, `apply_at`, `witness`, `unpacked`,
   `both`, `and_lhs`, `and_rhs`, `make_equivalence`, `equiv_forward`,
-  `equiv_converse`, `either_left`, `either_right`, `common_conclusion`, `contradiction`,
+  `equiv_converse`, `either_lhs`, `either_rhs`, `common_conclusion`, `contradiction`,
   `ex_falso`, `double_negation`, `reflexivity`, `symmetry`, `rewrite`, `equiv_rewrite`.
 - **`using`** (engine proof-generation): `instantiation`, `model`, `import`, and the
   accelerant tactics — `simplify`, `simplify_quantified`, `assoc_commut`,
@@ -1160,7 +1160,7 @@ partition**: every `RULE:` leaf is a `by` word and every `TACTIC:` leaf is a
 | `and_lhs STEP` / `and_rhs STEP` | project a conjunction |
 | `make_equivalence FWD BWD` | a biconditional `P iff Q` from its two directions (`P -> Q` then `Q -> P`). Requires an `iff`-shaped goal (a plain conjunction is `both`'s job) |
 | `equiv_forward STEP` / `equiv_converse STEP` | recover a direction of `P iff Q` (`P -> Q` / `Q -> P`) |
-| `either_left STEP` / `either_right STEP` | inject into a disjunction |
+| `either_lhs STEP` / `either_rhs STEP` | inject into a disjunction |
 | `common_conclusion DISJ LBLOCK RBLOCK` | case analysis: both assume blocks conclude the claim |
 | `contradiction BLOCK S1 S2` | the assumption led to the contradiction `S1`/`S2`, so its negation holds |
 | `ex_falso S1 S2` | from a contradiction, conclude anything |
@@ -1308,14 +1308,14 @@ direction `P -> Q`. (`equiv_converse` recovers `Q -> P`.)
 `[by equiv_converse STEP]` — one ref proving `P iff Q`; recovers the backward
 direction `Q -> P`.
 
-### RULE: either_left
+### RULE: either_lhs
 
-`[by either_left STEP]` — one ref proving `P`; concludes `P or Q` for the goal's
-right disjunct `Q`. (`either_right` proves `Q` to conclude `P or Q`.)
+`[by either_lhs STEP]` — one ref proving `P`; concludes `P or Q` for the goal's
+right disjunct `Q`. (`either_rhs` proves `Q` to conclude `P or Q`.)
 
-### RULE: either_right
+### RULE: either_rhs
 
-`[by either_right STEP]` — one ref proving `Q`; concludes `P or Q`.
+`[by either_rhs STEP]` — one ref proving `Q`; concludes `P or Q`.
 
 ### RULE: common_conclusion
 
