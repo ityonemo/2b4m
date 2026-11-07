@@ -91,7 +91,7 @@ DECISION — and declines only to EMIT and kernel-check the certificate.
 | `extensionality` (+`_q`) | the ext lemma and every unfold lemma resolve; **`emitExtSetResidue`'s `smt.tautology` closes the pointwise obligation** — reached by running the emitter and discarding its steps, since the decision lives inside it | packaging the emitted steps as the synthetic schema |
 | `model` | the model name resolves and is a model; exactly one cited theorem; **the transferred statement α-matches the claim** | the per-axiom OBLIGATION COVERAGE check (below) |
 | `import` | the import resolves; exactly one cited theorem; **the imported statement α-matches the claim** | nothing further — citing a proven fact IS the justification, so there is no certificate to emit |
-| `specialize` | a head is present | **everything else**, including whether the instance's conclusion matches the claim. This is a BUG, not a boundary — see `../SPECIALIZE-FAST-UNSOUND.md` |
+| `specialize` | the head resolves; its args elaborate in the caller's scope; **the instance's conclusion α-matches the claim** — one ∀ opened per arg at the elaborated argument, then some suffix of the `->` chain equals the goal (the antecedents before it are the refs' discharges plus refined-binder guards) | proving the instance, and discharging those guards from the caller's context (`withGuardPremises`) |
 | `instantiation` | — | **nothing. Never trustable at all**: an instantiation's content IS the body's proof at the args, which is the only soundness gate |
 
 ## `model` — unchecked obligation coverage
@@ -101,28 +101,59 @@ Strict rejects a partial model whose cited theorem needs an unmapped axiom (the 
 through"). `--fast` does not reach that check, so a consumer can be handed, say, an
 equivalence relation whose transitivity nothing supplied.
 
-## Building a producer's admit path
+## The three phases, and the tactic union
 
-A decision word admits on exactly ONE outcome: **the goal is TRUE.** A refutation fails,
-and a shape the procedure cannot handle also fails — "I can't decide this" is not a
-verdict. Each word has a regression fixture named `*_false_fast.b4m` beside it, asserting
-a false goal is still refused.
+Every tactic is one file under `src/Engine/ProveTask/Accelerants/` — a struct that is one
+variant of `Prove.Tactic`, a `union(enum)` with a variant per trustable word (the
+`_quantified` variants share a file and carry a `quantified` field). The scaffolding drives
+each step through three phases, dispatching once per phase with
+`switch (tactic) { inline else => |a| a.<phase>(…) }`:
 
-Four rules for where the admit goes:
+| phase | hook | may park? | who runs it |
+|---|---|---|---|
+| READ — demand what later phases will read | `read` | **yes** — the only phase with the suspend channel | both modes |
+| DECIDE — accept or reject from what phase 1 fetched | `decide` | no | both; `--fast` admits on accept and stops |
+| CERTIFY — build the synthetic schema the kernel checks | `certify` | no | strict only |
+
+Phase 1's standard citations — the head, lemma args, refs — are not written per tactic: the
+scaffolding derives them from three consts each tactic declares (`schema_slot`,
+`premise_shape`, `lemma_args`) and demands them mode-appropriately, PROOFS under strict and
+STATEMENTS under `--fast`. `read` is for whatever else a decision needs (`arithmetic`'s
+well-known operator symbols, `polynomial`'s ring vocabulary in the selector's file).
+
+**The scaffolding rule: no tactic-specific logic outside the union.** The read passes,
+`admit`, `demandUsing`/`lowerUsing`, `accelerantPremises`, root seeding and `RefScan` contain
+no rule-name comparison, no word list, no `switch (word)` arm naming a tactic. A behaviour
+that must vary per tactic becomes a const or a phase hook on the tactic. The converse holds
+too: a tactic file holds no scaffolding.
+
+Most tactics' `decide` is still FUSED with `certify` — `common.decideFused` runs the producer
+in admit mode and reads whether it reached its accept point. The contract is honoured at the
+scaffolding; unfusing a producer is that tactic's own work. `specialize` is unfused: its
+decide needs something certify never computes (the α-match against the elaborated instance).
+
+## Building a tactic's decide
+
+A decision admits on exactly ONE outcome: **the goal is TRUE.** A refutation fails, and a
+shape the procedure cannot handle also fails — "I can't decide this" is not a verdict. Each
+word has a regression fixture named `*_false_fast.b4m` beside it, asserting a false goal is
+still refused.
+
+Four rules, for a fused producer:
 
 1. **Admit AFTER the decision, not before.** Clear `producer_premise_refs` when you do, or
    the admitted path resolves global rule names as step labels.
 2. **But admit BEFORE a `fallback(thm)` resolves.** Resolving it needs that fact DEMANDED,
    which admit mode has not done. What adjudicates the goal is the cited theorem, whose own
    proof the strict pass checks.
-3. **Demand in the READ PASS, never from inside the producer.** `trustedReadPass` is the
-   only place with a free park channel. Parking from a producer via `error.Recover` reads as
-   a diagnosed REJECTION, and rejecting a step DROPS ITS LABEL from the walk — surfacing
-   later as "unknown reference" at the next step that cited it.
+3. **Demand in phase 1, never from inside decide or certify.** Parking from a producer via
+   `error.Recover` reads as a diagnosed REJECTION, and rejecting a step DROPS ITS LABEL from
+   the walk — surfacing later as "unknown reference" at the next step that cited it.
 4. **Read a statement with the right-weight tool.** `elaborateFactStatement` reads a fact's
    STATEMENT and racks NO ProveTask, which is what a decision needs. Do NOT use it to PROBE
    readability: it writes diagnostics on failure, so `--fast` would report errors strict
-   never gives. Demand the thing properly in the read pass instead.
+   never gives. A name the file does not declare is a typo — leave it to the process pass,
+   which diagnoses it with position (`Prove.citationDeclared`).
 
 Some decisions hide INSIDE the emitter — `extensionality`'s pointwise obligation is closed
 by an `smt.tautology` call inside `emitExtSetResidue`. There, admit means running the
@@ -218,15 +249,15 @@ only strict notices.
 
 | word | module | default (kernel-checked) path | what `--fast` presumes |
 |---|---|---|---|
-| `tautology` | `src/Engine/ProveTask/smt.zig` | replay as kernel steps — an inline excluded middle plus `common_conclusion` per split atom, structural derivation at the leaves | nothing but the step budget: past the 16-atom cap the certificate is skipped and the verdict admitted |
-| `arithmetic` | `src/Engine/ProveTask/presburger.zig` (decision), `farkas.zig` (refutation search) | the certifier chain below | the peano lemmas it would otherwise cite |
-| `polynomial` | `src/Engine/ProveTask/Polynomial.zig`, `Prove.zig` (`producePolynomial`) | distribute, right-nest and bubble-sort each monomial, sort the outer sum, fold identities — emitting rewrites that cite the theory's ring lemmas | the vocabulary's ring algebra, structurally |
-| `extensionality` | `Prove.zig` (`produceExtensionality`) | reduce to a pointwise residue, closed by `smt.tautology` inside `emitExtSetResidue` | packaging only — the decision still runs |
-| `assoc_commut` | `Prove.zig` (`produceAssocCommut`, `acPlan`) | sort both sides to the same summand multiset, emit the rewrite chain | the operator is associative *and* commutative |
-| `assoc` | `Prove.zig` (`produceAssoc`) | right-nest both sides by the cited lemma (confluent + terminating, so right-nesting is canonical), emit the chain | the operator is associative. The lemma is still resolved, since it identifies the operator |
-| `simplify` | `Prove.zig` | normalize both sides by the cited rules to a shared form, emit the `EqCert` join | the cited rules hold — statements are read, proofs are not |
-| `chain` | `Prove.zig` | BFS a rewrite path between the goal's two sides, emit it | as `simplify` |
-| `specialize` | `Prove.zig` | instantiate the head at the args, emit `theorem_ref → apply_at → modus_ponens` | **unsound — see the table above** |
+| `tautology` | `Accelerants/Tautology.zig` (decision in `smt.zig`) | replay as kernel steps — an inline excluded middle plus `common_conclusion` per split atom, structural derivation at the leaves | nothing but the step budget: past the 16-atom cap the certificate is skipped and the verdict admitted |
+| `arithmetic` | `Accelerants/Arithmetic.zig` (decision in `presburger.zig`, refutation search in `farkas.zig`) | the certifier chain below | the peano lemmas it would otherwise cite |
+| `polynomial` | `Accelerants/Polynomial.zig` | distribute, right-nest and bubble-sort each monomial, sort the outer sum, fold identities — emitting rewrites that cite the theory's ring lemmas | the vocabulary's ring algebra, structurally |
+| `extensionality` | `Accelerants/Extensionality.zig` | reduce to a pointwise residue, closed by `smt.tautology` inside `emitExtSetResidue` | packaging only — the decision still runs |
+| `assoc_commut` | `Accelerants/Assoc.zig` | sort both sides to the same summand multiset, emit the rewrite chain | the operator is associative *and* commutative |
+| `assoc` | `Accelerants/Assoc.zig` | right-nest both sides by the cited lemma (confluent + terminating, so right-nesting is canonical), emit the chain | the operator is associative. The lemma is still resolved, since it identifies the operator |
+| `simplify` | `Accelerants/Simplify.zig` | normalize both sides by the cited rules to a shared form, emit the `EqCert` join | the cited rules hold — statements are read, proofs are not |
+| `chain` | `Accelerants/Chain.zig` | BFS a rewrite path between the goal's two sides, emit it | as `simplify` |
+| `specialize` | `Accelerants/Specialize.zig` | instantiate the head at the args, emit `theorem_ref → apply_at → modus_ponens` | the head's statement (the claim is still α-matched) |
 | `model` / `import` | engine words, not term builders | re-prove the source under the mapping / cite the imported fact | the α-match only |
 
 ### `arithmetic` — the fragment, and `fallback`
