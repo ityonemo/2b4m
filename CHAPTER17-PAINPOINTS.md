@@ -333,7 +333,8 @@ user corrected it.**
 `theSubject` is declared `func theSubject() => QPoly` with **no defining axiom** — nothing in
 the file says which polynomial it is. So it is a model PARAMETER, and a model maps parameters.
 Two models in one file, each mapping `theSubject` to a different constant, both transfer
-`theIntegerDecompositionExists` strict-green (`drafts/two-subjects/probe.b4m`).
+`theIntegerDecompositionExists` strict-green (probed: `theSubject` has no defining axiom, so
+it is a parameter and a model maps it — two models, one per factor).
 
 The one real cost, and it is small: `isADenominatorFor` is an uninterpreted pred whose
 *defining axiom* mentions `theSubject`, so remapping the func alone leaves the pred pointing at

@@ -134,12 +134,13 @@ substituting a bare `**Proof.**` misattributes your argument to him.
 
 ### Auditing fidelity
 
-`drafts/aata-conformance/` scores each of our paragraphs against its best match among his:
+A conformance scan (run 2026-10-21, tooling not kept) scored each of our paragraphs against
+its best match among his:
 coverage (fraction of HIS words we carry → truncation) and fidelity (fraction of OURS that
 are his → paraphrase).
 
-    python3 drafts/aata-conformance/extract.py judson.json
-    python3 drafts/aata-conformance/compare.py judson.json cmp.json
+    # extract his prose per <proof>/<p> from the GFDL source, then score ours against it
+    # (sentence-level token overlap, best match per paragraph)
 
 **It has a blind spot that hid the worst defects: it scores paragraphs we WROTE, so it
 cannot see paragraphs we DROPPED.** 35 of the audit's 159 defects were found only by

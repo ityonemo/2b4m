@@ -184,7 +184,7 @@ blocks discharge — and, at each `using` step, that the accelerant's own interf
 its DECISION runs (both sides really do normalize alike, the arithmetic really is valid,
 the BFS really connects), and the vocabulary and cited statements that decision reads
 really resolve. A goal an accelerant's decision REFUTES is rejected in both modes, with the
-same diagnostic (swept across every trustable word; `drafts/fast-soundness/`, and
+same diagnostic (swept across every trustable word, each with its own gate, and
 `specialize` is the one gated exception).
 
 What `--fast` does not do is **drill into the certificate**. That is where the boundary
@@ -944,7 +944,7 @@ as "we need parameterized sorts"; neither needs one (settled 2026-10-21).
 - **A sort parameterized over a VALUE** (the elements of `H`, residues mod `N`): a `const`
   for the parameter, a predicate that reads it, and `where` — `const H: Set`,
   `pred inH(x): inH(x) iff member(x, H)`, `sort HSort = Element where inH`. A guarded
-  model onto `HSort` then runs any theory inside it (`drafts/size-balloon/size.b4m`'s
+  model onto `HSort` then runs any theory inside it (`std/group/size.b4m`'s
   `HGroup` runs group theory inside a subgroup given as a set). The bridge BACK — from a
   refined sort to a `Set` value, so it can be quantified over, sized, compared — is
   `std/set.b4m`'s `setFromPredicate` comprehension schema; `std/set/examples.b4m` shows

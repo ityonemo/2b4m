@@ -87,7 +87,7 @@ pub fn instanceHash(ip: *const InternPool, pool: *const term.Pool, schema_name: 
 /// demand schedule. Hashing the raw Index made `instanceHash` NONDETERMINISTIC: the same
 /// instantiation keyed to a different `Schema{<hash>}` run to run, so one instantiation could
 /// mint TWO instances and a citer could bind to the wrong one. `(name, loc)` is fixed by the
-/// source. See drafts/schema-instance-crosstalk.b4m.
+/// source. See tests/cases/schema/instance_crosstalk/.
 fn hashEntity(ip: *const InternPool, h: *std.hash.Wyhash, id: anytype) void {
     const ix: InternPool.Index = @enumFromInt(@intFromEnum(id));
     // RESERVED slots (`Index.none`, and the low sentinels `SortId.prop` and friends) are not
@@ -279,7 +279,7 @@ test "instanceHash: the schema name is folded in (rename escape hatch)" {
 // Entities are MINTED, not deduped, so an Index is allocation-ordered and therefore
 // demand-order dependent. Hashing it made `instanceHash` nondeterministic across runs: one
 // instantiation could key to two different `Schema{<hash>}` names and a citer bind to the
-// wrong instance. Measured before the fix on drafts/schema-instance-crosstalk.b4m: 4 distinct
+// wrong instance. Measured before the fix (tests/cases/schema/instance_crosstalk/): 4 distinct
 // hashes in 5 runs.
 //
 // Mint the SAME declaration (same name, same loc) in two pools at DIFFERENT indices — which

@@ -87,8 +87,8 @@ The synthetic correctly states what it needs, and the call site genuinely cannot
 lemma being applied. Whether a specialize at a refined binder should instead relativize over
 the binder's own guard is a design question, not this defect.
 
-`drafts/accelerant-generated-guard/specialize-guard-in-scope.b4m` is MIS-WRITTEN and should be
-corrected or dropped: its claim is `… = swap(c, c)`, but `theClosedForm(s, a, b)` yields
+The third original fixture (`specialize-guard-in-scope`, now deleted) was MIS-WRITTEN: its
+claim was `… = swap(c, c)`, but `theClosedForm(s, a, b)` yields
 `… = swap(at(inv(s), a), at(inv(s), b))`, with no step rewriting the images. The README claims
 the three files differ "only in the final justification"; that is not true of this one, and its
 `the claim does not match the instance's conclusion` is correct behaviour.
@@ -99,7 +99,6 @@ the three files differ "only in the final justification"; that is not true of th
 regression gates in `zig build test` (strict only: `--fast` emits no certificate, so it never
 builds the terms that owe these).
 
-`drafts/accelerant-generated-guard/` — the originals, plus `wrapped-shape-by-hand.b4m` (green).
 `drafts/accelerant-guard-discharge/specialize-refined-arg.b4m` — the remaining specialize case.
 
 **The trap that costs the most time:** an axiom written `forall f: Fn; inv(inv(f)) = f` is
@@ -131,5 +130,5 @@ a `[by discharge]` step rather than the tactic's, it is the authoring rule.
 
 - `NESTED-MODEL-COMPOSITION-ISSUE.md` — the sibling diagnostics problem: an incomplete model
   discharge also reports itself as a sort error in an unrelated file.
-- `drafts/guard-relativization-bug/` — an earlier positional-matching fix in
-  `withGuardPremises`.
+- `tests/cases/model/guarded/model_guarded_local_head_specialize.b4m` — the gate for an
+  earlier positional-matching fix in `withGuardPremises`.
