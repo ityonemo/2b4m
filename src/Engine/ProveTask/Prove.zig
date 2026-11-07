@@ -9,7 +9,7 @@
 //!
 //! `USING` STEPS AND THE SCAFFOLDING RULE. A `using` step is an engine word (`model`,
 //! `import`, `instantiation`) or an ACCELERATED TACTIC. Every tactic lives in its own file
-//! under `Accelerants/` as one variant of the `Tactic` union below, and passes through three
+//! under `src/Accelerants/` as one variant of `Accelerants.Tactic`, and passes through three
 //! phases the scaffolding drives in order: READ (demand what later phases will read — the
 //! only phase that may park), DECIDE (accept or reject; `--fast` stops here and admits), and
 //! CERTIFY (build the synthetic schema the kernel checks; strict only). The scaffolding —
@@ -40,33 +40,29 @@ const StrId = InternPool.StrId;
 const term = @import("../../term.zig");
 const TermId = term.TermId;
 const SortId = term.SortId;
-const Diagnostics = @import("../../diagnostics.zig");
 const kernel = @import("../../kernel.zig");
 const Engine = @import("../../Engine.zig");
 const Context = @import("../../Context.zig");
 const Walk = @import("Walk.zig");
 const RefScan = @import("RefScan.zig");
-const Expand = @import("../Expand.zig");
 const Elab = @import("Elab.zig");
 const Schema = @import("Schema.zig");
-const Accelerant = @import("Accelerant.zig");
-const common = @import("Accelerants/common.zig");
+const Accelerants = @import("../../Accelerants.zig");
+const Site = @import("../../Accelerants/Site.zig");
+const Demand = @import("Demand.zig");
+const Tactic = Accelerants.Tactic;
+const wordOfRule = Accelerants.wordOfRule;
 const Verify = @import("../../Verify.zig");
-const EqCert = @import("EqCert.zig");
-const polycanon = @import("Accelerants/polycanon.zig");
-const rewrite = @import("Accelerants/rewrite.zig");
-const presburger = @import("Accelerants/presburger.zig");
-const smt = @import("smt.zig");
-const farkas = @import("Accelerants/farkas.zig");
 const FactKV = @import("../../FactKV.zig");
 const FetchTask = @import("../../Engine/FetchTask.zig");
 const ModelTask = @import("../../Engine/ModelTask.zig");
 const ProveTask = @import("../ProveTask.zig");
-const testrig = @import("Accelerants/testrig.zig");
+const testrig = @import("../../Accelerants/testrig.zig");
 
 const Prove = @This();
 
-pub const Error = error{ Recover, OutOfMemory };
+pub const Error = Site.Error;
+pub const tokName = lexer.tokName;
 
 ctx: *Context,
 /// the engine handle of the CURRENT run — refreshed by the ProveTask on every (re)entry
@@ -107,13 +103,6 @@ ordinal_block: std.ArrayList(kernel.BlockId) = .empty,
 case_stack: std.ArrayList(CaseCtx) = .empty,
 /// hygienic fresh-name counter (shared with Elab via pointer)
 fresh_counter: u32 = 0,
-/// ADMIT MODE (`--fast <accelerant>`): when set, a producer does ITS OWN cheap acceptance
-/// check for the trusted step and returns WITHOUT building a certificate (the step is
-/// accelerated — accepted, not proved). Set only for the duration of a trusted `admit` call.
-/// A producer that ADMITS sets `admit_ok = true` and returns null (no cert); a producer that
-/// REJECTS fails (→ error.Recover) as usual. `admit` distinguishes admit-null from reject.
-admit_mode: bool = false,
-admit_ok: bool = false,
 /// the `using` WORDS this proof ADMITTED (`--fast`): each trusted step's word is inserted here.
 /// The ProveTask records this against the published fact for the summary's disclosure.
 admitted: Verify.Word.Set = Verify.Word.Set.initEmpty(),
@@ -157,23 +146,12 @@ self_key: ?FactKV.Key = null,
 /// twin (a source proof never states its model's guard) — the source twin is skipped there.
 /// Zero for every other proof.
 guard_wrappers: u32 = 0,
-/// A PRODUCER's outstanding demand: an accelerant producer that needs an identifier not in
-/// the goal (polynomial's `ZERO` for inverse cancellation, `add` for numeral expansion —
-/// `completePolyOps`) racks the FetchTask, records it here, and returns null WITHOUT a
-/// diagnostic; `demandUsing` then reports `.blocked` (the step's read pass suspends and the
-/// producer re-runs on resume, idempotently). Null = no demand outstanding.
-producer_blocker: ?Engine.TaskIndex = null,
 /// The LOCAL premise refs the last produced accelerant synthetic actually kept as antecedents
 /// (`Synthetic.premises`) — a producer DROPS a cited rule its certificate never fired, so the
 /// call site must discharge exactly these, not every local ref the author wrote. Set by
 /// `demandUsing` per step; read by `lowerUsing` (`accelerantPremises`). Null = not produced
 /// this pass (an admitted/trusted step, or a non-accelerant word).
 producer_premise_refs: ?[]const lexer.Token = null,
-/// Per-eigen RELATIVIZATION guards peeled off a `_quantified` accelerant's TRANSFERRED goal
-/// (`∀a; inH(a) -> …` — set by peelForallEq, parallel to its eigen list). The ∀-re-closers
-/// (wrapSimplifyForall / closeOverEigen) re-add them per level, matching the kernel's guarded
-/// generalize derivation. Empty outside a transfer / for unguarded goals.
-quant_guards: []const ?TermId = &.{},
 
 /// `goal_source` = the case goal in SOURCE space (== `goal` unless under a model transfer); the
 /// concluding step records it alongside its lowered (target-space) formula — see `source_formulas`.
@@ -248,45 +226,104 @@ fn sourceSpaceAccelerants(self: *const Prove) bool {
     return self.underModel();
 }
 
-// -- small utilities -------------------------------------------------------------------
+// -- the tactics' view of this proof ---------------------------------------------------
 
-pub fn text(self: *const Prove, tok: lexer.Token) []const u8 {
-    return self.source[tok.start..tok.end];
-}
-
-/// A stamped token's interned name — the parser stamped every engine-parsed token, so past
-/// parsing names are integers, never re-derived from source text.
-pub fn tokName(tok: lexer.Token) StrId {
-    std.debug.assert(tok.name != InternPool.Index.none);
-    return tok.name;
-}
-
-/// A term's sort: an fvar's own sort, an app's head result sort; `.prop` for non-term
-/// structure. (The operand sort for polynomial's rule-pattern fvars comes from here.)
-pub fn termSort(self: *const Prove, t: TermId) SortId {
-    return switch (self.pool.get(t)) {
-        .fvar => |v| v.sort,
-        .app => |a| @enumFromInt(@intFromEnum(self.ctx.interner.symResult(@enumFromInt(@intFromEnum(a.sym))))),
-        // not a term node — a proposition. Returns the marker, which matches no real sort, so
-        // every consumer's `!= v.sort` test rejects it (none of them wants a proposition here).
-        else => Elab.prop_sort,
+/// The `Site` an accelerated tactic is handed: a VIEW over this proof's state, built fresh
+/// per hook call (nothing a hook can reach mutates the driver, so the copy is never stale)
+/// and read back for its result channel. The small utilities below forward to it, so one
+/// implementation serves both sides.
+pub fn site(self: *Prove) Site {
+    return .{
+        .ctx = self.ctx,
+        .h = self.h,
+        .pool = self.pool,
+        .source = self.source,
+        .file = self.file,
+        .ns = self.ns,
+        .model = self.model,
+        .self_key = self.self_key,
+        .fresh_counter = &self.fresh_counter,
+        .ordinal_step = &self.ordinal_step,
+        .low_steps = &self.low_steps,
+        .source_formulas = &self.source_formulas,
+        .holes_used = &self.holes_used,
+        .axioms_used = &self.axioms_used,
     };
 }
 
-/// A stamped name in a LOCAL-only position (step label, step/block ref, proof binder):
-/// a `ns.`-qualified token is rejected — matching only its base name would let `x.y`
-/// falsely resolve to a local `y`.
+pub fn fail(self: *Prove, offset: u32, comptime fmt: []const u8, args: anytype) Error {
+    const s = self.site();
+    return s.fail(offset, fmt, args);
+}
+pub fn text(self: *const Prove, tok: lexer.Token) []const u8 {
+    return self.source[tok.start..tok.end];
+}
+pub fn freshNamed(self: *Prove, prefix: []const u8) Error!StrId {
+    const s = self.site();
+    return s.freshNamed(prefix);
+}
+pub fn renderTerm(self: *Prove, id: TermId) Error![]const u8 {
+    const s = self.site();
+    return s.renderTerm(id);
+}
+pub fn internStr(self: *Prove, comptime str: []const u8) Error!StrId {
+    const s = self.site();
+    return s.internStr(str);
+}
 fn localName(self: *Prove, tok: lexer.Token) Error!StrId {
-    if (tok.qualifier != InternPool.Index.none) {
-        return self.fail(tok.start, "'{s}' cannot be namespace-qualified here", .{self.text(tok)});
-    }
-    return tokName(tok);
+    const s = self.site();
+    return s.localName(tok);
+}
+pub fn resolveStepRef(self: *Prove, w: *const Walk, tok: lexer.Token) Error!kernel.SRef {
+    const s = self.site();
+    return s.resolveStepRef(w, tok);
+}
+pub fn resolveFactRef(self: *Prove, tok: lexer.Token) Error!InternPool.Index {
+    const s = self.site();
+    return s.resolveFactRef(tok);
+}
+fn resolveFactIn(self: *Prove, tok: lexer.Token, ns: InternPool.Index) Error!InternPool.Index {
+    const s = self.site();
+    return s.resolveFactIn(tok, ns);
+}
+pub fn resolveQualifier(self: *Prove, tok: lexer.Token) Error!InternPool.Index {
+    const s = self.site();
+    return s.resolveQualifier(tok);
+}
+fn inheritHoles(self: *Prove, ix: InternPool.Index) void {
+    const s = self.site();
+    s.inheritHoles(ix);
+}
+fn inheritAxioms(self: *Prove, ix: InternPool.Index) void {
+    const s = self.site();
+    s.inheritAxioms(ix);
+}
+fn traceFact(self: *Prove, tok: lexer.Token, ix: InternPool.Index, why: []const u8) void {
+    const s = self.site();
+    s.traceFact(tok, ix, why);
+}
+fn siteOf(self: *Prove, file: InternPool.Index, off: u32) []const u8 {
+    const s = self.site();
+    return s.siteOf(file, off);
+}
+pub fn citedFactFile(self: *Prove, t: lexer.Token) ?InternPool.Index {
+    const s = self.site();
+    return s.citedFactFile(t);
+}
+pub fn citationDeclared(self: *Prove, t: lexer.Token) bool {
+    const s = self.site();
+    return s.citationDeclared(t);
+}
+pub fn collectFreeFvars(self: *Prove, id: TermId, out: *std.ArrayList(term.Node.Fvar)) Error!void {
+    const s = self.site();
+    return s.collectFreeFvars(id, out);
+}
+pub fn isBiconditionalShape(self: *Prove, id: TermId) bool {
+    const s = self.site();
+    return s.isBiconditionalShape(id);
 }
 
-pub fn fail(self: *Prove, offset: u32, comptime fmt: []const u8, args: anytype) Error {
-    self.ctx.sink.add(self.diagFile(), offset, fmt, args) catch return error.OutOfMemory;
-    return error.Recover;
-}
+// -- small utilities -------------------------------------------------------------------
 
 /// The file this proof's offsets index — its own `file`, as a dense FileId. Derived rather
 /// than tracked on the sink so a diagnostic's file is a value (see diagnostics.zig).
@@ -305,315 +342,12 @@ pub fn freshNamedAt(self: *Prove, prefix: []const u8, loc: u32) Error!StrId {
     return self.ctx.interner.internString(s) catch error.OutOfMemory;
 }
 
-pub fn freshNamed(self: *Prove, prefix: []const u8) Error!StrId {
-    self.fresh_counter += 1;
-    const s = std.fmt.allocPrint(self.ctx.arena, "{s}#{d}", .{ prefix, self.fresh_counter }) catch return error.OutOfMemory;
-    return self.ctx.interner.internString(s) catch error.OutOfMemory;
-}
-
-pub fn renderTerm(self: *Prove, id: TermId) Error![]const u8 {
-    return @import("../../print.zig").render(self.ctx.arena, self.pool, self.ctx.interner, id) catch error.OutOfMemory;
-}
-
 fn sortName(self: *const Prove, sort: SortId) []const u8 {
     if (sort == Elab.prop_sort) return "Prop";
     return self.ctx.interner.sortName(@enumFromInt(@intFromEnum(sort)));
 }
 
 // -- global demand resolution (shared with ProveTask's formula pass) -------------------
-
-/// Resolve one read-pass candidate set against the KV tables, racking Fetch/Prove tasks
-/// for absent names. Returns a blocker to suspend on, or null when the whole closure is
-/// resolved "enough" to process (proven/done, or in_flight-SELF — the latter is left for
-/// process to diagnose as a self-citation). IDEMPOTENT — re-runs on every resume.
-pub fn resolveRefs(ctx: *Context, h: *Engine.Handle, file: InternPool.Index, ns: InternPool.Index, model: InternPool.Index, parent: ?FactKV.Key, refs: []const RefScan.Ref) Allocator.Error!?Engine.TaskIndex {
-    var blocker: ?Engine.TaskIndex = null;
-    for (refs) |r| {
-        // a QUALIFIED candidate resolves its import first; until the import is done we
-        // cannot even name the target namespace — block on it (the base resolves on a
-        // later resume).
-        var target_file = file;
-        var target_ns = ns;
-        if (r.ns) |ns_name| {
-            const state = ctx.idents.lookup(ctx.io, .{ .namespace = ns, .name = ns_name }) orelse {
-                blocker = try h.rackIndexed(try FetchTask.new(ctx.arena, .{ .file = file, .name = ns_name, .loc = r.loc, .loc_file = file }));
-                continue;
-            };
-            switch (state) {
-                .in_flight => |owner| {
-                    if (owner != h.self_index) blocker = owner;
-                    continue;
-                },
-                .done => |ix| switch (ctx.interner.keyOf(ix)) {
-                    .import => |m| {
-                        target_ns = m.namespace;
-                        target_file = ctx.interner.keyOf(m.namespace).namespace.file;
-                    },
-                    else => continue, // not a namespace — elaboration diagnoses
-                },
-            }
-        }
-        // MODEL-HOME fallback (13e): relativization introduces TARGET-file symbols (the guard
-        // pred `inH`, its closure facts) into a transferred proof's re-elaborated synthetics;
-        // those names have no decl in the SOURCE file. If the name is undeclared in the target
-        // file but declared in the model's HOME file (where the model — and its guard
-        // vocabulary — was written), retarget the demand there.
-        if (r.ns == null and model != InternPool.Index.none and model != .universe) {
-            const home = ctx.interner.keyOf(model).model.home;
-            if (home != InternPool.Index.none and home != target_file) miss: {
-                if (ctx.fileOf(target_file)) |tfid| {
-                    if (ctx.declOf(tfid, r.name) != null) break :miss; // declared at source — no fallback
-                }
-                const hfid = ctx.fileOf(home) orelse break :miss;
-                if (ctx.declOf(hfid, r.name) == null) break :miss; // not in home either
-                target_file = home;
-                target_ns = try ctx.interner.namespace(.universe, home);
-            }
-        }
-        switch (r.domain) {
-            .ident => {
-                const state = ctx.idents.lookup(ctx.io, .{ .namespace = target_ns, .name = r.name }) orelse {
-                    // loc is in the DEMANDING file (`file`); the fetch targets `target_file`.
-                    blocker = try h.rackIndexed(try FetchTask.new(ctx.arena, .{ .file = target_file, .name = r.name, .loc = r.loc, .loc_file = file }));
-                    continue;
-                };
-                switch (state) {
-                    .in_flight => |owner| {
-                        if (owner != h.self_index) blocker = owner;
-                    },
-                    .done => {},
-                }
-            },
-            // a model name resolves via IdentKV too, but its producer is a ModelTask (which
-            // builds the overlay), not a FetchTask.
-            .model => {
-                const state = ctx.idents.lookup(ctx.io, .{ .namespace = target_ns, .name = r.name }) orelse {
-                    blocker = try h.rackIndexed(try ModelTask.new(ctx.arena, .{ .file = target_file, .name = r.name, .loc = r.loc, .loc_file = file }));
-                    continue;
-                };
-                switch (state) {
-                    .in_flight => |owner| {
-                        if (owner != h.self_index) blocker = owner;
-                    },
-                    .done => {},
-                }
-            },
-            // a SCHEMA is a fact-with-params — it resolves through the FACT table (its
-            // ProveTask publishes a `.schema` locator instead of a ground fact); the
-            // instantiate handler then demands the monomorphized instance FACT separately.
-            .fact, .schema => {
-                const state = ctx.facts.lookup(ctx.io, .{ .namespace = target_ns, .name = r.name }) orelse {
-                    blocker = try h.rackIndexed(try ProveTask.new(ctx.arena, .{ .file = target_file, .name = r.name, .loc = r.loc, .loc_file = file, .parent = parent }));
-                    continue;
-                };
-                switch (state) {
-                    .in_flight => |owner| {
-                        if (owner != h.self_index) blocker = owner;
-                    },
-                    .proven => |src| {
-                        // In a model TRANSFER, a cited SOURCE THEOREM needs its TRANSFERRED version
-                        // `(model, target_file).name` (re-proved under the model). ONLY a theorem —
-                        // an AXIOM must go through the obligation overlay (mapped → local fact, or
-                        // FAIL if the substitution affects it and the model leaves it unmapped);
-                        // giving an axiom a free transferred leaf would let an unmapped axiom
-                        // through (unsound). `resolveFactRef` prefers the transferred fact when
-                        // present. (A schema isn't transferred this way — its instance carries the
-                        // model — so `.fact` domain only.)
-                        if (r.domain == .fact and model != InternPool.Index.none and model != .universe and
-                            ctx.interner.keyOf(src) == .fact and ctx.interner.keyOf(src).fact.kind == .theorem)
-                        {
-                            const tns = try ctx.interner.namespace(model, target_file);
-                            const tstate = ctx.facts.lookup(ctx.io, .{ .namespace = tns, .name = r.name });
-                            if (ctx.verify.trace_facts) {
-                                const what: []const u8 = if (tstate == null) "ABSENT -> racking its ProveTask (blocks)" else switch (tstate.?) {
-                                    .proven => "proven",
-                                    .in_flight => |o| if (o == h.self_index) "in_flight owned by SELF" else "in_flight owned by ANOTHER task — read pass sets NO blocker",
-                                };
-                                const line = std.fmt.allocPrint(ctx.arena, "[read pass] transferred copy of {s} under model#{d}: {s}\n", .{ ctx.interner.stringBytes(r.name), @intFromEnum(model), what }) catch "";
-                                ctx.traceLine(line);
-                            }
-                            // ABSENT: rack its re-proof and wait. IN FLIGHT under another task:
-                            // wait on THAT task — the same rule as the universe key above. The
-                            // old code only racked on absent and set no blocker on in_flight, so a
-                            // citer whose other refs resolved first ran its process pass while the
-                            // transferred copy was still being proved, and `resolveFactRef` fell
-                            // through to the UNTRANSFERRED source copy — a statement in the source
-                            // sort against a claim in the target sort. Order-dependent (the run
-                            // queue is a stack), so it surfaced only in a large directory sweep.
-                            if (tstate == null) {
-                                blocker = try h.rackIndexed(try ProveTask.new(ctx.arena, .{ .file = target_file, .name = r.name, .loc = r.loc, .loc_file = file, .model = model, .parent = parent }));
-                            } else if (tstate.? == .in_flight and tstate.?.in_flight != h.self_index) {
-                                blocker = tstate.?.in_flight;
-                            }
-                        }
-                    },
-                }
-            },
-        }
-    }
-    return blocker;
-}
-
-/// Elaborate a target fact's STATEMENT (its stated formula, relativized under `model`) into a
-/// caller-provided scratch `pool`, PUBLISHING NOTHING and CLAIMING NO FactKV key. This is the
-/// pure "statement elaborator" the trusted `--fast` admission uses to obtain the citation's
-/// Walk `(file, name)` to the ORIGIN that actually STATES the fact, following re-export
-/// aliases (`theorem sqrtOne = sqrt_theory.sqrtOne` has no formula of its own — identity is by
-/// ORIGIN). Each hop's file is PARSE-demanded, so the caller may suspend. Stops at a local
-/// fact, at a name it cannot resolve (the caller's own `declOf` reports that cleanly), or
-/// after 16 hops (a cycle is diagnosed elsewhere; do not spin).
-///
-/// Both the read pass and `process` call this, so a trusted citation's whole chain is parsed
-/// before the α-match runs — the invariant being that `--fast` must never report an error
-/// strict does not, and strict reaches the origin via `ProveTask.factAlias`.
-fn factOrigin(
-    self: *Context,
-    h: *Engine.Handle,
-    file: *InternPool.Index,
-    name: *StrId,
-) Allocator.Error!enum { ready, suspended } {
-    var hops: u8 = 0;
-    while (hops < 16) : (hops += 1) {
-        switch (try self.demandParse(h, file.*)) {
-            .parsed => {},
-            .parsing => |t| {
-                h.suspendOn(t);
-                return .suspended;
-            },
-            .unparsed => return .ready, // undiscovered — the caller diagnoses
-        }
-        const f = self.fileOf(file.*) orelse return .ready;
-        const d = self.declOf(f, name.*) orelse return .ready;
-        const alias = ast.aliasOf(d) orelse return .ready; // a local fact: the origin
-        // `ns.thm` hops to ns's file; a bare `thm` re-exports within this file.
-        if (alias.target.qualifier != InternPool.Index.none) {
-            const self_ns = try self.interner.namespace(.universe, file.*);
-            // The qualifier is an import NAME. If nobody has racked its fetch yet, giving up
-            // here (`return .ready`, which this used to do) hands the caller an UNRESOLVED
-            // alias, which it can only diagnose as "'X' has no stated formula" — an error
-            // strict never gives, since strict reaches the origin through `factAlias` after the
-            // read pass fetched the import. Rack the fetch and suspend instead, exactly as
-            // `resolveRefs` does for a qualified ref; the caller re-runs once it lands.
-            // (Surfaced by `--fast` reading a `simplify` rule's statement: four `fact X = ns.y`
-            // re-exports in std/integer/order.b4m and std/permutation/alternating.b4m.)
-            const state = self.idents.lookup(self.io, .{ .namespace = self_ns, .name = alias.target.qualifier }) orelse {
-                const t = try h.rackIndexed(try FetchTask.new(self.arena, .{
-                    .file = file.*,
-                    .name = alias.target.qualifier,
-                    .loc = alias.target.start,
-                    .loc_file = file.*,
-                }));
-                h.suspendOn(t);
-                return .suspended;
-            };
-            const ix = switch (state) {
-                .done => |ix| ix,
-                .in_flight => |owner| {
-                    if (owner != h.self_index) h.suspendOn(owner);
-                    return .suspended;
-                },
-            };
-            if (self.interner.keyOf(ix) != .import) return .ready;
-            // the import Item holds a NAMESPACE index; its file is one level down.
-            file.* = self.interner.keyOf(self.interner.keyOf(ix).import.namespace).namespace.file;
-        }
-        name.* = tokName(alias.target);
-    }
-    return .ready;
-}
-
-/// stated proposition WITHOUT proving it — reusing the SAME relativization logic the strict
-/// goal phase runs (`ProveTask.elaborateGoalInto`): RefScan → resolveRefs → Elab with `model`.
-///
-/// Suspendable via the CALLER's handle `h`: `.suspended` = a demand raced ahead (parse in
-/// flight, or an ident FetchTask racked — `h.suspendOn` was already called; the caller returns).
-/// `.ready` = the elaborated statement TermId (into `pool`). `.failed` = a diagnosed error (a
-/// schema / hole / missing decl / non-fact / Recover during elaboration).
-///
-/// It only ever demands PARSE (ParseTask) + resolveRefs (which may rack FetchTasks for IDENT-
-/// domain symbol refs — fine). A statement carries no fact CITATIONS, so no ProveTask is racked.
-pub fn elaborateFactStatement(
-    self: *Context,
-    h: *Engine.Handle,
-    file_arg: InternPool.Index,
-    name_arg: StrId,
-    model: InternPool.Index,
-    pool: *term.Pool,
-) Allocator.Error!union(enum) { ready: term.TermId, suspended: void, failed: void } {
-    // FOLLOW ALIASES to the origin that actually STATES the formula. A re-export
-    // (`theorem sqrtOne = sqrt_theory.sqrtOne`) has no formula of its own — identity is by
-    // ORIGIN — so reading the statement here has to chase the chain, exactly as the strict
-    // path does (`ProveTask.factAlias`). Without this an admitted `[using import(I) thm]`
-    // failed on an aliased `thm` while strict passed, breaking the invariant that `--fast`
-    // never reports an error strict does not.
-    var file = file_arg;
-    var name = name_arg;
-    switch (try factOrigin(self, h, &file, &name)) {
-        .ready => {},
-        .suspended => return .suspended,
-    }
-    const fid = self.fileOf(file) orelse {
-        self.sink.add(0, 0, "internal: elaborate a statement in an undiscovered file", .{}) catch return error.OutOfMemory;
-        return .failed;
-    };
-    // Every diagnostic below indexes the STATEMENT's own file — `fid` — not the caller's.
-    // (This used to save/restore an ambient sink field; passing the file is the same
-    // intent without the invariant that only one task may be running.)
-    const diag_file: u32 = @intFromEnum(fid);
-    const source = self.files.get(@intFromEnum(fid)).source;
-
-    // resolve the decl by name; a STATEMENT lives on a local axiom/theorem (an alias has no
-    // formula of its own, a schema / hole is not a ground statement).
-    const decl = self.declOf(fid, name) orelse {
-        self.sink.add(diag_file, 0, "reference not found: '{s}'", .{self.interner.stringBytes(name)}) catch return error.OutOfMemory;
-        return .failed;
-    };
-    const fact = ast.factOf(decl) orelse {
-        self.sink.add(diag_file, ast.declName(decl).start, "'{s}' has no stated formula (an alias or a non-fact)", .{self.interner.stringBytes(name)}) catch return error.OutOfMemory;
-        return .failed;
-    };
-    if (fact.params != null) {
-        self.sink.add(diag_file, fact.name.start, "'{s}' is a schema; its statement is not a ground formula", .{self.interner.stringBytes(name)}) catch return error.OutOfMemory;
-        return .failed;
-    }
-    // DEFINE EXPANSION first (see Engine/Expand): the statement is made define-free before its
-    // read pass or elaboration sees it.
-    const formula = switch (try Expand.expandFormula(self, h, file, fact.formula, .{ .model = model })) {
-        .ready => |f| f,
-        .suspended => return .suspended,
-        .failed => return .failed,
-    };
-
-    // RESOLUTION ns = the file's UNIVERSE ns (source names resolve there, then applyModel
-    // redirects for a transfer). A fresh Walk (no proof-local binders) + fresh counter own
-    // the standalone-call scratch state.
-    const resolve_ns = try self.interner.namespace(.universe, file);
-    const walk = try self.arena.create(Walk);
-    walk.* = Walk.init(self.arena, self.interner, source, self.sink);
-
-    var scanner = RefScan.init(self.arena, self.interner, source, walk);
-    scanner.ctx = self;
-    scanner.file = file;
-    const refs = try scanner.scanFormula(formula);
-    if (try resolveRefs(self, h, file, resolve_ns, model, null, refs)) |blocker| {
-        h.suspendOn(blocker);
-        return .suspended;
-    }
-
-    const fresh_counter = try self.arena.create(u32);
-    fresh_counter.* = 0;
-
-    var e = Elab.init(self.arena, self.io, self, self.interner, &self.idents, pool, self.sink, source, walk, resolve_ns, fresh_counter);
-    e.model = model; // remap source globals for a model transfer (identity for .universe)
-    const typed = e.requireProp(e.elaborateExpr(formula) catch |err| switch (err) {
-        error.OutOfMemory => return error.OutOfMemory,
-        error.Recover => return .failed,
-    }, formula) catch |err| switch (err) {
-        error.OutOfMemory => return error.OutOfMemory,
-        error.Recover => return .failed,
-    };
-    return .{ .ready = typed.id };
-}
 
 // -- the Walk driver seam --------------------------------------------------------------
 
@@ -639,7 +373,7 @@ pub fn readPass(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
     scanner.ctx = self.ctx;
     scanner.file = self.file;
     const refs = try scanner.scanStep(step);
-    if (try resolveRefs(self.ctx, self.h, self.file, self.ns, self.model, self.self_key, refs)) |blocker| return blocker;
+    if (try Demand.resolveRefs(self.ctx, self.h, self.file, self.ns, self.model, self.self_key, refs)) |blocker| return blocker;
 
     // an `instantiate` step additionally DEMANDS the monomorphized instance FACT (its own
     // ProveTask) — the schema name + args are now resolved, so build the instance and
@@ -677,8 +411,9 @@ pub fn readPass(self: *Prove, w: *Walk, step: *const ast.Step, block: Walk.Block
             // cited facts (well-known operator symbols, an induction schema, a selector's
             // vocabulary). Which tactic is the union's business, not a word test here.
             if (self.tacticOf(c)) |tactic| {
+                var st = self.site();
                 const extra: Allocator.Error!?Engine.TaskIndex = switch (tactic) {
-                    inline else => |a| a.read(self, w, c),
+                    inline else => |a| a.read(&st, w, c),
                 };
                 if (try extra) |blocker| return blocker;
             }
@@ -759,33 +494,12 @@ fn demandCitedStatements(self: *Prove, w: *const Walk, tactic: Tactic, c: ast.St
         // what strict does.
         const file = self.citedFactFile(t) orelse continue;
         if (!self.citationDeclared(t)) continue;
-        switch (try elaborateFactStatement(self.ctx, self.h, file, tokName(t), self.model, self.pool)) {
+        switch (try Demand.elaborateFactStatement(self.ctx, self.h, file, tokName(t), self.model, self.pool)) {
             .ready, .failed => {},
             .suspended => return self.h.blocked_on,
         }
     }
     return null;
-}
-
-/// The file a cited fact token names: its own file when unqualified, else the import's file.
-/// Null when the qualifier does not (yet) resolve to an import — the process pass diagnoses.
-pub fn citedFactFile(self: *Prove, t: lexer.Token) ?InternPool.Index {
-    if (t.qualifier == InternPool.Index.none) return self.file;
-    const st = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = t.qualifier }) orelse return null;
-    const ix = switch (st) {
-        .done => |x| x,
-        .in_flight => return null,
-    };
-    if (self.ctx.interner.keyOf(ix) != .import) return null;
-    return self.ctx.interner.keyOf(self.ctx.interner.keyOf(ix).import.namespace).namespace.file;
-}
-
-/// Does the file a cited fact token names DECLARE that name? A trusted decision reads a cited
-/// statement only when so — a name nothing declares is a typo for the process pass to report.
-pub fn citationDeclared(self: *Prove, t: lexer.Token) bool {
-    const file = self.citedFactFile(t) orelse return false;
-    const fid = self.ctx.fileOf(file) orelse return false;
-    return self.ctx.declOf(fid, tokName(t)) != null;
 }
 
 /// The read pass for a TRUSTED `using` step: make the AST that `process` will SHAPE-CHECK
@@ -811,7 +525,7 @@ fn trustedReadPass(self: *Prove, w: *Walk, step: *const ast.Step) Allocator.Erro
         },
         .fact, .schema => {}, // a PROOF demand — skipped under trust
     };
-    if (try resolveRefs(self.ctx, self.h, self.file, self.ns, self.model, self.self_key, idents[0..n])) |blocker| return blocker;
+    if (try Demand.resolveRefs(self.ctx, self.h, self.file, self.ns, self.model, self.self_key, idents[0..n])) |blocker| return blocker;
 
     // An ACCELERANT admits from the local goal — its producer matches THIS proof's goal AST —
     // so it needs no source file for the α-match. But a citation inside it still has to RESOLVE,
@@ -830,8 +544,9 @@ fn trustedReadPass(self: *Prove, w: *Walk, step: *const ast.Step) Allocator.Erro
     // report. Then the tactic's own phase-1 hook, for whatever else its decision needs.
     if (self.tacticOf(c)) |tactic| {
         if (try self.demandCitedStatements(w, tactic, c)) |blocker| return blocker;
+        var st = self.site();
         const extra: Allocator.Error!?Engine.TaskIndex = switch (tactic) {
-            inline else => |a| a.read(self, w, c),
+            inline else => |a| a.read(&st, w, c),
         };
         if (try extra) |blocker| return blocker;
     }
@@ -855,7 +570,7 @@ fn trustedReadPass(self: *Prove, w: *Walk, step: *const ast.Step) Allocator.Erro
     // then re-runs it against the real pool and finds everything resolved.
     if (src_file) |sf| if (self.trustedCiteName(c)) |cited| {
         var scratch: term.Pool = .init(self.ctx.arena, self.ctx.arena);
-        switch (try elaborateFactStatement(self.ctx, self.h, sf, cited, .universe, &scratch)) {
+        switch (try Demand.elaborateFactStatement(self.ctx, self.h, sf, cited, .universe, &scratch)) {
             .ready, .failed => {}, // `process` re-runs it and reports any failure there
             // elaborateFactStatement already called suspendOn; hand back that blocker.
             .suspended => return self.h.blocked_on,
@@ -1284,18 +999,6 @@ fn appendMainStep(self: *Prove, w: *const Walk, step: kernel.Step, source_formul
     try self.ordinal_step.append(self.ctx.arena, id);
 }
 
-/// The formula of a cited local step AS AN ACCELERANT PRODUCER'S INPUT: source space. Under a
-/// model transfer the lowered formula (`low_steps[..].formula`) is relativized to the target;
-/// a producer must not mix that with its source-space goal, so it reads the source-space twin
-/// recorded at lowering. Identical to the lowered formula in an ordinary proof.
-pub fn producerPremiseFormula(self: *const Prove, sref: kernel.SRef) TermId {
-    // While a producer runs in SOURCE mode, `self.model` is toggled to the universe
-    // (demandUsing) → the source twin. Under a guarded model's legacy target-space production
-    // the model stays set → the lowered (target) formula. Both coincide in an ordinary proof.
-    if (self.model == .universe) return self.source_formulas.items[@intFromEnum(sref.id)];
-    return self.low_steps.items[@intFromEnum(sref.id)].formula;
-}
-
 /// Append a SYNTHETIC kernel step (multi-arg apply_at intermediate) — no ordinal.
 pub fn emitSynthetic(self: *Prove, kb: kernel.BlockId, loc: u32, formula: TermId, just: kernel.Justification) Error!kernel.SRef {
     const id: kernel.StepId = @enumFromInt(self.low_steps.items.len);
@@ -1379,7 +1082,7 @@ fn bindProofVar(self: *Prove, w: *Walk, b: ast.Binder) Error!BoundVar {
     //
     // A SYNTHETIC binder keeps the counter. An accelerant's generated `fix` (ArithCert.fixStep,
     // the Cooper/arith certs, the guard projection) reaches here with a token built by
-    // `Accelerant.Builder.tok`, which stamps `start = end = loc` — ONE location for the whole
+    // `Accelerants.Builder.tok`, which stamps `start = end = loc` — ONE location for the whole
     // generated proof — so a loc-keyed name would collide every synthetic binder in one
     // producer's output. `start == end` is the established synthetic-token test (see Elab.text).
     // Synthetics need no source-stable identity anyway: they are regenerated deterministically
@@ -1825,31 +1528,6 @@ fn lowAncestorOrSelf(blocks: []const kernel.Block, a: kernel.BlockId, b: kernel.
 
 // -- reference resolution --------------------------------------------------------------
 
-/// A kernel-rule step reference: LOCAL-only (a live label in the walk's scope).
-pub fn resolveStepRef(self: *Prove, w: *const Walk, tok: lexer.Token) Error!kernel.SRef {
-    const name = try self.localName(tok);
-    const target = w.resolveStep(name) orelse {
-        // nicety: a global fact cited where a step label belongs — name the fix. Check both the
-        // FactKV (already-demanded) and the file's AST (a same-file fact decl that nothing
-        // demanded, e.g. the cited axiom in `apply_at(t) myAxiom`), so it fires regardless.
-        const is_fact = self.ctx.facts.lookup(self.ctx.io, .{ .namespace = self.ns, .name = name }) != null or
-            (tok.qualifier == InternPool.Index.none and if (self.ctx.fileOf(self.file)) |fid|
-                if (self.ctx.declOf(fid, name)) |d| ast.factOf(d) != null else false
-            else
-                false);
-        if (is_fact) {
-            return self.fail(tok.start, "'{s}' is a fact, not a proof step; introduce it as a step first with `[by cite {s}]`, then reference that step", .{
-                self.text(tok), self.text(tok),
-            });
-        }
-        return self.fail(tok.start, "unknown reference '{s}'", .{self.text(tok)});
-    };
-    return switch (target) {
-        .step => |ord| .{ .id = self.ordinal_step.items[@intFromEnum(ord)], .loc = tok.start },
-        .block => self.fail(tok.start, "'{s}' names a subproof; a step reference is required", .{self.text(tok)}),
-    };
-}
-
 fn resolveBlockRef(self: *Prove, w: *const Walk, tok: lexer.Token) Error!kernel.BRef {
     const name = try self.localName(tok);
     const target = w.resolveStep(name) orelse {
@@ -1858,190 +1536,6 @@ fn resolveBlockRef(self: *Prove, w: *const Walk, tok: lexer.Token) Error!kernel.
     return switch (target) {
         .block => |ord| .{ .id = self.kernelBlock(ord), .loc = tok.start },
         .step => self.fail(tok.start, "'{s}' names a step; a subproof reference is required", .{self.text(tok)}),
-    };
-}
-
-/// `--trace-facts`: report what a citation RESOLVED TO. Two theorems in different theories
-/// can share a name, and a model transfer publishes a second copy of its source's facts under
-/// the same names in a `(model, file)` namespace — so which copy a step actually got is not
-/// answerable from the source. `why` says which resolution path produced it. Stderr; the
-/// verdict is unaffected.
-fn traceFact(self: *Prove, tok: lexer.Token, ix: InternPool.Index, why: []const u8) void {
-    if (!self.ctx.verify.trace_facts) return;
-    const a = self.ctx.arena;
-    var line: []const u8 = std.fmt.allocPrint(a, "{s}: cite {s}\n    -> {s}\n", .{
-        self.siteOf(self.file, tok.start),
-        self.text(tok),
-        self.describeNamespaceOf(ix),
-    }) catch return;
-    if (self.ctx.interner.keyOf(ix) == .fact) {
-        const f = self.ctx.interner.keyOf(ix).fact;
-        line = std.fmt.allocPrint(a, "{s}       {s} {s}\n", .{ line, @tagName(f.kind), self.ctx.interner.stringBytes(f.name) }) catch return;
-        if (self.pool.copyIn(self.ctx.interner, f.formula)) |t| {
-            if (self.renderTerm(t)) |stmt| {
-                line = std.fmt.allocPrint(a, "{s}       {s}\n", .{ line, stmt }) catch return;
-            } else |_| {}
-        } else |_| {}
-    }
-    line = std.fmt.allocPrint(a, "{s}       via {s}\n", .{ line, why }) catch return;
-    self.ctx.traceLine(line);
-}
-
-/// `file:line:col` for a source offset. The offset must belong to `file` — a fact's `loc`
-/// indexes the file it was DECLARED in, which is generally not the citing file, so an offset
-/// past the end means we were handed the wrong file and the site is reported as unknown
-/// rather than read out of bounds.
-fn siteOf(self: *Prove, file: InternPool.Index, off: u32) []const u8 {
-    const fid = self.ctx.fileOf(file) orelse return "?";
-    const f = self.ctx.files.get(@intFromEnum(fid));
-    if (off >= f.source.len) return std.fmt.allocPrint(self.ctx.arena, "offset {d} (not in {s})", .{ off, f.path }) catch "?";
-    const lc = std.zig.findLineColumn(f.source, off);
-    return std.fmt.allocPrint(self.ctx.arena, "{s}:{d}:{d}", .{ f.path, lc.line + 1, lc.column + 1 }) catch "?";
-}
-
-/// Which FILE a published fact was declared in — searched by scanning the file table for the
-/// one whose namespace holds it. A fact Index records its `loc` but not its file, so the trace
-/// recovers it here (a linear scan is fine for a diagnostic).
-fn fileOfFact(self: *Prove, ix: InternPool.Index) ?InternPool.Index {
-    const key = self.ctx.interner.keyOf(ix);
-    const name: StrId = switch (key) {
-        .fact => |f| f.name,
-        .schema => |k| return k.file,
-        else => return null,
-    };
-    var files_it = self.ctx.files.iterator();
-    while (files_it.next()) |f| {
-        const pf = self.ctx.fileIndex(f.path) catch continue;
-        const ns = self.ctx.interner.namespace(.universe, pf) catch continue;
-        if (self.ctx.facts.lookup(self.ctx.io, .{ .namespace = ns, .name = name })) |st| {
-            if (st == .proven and st.proven == ix) return pf;
-        }
-    }
-    return null;
-}
-
-/// Describe where a resolved fact CAME FROM: the namespace the citing task is resolving in
-/// (`universe` for an ordinary proof, or the model it is proving under) plus the fact's own
-/// declaration site. The distinction is the point of the trace — a citation that should have
-/// stayed in the universe but came back through a model is the bug this exists to show.
-fn describeNamespaceOf(self: *Prove, ix: InternPool.Index) []const u8 {
-    const key = self.ctx.interner.keyOf(ix);
-    const loc: u32 = switch (key) {
-        .fact => |f| f.loc,
-        .schema => |k| k.loc,
-        else => return "(not a fact)",
-    };
-    const ns_text = if (self.model == InternPool.Index.none or self.model == .universe)
-        "universe"
-    else
-        std.fmt.allocPrint(self.ctx.arena, "model#{d}", .{@intFromEnum(self.model)}) catch "model?";
-    const decl_file = self.fileOfFact(ix) orelse self.file;
-    return std.fmt.allocPrint(self.ctx.arena, "resolved in ns={s}, declared at {s}", .{ ns_text, self.siteOf(decl_file, loc) }) catch "?";
-}
-
-/// An axiom/theorem citation: GLOBAL fact via FactKV (the read pass made it proven, or
-/// left an in_flight-self / failed entry — diagnosed here).
-pub fn resolveFactRef(self: *Prove, tok: lexer.Token) Error!InternPool.Index {
-    const ns = try self.resolveQualifier(tok);
-    return self.resolveFactIn(tok, ns);
-}
-
-/// `resolveFactRef` with the namespace already chosen: the fact `tok` names in `ns`, with the
-/// TRANSFER redirect (a source theorem → its copy re-proved under this proof's model) and the
-/// axiom overlay applied. Shared by the bare/qualified `cite` and the `[using import(I) thm]`
-/// citation, whose namespace is the import's — an import cite inside a transferred proof used to
-/// skip the redirect and hand the kernel the UNTRANSFERRED source statement.
-fn resolveFactIn(self: *Prove, tok: lexer.Token, ns: InternPool.Index) Error!InternPool.Index {
-    const state = self.ctx.facts.lookup(self.ctx.io, .{ .namespace = ns, .name = tokName(tok) }) orelse {
-        return self.fail(tok.start, "unknown statement '{s}'", .{self.text(tok)});
-    };
-    const src = switch (state) {
-        .proven => |x| x,
-        .in_flight => return self.fail(tok.start, "cites '{s}', whose proof has not completed (self-citation or a failed/cyclic dependency)", .{self.text(tok)}),
-    };
-    // In a TRANSFER, a cited SOURCE THEOREM resolves to its TRANSFERRED version (re-proved under
-    // the model), keyed `(model, ns.file).name` — the read pass demanded it. ONLY a theorem: an
-    // AXIOM stays on the `applyModel` overlay path (mapped → local discharging fact), never a free
-    // transferred leaf (see the read-pass note).
-    if (self.model != InternPool.Index.none and self.model != .universe and
-        self.ctx.interner.keyOf(src) == .fact and self.ctx.interner.keyOf(src).fact.kind == .theorem)
-    {
-        const nsfile = self.ctx.interner.keyOf(ns).namespace.file;
-        const tns = try self.ctx.interner.namespace(self.model, nsfile);
-        if (self.ctx.facts.lookup(self.ctx.io, .{ .namespace = tns, .name = tokName(tok) })) |st| switch (st) {
-            .proven => |x| if (self.ctx.interner.keyOf(x) != .schema) {
-                self.inheritHoles(x);
-                self.inheritAxioms(x);
-                self.traceFact(tok, x, "TRANSFER redirect: the citing task runs under a model, so the cited theorem resolved to its transferred copy");
-                return x;
-            },
-            // the transferred copy is being proved RIGHT NOW by another task (or by this one):
-            // falling through hands the citation the UNTRANSFERRED source copy, whose statement
-            // is in the source sort — the mismatch `--trace-facts` exists to expose.
-            .in_flight => |owner| self.traceFact(tok, src, if (owner == self.h.self_index)
-                "TRANSFER redirect FELL THROUGH: the transferred copy is in_flight owned by THIS task (self-cycle) — using the untransferred source copy"
-            else
-                "TRANSFER redirect FELL THROUGH: the transferred copy is in_flight owned by ANOTHER task — using the untransferred source copy"),
-        } else {
-            self.traceFact(tok, src, "TRANSFER redirect FELL THROUGH: no transferred copy was ever demanded for this citation — using the untransferred source copy");
-        }
-    }
-    const ix = switch (state) {
-        // in a model transfer, a source-axiom citation remaps (via the overlay) to its
-        // discharging LOCAL fact — an obligation. `.universe` = identity (ordinary proof).
-        .proven => |x| self.ctx.interner.applyModel(self.model, x),
-        .in_flight => unreachable, // handled above
-    };
-    // a SCHEMA lives in the fact table too (a fact-with-params), but it is NOT a citable ground
-    // fact — it has no closed formula. It must be MONOMORPHIZED via `[using instantiation …]`.
-    // Reject here so every fact-formula reader below can assume a real `.fact` Index.
-    if (self.ctx.interner.keyOf(ix) == .schema)
-        return self.fail(tok.start, "'{s}' is a schema; use `[using instantiation {s}(...)]`, not a fact citation", .{ self.text(tok), self.text(tok) });
-    self.inheritHoles(ix);
-    self.inheritAxioms(ix);
-    self.traceFact(tok, ix, if (self.model == InternPool.Index.none or self.model == .universe) "direct lookup" else "overlay (applyModel) under the citing task's model");
-    return ix;
-}
-
-/// HOLE TAINT inheritance (summary blast-radius only): if the cited fact `ix` rests on holes,
-/// add each hole name to THIS proof's `holes_used` (deduped). Citing a hole — or a fact that
-/// rests on one — makes the current proof rest on it. NEVER affects the proof verdict; a hole is
-/// an axiom everywhere the KERNEL is concerned. See [[hole-mechanism]].
-fn inheritHoles(self: *Prove, ix: InternPool.Index) void {
-    const names = self.ctx.holeTaintOf(ix) orelse return;
-    outer: for (names) |h| {
-        for (self.holes_used.items) |seen| if (seen == h) continue :outer; // already tracked
-        self.holes_used.append(self.ctx.arena, h) catch return; // OOM: best-effort taint
-    }
-}
-
-/// AXIOM DEPENDENCY inheritance (the `--axioms` report): the cited fact's own axiom set becomes
-/// part of this proof's. An AXIOM is its own seed — a theorem is not (it carries whatever its
-/// proof rested on). Deduped; never affects the proof verdict.
-fn inheritAxioms(self: *Prove, ix: InternPool.Index) void {
-    if (self.ctx.axiomTaintOf(ix)) |axs| {
-        outer: for (axs) |a| {
-            for (self.axioms_used.items) |seen| if (seen == a) continue :outer;
-            self.axioms_used.append(self.ctx.arena, a) catch return; // OOM: best-effort
-        }
-    }
-}
-
-/// The namespace a (possibly `ns.`-qualified) stamped token resolves in: unqualified =
-/// this proof's ns; qualified = the import named by `tok.qualifier`. (Multi-level
-/// qualification was diagnosed at parse — the stamped qualifier is at most one level.)
-pub fn resolveQualifier(self: *Prove, tok: lexer.Token) Error!InternPool.Index {
-    if (tok.qualifier == InternPool.Index.none) return self.ns;
-    const qtext = self.ctx.interner.stringBytes(tok.qualifier);
-    const state = self.ctx.idents.lookup(self.ctx.io, .{ .namespace = self.ns, .name = tok.qualifier }) orelse {
-        return self.fail(tok.start, "unknown namespace '{s}'", .{qtext});
-    };
-    return switch (state) {
-        .done => |ix| switch (self.ctx.interner.keyOf(ix)) {
-            .import => |m| m.namespace,
-            else => self.fail(tok.start, "'{s}' is not a namespace", .{qtext}),
-        },
-        .in_flight => self.fail(tok.start, "unknown namespace '{s}'", .{qtext}),
     };
 }
 
@@ -2355,7 +1849,7 @@ fn demandSchemaParamSorts(self: *Prove, rs: ResolvedSchema) Allocator.Error!?Eng
         if (p.resultSort()) |rt| try appendSortRef(self.ctx.arena, &refs, rt);
     }
     if (refs.items.len == 0) return null;
-    return resolveRefs(self.ctx, self.h, rs.file, rs.ns, self.model, self.self_key, refs.items);
+    return Demand.resolveRefs(self.ctx, self.h, rs.file, rs.ns, self.model, self.self_key, refs.items);
 }
 
 fn appendSortRef(arena: Allocator, refs: *std.ArrayList(RefScan.Ref), tok: lexer.Token) Allocator.Error!void {
@@ -2923,20 +2417,6 @@ fn trustWord(self: *Prove, c: ast.Step.Claim) ?Verify.Word {
     return wordOfRule(self.ctx.interner, c.rule.name);
 }
 
-/// The trustable ACCELERANT word a rule token names, matched by interned name (no strcmp past
-/// the parser: the rule is already a StrId; each candidate word is interned once per call).
-/// Engine words (`model`/`import`) are RuleStr and never reach here as accelerants.
-pub fn wordOfRule(interner: *InternPool, rule: StrId) ?Verify.Word {
-    inline for (@typeInfo(Verify.Word).@"enum".fields) |f| {
-        const engine_word = comptime (std.mem.eql(u8, f.name, "model") or std.mem.eql(u8, f.name, "import"));
-        if (!engine_word) {
-            const id = interner.internString(f.name) catch return null;
-            if (rule == id) return @field(Verify.Word, f.name);
-        }
-    }
-    return null;
-}
-
 /// Is this `using` step TRUSTED under the current `--fast` set? (Its word is in `verify.trusted`.)
 fn trusted(self: *Prove, c: ast.Step.Claim) bool {
     const word = self.trustWord(c) orelse return false;
@@ -2958,69 +2438,6 @@ fn trusted(self: *Prove, c: ast.Step.Claim) bool {
 // site. (`model` and `import` are ENGINE words — they transfer or cite an existing fact and
 // produce nothing — so they are not variants and are dispatched beside the union.)
 
-pub const Tactic = union(enum) {
-    specialize: @import("Accelerants/Specialize.zig"),
-    tautology: @import("Accelerants/Tautology.zig"),
-    simplify: @import("Accelerants/Simplify.zig"),
-    simplify_quantified: @import("Accelerants/Simplify.zig"),
-    chain: @import("Accelerants/Chain.zig"),
-    assoc: @import("Accelerants/Assoc.zig"),
-    assoc_quantified: @import("Accelerants/Assoc.zig"),
-    assoc_commut: @import("Accelerants/Assoc.zig"),
-    assoc_commut_quantified: @import("Accelerants/Assoc.zig"),
-    polynomial: @import("Accelerants/Polynomial.zig"),
-    polynomial_quantified: @import("Accelerants/Polynomial.zig"),
-    extensionality: @import("Accelerants/Extensionality.zig"),
-    extensionality_quantified: @import("Accelerants/Extensionality.zig"),
-    arithmetic: @import("Accelerants/Arithmetic.zig"),
-    arithmetic_quantified: @import("Accelerants/Arithmetic.zig"),
-
-    /// The tactic a trustable word names, its payload constructed for that word's variant —
-    /// or null for an engine word (`model`/`import`).
-    pub fn of(word: Verify.Word) ?Tactic {
-        return switch (word) {
-            .model, .import => null,
-            .specialize => .{ .specialize = .{} },
-            .tautology => .{ .tautology = .{} },
-            .simplify => .{ .simplify = .{ .quantified = false } },
-            .simplify_quantified => .{ .simplify_quantified = .{ .quantified = true } },
-            .chain => .{ .chain = .{} },
-            .assoc => .{ .assoc = .{ .commut = false, .quantified = false } },
-            .assoc_quantified => .{ .assoc_quantified = .{ .commut = false, .quantified = true } },
-            .assoc_commut => .{ .assoc_commut = .{ .commut = true, .quantified = false } },
-            .assoc_commut_quantified => .{ .assoc_commut_quantified = .{ .commut = true, .quantified = true } },
-            .polynomial => .{ .polynomial = .{ .quantified = false } },
-            .polynomial_quantified => .{ .polynomial_quantified = .{ .quantified = true } },
-            .extensionality => .{ .extensionality = .{ .quantified = false } },
-            .extensionality_quantified => .{ .extensionality_quantified = .{ .quantified = true } },
-            .arithmetic => .{ .arithmetic = .{} },
-            .arithmetic_quantified => .{ .arithmetic_quantified = .{} },
-        };
-    }
-
-    /// The tactic a `using` rule token names, by interned name — for the scanner, which has a
-    /// rule StrId and no claim. Null for an engine word or an unknown word.
-    pub fn ofRule(interner: *InternPool, rule: StrId) ?Tactic {
-        return Tactic.of(wordOfRule(interner, rule) orelse return null);
-    }
-
-    pub fn lemmaArgs(self: Tactic) bool {
-        return switch (self) {
-            inline else => |a| @TypeOf(a).lemma_args,
-        };
-    }
-    pub fn schemaSlot(self: Tactic) Accelerant.SchemaSlot {
-        return switch (self) {
-            inline else => |a| @TypeOf(a).schema_slot,
-        };
-    }
-    pub fn premiseShape(self: Tactic) Accelerant.PremiseShape {
-        return switch (self) {
-            inline else => |a| @TypeOf(a).premise_shape,
-        };
-    }
-};
-
 /// The accelerated tactic of a `using` claim, or null (a `by` step, or an engine word).
 fn tacticOf(self: *Prove, c: ast.Step.Claim) ?Tactic {
     return Tactic.of(self.trustWord(c) orelse return null);
@@ -3041,20 +2458,21 @@ fn demandUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step
     // ACCELERANTS PRODUCE IN THE AMBIENT NAMESPACE. The producer sees `goal` exactly as the
     // claim's proof does — under a model transfer, already interpreted into the target space —
     // and its synthetic is built from those terms, so its symbols are stamped FINAL (see
-    // `Accelerant.Builder.symTok`): the instance ProveTask runs under the same model and must
+    // `Accelerants.Builder.symTok`): the instance ProveTask runs under the same model and must
     // not interpret them a second time. `painted_production` tells `demandInstance` that no
     // source-space twin of the args exists (there is no source-space pass to feed).
     const prev_painted = self.painted_production;
     self.painted_production = true;
     defer self.painted_production = prev_painted;
     const syn = blk: {
-        const produced = self.produceAccelerant(w, e, goal, c) catch |err| switch (err) {
+        var st = self.site();
+        const produced = self.produceAccelerant(&st, w, e, goal, c) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             // A `Recover` WITH `producer_blocker` set is a PARK, not a diagnosis: the producer
             // racked a demand and suspended. Report it blocked so the step re-runs.
             error.Recover => {
-                if (self.producer_blocker) |blocker| {
-                    self.producer_blocker = null;
+                if (st.producer_blocker) |blocker| {
+                    st.producer_blocker = null;
                     return .{ .blocked = blocker };
                 }
                 return .failed;
@@ -3065,8 +2483,8 @@ fn demandUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step
             break :blk s;
         }
         // a null WITHOUT a diagnostic = the producer racked a demand it needs first.
-        if (self.producer_blocker) |blocker| {
-            self.producer_blocker = null;
+        if (st.producer_blocker) |blocker| {
+            st.producer_blocker = null;
             return .{ .blocked = blocker };
         }
         return .failed; // producer diagnosed
@@ -3081,7 +2499,7 @@ fn demandUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step
     const decl_ptr = self.ctx.arena.create(ast.Decl) catch return error.OutOfMemory;
     // the generated theorem STATES the preconditions of the terms it restates (see
     // `wrapObligations`); deterministic per step, so the keep-first registration is stable.
-    var wb: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
+    var wb: Accelerants.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
     const obligations = self.syntheticObligations(w, syn.seen) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.Recover => return .failed,
@@ -3109,7 +2527,7 @@ fn demandUsing(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step
     }
     // demand the instance via the ordinary schema path, using a synthesized claim that names
     // the synthetic schema + carries the accelerant's args (premises ride c.refs separately).
-    var b: Accelerant.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
+    var b: Accelerants.Builder = .{ .arena = self.ctx.arena, .interner = self.ctx.interner, .pool = self.pool, .loc = c.rule.start };
     const inst_c: ast.Step.Claim = .{
         .formula = c.formula,
         .kind = .using,
@@ -3244,12 +2662,11 @@ fn withGuardPremises(self: *Prove, kb: kernel.BlockId, loc: u32, instance: TermI
 
 /// Dispatch to the accelerant's producer by rule name. Returns null if the producer
 /// diagnosed (a Recover is mapped to null by the caller). Add new accelerants here.
-fn produceAccelerant(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
-    _ = e;
+fn produceAccelerant(self: *Prove, st: *Site, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step.Claim) Error!?Accelerants.Synthetic {
     const tactic = self.tacticOf(c) orelse
         return self.fail(c.rule.start, "unsupported by the demand prover: '{s}'", .{self.text(c.rule)});
     return switch (tactic) {
-        inline else => |a| a.certify(self, w, goal, c),
+        inline else => |a| a.certify(st, w, e, goal, c),
     };
 }
 
@@ -3298,11 +2715,6 @@ fn accelerantPremises(self: *Prove, w: *const Walk, c: ast.Step.Claim) Error![]c
     }
 }
 
-/// Intern a comptime literal once (cached on the Context's interner; cheap dedup).
-pub fn internStr(self: *Prove, comptime s: []const u8) Error!StrId {
-    return self.ctx.interner.internString(s) catch error.OutOfMemory;
-}
-
 // -- scaffolding helpers the tactics call (the producers live in Accelerants/) ---------
 
 /// `ants[0] -> ants[1] -> … -> consequent` as an AST expr (right-assoc `->`).
@@ -3335,7 +2747,7 @@ fn syntheticObligations(self: *Prove, w: *const Walk, seen: []const TermId) Erro
 /// `discharge`. The call site discharges them from what it knows (`withGuardPremises` →
 /// `refForKnown`), exactly like the premises it cites. The generated theorem thereby states the
 /// preconditions of the terms it mentions instead of re-owing them where nothing can teach them.
-fn wrapObligations(self: *Prove, b: *Accelerant.Builder, decl: ast.Decl, obls: []const TermId) Error!ast.Decl {
+fn wrapObligations(self: *Prove, b: *Accelerants.Builder, decl: ast.Decl, obls: []const TermId) Error!ast.Decl {
     if (obls.len == 0) return decl;
     const local = decl.theorem.local; // a producer's synthetic is always a local theorem
     var body = local.fact.formula;
@@ -3347,7 +2759,7 @@ fn wrapObligations(self: *Prove, b: *Accelerant.Builder, decl: ast.Decl, obls: [
         const opened = try b.assumeStep(blk, try b.termExpr(obls[i]), steps);
         const exported = try b.implies(try b.termExpr(obls[i]), body);
         const export_label = if (i == 0) try b.intern("conclusion") else try b.intern(try std.fmt.allocPrint(self.ctx.arena, "obligation-export{d}", .{i}));
-        const closed = try b.claimStep(export_label, exported, .by, try self.internStr("discharge"), &.{}, try common.oneRef(self, b, blk));
+        const closed = try b.claimStep(export_label, exported, .by, try self.internStr("discharge"), &.{}, try b.oneRef(blk));
         const pair = try self.ctx.arena.alloc(ast.Step, 2);
         pair[0] = opened;
         pair[1] = closed;
@@ -3462,45 +2874,7 @@ fn localRefsToSteps(self: *Prove, w: *const Walk, refs: []const lexer.Token) Err
     return out.items;
 }
 
-/// Collect distinct free fvars (by name) into `out`.
-/// Collect the DISTINCT free vars of `id` into `out` (on the caller's arena). Iterative work-stack
-/// (was native recursion) — depth-safe. The frontier stack is GPA-backed scratch (reclaimed here);
-/// `out` stays durable. (Note: this collects fvars regardless of binder depth — a "free var" here
-/// is any `.fvar` node, matching the original; bound vars are `.bvar` and contribute nothing.)
-pub fn collectFreeFvars(self: *Prove, id: TermId, out: *std.ArrayList(term.Node.Fvar)) Error!void {
-    var scratch: std.heap.ArenaAllocator = .init(self.ctx.gpa);
-    defer scratch.deinit();
-    const a = scratch.allocator();
-    var stack: std.ArrayList(TermId) = .empty;
-    try stack.append(a, id);
-    while (stack.pop()) |cur| {
-        const node = self.pool.get(cur);
-        switch (node) {
-            .fvar => |v| {
-                var seen = false;
-                for (out.items) |e| if (e.name == v.name) {
-                    seen = true;
-                    break;
-                };
-                if (!seen) try out.append(self.ctx.arena, v);
-            },
-            else => try self.pool.pushChildren(&stack, a, node),
-        }
-    }
-}
-
 // -- justification lowering ------------------------------------------------------------
-
-pub fn isBiconditionalShape(self: *const Prove, id: TermId) bool {
-    const pool = self.pool;
-    const n = pool.get(id);
-    if (n != .bin or n.bin.op != .and_op) return false;
-    const l = pool.get(n.bin.lhs);
-    const r = pool.get(n.bin.rhs);
-    if (l != .bin or l.bin.op != .implies) return false;
-    if (r != .bin or r.bin.op != .implies) return false;
-    return pool.alphaEq(l.bin.lhs, r.bin.rhs) and pool.alphaEq(l.bin.rhs, r.bin.lhs);
-}
 
 fn wantRefs(self: *Prove, c: ast.Step.Claim, n: usize) Error!void {
     if (c.refs.len != n) {
@@ -3532,8 +2906,9 @@ fn admit(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step.Claim
         // an accelerated tactic admits the claim on ITS OWN terms: its phase-2 `decide`.
         else => {
             const tactic = Tactic.of(word).?; // every non-engine word is a variant
+            var st = self.site();
             const decided: Error!void = switch (tactic) {
-                inline else => |a| a.decide(self, w, e, goal, c),
+                inline else => |a| a.decide(&st, w, e, goal, c),
             };
             decided catch |err| switch (err) {
                 error.OutOfMemory => return error.OutOfMemory,
@@ -3542,8 +2917,8 @@ fn admit(self: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step.Claim
                     // should never happen: the READ PASS is where an admitted word's demands are
                     // racked. Reaching here parked means it missed one — a bug worth a visible
                     // diagnostic, not a silent reject (which drops the step's label).
-                    if (self.producer_blocker != null) {
-                        self.producer_blocker = null;
+                    if (st.producer_blocker != null) {
+                        st.producer_blocker = null;
                         return self.fail(c.rule.start, "internal: '{s}' parked during admit (the read pass missed a demand)", .{self.text(c.rule)});
                     }
                     return error.Recover;
@@ -3596,7 +2971,7 @@ fn admitModel(self: *Prove, goal: TermId, c: ast.Step.Claim) Error!void {
     const rtok = c.refs[0];
     const src_file = if (rtok.qualifier == InternPool.Index.none) self.file else (try self.qualifierFile(rtok)) orelse
         return self.fail(rtok.start, "unknown namespace '{s}'", .{self.ctx.interner.stringBytes(rtok.qualifier)});
-    switch (try elaborateFactStatement(self.ctx, self.h, src_file, tokName(rtok), model_ix, self.pool)) {
+    switch (try Demand.elaborateFactStatement(self.ctx, self.h, src_file, tokName(rtok), model_ix, self.pool)) {
         .ready => |stmt| if (!self.pool.alphaEq(stmt, goal))
             return self.fail(c.rule.start, "the claim does not match the model transfer of '{s}':\n  claim:      {s}\n  transfer:   {s}", .{ self.text(rtok), try self.renderTerm(goal), try self.renderTerm(stmt) }),
         .suspended => return self.fail(c.rule.start, "internal: model admission not resolved before process (read-pass bug)", .{}),
@@ -3611,7 +2986,7 @@ fn admitImport(self: *Prove, goal: TermId, c: ast.Step.Claim) Error!void {
     if (c.refs.len != 1) return self.fail(c.rule.start, "`[using import(I) …]` cites exactly one imported theorem", .{});
     const rtok = c.refs[0];
     const ifile = (try self.importFile(itok)) orelse return self.fail(itok.start, "unknown import '{s}'", .{self.text(itok)});
-    switch (try elaborateFactStatement(self.ctx, self.h, ifile, tokName(rtok), .universe, self.pool)) {
+    switch (try Demand.elaborateFactStatement(self.ctx, self.h, ifile, tokName(rtok), .universe, self.pool)) {
         .ready => |stmt| if (!self.pool.alphaEq(stmt, goal))
             return self.fail(c.rule.start, "the claim does not match imported '{s}.{s}':\n  claim:    {s}\n  imported: {s}", .{ self.text(itok), self.text(rtok), try self.renderTerm(goal), try self.renderTerm(stmt) }),
         .suspended => return self.fail(c.rule.start, "internal: import admission not resolved before process (read-pass bug)", .{}),
@@ -4122,7 +3497,7 @@ test "freshNamedAt: a binder's name is keyed to its SOURCE OFFSET, independent o
     const arena = arena_state.allocator();
     var threaded: std.Io.Threaded = .init(arena, .{});
     const rig = try testrig.Rig.init(arena, threaded.io());
-    const p = rig.prove;
+    const p = try Prove.init(rig.ctx, rig.h, testrig.Rig.source, rig.file, rig.ns);
 
     // Mint at one offset, then bump the counter the way intervening `fix`es and accelerant
     // labels do, then mint at the SAME offset again. The two names must agree: a binder's

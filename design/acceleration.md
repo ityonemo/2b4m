@@ -103,11 +103,20 @@ equivalence relation whose transitivity nothing supplied.
 
 ## The three phases, and the tactic union
 
-Every tactic is one file under `src/Engine/ProveTask/Accelerants/` — a struct that is one
-variant of `Prove.Tactic`, a `union(enum)` with a variant per trustable word (the
-`_quantified` variants share a file and carry a `quantified` field). The scaffolding drives
-each step through three phases, dispatching once per phase with
-`switch (tactic) { inline else => |a| a.<phase>(…) }`:
+Every tactic is one file under `src/Accelerants/` — a struct that is one variant of
+`Accelerants.Tactic`, a `union(enum)` with a variant per trustable word (the `_quantified`
+variants share a file and carry a `quantified` field). A tactic never sees the proof driver
+(`Engine/ProveTask/Prove.zig`): each hook is handed a `*Site` (`Accelerants/Site.zig`) — the
+proof's pool, context, namespace, model, and a small result channel (`producer_blocker`,
+`admit_mode`/`admit_ok`, `quant_guards`) the driver reads back after the hook returns. The
+driver builds the Site as a view over its own state per hook and dispatches once per phase
+with `switch (tactic) { inline else => |a| a.<phase>(…) }`:
+
+| phase | hook | may park? | who runs it |
+|---|---|---|---|
+| READ — demand what later phases will read | `read` | **yes** — the only phase with the suspend channel | both modes |
+| DECIDE — accept or reject from what phase 1 fetched | `decide` | no | both; `--fast` admits on accept and stops |
+| CERTIFY — build the synthetic schema the kernel checks | `certify` | no | strict only |
 
 The directory also holds the lowercase ENGINE modules the tactics share, layered so that no
 engine imports a tactic and no two engines import each other: `symbols.zig` (the arithmetic
@@ -116,12 +125,6 @@ vocabulary table) and `rewrite.zig` (matching + innermost rewriting) are leaves;
 `ac.zig` (the AC / succ-tower substrate) sits on `rewrite` + `symbols`; `polycanon.zig` (the
 ring canonicalizer) sits on `ac`; `common.zig` is the tactic-side toolbox (goal abstraction,
 premise bookkeeping, the fused decide) and `testrig.zig` the unit-test rig.
-
-| phase | hook | may park? | who runs it |
-|---|---|---|---|
-| READ — demand what later phases will read | `read` | **yes** — the only phase with the suspend channel | both modes |
-| DECIDE — accept or reject from what phase 1 fetched | `decide` | no | both; `--fast` admits on accept and stops |
-| CERTIFY — build the synthetic schema the kernel checks | `certify` | no | strict only |
 
 Phase 1's standard citations — the head, lemma args, refs — are not written per tactic: the
 scaffolding derives them from three consts each tactic declares (`schema_slot`,

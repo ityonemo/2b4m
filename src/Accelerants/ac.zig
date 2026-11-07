@@ -6,16 +6,15 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const InternPool = @import("../../../InternPool.zig");
+const InternPool = @import("../InternPool.zig");
 const StrId = InternPool.StrId;
-const term = @import("../../../term.zig");
+const term = @import("../term.zig");
 const TermId = term.TermId;
 const SortId = term.SortId;
 const SymId = term.SymId;
-const EqCert = @import("../EqCert.zig");
-const Prove = @import("../Prove.zig");
-const Error = Prove.Error;
-const testing = std.testing;
+const EqCert = @import("EqCert.zig");
+const Site = @import("Site.zig");
+const Error = Site.Error;
 const rewrite = @import("rewrite.zig");
 const Symbols = @import("symbols.zig").Symbols;
 
@@ -24,58 +23,58 @@ const Symbols = @import("symbols.zig").Symbols;
 /// cites name the well-known lemmas BARE (resolved in the proof's namespace by the generated
 /// schema's ProveTask + kernel-checked). Shapes:
 ///   assoc: f(f(a,b),c) = f(a,f(b,c));  comm: f(a,b) = f(b,a);  swap: f(x,f(y,r)) = f(y,f(x,r))
-pub fn pushACTriple(prove: *Prove, rules: *std.ArrayList(rewrite.Rule), cites: *std.ArrayList(EqCert.RuleCite), op_sym: term.SymId, sort: term.SortId, assoc_name: []const u8, comm_name: []const u8, swap_name: []const u8, loc: u32) Error!void {
+pub fn pushACTriple(site: *Site, rules: *std.ArrayList(rewrite.Rule), cites: *std.ArrayList(EqCert.RuleCite), op_sym: term.SymId, sort: term.SortId, assoc_name: []const u8, comm_name: []const u8, swap_name: []const u8, loc: u32) Error!void {
     // assoc: f(f(a,b),c) = f(a,f(b,c))
     {
-        const a = try freshACFvar(prove, sort);
-        const b = try freshACFvar(prove, sort);
-        const cc = try freshACFvar(prove, sort);
-        const binders = try prove.ctx.arena.dupe(rewrite.Binder, &.{ .{ .fvar = a.name, .sort = sort }, .{ .fvar = b.name, .sort = sort }, .{ .fvar = cc.name, .sort = sort } });
-        const lhs = try prove.pool.addApp(.app, op_sym, &.{ try prove.pool.addApp(.app, op_sym, &.{ a.t, b.t }), cc.t });
-        const rhs = try prove.pool.addApp(.app, op_sym, &.{ a.t, try prove.pool.addApp(.app, op_sym, &.{ b.t, cc.t }) });
-        try pushHardcoded(prove, rules, cites, binders, lhs, rhs, assoc_name, loc);
+        const a = try freshACFvar(site, sort);
+        const b = try freshACFvar(site, sort);
+        const cc = try freshACFvar(site, sort);
+        const binders = try site.ctx.arena.dupe(rewrite.Binder, &.{ .{ .fvar = a.name, .sort = sort }, .{ .fvar = b.name, .sort = sort }, .{ .fvar = cc.name, .sort = sort } });
+        const lhs = try site.pool.addApp(.app, op_sym, &.{ try site.pool.addApp(.app, op_sym, &.{ a.t, b.t }), cc.t });
+        const rhs = try site.pool.addApp(.app, op_sym, &.{ a.t, try site.pool.addApp(.app, op_sym, &.{ b.t, cc.t }) });
+        try pushHardcoded(site, rules, cites, binders, lhs, rhs, assoc_name, loc);
     }
     // comm: f(a,b) = f(b,a)
     {
-        const a = try freshACFvar(prove, sort);
-        const b = try freshACFvar(prove, sort);
-        const binders = try prove.ctx.arena.dupe(rewrite.Binder, &.{ .{ .fvar = a.name, .sort = sort }, .{ .fvar = b.name, .sort = sort } });
-        const lhs = try prove.pool.addApp(.app, op_sym, &.{ a.t, b.t });
-        const rhs = try prove.pool.addApp(.app, op_sym, &.{ b.t, a.t });
-        try pushHardcoded(prove, rules, cites, binders, lhs, rhs, comm_name, loc);
+        const a = try freshACFvar(site, sort);
+        const b = try freshACFvar(site, sort);
+        const binders = try site.ctx.arena.dupe(rewrite.Binder, &.{ .{ .fvar = a.name, .sort = sort }, .{ .fvar = b.name, .sort = sort } });
+        const lhs = try site.pool.addApp(.app, op_sym, &.{ a.t, b.t });
+        const rhs = try site.pool.addApp(.app, op_sym, &.{ b.t, a.t });
+        try pushHardcoded(site, rules, cites, binders, lhs, rhs, comm_name, loc);
     }
     // swap: f(x,f(y,r)) = f(y,f(x,r))
     {
-        const x = try freshACFvar(prove, sort);
-        const y = try freshACFvar(prove, sort);
-        const r = try freshACFvar(prove, sort);
-        const binders = try prove.ctx.arena.dupe(rewrite.Binder, &.{ .{ .fvar = x.name, .sort = sort }, .{ .fvar = y.name, .sort = sort }, .{ .fvar = r.name, .sort = sort } });
-        const lhs = try prove.pool.addApp(.app, op_sym, &.{ x.t, try prove.pool.addApp(.app, op_sym, &.{ y.t, r.t }) });
-        const rhs = try prove.pool.addApp(.app, op_sym, &.{ y.t, try prove.pool.addApp(.app, op_sym, &.{ x.t, r.t }) });
-        try pushHardcoded(prove, rules, cites, binders, lhs, rhs, swap_name, loc);
+        const x = try freshACFvar(site, sort);
+        const y = try freshACFvar(site, sort);
+        const r = try freshACFvar(site, sort);
+        const binders = try site.ctx.arena.dupe(rewrite.Binder, &.{ .{ .fvar = x.name, .sort = sort }, .{ .fvar = y.name, .sort = sort }, .{ .fvar = r.name, .sort = sort } });
+        const lhs = try site.pool.addApp(.app, op_sym, &.{ x.t, try site.pool.addApp(.app, op_sym, &.{ y.t, r.t }) });
+        const rhs = try site.pool.addApp(.app, op_sym, &.{ y.t, try site.pool.addApp(.app, op_sym, &.{ x.t, r.t }) });
+        try pushHardcoded(site, rules, cites, binders, lhs, rhs, swap_name, loc);
     }
 }
 
 /// A fresh AC pattern fvar of `sort`.
-pub fn freshACFvar(prove: *Prove, sort: term.SortId) Error!struct { name: StrId, t: TermId } {
-    const name = try prove.freshNamed("p#");
-    return .{ .name = name, .t = try prove.pool.add(.{ .fvar = .{ .name = name, .sort = sort } }) };
+pub fn freshACFvar(site: *Site, sort: term.SortId) Error!struct { name: StrId, t: TermId } {
+    const name = try site.freshNamed("p#");
+    return .{ .name = name, .t = try site.pool.add(.{ .fvar = .{ .name = name, .sort = sort } }) };
 }
 
 /// Append one hardcoded rule (binders + lhs/rhs + its ∀-quantified formula) with a BARE cite
 /// naming `name_text` (resolved by the generated ProveTask; is_axiom = placeholder).
-pub fn pushHardcoded(prove: *Prove, rules: *std.ArrayList(rewrite.Rule), cites: *std.ArrayList(EqCert.RuleCite), binders: []const rewrite.Binder, lhs: TermId, rhs: TermId, name_text: []const u8, loc: u32) Error!void {
+pub fn pushHardcoded(site: *Site, rules: *std.ArrayList(rewrite.Rule), cites: *std.ArrayList(EqCert.RuleCite), binders: []const rewrite.Binder, lhs: TermId, rhs: TermId, name_text: []const u8, loc: u32) Error!void {
     // ∀-quantify eq(lhs,rhs) over binders, outermost = binders[0] (matches emitInstance).
-    var formula = try prove.pool.add(.{ .eq = .{ .lhs = lhs, .rhs = rhs } });
+    var formula = try site.pool.add(.{ .eq = .{ .lhs = lhs, .rhs = rhs } });
     var i = binders.len;
     while (i > 0) {
         i -= 1;
-        const closed = try prove.pool.close(formula, binders[i].fvar);
-        formula = try prove.pool.add(.{ .quant = .{ .q = .forall, .sort = binders[i].sort, .hint = binders[i].fvar, .body = closed } });
+        const closed = try site.pool.close(formula, binders[i].fvar);
+        formula = try site.pool.add(.{ .quant = .{ .q = .forall, .sort = binders[i].sort, .hint = binders[i].fvar, .body = closed } });
     }
-    const name = prove.ctx.interner.internString(name_text) catch return error.OutOfMemory;
-    try rules.append(prove.ctx.arena, .{ .binders = binders, .lhs = lhs, .rhs = rhs, .formula = formula });
-    try cites.append(prove.ctx.arena, .{
+    const name = site.ctx.interner.internString(name_text) catch return error.OutOfMemory;
+    try rules.append(site.ctx.arena, .{ .binders = binders, .lhs = lhs, .rhs = rhs, .formula = formula });
+    try cites.append(site.ctx.arena, .{
         .global = .{
             // stamp the call-site loc so a "reference not found" on the emitted cite points at the
             // `assoc_commut` step, not 1:1.
@@ -86,61 +85,61 @@ pub fn pushHardcoded(prove: *Prove, rules: *std.ArrayList(rewrite.Rule), cites: 
 }
 
 /// `succ^n(comb)` for n≥0, `prev^|n|(comb)` for n<0 (needs ℤ `prev`; null for ℕ negatives).
-pub fn buildArithTowerSigned(prove: *Prove, offset: i128, comb: TermId, symbols: Symbols) Error!?TermId {
+pub fn buildArithTowerSigned(site: *Site, offset: i128, comb: TermId, symbols: Symbols) Error!?TermId {
     var cur = comb;
     if (offset >= 0) {
         const succ = symbols.succ orelse return if (offset == 0) comb else null;
         var n = offset;
-        while (n > 0) : (n -= 1) cur = try prove.pool.addApp(.app, succ, &.{cur});
+        while (n > 0) : (n -= 1) cur = try site.pool.addApp(.app, succ, &.{cur});
         return cur;
     }
     const prev = symbols.prev orelse return null;
     var n = -offset;
-    while (n > 0) : (n -= 1) cur = try prove.pool.addApp(.app, prev, &.{cur});
+    while (n > 0) : (n -= 1) cur = try site.pool.addApp(.app, prev, &.{cur});
     return cur;
 }
 
 /// Flatten an `op`-tree into its atom summands (any maximal subterm that is not itself an
 /// `op(_, _)`), left-to-right.
-pub fn flattenSum(prove: *Prove, op_sym: term.SymId, id: TermId, out: *std.ArrayList(TermId)) Error!void {
+pub fn flattenSum(site: *Site, op_sym: term.SymId, id: TermId, out: *std.ArrayList(TermId)) Error!void {
     // flatten a nested `op(op(a,b),c)` sum into `out` in LEFT-TO-RIGHT leaf order. Iterative work-
     // stack (was native recursion); order-sensitive → push the two args REVERSED (a1 then a0) so a0
     // pops + is emitted first, matching the recursion's lhs-before-rhs.
-    var scratch: std.heap.ArenaAllocator = .init(prove.ctx.gpa);
+    var scratch: std.heap.ArenaAllocator = .init(site.ctx.gpa);
     defer scratch.deinit();
     const wa = scratch.allocator();
     var stack: std.ArrayList(TermId) = .empty;
     try stack.append(wa, id);
     while (stack.pop()) |cur| {
-        const node = prove.pool.get(cur);
+        const node = site.pool.get(cur);
         if (node == .app and node.app.sym == op_sym and node.app.args.len == 2) {
-            const args = prove.pool.args(node.app);
+            const args = site.pool.args(node.app);
             try stack.append(wa, args[1]); // rhs pushed first → pops second
             try stack.append(wa, args[0]); // lhs pushed second → pops first
         } else {
-            try out.append(prove.ctx.arena, cur); // a leaf summand
+            try out.append(site.ctx.arena, cur); // a leaf summand
         }
     }
 }
 
 /// Build a right-nested `op(l0, op(l1, … ln))` comb from the leaves (non-empty).
-pub fn buildRightNested(prove: *Prove, op_sym: term.SymId, leaves: []const TermId) Error!TermId {
+pub fn buildRightNested(site: *Site, op_sym: term.SymId, leaves: []const TermId) Error!TermId {
     var cur = leaves[leaves.len - 1];
     var i = leaves.len - 1;
     while (i > 0) {
         i -= 1;
-        cur = try prove.pool.addApp(.app, op_sym, &.{ leaves[i], cur });
+        cur = try site.pool.addApp(.app, op_sym, &.{ leaves[i], cur });
     }
     return cur;
 }
 
 /// In-place insertion sort by `termOrder` (stable, small lists).
-pub fn sortTerms(prove: *Prove, items: []TermId) void {
+pub fn sortTerms(site: *Site, items: []TermId) void {
     var i: usize = 1;
     while (i < items.len) : (i += 1) {
         const v = items[i];
         var j = i;
-        while (j > 0 and prove.pool.termOrder(items[j - 1], v) == .gt) : (j -= 1) {
+        while (j > 0 and site.pool.termOrder(items[j - 1], v) == .gt) : (j -= 1) {
             items[j] = items[j - 1];
         }
         items[j] = v;
@@ -155,27 +154,27 @@ pub const AcPlan = struct { sorted: TermId, trace: []const rewrite.Rewrite };
 /// / `swap_idx` the commutativity / swap rules. A succ/prev TOWER prefix (the pre-rules float
 /// succ/prev to the root: `succ(add(…))`) is stripped first and the sum sorted UNDER it — every
 /// emitted rewrite still names the whole tower, as the kernel's `rewrite` requires.
-pub fn acPlan(prove: *Prove, symbols: Symbols, rules: []const rewrite.Rule, assoc_idx: usize, comm_idx: usize, swap_idx: usize, start: TermId) Error!?AcPlan {
+pub fn acPlan(site: *Site, symbols: Symbols, rules: []const rewrite.Rule, assoc_idx: usize, comm_idx: usize, swap_idx: usize, start: TermId) Error!?AcPlan {
     const op_sym = symbols.add.?; // the reordered operator (the AC vocabulary's `add` slot)
     // phase 1: right-nest via associativity ONLY (a single-rule slice, terminating).
     const assoc_only = rules[assoc_idx .. assoc_idx + 1];
-    const rn = rewrite.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, assoc_only, start, 1000) catch |e| switch (e) {
+    const rn = rewrite.normalize(site.ctx.arena, site.pool, site.ctx.interner, assoc_only, start, 1000) catch |err| switch (err) {
         error.Limit => return null,
         error.OutOfMemory => return error.OutOfMemory,
     };
     // phase 2: strip the tower, flatten the right-nested comb under it, and bubble-sort.
-    const tower = stripTower(prove, symbols, rn.nf);
+    const tower = stripTower(site, symbols, rn.nf);
     var leaves: std.ArrayList(TermId) = .empty;
-    try flattenSum(prove, op_sym, tower.inner, &leaves);
+    try flattenSum(site, op_sym, tower.inner, &leaves);
     var trace: std.ArrayList(rewrite.Rewrite) = .empty;
     // phase-1 normalized over the single-rule slice, so its trace rule_idx is 0-relative;
     // rebase it to the full-array index.
     for (rn.trace) |rw| {
         var r = rw;
         r.rule_idx = rw.rule_idx + assoc_idx;
-        try trace.append(prove.ctx.arena, r);
+        try trace.append(site.ctx.arena, r);
     }
-    const sorted = (try sortTrace(prove, symbols, rules, comm_idx, swap_idx, op_sym, tower.offset, leaves.items, &trace)) orelse return null;
+    const sorted = (try sortTrace(site, symbols, rules, comm_idx, swap_idx, op_sym, tower.offset, leaves.items, &trace)) orelse return null;
     return .{ .sorted = sorted, .trace = trace.items };
 }
 
@@ -184,18 +183,18 @@ pub const StrippedTower = struct { offset: i128, inner: TermId };
 
 /// Peel `succ^j(prev^k(inner))` (in any interleaving) off the root: the signed offset and
 /// the inner term. A theory without succ/prev never strips (offset 0, inner = the term).
-pub fn stripTower(prove: *Prove, symbols: Symbols, t: TermId) StrippedTower {
+pub fn stripTower(site: *Site, symbols: Symbols, t: TermId) StrippedTower {
     var offset: i128 = 0;
     var cur = t;
     while (true) {
-        const node = prove.pool.get(cur);
+        const node = site.pool.get(cur);
         if (node != .app or node.app.args.len != 1) break;
         if (symIs(node.app.sym, symbols.succ)) {
             offset += 1;
         } else if (symIs(node.app.sym, symbols.prev)) {
             offset -= 1;
         } else break;
-        cur = prove.pool.args(node.app)[0];
+        cur = site.pool.args(node.app)[0];
     }
     return .{ .offset = offset, .inner = cur };
 }
@@ -205,7 +204,7 @@ pub fn stripTower(prove: *Prove, symbols: Symbols, t: TermId) StrippedTower {
 /// tower `succ^offset(…)`: each rewrite's before/after is the whole tower. Returns the sorted
 /// whole, or null when a fabricated rewrite fails to match its lemma. `leaves` is mutated.
 pub fn sortTrace(
-    prove: *Prove,
+    site: *Site,
     symbols: Symbols,
     rules: []const rewrite.Rule,
     comm_idx: usize,
@@ -215,23 +214,23 @@ pub fn sortTrace(
     leaves_in: []const TermId,
     trace: *std.ArrayList(rewrite.Rewrite),
 ) Error!?TermId {
-    const leaves = try prove.ctx.arena.dupe(TermId, leaves_in);
-    var whole = (try buildArithTowerSigned(prove, offset, try buildRightNested(prove, op_sym, leaves), symbols)) orelse return null;
+    const leaves = try site.ctx.arena.dupe(TermId, leaves_in);
+    var whole = (try buildArithTowerSigned(site, offset, try buildRightNested(site, op_sym, leaves), symbols)) orelse return null;
     if (leaves.len > 1) {
         for (0..leaves.len - 1) |pass| {
             for (0..leaves.len - 1 - pass) |i| {
-                if (prove.pool.termOrder(leaves[i], leaves[i + 1]) != .gt) continue;
+                if (site.pool.termOrder(leaves[i], leaves[i + 1]) != .gt) continue;
                 // the FINAL adjacent pair is a bare `op(x, y)` → commutativity; an interior
                 // pair sits at the head of a longer tail `op(x, op(y, r))` → the swap lemma.
                 const tail_pair = i + 2 == leaves.len;
                 const rule_idx = if (tail_pair) comm_idx else swap_idx;
-                const sub_before = try buildRightNested(prove, op_sym, leaves[i..]);
+                const sub_before = try buildRightNested(site, op_sym, leaves[i..]);
                 std.mem.swap(TermId, &leaves[i], &leaves[i + 1]);
-                const sub_after = try buildRightNested(prove, op_sym, leaves[i..]);
-                const after = (try buildArithTowerSigned(prove, offset, try buildRightNested(prove, op_sym, leaves), symbols)) orelse return null;
+                const sub_after = try buildRightNested(site, op_sym, leaves[i..]);
+                const after = (try buildArithTowerSigned(site, offset, try buildRightNested(site, op_sym, leaves), symbols)) orelse return null;
                 const rule = rules[rule_idx];
-                const bindings = (try rewrite.matchRule(prove.ctx.arena, prove.pool, prove.ctx.interner, rule, rule.lhs, sub_before)) orelse return null;
-                try trace.append(prove.ctx.arena, .{
+                const bindings = (try rewrite.matchRule(site.ctx.arena, site.pool, site.ctx.interner, rule, rule.lhs, sub_before)) orelse return null;
+                try trace.append(site.ctx.arena, .{
                     .before = whole,
                     .after = after,
                     .rule_idx = rule_idx,
@@ -253,7 +252,7 @@ pub fn symIs(id: term.SymId, want: ?term.SymId) bool {
 }
 
 /// If `t` is a numeral (succ^n(ZERO), prev^n(ZERO), or neg of one) return its signed value.
-pub fn numeralValue(self: *Prove, symbols: Symbols, t: TermId) ?i128 {
+pub fn numeralValue(self: *Site, symbols: Symbols, t: TermId) ?i128 {
     var cur = t;
     var sign: i128 = 1;
     while (true) {
@@ -287,7 +286,7 @@ pub fn numeralValue(self: *Prove, symbols: Symbols, t: TermId) ?i128 {
 }
 
 /// Parse succ^j(prev^k(right-nested sum)) with numeral summands folded into a signed offset.
-pub fn parseTower(self: *Prove, symbols: Symbols, t: TermId) Allocator.Error!?Tower {
+pub fn parseTower(self: *Site, symbols: Symbols, t: TermId) Allocator.Error!?Tower {
     var offset: i128 = 0;
     var cur = t;
     while (true) {
@@ -336,7 +335,7 @@ pub fn parseTower(self: *Prove, symbols: Symbols, t: TermId) Allocator.Error!?To
 }
 
 /// A tower summand leaf: an fvar, an opaque atom, or `neg(<leaf>)`.
-pub fn isTowerLeaf(self: *Prove, symbols: Symbols, t: TermId) bool {
+pub fn isTowerLeaf(self: *Site, symbols: Symbols, t: TermId) bool {
     // LINEAR recursion (only ever descends into neg's single arg) — a plain loop, depth-safe.
     var cur = t;
     while (true) {
@@ -351,7 +350,7 @@ pub fn isTowerLeaf(self: *Prove, symbols: Symbols, t: TermId) bool {
 }
 
 /// An opaque atom: an application whose head is NOT part of the sum structure.
-pub fn isOpaqueAtom(self: *Prove, symbols: Symbols, t: TermId) bool {
+pub fn isOpaqueAtom(self: *Site, symbols: Symbols, t: TermId) bool {
     const node = self.pool.get(t);
     if (node != .app) return false;
     const sym = node.app.sym;
@@ -361,7 +360,7 @@ pub fn isOpaqueAtom(self: *Prove, symbols: Symbols, t: TermId) bool {
         symIs(sym, symbols.one));
 }
 
-pub fn buildComb(self: *Prove, symbols: Symbols, leaves: []const TermId) Allocator.Error!?TermId {
+pub fn buildComb(self: *Site, symbols: Symbols, leaves: []const TermId) Allocator.Error!?TermId {
     if (leaves.len == 0) {
         const zero = symbols.zero orelse return null;
         return try self.pool.addApp(.app, zero, &.{});
@@ -376,7 +375,7 @@ pub fn buildComb(self: *Prove, symbols: Symbols, leaves: []const TermId) Allocat
     return cur;
 }
 
-pub fn buildTower(self: *Prove, symbols: Symbols, succs: usize, comb: TermId) Allocator.Error!?TermId {
+pub fn buildTower(self: *Site, symbols: Symbols, succs: usize, comb: TermId) Allocator.Error!?TermId {
     var cur = comb;
     for (0..succs) |_| {
         const succ_sym = symbols.succ orelse return null;
@@ -386,7 +385,7 @@ pub fn buildTower(self: *Prove, symbols: Symbols, succs: usize, comb: TermId) Al
 }
 
 /// A SIGNED tower: succ^n(comb) for n ≥ 0, prev^|n|(comb) for n < 0.
-pub fn buildTowerSigned(self: *Prove, symbols: Symbols, offset: i128, comb: TermId) Allocator.Error!?TermId {
+pub fn buildTowerSigned(self: *Site, symbols: Symbols, offset: i128, comb: TermId) Allocator.Error!?TermId {
     if (offset >= 0) return buildTower(self, symbols, @intCast(offset), comb);
     const prev_sym = symbols.prev orelse return null;
     var cur = comb;
@@ -396,7 +395,7 @@ pub fn buildTowerSigned(self: *Prove, symbols: Symbols, offset: i128, comb: Term
 }
 
 /// buildComb but with a trailing ZERO base: l0 + (l1 + ... + (l_{n-1} + 0)).
-pub fn buildCombWithZeroTail(self: *Prove, symbols: Symbols, leaves: []const TermId) Allocator.Error!?TermId {
+pub fn buildCombWithZeroTail(self: *Site, symbols: Symbols, leaves: []const TermId) Allocator.Error!?TermId {
     const zero = try self.pool.addApp(.app, symbols.zero orelse return null, &.{});
     var cur = zero;
     var i = leaves.len;
@@ -409,7 +408,7 @@ pub fn buildCombWithZeroTail(self: *Prove, symbols: Symbols, leaves: []const Ter
 
 /// Emit one adjacent swap of `order[pos]` / `order[pos+1]` in the tower `succ^k(sum(order))`.
 pub fn emitSwap(
-    self: *Prove,
+    self: *Site,
     symbols: Symbols,
     rules: []const rewrite.Rule,
     comm_idx: ?usize,
@@ -441,7 +440,7 @@ pub fn emitSwap(
 /// `x … neg(x)` is bubbled together before cancelling) rather than relying on sort adjacency,
 /// which misses pairs separated by another summand.
 pub fn cancelInverses(
-    self: *Prove,
+    self: *Site,
     symbols: Symbols,
     rules: []const rewrite.Rule,
     comm_idx: ?usize,
@@ -533,7 +532,7 @@ pub fn cancelInverses(
 /// Find the addNegRight (`add(a, neg(a)) = 0`) / addNegLeft (`add(neg(a), a) = 0`) rule index
 /// by matching the fabricated inverse-pair pattern against each rule's lhs (structural, no
 /// name lookup). `side` picks which orientation the neg sits on.
-pub fn findNegCancel(self: *Prove, rules: []const rewrite.Rule, symbols: Symbols, side: enum { left, right }) ?usize {
+pub fn findNegCancel(self: *Site, rules: []const rewrite.Rule, symbols: Symbols, side: enum { left, right }) ?usize {
     for (rules, 0..) |rule, i| {
         const n = self.pool.get(rule.lhs);
         if (n != .app or !symIs(n.app.sym, symbols.add.?) or n.app.args.len != 2) continue;
@@ -555,7 +554,7 @@ pub fn findNegCancel(self: *Prove, rules: []const rewrite.Rule, symbols: Symbols
 
 /// Find the addZeroLeft (`add(0, a) = a`) / addZeroRight (`add(a, 0) = a`) rule index by
 /// structural match (the ZERO factor's side selects left/right).
-pub fn findZeroDrop(self: *Prove, rules: []const rewrite.Rule, symbols: Symbols, side: enum { left, right }) ?usize {
+pub fn findZeroDrop(self: *Site, rules: []const rewrite.Rule, symbols: Symbols, side: enum { left, right }) ?usize {
     for (rules, 0..) |rule, i| {
         const n = self.pool.get(rule.lhs);
         if (n != .app or !symIs(n.app.sym, symbols.add.?) or n.app.args.len != 2) continue;

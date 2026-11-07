@@ -4,7 +4,7 @@
 //! the Presburger decision, the AC/tower substrate, the polynomial canonicalizer — so it lives
 //! below all of them rather than inside one.
 
-const term = @import("../../../term.zig");
+const term = @import("../term.zig");
 const SortId = term.SortId;
 const SymId = term.SymId;
 

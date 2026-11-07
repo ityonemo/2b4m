@@ -42,7 +42,8 @@ const RefScan = @import("ProveTask/RefScan.zig");
 const Elab = @import("ProveTask/Elab.zig");
 const Prove = @import("ProveTask/Prove.zig");
 const Schema = @import("ProveTask/Schema.zig");
-const Accelerant = @import("ProveTask/Accelerant.zig");
+const Accelerants = @import("../Accelerants.zig");
+const Demand = @import("ProveTask/Demand.zig");
 const Expand = @import("Expand.zig");
 const Delaborate = @import("ProveTask/Delaborate.zig");
 
@@ -288,7 +289,7 @@ fn elaborateGoalInto(self: *Context, task: *ProveTask, h: *Engine.Handle, st: *S
     const refs = try scanner.scanFormula(formula);
     // resolve in the RESOLUTION ns (st.prove.ns = universe-of-file), not the identity
     // ns — a model transfer's source names resolve there + get overlay-redirected.
-    if (try Prove.resolveRefs(self, h, task.file, st.prove.ns, st.prove.model, st.prove.self_key, refs)) |blocker| {
+    if (try Demand.resolveRefs(self, h, task.file, st.prove.ns, st.prove.model, st.prove.self_key, refs)) |blocker| {
         h.suspendOn(blocker);
         return .suspended;
     }
@@ -703,7 +704,7 @@ fn buildInstanceState(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: I
     var inst_formula: *const ast.Expr = schema_formula;
     var inst_steps: ?[]const ast.Step = schema_steps;
     if (task.model != InternPool.Index.none and task.model != .universe) {
-        var b: Accelerant.Builder = .{ .arena = self.arena, .interner = self.interner, .pool = prove.pool, .loc = schema_fact.name.start };
+        var b: Accelerants.Builder = .{ .arena = self.arena, .interner = self.interner, .pool = prove.pool, .loc = schema_fact.name.start };
         // a schema-scoped, model-aware Elab to resolve each param's sort token to its image.
         var sort_walk = Walk.init(self.arena, self.interner, source, self.sink);
         var se = Elab.init(self.arena, self.io, self, self.interner, &self.idents, prove.pool, self.sink, source, &sort_walk, resolve_ns, &prove.fresh_counter);

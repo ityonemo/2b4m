@@ -463,3 +463,10 @@ test "@label step-label sigil lexes as one token; lone @ is invalid" {
     // a lone '@' with no following identifier is invalid
     try expectTags("@ x", &.{ .invalid, .identifier });
 }
+
+/// A stamped token's interned name — the parser stamped every engine-parsed token, so past
+/// parsing names are integers, never re-derived from source text.
+pub fn tokName(tok: Token) InternPool.StrId {
+    std.debug.assert(tok.name != InternPool.Index.none);
+    return tok.name;
+}

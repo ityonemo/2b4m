@@ -17,19 +17,19 @@
 //! SCOPE: the emitted steps assume nothing about their surrounding block beyond the cited
 //! rule origins being in scope (globals always are; a local rule's `RuleCite.local` names
 //! the hypothesis-restatement label the producer placed in the wrapping assume block). All
-//! fresh labels come from the caller's `Prove.freshNamed` via the `label` callback shape.
+//! fresh labels come from the caller's `Site.freshNamed` via the `label` callback shape.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const ast = @import("../../ast.zig");
-const lexer = @import("../../lexer.zig");
+const ast = @import("../ast.zig");
+const lexer = @import("../lexer.zig");
 const Token = lexer.Token;
-const InternPool = @import("../../InternPool.zig");
+const InternPool = @import("../InternPool.zig");
 const StrId = InternPool.StrId;
-const term = @import("../../term.zig");
+const term = @import("../term.zig");
 const TermId = term.TermId;
-const Accelerant = @import("Accelerant.zig");
-const rewrite = @import("Accelerants/rewrite.zig");
+const Accelerants = @import("../Accelerants.zig");
+const rewrite = @import("rewrite.zig");
 
 /// How a rule's ORIGIN is cited inside the certificate.
 pub const RuleCite = union(enum) {
@@ -41,12 +41,12 @@ pub const RuleCite = union(enum) {
 };
 
 /// The emitter state: the shared builder + pool, the rules (parallel to `cites`), and a
-/// fresh-label source (the producer's `Prove.freshNamed`, type-erased through a closure).
-b: *Accelerant.Builder,
+/// fresh-label source (the producer's `Site.freshNamed`, type-erased through a closure).
+b: *Accelerants.Builder,
 pool: *term.Pool,
 rules: []const rewrite.Rule,
 cites: []const RuleCite,
-/// fresh-label callback: `ctx` is the producer (`*Prove`); returns an interned unique label.
+/// fresh-label callback: `ctx` is the tactic's `*Site`; returns an interned unique label.
 fresh_ctx: *anyopaque,
 freshFn: *const fn (ctx: *anyopaque, prefix: []const u8) anyerror!StrId,
 
