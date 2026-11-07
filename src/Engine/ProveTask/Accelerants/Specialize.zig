@@ -143,29 +143,9 @@ pub fn certify(self: @This(), prove: *Prove, w: *const Walk, goal: TermId, c: as
 pub fn produceSpecialize(prove: *Prove, w: *const Walk, goal: TermId, c: ast.Step.Claim) Error!?Accelerant.Synthetic {
     _ = goal;
     const head = c.schema orelse return prove.fail(c.rule.start, "specialize requires a head theorem/axiom or local step", .{});
-    // ADMIT UP FRONT — the one trustable word whose decision genuinely cannot move here.
-    //
-    // What `--fast` must never do is admit a claim the specialization cannot produce, and that
-    // match is done by `withGuardPremises` only AFTER the instance is PROVEN — which `--fast`
-    // skips. Doing it in the producer does not work: the consequent is in PARAM space (for
-    // `forall a, b; a = b` it is literally `p1 = p2`), and the actual arguments are AST exprs
-    // that only the instance pass elaborates, so matching the consequent against the goal with
-    // the params as pattern variables succeeds for ANY equation goal — measured 2026-10-26,
-    // `succ(ZERO) = ZERO` matched `p1 = p2`. A real check needs the elaborated args, i.e. the
-    // instance. (Moving admit past the peel is independently wrong: the caller installs
-    // `fvar_binds` only after the producer returns, so a local head's abstracted params become
-    // unresolvable — "reference not found: 'k'" across std/subgroup/products.b4m.)
-    //
-    // UNSOUND, TO FIX: `--fast` accepts a `specialize` whose instance conclusion differs from
-    // the claim — so a FALSE goal is admitted (`succ(ZERO) = ZERO`). Every other trustable word
-    // runs its decision or α-matches; this one checks only that a head is present. Gated by
-    // `tests/cases/tactics/specialize/specialize_claim_mismatch_fast.b4m`, which pins today's
-    // behaviour so the fix is noticed. See SPECIALIZE-FAST-UNSOUND.md for why the two obvious
-    // fixes do not work.
-    if (prove.admit_mode) {
-        prove.admit_ok = true;
-        return null;
-    }
+    // STRICT ONLY. `--fast` never reaches the producer: `decide` above settles the claim on the
+    // head's statement, and the claim-vs-instance match strict relies on (`withGuardPremises`,
+    // after the instance is proven) is what decide mirrors. Nothing here is admit-aware.
     var b: Accelerant.Builder = .{ .arena = prove.ctx.arena, .interner = prove.ctx.interner, .pool = prove.pool, .loc = c.rule.start };
 
     // resolve HEAD → its formula term + how the schema proof cites it.

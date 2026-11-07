@@ -3,12 +3,24 @@
 //! exitBlock) and accumulates the kernel-checkable lowering (steps + blocks) as the walk
 //! advances; `finish` runs the kernel over the whole proof and the use-all-facts pass.
 //!
-//! It is the demand-resolution port of the eager pure-kernel lowering (the late
-//! Prover.zig / elaborate.zig subset): every kernel justification arm survives; every
-//! name resolves LOCAL (Walk's LocalStepKV/LocalIdentKV) then GLOBAL (IdentKV/FactKV,
-//! populated by the read pass) — never through an eager environment. Schema
-//! `instantiate`, `model`, and every accelerant are UNSUPPORTED: an unrecognized rule
-//! name hard-errors "unsupported by the demand prover" (red until the Phase-5 rebuilds).
+//! Every kernel justification arm is lowered here; every name resolves LOCAL (Walk's
+//! LocalStepKV/LocalIdentKV) then GLOBAL (IdentKV/FactKV, populated by the read pass) —
+//! never through an eager environment.
+//!
+//! `USING` STEPS AND THE SCAFFOLDING RULE. A `using` step is an engine word (`model`,
+//! `import`, `instantiation`) or an ACCELERATED TACTIC. Every tactic lives in its own file
+//! under `Accelerants/` as one variant of the `Tactic` union below, and passes through three
+//! phases the scaffolding drives in order: READ (demand what later phases will read — the
+//! only phase that may park), DECIDE (accept or reject; `--fast` stops here and admits), and
+//! CERTIFY (build the synthetic schema the kernel checks; strict only). The scaffolding —
+//! the read passes, `admit`, `demandUsing`/`lowerUsing`, `accelerantPremises`, root seeding —
+//! contains NO TACTIC-SPECIFIC LOGIC: it dispatches through the union once
+//! (`switch (tactic) { inline else => |a| … }`) and reads each tactic's declared
+//! `schema_slot`/`premise_shape`/`lemma_args` off its type. No rule-name comparison, no word
+//! list, no `switch (word)` arm naming a tactic belongs anywhere else in this file or in
+//! `RefScan`; a behaviour that must vary per tactic becomes a const or a phase hook on the
+//! tactic. The converse holds too: a tactic file holds no scaffolding — it supplies the three
+//! phase functions and nothing about how or when they are called.
 //!
 //! ORDINAL ALIGNMENT: Walk assigns StepOrdinals/BlockOrdinals in walk order; this driver
 //! appends exactly ONE main kernel step per walked leaf step (synthetics — multi-arg
