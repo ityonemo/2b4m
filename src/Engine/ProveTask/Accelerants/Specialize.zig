@@ -38,6 +38,15 @@ pub const premise_shape: Accelerant.PremiseShape = .head_then_refs;
 /// `Claim.args` name LEMMAS (not value terms): demanded as facts, never elaborated as terms
 pub const lemma_args = false;
 
+/// Phase 1: nothing beyond the cited facts, which the scaffolding demands from the consts above.
+pub fn read(self: @This(), prove: *Prove, w: *const Walk, c: ast.Step.Claim) Allocator.Error!?Engine.TaskIndex {
+    _ = self;
+    _ = prove;
+    _ = w;
+    _ = c;
+    return null;
+}
+
 pub fn decide(self: @This(), prove: *Prove, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step.Claim) Error!void {
     return common.decideFused(self, prove, w, e, goal, c);
 }
