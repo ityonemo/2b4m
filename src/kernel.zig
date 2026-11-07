@@ -66,9 +66,9 @@ pub const Step = struct {
 pub const Justification = union(enum) {
     hypothesis: BRef,
     /// `stmt` is the cited fact's POOL `Index` (a `.fact` Item). The kernel re-reads its
-    /// kind + formula from the pool — it does not trust the lowering's copy.
-    axiom_ref: struct { stmt: InternPool.Index, loc: u32 },
-    theorem_ref: struct { stmt: InternPool.Index, loc: u32 },
+    /// formula from the pool — it does not trust the lowering's copy. Axiom or theorem makes
+    /// no difference here: a fact being interned at all means it was established.
+    cite_ref: struct { stmt: InternPool.Index, loc: u32 },
     modus_ponens: struct { implication: SRef, antecedent: SRef },
     discharge: BRef,
     generalize: BRef,
@@ -382,24 +382,16 @@ pub const Kernel = struct {
                 const hyp = try self.hypFormula(proof, b, r.loc);
                 try self.requireClaim(step, "the hypothesis", hyp);
             },
-            .axiom_ref => |r| {
-                // the cited fact is re-read from the POOL: kind tag checked, its durable
-                // formula copied into the working pool for the alpha-comparison. A fact
-                // being interned at all means it was established (interned ⇒ proven).
+            .cite_ref => |r| {
+                // the cited fact is re-read from the POOL: its durable formula copied into
+                // the working pool for the alpha-comparison. A fact being interned at all
+                // means it was established (interned ⇒ proven).
                 const fact = try self.factOf(r.stmt, r.loc);
-                if (fact.kind != .axiom) {
-                    return self.fail(r.loc, "'{s}' is not an axiom", .{self.str(fact.name)});
-                }
                 const formula = try self.pool.copyIn(self.interner, fact.formula);
-                try self.requireClaim(step, "the axiom", formula);
-            },
-            .theorem_ref => |r| {
-                const fact = try self.factOf(r.stmt, r.loc);
-                if (fact.kind != .theorem) {
-                    return self.fail(r.loc, "'{s}' is not a theorem", .{self.str(fact.name)});
+                switch (fact.kind) {
+                    .axiom => try self.requireClaim(step, "the axiom", formula),
+                    .theorem => try self.requireClaim(step, "the theorem", formula),
                 }
-                const formula = try self.pool.copyIn(self.interner, fact.formula);
-                try self.requireClaim(step, "the theorem", formula);
             },
             .modus_ponens => |r| {
                 const imp = try self.checkStepRef(proof, r.implication, i, at);
@@ -874,9 +866,9 @@ test "forged proof: eigenvariable leak is rejected" {
     };
     const steps = [_]Step{
         // d(x) cited in the ROOT — x is pinned outside the subproof
-        .{ .formula = dx, .just = .{ .axiom_ref = .{ .stmt = leak_stmt, .loc = 0 } }, .block = @enumFromInt(0), .label = s0, .loc = 0 },
+        .{ .formula = dx, .just = .{ .cite_ref = .{ .stmt = leak_stmt, .loc = 0 } }, .block = @enumFromInt(0), .label = s0, .loc = 0 },
         // d(x) inside the fix-block over the SAME x
-        .{ .formula = dx, .just = .{ .axiom_ref = .{ .stmt = leak_stmt, .loc = 0 } }, .block = @enumFromInt(1), .label = s1, .loc = 0 },
+        .{ .formula = dx, .just = .{ .cite_ref = .{ .stmt = leak_stmt, .loc = 0 } }, .block = @enumFromInt(1), .label = s1, .loc = 0 },
         // the illegal generalization
         .{ .formula = goal, .just = .{ .generalize = .{ .id = @enumFromInt(1), .loc = 0 } }, .block = @enumFromInt(0), .label = s2, .loc = 0 },
     };

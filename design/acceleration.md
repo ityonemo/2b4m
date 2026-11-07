@@ -265,7 +265,7 @@ only strict notices.
 | `assoc` | `Accelerants/Assoc.zig` | right-nest both sides by the cited lemma (confluent + terminating, so right-nesting is canonical), emit the chain | the operator is associative. The lemma is still resolved, since it identifies the operator |
 | `simplify` | `Accelerants/Simplify.zig` | normalize both sides by the cited rules to a shared form, emit the `EqCert` join | the cited rules hold — statements are read, proofs are not |
 | `chain` | `Accelerants/Chain.zig` | BFS a rewrite path between the goal's two sides, emit it | as `simplify` |
-| `specialize` | `Accelerants/Specialize.zig` | instantiate the head at the args, emit `theorem_ref → apply_at → modus_ponens` | the head's statement (the claim is still α-matched) |
+| `specialize` | `Accelerants/Specialize.zig` | instantiate the head at the args, emit `cite_ref → apply_at → modus_ponens` | the head's statement (the claim is still α-matched) |
 | `model` / `import` | engine words, not term builders | re-prove the source under the mapping / cite the imported fact | the α-match only |
 
 ### `arithmetic` — the fragment, and `fallback`
@@ -299,7 +299,7 @@ is for goals Presburger *decides* but no certifier can *emit*, e.g. multi-fixed-
    `x⃗` α-equals the goal. The matcher infers `x⃗` by first-order-matching `C` against the
    goal, discharges each antecedent `Aᵢ(x⃗)` from a supplied ref whose formula matches it
    (order-independent; the step's other refs are the decision premises), and emits a
-   `theorem_ref → apply_at(x⃗) → modus_ponens(refs)` chain the KERNEL re-checks — so a
+   `cite_ref → apply_at(x⃗) → modus_ponens(refs)` chain the KERNEL re-checks — so a
    mis-inferred witness can never pass.
    (`tests/cases/tactics/arithmetic/arithmetic_fallback_specialize.b4m`.)
 
