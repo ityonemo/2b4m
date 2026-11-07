@@ -20,6 +20,7 @@
 //! (`additionPreservesOrder`) to the contradiction.
 
 const std = @import("std");
+const testing = std.testing;
 const Allocator = std.mem.Allocator;
 
 /// A strict-order hypothesis `less_than(lo, hi)` between two abstract nodes.

@@ -3,7 +3,6 @@
 //! A namespace, not a type: every fn takes the driving `*Prove` as its first argument.
 
 const std = @import("std");
-const Allocator = std.mem.Allocator;
 const ast = @import("../../../ast.zig");
 const lexer = @import("../../../lexer.zig");
 const InternPool = @import("../../../InternPool.zig");
@@ -12,27 +11,19 @@ const term = @import("../../../term.zig");
 const TermId = term.TermId;
 const SortId = term.SortId;
 const kernel = @import("../../../kernel.zig");
-const Engine = @import("../../../Engine.zig");
-const Context = @import("../../../Context.zig");
 const Walk = @import("../Walk.zig");
 const RefScan = @import("../RefScan.zig");
 const Elab = @import("../Elab.zig");
 const Schema = @import("../Schema.zig");
 const Accelerant = @import("../Accelerant.zig");
-const Verify = @import("../../../Verify.zig");
 const EqCert = @import("../EqCert.zig");
-const Polynomial = @import("../Polynomial.zig");
-const simplify_mod = @import("../simplify.zig");
-const presburger_mod = @import("../presburger.zig");
+const rewrite = @import("rewrite.zig");
 const smt = @import("../smt.zig");
-const farkas = @import("../farkas.zig");
-const FactKV = @import("../../../FactKV.zig");
-const FetchTask = @import("../../../Engine/FetchTask.zig");
 const Prove = @import("../Prove.zig");
 const Error = Prove.Error;
 const tokName = Prove.tokName;
 const testing = std.testing;
-const Arithmetic = @import("Arithmetic.zig");
+const testrig = @import("testrig.zig");
 
 /// Build the synthetic schema's PROOF for specialize: prove `ants[0] -> … -> consequent`
 /// from the head. Structure: assume each antecedent (nested blocks), and in the innermost
@@ -610,7 +601,7 @@ pub fn factStatement(prove: *Prove, ref: lexer.Token) Error!TermId {
 /// axiom/theorem), orient the (possibly ∀-prefixed) equation left→right opening each binder
 /// at a fresh `#`-mangled pattern fvar, and record how the cert cites it. A rule's binders
 /// must all occur on the lhs (else it is not a usable rewrite rule).
-pub const PreparedRule = struct { rule: simplify_mod.Rule, cite: EqCert.RuleCite, local: bool, formula: TermId };
+pub const PreparedRule = struct { rule: rewrite.Rule, cite: EqCert.RuleCite, local: bool, formula: TermId };
 
 pub fn prepareRule(prove: *Prove, w: *const Walk, ref: lexer.Token) Error!PreparedRule {
     var formula: TermId = undefined;
@@ -631,7 +622,7 @@ pub fn prepareRule(prove: *Prove, w: *const Walk, ref: lexer.Token) Error!Prepar
     // guard `->`s interleaved with the binders; SKIP them here to reach the equation (they are
     // discharged where the lemma is applied: emitInstance cites + forall_elims the lemma, and the
     // instance ProveTask runs under the model so the apply_at discharge machinery strips them).
-    var binders: std.ArrayList(simplify_mod.Binder) = .empty;
+    var binders: std.ArrayList(rewrite.Binder) = .empty;
     var body = formula;
     while (true) {
         const node = prove.pool.get(body);
@@ -688,7 +679,7 @@ pub fn buildSimplify(prove: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_r
     // prepare the rewrite rules (in citation order) + how the cert cites each.
     const prepared = try prove.ctx.arena.alloc(PreparedRule, c.refs.len);
     for (c.refs, prepared) |r, *out| out.* = try prepareRule(prove, w, r);
-    const rules = try prove.ctx.arena.alloc(simplify_mod.Rule, prepared.len);
+    const rules = try prove.ctx.arena.alloc(rewrite.Rule, prepared.len);
     const cites = try prove.ctx.arena.alloc(EqCert.RuleCite, prepared.len);
     for (prepared, rules, cites) |p, *ru, *ci| {
         ru.* = p.rule;
@@ -721,11 +712,11 @@ pub fn buildSimplify(prove: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_r
     const t = gn.rhs;
 
     // normalize both sides; a looping rule set trips the cap (1000, as the eager core).
-    const rs = simplify_mod.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, rules, s, 1000) catch |e| switch (e) {
+    const rs = rewrite.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, rules, s, 1000) catch |e| switch (e) {
         error.Limit => return prove.fail(c.rule.start, "simplify: rewrite limit reached (looping rule set?)", .{}),
         error.OutOfMemory => return error.OutOfMemory,
     };
-    const rt = simplify_mod.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, rules, t, 1000) catch |e| switch (e) {
+    const rt = rewrite.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, rules, t, 1000) catch |e| switch (e) {
         error.Limit => return prove.fail(c.rule.start, "simplify: rewrite limit reached (looping rule set?)", .{}),
         error.OutOfMemory => return error.OutOfMemory,
     };
@@ -1213,157 +1204,6 @@ pub fn argRule(prove: *Prove, w: *const Walk, arg: *const ast.Expr) Error!Prepar
     return prepareRule(prove, w, arg.name);
 }
 
-/// Read the ring operator SymIds off `eq_goal` (an equation) by scanning for apps whose head
-/// NAME is a well-known ring operator. At least ONE of `add`/`mul` is required (null return
-/// otherwise — a goal with neither is no polynomial); each is optional on its own, a ring
-/// identity in one operator being a polynomial identity in that operator. The operand sort
-/// (for freshly-built rule-pattern fvars) is the equation's lhs sort.
-pub fn readPolyOps(prove: *Prove, eq_goal: TermId) Error!?Polynomial.Ops {
-    const eqn = prove.pool.get(eq_goal);
-    if (eqn != .eq) return null;
-    var found: Polynomial.Ops = .{
-        .add = null,
-        .mul = null,
-        .zero = null,
-        .one = null,
-        .neg = null,
-        .sub = null,
-        .succ = null,
-        .prev = null,
-        .sort = @enumFromInt(@intFromEnum(prove.termSort(eqn.eq.lhs))),
-    };
-    var have_add = false;
-    var have_mul = false;
-    try collectPolyOps(prove, eq_goal, &found, &have_add, &have_mul);
-    if (!have_add and !have_mul) return null;
-    return found;
-}
-
-/// A symbol's WELL-KNOWN name for vocabulary matching: under a TRANSFER the goal's syms are
-/// TARGET images (`tadd`), but the well-known vocabulary (add/mul/…) is the SOURCE theory's —
-/// reverse-map through the overlay to the source symbol's name.
-fn vocabName(prove: *Prove, ix: InternPool.Index) []const u8 {
-    if (prove.model != InternPool.Index.none and prove.model != .universe) {
-        var cur = prove.model;
-        while (true) {
-            const m = prove.ctx.interner.keyOf(cur).model;
-            for (m.overlay) |mp| if (mp.tgt == ix and mp.src != ix)
-                return prove.ctx.interner.stringBytes(prove.ctx.interner.nameOf(mp.src));
-            if (cur == m.parent) break;
-            cur = m.parent;
-        }
-    }
-    return prove.ctx.interner.stringBytes(prove.ctx.interner.nameOf(ix));
-}
-
-/// Recursively match each app head's well-known NAME, filling `ops`. Pure goal inspection.
-fn collectPolyOps(prove: *Prove, id: TermId, ops: *Polynomial.Ops, have_add: *bool, have_mul: *bool) Error!void {
-    // iterative single-tree collector (was native recursion). Records the polynomial vocabulary
-    // ops by well-known name; field-setting is order-independent so a plain work-stack suffices.
-    var scratch: std.heap.ArenaAllocator = .init(prove.ctx.gpa);
-    defer scratch.deinit();
-    const wa = scratch.allocator();
-    var stack: std.ArrayList(TermId) = .empty;
-    try stack.append(wa, id);
-    while (stack.pop()) |cur| {
-        const node = prove.pool.get(cur);
-        if (node == .app) {
-            const a = node.app;
-            const name = vocabName(prove, @enumFromInt(@intFromEnum(a.sym)));
-            if (std.mem.eql(u8, name, "add")) {
-                ops.add = a.sym;
-                have_add.* = true;
-            } else if (std.mem.eql(u8, name, "mul")) {
-                ops.mul = a.sym;
-                have_mul.* = true;
-            } else if (std.mem.eql(u8, name, "ZERO")) {
-                ops.zero = a.sym;
-            } else if (std.mem.eql(u8, name, "ONE")) {
-                ops.one = a.sym;
-            } else if (std.mem.eql(u8, name, "neg")) {
-                ops.neg = a.sym;
-            } else if (std.mem.eql(u8, name, "sub")) {
-                ops.sub = a.sym;
-            } else if (std.mem.eql(u8, name, "succ")) {
-                ops.succ = a.sym;
-            } else if (std.mem.eql(u8, name, "prev")) {
-                ops.prev = a.sym;
-            }
-        }
-        // `.pred` is NOT descended (the original had no `.pred` arm — only app/eq/bin/not/quant).
-        switch (node) {
-            .app, .eq, .bin, .not, .quant => try prove.pool.pushChildren(&stack, wa, node),
-            else => {},
-        }
-    }
-}
-
-/// Build the associativity / commutativity / swap triple for `op_sym` as HARDCODED rewrite
-/// shapes (no facts.lookup), appending to `rules`/`cites` in the order assoc, comm, swap. The
-/// cites name the well-known lemmas BARE (resolved in the proof's namespace by the generated
-/// schema's ProveTask + kernel-checked). Shapes:
-///   assoc: f(f(a,b),c) = f(a,f(b,c));  comm: f(a,b) = f(b,a);  swap: f(x,f(y,r)) = f(y,f(x,r))
-pub fn pushACTriple(prove: *Prove, rules: *std.ArrayList(simplify_mod.Rule), cites: *std.ArrayList(EqCert.RuleCite), op_sym: term.SymId, sort: term.SortId, assoc_name: []const u8, comm_name: []const u8, swap_name: []const u8, loc: u32) Error!void {
-    // assoc: f(f(a,b),c) = f(a,f(b,c))
-    {
-        const a = try freshACFvar(prove, sort);
-        const b = try freshACFvar(prove, sort);
-        const cc = try freshACFvar(prove, sort);
-        const binders = try prove.ctx.arena.dupe(simplify_mod.Binder, &.{ .{ .fvar = a.name, .sort = sort }, .{ .fvar = b.name, .sort = sort }, .{ .fvar = cc.name, .sort = sort } });
-        const lhs = try prove.pool.addApp(.app, op_sym, &.{ try prove.pool.addApp(.app, op_sym, &.{ a.t, b.t }), cc.t });
-        const rhs = try prove.pool.addApp(.app, op_sym, &.{ a.t, try prove.pool.addApp(.app, op_sym, &.{ b.t, cc.t }) });
-        try pushHardcoded(prove, rules, cites, binders, lhs, rhs, assoc_name, loc);
-    }
-    // comm: f(a,b) = f(b,a)
-    {
-        const a = try freshACFvar(prove, sort);
-        const b = try freshACFvar(prove, sort);
-        const binders = try prove.ctx.arena.dupe(simplify_mod.Binder, &.{ .{ .fvar = a.name, .sort = sort }, .{ .fvar = b.name, .sort = sort } });
-        const lhs = try prove.pool.addApp(.app, op_sym, &.{ a.t, b.t });
-        const rhs = try prove.pool.addApp(.app, op_sym, &.{ b.t, a.t });
-        try pushHardcoded(prove, rules, cites, binders, lhs, rhs, comm_name, loc);
-    }
-    // swap: f(x,f(y,r)) = f(y,f(x,r))
-    {
-        const x = try freshACFvar(prove, sort);
-        const y = try freshACFvar(prove, sort);
-        const r = try freshACFvar(prove, sort);
-        const binders = try prove.ctx.arena.dupe(simplify_mod.Binder, &.{ .{ .fvar = x.name, .sort = sort }, .{ .fvar = y.name, .sort = sort }, .{ .fvar = r.name, .sort = sort } });
-        const lhs = try prove.pool.addApp(.app, op_sym, &.{ x.t, try prove.pool.addApp(.app, op_sym, &.{ y.t, r.t }) });
-        const rhs = try prove.pool.addApp(.app, op_sym, &.{ y.t, try prove.pool.addApp(.app, op_sym, &.{ x.t, r.t }) });
-        try pushHardcoded(prove, rules, cites, binders, lhs, rhs, swap_name, loc);
-    }
-}
-
-/// A fresh AC pattern fvar of `sort`.
-pub fn freshACFvar(prove: *Prove, sort: term.SortId) Error!struct { name: StrId, t: TermId } {
-    const name = try prove.freshNamed("p#");
-    return .{ .name = name, .t = try prove.pool.add(.{ .fvar = .{ .name = name, .sort = sort } }) };
-}
-
-/// Append one hardcoded rule (binders + lhs/rhs + its ∀-quantified formula) with a BARE cite
-/// naming `name_text` (resolved by the generated ProveTask; is_axiom = placeholder).
-pub fn pushHardcoded(prove: *Prove, rules: *std.ArrayList(simplify_mod.Rule), cites: *std.ArrayList(EqCert.RuleCite), binders: []const simplify_mod.Binder, lhs: TermId, rhs: TermId, name_text: []const u8, loc: u32) Error!void {
-    // ∀-quantify eq(lhs,rhs) over binders, outermost = binders[0] (matches emitInstance).
-    var formula = try prove.pool.add(.{ .eq = .{ .lhs = lhs, .rhs = rhs } });
-    var i = binders.len;
-    while (i > 0) {
-        i -= 1;
-        const closed = try prove.pool.close(formula, binders[i].fvar);
-        formula = try prove.pool.add(.{ .quant = .{ .q = .forall, .sort = binders[i].sort, .hint = binders[i].fvar, .body = closed } });
-    }
-    const name = prove.ctx.interner.internString(name_text) catch return error.OutOfMemory;
-    try rules.append(prove.ctx.arena, .{ .binders = binders, .lhs = lhs, .rhs = rhs, .formula = formula });
-    try cites.append(prove.ctx.arena, .{
-        .global = .{
-            // stamp the call-site loc so a "reference not found" on the emitted cite points at the
-            // `assoc_commut` step, not 1:1.
-            .head = .{ .tag = .identifier, .start = loc, .end = loc, .name = name, .qualifier = .none },
-            .is_axiom = false,
-        },
-    });
-}
-
 /// The well-known AC triple + operator for a bare `assoc_commut`, chosen by the goal LHS's
 /// head symbol NAME (`add` or `mul`). Null when the head is neither.
 const WellKnownOp = struct { sym: term.SymId, assoc: []const u8, comm: []const u8, swap: []const u8 };
@@ -1383,8 +1223,8 @@ pub fn pickWellKnownOp(prove: *Prove, head: ?term.SymId) ?WellKnownOp {
 /// Orient a (possibly ∀-prefixed) equation `formula` into an L→R rewrite rule, opening each
 /// binder at a fresh pattern fvar. Null when the body is not an equation or a binder is
 /// unused on the LHS (not a usable rewrite rule) — the extracted core of `prepareRule`.
-pub fn orientRule(prove: *Prove, formula: TermId) Error!?simplify_mod.Rule {
-    var binders: std.ArrayList(simplify_mod.Binder) = .empty;
+pub fn orientRule(prove: *Prove, formula: TermId) Error!?rewrite.Rule {
+    var binders: std.ArrayList(rewrite.Binder) = .empty;
     var body = formula;
     while (true) {
         const node = prove.pool.get(body);
@@ -1481,10 +1321,10 @@ pub fn finishReorder(
     comptime name_prefix: []const u8,
     s: TermId,
     t: TermId,
-    rules: []const simplify_mod.Rule,
+    rules: []const rewrite.Rule,
     cites: []const EqCert.RuleCite,
-    rs: simplify_mod.Result,
-    rt: simplify_mod.Result,
+    rs: rewrite.Result,
+    rt: rewrite.Result,
     abs: FvarAbstraction,
     eigen: []const term.Node.Fvar,
     local_prems: []const PreparedRule,
@@ -1540,217 +1380,14 @@ pub fn finishReorder(
     };
 }
 
-/// Does `sym` (if present) name the given head?
-pub fn symIs(prove: *const Prove, sym: term.SymId, want: ?term.SymId) bool {
-    _ = prove;
-    const w = want orelse return false;
-    return sym == w;
-}
-
-/// `succ^n(comb)` for n≥0, `prev^|n|(comb)` for n<0 (needs ℤ `prev`; null for ℕ negatives).
-pub fn buildArithTowerSigned(prove: *Prove, offset: i128, comb: TermId, symbols: presburger_mod.Symbols) Error!?TermId {
-    var cur = comb;
-    if (offset >= 0) {
-        const succ = symbols.succ orelse return if (offset == 0) comb else null;
-        var n = offset;
-        while (n > 0) : (n -= 1) cur = try prove.pool.addApp(.app, succ, &.{cur});
-        return cur;
-    }
-    const prev = symbols.prev orelse return null;
-    var n = -offset;
-    while (n > 0) : (n -= 1) cur = try prove.pool.addApp(.app, prev, &.{cur});
-    return cur;
-}
-
-/// Flatten an `op`-tree into its atom summands (any maximal subterm that is not itself an
-/// `op(_, _)`), left-to-right.
-pub fn flattenSum(prove: *Prove, op_sym: term.SymId, id: TermId, out: *std.ArrayList(TermId)) Error!void {
-    // flatten a nested `op(op(a,b),c)` sum into `out` in LEFT-TO-RIGHT leaf order. Iterative work-
-    // stack (was native recursion); order-sensitive → push the two args REVERSED (a1 then a0) so a0
-    // pops + is emitted first, matching the recursion's lhs-before-rhs.
-    var scratch: std.heap.ArenaAllocator = .init(prove.ctx.gpa);
-    defer scratch.deinit();
-    const wa = scratch.allocator();
-    var stack: std.ArrayList(TermId) = .empty;
-    try stack.append(wa, id);
-    while (stack.pop()) |cur| {
-        const node = prove.pool.get(cur);
-        if (node == .app and node.app.sym == op_sym and node.app.args.len == 2) {
-            const args = prove.pool.args(node.app);
-            try stack.append(wa, args[1]); // rhs pushed first → pops second
-            try stack.append(wa, args[0]); // lhs pushed second → pops first
-        } else {
-            try out.append(prove.ctx.arena, cur); // a leaf summand
-        }
-    }
-}
-
-/// Build a right-nested `op(l0, op(l1, … ln))` comb from the leaves (non-empty).
-fn buildRightNested(prove: *Prove, op_sym: term.SymId, leaves: []const TermId) Error!TermId {
-    var cur = leaves[leaves.len - 1];
-    var i = leaves.len - 1;
-    while (i > 0) {
-        i -= 1;
-        cur = try prove.pool.addApp(.app, op_sym, &.{ leaves[i], cur });
-    }
-    return cur;
-}
-
-/// In-place insertion sort by `termOrder` (stable, small lists).
-fn sortTerms(prove: *Prove, items: []TermId) void {
-    var i: usize = 1;
-    while (i < items.len) : (i += 1) {
-        const v = items[i];
-        var j = i;
-        while (j > 0 and prove.pool.termOrder(items[j - 1], v) == .gt) : (j -= 1) {
-            items[j] = items[j - 1];
-        }
-        items[j] = v;
-    }
-}
-
-const AcPlan = struct { sorted: TermId, trace: []const simplify_mod.Rewrite };
-
-/// Re-associate `start` to a right-nested comb (via associativity only, terminating), then
-/// bubble-sort its atoms into canonical `termOrder`, accumulating one trace. `assoc_idx` is
-/// the rule-array index of the associativity rule (after the distribute pre-rules); `comm_idx`
-/// / `swap_idx` the commutativity / swap rules. A succ/prev TOWER prefix (the pre-rules float
-/// succ/prev to the root: `succ(add(…))`) is stripped first and the sum sorted UNDER it — every
-/// emitted rewrite still names the whole tower, as the kernel's `rewrite` requires.
-pub fn acPlan(prove: *Prove, symbols: presburger_mod.Symbols, rules: []const simplify_mod.Rule, assoc_idx: usize, comm_idx: usize, swap_idx: usize, start: TermId) Error!?AcPlan {
-    const op_sym = symbols.add.?; // the reordered operator (the AC vocabulary's `add` slot)
-    // phase 1: right-nest via associativity ONLY (a single-rule slice, terminating).
-    const assoc_only = rules[assoc_idx .. assoc_idx + 1];
-    const rn = simplify_mod.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, assoc_only, start, 1000) catch |e| switch (e) {
-        error.Limit => return null,
-        error.OutOfMemory => return error.OutOfMemory,
-    };
-    // phase 2: strip the tower, flatten the right-nested comb under it, and bubble-sort.
-    const tower = stripTower(prove, symbols, rn.nf);
-    var leaves: std.ArrayList(TermId) = .empty;
-    try flattenSum(prove, op_sym, tower.inner, &leaves);
-    var trace: std.ArrayList(simplify_mod.Rewrite) = .empty;
-    // phase-1 normalized over the single-rule slice, so its trace rule_idx is 0-relative;
-    // rebase it to the full-array index.
-    for (rn.trace) |rw| {
-        var r = rw;
-        r.rule_idx = rw.rule_idx + assoc_idx;
-        try trace.append(prove.ctx.arena, r);
-    }
-    const sorted = (try sortTrace(prove, symbols, rules, comm_idx, swap_idx, op_sym, tower.offset, leaves.items, &trace)) orelse return null;
-    return .{ .sorted = sorted, .trace = trace.items };
-}
-
-/// A term split into its succ/prev prefix (signed count) and the term underneath.
-const StrippedTower = struct { offset: i128, inner: TermId };
-
-/// Peel `succ^j(prev^k(inner))` (in any interleaving) off the root: the signed offset and
-/// the inner term. A theory without succ/prev never strips (offset 0, inner = the term).
-fn stripTower(prove: *Prove, symbols: presburger_mod.Symbols, t: TermId) StrippedTower {
-    var offset: i128 = 0;
-    var cur = t;
-    while (true) {
-        const node = prove.pool.get(cur);
-        if (node != .app or node.app.args.len != 1) break;
-        if (symIs(prove, node.app.sym, symbols.succ)) {
-            offset += 1;
-        } else if (symIs(prove, node.app.sym, symbols.prev)) {
-            offset -= 1;
-        } else break;
-        cur = prove.pool.args(node.app)[0];
-    }
-    return .{ .offset = offset, .inner = cur };
-}
-
-/// Bubble-sort a comb's summands, appending one rewrite per adjacent swap (the swap lemma
-/// inside the comb, the commutativity lemma for the final pair). The comb sits under the
-/// tower `succ^offset(…)`: each rewrite's before/after is the whole tower. Returns the sorted
-/// whole, or null when a fabricated rewrite fails to match its lemma. `leaves` is mutated.
-fn sortTrace(
-    prove: *Prove,
-    symbols: presburger_mod.Symbols,
-    rules: []const simplify_mod.Rule,
-    comm_idx: usize,
-    swap_idx: usize,
-    op_sym: term.SymId,
-    offset: i128,
-    leaves_in: []const TermId,
-    trace: *std.ArrayList(simplify_mod.Rewrite),
-) Error!?TermId {
-    const leaves = try prove.ctx.arena.dupe(TermId, leaves_in);
-    var whole = (try buildArithTowerSigned(prove, offset, try buildRightNested(prove, op_sym, leaves), symbols)) orelse return null;
-    if (leaves.len > 1) {
-        for (0..leaves.len - 1) |pass| {
-            for (0..leaves.len - 1 - pass) |i| {
-                if (prove.pool.termOrder(leaves[i], leaves[i + 1]) != .gt) continue;
-                // the FINAL adjacent pair is a bare `op(x, y)` → commutativity; an interior
-                // pair sits at the head of a longer tail `op(x, op(y, r))` → the swap lemma.
-                const tail_pair = i + 2 == leaves.len;
-                const rule_idx = if (tail_pair) comm_idx else swap_idx;
-                const sub_before = try buildRightNested(prove, op_sym, leaves[i..]);
-                std.mem.swap(TermId, &leaves[i], &leaves[i + 1]);
-                const sub_after = try buildRightNested(prove, op_sym, leaves[i..]);
-                const after = (try buildArithTowerSigned(prove, offset, try buildRightNested(prove, op_sym, leaves), symbols)) orelse return null;
-                const rule = rules[rule_idx];
-                const bindings = (try simplify_mod.matchRule(prove.ctx.arena, prove.pool, prove.ctx.interner, rule, rule.lhs, sub_before)) orelse return null;
-                try trace.append(prove.ctx.arena, .{
-                    .before = whole,
-                    .after = after,
-                    .rule_idx = rule_idx,
-                    .bindings = bindings,
-                    .inst_lhs = sub_before,
-                    .inst_rhs = sub_after,
-                });
-                whole = after;
-            }
-        }
-    }
-    return whole;
-}
-
 /// Concatenate two rewrite traces (short-circuiting an empty side).
-pub fn concatTrace(prove: *Prove, a: []const simplify_mod.Rewrite, bb: []const simplify_mod.Rewrite) Error![]const simplify_mod.Rewrite {
+pub fn concatTrace(prove: *Prove, a: []const rewrite.Rewrite, bb: []const rewrite.Rewrite) Error![]const rewrite.Rewrite {
     if (a.len == 0) return bb;
     if (bb.len == 0) return a;
-    var out: std.ArrayList(simplify_mod.Rewrite) = .empty;
+    var out: std.ArrayList(rewrite.Rewrite) = .empty;
     try out.appendSlice(prove.ctx.arena, a);
     try out.appendSlice(prove.ctx.arena, bb);
     return out.items;
-}
-
-test "readPolyOps: an add-only goal reads add (and neg), leaves mul absent" {
-    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
-    defer arena_state.deinit();
-    const arena = arena_state.allocator();
-    var threaded: std.Io.Threaded = .init(arena, .{});
-    const rig = try Polynomial.Rig.init(arena, threaded.io());
-    const a = try rig.v("a");
-    const b = try rig.v("b");
-    // neg(add(a, b)) = add(neg(a), neg(b))
-    const goal = try rig.eq(try rig.a1(rig.neg, try rig.a2(rig.add, a, b)), try rig.a2(rig.add, try rig.a1(rig.neg, a), try rig.a1(rig.neg, b)));
-    const ops = (try readPolyOps(rig.prove, goal)).?;
-    try testing.expectEqual(rig.add, ops.add.?);
-    try testing.expect(ops.mul == null);
-    try testing.expectEqual(rig.neg, ops.neg.?);
-    try testing.expect(ops.zero == null);
-}
-
-test "readPolyOps: a mul-only goal reads mul, leaves add absent; a goal with neither is no polynomial" {
-    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
-    defer arena_state.deinit();
-    const arena = arena_state.allocator();
-    var threaded: std.Io.Threaded = .init(arena, .{});
-    const rig = try Polynomial.Rig.init(arena, threaded.io());
-    const e = try rig.v("e");
-    const k = try rig.v("k");
-    // mul(e, k) = mul(neg(e), neg(k))
-    const goal = try rig.eq(try rig.a2(rig.mul, e, k), try rig.a2(rig.mul, try rig.a1(rig.neg, e), try rig.a1(rig.neg, k)));
-    const ops = (try readPolyOps(rig.prove, goal)).?;
-    try testing.expectEqual(rig.mul, ops.mul.?);
-    try testing.expect(ops.add == null);
-    // neg(e) = neg(k): no ring operator at all → not a polynomial goal.
-    const bare = try rig.eq(try rig.a1(rig.neg, e), try rig.a1(rig.neg, k));
-    try testing.expect((try readPolyOps(rig.prove, bare)) == null);
 }
 
 test "usedPremiseCites: a premise whose hypothesis the cert CITES is kept; an uncited one is dropped" {
@@ -1758,7 +1395,7 @@ test "usedPremiseCites: a premise whose hypothesis the cert CITES is kept; an un
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     var threaded: std.Io.Threaded = .init(arena, .{});
-    const rig = try Polynomial.Rig.init(arena, threaded.io());
+    const rig = try testrig.Rig.init(arena, threaded.io());
     const p = rig.prove;
     var b: Accelerant.Builder = .{ .arena = arena, .interner = rig.ctx.interner, .pool = p.pool, .loc = 0 };
     const used_lbl = try internStrRt(p, "prem-used");
@@ -1784,7 +1421,7 @@ test "usedPremiseCites: a citation NESTED in an assume/fix block still counts" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     var threaded: std.Io.Threaded = .init(arena, .{});
-    const rig = try Polynomial.Rig.init(arena, threaded.io());
+    const rig = try testrig.Rig.init(arena, threaded.io());
     const p = rig.prove;
     var b: Accelerant.Builder = .{ .arena = arena, .interner = rig.ctx.interner, .pool = p.pool, .loc = 0 };
     const hyp = try internStrRt(p, "prem-deep");
@@ -1807,7 +1444,7 @@ test "usedPremiseCites: a GLOBAL cite is never a local antecedent; an empty cert
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     var threaded: std.Io.Threaded = .init(arena, .{});
-    const rig = try Polynomial.Rig.init(arena, threaded.io());
+    const rig = try testrig.Rig.init(arena, threaded.io());
     const p = rig.prove;
     const cites = [_]EqCert.RuleCite{
         .{ .local = .{ .hyp = try internStrRt(p, "prem-0") } },
@@ -1823,7 +1460,7 @@ test "fvarBinds: an abstraction's origs become caller-scope bindings keyed by th
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     var threaded: std.Io.Threaded = .init(arena, .{});
-    const rig = try Polynomial.Rig.init(arena, threaded.io());
+    const rig = try testrig.Rig.init(arena, threaded.io());
     const p = rig.prove;
     // an abstraction over two inherited fvars: a hygienic `b#7` and a plain `x`.
     const mangled = try internStrRt(p, "b#7");
@@ -1834,7 +1471,7 @@ test "fvarBinds: an abstraction's origs become caller-scope bindings keyed by th
         .origs = &.{ mangled, plain },
         .args = &.{},
     };
-    var wk = Walk.init(arena, rig.ctx.interner, Polynomial.Rig.source, rig.ctx.sink);
+    var wk = Walk.init(arena, rig.ctx.interner, testrig.Rig.source, rig.ctx.sink);
     const binds = try fvarBinds(p, &wk, abs);
     try testing.expectEqual(@as(usize, 2), binds.len);
     // the DISPLAY name drops the hygiene mangle (so the call-site arg re-resolves by spelling)
@@ -1851,69 +1488,11 @@ test "fvarBinds: an abstraction with no free fvars yields no bindings" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     var threaded: std.Io.Threaded = .init(arena, .{});
-    const rig = try Polynomial.Rig.init(arena, threaded.io());
+    const rig = try testrig.Rig.init(arena, threaded.io());
     const abs: FvarAbstraction = .{ .names = &.{}, .sorts = &.{}, .origs = &.{}, .args = &.{} };
-    var wk = Walk.init(arena, rig.ctx.interner, Polynomial.Rig.source, rig.ctx.sink);
+    var wk = Walk.init(arena, rig.ctx.interner, testrig.Rig.source, rig.ctx.sink);
     const binds = try fvarBinds(rig.prove, &wk, abs);
     try testing.expectEqual(@as(usize, 0), binds.len);
-}
-
-/// The additive normalizer's rule set over the rig's ring + succ, exactly as arithEmitEquation
-/// builds it: the ℤ elimination pre-rules (qualified, so the rig file needn't declare the
-/// lemmas) followed by the add AC triple at assoc/comm/swap.
-const TowerRules = struct { rules: []const simplify_mod.Rule, assoc: usize, comm: usize, swap: usize, symbols: presburger_mod.Symbols };
-
-pub fn towerRules(rig: Polynomial.Rig) !TowerRules {
-    const symbols: presburger_mod.Symbols = .{ .nat = rig.int, .zero = rig.zero, .succ = rig.succ, .add = rig.add, .neg = rig.neg };
-    var rules: std.ArrayList(simplify_mod.Rule) = .empty;
-    var cites: std.ArrayList(EqCert.RuleCite) = .empty;
-    try Arithmetic.pushAdditiveElim(rig.prove, &rules, &cites, symbols, try rig.ctx.interner.internString("T"), 0);
-    const pre = rules.items.len;
-    try pushACTriple(rig.prove, &rules, &cites, rig.add, rig.int, "addIsAssociative", "addIsCommutative", "addLeftSwap", 0);
-    return .{ .rules = rules.items, .assoc = pre, .comm = pre + 1, .swap = pre + 2, .symbols = symbols };
-}
-
-test "acPlan: a succ-tower root sorts the sum UNDER the tower — succ(add(y, x)) ≡ succ(add(x, y))" {
-    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
-    defer arena_state.deinit();
-    const arena = arena_state.allocator();
-    var threaded: std.Io.Threaded = .init(arena, .{});
-    const rig = try Polynomial.Rig.init(arena, threaded.io());
-    const tr = try towerRules(rig);
-    const x = try rig.v("x");
-    const y = try rig.v("y");
-    const yx = try rig.a1(rig.succ, try rig.a2(rig.add, y, x));
-    const xy = try rig.a1(rig.succ, try rig.a2(rig.add, x, y));
-    const ps = (try acPlan(rig.prove, tr.symbols, tr.rules, tr.assoc, tr.comm, tr.swap, yx)).?;
-    const pt = (try acPlan(rig.prove, tr.symbols, tr.rules, tr.assoc, tr.comm, tr.swap, xy)).?;
-    try testing.expect(rig.prove.pool.alphaEq(ps.sorted, pt.sorted));
-    // exactly one side moved, by ONE commutativity rewrite whose before/after are the whole towers.
-    const moved = if (ps.trace.len > 0) ps else pt;
-    const moved_start = if (ps.trace.len > 0) yx else xy;
-    try testing.expectEqual(@as(usize, 1), moved.trace.len);
-    try testing.expect(rig.prove.pool.alphaEq(moved.trace[0].before, moved_start));
-    try testing.expect(rig.prove.pool.alphaEq(moved.trace[0].after, moved.sorted));
-}
-
-test "cancelInverses: an inverse pair UNDER a succ tower cancels and the tower survives — succ(add(x, add(d, neg(x)))) ≡ succ(d)" {
-    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
-    defer arena_state.deinit();
-    const arena = arena_state.allocator();
-    var threaded: std.Io.Threaded = .init(arena, .{});
-    const rig = try Polynomial.Rig.init(arena, threaded.io());
-    const tr = try towerRules(rig);
-    const x = try rig.v("x");
-    const d = try rig.v("d");
-    const whole = try rig.a1(rig.succ, try rig.a2(rig.add, x, try rig.a2(rig.add, d, try rig.a1(rig.neg, x))));
-    var trace: std.ArrayList(simplify_mod.Rewrite) = .empty;
-    const out = (try Polynomial.cancelInverses(rig.prove, tr.symbols, tr.rules, tr.comm, tr.swap, whole, &trace)).?;
-    try testing.expect(rig.prove.pool.alphaEq(out, try rig.a1(rig.succ, d)));
-    // the rewrites chain: the first starts at the whole tower, each next at the previous after,
-    // the last lands on the result — every step names the WHOLE term (kernel `rewrite` shape).
-    try testing.expect(trace.items.len > 0);
-    try testing.expect(rig.prove.pool.alphaEq(trace.items[0].before, whole));
-    for (trace.items[1..], 0..) |rw, i| try testing.expect(rig.prove.pool.alphaEq(rw.before, trace.items[i].after));
-    try testing.expect(rig.prove.pool.alphaEq(trace.items[trace.items.len - 1].after, out));
 }
 
 /// A phase-2 `decide` for a tactic whose decision is still FUSED with its certificate

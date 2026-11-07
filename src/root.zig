@@ -28,7 +28,7 @@ pub const Prove = @import("Engine/ProveTask/Prove.zig");
 pub const Schema = @import("Engine/ProveTask/Schema.zig");
 pub const Delaborate = @import("Engine/ProveTask/Delaborate.zig");
 pub const smt = @import("Engine/ProveTask/smt.zig");
-pub const simplify = @import("Engine/ProveTask/simplify.zig");
+pub const rewrite = @import("Engine/ProveTask/Accelerants/rewrite.zig");
 pub const EqCert = @import("Engine/ProveTask/EqCert.zig");
 pub const print = @import("print.zig");
 pub const kernel = @import("kernel.zig");
@@ -783,5 +783,5 @@ test {
     std.testing.refAllDecls(Engine.FetchTask);
     std.testing.refAllDecls(Engine.ModelTask);
     std.testing.refAllDecls(@import("Engine/ProveTask/Prove.zig"));
-    std.testing.refAllDecls(@import("Engine/ProveTask/Polynomial.zig"));
+    std.testing.refAllDecls(@import("Engine/ProveTask/Accelerants/polycanon.zig"));
 }

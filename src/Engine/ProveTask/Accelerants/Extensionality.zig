@@ -10,27 +10,16 @@ const StrId = InternPool.StrId;
 const term = @import("../../../term.zig");
 const TermId = term.TermId;
 const SortId = term.SortId;
-const kernel = @import("../../../kernel.zig");
 const Engine = @import("../../../Engine.zig");
-const Context = @import("../../../Context.zig");
 const Walk = @import("../Walk.zig");
-const RefScan = @import("../RefScan.zig");
 const Elab = @import("../Elab.zig");
 const Schema = @import("../Schema.zig");
 const Accelerant = @import("../Accelerant.zig");
-const Verify = @import("../../../Verify.zig");
 const EqCert = @import("../EqCert.zig");
-const Polynomial = @import("../Polynomial.zig");
-const simplify_mod = @import("../simplify.zig");
-const presburger_mod = @import("../presburger.zig");
+const rewrite = @import("rewrite.zig");
 const smt = @import("../smt.zig");
-const farkas = @import("../farkas.zig");
-const FactKV = @import("../../../FactKV.zig");
-const FetchTask = @import("../../../Engine/FetchTask.zig");
 const Prove = @import("../Prove.zig");
 const Error = Prove.Error;
-const tokName = Prove.tokName;
-const testing = std.testing;
 const common = @import("common.zig");
 
 /// the `_quantified` variant: a `forall …; s = t` goal, peeled first
@@ -369,7 +358,7 @@ fn emitExtObligation(prove: *Prove, b: *Accelerant.Builder, block: *std.ArrayLis
 fn emitExtFunctionResidue(prove: *Prove, b: *Accelerant.Builder, block: *std.ArrayList(ast.Step), eq_goal: TermId, unfolds: []const ExtUnfold, c: ast.Step.Claim) Error!void {
     const eq = prove.pool.get(eq_goal).eq;
     // build rewrite rules from the cited (equation) unfold lemmas, in citation order.
-    var rules: std.ArrayList(simplify_mod.Rule) = .empty;
+    var rules: std.ArrayList(rewrite.Rule) = .empty;
     var cites: std.ArrayList(EqCert.RuleCite) = .empty;
     for (unfolds) |u| {
         if (!u.is_eq) return prove.fail(u.head.start, "extensionality: '{s}' is a membership lemma, but the obligation is an equation (function model)", .{prove.text(u.head)});
@@ -378,11 +367,11 @@ fn emitExtFunctionResidue(prove: *Prove, b: *Accelerant.Builder, block: *std.Arr
         try rules.append(prove.ctx.arena, rule);
         try cites.append(prove.ctx.arena, .{ .global = .{ .head = u.head, .is_axiom = u.is_axiom } });
     }
-    const rs = simplify_mod.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, rules.items, eq.lhs, 1000) catch |e| switch (e) {
+    const rs = rewrite.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, rules.items, eq.lhs, 1000) catch |e| switch (e) {
         error.Limit => return prove.fail(c.rule.start, "extensionality: rewrite limit reached (looping rule set?)", .{}),
         error.OutOfMemory => return error.OutOfMemory,
     };
-    const rt = simplify_mod.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, rules.items, eq.rhs, 1000) catch |e| switch (e) {
+    const rt = rewrite.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, rules.items, eq.rhs, 1000) catch |e| switch (e) {
         error.Limit => return prove.fail(c.rule.start, "extensionality: rewrite limit reached (looping rule set?)", .{}),
         error.OutOfMemory => return error.OutOfMemory,
     };

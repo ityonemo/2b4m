@@ -4,34 +4,21 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const ast = @import("../../../ast.zig");
-const lexer = @import("../../../lexer.zig");
-const InternPool = @import("../../../InternPool.zig");
-const StrId = InternPool.StrId;
 const term = @import("../../../term.zig");
 const TermId = term.TermId;
 const SortId = term.SortId;
 const kernel = @import("../../../kernel.zig");
 const Engine = @import("../../../Engine.zig");
-const Context = @import("../../../Context.zig");
 const Walk = @import("../Walk.zig");
-const RefScan = @import("../RefScan.zig");
 const Elab = @import("../Elab.zig");
-const Schema = @import("../Schema.zig");
 const Accelerant = @import("../Accelerant.zig");
-const Verify = @import("../../../Verify.zig");
 const EqCert = @import("../EqCert.zig");
-const Polynomial = @import("../Polynomial.zig");
-const simplify_mod = @import("../simplify.zig");
-const presburger_mod = @import("../presburger.zig");
-const smt = @import("../smt.zig");
-const farkas = @import("../farkas.zig");
-const FactKV = @import("../../../FactKV.zig");
-const FetchTask = @import("../../../Engine/FetchTask.zig");
+const rewrite = @import("rewrite.zig");
 const Prove = @import("../Prove.zig");
 const Error = Prove.Error;
-const tokName = Prove.tokName;
-const testing = std.testing;
 const common = @import("common.zig");
+const ac = @import("ac.zig");
+const Symbols = @import("symbols.zig").Symbols;
 
 /// `assoc_commut*`: commutativity too (sort to a summand multiset), not re-nesting only
 commut: bool,
@@ -123,16 +110,16 @@ fn buildAssoc(prove: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_raw: Ter
     const s = gn.lhs;
     const t = gn.rhs;
 
-    const rules = [_]simplify_mod.Rule{prepared.rule};
+    const rules = [_]rewrite.Rule{prepared.rule};
     const cites = [_]EqCert.RuleCite{prepared.cite};
 
     // right-nest each side by the single associativity rule (terminating). The resulting
     // canonical forms agree iff the sides differ by associativity alone.
-    const rs = simplify_mod.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, &rules, s, 1000) catch |e| switch (e) {
+    const rs = rewrite.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, &rules, s, 1000) catch |e| switch (e) {
         error.Limit => return prove.fail(c.rule.start, "assoc: rewrite limit reached", .{}),
         error.OutOfMemory => return error.OutOfMemory,
     };
-    const rt = simplify_mod.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, &rules, t, 1000) catch |e| switch (e) {
+    const rt = rewrite.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, &rules, t, 1000) catch |e| switch (e) {
         error.Limit => return prove.fail(c.rule.start, "assoc: rewrite limit reached", .{}),
         error.OutOfMemory => return error.OutOfMemory,
     };
@@ -191,7 +178,7 @@ fn buildAssocCommut(prove: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_ra
 
     // optional distribute PRE-RULES from the cited refs (L→R before flattening); their rule
     // indices sit at the FRONT so the AC bubble-sort's indices shift after them.
-    var rules: std.ArrayList(simplify_mod.Rule) = .empty;
+    var rules: std.ArrayList(rewrite.Rule) = .empty;
     var cites: std.ArrayList(EqCert.RuleCite) = .empty;
     var pre_prepared: std.ArrayList(common.PreparedRule) = .empty;
     for (c.refs) |ref| {
@@ -229,7 +216,7 @@ fn buildAssocCommut(prove: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_ra
         const gn = prove.pool.get(eq_goal_raw).eq;
         // the reordered operator is the head of the left side AFTER the cited pre-rules have
         // distributed it (`mul(add(a, b), c)` is an add-sum once mulAddDistribRight fires).
-        const lhs_pre = simplify_mod.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, rules.items[0..pre_count], gn.lhs, 1000) catch |e| switch (e) {
+        const lhs_pre = rewrite.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, rules.items[0..pre_count], gn.lhs, 1000) catch |e| switch (e) {
             error.Limit => return prove.fail(c.rule.start, "assoc_commut: pre-normalization rewrite limit reached", .{}),
             error.OutOfMemory => return error.OutOfMemory,
         };
@@ -243,7 +230,7 @@ fn buildAssocCommut(prove: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_ra
         // generated schema's ProveTask (a missing lemma fails THERE). The operand sort is the
         // goal LHS's sort (the reordered operator's carrier).
         const sort: term.SortId = @enumFromInt(@intFromEnum(prove.termSort(gn.lhs)));
-        try common.pushACTriple(prove, &rules, &cites, op_sym, sort, op.assoc, op.comm, op.swap, c.rule.start);
+        try ac.pushACTriple(prove, &rules, &cites, op_sym, sort, op.assoc, op.comm, op.swap, c.rule.start);
     }
     const assoc_idx = pre_count;
     const comm_idx = pre_count + 1;
@@ -260,23 +247,23 @@ fn buildAssocCommut(prove: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_ra
     const s0 = gn.lhs;
     const t0 = gn.rhs;
 
-    const symbols: presburger_mod.Symbols = .{ .add = op_sym };
+    const symbols: Symbols = .{ .add = op_sym };
     const pre_rules = rules.items[0..pre_count];
 
     // distribute both sides (L→R with the pre-rules); traces feed the join unchanged.
-    const s_pre = simplify_mod.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, pre_rules, s0, 1000) catch |e| switch (e) {
+    const s_pre = rewrite.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, pre_rules, s0, 1000) catch |e| switch (e) {
         error.Limit => return prove.fail(c.rule.start, "assoc_commut: pre-normalization rewrite limit reached", .{}),
         error.OutOfMemory => return error.OutOfMemory,
     };
-    const t_pre = simplify_mod.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, pre_rules, t0, 1000) catch |e| switch (e) {
+    const t_pre = rewrite.normalize(prove.ctx.arena, prove.pool, prove.ctx.interner, pre_rules, t0, 1000) catch |e| switch (e) {
         error.Limit => return prove.fail(c.rule.start, "assoc_commut: pre-normalization rewrite limit reached", .{}),
         error.OutOfMemory => return error.OutOfMemory,
     };
 
     // per side: re-associate to a right-nested comb, flatten, bubble-sort.
-    const plan_s = (try common.acPlan(prove, symbols, rules.items, assoc_idx, comm_idx, swap_idx, s_pre.nf)) orelse
+    const plan_s = (try ac.acPlan(prove, symbols, rules.items, assoc_idx, comm_idx, swap_idx, s_pre.nf)) orelse
         return prove.fail(c.rule.start, "assoc_commut: could not re-associate the left side", .{});
-    const plan_t = (try common.acPlan(prove, symbols, rules.items, assoc_idx, comm_idx, swap_idx, t_pre.nf)) orelse
+    const plan_t = (try ac.acPlan(prove, symbols, rules.items, assoc_idx, comm_idx, swap_idx, t_pre.nf)) orelse
         return prove.fail(c.rule.start, "assoc_commut: could not re-associate the right side", .{});
     if (!prove.pool.alphaEq(plan_s.sorted, plan_t.sorted)) {
         return prove.fail(c.rule.start, "assoc_commut: sides have different summands: '{s}' vs '{s}'", .{
@@ -287,8 +274,8 @@ fn buildAssocCommut(prove: *Prove, w: *const Walk, c: ast.Step.Claim, eq_goal_ra
     // prepend the distribution trace so the join replays s0 -> distributed -> sorted.
     const full_s = try common.concatTrace(prove, s_pre.trace, plan_s.trace);
     const full_t = try common.concatTrace(prove, t_pre.trace, plan_t.trace);
-    const rs: simplify_mod.Result = .{ .nf = plan_s.sorted, .trace = full_s };
-    const rt: simplify_mod.Result = .{ .nf = plan_t.sorted, .trace = full_t };
+    const rs: rewrite.Result = .{ .nf = plan_s.sorted, .trace = full_s };
+    const rt: rewrite.Result = .{ .nf = plan_t.sorted, .trace = full_t };
     // ADMIT: both sides sort to the same summand multiset, so a certificate demonstrably
     // exists — only emitting it is pruned.
     if (prove.admit_mode) {

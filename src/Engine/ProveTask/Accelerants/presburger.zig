@@ -21,40 +21,16 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const StrId = @import("../../InternPool.zig").StrId;
-const term = @import("../../term.zig");
+const StrId = @import("../../../InternPool.zig").StrId;
+const term = @import("../../../term.zig");
 const TermId = term.TermId;
 const SortId = term.SortId;
 const SymId = term.SymId;
 const Pool = term.Pool;
 
-/// The arithmetic vocabulary, resolved by well-known name in the use site's
-/// scope. Absent names shrink the fragment; a term outside it is a located
-/// error naming the term.
-pub const Symbols = struct {
-    /// The arithmetic sort's anchor (used only to shape countermodels / bind
-    /// binders — NOT a soundness filter: the engine is sort-blind and treats
-    /// any non-well-known term as a linear variable ranging over ℤ).
-    nat: ?SortId = null,
-    zero: ?SymId = null,
-    one: ?SymId = null,
-    succ: ?SymId = null,
-    /// predecessor: prev(x) = x - 1 (ℤ theories; absent for ℕ).
-    prev: ?SymId = null,
-    add: ?SymId = null,
-    mul: ?SymId = null,
-    /// unary negation neg(x) = -x and total subtraction sub(a,b) = a - b
-    /// (ℤ theories; absent for ℕ, whose sub is truncated monus — NOT linear).
-    neg: ?SymId = null,
-    sub: ?SymId = null,
-    less_than: ?SymId = null,
-    /// a well-known nonnegativity predicate nonneg(x) meaning x >= 0. Its
-    /// PRESENCE is a theory's request to constrain its variables nonneg: the
-    /// engine reads nonneg(x) hypotheses as x >= 0, and the elaborator injects
-    /// nonneg(x) per bound variable when this is set. Absent → pure ℤ (no
-    /// nonnegativity assumed anywhere).
-    nonneg: ?SymId = null,
-};
+/// The well-known arithmetic vocabulary — see `symbols.zig`; re-exported so the engine's
+/// own code and its callers read `presburger.Symbols` unchanged.
+pub const Symbols = @import("symbols.zig").Symbols;
 
 pub const Verdict = union(enum) {
     /// premises AND not(goal) is unsatisfiable: the goal follows

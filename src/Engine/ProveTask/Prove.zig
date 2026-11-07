@@ -53,15 +53,16 @@ const Accelerant = @import("Accelerant.zig");
 const common = @import("Accelerants/common.zig");
 const Verify = @import("../../Verify.zig");
 const EqCert = @import("EqCert.zig");
-const Polynomial = @import("Polynomial.zig");
-const simplify_mod = @import("simplify.zig");
-const presburger_mod = @import("presburger.zig");
+const polycanon = @import("Accelerants/polycanon.zig");
+const rewrite = @import("Accelerants/rewrite.zig");
+const presburger = @import("Accelerants/presburger.zig");
 const smt = @import("smt.zig");
-const farkas = @import("farkas.zig");
+const farkas = @import("Accelerants/farkas.zig");
 const FactKV = @import("../../FactKV.zig");
 const FetchTask = @import("../../Engine/FetchTask.zig");
 const ModelTask = @import("../../Engine/ModelTask.zig");
 const ProveTask = @import("../ProveTask.zig");
+const testrig = @import("Accelerants/testrig.zig");
 
 const Prove = @This();
 
@@ -4147,7 +4148,7 @@ test "freshNamedAt: a binder's name is keyed to its SOURCE OFFSET, independent o
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     var threaded: std.Io.Threaded = .init(arena, .{});
-    const rig = try Polynomial.Rig.init(arena, threaded.io());
+    const rig = try testrig.Rig.init(arena, threaded.io());
     const p = rig.prove;
 
     // Mint at one offset, then bump the counter the way intervening `fix`es and accelerant

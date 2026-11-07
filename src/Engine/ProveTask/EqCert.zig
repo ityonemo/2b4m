@@ -1,18 +1,18 @@
 //! EqCert — a SHARED equation-cert emitter: given a goal `s = t` plus the left/right
-//! rewrite `Result`s from `simplify.normalize`, it emits `ast.Step`s that prove `s = t`
-//! via a reflexivity + rewrite + symmetry chain the kernel re-checks. This is the AST port
+//! rewrite_rule `Result`s from `rewrite.normalize`, it emits `ast.Step`s that prove `s = t`
+//! via a reflexivity + rewrite_rule + symmetry chain the kernel re-checks. This is the AST port
 //! of the eager `emitJoin`/`emitSideChain`/`emitInstance` (which emitted kernel steps).
 //!
 //! REUSABLE: every equational accelerant (simplify now; assoc / chain / polynomial next)
 //! proves an equality by rewriting to a common normal form, so they all reduce to "here are
-//! the two rewrite traces, emit the join". They differ only in how they PRODUCE the rules +
+//! the two rewrite_rule traces, emit the join". They differ only in how they PRODUCE the rules +
 //! traces; this file owns the certificate shape. See memory `accelerants-emit-ast`.
 //!
-//! CITING A RULE INSTANCE (`emitInstance`): a rewrite by rule R at bindings β needs the
+//! CITING A RULE INSTANCE (`emitInstance`): a rewrite_rule by rule R at bindings β needs the
 //! specific equation `R@β` as a proven step. The rule's ORIGIN is cited once (a GLOBAL
 //! axiom/theorem by its fact word + token, or a LOCAL premise restated as a hypothesis in
 //! the enclosing assume block), then a `apply_at` per binder specializes it at β. The
-//! result is the instance equation the `rewrite` step consumes.
+//! result is the instance equation the `rewrite_rule` step consumes.
 //!
 //! SCOPE: the emitted steps assume nothing about their surrounding block beyond the cited
 //! rule origins being in scope (globals always are; a local rule's `RuleCite.local` names
@@ -29,7 +29,7 @@ const StrId = InternPool.StrId;
 const term = @import("../../term.zig");
 const TermId = term.TermId;
 const Accelerant = @import("Accelerant.zig");
-const simplify = @import("simplify.zig");
+const rewrite = @import("Accelerants/rewrite.zig");
 
 /// How a rule's ORIGIN is cited inside the certificate.
 pub const RuleCite = union(enum) {
@@ -44,7 +44,7 @@ pub const RuleCite = union(enum) {
 /// fresh-label source (the producer's `Prove.freshNamed`, type-erased through a closure).
 b: *Accelerant.Builder,
 pool: *term.Pool,
-rules: []const simplify.Rule,
+rules: []const rewrite.Rule,
 cites: []const RuleCite,
 /// fresh-label callback: `ctx` is the producer (`*Prove`); returns an interned unique label.
 fresh_ctx: *anyopaque,
@@ -120,23 +120,23 @@ fn emitInstance(self: *EqCert, block: *std.ArrayList(ast.Step), ri: usize, bindi
     return cur_label;
 }
 
-/// Emit `eq(start, start)` by reflexivity, then one `rewrite` step per trace entry; append to
+/// Emit `eq(start, start)` by reflexivity, then one `rewrite_rule` step per trace entry; append to
 /// `block` and return the label proving `eq(start, <after last entry>)`. `trace` non-empty.
-fn emitSideChain(self: *EqCert, block: *std.ArrayList(ast.Step), start: TermId, trace: []const simplify.Rewrite) Error!StrId {
+fn emitSideChain(self: *EqCert, block: *std.ArrayList(ast.Step), start: TermId, trace: []const rewrite.Rewrite) Error!StrId {
     const refl_formula = try self.pool.add(.{ .eq = .{ .lhs = start, .rhs = start } });
     const reflexivity = self.b.interner.internString("reflexivity") catch return error.OutOfMemory;
-    const rewrite = self.b.interner.internString("rewrite") catch return error.OutOfMemory;
+    const rewrite_rule = self.b.interner.internString("rewrite") catch return error.OutOfMemory;
     var prev = try self.fresh("simplify");
     try block.append(self.b.arena, try self.b.claimStep(prev, try self.b.termExpr(refl_formula), .by, reflexivity, &.{}, &.{}));
     for (trace) |rw| {
         const inst = try self.emitInstance(block, rw.rule_idx, rw.bindings);
         const next_formula = try self.pool.add(.{ .eq = .{ .lhs = start, .rhs = rw.after } });
         const lbl = try self.fresh("simplify");
-        // `[by rewrite <inst-eq> <target>]` — kernel rewrites all occurrences of the eq's lhs.
+        // `[by rewrite_rule <inst-eq> <target>]` — kernel rewrites all occurrences of the eq's lhs.
         const refs = try self.b.arena.alloc(Token, 2);
         refs[0] = self.b.tok(inst);
         refs[1] = self.b.tok(prev);
-        try block.append(self.b.arena, try self.b.claimStep(lbl, try self.b.termExpr(next_formula), .by, rewrite, &.{}, refs));
+        try block.append(self.b.arena, try self.b.claimStep(lbl, try self.b.termExpr(next_formula), .by, rewrite_rule, &.{}, refs));
         prev = lbl;
     }
     return prev;
@@ -156,11 +156,11 @@ fn emitRefl(self: *EqCert, block: *std.ArrayList(ast.Step), t: TermId) Error!Str
 /// (whose formula is exactly `s = t`). Ported from the eager `emitJoin`:
 ///   - both sides normalize to a shared NF; the s-chain proves `s = NF`;
 ///   - the t-chain proves `t = NF`, flipped by `symmetry` to `NF = t`;
-///   - a final `rewrite` composes `s = NF` with `NF = t` into `s = t`.
+///   - a final `rewrite_rule` composes `s = NF` with `NF = t` into `s = t`.
 /// The degenerate cases (t already the NF, or s already the NF) collapse the flip/compose.
-pub fn emitJoin(self: *EqCert, block: *std.ArrayList(ast.Step), s: TermId, t: TermId, rs: simplify.Result, rt: simplify.Result) Error!StrId {
+pub fn emitJoin(self: *EqCert, block: *std.ArrayList(ast.Step), s: TermId, t: TermId, rs: rewrite.Result, rt: rewrite.Result) Error!StrId {
     const symmetry = self.b.interner.internString("symmetry") catch return error.OutOfMemory;
-    const rewrite = self.b.interner.internString("rewrite") catch return error.OutOfMemory;
+    const rewrite_rule = self.b.interner.internString("rewrite") catch return error.OutOfMemory;
 
     // `s = NF` (reflexivity if s is already the NF).
     const s_end = if (rs.trace.len > 0)
@@ -169,12 +169,12 @@ pub fn emitJoin(self: *EqCert, block: *std.ArrayList(ast.Step), s: TermId, t: Te
         try self.emitRefl(block, s);
 
     if (rt.trace.len == 0) {
-        // t IS the shared NF: `s = NF` already equals `s = t`. Rename by an identity rewrite
+        // t IS the shared NF: `s = NF` already equals `s = t`. Rename by an identity rewrite_rule
         // is unnecessary — the s-chain's final formula is literally `s = t`.
         return s_end;
     }
 
-    // t moves: prove `t = NF`, flip to `NF = t`, then rewrite `s = NF` by `NF = t` → `s = t`.
+    // t moves: prove `t = NF`, flip to `NF = t`, then rewrite_rule `s = NF` by `NF = t` → `s = t`.
     const t_end = try self.emitSideChain(block, t, rt.trace);
     const flipped = try self.pool.add(.{ .eq = .{ .lhs = rt.nf, .rhs = t } });
     const sym_lbl = try self.fresh("simplify");
@@ -185,6 +185,6 @@ pub fn emitJoin(self: *EqCert, block: *std.ArrayList(ast.Step), s: TermId, t: Te
     const refs = try self.b.arena.alloc(Token, 2);
     refs[0] = self.b.tok(sym_lbl); // the equation `NF = t`
     refs[1] = self.b.tok(s_end); // the target `s = NF`
-    try block.append(self.b.arena, try self.b.claimStep(join_lbl, try self.b.termExpr(goal_eq), .by, rewrite, &.{}, refs));
+    try block.append(self.b.arena, try self.b.claimStep(join_lbl, try self.b.termExpr(goal_eq), .by, rewrite_rule, &.{}, refs));
     return join_lbl;
 }

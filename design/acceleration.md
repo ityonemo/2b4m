@@ -109,6 +109,14 @@ variant of `Prove.Tactic`, a `union(enum)` with a variant per trustable word (th
 each step through three phases, dispatching once per phase with
 `switch (tactic) { inline else => |a| a.<phase>(…) }`:
 
+The directory also holds the lowercase ENGINE modules the tactics share, layered so that no
+engine imports a tactic and no two engines import each other: `symbols.zig` (the arithmetic
+vocabulary table) and `rewrite.zig` (matching + innermost rewriting) are leaves;
+`presburger.zig` (the ℤ decision) and `farkas.zig` (refutation search) sit on `symbols`;
+`ac.zig` (the AC / succ-tower substrate) sits on `rewrite` + `symbols`; `polycanon.zig` (the
+ring canonicalizer) sits on `ac`; `common.zig` is the tactic-side toolbox (goal abstraction,
+premise bookkeeping, the fused decide) and `testrig.zig` the unit-test rig.
+
 | phase | hook | may park? | who runs it |
 |---|---|---|---|
 | READ — demand what later phases will read | `read` | **yes** — the only phase with the suspend channel | both modes |
@@ -250,7 +258,7 @@ only strict notices.
 | word | module | default (kernel-checked) path | what `--fast` presumes |
 |---|---|---|---|
 | `tautology` | `Accelerants/Tautology.zig` (decision in `smt.zig`) | replay as kernel steps — an inline excluded middle plus `common_conclusion` per split atom, structural derivation at the leaves | nothing but the step budget: past the 16-atom cap the certificate is skipped and the verdict admitted |
-| `arithmetic` | `Accelerants/Arithmetic.zig` (decision in `presburger.zig`, refutation search in `farkas.zig`) | the certifier chain below | the peano lemmas it would otherwise cite |
+| `arithmetic` | `Accelerants/Arithmetic.zig` (decision in `Accelerants/presburger.zig`, refutation search in `Accelerants/farkas.zig`) | the certifier chain below | the peano lemmas it would otherwise cite |
 | `polynomial` | `Accelerants/Polynomial.zig` | distribute, right-nest and bubble-sort each monomial, sort the outer sum, fold identities — emitting rewrites that cite the theory's ring lemmas | the vocabulary's ring algebra, structurally |
 | `extensionality` | `Accelerants/Extensionality.zig` | reduce to a pointwise residue, closed by `smt.tautology` inside `emitExtSetResidue` | packaging only — the decision still runs |
 | `assoc_commut` | `Accelerants/Assoc.zig` | sort both sides to the same summand multiset, emit the rewrite chain | the operator is associative *and* commutative |
