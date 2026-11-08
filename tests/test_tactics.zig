@@ -618,6 +618,11 @@ pub fn addTests(
     // RE-EXPORTING it (checked where the alias resolves to its origin — the citation that
     // reads such an alias is local, so only the alias itself crosses the boundary).
     ctx.fail(&.{ "check", "tests/cases/lemma/lemma_cross_file_bad.b4m" }, "tests/cases/lemma/lemma_cross_file_bad.b4m:13:29: error: 'helper' is a `lemma`: it is not exported, so another file cannot cite it. Make it a `theorem` where it is declared (and add its `intheory` entry), or prove what you need locally.\n");
+    // AND A LEMMA NOTHING CITES IS DEAD WEIGHT: it cannot be reached from another file, so an
+    // uncited one is reachable by nobody. Syntactic, like the unused-theory/alias checks, and
+    // `--draft` relaxes it.
+    ctx.fail(&.{ "check", "tests/cases/lemma/lemma_uncited_bad.b4m" }, "tests/cases/lemma/lemma_uncited_bad.b4m:13:7: error: lemma 'nobodyCitesThis' is never cited in this file — a lemma is not exported, so nothing can reach it; cite it, make it a `theorem` (and add its `intheory` entry), or delete it (--draft relaxes this)\n");
+    ctx.okSilent(&.{ "check", "--draft", "tests/cases/lemma/lemma_uncited_bad.b4m" });
     ctx.fail(&.{ "check", "tests/cases/lemma/lemma_realias_bad.b4m" }, "tests/cases/lemma/lemma_realias_bad.b4m:6:17: error: 'helper' is a `lemma`: it is not exported, so another file cannot re-export it either. Make it a `theorem` where it is declared (and add its `intheory` entry).\n");
 
     // SOUNDNESS negative: an iff must not license an unrelated conclusion —
