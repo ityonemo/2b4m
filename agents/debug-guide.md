@@ -255,7 +255,7 @@ sort Element
 sort Fn
 pred invertible(f: Fn)
 sort Perm = Fn where invertible
-func apply(f: Fn, x: Element) => Element
+oper apply(f: Fn, x: Element) => Element
 const point: Element
 
 axiom permFixesPoint: forall f: Perm; apply(f, point) = point

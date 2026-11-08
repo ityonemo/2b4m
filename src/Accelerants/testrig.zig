@@ -35,10 +35,10 @@ pub const Rig = struct {
     pub const source =
         \\sort Int
         \\const ZERO: Int
-        \\func add(a: Int, b: Int) => Int
-        \\func mul(a: Int, b: Int) => Int
-        \\func neg(a: Int) => Int
-        \\func succ(a: Int) => Int
+        \\oper add(a: Int, b: Int) => Int
+        \\oper mul(a: Int, b: Int) => Int
+        \\oper neg(a: Int) => Int
+        \\oper succ(a: Int) => Int
     ;
 
     pub fn init(arena: std.mem.Allocator, io: std.Io) !Rig {

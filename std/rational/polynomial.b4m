@@ -37,28 +37,28 @@ pred isInteger = rational.isInteger
 
 // -- ℚ[x] ---------------------------------------------------------------------------------
 sort QPoly
-func qcoeff(p: QPoly, i: Nat) => Q
+oper qcoeff(p: QPoly, i: Nat) => Q
 const QZEROP: QPoly
-func qaddP(p: QPoly, q: QPoly) => QPoly:
+oper qaddP(p: QPoly, q: QPoly) => QPoly:
   qcoeff(qaddP(p, q), i) = rational.add(qcoeff(p, i), qcoeff(q, i))
-func qnegP(p: QPoly) => QPoly:
+oper qnegP(p: QPoly) => QPoly:
   qcoeff(qnegP(p), i) = rational.neg(qcoeff(p, i))
-func qmulP(p: QPoly, q: QPoly) => QPoly:
+oper qmulP(p: QPoly, q: QPoly) => QPoly:
   qcoeff(qmulP(p, q), i) = qconvolution(p, q, NAT_ZERO, i)
-func qmonomial(a: Q, k: Nat) => QPoly:
+oper qmonomial(a: Q, k: Nat) => QPoly:
   qcoeff(qmonomial(a, k), k) = a;
   (not (i = k)) -> qcoeff(qmonomial(a, k), i) = ZERO
 // the degree layer, restated over ℚ exactly as F[x] states it — needed for Gauss's monic
 // bookkeeping, which reads off leading coefficients.
 pred qdegreeAtMost(p: QPoly, n: Nat)
-func qdegree(p: QPoly) => Nat
+oper qdegree(p: QPoly) => Nat
 // the convolution, so multiplication has a COEFFICIENT LAW here. `qmulP` was declared and
 // mapped into F[x] but its coefficient behaviour never was, so `qcoeff(qmulP(p, q), i)` was
 // opaque — nothing could be proved about a product's coefficients. This is the FIFTH
 // restatement of the same convolution recursion in std (R[x], F[x], ℤ_p[x], ℤ[x], here),
 // which is the duplication a generic polynomial theory removes; see
 // `drafts/algebra-layering/README.md`.
-func qconvolution(p: QPoly, q: QPoly, i: Nat, k: Nat) => Q:
+oper qconvolution(p: QPoly, q: QPoly, i: Nat, k: Nat) => Q:
   qconvolution(p, q, j, NAT_ZERO) = rational.mul(qcoeff(p, j), qcoeff(q, NAT_ZERO));
   qconvolution(p, q, j, peano.succ(m)) = rational.add(rational.mul(qcoeff(p, j), qcoeff(q, peano.succ(m))), qconvolution(p, q, peano.succ(j), m))
 
@@ -77,18 +77,18 @@ axiom qDegreeBoundsTheCoefficients: forall p: QPoly;
 // The same partial sum grown at the BASE rather than the top. `ring_poly` needs it to prove
 // `polyMulIsCommutative` — the reversed product's partial sum IS this segment — and a model
 // must map every symbol the transferred proof mentions, so ℚ[x] declares it too.
-func qtailConvolution(p: QPoly, q: QPoly, i: Nat, k: Nat) => Q:
+oper qtailConvolution(p: QPoly, q: QPoly, i: Nat, k: Nat) => Q:
   qtailConvolution(p, q, NAT_ZERO, m) = rational.mul(qcoeff(p, NAT_ZERO), qcoeff(q, m));
   qtailConvolution(p, q, peano.succ(j), m) = rational.add(rational.mul(qcoeff(p, peano.succ(j)), qcoeff(q, m)), qtailConvolution(p, q, j, peano.succ(m)))
 
 // And the two-bound generalization `ring_poly` inducts on: the n+1 terms starting at index m,
 // grown at the top. Same reason it is here — a transferred proof mentions it.
-func qsegment(p: QPoly, q: QPoly, j: Nat, c: Nat, n: Nat) => Q:
+oper qsegment(p: QPoly, q: QPoly, j: Nat, c: Nat, n: Nat) => Q:
   qsegment(p, q, j, c, NAT_ZERO) = rational.mul(qcoeff(p, j), qcoeff(q, c));
   qsegment(p, q, peano.succ(j), c, peano.succ(n)) = rational.add(rational.mul(qcoeff(p, peano.succ(j)), qcoeff(q, c)), qsegment(p, q, j, peano.succ(c), n))
 
 // the bottom-up capped run, mirror of `qsegment`
-func qrsegment(p: QPoly, q: QPoly, j: Nat, c: Nat, n: Nat) => Q:
+oper qrsegment(p: QPoly, q: QPoly, j: Nat, c: Nat, n: Nat) => Q:
   qrsegment(p, q, j, c, NAT_ZERO) = rational.mul(qcoeff(p, j), qcoeff(q, c));
   qrsegment(p, q, j, peano.succ(c), peano.succ(n)) = rational.add(rational.mul(qcoeff(p, j), qcoeff(q, peano.succ(c))), qrsegment(p, q, peano.succ(j), c, n))
 
@@ -1158,11 +1158,11 @@ qed
 // Corollary 17.14 (the Rational Root Theorem) is about a ZERO of a polynomial, so ℚ[x] needs
 // evaluation. F[x] has the whole layer; these are its symbols at ℚ, declared here so the
 // `RationalPolynomials` model can map them and F[x]'s evaluation corpus can travel.
-func qpower(a: Q, n: peano.Nat) => Q:
+oper qpower(a: Q, n: peano.Nat) => Q:
   qpower(a, peano.ZERO) = rational.ONE;
   qpower(a, peano.succ(n)) = rational.mul(a, qpower(a, n))
 
-func qevalUpTo(p: QPoly, a: Q, k: peano.Nat) => Q:
+oper qevalUpTo(p: QPoly, a: Q, k: peano.Nat) => Q:
   qevalUpTo(p, a, peano.ZERO) = ZERO;
   qevalUpTo(p, a, peano.succ(k)) = rational.add(qevalUpTo(p, a, k), rational.mul(qcoeff(p, k), qpower(a, k)))
 
@@ -1285,7 +1285,7 @@ qed
 // as the induction variable, the cleared sum has its own recursion and no subtraction
 // anywhere — `sum_{i<k} a_i r^i s^(k-i)` grows at the top as
 // `S(k+1) = s·(S(k) + a_k·r^k)`, since the new term's s-exponent is exactly 1.
-func qclearedSum(p: QPoly, r: Q, s: Q, k: peano.Nat) => Q:
+oper qclearedSum(p: QPoly, r: Q, s: Q, k: peano.Nat) => Q:
   qclearedSum(p, r, s, peano.ZERO) = ZERO;
   qclearedSum(p, r, s, peano.succ(k)) = rational.mul(s, rational.add(qclearedSum(p, r, s, k), rational.mul(qcoeff(p, k), qpower(r, k))))
 
@@ -2533,34 +2533,34 @@ qed
 // The index arithmetic, NAMED rather than subtracted — the ring proof carries a term's three
 // exponents and computes the cofactor index with these, so nothing here writes
 // `sub(sub(i,j),k)` and nothing owes a subtraction guard.
-func qtheGapTo(i: Nat, j: Nat) => Nat:
+oper qtheGapTo(i: Nat, j: Nat) => Nat:
   qtheGapTo(i, NAT_ZERO) = i;
   qtheGapTo(peano.succ(i), peano.succ(j)) = qtheGapTo(i, j)
 
-func qtheCofactorIndex(i: Nat, j: Nat, k: Nat) => Nat:
+oper qtheCofactorIndex(i: Nat, j: Nat, k: Nat) => Nat:
   qtheCofactorIndex(i, j, NAT_ZERO) = qtheGapTo(i, j);
   qtheCofactorIndex(i, j, peano.succ(k)) = qtheGapTo(qtheGapTo(i, j), peano.succ(k))
 
-func qcappedRun(q: QPoly, r: QPoly, g: Nat, n: Nat) => Q:
+oper qcappedRun(q: QPoly, r: QPoly, g: Nat, n: Nat) => Q:
   qcappedRun(q, r, g, NAT_ZERO) = ZERO;
   qcappedRun(q, r, g, peano.succ(n)) = rational.add(qcappedRun(q, r, g, n), rational.mul(qcoeff(q, n), qcoeff(r, qtheGapTo(g, n))))
 
-func qtripleTerm(p: QPoly, q: QPoly, r: QPoly, i: Nat, j: Nat, k: Nat) => Q:
+oper qtripleTerm(p: QPoly, q: QPoly, r: QPoly, i: Nat, j: Nat, k: Nat) => Q:
   qtripleTerm(p, q, r, i, j, k) = rational.mul(rational.mul(qcoeff(p, j), qcoeff(q, k)), qcoeff(r, qtheCofactorIndex(i, j, k)))
 
-func qtripleRow(p: QPoly, q: QPoly, r: QPoly, i: Nat, j: Nat, n: Nat) => Q:
+oper qtripleRow(p: QPoly, q: QPoly, r: QPoly, i: Nat, j: Nat, n: Nat) => Q:
   qtripleRow(p, q, r, i, j, NAT_ZERO) = ZERO;
   qtripleRow(p, q, r, i, j, peano.succ(n)) = rational.add(qtripleRow(p, q, r, i, j, n), qtripleTerm(p, q, r, i, j, n))
 
-func qtripleDiag(p: QPoly, q: QPoly, r: QPoly, i: Nat, m: Nat, c: Nat) => Q:
+oper qtripleDiag(p: QPoly, q: QPoly, r: QPoly, i: Nat, m: Nat, c: Nat) => Q:
   qtripleDiag(p, q, r, i, m, NAT_ZERO) = ZERO;
   qtripleDiag(p, q, r, i, m, peano.succ(c)) = rational.add(qtripleDiag(p, q, r, i, m, c), qtripleTerm(p, q, r, i, c, qtheGapTo(m, c)))
 
-func qtripleTri(p: QPoly, q: QPoly, r: QPoly, i: Nat, n: Nat) => Q:
+oper qtripleTri(p: QPoly, q: QPoly, r: QPoly, i: Nat, n: Nat) => Q:
   qtripleTri(p, q, r, i, NAT_ZERO) = ZERO;
   qtripleTri(p, q, r, i, peano.succ(n)) = rational.add(qtripleTri(p, q, r, i, n), qtripleDiag(p, q, r, i, n, peano.succ(n)))
 
-func qtripleRows(p: QPoly, q: QPoly, r: QPoly, i: Nat, m: Nat, n: Nat) => Q:
+oper qtripleRows(p: QPoly, q: QPoly, r: QPoly, i: Nat, m: Nat, n: Nat) => Q:
   qtripleRows(p, q, r, i, NAT_ZERO, n) = ZERO;
   qtripleRows(p, q, r, i, peano.succ(m), n) = rational.add(qtripleRows(p, q, r, i, m, n), qtripleRow(p, q, r, i, m, qtheGapTo(n, m)))
 

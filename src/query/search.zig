@@ -129,7 +129,7 @@ fn stmtSig(arena: Allocator, source: []const u8, kw: lexer.Token.Tag, name: []co
         while (j < toks.items.len) : (j += 1) {
             switch (toks.items[j].tag) {
                 .keyword_proof => break,
-                .keyword_import, .keyword_forward, .keyword_sort, .keyword_const, .keyword_define, .keyword_func, .keyword_pred, .keyword_axiom, .keyword_theorem, .comment, .eof => if (j > i + 1) break,
+                .keyword_import, .keyword_forward, .keyword_sort, .keyword_const, .keyword_define, .keyword_oper, .keyword_pred, .keyword_axiom, .keyword_theorem, .comment, .eof => if (j > i + 1) break,
                 else => end = toks.items[j].end,
             }
         }

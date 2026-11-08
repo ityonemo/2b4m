@@ -636,7 +636,7 @@ const Expander = struct {
         const target = (try self.demandGlobal(ienv, callee)) orelse return;
         const keyword: []const u8 = switch (self.ctx.interner.keyOf(target)) {
             .constant => "const",
-            .func => "func",
+            .func => "oper",
             .pred => "pred",
             else => return,
         };

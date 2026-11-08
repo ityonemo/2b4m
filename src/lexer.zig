@@ -43,7 +43,7 @@ pub const Token = struct {
         keyword_const,
         keyword_define,
         keyword_when,
-        keyword_func,
+        keyword_oper,
         keyword_pred,
         keyword_axiom,
         keyword_hole,
@@ -119,7 +119,7 @@ pub const Token = struct {
                 .keyword_const => "const",
                 .keyword_define => "define",
                 .keyword_when => "when",
-                .keyword_func => "func",
+                .keyword_oper => "oper",
                 .keyword_pred => "pred",
                 .keyword_axiom => "axiom",
                 .keyword_hole => "hole",
@@ -180,7 +180,7 @@ const keywords = std.StaticStringMap(Token.Tag).initComptime(.{
     .{ "const", .keyword_const },
     .{ "define", .keyword_define },
     .{ "when", .keyword_when },
-    .{ "func", .keyword_func },
+    .{ "oper", .keyword_oper },
     .{ "pred", .keyword_pred },
     .{ "axiom", .keyword_axiom },
     .{ "hole", .keyword_hole },
@@ -378,13 +378,26 @@ fn expectTags(source: []const u8, expected: []const Token.Tag) !void {
     try std.testing.expectEqual(.eof, lexer.next().tag);
 }
 
+test "the operation keyword is `oper`, not `func`" {
+    // `func` read as the `Fn`/Function SORT (std/function.b4m) — two concepts, one word —
+    // and sat one character from the `fun` LAMBDA (a schema argument, beta-reduced away).
+    // `oper` collides with neither, and leaves `op` free as the conventional group/ring
+    // operation SYMBOL name (1387 uses), which an `op` keyword would have shadowed.
+    try expectTags("oper neg(a: Int) => Int", &.{
+        .keyword_oper, .identifier, .l_paren, .identifier, .colon, .identifier, .r_paren,
+        .fat_arrow,    .identifier,
+    });
+    // the old spelling is an ordinary identifier now, not a keyword
+    try expectTags("func", &.{.identifier});
+}
+
 test "declarations lex to expected tags" {
     try expectTags("sort nat", &.{ .keyword_sort, .identifier });
     try expectTags("const zero: nat", &.{ .keyword_const, .identifier, .colon, .identifier });
     try expectTags(
-        "func div(a: nat, b: nat) => nat requires b != zero",
+        "oper div(a: nat, b: nat) => nat requires b != zero",
         &.{
-            .keyword_func, .identifier, .l_paren,    .identifier,       .colon,
+            .keyword_oper, .identifier, .l_paren,    .identifier,       .colon,
             .identifier,   .comma,      .identifier, .colon,            .identifier,
             .r_paren,      .fat_arrow,  .identifier, .keyword_requires, .identifier,
             .bang_equal,   .identifier,

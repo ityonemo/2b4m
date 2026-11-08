@@ -244,8 +244,8 @@ pub fn addTests(
     // aliased in parity from subtraction.
     ctx.ok(&.{ "query", "whereis", "std/peano/parity.b4m", "sub" },
         \\sub
-        \\  std/peano/parity.b4m:19:  func sub = subtraction.sub
-        \\  std/peano/subtraction.b4m:58:  func sub(a: Nat, b: Nat) => Nat requires ordering.less_or_equal(b, a)  [origin]
+        \\  std/peano/parity.b4m:19:  oper sub = subtraction.sub
+        \\  std/peano/subtraction.b4m:58:  oper sub(a: Nat, b: Nat) => Nat requires ordering.less_or_equal(b, a)  [origin]
         \\
     );
 
