@@ -504,6 +504,12 @@ its `intheory` entry.
 Note that a lemma needs no `intheory` entry of its own, which is the other half of
 the same idea: the manifest lists what a file EXPORTS, and a lemma is not that.
 
+**A lemma nothing cites is an error.** Nothing outside the file can reach it, so an
+uncited one is reachable by nobody — the proof carries no load and without the check
+nothing would say so. Wire it up, promote it to a `theorem` (adding its manifest
+entry), or delete it. Use is syntactic, like the unused-theory and unused-alias
+checks: some step of some proof in the file must name it. `--draft` relaxes this.
+
 ### KEYWORD: fact
 
 **Localizes a named fact** — an `axiom`, a proven `theorem`, or a `hole` — from an

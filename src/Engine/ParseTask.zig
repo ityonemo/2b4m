@@ -32,6 +32,7 @@ const ast = @import("../ast.zig");
 const Engine = @import("../Engine.zig");
 const Context = @import("../Context.zig");
 const literate = @import("../literate.zig");
+const InternPool = @import("../InternPool.zig");
 
 const ParseTask = @This();
 
@@ -114,6 +115,49 @@ fn runErased(self: *Context, payload: *anyopaque, h: *Engine.Handle) std.mem.All
 /// child's ParseTask; that happens on demand when something cites into it). Mark the file
 /// `parsed` at the end (the completion wakes anyone suspended in `demandParse`). If this
 /// is the root file, scan its theorems and rack the seed ProveTasks.
+/// Does `decl`'s proof name `want` anywhere a citation can appear? Walks the step tree —
+/// a claim's rule refs, its `instantiation` schema slot, its `fallback(thm)`, and the step
+/// a `case`/`unpack` block reads — plus every nested block. Syntactic by design: this
+/// answers "is this name mentioned", not "is it load-bearing".
+fn declCites(decl: ast.Decl, want: InternPool.StrId) bool {
+    const steps = switch (decl) {
+        .theorem => |t| switch (t) {
+            .local => |l| l.steps,
+            .alias => |a| return a.target.name == want,
+        },
+        .fact => |a| return a.target.name == want,
+        .axiom => |x| switch (x) {
+            .alias => |a| return a.target.name == want,
+            .local => return false,
+        },
+        else => return false,
+    };
+    return stepsCite(steps, want);
+}
+
+/// `declCites`'s recursion over a step list. Depth is the proof's block nesting, which the
+/// parser already bounded, so native recursion is safe here.
+fn stepsCite(steps: []const ast.Step, want: InternPool.StrId) bool {
+    for (steps) |step| switch (step.body) {
+        .claim => |c| {
+            for (c.refs) |r| if (r.name == want) return true;
+            if (c.schema) |sc| if (sc.name == want) return true;
+            if (c.fallback) |fb| if (fb.name == want) return true;
+        },
+        .assume => |b| if (stepsCite(b.steps, want)) return true,
+        .fix => |b| if (stepsCite(b.steps, want)) return true,
+        .unpack => |b| {
+            if (b.from.name == want) return true;
+            if (stepsCite(b.steps, want)) return true;
+        },
+        .case => |b| {
+            if (b.disj.name == want) return true;
+            for (b.arms) |arm| if (stepsCite(arm.steps, want)) return true;
+        },
+    };
+    return false;
+}
+
 pub fn run(self: *Context, task: *ParseTask, h: *Engine.Handle) std.mem.Allocator.Error!void {
     const idx = @intFromEnum(task.file_id);
     const path = self.files.get(idx).path;
@@ -227,6 +271,39 @@ pub fn run(self: *Context, task: *ParseTask, h: *Engine.Handle) std.mem.Allocato
                     self.interner.stringBytes(name.name),
                     self.interner.stringBytes(name.name),
                 });
+            }
+        }
+    }
+
+    // A LEMMA NOTHING CITES IS DEAD WEIGHT. It cannot be cited from another file — that is
+    // what `lemma` means — so an uncited one is reachable by nobody: the proof carries no
+    // load, and without this nothing would report it. The author either wires it up, promotes
+    // it to a `theorem` (announcing it in the manifest), or deletes it.
+    //
+    // USE is syntactic, like the unused-theory and unused-alias checks: some step in some
+    // proof of this file names it. That is deliberately coarse — a mention in a comment or in
+    // prose does not count, and it cannot miss a real citation, which is the property that
+    // matters for a hygiene rule.
+    //
+    // Author hygiene, so `--draft` relaxes it (same gate as the `intheory` rule above and
+    // `Expand.lintAliasShaped`).
+    if (!self.verify.draft) {
+        for (self.parsed.get(idx).decls) |decl| {
+            if (decl != .theorem or decl != .theorem) continue;
+            if (decl.theorem != .local) continue;
+            if (decl.theorem.local.fact.exported) continue; // a theorem's audience is elsewhere
+            const name = decl.theorem.local.fact.name;
+            var cited = false;
+            for (self.parsed.get(idx).decls) |other| {
+                if (other == .theorem and other.theorem == .local and
+                    other.theorem.local.fact.name.start == name.start) continue; // itself
+                if (declCites(other, name.name)) {
+                    cited = true;
+                    break;
+                }
+            }
+            if (!cited) {
+                try self.sink.add(idx, name.start, "lemma '{s}' is never cited in this file — a lemma is not exported, so nothing can reach it; cite it, make it a `theorem` (and add its `intheory` entry), or delete it (--draft relaxes this)", .{self.interner.stringBytes(name.name)});
             }
         }
     }
