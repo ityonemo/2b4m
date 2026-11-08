@@ -198,6 +198,12 @@ pub const Fact = struct {
     formula: *const Expr,
     params: ?[]const SchemaParam = null,
     cites: ?Token = null,
+    /// FALSE for a `lemma`: a theorem whose name another file may not cite. The kernel sees
+    /// no difference — a lemma's fact kind is `theorem` and its proof obligation is
+    /// identical — so this rides on the surface declaration, not on `InternPool.Fact.Kind`.
+    /// Enforcement (unreachable from another namespace, and every lemma must be cited
+    /// somewhere) is the next push; for now the bit is recorded and carried.
+    exported: bool = true,
 };
 
 pub const Axiom = union(enum) {

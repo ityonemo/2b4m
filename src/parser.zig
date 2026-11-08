@@ -500,12 +500,18 @@ pub const Parser = struct {
                 }
                 return .{ .hole = .{ .local = .{ .name = name, .formula = try self.parseExpr(), .params = params, .cites = cites } } };
             },
-            .keyword_theorem => {
+            // `theorem` and `lemma` are the SAME declaration: identical syntax, identical
+            // proof obligation, identical kernel treatment (both intern as fact kind
+            // `theorem`). A `lemma` only clears `Fact.exported`, which says another file may
+            // not cite its name.
+            .keyword_theorem, .keyword_lemma => {
+                const exported = self.tok.tag == .keyword_theorem;
+                const kw: []const u8 = if (exported) "theorem" else "lemma";
                 _ = self.advance();
                 const name = try self.expect(.identifier);
                 // likewise `theorem X = ns.y` → `fact X = ns.y`.
                 if (self.tok.tag == .equal) {
-                    return self.fail("a re-export is spelled `fact`, not `theorem`: write `fact <name> = <namespace>.<name>`. The alias cannot know its target's kind, so restating it was redundant and went stale", .{});
+                    return self.fail("a re-export is spelled `fact`, not `{s}`: write `fact <name> = <namespace>.<name>`. The alias cannot know its target's kind, so restating it was redundant and went stale", .{kw});
                 }
                 // an optional `(params)` makes it a theorem-SCHEMA (proof re-checked per
                 // instantiation) — recorded as Fact.params.
@@ -515,7 +521,7 @@ pub const Parser = struct {
                 _ = try self.expect(.keyword_proof);
                 const steps = try self.parseSteps(.keyword_qed);
                 _ = try self.expect(.keyword_qed);
-                return .{ .theorem = .{ .local = .{ .fact = .{ .name = name, .formula = formula, .params = params }, .steps = steps } } };
+                return .{ .theorem = .{ .local = .{ .fact = .{ .name = name, .formula = formula, .params = params, .exported = exported }, .steps = steps } } };
             },
             .keyword_model => {
                 _ = self.advance();

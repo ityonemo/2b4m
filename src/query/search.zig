@@ -87,8 +87,8 @@ fn candidate(arena: Allocator, source: []const u8, decl: ast.Decl) Allocator.Err
             .local => |l| .{
                 .name = tok(source, l.fact.name),
                 .name_off = l.fact.name.start,
-                .kind = "theorem",
-                .sig = try stmtSig(arena, source, .keyword_theorem, tok(source, l.fact.name)),
+                .kind = if (l.fact.exported) "theorem" else "lemma",
+                .sig = try stmtSig(arena, source, if (l.fact.exported) .keyword_theorem else .keyword_lemma, tok(source, l.fact.name)),
             },
             .alias => null,
         },
@@ -129,7 +129,7 @@ fn stmtSig(arena: Allocator, source: []const u8, kw: lexer.Token.Tag, name: []co
         while (j < toks.items.len) : (j += 1) {
             switch (toks.items[j].tag) {
                 .keyword_proof => break,
-                .keyword_theory, .keyword_forward, .keyword_sort, .keyword_const, .keyword_define, .keyword_oper, .keyword_pred, .keyword_axiom, .keyword_theorem, .comment, .eof => if (j > i + 1) break,
+                .keyword_theory, .keyword_forward, .keyword_sort, .keyword_const, .keyword_define, .keyword_oper, .keyword_pred, .keyword_axiom, .keyword_theorem, .keyword_lemma, .comment, .eof => if (j > i + 1) break,
                 else => end = toks.items[j].end,
             }
         }
