@@ -17,6 +17,8 @@ oper op(a: T, b: T) => T
 
 axiom opComm: forall a, b: T; op(a, b) = op(b, a)
 axiom opIdRight: forall a: T; op(a, E) = a
+// What this file proves (verified manifest):
+intheory opIdLeft
 ```
 
 ## The theorem

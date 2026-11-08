@@ -40,7 +40,7 @@ pub fn addTests(
     // therefore compares two vocabularies, reported at a line in the SOURCE file — which read
     // as a remapping BUG until the `Model@theorem` prefix made the transfer visible. Pin it.
     ctx.fail(&.{ "check", "tests/cases/model/transfer_label/transfer.b4m" },
-        \\tests/cases/model/transfer_label/source.b4m:12:4: error: M@srcPlain: step claims 'forall x: Grp; op(x, E) = x' but the axiom derives 'forall x: SrcVal; scomb(x, SRCE) = x'
+        \\tests/cases/model/transfer_label/source.b4m:15:4: error: M@srcPlain: step claims 'forall x: Grp; op(x, E) = x' but the axiom derives 'forall x: SrcVal; scomb(x, SRCE) = x'
         \\
     );
 
@@ -54,7 +54,7 @@ pub fn addTests(
     // pool thread records it as data; the resumed task diagnoses at the import token).
     const import_missing_diag =
         \\tests/cases/namespaces/imports/missing_import.b4m:4:18: error: cannot open 'tests/cases/namespaces/imports/nope.b4m': file not found
-        \\tests/cases/namespaces/imports/missing_import.b4m:10:26: error: reference not found: 'reflexive'
+        \\tests/cases/namespaces/imports/missing_import.b4m:14:26: error: reference not found: 'reflexive'
         \\
     ;
     ctx.fail(&.{ "check", "tests/cases/namespaces/imports/missing_import.b4m", "--sync-io" }, import_missing_diag);
@@ -64,7 +64,7 @@ pub fn addTests(
     // numbers, so the stdout verdict is pinned exactly and the stderr trace only by its
     // footer (a checked run must state SOME expectation for a stream it writes to).
     const traced = ctx.run(&.{ "check", "--trace-facts", "tests/cases/cli/single_theorem.b4m", "good" });
-    traced.expectStdOutEqual("OK: 5 declarations, 1 theorems proven\n");
+    traced.expectStdOutEqual("OK: 7 declarations, 1 theorems proven\n");
     traced.expectStdErrMatch("--- end trace ---\n");
     traced.expectExitCode(0);
 
@@ -78,7 +78,7 @@ pub fn addTests(
     // now. (agents/debug-guide.md shows the wider by-hand sweep over a directory; the corpus
     // is deterministic under chaos today, and this keeps the cheapest witness in the suite.)
     const holes_report =
-        \\OK: 12 declarations, 4 theorems proven
+        \\OK: 16 declarations, 4 theorems proven
         \\  — rests on 4 axiom(s):
         \\      holeAlpha  (tests/cases/namespaces/holes_many.b4m:18)  — HOLE
         \\      holeBravo  (tests/cases/namespaces/holes_many.b4m:19)  — HOLE
@@ -117,14 +117,14 @@ pub fn addTests(
     // parked both proofs, drained its queue and returned as if quiescent — `OK: 0 theorems
     // proven`, exit 0 — so a theorem that could never be proved read as success.
     ctx.fail(&.{ "check", "tests/cases/kernel/cycle_two.b4m" },
-        \\tests/cases/kernel/cycle_two.b4m:13:9: error: 'first' is part of a citation cycle (first, second) — each proof waits on the next, so none can be proved
-        \\tests/cases/kernel/cycle_two.b4m:20:9: error: 'second' is part of a citation cycle (first, second) — each proof waits on the next, so none can be proved
+        \\tests/cases/kernel/cycle_two.b4m:17:9: error: 'first' is part of a citation cycle (first, second) — each proof waits on the next, so none can be proved
+        \\tests/cases/kernel/cycle_two.b4m:24:9: error: 'second' is part of a citation cycle (first, second) — each proof waits on the next, so none can be proved
         \\
     );
     ctx.fail(&.{ "check", "tests/cases/kernel/cycle_three.b4m" },
-        \\tests/cases/kernel/cycle_three.b4m:7:9: error: 'one' is part of a citation cycle (one, two, three) — each proof waits on the next, so none can be proved
-        \\tests/cases/kernel/cycle_three.b4m:14:9: error: 'two' is part of a citation cycle (one, two, three) — each proof waits on the next, so none can be proved
-        \\tests/cases/kernel/cycle_three.b4m:21:9: error: 'three' is part of a citation cycle (one, two, three) — each proof waits on the next, so none can be proved
+        \\tests/cases/kernel/cycle_three.b4m:12:9: error: 'one' is part of a citation cycle (one, two, three) — each proof waits on the next, so none can be proved
+        \\tests/cases/kernel/cycle_three.b4m:19:9: error: 'two' is part of a citation cycle (one, two, three) — each proof waits on the next, so none can be proved
+        \\tests/cases/kernel/cycle_three.b4m:26:9: error: 'three' is part of a citation cycle (one, two, three) — each proof waits on the next, so none can be proved
         \\
     );
     // ...but cyclic FILE IMPORTS stay legal — only the PROOF graph must be acyclic.

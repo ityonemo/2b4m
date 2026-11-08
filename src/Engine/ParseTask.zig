@@ -206,6 +206,31 @@ pub fn run(self: *Context, task: *ParseTask, h: *Engine.Handle) std.mem.Allocato
         }
     }
 
+    // …AND THE CONVERSE: every `theorem` must have its manifest entry. The two directions
+    // together make the `intheory` block a VERIFIED TABLE OF CONTENTS — a reader learns what
+    // a file proves from its header, and the header cannot drift from the body. A `lemma` is
+    // exempt by construction: it is the file's own working step, not part of what it
+    // publishes, so it has nothing to announce.
+    //
+    // Author hygiene, not soundness — so `--draft` relaxes it, which is what keeps a
+    // work-in-progress file writable.
+    if (!self.verify.draft) {
+        for (self.parsed.get(idx).decls) |decl| {
+            if (decl != .theorem or decl.theorem != .local) continue;
+            if (!decl.theorem.local.fact.exported) continue; // a lemma announces nothing
+            const name = decl.theorem.local.fact.name;
+            const declared = for (self.parsed.get(idx).decls) |d| {
+                if (d == .forward and d.forward.name.name == name.name) break true;
+            } else false;
+            if (!declared) {
+                try self.sink.add(idx, name.start, "theorem '{s}' is not in this file's `intheory` manifest — add `intheory {s}` above, or make it a `lemma` if the file should not export it", .{
+                    self.interner.stringBytes(name.name),
+                    self.interner.stringBytes(name.name),
+                });
+            }
+        }
+    }
+
     // resolved import-path strings are TRANSIENT — used only to look the child file up / discover
     // it, then dropped (the common re-reference / std-hit case retains nothing). Resolve them into
     // a GPA-backed scratch arena (reclaimed at the end of the loop) instead of leaking every path

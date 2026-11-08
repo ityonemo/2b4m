@@ -116,13 +116,13 @@ pub fn addTests(
     // variant runs the same accelerated core).
     ctx.ok(&.{ "debug", "taint", "tests/cases/tactics/assoc/assoc.b4m" },
         \\theorem reassoc1
-        \\  tests/cases/tactics/assoc/assoc.b4m:19:12: assoc_quantified
+        \\  tests/cases/tactics/assoc/assoc.b4m:24:12: assoc_quantified
         \\
         \\theorem reassoc2
-        \\  tests/cases/tactics/assoc/assoc.b4m:28:12: assoc_quantified
+        \\  tests/cases/tactics/assoc/assoc.b4m:33:12: assoc_quantified
         \\
         \\theorem reassoc3
-        \\  tests/cases/tactics/assoc/assoc.b4m:45:28: assoc
+        \\  tests/cases/tactics/assoc/assoc.b4m:50:28: assoc
         \\
     );
 
@@ -210,7 +210,7 @@ pub fn addTests(
     // eigenvariables or premises, so its synthetic theorem's statement is the
     // bare equation; the proof is the reflexivity+rewrite chain simplify built.
     // The reprint is re-parseable: appending it to the fixture's declarations checks clean.
-    ctx.ok(&.{ "debug", "accelerant", "tests/cases/cli/debug_accelerant.b4m", "15" }, debug_accelerant_text);
+    ctx.ok(&.{ "debug", "accelerant", "tests/cases/cli/debug_accelerant.b4m", "20" }, debug_accelerant_text);
 
     // `debug accelerant` resolves a step inside a proof-carrying SCHEMA (not just plain
     // theorems) and reprints its accelerant synthetic — the schema's INSTANCE proof (the
@@ -226,7 +226,7 @@ pub fn addTests(
     // `debug accelerant` on a file whose check FAILS passes the check's own located
     // diagnostic through (root path as given on the command line), rather than reprinting
     // anything — here a redundant `fallback(...)` the certifier didn't need.
-    ctx.fail(&.{ "debug", "accelerant", "tests/cases/tactics/arithmetic/arithmetic_fallback_redundant_bad.b4m", "twoTimesTwoRedundant", "conclusion" }, "tests/cases/tactics/arithmetic/arithmetic_fallback_redundant_bad.b4m:31:32: error: 'arithmetic' certifies this goal on its own — the fallback 'twoTimesTwoManual' is unnecessary; drop `fallback(twoTimesTwoManual)`\n");
+    ctx.fail(&.{ "debug", "accelerant", "tests/cases/tactics/arithmetic/arithmetic_fallback_redundant_bad.b4m", "twoTimesTwoRedundant", "conclusion" }, "tests/cases/tactics/arithmetic/arithmetic_fallback_redundant_bad.b4m:35:32: error: 'arithmetic' certifies this goal on its own — the fallback 'twoTimesTwoManual' is unnecessary; drop `fallback(twoTimesTwoManual)`\n");
 
     // an ALIAS (`theorem addZeroRight = peano.addZeroRight` in subtraction)
     // resolves across files to the real proof — identical output.
@@ -268,7 +268,7 @@ pub fn addTests(
     // statements. Both "cancel"-named decls match; ranked, one-line sigs.
     ctx.ok(&.{ "query", "search", "tests/cases/cli/search_target.b4m", "cancel" },
         \\tests/cases/cli/search_target.b4m:13:  axiom cancelAxiom: forall c, a, b: Nat; add(c, a) = add(c, b) -> a = b
-        \\tests/cases/cli/search_target.b4m:16:  theorem addCancelLeft: forall c, a, b: Nat; add(c, a) = add(c, b) -> a = b
+        \\tests/cases/cli/search_target.b4m:19:  theorem addCancelLeft: forall c, a, b: Nat; add(c, a) = add(c, b) -> a = b
         \\
     );
 
@@ -283,8 +283,8 @@ pub fn addTests(
     // scope that could not see the corpus.
     ctx.ok(&.{ "query", "search", "tests/cases/cli/directory-mode/ok", "even" },
         \\tests/cases/cli/directory-mode/ok/base.b4m:5:  axiom zeroEven: even(ZERO)
-        \\tests/cases/cli/directory-mode/ok/base.b4m:7:  theorem zeroIsEven: even(ZERO)
-        \\tests/cases/cli/directory-mode/ok/sub/uses_base.b4m:7:  theorem stillEven: even(ZERO)
+        \\tests/cases/cli/directory-mode/ok/base.b4m:10:  theorem zeroIsEven: even(ZERO)
+        \\tests/cases/cli/directory-mode/ok/sub/uses_base.b4m:10:  theorem stillEven: even(ZERO)
         \\
     );
 }

@@ -17,6 +17,8 @@ proof
     A = B
     [by reflexivity]
 qed
+// What this file proves (verified manifest):
+intheory wrong
 ```
 
 `reflexivity` proves `A = A`, not `A = B`, so the `@conclusion` claim is a

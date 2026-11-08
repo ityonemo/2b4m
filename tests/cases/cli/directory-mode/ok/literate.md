@@ -12,4 +12,6 @@ proof
     p()
     [by cite pHolds]
 qed
+// What this file proves (verified manifest):
+intheory pIsTrue
 ```
