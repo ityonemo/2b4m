@@ -613,9 +613,12 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/intheory/declared_theorem_ok.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/lemma/lemma_proves.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/lemma/lemma_cross_file_provider.b4m" });
-    // WAITING RED TEST: cross-file citation of a lemma still RESOLVES today, which is the
-    // hole push 2 closes. When the non-export rule lands this flips to a `ctx.fail`.
-    ctx.okSilent(&.{ "check", "tests/cases/lemma/lemma_cross_file_bad.b4m" });
+    // A LEMMA DOES NOT LEAVE ITS FILE, by either route: a citation naming it through another
+    // file's namespace (checked at the citation, `Site.requireExported`), and a `fact` alias
+    // RE-EXPORTING it (checked where the alias resolves to its origin — the citation that
+    // reads such an alias is local, so only the alias itself crosses the boundary).
+    ctx.fail(&.{ "check", "tests/cases/lemma/lemma_cross_file_bad.b4m" }, "tests/cases/lemma/lemma_cross_file_bad.b4m:13:29: error: 'helper' is a `lemma`: it is not exported, so another file cannot cite it. Make it a `theorem` where it is declared (and add its `intheory` entry), or prove what you need locally.\n");
+    ctx.fail(&.{ "check", "tests/cases/lemma/lemma_realias_bad.b4m" }, "tests/cases/lemma/lemma_realias_bad.b4m:6:17: error: 'helper' is a `lemma`: it is not exported, so another file cannot re-export it either. Make it a `theorem` where it is declared (and add its `intheory` entry).\n");
 
     // SOUNDNESS negative: an iff must not license an unrelated conclusion —
     // tautology rejects `A iff B, A ⊢ C` with a countermodel that respects the iff.

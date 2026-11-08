@@ -256,12 +256,31 @@ pub fn resolveFactRef(self: *const Site, tok: lexer.Token) Error!InternPool.Inde
     return self.resolveFactIn(tok, ns);
 }
 
+/// A `lemma` is NOT part of what its file publishes, so no other file may cite it. Checked
+/// against the DECLARATION (the surface `exported` bit), which is where the distinction
+/// lives — a lemma interns as fact kind `theorem` precisely so the kernel sees no difference.
+///
+/// Scoped to a citation whose target file is NOT this proof's own: a lemma is freely citable
+/// inside its file, and a MODEL TRANSFER re-proves a source theorem under the citing proof's
+/// namespace, so comparing FILES (not namespaces) leaves both alone.
+fn requireExported(self: *const Site, tok: lexer.Token, ns: InternPool.Index) Error!void {
+    if (self.ctx.interner.keyOf(ns) != .namespace) return;
+    const target_file = self.ctx.interner.keyOf(ns).namespace.file;
+    if (target_file == self.file) return; // same file: a lemma is local vocabulary
+    const fid = self.ctx.fileOf(target_file) orelse return;
+    const decl = self.ctx.declOf(fid, tokName(tok)) orelse return;
+    if (decl.* != .theorem or decl.theorem != .local) return;
+    if (decl.theorem.local.fact.exported) return;
+    return self.fail(tok.start, "'{s}' is a `lemma`: it is not exported, so another file cannot cite it. Make it a `theorem` where it is declared (and add its `intheory` entry), or prove what you need locally.", .{self.text(tok)});
+}
+
 /// `resolveFactRef` with the namespace already chosen: the fact `tok` names in `ns`, with the
 /// TRANSFER redirect (a source theorem → its copy re-proved under this proof's model) and the
 /// axiom overlay applied. Shared by the bare/qualified `cite` and the `[using import(I) thm]`
 /// citation, whose namespace is the import's — an import cite inside a transferred proof used to
 /// skip the redirect and hand the kernel the UNTRANSFERRED source statement.
 pub fn resolveFactIn(self: *const Site, tok: lexer.Token, ns: InternPool.Index) Error!InternPool.Index {
+    try self.requireExported(tok, ns);
     const state = self.ctx.facts.lookup(self.ctx.io, .{ .namespace = ns, .name = tokName(tok) }) orelse {
         return self.fail(tok.start, "unknown statement '{s}'", .{self.text(tok)});
     };

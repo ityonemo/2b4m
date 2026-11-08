@@ -386,6 +386,20 @@ fn factAlias(self: *Context, task: *ProveTask, h: *Engine.Handle, key: FactKV.Ke
         else => return .not_alias,
     };
     const target = (try demandFactTarget(self, task, h, alias.target)) orelse return .handled; // suspended/diagnosed
+    // A `fact` alias is a RE-EXPORT, so it is the other way a lemma could leave its file: the
+    // citation that reads the alias is local and passes `Site.requireExported`, while the
+    // alias itself crosses the boundary. Checked here, where the ORIGIN file and name are
+    // known. (Same file = local vocabulary; `.b4m` has no sub-file scope.)
+    if (target.file != task.file) {
+        if (self.fileOf(target.file)) |ofid| {
+            if (self.declOf(ofid, target.name)) |od| {
+                if (od.* == .theorem and od.theorem == .local and !od.theorem.local.fact.exported) {
+                    try self.sink.add(@intFromEnum(fid), alias.target.start, "'{s}' is a `lemma`: it is not exported, so another file cannot re-export it either. Make it a `theorem` where it is declared (and add its `intheory` entry).", .{self.interner.stringBytes(target.name)});
+                    return .handled;
+                }
+            }
+        }
+    }
     var origin = target.index;
     // UNDER A MODEL TRANSFER, an aliased THEOREM binds to its TRANSFERRED copy, keyed on the
     // ORIGIN file `(model, origin_file).origin_name` — re-proved under the model there. A
