@@ -602,12 +602,14 @@ const single_theorem_source =
     \\pred p()
     \\pred q()
     \\axiom pq: p()
+    \\intheory good
     \\theorem good: p()
     \\proof
     \\  @conclusion |
     \\    p()
     \\    [by cite pq]
     \\qed
+    \\intheory broken
     \\theorem broken: q()
     \\proof
     \\  @conclusion |
@@ -646,7 +648,7 @@ test "a single-theorem check: a missing name is the racked task's diagnostic; an
     const axiom = try checkSourceTheorem(arena, single_theorem_source, "pq");
     try std.testing.expect(axiom.ok());
     try std.testing.expectEqual(@as(usize, 0), axiom.theorems_proven);
-    const schema = try checkSourceTheorem(arena, "sort T\npred p(x: T)\ntheorem sch(prop(T)): forall x: T; prop(x) -> prop(x)\nproof\n  @conclusion |\n    forall x: T; prop(x) -> prop(x)\n    [using tautology]\nqed\n", "sch");
+    const schema = try checkSourceTheorem(arena, "sort T\npred p(x: T)\nintheory sch\ntheorem sch(prop(T)): forall x: T; prop(x) -> prop(x)\nproof\n  @conclusion |\n    forall x: T; prop(x) -> prop(x)\n    [using tautology]\nqed\n", "sch");
     try std.testing.expectEqual(@as(usize, 1), schema.sink.list.items.len);
     try std.testing.expectEqualStrings("'sch' is a schema; it is checked at its instantiations — check a theorem that instantiates it", schema.sink.list.items[0].message);
 }
@@ -671,6 +673,7 @@ test "library: an axiom no root theorem rests on is unused; one reached through 
         \\axiom zeroEven: even(ZERO)
         \\axiom spare: forall n: Nat; even(n)
         \\axiom evenInduction(prop(Nat)): prop(ZERO) -> forall n: Nat; prop(n)
+        \\intheory zeroIsEven
         \\theorem zeroIsEven: even(ZERO)
         \\proof
         \\  @conclusion |
@@ -684,12 +687,14 @@ test "library: an axiom no root theorem rests on is unused; one reached through 
         \\sort Nat = base.Nat
         \\const ZERO = base.ZERO
         \\pred even = base.even
+        \\intheory viaImport
         \\theorem viaImport: even(ZERO)
         \\proof
         \\  @conclusion |
         \\    even(ZERO)
         \\    [using import(base) zeroIsEven]
         \\qed
+        \\intheory allEven
         \\theorem allEven: even(ZERO) -> forall n: Nat; even(n)
         \\proof
         \\  @conclusion |
@@ -721,6 +726,7 @@ test "library: a fact a model names as a discharger is USED, not unused" {
         \\const UNIT: Elem
         \\oper op(a: Elem, b: Elem) => Elem
         \\axiom opUnitLeft: forall a: Elem; op(UNIT, a) = a
+        \\intheory opUnitTwice
         \\theorem opUnitTwice: forall a: Elem; op(UNIT, op(UNIT, a)) = op(UNIT, a)
         \\proof
         \\  @generalize-a |
@@ -750,6 +756,7 @@ test "library: a fact a model names as a discharger is USED, not unused" {
         \\  abstract.op: combine
         \\  abstract.opUnitLeft <- combineZedLeft
         \\}
+        \\intheory combineZedTwice
         \\theorem combineZedTwice: forall a: Thing; combine(ZED, combine(ZED, a)) = combine(ZED, a)
         \\proof
         \\  @conclusion |

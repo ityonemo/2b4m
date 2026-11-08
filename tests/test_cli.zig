@@ -88,7 +88,7 @@ pub fn addTests(
     // locations; errors print sorted by source position.
     ctx.fail(&.{ "check", "tests/cases/sorts/sort_mismatch.b4m" },
         \\tests/cases/sorts/sort_mismatch.b4m:7:17: error: expected sort 'Nat', got 'Prop'
-        \\tests/cases/sorts/sort_mismatch.b4m:9:35: error: expected sort 'Nat', got 'Prop'
+        \\tests/cases/sorts/sort_mismatch.b4m:12:35: error: expected sort 'Nat', got 'Prop'
         \\
     );
 
@@ -115,7 +115,7 @@ pub fn addTests(
     // primitive, and only the second is something a reader should weigh. Reported under the
     // SYMBOL and its clause — never the mangled publication name.
     ctx.ok(&.{ "check", "tests/cases/define/definition_blocks.b4m", "--axioms" },
-        \\OK: 15 declarations, 3 theorems proven
+        \\OK: 18 declarations, 3 theorems proven
         \\  — rests on 3 axiom(s):
         \\      isZero (clause 0)  (tests/cases/define/definition_blocks.b4m:10)  — DEFINITION
         \\      add (clause 0)  (tests/cases/define/definition_blocks.b4m:16)  — DEFINITION
@@ -126,14 +126,14 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/kernel/forall_swap.b4m" });
 
     // M3: broken siblings with exact diagnostics
-    ctx.fail(&.{ "check", "tests/cases/kernel/modus_ponens_bad.b4m" }, "tests/cases/kernel/modus_ponens_bad.b4m:16:22: error: modus_ponens expects an implication, got 'p()'\n");
+    ctx.fail(&.{ "check", "tests/cases/kernel/modus_ponens_bad.b4m" }, "tests/cases/kernel/modus_ponens_bad.b4m:20:22: error: modus_ponens expects an implication, got 'p()'\n");
 
     // citing an axiom where a proof STEP is required: the diagnostic must
     // point at the fix (materialize it as a step first), not report a bare
     // "unknown reference".
-    ctx.fail(&.{ "check", "tests/cases/syntax/axiom_as_step_bad.b4m" }, "tests/cases/syntax/axiom_as_step_bad.b4m:14:21: error: 'pall' is a fact, not a proof step; introduce it as a step first with `[by cite pall]`, then reference that step\n");
+    ctx.fail(&.{ "check", "tests/cases/syntax/axiom_as_step_bad.b4m" }, "tests/cases/syntax/axiom_as_step_bad.b4m:17:21: error: 'pall' is a fact, not a proof step; introduce it as a step first with `[by cite pall]`, then reference that step\n");
 
-    ctx.fail(&.{ "check", "tests/cases/syntax/fix_shadow_bad.b4m" }, "tests/cases/syntax/fix_shadow_bad.b4m:10:13: error: 'a' shadows an enclosing variable; choose a fresh name\n");
+    ctx.fail(&.{ "check", "tests/cases/syntax/fix_shadow_bad.b4m" }, "tests/cases/syntax/fix_shadow_bad.b4m:14:13: error: 'a' shadows an enclosing variable; choose a fresh name\n");
 
     // M6: --help
     const help = b.addRunArtifact(exe);
@@ -143,7 +143,7 @@ pub fn addTests(
     test_step.dependOn(&help.step);
 
     // M4: ill-sorted schema argument dies at the use site
-    ctx.fail(&.{ "check", "tests/cases/kernel/induction_bad_sort.b4m" }, "tests/cases/kernel/induction_bad_sort.b4m:14:51: error: expected sort 'Prop', got 'Nat'\n");
+    ctx.fail(&.{ "check", "tests/cases/kernel/induction_bad_sort.b4m" }, "tests/cases/kernel/induction_bad_sort.b4m:17:51: error: expected sort 'Prop', got 'Nat'\n");
 
     // proof-carrying schema `zeroLike(t): t = ZERO` whose body only survives the t := ZERO
     // instance. A schema NEED NOT be a true universal (a narrow one is bad form, not wrong, #93);
@@ -152,11 +152,11 @@ pub fn addTests(
     // `instantiation` is NOT admit-trustable, so `--fast` behaves IDENTICALLY to strict here (the
     // bad instance is always proved — admitting it shape-only would be unsound).
     ctx.fail(&.{ "check", "tests/cases/schema/schema_per_instance.b4m" },
-        \\tests/cases/schema/schema_per_instance.b4m:10:4: error: reflexivity requires a claim of the form 't = t', got 'succ(ZERO) = ZERO'
+        \\tests/cases/schema/schema_per_instance.b4m:15:4: error: reflexivity requires a claim of the form 't = t', got 'succ(ZERO) = ZERO'
         \\
     );
     ctx.fail(&.{ "check", "--fast", "tests/cases/schema/schema_per_instance.b4m" },
-        \\tests/cases/schema/schema_per_instance.b4m:10:4: error: reflexivity requires a claim of the form 't = t', got 'succ(ZERO) = ZERO'
+        \\tests/cases/schema/schema_per_instance.b4m:15:4: error: reflexivity requires a claim of the form 't = t', got 'succ(ZERO) = ZERO'
         \\
     );
 
@@ -164,13 +164,13 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/namespaces/forward_ref.b4m" });
 
     // mutually-citing steps form a justification cycle, reported by name
-    ctx.fail(&.{ "check", "tests/cases/namespaces/forward_ref_cycle.b4m" }, "tests/cases/namespaces/forward_ref_cycle.b4m:10:4: error: cyclic justification: a -> b -> a\n");
+    ctx.fail(&.{ "check", "tests/cases/namespaces/forward_ref_cycle.b4m" }, "tests/cases/namespaces/forward_ref_cycle.b4m:13:4: error: cyclic justification: a -> b -> a\n");
 
     // a self-instantiating schema is a named cycle, not a blunt depth cap. The
     // strict declaration-time opaque check catches it first (its body instantiates
     // itself); the later real instantiation site reports it again.
     ctx.fail(&.{ "check", "tests/cases/schema/schema_cycle.b4m" },
-        \\tests/cases/schema/schema_cycle.b4m:11:26: error: cyclic schema instantiation of 'loopy'
+        \\tests/cases/schema/schema_cycle.b4m:15:26: error: cyclic schema instantiation of 'loopy'
         \\
     );
 
@@ -206,8 +206,8 @@ pub fn addTests(
     // skip every name that did not resolve to a local step. A ref naming neither a local step
     // nor a global fact is a typo, so skipping it let `--fast` pass a proof strict rejects.
     // Both modes must reject; the wording differs, so assert each.
-    ctx.fail(&.{ "check", "tests/cases/fast/fast_unknown_ref_bad.b4m" }, "tests/cases/fast/fast_unknown_ref_bad.b4m:43:27: error: reference not found: 'p-holds-everywhere'\n");
-    ctx.fail(&.{ "check", "--fast", "tests/cases/fast/fast_unknown_ref_bad.b4m" }, "tests/cases/fast/fast_unknown_ref_bad.b4m:43:27: error: unknown reference 'p-holds-everywhere'\n");
+    ctx.fail(&.{ "check", "tests/cases/fast/fast_unknown_ref_bad.b4m" }, "tests/cases/fast/fast_unknown_ref_bad.b4m:47:27: error: reference not found: 'p-holds-everywhere'\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/fast/fast_unknown_ref_bad.b4m" }, "tests/cases/fast/fast_unknown_ref_bad.b4m:47:27: error: unknown reference 'p-holds-everywhere'\n");
 
     // the QUALIFIED twin of the above, and a second escape on the same walk: a `ns.`-qualified
     // name is never a local step, so `seedAndCheckLocalRoot` returned on sight of a qualifier
@@ -217,8 +217,8 @@ pub fn addTests(
     // pass and every valid cross-file qualified citation in std becomes a false positive), and
     // the check is then existence-only — NOT `.proven`, since under `--fast` the cited fact's
     // own proof may not have run.
-    ctx.fail(&.{ "check", "tests/cases/fast/fast_qualified_ref_rejected.b4m" }, "tests/cases/fast/fast_qualified_ref_rejected.b4m:30:23: error: reference not found: 'thereIsNoSuchTheorem'\n");
-    ctx.fail(&.{ "check", "--fast", "tests/cases/fast/fast_qualified_ref_rejected.b4m" }, "tests/cases/fast/fast_qualified_ref_rejected.b4m:30:23: error: unknown reference 'peano.thereIsNoSuchTheorem'\n");
+    ctx.fail(&.{ "check", "tests/cases/fast/fast_qualified_ref_rejected.b4m" }, "tests/cases/fast/fast_qualified_ref_rejected.b4m:33:23: error: reference not found: 'thereIsNoSuchTheorem'\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/fast/fast_qualified_ref_rejected.b4m" }, "tests/cases/fast/fast_qualified_ref_rejected.b4m:33:23: error: unknown reference 'peano.thereIsNoSuchTheorem'\n");
 
     // the other direction: `--fast` must not REJECT what strict ACCEPTS. An aliased lemma
     // (`fact X = ns.y`) cited by its bare name is the ordinary way a file names an imported
@@ -251,7 +251,7 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/kernel/case_split.b4m" });
 
     // a `case` arm assuming the wrong disjunct is a located error
-    ctx.fail(&.{ "check", "tests/cases/kernel/case_bad_arm.b4m" }, "tests/cases/kernel/case_bad_arm.b4m:19:8: error: common_conclusion: subproof must assume 'p(Z)'\n");
+    ctx.fail(&.{ "check", "tests/cases/kernel/case_bad_arm.b4m" }, "tests/cases/kernel/case_bad_arm.b4m:22:8: error: common_conclusion: subproof must assume 'p(Z)'\n");
 
     // apply_at at several arguments emits the chain in one written step
     ctx.okSilent(&.{ "check", "tests/cases/kernel/forall_elim_multi.b4m" });
@@ -261,7 +261,7 @@ pub fn addTests(
 
     // no-shadowing rule for labels: an inner label shadowing an enclosing
     // one is an error (disjoint sibling reuse stays fine)
-    ctx.fail(&.{ "check", "tests/cases/syntax/label_shadow_bad.b4m" }, "tests/cases/syntax/label_shadow_bad.b4m:17:8: error: label 'base' shadows an enclosing label; choose a fresh name\n");
+    ctx.fail(&.{ "check", "tests/cases/syntax/label_shadow_bad.b4m" }, "tests/cases/syntax/label_shadow_bad.b4m:20:8: error: label 'base' shadows an enclosing label; choose a fresh name\n");
 
     // the forward manifest is checked: promised theorems must exist
     ctx.fail(&.{ "check", "tests/cases/namespaces/forward_bad.b4m" },
@@ -307,7 +307,7 @@ pub fn addTests(
     // the define's FIRST USE — a define is only ever met by expansion); the diagnostic spells
     // the alias form. A PERMUTED forward (`gt(a, b) = less_than(b, a)`) is
     // a genuine macro and is accepted.
-    ctx.fail(&.{ "check", "tests/cases/define/define_alias_bad.b4m" }, "tests/cases/define/define_alias_bad.b4m:7:35: error: define 'lt' only forwards 'ordering.less_than' — it is an alias, not a macro; write `pred lt = ordering.less_than` (--draft allows)\n");
+    ctx.fail(&.{ "check", "tests/cases/define/define_alias_bad.b4m" }, "tests/cases/define/define_alias_bad.b4m:11:35: error: define 'lt' only forwards 'ordering.less_than' — it is an alias, not a macro; write `pred lt = ordering.less_than` (--draft allows)\n");
     ctx.okSilent(&.{ "check", "--draft", "tests/cases/define/define_alias_bad.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/define/define_forward_permuted_ok.b4m" });
 
@@ -353,18 +353,18 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/tactics/specialize/specialize_local.b4m" });
     // …but a local head whose formula is NOT universally quantified is rejected
     // with the same "not universally quantified" diagnostic (now via a step head).
-    ctx.fail(&.{ "check", "tests/cases/tactics/specialize/specialize_local_bad.b4m" }, "tests/cases/tactics/specialize/specialize_local_bad.b4m:19:16: error: specialize: head is not universally quantified enough for 1 argument(s)\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/specialize/specialize_local_bad.b4m" }, "tests/cases/tactics/specialize/specialize_local_bad.b4m:22:16: error: specialize: head is not universally quantified enough for 1 argument(s)\n");
 
     // `chain`: prove A = Z from cited equations used in any direction +
     // congruence (union-find + BFS, emits a rewrite/symmetry certificate).
     // Positive (transitivity, congruence, combined); negative (no path).
     ctx.okSilent(&.{ "check", "tests/cases/namespaces/imports/chain.b4m" });
-    ctx.fail(&.{ "check", "tests/cases/tactics/chain/chain_bad.b4m" }, "tests/cases/tactics/chain/chain_bad.b4m:15:12: error: chain: cannot connect 'a' to 'z' from the cited equations\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/chain/chain_bad.b4m" }, "tests/cases/tactics/chain/chain_bad.b4m:19:12: error: chain: cannot connect 'a' to 'z' from the cited equations\n");
     // over-args (∀ prefix exhausted), extra hyp with no antecedent, and a schema
     // (redirect to instantiate) each fail cleanly.
-    ctx.fail(&.{ "check", "tests/cases/tactics/specialize/specialize_overargs_bad.b4m" }, "tests/cases/tactics/specialize/specialize_overargs_bad.b4m:9:12: error: specialize: head is not universally quantified enough for 2 argument(s)\n");
-    ctx.fail(&.{ "check", "tests/cases/tactics/specialize/specialize_nohyp_bad.b4m" }, "tests/cases/tactics/specialize/specialize_nohyp_bad.b4m:16:39: error: schema instance 'p(ZERO)' has no antecedent left for this premise\n");
-    ctx.fail(&.{ "check", "tests/cases/tactics/specialize/specialize_schema_bad.b4m" }, "tests/cases/tactics/specialize/specialize_schema_bad.b4m:9:23: error: 'sch' is a schema; use `[using instantiation sch(...)]`, not a fact citation\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/specialize/specialize_overargs_bad.b4m" }, "tests/cases/tactics/specialize/specialize_overargs_bad.b4m:13:12: error: specialize: head is not universally quantified enough for 2 argument(s)\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/specialize/specialize_nohyp_bad.b4m" }, "tests/cases/tactics/specialize/specialize_nohyp_bad.b4m:20:39: error: schema instance 'p(ZERO)' has no antecedent left for this premise\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/specialize/specialize_schema_bad.b4m" }, "tests/cases/tactics/specialize/specialize_schema_bad.b4m:13:23: error: 'sch' is a schema; use `[using instantiation sch(...)]`, not a fact citation\n");
 
     // the outline fixture is itself a valid proof
     ctx.okSilent(&.{ "check", "tests/cases/cli/outline.b4m" });
@@ -382,25 +382,25 @@ pub fn addTests(
     // M5: unguarded division is rejected with the exact obligation — at the PROOF STEP that
     // writes the term (a statement is a claim and owes nothing; user ruling 2026-09-13).
     ctx.fail(&.{ "check", "tests/cases/sorts/div_bad.b4m" },
-        \\tests/cases/sorts/div_bad.b4m:10:5: error: unproved obligation: 'ZERO != ZERO'
-        \\tests/cases/sorts/div_bad.b4m:10:22: error: unproved obligation: 'ZERO != ZERO'
+        \\tests/cases/sorts/div_bad.b4m:14:5: error: unproved obligation: 'ZERO != ZERO'
+        \\tests/cases/sorts/div_bad.b4m:14:22: error: unproved obligation: 'ZERO != ZERO'
         \\
     );
 
     // M5: nested guarded applications report every obligation (at the step citing the axiom).
     ctx.fail(&.{ "check", "tests/cases/sorts/div_nested.b4m" },
-        \\tests/cases/sorts/div_nested.b4m:11:5: error: unproved obligation: 'div(ZERO, ZERO) != ZERO'
-        \\tests/cases/sorts/div_nested.b4m:11:15: error: unproved obligation: 'ZERO != ZERO'
+        \\tests/cases/sorts/div_nested.b4m:15:5: error: unproved obligation: 'div(ZERO, ZERO) != ZERO'
+        \\tests/cases/sorts/div_nested.b4m:15:15: error: unproved obligation: 'ZERO != ZERO'
         \\
     );
 
     // Review fix: contradiction may only cite steps available at the END of
     // the cited subproof, not inside deeper nested assumptions
-    ctx.fail(&.{ "check", "tests/cases/kernel/not_intro_nested_bad.b4m" }, "tests/cases/kernel/not_intro_nested_bad.b4m:24:25: error: contradiction: 's1' is not accessible at the conclusion of the cited subproof\n");
+    ctx.fail(&.{ "check", "tests/cases/kernel/not_intro_nested_bad.b4m" }, "tests/cases/kernel/not_intro_nested_bad.b4m:28:25: error: contradiction: 's1' is not accessible at the conclusion of the cited subproof\n");
 
     // Review fix: a block whose only content is a nested subproof has no
     // conclusion to discharge (was: kernel panic)
-    ctx.fail(&.{ "check", "tests/cases/syntax/no_conclusion_bad.b4m" }, "tests/cases/syntax/no_conclusion_bad.b4m:18:19: error: subproof 'b' has no concluding step of its own\n");
+    ctx.fail(&.{ "check", "tests/cases/syntax/no_conclusion_bad.b4m" }, "tests/cases/syntax/no_conclusion_bad.b4m:22:19: error: subproof 'b' has no concluding step of its own\n");
 
     // `hole`: an aspirational axiom-shaped placeholder. Default mode REJECTS a
     // file that rests on one, enumerating each hole with its location and the
@@ -412,7 +412,7 @@ pub fn addTests(
     );
     // --draft allows holes (exit 0) with a loud disclosure banner naming them.
     ctx.ok(&.{ "check", "--draft", "tests/cases/namespaces/hole.b4m" },
-        \\OK: 6 declarations, 1 theorems proven
+        \\OK: 7 declarations, 1 theorems proven
         \\  — DRAFT — 1 hole(s) unfilled (aspirational; the result is conditional on them): zeroIsEven; re-run `2b4m check` (no --draft) once filled.
         \\
     );
@@ -427,7 +427,7 @@ pub fn addTests(
     // checker cannot verify, so the run discloses it rather than rejecting. Still a hole:
     // `--axioms` marks it `— CITED HOLE`, so it is never mistaken for a proved step.
     ctx.ok(&.{ "check", "tests/cases/namespaces/hole_cited.b4m" },
-        \\OK: 6 declarations, 1 theorems proven
+        \\OK: 7 declarations, 1 theorems proven
         \\  — 1 CITED hole(s) — assumed on external authority, NOT verified here; check each citation:
         \\      zeroIsEven  (tests/cases/namespaces/hole_cited.b4m:17)
         \\          cites Hardy & Wright, Thm 1 (parity of zero)
@@ -460,7 +460,7 @@ pub fn addTests(
     // any later step nor the conclusion — is rejected (a proof must use every fact
     // it introduces).
     ctx.fail(&.{ "check", "tests/cases/fast/use_all_facts_bad.b4m" },
-        \\tests/cases/fast/use_all_facts_bad.b4m:12:4: error: unused fact: step 'unused' is never used — no later step or the conclusion cites it (a proof must use every fact it introduces; use --draft while filling in a proof)
+        \\tests/cases/fast/use_all_facts_bad.b4m:15:4: error: unused fact: step 'unused' is never used — no later step or the conclusion cites it (a proof must use every fact it introduces; use --draft while filling in a proof)
         \\
     );
     // --draft disables the check (a WIP proof may have not-yet-wired facts).
@@ -502,14 +502,14 @@ pub fn addTests(
     // what it cites) — `good` alone is clean while `broken` (and so the whole file) fails;
     // the theorem follows the file, after any trust words. The entry racks the ParseTask and
     // ONE ProveTask for the name, so a wrong name is that task's own diagnostic.
-    ctx.ok(&.{ "check", "tests/cases/cli/single_theorem.b4m", "good" }, "OK: 5 declarations, 1 theorems proven\n");
-    ctx.fail(&.{ "check", "tests/cases/cli/single_theorem.b4m", "broken" }, "tests/cases/cli/single_theorem.b4m:16:4: error: step claims 'q()' but the axiom derives 'p()'\n");
-    ctx.fail(&.{ "check", "tests/cases/cli/single_theorem.b4m" }, "tests/cases/cli/single_theorem.b4m:16:4: error: step claims 'q()' but the axiom derives 'p()'\n");
+    ctx.ok(&.{ "check", "tests/cases/cli/single_theorem.b4m", "good" }, "OK: 7 declarations, 1 theorems proven\n");
+    ctx.fail(&.{ "check", "tests/cases/cli/single_theorem.b4m", "broken" }, "tests/cases/cli/single_theorem.b4m:20:4: error: step claims 'q()' but the axiom derives 'p()'\n");
+    ctx.fail(&.{ "check", "tests/cases/cli/single_theorem.b4m" }, "tests/cases/cli/single_theorem.b4m:20:4: error: step claims 'q()' but the axiom derives 'p()'\n");
     ctx.fail(&.{ "check", "tests/cases/cli/single_theorem.b4m", "nosuch" }, "tests/cases/cli/single_theorem.b4m:1:1: error: reference not found: 'nosuch'\n");
     // naming an AXIOM racks its (statement-elaborating) task: nothing is proved, nothing fails.
-    ctx.ok(&.{ "check", "tests/cases/cli/single_theorem.b4m", "pq" }, "OK: 5 declarations, 0 theorems proven\n");
+    ctx.ok(&.{ "check", "tests/cases/cli/single_theorem.b4m", "pq" }, "OK: 7 declarations, 0 theorems proven\n");
     ctx.ok(&.{ "check", "--fast-only", "tautology", "tests/cases/cli/single_theorem.b4m", "good" },
-        \\OK: 5 declarations, 1 theorems proven
+        \\OK: 7 declarations, 1 theorems proven
         \\  — (--fast set given, but no step used a trusted word — fully verified)
         \\
     );
@@ -518,19 +518,19 @@ pub fn addTests(
     // 119, not 120: an `arithmetic` step whose decision ABSTAINS (its refutation rested on the
     // opaque `sumTo(succ(k))`) now falls straight through to the certifier, so strict no longer
     // demands the one extra declaration the old diagnostic path pulled in. Same 6 axioms.
-    ctx.ok(&.{ "check", "examples/gauss.b4m", "gaussSum" }, "OK: 119 declarations, 1 theorems proven\n");
+    ctx.ok(&.{ "check", "examples/gauss.b4m", "gaussSum" }, "OK: 120 declarations, 1 theorems proven\n");
     // `--axioms`: what a proof BOTTOMS OUT IN, per theorem — `direct` cites one axiom,
     // `viaLemma` inherits a second through the theorem it cites. A HOLE is an axiom to the
     // kernel, so it is listed and MARKED — and only reachable under --draft, since default
     // mode rejects a hole-bearing run before the report.
     ctx.ok(&.{ "check", "tests/cases/cli/axioms_report.b4m", "direct", "--axioms" },
-        \\OK: 9 declarations, 1 theorems proven
+        \\OK: 11 declarations, 1 theorems proven
         \\  — rests on 1 axiom(s):
         \\      pZero  (tests/cases/cli/axioms_report.b4m:10)
         \\
     );
     ctx.ok(&.{ "check", "tests/cases/cli/axioms_report.b4m", "viaLemma", "--axioms" },
-        \\OK: 9 declarations, 1 theorems proven
+        \\OK: 11 declarations, 1 theorems proven
         \\  — rests on 2 axiom(s):
         \\      pZero  (tests/cases/cli/axioms_report.b4m:10)
         \\      pImpliesQ  (tests/cases/cli/axioms_report.b4m:11)
@@ -542,7 +542,7 @@ pub fn addTests(
         \\
     );
     ctx.ok(&.{ "check", "tests/cases/namespaces/hole.b4m", "restsOnHole", "--axioms", "--draft" },
-        \\OK: 6 declarations, 1 theorems proven
+        \\OK: 7 declarations, 1 theorems proven
         \\  — rests on 1 axiom(s):
         \\      zeroIsEven  (tests/cases/namespaces/hole.b4m:10)  — HOLE
         \\  — DRAFT — 1 hole(s) unfilled (aspirational; the result is conditional on them): zeroIsEven; re-run `2b4m check` (no --draft) once filled.
@@ -551,20 +551,20 @@ pub fn addTests(
     // DIRECTORY CHECK: every .b4m and .md under the directory, recursively, in ONE engine pass
     // (base.b4m is both a root and sub/uses_base.b4m's import — proved once); a prose .md is a
     // root that parses to nothing; a literate .md counts like any file; one aggregate line.
-    ctx.ok(&.{ "check", "tests/cases/cli/directory-mode/ok" }, "OK: 4 files, 12 declarations, 3 theorems proven\n");
+    ctx.ok(&.{ "check", "tests/cases/cli/directory-mode/ok" }, "OK: 4 files, 15 declarations, 3 theorems proven\n");
     ctx.ok(&.{ "check", "tests/cases/cli/directory-mode/ok", "--axioms" },
-        \\OK: 4 files, 12 declarations, 3 theorems proven
+        \\OK: 4 files, 15 declarations, 3 theorems proven
         \\  — rests on 2 axiom(s):
         \\      zeroEven  (tests/cases/cli/directory-mode/ok/base.b4m:5)
         \\      pHolds  (tests/cases/cli/directory-mode/ok/literate.md:7)
         \\
     );
-    ctx.fail(&.{ "check", "tests/cases/cli/directory-mode/broken" }, "tests/cases/cli/directory-mode/broken/broken.b4m:7:4: error: step claims 'q()' but the axiom derives 'p()'\n");
+    ctx.fail(&.{ "check", "tests/cases/cli/directory-mode/broken" }, "tests/cases/cli/directory-mode/broken/broken.b4m:11:4: error: step claims 'q()' but the axiom derives 'p()'\n");
     ctx.fail(&.{ "check", "tests/cases/cli/directory-mode/ok", "zeroIsEven" }, "error: a theorem selects within one file; 'tests/cases/cli/directory-mode/ok' is a directory\n");
     // `--library` (a directory): an axiom declared in the directory that no theorem in it
     // rests on FAILS the check; a directory whose every axiom is reached passes; a file is
     // not a library.
-    ctx.ok(&.{ "check", "tests/cases/cli/directory-mode/ok", "--library" }, "OK: 4 files, 12 declarations, 3 theorems proven\n");
+    ctx.ok(&.{ "check", "tests/cases/cli/directory-mode/ok", "--library" }, "OK: 4 files, 15 declarations, 3 theorems proven\n");
     ctx.fail(&.{ "check", "tests/cases/cli/directory-mode/unused-axiom", "--library" },
         \\error: 1 unused axiom(s) — no theorem in the library rests on them:
         \\  - spare  (tests/cases/cli/directory-mode/unused-axiom/spare.b4m:6)
@@ -578,22 +578,22 @@ pub fn addTests(
     // `[by cite I.ax]`: it appears in the citer's `--axioms` report and counts as used for
     // `--library` (regression: the import path once skipped the taint bookkeeping).
     ctx.ok(&.{ "check", "tests/cases/namespaces/import_axiom_taint/user.b4m", "--axioms" },
-        \\OK: 8 declarations, 1 theorems proven
+        \\OK: 9 declarations, 1 theorems proven
         \\  — rests on 1 axiom(s):
         \\      pZero  (tests/cases/namespaces/import_axiom_taint/lib.b4m:8)
         \\
     );
-    ctx.ok(&.{ "check", "tests/cases/namespaces/import_axiom_taint", "--library" }, "OK: 2 files, 8 declarations, 1 theorems proven\n");
+    ctx.ok(&.{ "check", "tests/cases/namespaces/import_axiom_taint", "--library" }, "OK: 2 files, 9 declarations, 1 theorems proven\n");
     // an UNCITED axiom never discharges — the author states it as a step first.
     ctx.fail(&.{ "check", "tests/cases/sorts/tcc_uncited_bad.b4m" },
-        \\tests/cases/sorts/tcc_uncited_bad.b4m:15:11: error: unproved obligation: 'inH(UNIT)'
-        \\tests/cases/sorts/tcc_uncited_bad.b4m:15:25: error: unproved obligation: 'inH(UNIT)'
+        \\tests/cases/sorts/tcc_uncited_bad.b4m:18:11: error: unproved obligation: 'inH(UNIT)'
+        \\tests/cases/sorts/tcc_uncited_bad.b4m:18:25: error: unproved obligation: 'inH(UNIT)'
         \\
     );
     // knowledge is block-scoped: taught inside an assume, gone after it closes.
     ctx.fail(&.{ "check", "tests/cases/sorts/tcc_scope_bad.b4m" },
-        \\tests/cases/sorts/tcc_scope_bad.b4m:22:11: error: unproved obligation: 'inH(UNIT)'
-        \\tests/cases/sorts/tcc_scope_bad.b4m:22:25: error: unproved obligation: 'inH(UNIT)'
+        \\tests/cases/sorts/tcc_scope_bad.b4m:25:11: error: unproved obligation: 'inH(UNIT)'
+        \\tests/cases/sorts/tcc_scope_bad.b4m:25:25: error: unproved obligation: 'inH(UNIT)'
         \\
     );
     // REGRESSION: a schema `instantiate` step re-enters checkProofSteps (to

@@ -23,10 +23,10 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/tactics/simplify/simplify.b4m" });
 
     // unjoinable normal forms: the diagnostic shows both, copy-pasteable
-    ctx.fail(&.{ "check", "tests/cases/tactics/simplify/simplify_bad.b4m" }, "tests/cases/tactics/simplify/simplify_bad.b4m:14:16: error: simplify: normal forms differ: 'add(n, ZERO)' vs 'n'\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/simplify/simplify_bad.b4m" }, "tests/cases/tactics/simplify/simplify_bad.b4m:18:16: error: simplify: normal forms differ: 'add(n, ZERO)' vs 'n'\n");
 
     // cycling rules hit the hard rewrite cap instead of hanging
-    ctx.fail(&.{ "check", "tests/cases/tactics/simplify/simplify_loop.b4m" }, "tests/cases/tactics/simplify/simplify_loop.b4m:13:12: error: simplify: rewrite limit reached (looping rule set?)\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/simplify/simplify_loop.b4m" }, "tests/cases/tactics/simplify/simplify_loop.b4m:17:12: error: simplify: rewrite limit reached (looping rule set?)\n");
 
     // ac: associative-commutative sum reordering over opaque atoms, emits kernel steps
     ctx.okSilent(&.{ "check", "tests/cases/tactics/ac/ac.b4m" });
@@ -47,7 +47,7 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/tactics/polynomial/polynomial.b4m" });
 
     // sides with different expansions → located error, exit 1 (not accelerated)
-    ctx.fail(&.{ "check", "tests/cases/tactics/polynomial/polynomial_bad.b4m" }, "tests/cases/tactics/polynomial/polynomial_bad.b4m:18:12: error: polynomial: sides expand differently: 'add(mul(a, a), add(mul(a, b), add(mul(a, b), mul(b, b))))' vs 'add(mul(a, a), mul(b, b))'\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/polynomial/polynomial_bad.b4m" }, "tests/cases/tactics/polynomial/polynomial_bad.b4m:21:12: error: polynomial: sides expand differently: 'add(mul(a, a), add(mul(a, b), add(mul(a, b), mul(b, b))))' vs 'add(mul(a, a), mul(b, b))'\n");
 
     // `polynomial` expands sub/neg (definitionOfSubtraction + neg-folds push neg
     // to the leaves), cancels additive inverses (t + neg(t) → 0), and folds
@@ -105,7 +105,7 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "--fast", "tests/cases/tactics/polynomial/polynomial_field.b4m" });
     // a wrong coefficient (q+q claimed = 3·q) is still rejected: q+q expands to
     // add(q, q), 3·q to add(q, add(q, q)) — real repeated-addition arithmetic.
-    ctx.fail(&.{ "check", "tests/cases/tactics/polynomial/polynomial_coeff_bad.b4m" }, "tests/cases/tactics/polynomial/polynomial_coeff_bad.b4m:15:12: error: polynomial: sides expand differently: 'add(q, q)' vs 'add(q, add(q, q))'\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/polynomial/polynomial_coeff_bad.b4m" }, "tests/cases/tactics/polynomial/polynomial_coeff_bad.b4m:18:12: error: polynomial: sides expand differently: 'add(q, q)' vs 'add(q, add(q, q))'\n");
 
     // `ext(theory)`: the extensionality tactic, one tactic over two models —
     // reduce an equation to its pointwise obligation via the theory's
@@ -116,7 +116,7 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/tactics/extensionality/extensionality_function.b4m" });
     // a FALSE set identity: the pointwise residue has a countermodel, so ext
     // declines with a located error (exit 1) — never accepts a false equation.
-    ctx.fail(&.{ "check", "tests/cases/tactics/extensionality/extensionality_bad.b4m" }, "tests/cases/tactics/extensionality/extensionality_bad.b4m:18:12: error: extensionality: could not close the pointwise obligation propositionally (is the identity true?)\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/extensionality/extensionality_bad.b4m" }, "tests/cases/tactics/extensionality/extensionality_bad.b4m:21:12: error: extensionality: could not close the pointwise obligation propositionally (is the identity true?)\n");
 
     // `model`: structure reuse. The source theory (a carrier + op + left-unit +
     // one proven theorem) is modeled by a concrete sort, and its theorem
@@ -126,7 +126,7 @@ pub fn addTests(
     // --fast trusts the transfer wholesale (remap the source theorem, α-match the
     // goal, taint accelerated: model) — checks nothing about the source proof.
     ctx.ok(&.{ "check", "--fast", "tests/cases/model/model_transfer.b4m" },
-        \\OK: 14 declarations, 1 theorems proven
+        \\OK: 17 declarations, 1 theorems proven
         \\  — NOT FULLY VERIFIED: 1 theorem(s) accelerated (admitted, not proved): model
         \\
     );
@@ -143,7 +143,7 @@ pub fn addTests(
     // proof is NOT re-materialized), disclosed via the NOT-FULLY-VERIFIED banner. Scoped to
     // `model` so the banner lists just that word.
     ctx.ok(&.{ "check", "--fast-only", "model", "tests/cases/model/model_recurse.b4m" },
-        \\OK: 15 declarations, 2 theorems proven
+        \\OK: 19 declarations, 2 theorems proven
         \\  — NOT FULLY VERIFIED: 2 theorem(s) accelerated (admitted, not proved): model
         \\
     );
@@ -158,7 +158,7 @@ pub fn addTests(
     // rejected. In the demand path an unmapped source axiom stays the SOURCE axiom under the
     // transfer (applyModel = identity), so its formula fails to match the transferred step's
     // relativized claim — the rejection surfaces at that source citation.
-    ctx.fail(&.{ "check", "tests/cases/model/model_cite_bad.b4m" }, "tests/cases/model/model_cite_source.b4m:43:8: error: ThingModel@unitCollapsesAndMarks: step claims 'forall b: Thing; combine(b, NEUTRAL) = b' but the axiom derives 'forall a: Sort; op(a, UNIT) = a'\n");
+    ctx.fail(&.{ "check", "tests/cases/model/model_cite_bad.b4m" }, "tests/cases/model/model_cite_source.b4m:47:8: error: ThingModel@unitCollapsesAndMarks: step claims 'forall b: Thing; combine(b, NEUTRAL) = b' but the axiom derives 'forall a: Sort; op(a, UNIT) = a'\n");
     // a model maps only the source theory's AXIOMS; mapping a source THEOREM (which
     // materializes through the mapped axioms) is misuse and rejected at that mapping.
     ctx.fail(&.{ "check", "tests/cases/model/model_maps_theorem_bad.b4m" }, "tests/cases/model/model_maps_theorem_bad.b4m:22:3: error: model maps only axioms; 'src.leftUnit' is a theorem — it materializes through the mapped axioms, so drop this mapping\n");
@@ -186,7 +186,7 @@ pub fn addTests(
     // fallback point for future author-supplied obligations).
     // (demand path: no discharger nominated for good(ZED), so the transferred proof's
     // apply_at(ZED) leaks the guard and the step fails to match its claim — a sound rejection.)
-    ctx.fail(&.{ "check", "tests/cases/model/guarded/model_guarded_noclose.b4m" }, "tests/cases/model/guarded/model_guarded_source.b4m:20:4: error: ThingModel@opUnitAtUnit: step claims 'combine(ZED, ZED) = ZED' but apply_at derives 'good(ZED) -> combine(ZED, ZED) = ZED'\n");
+    ctx.fail(&.{ "check", "tests/cases/model/guarded/model_guarded_noclose.b4m" }, "tests/cases/model/guarded/model_guarded_source.b4m:26:4: error: ThingModel@opUnitAtUnit: step claims 'combine(ZED, ZED) = ZED' but apply_at derives 'good(ZED) -> combine(ZED, ZED) = ZED'\n");
     // BOUNDARY fixtures (all now handled): a guarded transfer of a proof that
     // unpacks an existential witness surfaces `guard(w)` from the relativized
     // `∃x; guard(x) and P(x)` conjunct (and re-guards a matching `witness`);
@@ -290,21 +290,21 @@ pub fn addTests(
     // exist. `Prop` stays legal as a schema parameter's RESULT.
     ctx.fail(
         &.{ "check", "tests/cases/sorts/sorts_reject_prop_binder.b4m" },
-        "tests/cases/sorts/sorts_reject_prop_binder.b4m:16:44: error: a binder cannot range over 'Prop': propositions are asserted about individuals, not quantified over (only a schema PARAMETER may be predicate-shaped)\n",
+        "tests/cases/sorts/sorts_reject_prop_binder.b4m:19:44: error: a binder cannot range over 'Prop': propositions are asserted about individuals, not quantified over (only a schema PARAMETER may be predicate-shaped)\n",
     );
     ctx.fail(
         &.{ "check", "tests/cases/sorts/sorts_reject_callable_as_sort.b4m" },
-        "tests/cases/sorts/sorts_reject_callable_as_sort.b4m:13:36: error: 'marks' is not a sort\n",
+        "tests/cases/sorts/sorts_reject_callable_as_sort.b4m:16:36: error: 'marks' is not a sort\n",
     );
     ctx.fail(
         &.{ "check", "tests/cases/sorts/sorts_reject_func_as_sort.b4m" },
-        "tests/cases/sorts/sorts_reject_func_as_sort.b4m:9:36: error: 'f' is not a sort\n",
+        "tests/cases/sorts/sorts_reject_func_as_sort.b4m:12:36: error: 'f' is not a sort\n",
     );
     // ...and the bare form, OUTSIDE a schema body, is an authoring error: there is nothing to
     // instantiate at. Diagnosed with both fixes named.
     ctx.fail(
         &.{ "check", "tests/cases/model/schema/model_schema_bare_cite_rejected.b4m" },
-        "tests/cases/model/schema/model_schema_bare_cite_rejected.b4m:30:31: error: 'specialIsWitnessed' transfers as a SCHEMA, so it must be instantiated: either name the arguments at the cite (`[using model(M) specialIsWitnessed(<arg>…)]`) or cite it from inside a schema body whose own parameters stand in for its\n",
+        "tests/cases/model/schema/model_schema_bare_cite_rejected.b4m:33:31: error: 'specialIsWitnessed' transfers as a SCHEMA, so it must be instantiated: either name the arguments at the cite (`[using model(M) specialIsWitnessed(<arg>…)]`) or cite it from inside a schema body whose own parameters stand in for its\n",
     );
     // A MODEL IS AN OVERLAY OVER THE WHOLE UNIVERSE, not scoped to one file (user ruling
     // 2026-09-26): the block names entities from THREE namespaces (top's, mid's and base's
@@ -337,7 +337,7 @@ pub fn addTests(
     // ... and the overlay's CONSISTENCY condition: a model that maps the symbols but leaves
     // base's axiom undischarged is REJECTED when the transfer reaches it two hops down —
     // the unmapped axiom stays in source terms and fails to match the relativized claim.
-    ctx.fail(&.{ "check", "tests/cases/model/alias/model_alias_borrowed_bad.b4m" }, "tests/cases/model/alias/model_alias_borrowed_base.b4m:9:4: error: Undischarged@unitTwice: step claims 'forall a: T; add(Z, a) = a' but the axiom derives 'forall a: S; op(U, a) = a'\n");
+    ctx.fail(&.{ "check", "tests/cases/model/alias/model_alias_borrowed_bad.b4m" }, "tests/cases/model/alias/model_alias_borrowed_base.b4m:12:4: error: Undischarged@unitTwice: step claims 'forall a: T; add(Z, a) = a' but the axiom derives 'forall a: S; op(U, a) = a'\n");
 
     // SCHEMA TRANSFER through a guarded model: a source induction SCHEMA (elemInduction) is
     // discharged by a local guard-relativized schema (goodInduction); a local schema cites it
@@ -348,14 +348,14 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/model/schema/model_schema_source.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/model/schema/model_schema.b4m" });
     ctx.ok(&.{ "check", "--fast-only", "model", "tests/cases/model/schema/model_schema.b4m" },
-        \\OK: 14 declarations, 2 theorems proven
+        \\OK: 16 declarations, 2 theorems proven
         \\  — (--fast set given, but no step used a trusted word — fully verified)
         \\
     );
     // RED: the transferring schema claims MORE than the discharging schema's instance gives
     // (the unguarded conclusion) — rejected as a claim/instance mismatch at the transfer step.
     ctx.fail(&.{ "check", "tests/cases/model/schema/model_schema_claim_bad.b4m" },
-        \\tests/cases/model/schema/model_schema_claim_bad.b4m:42:12: error: the claim does not match the instance's conclusion:
+        \\tests/cases/model/schema/model_schema_claim_bad.b4m:46:12: error: the claim does not match the instance's conclusion:
         \\  claim:      good(ZED) -> (forall k: Number; good(k) -> good(k) -> good(next(k))) -> forall n: Number; good(n)
         \\  instance:   good(ZED) -> (forall k: Number; good(k) -> good(k) -> good(next(k))) -> forall n: Number; good(n) -> good(n)
         \\
@@ -404,11 +404,11 @@ pub fn addTests(
     // "uncited code isn't checked"; a future --library mode would catch it. Both modes pass (no
     // step is admitted → --fast adds only the "no trusted word used" note).
     ctx.ok(&.{ "check", "tests/cases/schema/schema_wellformed_bad.b4m" },
-        \\OK: 11 declarations, 1 theorems proven
+        \\OK: 13 declarations, 1 theorems proven
         \\
     );
     ctx.ok(&.{ "check", "--fast", "tests/cases/schema/schema_wellformed_bad.b4m" },
-        \\OK: 11 declarations, 1 theorems proven
+        \\OK: 13 declarations, 1 theorems proven
         \\  — (--fast set given, but no step used a trusted word — fully verified)
         \\
     );
@@ -488,7 +488,7 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/sorts/refined_discharge_local.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/sorts/refined_discharge_const.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/sorts/refined_discharge_composite.b4m" });
-    ctx.fail(&.{ "check", "tests/cases/sorts/refined_discharge_bad.b4m" }, "tests/cases/sorts/refined_discharge_bad.b4m:21:4: error: step claims 'f(c) = c' but apply_at derives 'good(c) -> f(c) = c'\n");
+    ctx.fail(&.{ "check", "tests/cases/sorts/refined_discharge_bad.b4m" }, "tests/cases/sorts/refined_discharge_bad.b4m:24:4: error: step claims 'f(c) = c' but apply_at derives 'good(c) -> f(c) = c'\n");
     // H ∩ K ≤ G (the 13e acceptance stress test): a MULTI-GUARD model — the intersection
     // as `Grp where inH and inK`, base facts via the parens list, per-predicate closures
     // via the `-|` comma list, auto-weakening over the conjoined guard, and composite-
@@ -499,7 +499,7 @@ pub fn addTests(
     // goal — a flipped-equation goal is rejected (you can't prove what the source
     // theorem doesn't say).
     ctx.fail(&.{ "check", "--fast", "tests/cases/model/model_bad.b4m" },
-        \\tests/cases/model/model_bad.b4m:24:12: error: the claim does not match the model transfer of 'source.opUnitLeftTwice':
+        \\tests/cases/model/model_bad.b4m:27:12: error: the claim does not match the model transfer of 'source.opUnitLeftTwice':
         \\  claim:      forall a: Thing; combine(ZED, a) = combine(ZED, combine(ZED, a))
         \\  transfer:   forall a: Thing; combine(ZED, combine(ZED, a)) = combine(ZED, a)
         \\
@@ -508,10 +508,10 @@ pub fn addTests(
     // the polynomial tactic on a thin theory (no ring lemmas): it EMITS the certificate citing
     // the well-known lemmas by name (no produce-time lookup); the generated schema's ProveTask
     // then can't resolve them, failing "reference not found" at the `polynomial` step.
-    ctx.fail(&.{ "check", "tests/cases/tactics/polynomial/polynomial_oracle.b4m" }, "tests/cases/tactics/polynomial/polynomial_oracle.b4m:22:12: error: the generated proof of this step cites 'mulAddDistribRight', which is not in scope here; alias it from the theory that states it (`theorem mulAddDistribRight = <module>.mulAddDistribRight`)\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/polynomial/polynomial_oracle.b4m" }, "tests/cases/tactics/polynomial/polynomial_oracle.b4m:25:12: error: the generated proof of this step cites 'mulAddDistribRight', which is not in scope here; alias it from the theory that states it (`theorem mulAddDistribRight = <module>.mulAddDistribRight`)\n");
 
     ctx.ok(&.{ "check", "--fast", "tests/cases/tactics/polynomial/polynomial_oracle.b4m" },
-        \\OK: 6 declarations, 1 theorems proven
+        \\OK: 7 declarations, 1 theorems proven
         \\  — NOT FULLY VERIFIED: 1 theorem(s) accelerated (admitted, not proved): polynomial_quantified
         \\
     );
@@ -521,13 +521,13 @@ pub fn addTests(
     // which pool.args aliases — the old code read a dangling arg slice and
     // panicked. Must check clean under --fast (never crash).
     ctx.ok(&.{ "check", "--fast", "tests/cases/tactics/polynomial/polynomial_oob.b4m" },
-        \\OK: 6 declarations, 1 theorems proven
+        \\OK: 7 declarations, 1 theorems proven
         \\  — NOT FULLY VERIFIED: 1 theorem(s) accelerated (admitted, not proved): polynomial_quantified
         \\
     );
 
     // ac on different multisets reports the mismatch (emits kernel steps, not accelerated)
-    ctx.fail(&.{ "check", "tests/cases/tactics/ac/ac_bad.b4m" }, "tests/cases/tactics/ac/ac_bad.b4m:18:20: error: assoc_commut: sides have different summands: 'add(b, add(a, a))' vs 'add(b, a)'\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/ac/ac_bad.b4m" }, "tests/cases/tactics/ac/ac_bad.b4m:21:20: error: assoc_commut: sides have different summands: 'add(b, add(a, a))' vs 'add(b, a)'\n");
 
     // assoc_commut(assoc, comm, swap): the explicit-triple form on a CUSTOM
     // operator (emits kernel steps — the triple is kernel-checked).
@@ -535,19 +535,19 @@ pub fn addTests(
 
     // no partials: 1 or 2 args is an error (either bare or exactly three). (Column 12: the
     // rule word sits after `[using `.)
-    ctx.fail(&.{ "check", "tests/cases/tactics/assoc/assoc_commut_bad_arity.b4m" }, "tests/cases/tactics/assoc/assoc_commut_bad_arity.b4m:12:12: error: assoc_commut takes either no arguments (well-known add/mul) or exactly three (assoc, comm, swap); got 2\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/assoc/assoc_commut_bad_arity.b4m" }, "tests/cases/tactics/assoc/assoc_commut_bad_arity.b4m:15:12: error: assoc_commut takes either no arguments (well-known add/mul) or exactly three (assoc, comm, swap); got 2\n");
 
     // the bare assoc_commut form on a thin theory (no AC lemmas): it EMITS the certificate
     // citing the well-known AC triple by name (no produce-time lookup); the generated schema's
     // ProveTask can't resolve them, failing "reference not found" at the `assoc_commut` step.
     // (--fast is SUSPENDED during the demand rebuild — strict-only, so it errors identically.)
-    ctx.fail(&.{ "check", "tests/cases/tactics/assoc/assoc_commut_oracle.b4m" }, "tests/cases/tactics/assoc/assoc_commut_oracle.b4m:16:12: error: the generated proof of this step cites 'addIsAssociative', which is not in scope here; alias it from the theory that states it (`theorem addIsAssociative = <module>.addIsAssociative`)\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/assoc/assoc_commut_oracle.b4m" }, "tests/cases/tactics/assoc/assoc_commut_oracle.b4m:19:12: error: the generated proof of this step cites 'addIsAssociative', which is not in scope here; alias it from the theory that states it (`theorem addIsAssociative = <module>.addIsAssociative`)\n");
     // `--fast-only assoc_commut_all` ADMITS the step: `assoc_commut` accepts it on its own fast
     // check and never RESOLVES the cited lemma, so the strict-only "reference not found" is not
     // raised. Trusting the accelerant means accepting its steps unproved — the missing lemma
     // surfaces only in a strict run. Disclosed via the banner.
     ctx.ok(&.{ "check", "--fast-only", "assoc_commut_all", "tests/cases/tactics/assoc/assoc_commut_oracle.b4m" },
-        \\OK: 4 declarations, 1 theorems proven
+        \\OK: 5 declarations, 1 theorems proven
         \\  — NOT FULLY VERIFIED: 1 theorem(s) accelerated (admitted, not proved): assoc_commut_quantified
         \\
     );
@@ -557,10 +557,10 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/tactics/assoc/assoc.b4m" });
 
     // sides differ by more than associativity (operands permuted) → error
-    ctx.fail(&.{ "check", "tests/cases/tactics/assoc/assoc_bad.b4m" }, "tests/cases/tactics/assoc/assoc_bad.b4m:11:12: error: assoc: sides differ by more than associativity: 'op(a, b)' vs 'op(b, a)'\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/assoc/assoc_bad.b4m" }, "tests/cases/tactics/assoc/assoc_bad.b4m:14:12: error: assoc: sides differ by more than associativity: 'op(a, b)' vs 'op(b, a)'\n");
 
     // the required-arg contract: bare `assoc` is an error
-    ctx.fail(&.{ "check", "tests/cases/tactics/assoc/assoc_missing_arg.b4m" }, "tests/cases/tactics/assoc/assoc_missing_arg.b4m:10:12: error: assoc requires an associativity lemma: assoc(<assocLemma>); got 0 argument(s)\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/assoc/assoc_missing_arg.b4m" }, "tests/cases/tactics/assoc/assoc_missing_arg.b4m:13:12: error: assoc requires an associativity lemma: assoc(<assocLemma>); got 0 argument(s)\n");
 
     // the assoc tactic certifies by default. (The --fast accelerated verdict is SUSPENDED —
     // strict-only during the rebuild — so --fast just re-certifies, no acceleration banner.)
@@ -571,10 +571,10 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/tactics/simplify/simplify_quantified.b4m" });
 
     // simplify_quantified on a bare equation redirects to simplify
-    ctx.fail(&.{ "check", "tests/cases/tactics/simplify/simplify_quantified_bad.b4m" }, "tests/cases/tactics/simplify/simplify_quantified_bad.b4m:12:12: error: simplify_quantified expects a quantified goal; did you mean simplify?\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/simplify/simplify_quantified_bad.b4m" }, "tests/cases/tactics/simplify/simplify_quantified_bad.b4m:15:12: error: simplify_quantified expects a quantified goal; did you mean simplify?\n");
 
     // plain simplify on a quantified goal redirects to simplify_quantified
-    ctx.fail(&.{ "check", "tests/cases/tactics/simplify/simplify_on_quantified.b4m" }, "tests/cases/tactics/simplify/simplify_on_quantified.b4m:12:12: error: simplify proves equations; did you mean simplify_quantified?\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/simplify/simplify_on_quantified.b4m" }, "tests/cases/tactics/simplify/simplify_on_quantified.b4m:15:12: error: simplify proves equations; did you mean simplify_quantified?\n");
 
     // symmetry: y = x from x = y in one step, emits kernel steps
     ctx.okSilent(&.{ "check", "tests/cases/kernel/symmetry.b4m" });
@@ -587,10 +587,10 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/tactics/tautology/tautology.b4m" });
 
     // non-consequence: the diagnostic carries the countermodel
-    ctx.fail(&.{ "check", "tests/cases/tactics/tautology/tautology_bad.b4m" }, "tests/cases/tactics/tautology/tautology_bad.b4m:10:12: error: tautology: not a propositional consequence; countermodel: p() := true, q() := false\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/tautology/tautology_bad.b4m" }, "tests/cases/tactics/tautology/tautology_bad.b4m:13:12: error: tautology: not a propositional consequence; countermodel: p() := true, q() := false\n");
 
     // the atom cap is a hard, honest limit
-    ctx.fail(&.{ "check", "tests/cases/tactics/tautology/tautology_cap.b4m" }, "tests/cases/tactics/tautology/tautology_cap.b4m:25:12: error: tautology: 17 distinct atoms exceeds the limit of 16\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/tautology/tautology_cap.b4m" }, "tests/cases/tactics/tautology/tautology_cap.b4m:28:12: error: tautology: 17 distinct atoms exceeds the limit of 16\n");
 
     // `iff` surface sugar: `P iff Q` desugars to `(P -> Q) and (Q -> P)` (never
     // reaches the kernel). make_equivalence/equiv_forward/equiv_converse are thin
@@ -603,6 +603,14 @@ pub fn addTests(
     // treatment (the fact kind stays `theorem`), and citable WITHIN its own file exactly like
     // one. Push 1 only has to parse and prove it — the non-export rule and "every lemma must
     // be cited" are the next push.
+    // EVERY THEOREM MUST BE IN ITS FILE'S `intheory` MANIFEST — the two directions
+    // together (a forward promises a theorem; a theorem owes a forward) make the header a
+    // VERIFIED TABLE OF CONTENTS that cannot drift from the body. A `lemma` is exempt: it is
+    // the file's own working step, not part of what it publishes. Author hygiene, so
+    // `--draft` relaxes it.
+    ctx.fail(&.{ "check", "tests/cases/intheory/undeclared_theorem_bad.b4m" }, "tests/cases/intheory/undeclared_theorem_bad.b4m:11:9: error: theorem 'provedButNotDeclared' is not in this file's `intheory` manifest — add `intheory provedButNotDeclared` above, or make it a `lemma` if the file should not export it\n");
+    ctx.okSilent(&.{ "check", "--draft", "tests/cases/intheory/undeclared_theorem_bad.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/intheory/declared_theorem_ok.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/lemma/lemma_proves.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/lemma/lemma_cross_file_provider.b4m" });
     // WAITING RED TEST: cross-file citation of a lemma still RESOLVES today, which is the
@@ -611,14 +619,14 @@ pub fn addTests(
 
     // SOUNDNESS negative: an iff must not license an unrelated conclusion —
     // tautology rejects `A iff B, A ⊢ C` with a countermodel that respects the iff.
-    ctx.fail(&.{ "check", "tests/cases/kernel/iff_bad.b4m" }, "tests/cases/kernel/iff_bad.b4m:25:20: error: tautology: not a propositional consequence; countermodel: A() := true, B() := true, C() := false\n");
+    ctx.fail(&.{ "check", "tests/cases/kernel/iff_bad.b4m" }, "tests/cases/kernel/iff_bad.b4m:28:20: error: tautology: not a propositional consequence; countermodel: A() := true, B() := true, C() := false\n");
 
     // GUARD: the biconditional shape `(X -> Y) and (Y -> X)` is canonically an
     // iff — `both` is forbidden from producing it (must use `make_equivalence`)…
-    ctx.fail(&.{ "check", "tests/cases/kernel/iff_and_intro_bad.b4m" }, "tests/cases/kernel/iff_and_intro_bad.b4m:21:9: error: this goal is a biconditional '(X -> Y) and (Y -> X)' — use `make_equivalence` (which is the same rule, named for what it proves)\n");
+    ctx.fail(&.{ "check", "tests/cases/kernel/iff_and_intro_bad.b4m" }, "tests/cases/kernel/iff_and_intro_bad.b4m:24:9: error: this goal is a biconditional '(X -> Y) and (Y -> X)' — use `make_equivalence` (which is the same rule, named for what it proves)\n");
 
     // …and conversely `make_equivalence` requires that shape — a plain conjunction is rejected.
-    ctx.fail(&.{ "check", "tests/cases/kernel/iff_intro_bad.b4m" }, "tests/cases/kernel/iff_intro_bad.b4m:20:9: error: make_equivalence's goal must be a biconditional (from `P iff Q`); this goal is not of the form '(X -> Y) and (Y -> X)' — did you mean `both`?\n");
+    ctx.fail(&.{ "check", "tests/cases/kernel/iff_intro_bad.b4m" }, "tests/cases/kernel/iff_intro_bad.b4m:23:9: error: make_equivalence's goal must be a biconditional (from `P iff Q`); this goal is not of the form '(X -> Y) and (Y -> X)' — did you mean `both`?\n");
 
     // `equiv_rewrite`: the propositional analogue of `=`-rewrite. From `P iff Q`,
     // replace the sub-proposition P by Q at any position (subformula congruence,
@@ -628,10 +636,10 @@ pub fn addTests(
 
     // it is SOUND: the claim must be reachable by replacing P with Q (or Q with P
     // — equiv_rewrite is bidirectional) — an unrelated claim is rejected in BOTH.
-    ctx.fail(&.{ "check", "tests/cases/kernel/iff_rewrite_bad.b4m" }, "tests/cases/kernel/iff_rewrite_bad.b4m:21:12: error: equiv_rewrite cannot derive 'R()' from 'P()' using '(P() -> Q()) and (Q() -> P())' (tried both orientations)\n");
+    ctx.fail(&.{ "check", "tests/cases/kernel/iff_rewrite_bad.b4m" }, "tests/cases/kernel/iff_rewrite_bad.b4m:24:12: error: equiv_rewrite cannot derive 'R()' from 'P()' using '(P() -> Q()) and (Q() -> P())' (tried both orientations)\n");
 
     // …and its first argument must be a biconditional, not a plain implication.
-    ctx.fail(&.{ "check", "tests/cases/kernel/iff_rewrite_notbicond.b4m" }, "tests/cases/kernel/iff_rewrite_notbicond.b4m:20:23: error: equiv_rewrite expects a biconditional '(P -> Q) and (Q -> P)', got 'P() -> Q()'\n");
+    ctx.fail(&.{ "check", "tests/cases/kernel/iff_rewrite_notbicond.b4m" }, "tests/cases/kernel/iff_rewrite_notbicond.b4m:23:23: error: equiv_rewrite expects a biconditional '(P -> Q) and (Q -> P)', got 'P() -> Q()'\n");
 
     // BIDIRECTIONAL rewrite: an equation / biconditional cited in the "wrong"
     // orientation for the goal still rewrites — no preceding `symmetry` needed.
@@ -640,11 +648,11 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/kernel/iff_rewrite_reverse.b4m" });
     // …but a claim reachable in NEITHER orientation is still rejected (the change
     // is a superset of acceptance, not a hole).
-    ctx.fail(&.{ "check", "tests/cases/kernel/rewrite_bad.b4m" }, "tests/cases/kernel/rewrite_bad.b4m:23:4: error: rewrite cannot derive 'B = D' from 'A = C' using 'A = B' (tried both orientations)\n");
+    ctx.fail(&.{ "check", "tests/cases/kernel/rewrite_bad.b4m" }, "tests/cases/kernel/rewrite_bad.b4m:26:4: error: rewrite cannot derive 'B = D' from 'A = C' using 'A = B' (tried both orientations)\n");
 
     // Milestone C: arithmetic accelerated tactic — Presburger quantifier elimination
     ctx.ok(&.{ "check", "--fast", "tests/cases/tactics/arithmetic/arithmetic.b4m" },
-        \\OK: 10 declarations, 4 theorems proven
+        \\OK: 14 declarations, 4 theorems proven
         \\  — NOT FULLY VERIFIED: 4 theorem(s) accelerated (admitted, not proved): arithmetic
         \\
     );
@@ -655,21 +663,21 @@ pub fn addTests(
     // fixture has no ring lemmas in scope to certify with; strict certification
     // is exercised over the real integer theory in the std corpus.)
     ctx.ok(&.{ "check", "--fast", "tests/cases/tactics/arithmetic/arithmetic_integer.b4m" },
-        \\OK: 17 declarations, 8 theorems proven
+        \\OK: 25 declarations, 8 theorems proven
         \\  — NOT FULLY VERIFIED: 8 theorem(s) accelerated (admitted, not proved): arithmetic
         \\
     );
 
     // false statement: the diagnostic carries countermodel values
-    ctx.fail(&.{ "check", "tests/cases/tactics/arithmetic/arithmetic_bad.b4m" }, "tests/cases/tactics/arithmetic/arithmetic_bad.b4m:17:20: error: arithmetic: false at a := 0, b := 0\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/arithmetic/arithmetic_bad.b4m" }, "tests/cases/tactics/arithmetic/arithmetic_bad.b4m:20:20: error: arithmetic: false at a := 0, b := 0\n");
 
     // a relation opaque only because it hides a nonlinear term is
     // reported honestly as outside the fragment, not as a false countermodel
-    ctx.fail(&.{ "check", "tests/cases/tactics/arithmetic/arithmetic_frag.b4m" }, "tests/cases/tactics/arithmetic/arithmetic_frag.b4m:15:12: error: the generated proof of this step cites 'mulIsCommutative', which is not in scope here; alias it from the theory that states it (`theorem mulIsCommutative = <module>.mulIsCommutative`)\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/arithmetic/arithmetic_frag.b4m" }, "tests/cases/tactics/arithmetic/arithmetic_frag.b4m:18:12: error: the generated proof of this step cites 'mulIsCommutative', which is not in scope here; alias it from the theory that states it (`theorem mulIsCommutative = <module>.mulIsCommutative`)\n");
 
     // Milestone D: the SMT combination — mixed goals, one accelerated-tactic name
     ctx.ok(&.{ "check", "--fast", "tests/cases/tactics/smt/smt.b4m" },
-        \\OK: 9 declarations, 2 theorems proven
+        \\OK: 11 declarations, 2 theorems proven
         \\  — NOT FULLY VERIFIED: 2 theorem(s) accelerated (admitted, not proved): arithmetic
         \\
     );
@@ -718,7 +726,7 @@ pub fn addTests(
     // and hides the one-alias fix). Guards the equation certifier's decline reason.
     ctx.fail(
         &.{ "check", "tests/cases/tactics/arithmetic/arithmetic_missing_lemma_diagnostic.b4m" },
-        "tests/cases/tactics/arithmetic/arithmetic_missing_lemma_diagnostic.b4m:37:20: error: the generated proof of this step cites 'addLeftSwap', which is not in scope here; alias it from the theory that states it (`theorem addLeftSwap = <module>.addLeftSwap`)\n",
+        "tests/cases/tactics/arithmetic/arithmetic_missing_lemma_diagnostic.b4m:41:20: error: the generated proof of this step cites 'addLeftSwap', which is not in scope here; alias it from the theory that states it (`theorem addLeftSwap = <module>.addLeftSwap`)\n",
     );
 
     // opaque compound leaves: `add(f(x), sub(g(y), f(x))) = g(y)` — foreign
@@ -744,7 +752,7 @@ pub fn addTests(
     // a fallback, default mode is a hard error listing every link's decline
     // (the "solvable by arithmetic, not yet certifiable" gap)...
     ctx.fail(&.{ "check", "tests/cases/tactics/cooper/cooper_gap_raw.b4m" },
-        \\tests/cases/tactics/cooper/cooper_gap_raw.b4m:25:12: error: 'arithmetic' is valid but no certifier could prove it here:
+        \\tests/cases/tactics/cooper/cooper_gap_raw.b4m:28:12: error: 'arithmetic' is valid but no certifier could prove it here:
         \\  - equation/order/exists: form not in certification scope
         \\  - mixed-skeleton: form not in certification scope
         \\  - farkas: theory lacks symbol 'less_than'
@@ -754,7 +762,7 @@ pub fn addTests(
     );
     // ...and --fast accepts the accelerated verdict, marking the theorem accelerated.
     ctx.ok(&.{ "check", "--fast", "tests/cases/tactics/cooper/cooper_gap_raw.b4m" },
-        \\OK: 15 declarations, 1 theorems proven
+        \\OK: 16 declarations, 1 theorems proven
         \\  — NOT FULLY VERIFIED: 1 theorem(s) accelerated (admitted, not proved): arithmetic
         \\
     );
@@ -772,7 +780,7 @@ pub fn addTests(
     // Case D: a `fallback(<thm>)` on a goal the arithmetic CERTIFIER CHAIN can
     // discharge itself is REDUNDANT — strict `check` rejects it. (Distinct from
     // cooper_gap, where the certifier DECLINES so the fallback is legitimate.)
-    ctx.fail(&.{ "check", "tests/cases/tactics/arithmetic/arithmetic_fallback_redundant_bad.b4m" }, "tests/cases/tactics/arithmetic/arithmetic_fallback_redundant_bad.b4m:31:32: error: 'arithmetic' certifies this goal on its own — the fallback 'twoTimesTwoManual' is unnecessary; drop `fallback(twoTimesTwoManual)`\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/arithmetic/arithmetic_fallback_redundant_bad.b4m" }, "tests/cases/tactics/arithmetic/arithmetic_fallback_redundant_bad.b4m:35:32: error: 'arithmetic' certifies this goal on its own — the fallback 'twoTimesTwoManual' is unnecessary; drop `fallback(twoTimesTwoManual)`\n");
     // `--fast` suppresses it structurally (the certifier chain never runs).
     ctx.okSilent(&.{ "check", "--fast", "tests/cases/tactics/arithmetic/arithmetic_fallback_redundant_bad.b4m" });
     // `--draft` suppresses it (WIP: don't nag about redundant fallbacks yet).
@@ -804,8 +812,8 @@ pub fn addTests(
     // fragment, and without it `less_than(a, add(a, succ(b)))` decides false over ℤ — so
     // `trustedReadPass` demands them too, not just the untrusted read pass.
     // See design/acceleration.md.
-    ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/arithmetic/arithmetic_false_fast.b4m" }, "tests/cases/tactics/arithmetic/arithmetic_false_fast.b4m:12:12: error: arithmetic: the statement is false\n");
-    ctx.fail(&.{ "check", "tests/cases/tactics/arithmetic/arithmetic_false_fast.b4m" }, "tests/cases/tactics/arithmetic/arithmetic_false_fast.b4m:12:12: error: arithmetic: the statement is false\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/arithmetic/arithmetic_false_fast.b4m" }, "tests/cases/tactics/arithmetic/arithmetic_false_fast.b4m:15:12: error: arithmetic: the statement is false\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/arithmetic/arithmetic_false_fast.b4m" }, "tests/cases/tactics/arithmetic/arithmetic_false_fast.b4m:15:12: error: arithmetic: the statement is false\n");
     // and a TRUE goal no certifier can certify is ADMITTED under `--fast` (strict reports the
     // certification gap) — the `arithmetic.b4m` fixture above covers exactly that pair.
 
@@ -815,15 +823,15 @@ pub fn addTests(
     // direction (the 2026-10-26 sweep only probed the other one). The fixture's goal is true
     // over ℕ and false over ℤ, and the certifier can prove it from ℕ lemmas while the
     // sort-agnostic decision refutes it, so it separates the two paths exactly.
-    ctx.fail(&.{ "check", "tests/cases/tactics/arithmetic/arithmetic_strict_runs_the_gate.b4m" }, "tests/cases/tactics/arithmetic/arithmetic_strict_runs_the_gate.b4m:26:12: error: arithmetic: the statement is false\n");
-    ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/arithmetic/arithmetic_strict_runs_the_gate.b4m" }, "tests/cases/tactics/arithmetic/arithmetic_strict_runs_the_gate.b4m:26:12: error: arithmetic: the statement is false\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/arithmetic/arithmetic_strict_runs_the_gate.b4m" }, "tests/cases/tactics/arithmetic/arithmetic_strict_runs_the_gate.b4m:29:12: error: arithmetic: the statement is false\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/arithmetic/arithmetic_strict_runs_the_gate.b4m" }, "tests/cases/tactics/arithmetic/arithmetic_strict_runs_the_gate.b4m:29:12: error: arithmetic: the statement is false\n");
 
     // `simplify` runs its decision under `--fast` too — the normal-form comparison — and
     // declines only to EMIT the join certificate. A FALSE equation is rejected in both modes
     // with the same diagnostic. (It used to admit before normalizing, so `--fast` reported
     // `OK` for `add(ZERO, succ(ZERO)) = succ(succ(ZERO))`.)
-    ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/simplify/simplify_false_fast.b4m" }, "tests/cases/tactics/simplify/simplify_false_fast.b4m:11:12: error: simplify: normal forms differ: 'succ(ZERO)' vs 'succ(succ(ZERO))'\n");
-    ctx.fail(&.{ "check", "tests/cases/tactics/simplify/simplify_false_fast.b4m" }, "tests/cases/tactics/simplify/simplify_false_fast.b4m:11:12: error: simplify: normal forms differ: 'succ(ZERO)' vs 'succ(succ(ZERO))'\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/simplify/simplify_false_fast.b4m" }, "tests/cases/tactics/simplify/simplify_false_fast.b4m:14:12: error: simplify: normal forms differ: 'succ(ZERO)' vs 'succ(succ(ZERO))'\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/simplify/simplify_false_fast.b4m" }, "tests/cases/tactics/simplify/simplify_false_fast.b4m:14:12: error: simplify: normal forms differ: 'succ(ZERO)' vs 'succ(succ(ZERO))'\n");
     // The decision reads each cited rule's STATEMENT (no proof demand). For a `fact X = ns.y`
     // RE-EXPORT that means the alias chase must resolve the import name; `factOrigin` used to
     // give up when it was not fetched yet, and `--fast` then failed with "'X' has no stated
@@ -837,18 +845,18 @@ pub fn addTests(
     // SHAPE alone — `polynomial` accepted any add/mul-shaped equation, `tautology` any goal with
     // premises (its own comment said "no --fast escape", which the early admit undid), `chain`
     // any equation goal with a cited equation. See design/acceleration.md.
-    ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/polynomial/polynomial_false_fast.b4m" }, "tests/cases/tactics/polynomial/polynomial_false_fast.b4m:10:12: error: polynomial: sides expand differently: 'add(mul(a, a), add(mul(a, b), add(mul(a, b), mul(b, b))))' vs 'add(mul(a, a), mul(b, b))'\n");
-    ctx.fail(&.{ "check", "tests/cases/tactics/polynomial/polynomial_false_fast.b4m" }, "tests/cases/tactics/polynomial/polynomial_false_fast.b4m:10:12: error: polynomial: sides expand differently: 'add(mul(a, a), add(mul(a, b), add(mul(a, b), mul(b, b))))' vs 'add(mul(a, a), mul(b, b))'\n");
-    ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/tautology/tautology_false_fast.b4m" }, "tests/cases/tactics/tautology/tautology_false_fast.b4m:14:12: error: tautology: not a propositional consequence; countermodel: p(ZERO) := true\n");
-    ctx.fail(&.{ "check", "tests/cases/tactics/tautology/tautology_false_fast.b4m" }, "tests/cases/tactics/tautology/tautology_false_fast.b4m:14:12: error: tautology: not a propositional consequence; countermodel: p(ZERO) := true\n");
-    ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/chain/chain_false_fast.b4m" }, "tests/cases/tactics/chain/chain_false_fast.b4m:24:12: error: chain: cannot connect 'succ(ZERO)' to 'add(succ(ZERO), succ(ZERO))' from the cited equations\n");
-    ctx.fail(&.{ "check", "tests/cases/tactics/chain/chain_false_fast.b4m" }, "tests/cases/tactics/chain/chain_false_fast.b4m:24:12: error: chain: cannot connect 'succ(ZERO)' to 'add(succ(ZERO), succ(ZERO))' from the cited equations\n");
-    ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/assoc/assoc_false_fast.b4m" }, "tests/cases/tactics/assoc/assoc_false_fast.b4m:12:12: error: assoc: sides differ by more than associativity: 'add(a, b)' vs 'add(b, succ(a))'\n");
-    ctx.fail(&.{ "check", "tests/cases/tactics/assoc/assoc_false_fast.b4m" }, "tests/cases/tactics/assoc/assoc_false_fast.b4m:12:12: error: assoc: sides differ by more than associativity: 'add(a, b)' vs 'add(b, succ(a))'\n");
-    ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/assoc/assoc_commut_false_fast.b4m" }, "tests/cases/tactics/assoc/assoc_commut_false_fast.b4m:10:12: error: assoc_commut: sides have different summands: 'add(a, b)' vs 'add(a, succ(b))'\n");
-    ctx.fail(&.{ "check", "tests/cases/tactics/assoc/assoc_commut_false_fast.b4m" }, "tests/cases/tactics/assoc/assoc_commut_false_fast.b4m:10:12: error: assoc_commut: sides have different summands: 'add(a, b)' vs 'add(a, succ(b))'\n");
-    ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/extensionality/extensionality_false_fast.b4m" }, "tests/cases/tactics/extensionality/extensionality_false_fast.b4m:15:12: error: extensionality: could not close the pointwise obligation propositionally (is the identity true?)\n");
-    ctx.fail(&.{ "check", "tests/cases/tactics/extensionality/extensionality_false_fast.b4m" }, "tests/cases/tactics/extensionality/extensionality_false_fast.b4m:15:12: error: extensionality: could not close the pointwise obligation propositionally (is the identity true?)\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/polynomial/polynomial_false_fast.b4m" }, "tests/cases/tactics/polynomial/polynomial_false_fast.b4m:13:12: error: polynomial: sides expand differently: 'add(mul(a, a), add(mul(a, b), add(mul(a, b), mul(b, b))))' vs 'add(mul(a, a), mul(b, b))'\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/polynomial/polynomial_false_fast.b4m" }, "tests/cases/tactics/polynomial/polynomial_false_fast.b4m:13:12: error: polynomial: sides expand differently: 'add(mul(a, a), add(mul(a, b), add(mul(a, b), mul(b, b))))' vs 'add(mul(a, a), mul(b, b))'\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/tautology/tautology_false_fast.b4m" }, "tests/cases/tactics/tautology/tautology_false_fast.b4m:17:12: error: tautology: not a propositional consequence; countermodel: p(ZERO) := true\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/tautology/tautology_false_fast.b4m" }, "tests/cases/tactics/tautology/tautology_false_fast.b4m:17:12: error: tautology: not a propositional consequence; countermodel: p(ZERO) := true\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/chain/chain_false_fast.b4m" }, "tests/cases/tactics/chain/chain_false_fast.b4m:27:12: error: chain: cannot connect 'succ(ZERO)' to 'add(succ(ZERO), succ(ZERO))' from the cited equations\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/chain/chain_false_fast.b4m" }, "tests/cases/tactics/chain/chain_false_fast.b4m:27:12: error: chain: cannot connect 'succ(ZERO)' to 'add(succ(ZERO), succ(ZERO))' from the cited equations\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/assoc/assoc_false_fast.b4m" }, "tests/cases/tactics/assoc/assoc_false_fast.b4m:15:12: error: assoc: sides differ by more than associativity: 'add(a, b)' vs 'add(b, succ(a))'\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/assoc/assoc_false_fast.b4m" }, "tests/cases/tactics/assoc/assoc_false_fast.b4m:15:12: error: assoc: sides differ by more than associativity: 'add(a, b)' vs 'add(b, succ(a))'\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/assoc/assoc_commut_false_fast.b4m" }, "tests/cases/tactics/assoc/assoc_commut_false_fast.b4m:13:12: error: assoc_commut: sides have different summands: 'add(a, b)' vs 'add(a, succ(b))'\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/assoc/assoc_commut_false_fast.b4m" }, "tests/cases/tactics/assoc/assoc_commut_false_fast.b4m:13:12: error: assoc_commut: sides have different summands: 'add(a, b)' vs 'add(a, succ(b))'\n");
+    ctx.fail(&.{ "check", "--fast", "tests/cases/tactics/extensionality/extensionality_false_fast.b4m" }, "tests/cases/tactics/extensionality/extensionality_false_fast.b4m:18:12: error: extensionality: could not close the pointwise obligation propositionally (is the identity true?)\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/extensionality/extensionality_false_fast.b4m" }, "tests/cases/tactics/extensionality/extensionality_false_fast.b4m:18:12: error: extensionality: could not close the pointwise obligation propositionally (is the identity true?)\n");
 
     // Swept across all 17 trustable words: a word must not
     // ADMIT a goal the strict path REFUTES. (Distinct from the legitimate case where strict
@@ -865,15 +873,15 @@ pub fn addTests(
     //   - an antecedent-FREE instance whose conclusion is simply a different formula (the
     //     kernel's instantiation check).
     const mismatch = "tests/cases/tactics/specialize/specialize_claim_mismatch_fast.b4m";
-    const mismatch_diag = "tests/cases/tactics/specialize/specialize_claim_mismatch_fast.b4m:11:12: error: the claim does not match the instance's conclusion:\n  claim:      succ(ZERO) = ZERO\n  instance:   succ(ZERO) = succ(ZERO) -> ZERO = ZERO\n";
+    const mismatch_diag = "tests/cases/tactics/specialize/specialize_claim_mismatch_fast.b4m:14:12: error: the claim does not match the instance's conclusion:\n  claim:      succ(ZERO) = ZERO\n  instance:   succ(ZERO) = succ(ZERO) -> ZERO = ZERO\n";
     ctx.fail(&.{ "check", mismatch }, mismatch_diag);
     ctx.fail(&.{ "check", "--fast", mismatch }, mismatch_diag);
 
     // Strict reports the antecedent-free shape from the KERNEL, at the step label; --fast
     // reports it from the tactic's decide, at the justification. Same rejection, two sites.
     const unrelated = "tests/cases/tactics/specialize/specialize_claim_unrelated_bad.b4m";
-    ctx.fail(&.{ "check", unrelated }, "tests/cases/tactics/specialize/specialize_claim_unrelated_bad.b4m:22:4: error: step claims 'q(ZERO)' but instantiate derives 'p(ZERO)'\n");
-    ctx.fail(&.{ "check", "--fast", unrelated }, "tests/cases/tactics/specialize/specialize_claim_unrelated_bad.b4m:24:12: error: the claim does not match the instance's conclusion:\n  claim:      q(ZERO)\n  instance:   p(ZERO)\n");
+    ctx.fail(&.{ "check", unrelated }, "tests/cases/tactics/specialize/specialize_claim_unrelated_bad.b4m:25:4: error: step claims 'q(ZERO)' but instantiate derives 'p(ZERO)'\n");
+    ctx.fail(&.{ "check", "--fast", unrelated }, "tests/cases/tactics/specialize/specialize_claim_unrelated_bad.b4m:27:12: error: the claim does not match the instance's conclusion:\n  claim:      q(ZERO)\n  instance:   p(ZERO)\n");
 
     // Two theorems `specialize` ONE shared fact by DIFFERENT access paths — one by its
     // declared name, the other via a local step that `[by cite]`s it. The synthetic
@@ -900,7 +908,7 @@ pub fn addTests(
     // declaration-time wellformedness self-check (instantiate at opaque params,
     // run the proof) exercises arithmeticJustification, so a redundant `fallback`
     // in a schema's proof is rejected. `--fast`/`--draft` suppress it as usual.
-    ctx.fail(&.{ "check", "tests/cases/schema/schema_arithmetic_fallback_bad.b4m" }, "tests/cases/schema/schema_arithmetic_fallback_bad.b4m:30:32: error: 'arithmetic' certifies this goal on its own — the fallback 'twoTwo' is unnecessary; drop `fallback(twoTwo)`\n");
+    ctx.fail(&.{ "check", "tests/cases/schema/schema_arithmetic_fallback_bad.b4m" }, "tests/cases/schema/schema_arithmetic_fallback_bad.b4m:35:32: error: 'arithmetic' certifies this goal on its own — the fallback 'twoTwo' is unnecessary; drop `fallback(twoTwo)`\n");
     ctx.okSilent(&.{ "check", "--fast", "tests/cases/schema/schema_arithmetic_fallback_bad.b4m" });
     ctx.okSilent(&.{ "check", "--draft", "tests/cases/schema/schema_arithmetic_fallback_bad.b4m" });
 
@@ -915,7 +923,7 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/tactics/smt/smt_cert.b4m" });
 
     // mixed countermodel: arithmetic values plus opaque truth values
-    ctx.fail(&.{ "check", "tests/cases/tactics/smt/smt_bad.b4m" }, "tests/cases/tactics/smt/smt_bad.b4m:12:12: error: arithmetic: false at a := 0, p() := false\n");
+    ctx.fail(&.{ "check", "tests/cases/tactics/smt/smt_bad.b4m" }, "tests/cases/tactics/smt/smt_bad.b4m:15:12: error: arithmetic: false at a := 0, p() := false\n");
 
     // instantiating strongInduction re-checks its full stored proof
     ctx.okSilent(&.{ "check", "tests/cases/kernel/strong_induction.b4m" });

@@ -20,14 +20,14 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/namespaces/imports/diamond.b4m" });
 
     // guards travel across imports
-    ctx.fail(&.{ "check", "tests/cases/namespaces/imports/guarded_bad.b4m" }, "tests/cases/namespaces/imports/guarded_bad.b4m:7:5: error: unproved obligation: 'Z != Z'\n");
+    ctx.fail(&.{ "check", "tests/cases/namespaces/imports/guarded_bad.b4m" }, "tests/cases/namespaces/imports/guarded_bad.b4m:11:5: error: unproved obligation: 'Z != Z'\n");
 
     // a missing import file is a clean diagnostic at the import site
     // an import is READ by its own ParseTask when first cited into: the missing file is
     // reported at the import token that named it, and the citation then misses its fact.
     ctx.fail(&.{ "check", "tests/cases/namespaces/imports/missing_import.b4m" },
         \\tests/cases/namespaces/imports/missing_import.b4m:4:18: error: cannot open 'tests/cases/namespaces/imports/nope.b4m': file not found
-        \\tests/cases/namespaces/imports/missing_import.b4m:10:26: error: reference not found: 'reflexive'
+        \\tests/cases/namespaces/imports/missing_import.b4m:14:26: error: reference not found: 'reflexive'
         \\
     );
 
@@ -46,14 +46,14 @@ pub fn addTests(
     // 6 in the imported peano.b4m are dependencies, not this file's — the old eager engine's
     // transitive "7" was the whole dependency closure).
     ctx.ok(&.{ "check", "--fast-only", "import", "examples/peano-imports.b4m" },
-        \\OK: 22 declarations, 1 theorems proven
+        \\OK: 26 declarations, 1 theorems proven
         \\  — NOT FULLY VERIFIED: 1 theorem(s) accelerated (admitted, not proved): import
         \\
     );
 
     // --fast (trust everything) admits the same import step; the disclosure names the word.
     ctx.ok(&.{ "check", "--fast", "examples/peano-imports.b4m" },
-        \\OK: 22 declarations, 1 theorems proven
+        \\OK: 26 declarations, 1 theorems proven
         \\  — NOT FULLY VERIFIED: 1 theorem(s) accelerated (admitted, not proved): import
         \\
     );
@@ -64,13 +64,13 @@ pub fn addTests(
     // broken library proof (`A = A` claimed as `A = B`) fails regardless of the flag. There is
     // no longer a blind "trust imported proofs" escape (the old --faster).
     ctx.fail(&.{ "check", "--fast-only", "import", "tests/cases/namespaces/imports/trusts_broken.b4m" },
-        \\tests/cases/namespaces/imports/broken_lib.b4m:9:4: error: proof concludes 'A = A' but the theorem states 'A = B'
+        \\tests/cases/namespaces/imports/broken_lib.b4m:13:4: error: proof concludes 'A = A' but the theorem states 'A = B'
         \\
     );
 
     // ...and the DEFAULT (strict) catches it the same way.
     ctx.fail(&.{ "check", "tests/cases/namespaces/imports/trusts_broken.b4m" },
-        \\tests/cases/namespaces/imports/broken_lib.b4m:9:4: error: proof concludes 'A = A' but the theorem states 'A = B'
+        \\tests/cases/namespaces/imports/broken_lib.b4m:13:4: error: proof concludes 'A = A' but the theorem states 'A = B'
         \\
     );
 

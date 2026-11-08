@@ -35,8 +35,8 @@ below. The overview tables (`### Justification rules (overview table)`,
 | `KEYWORD: fact` | localize a named fact (axiom, theorem, hole) from an imported namespace |
 | `KEYWORD: hole` | aspirational placeholder (the "sorry"); `--draft` |
 | `KEYWORD: schemas` | parameterized `axiom`/`theorem` (a parameter list) |
-| `KEYWORD: intheory` | forward-declare a theorem (verified TOC) |
-| `KEYWORD: import` | load another file under a namespace |
+| `KEYWORD: intheory` | forward-declare a theorem — REQUIRED (verified TOC) |
+| `KEYWORD: theory` | load another file under a namespace |
 | `KEYWORD: alias` | local kind-checked view of an imported entity |
 | `KEYWORD: model` | declare a local structure models an abstract theory |
 | `JUSTIFICATION: by` | instruct the kernel to use one of the below RULEs |
@@ -677,13 +677,25 @@ theory divides_theory <<< "std/integer/divides.b4m"
 fact gcdGreatest = divides_theory.gcdGreatest
 ```
 
+**Required.** Every `theorem` a file proves must have its manifest entry, and every
+entry must be kept — the two directions together make the header a VERIFIED TABLE OF
+CONTENTS that cannot drift from the body. A reader learns what a file proves without
+reading it.
+
+A `lemma` is exempt by construction: it is the file's own working step, not part of
+what the file publishes, so it has nothing to announce. That is the choice the
+diagnostic offers — add the entry, or make it a `lemma`.
+
+This is author hygiene rather than soundness, so `--draft` relaxes it; a
+work-in-progress file stays writable.
+
 `intheory` promises a fact proved later in THIS file; a forward is that promise
 kept in another. Forward a theory's takeaway RESULTS, not the lemmas that got
 there — a consumer wanting a lemma imports the sub-theory directly. Name the
 import so it cannot collide with what it forwards (`divides_theory`, not
 `divides`).
 
-### KEYWORD: import
+### KEYWORD: theory
 
 Loads another file under a namespace. Members are referenced with
 qualified names (`peano.Nat`, `peano.addZeroLeft`). Paths beginning

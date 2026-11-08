@@ -22,7 +22,7 @@ pub fn addTests(
     // the banner fires. Under the default mode below they build kernel-checked
     // certificates (no acceleration).
     ctx.ok(&.{ "check", "--fast", "examples/peano.b4m" },
-        \\OK: 18 declarations, 6 theorems proven
+        \\OK: 21 declarations, 6 theorems proven
         \\  — NOT FULLY VERIFIED: 6 theorem(s) accelerated (admitted, not proved): simplify, arithmetic
         \\
     );
@@ -39,9 +39,9 @@ pub fn addTests(
     // the incorrect-proof showcase: three classic mistakes, three exact
     // diagnostics (this file is documentation; its output is the contract)
     ctx.fail(&.{ "check", "examples/incorrect.b4m" },
-        \\examples/incorrect.b4m:39:41: error: modus_ponens: expected antecedent 'raining()', got 'wet()'
-        \\examples/incorrect.b4m:61:4: error: step claims 'forall n: Nat; is_zero(n)' but generalize derives 'forall n: Nat; is_zero(ZERO)'
-        \\examples/incorrect.b4m:77:5: error: unproved obligation: 'ZERO != ZERO'
+        \\examples/incorrect.b4m:44:41: error: modus_ponens: expected antecedent 'raining()', got 'wet()'
+        \\examples/incorrect.b4m:66:4: error: step claims 'forall n: Nat; is_zero(n)' but generalize derives 'forall n: Nat; is_zero(ZERO)'
+        \\examples/incorrect.b4m:82:5: error: unproved obligation: 'ZERO != ZERO'
         \\
     );
 
