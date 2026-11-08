@@ -31,6 +31,7 @@ below. The overview tables (`### Justification rules (overview table)`,
 | `KEYWORD: pred` | predicate (function into `Prop`) |
 | `KEYWORD: axiom` | assert a formula without proof |
 | `KEYWORD: theorem` | assert a formula with a checked `proof … qed` |
+| `KEYWORD: lemma` | the same, for a result the file does NOT export |
 | `KEYWORD: fact` | localize a named fact (axiom, theorem, hole) from an imported namespace |
 | `KEYWORD: hole` | aspirational placeholder (the "sorry"); `--draft` |
 | `KEYWORD: schemas` | parameterized `axiom`/`theorem` (a parameter list) |
@@ -479,6 +480,29 @@ proof
   ...
 qed
 ```
+
+### KEYWORD: lemma
+
+The same declaration as `theorem` — identical syntax, identical proof obligation,
+identical kernel treatment (a lemma's fact kind IS `theorem`) — declaring a result
+**this file does not export**. It says "a step on the way to something here", so a
+reader need not weigh it as part of the file's interface.
+
+```2b4m
+lemma addZeroOnTheLeft: forall b: Nat; add(ZERO, b) = b
+proof
+  ...
+qed
+```
+
+Cite it within its own file exactly like a theorem. Another file may not: a `lemma`
+is not part of what its file publishes.
+
+NOTE (2026-11-07): the keyword parses and proves today, and the surface records the
+non-export bit, but the engine does not yet ENFORCE it — a cross-file citation still
+resolves. `tests/cases/lemma/lemma_cross_file_bad.b4m` is the waiting red test for
+that, alongside the companion rule that every lemma must be cited somewhere in its
+own file.
 
 ### KEYWORD: fact
 

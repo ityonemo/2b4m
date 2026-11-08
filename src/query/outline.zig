@@ -70,7 +70,7 @@ fn asProof(decl: ast.Decl) ?Proof {
     return switch (decl) {
         // a theorem carries a proof; a proof-carrying schema is just a theorem with params.
         .theorem => |t| switch (t) {
-            .local => |l| .{ .kind = if (l.fact.params != null) "schema" else "theorem", .name = l.fact.name, .steps = l.steps },
+            .local => |l| .{ .kind = if (l.fact.params != null) "schema" else if (l.fact.exported) "theorem" else "lemma", .name = l.fact.name, .steps = l.steps },
             .alias => null,
         },
         else => null,

@@ -162,7 +162,7 @@ fn stmtSpanOf(arena: Allocator, source: []const u8, name: []const u8) Allocator.
     var i: usize = 0;
     while (i + 1 < toks.len) : (i += 1) {
         const t = toks[i];
-        if (t.tag != .keyword_theorem) continue;
+        if (t.tag != .keyword_theorem and t.tag != .keyword_lemma) continue; // a lemma is a theorem here
         const nm = toks[i + 1];
         if (nm.tag != .identifier or !std.mem.eql(u8, source[nm.start..nm.end], name)) continue;
         var j = i + 1;
@@ -214,7 +214,7 @@ fn spanOf(arena: Allocator, source: []const u8, name: []const u8) Allocator.Erro
     var i: usize = 0;
     while (i + 1 < toks.len) : (i += 1) {
         const t = toks[i];
-        if (t.tag != .keyword_theorem) continue;
+        if (t.tag != .keyword_theorem and t.tag != .keyword_lemma) continue; // a lemma is a theorem here
         const nm = toks[i + 1];
         if (nm.tag != .identifier or !std.mem.eql(u8, source[nm.start..nm.end], name)) continue;
 
@@ -248,7 +248,7 @@ fn axiomSpanOf(arena: Allocator, source: []const u8, name: []const u8) Allocator
         var j = i + 1;
         while (j < toks.len) : (j += 1) {
             switch (toks[j].tag) {
-                .keyword_theory, .keyword_forward, .keyword_sort, .keyword_const, .keyword_define, .keyword_oper, .keyword_pred, .keyword_axiom, .keyword_theorem, .comment, .eof => break,
+                .keyword_theory, .keyword_forward, .keyword_sort, .keyword_const, .keyword_define, .keyword_oper, .keyword_pred, .keyword_axiom, .keyword_theorem, .keyword_lemma, .comment, .eof => break,
                 else => end = toks[j].end,
             }
         }

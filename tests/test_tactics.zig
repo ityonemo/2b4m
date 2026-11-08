@@ -599,6 +599,16 @@ pub fn addTests(
     // property the set/collection membership-axiom corpus relies on.
     ctx.okSilent(&.{ "check", "tests/cases/kernel/iff.b4m" });
 
+    // `lemma` declares a THEOREM that does not export: same proof obligation, same kernel
+    // treatment (the fact kind stays `theorem`), and citable WITHIN its own file exactly like
+    // one. Push 1 only has to parse and prove it — the non-export rule and "every lemma must
+    // be cited" are the next push.
+    ctx.okSilent(&.{ "check", "tests/cases/lemma/lemma_proves.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/lemma/lemma_cross_file_provider.b4m" });
+    // WAITING RED TEST: cross-file citation of a lemma still RESOLVES today, which is the
+    // hole push 2 closes. When the non-export rule lands this flips to a `ctx.fail`.
+    ctx.okSilent(&.{ "check", "tests/cases/lemma/lemma_cross_file_bad.b4m" });
+
     // SOUNDNESS negative: an iff must not license an unrelated conclusion —
     // tautology rejects `A iff B, A ⊢ C` with a countermodel that respects the iff.
     ctx.fail(&.{ "check", "tests/cases/kernel/iff_bad.b4m" }, "tests/cases/kernel/iff_bad.b4m:25:20: error: tautology: not a propositional consequence; countermodel: A() := true, B() := true, C() := false\n");

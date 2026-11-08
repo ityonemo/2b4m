@@ -1,0 +1,32 @@
+// A `lemma` is a THEOREM that does not export: same proof obligation, same kernel
+// treatment (`Fact.Kind` stays `{axiom, theorem}` — under the hood it IS a theorem),
+// but its name is not citable from another file.
+//
+// Push 1 of the keyword work only has to PARSE and PROVE it; the non-export rule is
+// enforced in the next push, together with "every lemma must be cited somewhere".
+sort Nat
+const ZERO: Nat
+oper succ(n: Nat) => Nat
+oper add(a: Nat, b: Nat) => Nat:
+  add(ZERO, b) = b;
+  add(succ(k), b) = succ(add(k, b))
+  lemma addZeroOnTheLeft: forall b: Nat; add(ZERO, b) = b
+proof
+  @conclusion |
+    forall b: Nat; add(ZERO, b) = b
+    [by definition(0) add]
+qed
+
+// a lemma is citable WITHIN its own file, exactly like a theorem
+theorem addZeroTwice: add(ZERO, add(ZERO, succ(ZERO))) = succ(ZERO)
+proof
+  @inner |
+    add(ZERO, succ(ZERO)) = succ(ZERO)
+    [using specialize addZeroOnTheLeft(succ(ZERO))]
+  @outer |
+    add(ZERO, add(ZERO, succ(ZERO))) = add(ZERO, succ(ZERO))
+    [using specialize addZeroOnTheLeft(add(ZERO, succ(ZERO)))]
+  @conclusion |
+    add(ZERO, add(ZERO, succ(ZERO))) = succ(ZERO)
+    [using chain outer inner]
+qed
