@@ -9,14 +9,14 @@ Repros in `drafts/uncited-alias/`.
 
 **A dangling MEMBER of a real file:**
 
-    import group_lagrange <<< "std/group/lagrange.b4m"   // the file exists
+    theory group_lagrange <<< "std/group/lagrange.b4m"   // the file exists
     sort G = group_lagrange.Grp                          // makes the import "used"
     fact lagrange = group_lagrange.noSuchTheoremAtAll    // this name does NOT exist
     → OK: 3 declarations, 0 theorems proven, exit 0
 
 **A dangling FILE, behind an alias that IS used:**
 
-    import lib <<< "no-such-file.b4m"
+    theory lib <<< "no-such-file.b4m"
     sort A = lib.X
     const Z: A                        // without this, the unused-alias check fires instead
     → OK: 3 declarations, 0 theorems proven, exit 0

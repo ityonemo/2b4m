@@ -37,7 +37,7 @@ They are orthogonal, and conflating them is the usual confusion.
 |---|---|---|
 | what it is | a namespace VALUE bound to a name | a universe of discourse over a source theory |
 | what it changes | where names are looked up | what the names MEAN |
-| surface | `import g <<< "std/group.b4m"`, then `g.Grp` | `model M { … }`, then `[using model(M) g.thm]` |
+| surface | `theory g <<< "std/group.b4m"`, then `g.Grp` | `model M { … }`, then `[using model(M) g.thm]` |
 | bulk open | never — references stay qualified | n/a |
 
 `import` is Zig-like: it yields a value you qualify through, with no bulk open and no

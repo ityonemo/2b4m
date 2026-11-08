@@ -146,7 +146,7 @@ fn render(w: *std.Io.Writer, source: []const u8, toks: []const Token) std.Io.Wri
         const wants_new_line: bool, const indent: u32 = decide: {
             switch (tok.tag) {
                 // inside [by ...], `axiom`/`theorem`/`model` are citations, not decls
-                .keyword_import, .keyword_forward, .keyword_sort, .keyword_const, .keyword_define, .keyword_oper, .keyword_pred, .keyword_fact, .keyword_axiom, .keyword_theorem, .keyword_hole, .keyword_model => {
+                .keyword_theory, .keyword_forward, .keyword_sort, .keyword_const, .keyword_define, .keyword_oper, .keyword_pred, .keyword_fact, .keyword_axiom, .keyword_theorem, .keyword_hole, .keyword_model => {
                     if (in_bracket) break :decide .{ false, 0 };
                     break :decide .{ true, 0 };
                 },
@@ -301,7 +301,7 @@ fn needSpace(prev: Tag, cur: Tag) bool {
         .pipe => return true,
         // `model(Instance)` / `import(NS)` cite with no space, like `arithmetic(peano)`
         // — `model`/`import` are keywords here, not identifiers, so admit them explicitly.
-        .l_paren => return prev != .identifier and prev != .kebab_identifier and prev != .l_paren and prev != .keyword_model and prev != .keyword_import,
+        .l_paren => return prev != .identifier and prev != .kebab_identifier and prev != .l_paren and prev != .keyword_model and prev != .keyword_theory,
         else => {},
     }
     switch (prev) {

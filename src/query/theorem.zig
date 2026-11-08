@@ -248,7 +248,7 @@ fn axiomSpanOf(arena: Allocator, source: []const u8, name: []const u8) Allocator
         var j = i + 1;
         while (j < toks.len) : (j += 1) {
             switch (toks[j].tag) {
-                .keyword_import, .keyword_forward, .keyword_sort, .keyword_const, .keyword_define, .keyword_oper, .keyword_pred, .keyword_axiom, .keyword_theorem, .comment, .eof => break,
+                .keyword_theory, .keyword_forward, .keyword_sort, .keyword_const, .keyword_define, .keyword_oper, .keyword_pred, .keyword_axiom, .keyword_theorem, .comment, .eof => break,
                 else => end = toks[j].end,
             }
         }
@@ -309,7 +309,7 @@ fn findImportPath(source: []const u8, path: []const u8, ns: []const u8, std_root
         const t = lex.next();
         if (t.tag == .eof) break;
         // `import <ns> <<< "path"` — capture ns after the keyword, path after <<<
-        if (prev.tag == .keyword_import and t.tag == .identifier) {
+        if (prev.tag == .keyword_theory and t.tag == .identifier) {
             import_ns = source[t.start..t.end];
         } else if (t.tag == .string and import_ns != null) {
             if (std.mem.eql(u8, import_ns.?, ns)) {

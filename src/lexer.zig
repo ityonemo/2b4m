@@ -37,7 +37,7 @@ pub const Token = struct {
         /// parent/universe space, no model — a refined target sort's guard predicate).
         symbol,
         // declaration keywords
-        keyword_import,
+        keyword_theory,
         keyword_forward,
         keyword_sort,
         keyword_const,
@@ -113,7 +113,7 @@ pub const Token = struct {
                 .kebab_identifier => "identifier",
                 .at_label => "@label",
                 .symbol => "symbol",
-                .keyword_import => "import",
+                .keyword_theory => "theory",
                 .keyword_forward => "intheory",
                 .keyword_sort => "sort",
                 .keyword_const => "const",
@@ -174,7 +174,7 @@ pub const Token = struct {
 };
 
 const keywords = std.StaticStringMap(Token.Tag).initComptime(.{
-    .{ "import", .keyword_import },
+    .{ "theory", .keyword_theory },
     .{ "intheory", .keyword_forward },
     .{ "sort", .keyword_sort },
     .{ "const", .keyword_const },
@@ -437,8 +437,18 @@ test "invalid characters produce invalid token" {
     try expectTags("both orx", &.{ .identifier, .identifier });
 }
 
+test "the theory-declaration keyword is `theory`; `import` is the ACCELERANT word only" {
+    // `theory peano <<< "..."` DECLARES: it binds a namespace value for another file's
+    // theory. `[using import(peano) thm]` CITES through it, and that rule word stays
+    // `import` — the two were one word doing two jobs, which also forced `keyword_import`
+    // to be special-cased in rule position (parser.zig) and pre-stamped with
+    // `RuleStr.import`'s id. As a plain identifier it interns like every other rule word.
+    try expectTags("theory peano <<< \"peano.b4m\"", &.{ .keyword_theory, .identifier, .import_arrow, .string });
+    try expectTags("import", &.{.identifier});
+}
+
 test "imports: keyword, arrow, string, qualified names" {
-    try expectTags("import peano <<< \"peano.b4m\"", &.{ .keyword_import, .identifier, .import_arrow, .string });
+    try expectTags("theory peano <<< \"peano.b4m\"", &.{ .keyword_theory, .identifier, .import_arrow, .string });
     try expectTags("peano.Nat", &.{.identifier});
     try expectTags("good(lib.NIL)", &.{ .identifier, .l_paren, .identifier, .r_paren });
     // '.' joins only before a letter/underscore; a lone '<' is invalid

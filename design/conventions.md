@@ -16,12 +16,12 @@ axioms → theorems. Blank lines between the groups; in larger files, section co
 `std/integer/order.b4m`, `std/integer/divides.b4m`, …). The parent ends with a
 `// THEORY OF X` section forwarding its sub-theories' results by alias
 (`theorem gcdGreatest = divides_theory.gcdGreatest`). A consumer then writes
-`import integer` and reaches the order, the division algorithm and gcd without knowing
+`theory integer` and reaches the order, the division algorithm and gcd without knowing
 which file proved which.
 
 Forward the **takeaway results** — what someone reasoning about the theory reaches for. A
 lemma belongs in the forwarding section no more than it belongs in an `intheory` block; a
-consumer that genuinely wants one keeps the honest `import integer/order`.
+consumer that genuinely wants one keeps the honest `theory integer/order`.
 
 **Name an import after its PATH, with `/` written `_`**: `std/function/invertible.b4m` is
 `function_invertible`, `std/integer/divides.b4m` is `integer_divides`, `std/peano.b4m` is

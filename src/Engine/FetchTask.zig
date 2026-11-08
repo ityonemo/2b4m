@@ -724,7 +724,7 @@ test "fetch: an import binds to the target file's namespace" {
         // `unused_aliases`), and this fixture's subject is RESOLUTION, not either of those.
         // A file that only re-exports satisfies neither check — which is the point: identity
         // is by origin, so a pure façade is an antipattern.
-        \\import peano <<< "child.b4m"
+        \\theory peano <<< "child.b4m"
         \\sort N = peano.Nat
         \\const Z: N
     );
@@ -846,7 +846,7 @@ test "fetch layer 2: a qualified param sort walks import -> child file's sort" {
     const io = threaded.io();
 
     const ctx = try fixtureCtx(arena, io, "/t/parent.b4m",
-        \\import peano <<< "child.b4m"
+        \\theory peano <<< "child.b4m"
         \\oper double(n: peano.Nat) => peano.Nat
     );
     const child_fid = try ctx.preload("/t/child.b4m", "sort Nat");
