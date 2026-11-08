@@ -495,14 +495,14 @@ proof
 qed
 ```
 
-Cite it within its own file exactly like a theorem. Another file may not: a `lemma`
-is not part of what its file publishes.
+Cite it within its own file exactly like a theorem. Another file may not, by either
+route — naming it through the declaring file's namespace (`[using import(I) helper]`,
+`[by cite I.helper]`), or re-exporting it with a `fact` alias. Both are errors that
+name the lemma and offer the fix: make it a `theorem` where it is declared, and add
+its `intheory` entry.
 
-NOTE (2026-11-07): the keyword parses and proves today, and the surface records the
-non-export bit, but the engine does not yet ENFORCE it — a cross-file citation still
-resolves. `tests/cases/lemma/lemma_cross_file_bad.b4m` is the waiting red test for
-that, alongside the companion rule that every lemma must be cited somewhere in its
-own file.
+Note that a lemma needs no `intheory` entry of its own, which is the other half of
+the same idea: the manifest lists what a file EXPORTS, and a lemma is not that.
 
 ### KEYWORD: fact
 
