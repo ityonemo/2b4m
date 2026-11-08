@@ -649,7 +649,7 @@ FORWARD — an alias to the fact another file proved — grouped in the same
 section:
 
 ```2b4m
-import divides_theory <<< "std/integer/divides.b4m"
+theory divides_theory <<< "std/integer/divides.b4m"
 fact gcdGreatest = divides_theory.gcdGreatest
 ```
 
@@ -667,7 +667,7 @@ qualified names (`peano.Nat`, `peano.addZeroLeft`). Paths beginning
 other paths resolve relative to the importing file.
 
 ```2b4m
-import peano <<< "std/peano.b4m"
+theory peano <<< "std/peano.b4m"
 ```
 
 A cross-file citation is an `import` `using` step. By default it is fully
@@ -706,7 +706,7 @@ discharge each of its axioms, and in exchange every theorem the theory proves be
 citable at your sort.
 
 ```2b4m
-import group <<< "std/group.b4m"
+theory group <<< "std/group.b4m"
 
 model AdditiveGroup {
   group.Grp:      Rat               // `:` — a sort interpretation
@@ -1521,7 +1521,7 @@ boundary. `I` names an `import` in scope; `thm` is a theorem (or axiom) that fil
 proves; the goal must equal its formula (up to α-equivalence).
 
 ```2b4m
-import lib <<< "std/lib.b4m"
+theory lib <<< "std/lib.b4m"
 // ...
 @conclusion |
   forall n: Nat; succ(n) = succ(n)

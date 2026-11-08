@@ -96,7 +96,7 @@ like any other declaration — bare when it is in scope, qualified through an im
 is not:
 
 ```2b4m
-import rational <<< "std/rational.b4m"
+theory rational <<< "std/rational.b4m"
 …
 [using model(rational.RationalOrderedField) field_order.zeroLessThanOne]
 ```

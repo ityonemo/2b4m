@@ -324,7 +324,7 @@ fn importPaths(arena: std.mem.Allocator, source: []const u8, from: []const u8, s
     while (true) {
         const t = lex.next();
         if (t.tag == .eof) break;
-        if (t.tag == .keyword_import) {
+        if (t.tag == .keyword_theory) {
             after_import = true;
         } else if (after_import and t.tag == .string) {
             const raw = source[t.start + 1 .. t.end - 1];

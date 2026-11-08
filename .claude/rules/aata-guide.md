@@ -23,7 +23,7 @@ the book's cumulative build:
   Chapter 2 works over ℤ, so importing `std/integer*` for the ℤ sort + its ring
   and order is fine ("Judson has ℤ").
 - Once **past** a chapter, later chapters may import that chapter's `std/` theory —
-  past Chapter 3 (groups), later chapters may `import std/group` ("Judson has
+  past Chapter 3 (groups), later chapters may declare `theory std/group` ("Judson has
   groups by then").
 - But a theorem Judson **builds in-text** must be **proved in the main text**, not
   aliased from a `std/` library that packaged it. The Division Algorithm (from

@@ -156,7 +156,7 @@ fn findImportPath(source: []const u8, path: []const u8, ns: []const u8, std_root
     while (true) {
         const t = lex.next();
         if (t.tag == .eof) break;
-        if (prev.tag == .keyword_import and t.tag == .identifier) {
+        if (prev.tag == .keyword_theory and t.tag == .identifier) {
             import_ns = source[t.start..t.end];
         } else if (t.tag == .string and import_ns != null) {
             if (std.mem.eql(u8, import_ns.?, ns)) {

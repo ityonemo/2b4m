@@ -680,7 +680,7 @@ test "library: an axiom no root theorem rests on is unused; one reached through 
         \\
         },
         .{ .path = "/lib/client.b4m", .source =
-        \\import base <<< "base.b4m"
+        \\theory base <<< "base.b4m"
         \\sort Nat = base.Nat
         \\const ZERO = base.ZERO
         \\pred even = base.even
@@ -739,29 +739,29 @@ test "library: a fact a model names as a discharger is USED, not unused" {
         \\
         },
         .{ .path = "/lib/concrete.b4m", .source =
-        \\import theory <<< "theory.b4m"
+        \\theory abstract <<< "theory.b4m"
         \\sort Thing
         \\const ZED: Thing
         \\oper combine(a: Thing, b: Thing) => Thing
         \\axiom combineZedLeft: forall a: Thing; combine(ZED, a) = a
         \\model ThingModel {
-        \\  theory.Elem: Thing
-        \\  theory.UNIT: ZED
-        \\  theory.op: combine
-        \\  theory.opUnitLeft <- combineZedLeft
+        \\  abstract.Elem: Thing
+        \\  abstract.UNIT: ZED
+        \\  abstract.op: combine
+        \\  abstract.opUnitLeft <- combineZedLeft
         \\}
         \\theorem combineZedTwice: forall a: Thing; combine(ZED, combine(ZED, a)) = combine(ZED, a)
         \\proof
         \\  @conclusion |
         \\    forall a: Thing; combine(ZED, combine(ZED, a)) = combine(ZED, a)
-        \\    [using model(ThingModel) theory.opUnitTwice]
+        \\    [using model(ThingModel) abstract.opUnitTwice]
         \\qed
         \\
         },
     };
     const r = try checkSources(arena, &files, true);
     try std.testing.expect(r.ok());
-    // `combineZedLeft` is cited by NO proof — the model discharges `theory.opUnitLeft` with it.
+    // `combineZedLeft` is cited by NO proof — the model discharges `abstract.opUnitLeft` with it.
     // That is a use.
     for (r.unused_axioms) |a| std.debug.print("unexpected unused: {s}\n", .{a.name});
     try std.testing.expectEqual(@as(usize, 0), r.unused_axioms.len);

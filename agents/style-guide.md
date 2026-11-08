@@ -119,7 +119,7 @@ form is a fine content label: `@add-is-commutative`.)
 - **Imports**: name an import after its PATH with `/` written `_`
   (`std/function/invertible.b4m` → `function_invertible`) — a namespace shares a
   declaration space with every symbol, so naming a theory after its subject
-  collides with the subject (`import invertible` beside `pred invertible = …` is
+  collides with the subject (`theory invertible` beside `pred invertible = …` is
   a hard duplicate-declaration error, plus confusing follow-on errors at each
   *use*). Then alias a name used more than once, qualify inline
   (`peano.mulSuccLeft`) for a single use. Prefer `by arithmetic(<module>)` in

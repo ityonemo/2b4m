@@ -215,7 +215,6 @@ pub const Parser = struct {
             // so stamping is a constant, no interning. (`axiom`/`theorem` are NO LONGER rule
             // words — fact citation is `cite` — so their keyword tokens aren't stamped.)
             .keyword_model => tok.name = InternPool.RuleStr.model.id(),
-            .keyword_import => tok.name = InternPool.RuleStr.import.id(),
             else => {},
         }
         return tok;
@@ -307,7 +306,7 @@ pub const Parser = struct {
 
     fn isTopLevelKeyword(tag: Token.Tag) bool {
         return switch (tag) {
-            .keyword_sort, .keyword_const, .keyword_define, .keyword_oper, .keyword_pred, .keyword_fact, .keyword_axiom, .keyword_hole, .keyword_theorem, .keyword_import, .keyword_forward, .keyword_model => true,
+            .keyword_sort, .keyword_const, .keyword_define, .keyword_oper, .keyword_pred, .keyword_fact, .keyword_axiom, .keyword_hole, .keyword_theorem, .keyword_theory, .keyword_forward, .keyword_model => true,
             else => false,
         };
     }
@@ -337,7 +336,7 @@ pub const Parser = struct {
         // path that `check` would otherwise accept in silence.
         for (self.unused_imports.keys(), self.unused_imports.values()) |ns, pending| {
             const ip = self.interner orelse break;
-            self.sink.add(self.file, pending.at, "import '{s}' ({s}) is never used — cite it, or remove it if the path is wrong", .{ ip.stringBytes(ns), ip.stringBytes(pending.path) }) catch return error.OutOfMemory;
+            self.sink.add(self.file, pending.at, "theory '{s}' ({s}) is never used — cite it, or remove it if the path is wrong", .{ ip.stringBytes(ns), ip.stringBytes(pending.path) }) catch return error.OutOfMemory;
         }
         // Likewise a non-`fact` alias nothing mentions: local vocabulary nothing speaks. A
         // `fact` alias is exempt — it is a re-export, so being unused HERE is its normal state.
@@ -352,7 +351,7 @@ pub const Parser = struct {
 
     fn parseDecl(self: *Parser) ParseError!ast.Decl {
         switch (self.tok.tag) {
-            .keyword_import => {
+            .keyword_theory => {
                 _ = self.advance();
                 const ns = try self.expect(.identifier);
                 _ = try self.expect(.import_arrow);
@@ -923,11 +922,13 @@ pub const Parser = struct {
                 };
                 _ = self.advance();
                 // rule position admits `model` (the `using model(M)` citation rule) even
-                // though it is a declaration keyword. `axiom`/`theorem` are NO LONGER rule
-                // words — fact citations use `cite` (kind-agnostic); the keyword tokens here
-                // surface the actionable diagnostic below.
+                // though it is a declaration keyword. `import` needs no such case — it is a
+                // rule word ONLY (the declaration keyword is `theory`), so it arrives as a
+                // plain identifier. `axiom`/`theorem` are NO LONGER rule words — fact
+                // citations use `cite` (kind-agnostic); the keyword tokens here surface the
+                // actionable diagnostic below.
                 const rule = switch (self.tok.tag) {
-                    .identifier, .keyword_model, .keyword_import => self.advance(),
+                    .identifier, .keyword_model => self.advance(),
                     .keyword_axiom, .keyword_theorem => return self.fail("'{s}' is no longer a citation rule; cite a fact with `by cite <name>`", .{self.describe()}),
                     else => return self.fail("expected a rule name, got '{s}'", .{self.describe()}),
                 };
@@ -1838,9 +1839,9 @@ test "an import no qualifier mentions is an error; a model block's qualifier cou
     // knowing anything about models — and why the six engine sites that resolve a qualifier
     // to a target need no instrumentation.
     const source =
-        \\import used_by_sort <<< "a.b4m"
-        \\import used_by_model <<< "b.b4m"
-        \\import dead <<< "c.b4m"
+        \\theory used_by_sort <<< "a.b4m"
+        \\theory used_by_model <<< "b.b4m"
+        \\theory dead <<< "c.b4m"
         \\sort G = used_by_sort.G
         \\model M {
         \\  used_by_model.G: G
@@ -1870,7 +1871,7 @@ test "a theory-rule argument marks an import used: `using import(I) thm` writes 
     // A CLI fixture cannot isolate this (the citer needs the imported SORT too, which marks
     // the import used via its qualifier), so the unit test is the only place it is guarded.
     const source =
-        \\import cited_only <<< "a.b4m"
+        \\theory cited_only <<< "a.b4m"
         \\sort T
         \\theorem t: forall a: T; a = a
         \\proof
@@ -1893,7 +1894,7 @@ test "a theory-rule argument marks an import used: `using import(I) thm` writes 
 
 test "the unused-import check sleeps without an interner (fmt/lint/query parse this way)" {
     const source =
-        \\import dead <<< "c.b4m"
+        \\theory dead <<< "c.b4m"
     ;
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
