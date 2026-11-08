@@ -13,7 +13,7 @@ axioms — `op` is commutative, and it has a right identity `E`.
 ```2b4m
 sort T
 const E: T
-func op(a: T, b: T) => T
+oper op(a: T, b: T) => T
 
 axiom opComm: forall a, b: T; op(a, b) = op(b, a)
 axiom opIdRight: forall a: T; op(a, E) = a

@@ -248,7 +248,7 @@ fn axiomSpanOf(arena: Allocator, source: []const u8, name: []const u8) Allocator
         var j = i + 1;
         while (j < toks.len) : (j += 1) {
             switch (toks[j].tag) {
-                .keyword_import, .keyword_forward, .keyword_sort, .keyword_const, .keyword_define, .keyword_func, .keyword_pred, .keyword_axiom, .keyword_theorem, .comment, .eof => break,
+                .keyword_import, .keyword_forward, .keyword_sort, .keyword_const, .keyword_define, .keyword_oper, .keyword_pred, .keyword_axiom, .keyword_theorem, .comment, .eof => break,
                 else => end = toks[j].end,
             }
         }

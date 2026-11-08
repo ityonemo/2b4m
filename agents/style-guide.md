@@ -15,7 +15,7 @@ long generation session — chiefly **proof labels**. When writing or reviewing 
 (e.g. an AATA textbook chapter into `aata/`), use discretion to match the
 source's own formatting where it conflicts with a convention — the book's
 notation is the point. This overrides the *naming* rules in particular: alias
-to the source's symbols (`sort G = group.Grp`, `func inv = group.inverse`,
+to the source's symbols (`sort G = group.Grp`, `oper inv = group.inverse`,
 `const e = group.E`), keep its one-letter variables, and mirror its theorem
 names. It does NOT excuse bad **labels** — the dump test still holds; a
 transcribed proof's own `@labels` are yours to write well regardless of the
@@ -108,7 +108,7 @@ form is a fine content label: `@add-is-commutative`.)
   statement binder, reuse the statement's own binder name; induction variable is
   `k`; re-fixing a conceptual var in a disjoint subproof appends an index
   (`a`, `a2`). No infix minus — ever (`sub(a, b)`).
-- **Defining a symbol**: prefer a DEFINITION BLOCK (`pred p(x: T):` / `func f(a:
+- **Defining a symbol**: prefer a DEFINITION BLOCK (`pred p(x: T):` / `oper f(a:
   T) => U:` followed by its clauses) over declaring the symbol and writing a
   separately-named axiom. Same meaning, but the reader sees at the declaration
   what the symbol MEANS, `--axioms` reports it as a definition rather than as an

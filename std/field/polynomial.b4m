@@ -33,10 +33,10 @@ const zeroF = field.ZERO
 pred nonzeroF = field.nonzero
 fact nonzeroFMeaning = field.nonzeroMeaning
 const oneF = field.ONE
-func addF = field.add
-func mulF = field.mul
-func negF = field.neg
-func recipF = field.recip
+oper addF = field.add
+oper mulF = field.mul
+oper negF = field.neg
+oper recipF = field.recip
 
 fact addIsAssociativeF = field.addIsAssociative
 fact addIsCommutativeF = field.addIsCommutative
@@ -54,13 +54,13 @@ fact oneNotZero = field.oneNotZero
 
 sort Nat = peano.Nat
 const ZERO = peano.ZERO
-func succ = peano.succ
+oper succ = peano.succ
 pred less_than = peano.less_than
 
 // -- the carrier: F[x] --------------------------------------------------------------------
 
 sort Poly
-func coeff(p: Poly, i: Nat) => F
+oper coeff(p: Poly, i: Nat) => F
 
 // The zero polynomial, named because every degree statement is guarded on `p != ZEROP`.
 // Its coefficient equation is not needed by anything proved here, so it is not asserted:
@@ -83,7 +83,7 @@ pred degreeAtMost(p: Poly, n: Nat)
 axiom degreeAtMostMeaning: forall p: Poly; forall n: Nat;
   degreeAtMost(p, n) iff (forall i: Nat; less_than(n, i) -> coeff(p, i) = zeroF)
 
-func degree(p: Poly) => Nat
+oper degree(p: Poly) => Nat
 axiom degreeIsALeadingIndex: forall p: Poly;
   (not (p = ZEROP)) -> (not (coeff(p, degree(p)) = zeroF))
 axiom degreeBoundsTheCoefficients: forall p: Poly;
@@ -98,13 +98,13 @@ axiom degreeBoundsTheCoefficients: forall p: Poly;
 // REINDEXED to match `ring_poly` (the no-totalizing-`sub` sweep): the second argument is the
 // COMPLEMENTARY exponent and counts down while the first counts up, so no subtraction
 // appears. See `std/ring/polynomial.b4m` for the rationale.
-func convolution(p: Poly, q: Poly, j: Nat, m: Nat) => F:
+oper convolution(p: Poly, q: Poly, j: Nat, m: Nat) => F:
   convolution(p, q, j, ZERO) = mulF(coeff(p, j), coeff(q, ZERO));
   convolution(p, q, j, succ(m)) =
   addF(mulF(coeff(p, j), coeff(q, succ(m))),
   convolution(p, q, succ(j), m))
 
-func mulP(p: Poly, q: Poly) => Poly:
+oper mulP(p: Poly, q: Poly) => Poly:
   coeff(mulP(p, q), i) = convolution(p, q, ZERO, i)
 
 // Judson's Proposition 17.4 over a field: a product of nonzeros is nonzero, and the degree
@@ -225,20 +225,20 @@ qed
 //
 // They are pure reification: nothing below proves anything ABOUT them directly. Their whole
 // job is to let `polyMulIsCommutative` land over `F`.
-func tailConvolution(p: Poly, q: Poly, j: Nat, m: Nat) => F:
+oper tailConvolution(p: Poly, q: Poly, j: Nat, m: Nat) => F:
   tailConvolution(p, q, ZERO, m) = mulF(coeff(p, ZERO), coeff(q, m));
   tailConvolution(p, q, succ(j), m) =
   addF(mulF(coeff(p, succ(j)), coeff(q, m)),
   tailConvolution(p, q, j, succ(m)))
 
-func segment(p: Poly, q: Poly, j: Nat, c: Nat, n: Nat) => F:
+oper segment(p: Poly, q: Poly, j: Nat, c: Nat, n: Nat) => F:
   segment(p, q, j, c, ZERO) = mulF(coeff(p, j), coeff(q, c));
   segment(p, q, succ(j), c, succ(n)) =
   addF(mulF(coeff(p, succ(j)), coeff(q, c)),
   segment(p, q, j, succ(c), n))
 
 // the bottom-up capped run, mirror of `segment`
-func rsegment(p: Poly, q: Poly, j: Nat, c: Nat, n: Nat) => F:
+oper rsegment(p: Poly, q: Poly, j: Nat, c: Nat, n: Nat) => F:
   rsegment(p, q, j, c, ZERO) = mulF(coeff(p, j), coeff(q, c));
   rsegment(p, q, j, succ(c), succ(n)) =
   addF(mulF(coeff(p, j), coeff(q, succ(c))),
@@ -250,41 +250,41 @@ func rsegment(p: Poly, q: Poly, j: Nat, c: Nat, n: Nat) => F:
 // Note what is NOT here: a subtraction. The ring version carries a term's three EXPONENTS and
 // names the index arithmetic (`theGapTo`, `theCofactorIndex`) rather than writing
 // `sub(sub(i,j),k)` — which is what retired the old standalone F[x] associativity file.
-func theGapTo(i: Nat, j: Nat) => Nat:
+oper theGapTo(i: Nat, j: Nat) => Nat:
   theGapTo(i, ZERO) = i;
   theGapTo(succ(i), succ(j)) = theGapTo(i, j)
 
-func theCofactorIndex(i: Nat, j: Nat, k: Nat) => Nat:
+oper theCofactorIndex(i: Nat, j: Nat, k: Nat) => Nat:
   theCofactorIndex(i, j, ZERO) = theGapTo(i, j);
   theCofactorIndex(i, j, succ(k)) = theGapTo(theGapTo(i, j), succ(k))
 
-func cappedRun(q: Poly, r: Poly, g: Nat, n: Nat) => F:
+oper cappedRun(q: Poly, r: Poly, g: Nat, n: Nat) => F:
   cappedRun(q, r, g, ZERO) = zeroF;
   cappedRun(q, r, g, succ(n)) =
   addF(cappedRun(q, r, g, n),
   mulF(coeff(q, n), coeff(r, theGapTo(g, n))))
 
-func tripleTerm(p: Poly, q: Poly, r: Poly, i: Nat, j: Nat, k: Nat) => F:
+oper tripleTerm(p: Poly, q: Poly, r: Poly, i: Nat, j: Nat, k: Nat) => F:
   tripleTerm(p, q, r, i, j, k) =
   mulF(mulF(coeff(p, j), coeff(q, k)), coeff(r, theCofactorIndex(i, j, k)))
 
-func tripleRow(p: Poly, q: Poly, r: Poly, i: Nat, j: Nat, n: Nat) => F:
+oper tripleRow(p: Poly, q: Poly, r: Poly, i: Nat, j: Nat, n: Nat) => F:
   tripleRow(p, q, r, i, j, ZERO) = zeroF;
   tripleRow(p, q, r, i, j, succ(n)) =
   addF(tripleRow(p, q, r, i, j, n), tripleTerm(p, q, r, i, j, n))
 
-func tripleDiag(p: Poly, q: Poly, r: Poly, i: Nat, m: Nat, c: Nat) => F:
+oper tripleDiag(p: Poly, q: Poly, r: Poly, i: Nat, m: Nat, c: Nat) => F:
   tripleDiag(p, q, r, i, m, ZERO) = zeroF;
   tripleDiag(p, q, r, i, m, succ(c)) =
   addF(tripleDiag(p, q, r, i, m, c),
   tripleTerm(p, q, r, i, c, theGapTo(m, c)))
 
-func tripleTri(p: Poly, q: Poly, r: Poly, i: Nat, n: Nat) => F:
+oper tripleTri(p: Poly, q: Poly, r: Poly, i: Nat, n: Nat) => F:
   tripleTri(p, q, r, i, ZERO) = zeroF;
   tripleTri(p, q, r, i, succ(n)) =
   addF(tripleTri(p, q, r, i, n), tripleDiag(p, q, r, i, n, succ(n)))
 
-func tripleRows(p: Poly, q: Poly, r: Poly, i: Nat, m: Nat, n: Nat) => F:
+oper tripleRows(p: Poly, q: Poly, r: Poly, i: Nat, m: Nat, n: Nat) => F:
   tripleRows(p, q, r, i, ZERO, n) = zeroF;
   tripleRows(p, q, r, i, succ(m), n) =
   addF(tripleRows(p, q, r, i, m, n),
@@ -294,10 +294,10 @@ func tripleRows(p: Poly, q: Poly, r: Poly, i: Nat, m: Nat, n: Nat) => F:
 //
 // Judson's `f(x) - (a_n/b_m) x^{n-m} g(x)` needs a difference, so addition and negation come
 // back here, now that there is a theorem that uses them.
-func addP(p: Poly, q: Poly) => Poly:
+oper addP(p: Poly, q: Poly) => Poly:
   coeff(addP(p, q), i) = addF(coeff(p, i), coeff(q, i))
 
-func negP(p: Poly) => Poly:
+oper negP(p: Poly) => Poly:
   coeff(negP(p), i) = negF(coeff(p, i))
 
 // `subP(p, q)` is `p - q`. Over a FIELD subtraction is total and honest — it is addition of
@@ -344,7 +344,7 @@ qed
 // `F[x]` above is observe-only — `coeff` reads a polynomial and only `ZEROP` is named, so
 // nothing BUILDS one. Judson's construction needs `(a_n / b_m) x^{n-m}`, a single term, so
 // that is the constructor to add: `monomial(a, k)` is the polynomial `a x^k`.
-func monomial(a: F, k: Nat) => Poly:
+oper monomial(a: F, k: Nat) => Poly:
   coeff(monomial(a, k), k) = a;
   (not (i = k)) -> coeff(monomial(a, k), i) = zeroF
 // Transferred: generic in the coefficient ring, so it lives in
@@ -972,7 +972,7 @@ qed
 // `polyMulIsCommutative` goes through them.
 // The unit polynomial as a named constant. A model target must be a SYMBOL, not an
 // expression, so `ring_poly.ONEP` cannot map onto `monomial(oneF, ZERO)` directly.
-func monomialOne() => Poly
+oper monomialOne() => Poly
 axiom monomialOneIsTheUnitMonomial: monomialOne = monomial(oneF, ZERO)
 
 // The unit polynomial, as `ring_poly` wants it: F[x] writes it `monomial(oneF, ZERO)`, and
@@ -2602,11 +2602,11 @@ qed
 // evaluation map has to be here. `evalUpTo(p, a, k)` is `a_0 + a_1 a + ... + a_{k-1} a^{k-1}`,
 // summed to a bound exactly as the convolution is; `p(a)` is then the sum to one past the
 // degree, which is the first bound that reaches every nonzero coefficient.
-func power(a: F, n: Nat) => F:
+oper power(a: F, n: Nat) => F:
   power(a, ZERO) = oneF;
   power(a, succ(n)) = mulF(a, power(a, n))
 
-func evalUpTo(p: Poly, a: F, k: Nat) => F:
+oper evalUpTo(p: Poly, a: F, k: Nat) => F:
   evalUpTo(p, a, ZERO) = zeroF;
   evalUpTo(p, a, succ(k)) = addF(evalUpTo(p, a, k), mulF(coeff(p, k), power(a, k)))
 

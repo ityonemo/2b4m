@@ -175,7 +175,7 @@ All four were committed in one session, with confident comments on each:
    conditions live. Cost here: a confident, published, wrong diagnosis.
 3. **The textbook-sounding assumption about your own symbols.** "A group is cancellative",
    "projections are linear" — true of groups and projections, but the symbol in your file is
-   an opaque `func` with no theory attached, so nothing makes it true. Test: is the structure
+   an opaque `oper` with no theory attached, so nothing makes it true. Test: is the structure
    the claim relies on actually declared?
 4. **The restated argument.** You formalize a *determination* argument as a *vanishing*
    argument, or assert a ground equation where the source gives a per-index identity. It
@@ -342,18 +342,18 @@ citation; `[by cite I.thm]` is the same effect but a plain re-checked obligation
 
 ## DEFINITION BLOCKS — a declaration may carry its defining clauses
 
-A `pred`/`func` declaration followed by `:` takes the clauses that characterize
+A `pred`/`oper` declaration followed by `:` takes the clauses that characterize
 it, `;`-separated. Each clause is written EXACTLY as the axiom it becomes.
 
 ```2b4m
 pred isZero(n: Nat):
   isZero(n) iff n = ZERO          // a predicate: one clause, writes its connective
 
-func add(a: Nat, b: Nat) => Nat:
+oper add(a: Nat, b: Nat) => Nat:
   add(ZERO, b) = b;               // a function: one clause per case
   add(succ(k), b) = succ(add(k, b))
 
-func gcd(a: Nat, b: Nat) => Nat:  // guards when the heads don't distinguish
+oper gcd(a: Nat, b: Nat) => Nat:  // guards when the heads don't distinguish
   gcd(a, b) = a                  when b = ZERO;
   gcd(a, b) = gcd(b, mod(a, b))  when b != ZERO
 ```
@@ -373,13 +373,13 @@ func gcd(a: Nat, b: Nat) => Nat:  // guards when the heads don't distinguish
 
 ## Declaration keywords — one-liners; detail at `### KEYWORD: <name>` in GUIDE.md
 
-`sort` (a type; `sort H = G where inH` is a refined subsort; `where inH and inK` conjoins guards), `const` (0-ary), `func` (returns a term-sort, never Prop — RESULT SORT AFTER `=>`: `func f(a: T) => U`), `pred` (opaque predicate; ALWAYS writes its parens — a nullary one is `pred q()`, used/parameterized/passed as `q()`, never bare; a nullary `func` stays bare, being `const`-shaped), `axiom`, `theorem`, `hole` (aspirational placeholder — a top-level DECLARATION, NOT a `[by hole]` step; default rejects, `--draft` allows), `intheory <name>` (forward-declare a theorem — "in theory it holds; you owe the proof later"), `import X <<< "path"`, aliases (`sort A = X.B`, `func f = X.g`; a FACT re-export is always `fact T = X.t` — one keyword whatever the target's kind, since an alias cannot know it and `--axioms` reports the origin's true kind anyway. `axiom T = X.t` / `theorem T = X.t` are hard errors, and `fact` has no local form), `model NAME { src: tgt … ; srcAxiom <- localFact … }` (interpret an abstract theory's primitives with `:` + discharge its axioms with `<-`, so its theorems transfer; cite `[using model(NAME) src.thm]`. `:` on an axiom or `<-` on a symbol is a hard error; a source theorem isn't mappable; `@`-projection is `<-`-only). GUARDED model (sort mapped onto `G where inH`): NOMINATE membership dischargers on the `:` map — a CONST `src.C: TGT(baseFact…)` (parens; one ground fact per guard pred), a FUNC `src.op: F -| closureFact…` (`-|`; closure preserves membership). Transferred theorems relativize (`inH(x) ->` per binder); an unconditional axiom mapped to itself auto-weakens.
+`sort` (a type; `sort H = G where inH` is a refined subsort; `where inH and inK` conjoins guards), `const` (0-ary), `oper` (an operation; RESULT SORT AFTER `=>`: `oper f(a: T) => U`), `pred` (opaque predicate; ALWAYS writes its parens — a nullary one is `pred q()`, used/parameterized/passed as `q()`, never bare; a nullary `oper` stays bare, being `const`-shaped), `axiom`, `theorem`, `hole` (aspirational placeholder — a top-level DECLARATION, NOT a `[by hole]` step; default rejects, `--draft` allows), `intheory <name>` (forward-declare a theorem — "in theory it holds; you owe the proof later"), `import X <<< "path"`, aliases (`sort A = X.B`, `oper f = X.g`; a FACT re-export is always `fact T = X.t` — one keyword whatever the target's kind, since an alias cannot know it and `--axioms` reports the origin's true kind anyway. `axiom T = X.t` / `theorem T = X.t` are hard errors, and `fact` has no local form), `model NAME { src: tgt … ; srcAxiom <- localFact … }` (interpret an abstract theory's primitives with `:` + discharge its axioms with `<-`, so its theorems transfer; cite `[using model(NAME) src.thm]`. `:` on an axiom or `<-` on a symbol is a hard error; a source theorem isn't mappable; `@`-projection is `<-`-only). GUARDED model (sort mapped onto `G where inH`): NOMINATE membership dischargers on the `:` map — a CONST `src.C: TGT(baseFact…)` (parens; one ground fact per guard pred), a FUNC `src.op: F -| closureFact…` (`-|`; closure preserves membership). Transferred theorems relativize (`inH(x) ->` per binder); an unconditional axiom mapped to itself auto-weakens.
 
 ## `import` and `model` — unlearn the Python prior (these are two different axes)
 
 A recurring wrong assumption, imported from Python, is that `import` dumps names into your namespace and that `model` is some flavor of import. Neither is true.
 
-- **`import` is LIKE a Zig import, not a Python one.** `import peano <<< "std/peano.b4m"` binds a namespace VALUE (the mental model is `const peano = @import("...")`, not `from peano import *`). You reach members fully-qualified: `peano.mulAddDistribLeft`. There is NO bulk open, no bare re-export. Importing `field` never gives you a bare `mulAddDistribLeft` in scope; only `field.mulAddDistribLeft`. To get a bare local name you must ALIAS (`func add = field.add`) or DECLARE a local theorem.
+- **`import` is LIKE a Zig import, not a Python one.** `import peano <<< "std/peano.b4m"` binds a namespace VALUE (the mental model is `const peano = @import("...")`, not `from peano import *`). You reach members fully-qualified: `peano.mulAddDistribLeft`. There is NO bulk open, no bare re-export. Importing `field` never gives you a bare `mulAddDistribLeft` in scope; only `field.mulAddDistribLeft`. To get a bare local name you must ALIAS (`oper add = field.add`) or DECLARE a local theorem.
 - **`model` is NOT `import` — it is structure interpretation.** A `model` maps an abstract theory's symbols to YOUR local symbols and discharges its axioms; in return its THEOREMS become true of your symbols and citable via `[using model(NAME) src.thm]`. It does **not** put any name into your scope. The theorem is a fact about your symbols; it has no bare local name until you write one.
 - **Consequence — the shim idiom.** When an accelerant (`polynomial(myTheory)`, `arithmetic`) resolves a lemma by BARE name in your file's scope (self-theory), a model-transferred fact won't resolve — it has no bare name. Bridge the two axes with a one-line SHIM theorem: `theorem barelyNamedLemma: <stmt in your symbols> [using model(NAME) src.thm]` (a THEOREM with a proof, not a `fact` — `fact` only re-exports an existing name). Every model-based concrete sort (e.g. ℚ/ℝ/ℂ modeling `field`) pays this shim cost to use bare-name accelerants; the aliased case does not. This is the price of the model system, not a bug.
 
@@ -411,6 +411,6 @@ A recurring wrong assumption, imported from Python, is that `import` dumps names
 - `common_conclusion` is BINARY. 3-way → `case`.
 - Cite a theorem/axiom as a `[by cite X]` STEP before a later `apply_at` refs that step.
 - No `<->`; use `iff`. No `<->`-style iff intro/elim beyond `make_equivalence`/`equiv_forward`/`equiv_converse`.
-- A `func` cannot return `Prop` and cannot take a `-> Prop` parameter; predicates are opaque (no body).
+- An `oper` cannot take a `-> Prop` parameter; predicates are opaque (no body). (`Prop` is not a nameable sort, so `=> Prop` fails as `reference not found: 'Prop'` — there is no term-sort-vs-Prop rule to remember.)
 - No variable shadowing (checker-enforced). When generalizing a statement binder, reuse the statement's binder name.
 - A declarations-only file (no `theorem`s) checks with an informational note + exit 0 — that's fine, it's a dependency. A file that declares theorems but a proof fails is a hard error.

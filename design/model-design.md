@@ -18,7 +18,7 @@ universe, and which local facts pay off the source theory's axioms:
 model ZnGroup {
   group.Grp: Zn                           // `:`  interprets a sort
   group.E: ZERO                           // `:`  interprets a const
-  group.op: add                           // `:`  interprets a func
+  group.op: add                           // `:`  interprets an oper
   group.inverse: neg
   group.opAssoc <- addAssoc               // `<-` discharges an axiom obligation
   group.opIdentityLeft <- addIdentityLeft
@@ -35,7 +35,7 @@ and are told apart only by it.
 
 | arrow | left side | right side | reads as |
 |---|---|---|---|
-| `:` | a sort, const, func or pred | the symbol it means here | "is interpreted as" |
+| `:` | a sort, const, oper or pred | the symbol it means here | "is interpreted as" |
 | `<-` | an axiom of the source theory | a fact that establishes it | "is discharged by" |
 
 An axiom obligation names a *fact* — an existing axiom or theorem whose formula already
@@ -47,13 +47,13 @@ says which lines are *definitions of meaning* and which are *debts being paid*.
 
 ### `definition` — a definition block discharges a definition block, arm for arm
 
-A multi-clause `func f(…) => U: f(…) = …; f(…) = …` publishes one obligation per clause,
+A multi-clause `oper f(…) => U: f(…) = …; f(…) = …` publishes one obligation per clause,
 and those clauses have **no user-facing names** — so there is nothing to put on the right
 of a `<-` per arm. Instead the SYMBOL stands for the whole obligation set, and clause 0
 discharges clause 0, clause 1 clause 1:
 
 ```2b4m
-func madd(a: M, b: M) => M:
+oper madd(a: M, b: M) => M:
   madd(MZ, b) = b;
   madd(msucc(k), b) = msucc(madd(k, b))
 
@@ -167,7 +167,7 @@ sort QStar = Rat where nonzero
 model RationalUnitsGroup {
   group.Grp: QStar                                  // predicated ⇒ relativized by `nonzero`
   group.E: ONE(oneIsNonzero)                        // a const names its BASE fact
-  group.op: mul -| productOfNonzeroIsNonzero        // a func names its CLOSURE fact
+  group.op: mul -| productOfNonzeroIsNonzero        // an oper names its CLOSURE fact
   group.inverse: recip -| recipOfNonzeroIsNonzero
   group.opAssoc <- unitsAssoc                       // already guarded by nonzero
   group.opIdentityLeft <- unitsIdentityLeft
@@ -182,7 +182,7 @@ guards — the checker does not synthesize or strip them, which is why `unitsAss
 `QStar` theorem rather than a bare `Rat` one.
 
 So a guarded model nominates **guard dischargers** right on the `:` lines — a const's base
-fact in parens, a func's closure fact after `-|` — because a refined target makes every
+fact in parens, an oper's closure fact after `-|` — because a refined target makes every
 mapped symbol owe its guard. They are looked up by `InternPool.modelDischargers` and
 discharged at the call site by `Prove.withGuardPremises`.
 

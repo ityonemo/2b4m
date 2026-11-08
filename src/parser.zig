@@ -114,7 +114,7 @@ pub const Parser = struct {
     const PendingImport = struct { at: u32, path: InternPool.StrId };
 
     /// An alias awaiting its first bare mention: where it was declared, its keyword (for the
-    /// message — "sort"/"const"/"func"/"pred"), and the NAMESPACE it was aliased from.
+    /// message — "sort"/"const"/"oper"/"pred"), and the NAMESPACE it was aliased from.
     ///
     /// The namespace is what implements the AGGREGATOR EXEMPTION. A `fact` re-exported from
     /// namespace N is a statement written in N's vocabulary, and a consumer citing it needs
@@ -307,7 +307,7 @@ pub const Parser = struct {
 
     fn isTopLevelKeyword(tag: Token.Tag) bool {
         return switch (tag) {
-            .keyword_sort, .keyword_const, .keyword_define, .keyword_func, .keyword_pred, .keyword_fact, .keyword_axiom, .keyword_hole, .keyword_theorem, .keyword_import, .keyword_forward, .keyword_model => true,
+            .keyword_sort, .keyword_const, .keyword_define, .keyword_oper, .keyword_pred, .keyword_fact, .keyword_axiom, .keyword_hole, .keyword_theorem, .keyword_import, .keyword_forward, .keyword_model => true,
             else => false,
         };
     }
@@ -413,11 +413,11 @@ pub const Parser = struct {
                 _ = try self.expect(.equal);
                 return .{ .define = .{ .name = name, .params = params, .value = try self.parseExpr() } };
             },
-            .keyword_func => {
+            .keyword_oper => {
                 _ = self.advance();
                 const name = try self.expect(.identifier);
                 if (try self.parseAliasTail()) |target| {
-                    try self.presumeAliasDead(name, "func", target);
+                    try self.presumeAliasDead(name, "oper", target);
                     return .{ .func = .{ .alias = .{ .name = name, .target = target } } };
                 }
                 const params = try self.parseParams(false);
@@ -1483,7 +1483,7 @@ test "declarations parse" {
     const source =
         \\sort Nat
         \\const ZERO: Nat
-        \\func div(a: Nat, b: Nat) => Nat requires b != ZERO
+        \\oper div(a: Nat, b: Nat) => Nat requires b != ZERO
         \\pred even(n: Nat)
         \\axiom reflAx: forall x: Nat; x = x
         \\axiom induction(prop(Nat)):

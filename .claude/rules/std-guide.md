@@ -18,10 +18,10 @@ Declare the guard on the DECLARATION, with `requires`, so every application owes
 obligation at the call site:
 
 ```2b4m
-func div(a: Int, b: Int) => Int requires less_than(ZERO, b)
-func recip(a: Field) => Field requires nonzero(a)
-func sqrt(x: Real) => Real requires less_or_equal(ZERO, x)
-func inverse(f: Fn) => Fn requires invertible(f)
+oper div(a: Int, b: Int) => Int requires less_than(ZERO, b)
+oper recip(a: Field) => Field requires nonzero(a)
+oper sqrt(x: Real) => Real requires less_or_equal(ZERO, x)
+oper inverse(f: Fn) => Fn requires invertible(f)
 ```
 
 **Why it is a safety property and not a style preference** (user, 2026-11-03): this software
@@ -30,7 +30,7 @@ TOTAL reciprocal divides by it — the proof discharges, the junk value propagat
 formal artifact flags nothing. You can crash an airplane with verified code. A guarded
 operation turns "prove the count is nonzero" into an obligation where the division happens.
 
-**The guarded-AXIOM dodge is the same violation.** A total `func recip` plus
+**The guarded-AXIOM dodge is the same violation.** A total `oper recip` plus
 `axiom fieldInverse: a != ZERO -> mul(a, recip(a)) = ONE` makes `recip(ZERO)` unusable in a
 proof but still WRITABLE in a statement, so a term can still mean nothing. `std/field.b4m`
 and `std/function.b4m` both used to state this in their own words as a defence; neither
@@ -54,7 +54,7 @@ literature agrees on.
   every `assume` — that placement serves the whole nesting with no antecedent.
 - **A `define` whose body calls a guarded operation propagates the guard to EVERY use site.**
   `define abs(z) = sqrt(normSq(z))` re-raised `0 <= normSq(z)` at all 84 uses. If the defined
-  symbol is itself TOTAL, convert it to a `func` with a defining axiom so the obligation is
+  symbol is itself TOTAL, convert it to an `oper` with a defining axiom so the obligation is
   met ONCE.
 
 When a guarded operation cannot satisfy an existing interface, **restate the thing as a
@@ -69,8 +69,8 @@ letter:
 
 ```2b4m
 // in std/integer/embedding.b4m — ℤ is the theory, ℕ is visiting
-const ZERO      = integer.ZERO        func add     = integer.add
-const NAT_ZERO  = peano.ZERO          func nat_add = peano.add
+const ZERO      = integer.ZERO        oper add     = integer.add
+const NAT_ZERO  = peano.ZERO          oper nat_add = peano.add
 ```
 
 Spell the prefix `nat_`/`NAT_`, `int_`/`INT_`, `real_`/`REAL_`, `cplx_`/`CPLX_`, and for

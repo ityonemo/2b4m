@@ -622,7 +622,7 @@ test "ast registry: declOf resolves parsed decls by name; a miss is null; a synt
 
     const ctx = try fixtureCtx(arena, io, "/t/a.b4m",
         \\sort Nat
-        \\func succ(n: Nat) => Nat
+        \\oper succ(n: Nat) => Nat
         \\axiom refl: forall n: Nat; n = n
     );
     const fid = (try ctx.lookupFile("/t/a.b4m")).?;
@@ -791,7 +791,7 @@ test "fetch layer 2: a func's sorts are sub-demanded; sig + param names assemble
 
     const ctx = try fixtureCtx(arena, io, "/t/a.b4m",
         \\sort Nat
-        \\func add(a: Nat, b: Nat) => Nat
+        \\oper add(a: Nat, b: Nat) => Nat
         \\pred le(a: Nat, b: Nat)
         \\const ZERO: Nat
     );
@@ -847,7 +847,7 @@ test "fetch layer 2: a qualified param sort walks import -> child file's sort" {
 
     const ctx = try fixtureCtx(arena, io, "/t/parent.b4m",
         \\import peano <<< "child.b4m"
-        \\func double(n: peano.Nat) => peano.Nat
+        \\oper double(n: peano.Nat) => peano.Nat
     );
     const child_fid = try ctx.preload("/t/child.b4m", "sort Nat");
     {
@@ -890,7 +890,7 @@ test "fetch layer 2: a guarded func ('requires') reifies its precondition into t
     const ctx = try fixtureCtx(arena, io, "/t/a.b4m",
         \\sort Nat
         \\pred pos(n: Nat)
-        \\func dec(n: Nat) => Nat requires pos(n)
+        \\oper dec(n: Nat) => Nat requires pos(n)
     );
     const f = try ctx.fileIndex("/t/a.b4m");
     const dec = try ctx.interner.internString("dec");

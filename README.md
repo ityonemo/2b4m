@@ -91,8 +91,8 @@ A proof is a sequence of labeled steps, each justified by a rule:
 ```
 sort Nat
 const ZERO: Nat
-func succ(n: Nat) => Nat
-func add(a: Nat, b: Nat) => Nat
+oper succ(n: Nat) => Nat
+oper add(a: Nat, b: Nat) => Nat
 axiom addZeroLeft: forall b: Nat; add(ZERO, b) = b
 axiom addSuccLeft: forall a, b: Nat; add(succ(a), b) = succ(add(a, b))
 
@@ -262,7 +262,7 @@ partial functions) is made *total* by fiat.** Lean, Isabelle/HOL, and Rocq
 all define `n / 0 = 0` (and `head []`, etc.) so the term is well-typed —
 which means `n / 0` silently denotes a meaningless value and a proof can pass
 through it without anyone noticing the degenerate case. 2b4m instead guards
-such functions (`func div(a, b) requires b != ZERO`), turning every use into
+such functions (`oper div(a, b) requires b != ZERO`), turning every use into
 a proof obligation: you must *prove* the divisor is nonzero, or the check
 fails with a located error. The cost is that you carry the obligation; the
 benefit is that the `n / 0` case cannot silently slip into a proof.

@@ -591,8 +591,8 @@ const testing = std.testing;
 const test_source =
     \\sort Nat
     \\const ZERO: Nat
-    \\func succ(n: Nat) => Nat
-    \\func add(a: Nat, b: Nat) => Nat
+    \\oper succ(n: Nat) => Nat
+    \\oper add(a: Nat, b: Nat) => Nat
     \\pred even(n: Nat)
     \\axiom addZeroLeft: forall b: Nat; add(ZERO, b) = b
     \\theorem shape(prop(Nat), k: Nat): forall x, y: Nat; (even(x) and (not even(y))) -> add(x, y) != ZERO -> exists z: Nat; add(z, z) = x

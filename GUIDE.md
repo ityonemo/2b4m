@@ -27,7 +27,7 @@ below. The overview tables (`### Justification rules (overview table)`,
 | `KEYWORD: sort` | declare a sort / predicated (subset) sorts |
 | `KEYWORD: const` | uninterpreted constant of a sort |
 | `KEYWORD: define` | name a term (transparent expansion) |
-| `KEYWORD: func` | function symbol; `requires` guards |
+| `KEYWORD: oper` | function symbol; `requires` guards |
 | `KEYWORD: pred` | predicate (function into `Prop`) |
 | `KEYWORD: axiom` | assert a formula without proof |
 | `KEYWORD: theorem` | assert a formula with a checked `proof … qed` |
@@ -265,9 +265,9 @@ The guard appears at each position `H` is used:
   `[by predicate <fix-label>]`, and `generalize` concludes the relativized
   `forall h; inH(h) -> …`. `unpack h: H` needs nothing special — the existential
   it opens already carries `inH(h)` as a conjunct (project it with `and_lhs`).
-- **Function arguments** — `func f(x: H) => R` makes every call owe `inH(t)` for the
+- **Function arguments** — `oper f(x: H) => R` makes every call owe `inH(t)` for the
   actual argument `t` (an undischarged obligation is an error), like a `requires`.
-- **Function results** — `func op(a: H, b: H) => H` asserts `op` is *closed* on `H`
+- **Function results** — `oper op(a: H, b: H) => H` asserts `op` is *closed* on `H`
   (an uninterpreted function's signature is an assertion, on par with an axiom):
   each application `op(x, y)` makes `inH(op(x, y))` available, so a downstream
   `f(op(x, y))` composes for free — the subgroup-closure pattern.
@@ -278,7 +278,7 @@ An **anonymous** predicated sort may be written inline anywhere a sort appears,
 without a named `sort` declaration:
 
 ```2b4m
-func f(x: G where inH) => R              // inline-refined argument
+oper f(x: G where inH) => R              // inline-refined argument
 theorem t: forall h: G where inH; P(h) // inline-refined binder
 ```
 
@@ -331,7 +331,7 @@ instead: an alias binds the name to the target's identity, so it keeps its KIND 
 downstream files can alias it in turn. A PERMUTED forward (`define gt(a, b) =
 ordering.less_than(b, a)`) is a genuine macro and is fine.
 
-### KEYWORD: func
+### KEYWORD: oper
 
 Declares a function symbol with argument and result sorts. An optional
 `requires` clause guards the function: every application incurs a proof
@@ -339,14 +339,14 @@ obligation that the guard holds, discharged against facts available at the
 use site (an undischarged obligation is an error).
 
 ```2b4m
-func succ(n: Nat) => Nat
-func div(a: Nat, b: Nat) => Nat requires b != ZERO
+oper succ(n: Nat) => Nat
+oper div(a: Nat, b: Nat) => Nat requires b != ZERO
 ```
 
 The result sort follows `=>`, not `:` — the same arrow a lambda uses
 (`fun k: Nat => body`), reading the same way: takes these, gives that. The colon
 is reserved for a DEFINITION block, where a declaration carries its defining
-clauses (`func sub(a: Int, b: Int) => Int:` followed by `sub(a, b) = …`).
+clauses (`oper sub(a: Int, b: Int) => Int:` followed by `sub(a, b) = …`).
 
 ### KEYWORD: pred
 
@@ -363,7 +363,7 @@ pred raining()
 ```
 
 (A nullary *function* is different: its zero-arity form is `const`, and a
-`func nil() => Nat` does apply bare as `nil`, like any constant.)
+`oper nil() => Nat` does apply bare as `nil`, like any constant.)
 
 A predicate declared with no defining clauses is OPAQUE: it has no meaning
 beyond whatever axioms constrain it. Follow the declaration with `:` and a
@@ -371,7 +371,7 @@ clause to DEFINE it instead — see **DEFINITION BLOCKS** below.
 
 ### DEFINITION BLOCKS
 
-A `pred` or `func` declaration may carry the clauses that characterize it: follow
+A `pred` or `oper` declaration may carry the clauses that characterize it: follow
 the declaration with `:`, then one or more clauses separated by `;`. Each clause
 is written **exactly as the axiom it becomes** — the checker wraps it in the
 declaration's binders and emits an ordinary axiom, so there is nothing to learn
@@ -381,10 +381,10 @@ about how it desugars.
 pred isZero(n: Nat):
   isZero(n) iff n = ZERO
 
-func double(n: Nat) => Nat:
+oper double(n: Nat) => Nat:
   double(n) = add(n, n)
 
-func add(a: Nat, b: Nat) => Nat:
+oper add(a: Nat, b: Nat) => Nat:
   add(ZERO, b) = b;
   add(succ(k), b) = succ(add(k, b))
 ```
@@ -410,7 +410,7 @@ sort is determined.
 clause may carry a guard, `when` after the head:
 
 ```2b4m
-func gcd(a: Nat, b: Nat) => Nat:
+oper gcd(a: Nat, b: Nat) => Nat:
   gcd(a, b) = a                  when b = ZERO;
   gcd(a, b) = gcd(b, mod(a, b))  when b != ZERO
 ```
@@ -587,7 +587,7 @@ fun a, b: Nat, v: Q => …         // spec(Nat, Nat, Q) — (a,b : Nat) then (v 
 
 Before this, one sort governed the whole binder list, so a schema whose spec relates two
 DIFFERENT sorts had no lambda form at all — it could only be instantiated at a bare predicate
-name, which forces a caller to pin any varying argument as a file-scope nullary func. (A
+name, which forces a caller to pin any varying argument as a file-scope nullary oper. (A
 quantifier never hit this because it chains mixed sorts with `;` —
 `forall i: Nat; forall v: Q; …` — while a lambda has only its single `=>`.)
 
@@ -686,7 +686,7 @@ thing, not a copy, so facts proved through either spelling interoperate.
 
 ```2b4m
 sort Nat = peano.Nat
-func add = peano.add
+oper add = peano.add
 fact addZeroLeft = peano.addZeroLeft
 fact addIsCommutative = peano.addIsCommutative
 ```
@@ -751,7 +751,7 @@ obligation — with a spelling that differs by symbol kind:
   reverse-turnstile reads like `<-`: the obligation-bearer on the left, the
   discharging fact on the right. A comma list gives one closure per guard predicate.
 
-Using the parens form on a func (or `-|` on a const) is a hard error. At each
+Using the parens form on an oper (or `-|` on a const) is a hard error. At each
 membership obligation the transfer walks the witness term: a const cites its base
 fact, a `fix`-bound variable uses its block guard, a composite `op(a, b)` applies
 `op`'s nominated closure and RECURSES on the guarded arguments. An UNCONDITIONAL
@@ -768,7 +768,7 @@ axiom invClosed:   forall a: Grp; inH(a) -> inH(inverse(a))
 model SubgroupIsGroup {
   group.Grp:     GrpH
   group.E:       E(identityInH)          // const → base fact
-  group.op:      op -| opClosed           // func → closure fact
+  group.op:      op -| opClosed           // oper → closure fact
   group.inverse: inverse -| invClosed
   group.opAssoc  <- group.opAssoc         // unconditional axiom, auto-weakened
 }
@@ -1911,7 +1911,7 @@ can't do cleanly.
 | `2b4m query outline <file> [theorem]` | the proof *skeleton*: one line per step (bare label), with a header on each block opener (`fix`/`assume`/`unpack`/`case`). No theorem arg = every proof in the file. |
 | `2b4m query claims <file> [theorem]` | the same skeleton as `outline`, but each step shows its **claim formula** instead of its label — the propositions the proof establishes, label-free (block openers keep their `fix`/`assume`/`case` headers). Reads as the mathematical content; `outline` reads as the table of contents. Works on proof-carrying schemas too. |
 | `2b4m query theorem <file> <name> [--sig]` | the full verbatim source of one declaration — statement + `proof … qed` + leading doc-comment. Follows aliases across files to the real proof; axioms are marked. `--sig` prints **just the statement** (kind + name + formula), wrap-collapsed to one line — handy for reading binder order/arity before a `apply_at`. |
-| `2b4m query whereis <file> <identifier>` | trace an identifier through every alias/import hop to its **origin** — the file-chase as one command. Works for any named decl (theorem/axiom/func/pred/sort/const/define/schema) and for import namespaces. Each hop shows `file:line` + the source line; the origin is marked. |
+| `2b4m query whereis <file> <identifier>` | trace an identifier through every alias/import hop to its **origin** — the file-chase as one command. Works for any named decl (theorem/axiom/oper/pred/sort/const/define/schema) and for import namespaces. Each hop shows `file:line` + the source line; the origin is marked. |
 | `2b4m query search <path> <query>` | fuzzy-search theorem/axiom **names + statements** — find a lemma by concept when you don't recall its name (`search std cancel` → `mulCancelLeft`, `addCancelLeft`, …). `<path>` is a **directory** (search every `.b4m`/`.md` under it, RECURSIVELY — corpus discovery, so `search std <term>` really does cover `std/group/`, `std/permutation/`, …) or a **file** (search it + everything it transitively imports — only results citable from there). Ranked, one line per hit: `file:line  <kind> <name>: <statement>`. Query terms are AND'd. Self-contained/deterministic (no ML). |
 
 ```

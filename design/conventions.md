@@ -50,8 +50,8 @@ In `std/<theory>/*` or `std/<theory>.b4m`, that theory owns the unmodified names
 
 ```2b4m
 // in std/integer/embedding.b4m — ℤ is the theory, ℕ is visiting
-const ZERO      = integer.ZERO        func add     = integer.add
-const NAT_ZERO  = peano.ZERO          func nat_add = peano.add
+const ZERO      = integer.ZERO        oper add     = integer.add
+const NAT_ZERO  = peano.ZERO          oper nat_add = peano.add
 ```
 
 **Never prefix a name nothing competes for.** `nat_less_than` in a permutation file guards
@@ -138,7 +138,7 @@ the other**, axiomatize the LEFT and prove the RIGHT. It is the foundational cho
 one primitive side keeps the axiom set minimal — a `model` then supplies only the LEFT laws
 and the RIGHT ones materialize for free.
 
-For a recursive `func` this means the recursion equations are left-recursive: `ZERO`/`succ`/
+For a recursive `oper` this means the recursion equations are left-recursive: `ZERO`/`succ`/
 `prev` sit in the first slot. (For `mul`, note the extra summand flips with the side: left
 `mul(succ(a), b) = add(mul(a, b), b)` adds the *second* factor, where the right mirror adds
 the first.)
