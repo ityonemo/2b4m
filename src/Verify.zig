@@ -90,6 +90,12 @@ pub const Word = enum {
 /// The set of `using` words TRUSTED (accelerated, cert not built). Empty = strict (the default:
 /// everything kernel-checked). Populated by the CLI `--fast` parsing.
 trusted: Word.Set = Word.Set.initEmpty(),
+/// `--library` mode: the file set is a published LIBRARY, not a working directory, so the
+/// stricter publishing rules apply — no axiom nothing rests on, and the per-file STRUCTURE
+/// rule (a `.b4m` file's header declares its whole assumption surface before any proof).
+/// Set only for a directory check; `.md` files are exempt from the structure rule, being
+/// documents whose prose drives their order.
+library: bool = false,
 /// `--draft` mode: a WIP proof. The single coarse "work in progress" bit that author-hygiene
 /// checks consult to relax — NOT rejecting a proof for a dead step (a fact it introduces but
 /// never uses), etc. (Holes are allowed under `--draft` too, gated in main.) NOT a trust bypass.

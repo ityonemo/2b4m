@@ -34,10 +34,8 @@ below. The overview tables (`### Justification rules (overview table)`,
 | `KEYWORD: lemma` | the same, for a result the file does NOT export |
 | `KEYWORD: fact` | localize a named fact (axiom, theorem, hole) from an imported namespace |
 | `KEYWORD: hole` | aspirational placeholder (the "sorry"); `--draft` |
-| `CONCEPT: schemas` | parameterized `axiom`/`theorem` — a parameter list, not a keyword |
 | `KEYWORD: intheory` | forward-declare a theorem — REQUIRED (verified TOC) |
 | `KEYWORD: theory` | load another file under a namespace |
-| `CONCEPT: alias` | any declaration keyword + `= ns.name`, not a keyword itself |
 | `KEYWORD: model` | declare a local structure models an abstract theory |
 | `JUSTIFICATION: by` | instruct the kernel to use one of the below RULEs |
 | `JUSTIFICATION: using` | kernel should use one of the below accelerated TACTICs |
@@ -583,7 +581,7 @@ Practical notes, from proving Judson's parity lemma this way (2026-09-29):
 signature the source dictates — build it bottom-up; its shape is not in question and the
 hole machinery only adds the costs above.
 
-### CONCEPT: schemas
+### Schemas — a parameter list, not a keyword
 
 Schematic axioms and theorems. There is no `schematic` keyword — the parameter
 list alone is what makes a declaration a schema.
@@ -695,6 +693,21 @@ diagnostic offers — add the entry, or make it a `lemma`.
 This is author hygiene rather than soundness, so `--draft` relaxes it; a
 work-in-progress file stays writable.
 
+**Under `--library`, the manifest must also be in the HEADER.** A library file's header
+is its interface: everything it ASSUMES (`axiom`, `hole`) and PROMISES (`intheory`) is
+declared before the first `theorem`, `lemma` or `model`, so a reader learns both without
+reading a proof. After that point those three are errors.
+
+Vocabulary stays legal anywhere — `sort`, `oper`, `const`, `pred`, `define`, a `fact`
+alias, a further `theory` declaration — since none of it adds an assumption or a promise.
+A `fact` is header vocabulary rather than a boundary: an alias is a local name for the
+same thing, so it is the same kind of declaration as the `sort`/`oper` aliases it sits
+among.
+
+The rule applies ONLY under `--library` (a working directory is not a published library)
+and ONLY to `.b4m` files — a literate `.md` is a document whose prose drives its
+declaration order.
+
 `intheory` promises a fact proved later in THIS file; a forward is that promise
 kept in another. Forward a theory's takeaway RESULTS, not the lemmas that got
 there — a consumer wanting a lemma imports the sub-theory directly. Name the
@@ -720,7 +733,7 @@ theorem is still re-checked in its own file, so a broken import is caught
 regardless of the flag. Imported schematic theorems are always re-checked at
 each instantiation (`instantiation` is never trustable).
 
-### CONCEPT: alias
+### Aliases — a declaration keyword + `= ns.name`
 
 Any declaration keyword followed by `= qualified.name` creates a
 kind-checked **view** of an imported entity — a local name for the same
@@ -1457,7 +1470,7 @@ term-equation rule) cannot reach. A kernel-checked rule with **no accelerant tai
 `[using instantiation NAME(args) refs...]` — monomorphize the schema `NAME` at the
 written-out `args` (formula params supplied as `fun … => …` lambdas). Trailing refs
 discharge the instance's **leading antecedents** (its `->` premises), left to right.
-The proof body is re-checked at this instance (see `CONCEPT: schemas`). Reusing an
+The proof body is re-checked at this instance (see "Schemas", above). Reusing an
 expensive instance? Realize it into a named theorem and cite that instead.
 
 ```2b4m

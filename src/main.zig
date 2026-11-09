@@ -549,6 +549,7 @@ pub fn main(init: std.process.Init) !u8 {
     // --draft is for WIP proofs: allow holes AND relax author-hygiene checks
     // (dead steps, redundant fallbacks, …). One coarse bit read by all of them.
     verify.draft = draft;
+    verify.library = library;
 
     // the root must EXIST (a typo'd path is a usage-level error, said plainly); its bytes are
     // the engine's business — each root's ParseTask reads them, like any file's.

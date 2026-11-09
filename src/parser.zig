@@ -100,6 +100,12 @@ pub const Parser = struct {
     /// block's targets/dischargers/closure facts, func params and results); enumerating
     /// them would be complete only until someone adds the eleventh.
     unused_aliases: std.AutoArrayHashMapUnmanaged(InternPool.StrId, PendingAlias) = .empty,
+    /// `--library` on a `.b4m` file: enforce the HEADER STRUCTURE rule below. Off for a
+    /// working-directory check and for every literate `.md` (a document's prose drives its
+    /// order), so the parser is unchanged outside a published-library check.
+    library_structure: bool = false,
+    /// set by `checkHeaderStructure` at the first `theorem`/`lemma`/`model`
+    past_header: bool = false,
 
     /// Namespaces this file re-exports at least one `fact` from. Applied to
     /// `unused_aliases` ONCE at `parseFile`'s end, not eagerly at each `fact`, so the
@@ -311,9 +317,51 @@ pub const Parser = struct {
         };
     }
 
+    /// THE LIBRARY HEADER RULE (`--library`, `.b4m` only). A library file's header is its
+    /// INTERFACE: what it assumes (`axiom`, `hole`) and what it promises (`intheory`). All of
+    /// it must be declared before any of it is used, so a reader learns both without reading a
+    /// proof.
+    ///
+    /// The header admits `theory`, `intheory`, `axiom`, `hole`, `sort`, `oper`, `const`,
+    /// `pred`, `define` and `fact`. The first `theorem`, `lemma` or `model` ends it; after
+    /// that, `intheory`, `axiom` and `hole` are errors. Vocabulary — sorts, opers, consts,
+    /// preds, defines, `fact` aliases, further `theory` declarations — stays legal anywhere,
+    /// since none of it adds an assumption or a promise.
+    ///
+    /// `fact` is header vocabulary rather than a trigger: an alias is "a local name for the
+    /// same thing, not a copy", so it is the same kind of declaration as the `sort`/`oper`
+    /// aliases it sits among (91 of 151 std files open with such a block).
+    fn checkHeaderStructure(self: *Parser, decl: ast.Decl, loc: u32) void {
+        const kind: []const u8 = switch (decl) {
+            .theorem => |t| switch (t) {
+                .local => if (t.local.fact.exported) "theorem" else "lemma",
+                .alias => return, // a `theorem X = ns.y` is a re-export; parsed as `fact`
+            },
+            .model => "model",
+            .forward => "intheory",
+            .axiom => |a| switch (a) {
+                .local => "axiom",
+                .alias => return,
+            },
+            .hole => "hole",
+            else => return, // vocabulary: legal anywhere
+        };
+        if (std.mem.eql(u8, kind, "theorem") or std.mem.eql(u8, kind, "lemma") or
+            std.mem.eql(u8, kind, "model"))
+        {
+            self.past_header = true;
+            return;
+        }
+        if (!self.past_header) return;
+        self.sink.add(self.file, loc, "`{s}` after the first proof: a library file's header declares everything it assumes and promises before any of it is used — move this above the first theorem/lemma/model (--library only)", .{kind}) catch {
+            self.intern_oom = true;
+        };
+    }
+
     pub fn parseFile(self: *Parser) Allocator.Error!ast.File {
         var decls: std.ArrayList(ast.Decl) = .empty;
         while (self.tok.tag != .eof) {
+            const decl_loc = self.tok.start;
             const decl = self.parseDecl() catch |err| switch (err) {
                 error.OutOfMemory => return error.OutOfMemory,
                 error.Recover => {
@@ -325,6 +373,7 @@ pub const Parser = struct {
                 },
             };
             try decls.append(self.arena, decl);
+            if (self.library_structure) self.checkHeaderStructure(decl, decl_loc);
             // a definition block staged its clause axioms — emit them right after the
             // declaration they belong to, so source order is preserved.
             for (self.pending.items) |extra| try decls.append(self.arena, extra);

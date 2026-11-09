@@ -573,6 +573,18 @@ pub fn addTests(
     // An import whose ONLY use is inside a `model` block counts as USED. Six corpus imports
     // are used exactly this way (4 under std/), so a regression here would break the library.
     ctx.okSilent(&.{ "check", "tests/cases/namespaces/unused_import_model/consumer.b4m" });
+
+    // THE LIBRARY HEADER RULE: under `--library`, a `.b4m` file declares everything it
+    // ASSUMES (`axiom`, `hole`) and PROMISES (`intheory`) before the first
+    // theorem/lemma/model, so a reader learns both without reading a proof. Vocabulary
+    // (sorts, opers, consts, preds, defines, `fact` aliases) stays legal anywhere.
+    //
+    // Three boundaries, each gated: it fires under `--library`; it is SILENT without it (a
+    // working directory is not a published library); and it is silent for a literate `.md`,
+    // whose prose drives its declaration order.
+    ctx.fail(&.{ "check", "--library", "tests/cases/library/bad" }, "tests/cases/library/bad/axiom_after_proof_bad.b4m:23:1: error: `axiom` after the first proof: a library file's header declares everything it assumes and promises before any of it is used — move this above the first theorem/lemma/model (--library only)\n");
+    ctx.okSilent(&.{ "check", "tests/cases/library/bad" });
+    ctx.okSilent(&.{ "check", "--library", "tests/cases/library/ok" });
     ctx.fail(&.{ "check", "tests/cases/cli/single_theorem.b4m", "--library" }, "error: --library checks a directory (a library is its whole file set); 'tests/cases/cli/single_theorem.b4m' is a file\n");
     // an axiom cited through `[using import(I) ax]` is rested on exactly as through
     // `[by cite I.ax]`: it appears in the citer's `--axioms` report and counts as used for

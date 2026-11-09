@@ -211,6 +211,10 @@ pub fn run(self: *Context, task: *ParseTask, h: *Engine.Handle) std.mem.Allocato
     const source = task.load_bytes;
     self.files.at(idx).source = source; // in place: `at` is a stable pointer
     var p: parser.Parser = .initInterningInFile(self.arena, source, self.sink, self.interner, idx);
+    // The library HEADER STRUCTURE rule is `--library`-only and `.b4m`-only: a published
+    // library's files declare their whole assumption surface up front, while a literate `.md`
+    // is a document whose prose drives its declaration order.
+    p.library_structure = self.verify.library and !std.mem.endsWith(u8, path, ".md");
     const parsed = try p.parseFile();
     self.parsed.set(idx, parsed);
     self.addDeclarations(parsed.decls.len);
