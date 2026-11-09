@@ -708,6 +708,12 @@ The rule applies ONLY under `--library` (a working directory is not a published 
 and ONLY to `.b4m` files — a literate `.md` is a document whose prose drives its
 declaration order.
 
+**`2b4m index <file.b4m>` prints that header** — every line before the first `theorem`,
+`lemma` or `model`, with the trailing newline stripped. It is how you read a file's
+interface without opening its proofs: what it assumes, what it promises, and the
+vocabulary it speaks. A file with no proof is entirely header, so its whole contents are
+printed. `.b4m` only, for the reason above.
+
 `intheory` promises a fact proved later in THIS file; a forward is that promise
 kept in another. Forward a theory's takeaway RESULTS, not the lemmas that got
 there — a consumer wanting a lemma imports the sub-theory directly. Name the

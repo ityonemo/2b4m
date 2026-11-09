@@ -36,6 +36,7 @@ pub const kernel = @import("kernel.zig");
 pub const fmt = @import("fmt.zig");
 pub const literate = @import("literate.zig");
 pub const lint = @import("lint.zig");
+pub const index = @import("index.zig");
 
 pub const query = @import("query.zig");
 pub const debug = @import("debug.zig");

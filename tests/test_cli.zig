@@ -20,6 +20,7 @@ pub fn addTests(
         "usage: 2b4m check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] [--trace-facts] [--chaos[=SEED]] [-j<n>] [--io-threads=<n>] [--sync-io] [--io-delay=<us>] <file.b4m | dir> [theorem]\n" ++
             "       2b4m fmt [--check] <file.b4m|.md>\n" ++
             "       2b4m lint <file.b4m|.md>\n" ++
+            "       2b4m index <file.b4m>\n" ++
             "       2b4m debug accelerant <file> <line | theorem step-label>\n" ++
             "       2b4m debug taint <file> [theorem]\n" ++
             "       2b4m query outline <file.b4m> [theorem]\n" ++
@@ -585,6 +586,23 @@ pub fn addTests(
     ctx.fail(&.{ "check", "--library", "tests/cases/library/bad" }, "tests/cases/library/bad/axiom_after_proof_bad.b4m:23:1: error: `axiom` after the first proof: a library file's header declares everything it assumes and promises before any of it is used — move this above the first theorem/lemma/model (--library only)\n");
     ctx.okSilent(&.{ "check", "tests/cases/library/bad" });
     ctx.okSilent(&.{ "check", "--library", "tests/cases/library/ok" });
+
+    // `2b4m index <file.b4m>` prints the file's HEADER — every line before the first
+    // `theorem`/`lemma`/`model`, trailing newline stripped. That boundary is the one
+    // `--library` enforces, so the header IS the file's interface: what it assumes and what
+    // it promises, readable without opening a proof.
+    ctx.ok(&.{ "index", "tests/cases/cli/index_target.b4m" },
+        \\// Fixture for `2b4m index`: the header is everything above the first theorem.
+        \\sort Nat
+        \\const ZERO: Nat
+        \\oper succ(n: Nat) => Nat
+        \\axiom succNotZero: forall n: Nat; succ(n) != ZERO
+        \\
+        \\intheory indexed
+        \\
+    );
+    // `.b4m` only: a literate `.md` has no enforced header.
+    ctx.fail(&.{ "index", "tests/cases/cli/literate_bad.md" }, "error: index takes a .b4m file; 'tests/cases/cli/literate_bad.md' is a literate document, whose prose drives its declaration order\n");
     ctx.fail(&.{ "check", "tests/cases/cli/single_theorem.b4m", "--library" }, "error: --library checks a directory (a library is its whole file set); 'tests/cases/cli/single_theorem.b4m' is a file\n");
     // an axiom cited through `[using import(I) ax]` is rested on exactly as through
     // `[by cite I.ax]`: it appears in the citer's `--axioms` report and counts as used for

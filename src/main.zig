@@ -80,6 +80,33 @@ fn lintCommand(arena: std.mem.Allocator, rest: []const [:0]const u8) !u8 {
 /// `2b4m debug accelerant <file> <line>` | `<file> <theorem> <step-label>`: reprint the
 /// synthetic theorem the named accelerant step produced, as re-parseable 2b4m source. Reads
 /// `.md` through the literate extractor.
+/// `2b4m index <file.b4m>` — print the file's HEADER (every line before the first
+/// `theorem`/`lemma`/`model`), trailing newline stripped. `.b4m` only: a literate `.md`
+/// has no enforced header and its extraction is blank-padded. See src/index.zig.
+fn indexCommand(arena: std.mem.Allocator, rest: []const [:0]const u8) !u8 {
+    const usage = "usage: 2b4m index <file.b4m>\n";
+    var path: ?[]const u8 = null;
+    for (rest) |arg| {
+        if (path == null) path = arg else return fail(usage, .{});
+    }
+    const p = path orelse return fail(usage, .{});
+    if (std.mem.endsWith(u8, p, ".md")) {
+        return fail("error: index takes a .b4m file; '{s}' is a literate document, whose prose drives its declaration order\n", .{p});
+    }
+    const source = readSource(arena, p) catch |e| switch (e) {
+        error.FileNotFound => return fail("error: cannot open '{s}': file not found\n", .{p}),
+        else => return fail("error: cannot open '{s}': {t}\n", .{ p, e }),
+    };
+    const head = b4m.index.header(source);
+    var buf: [4096]u8 = undefined;
+    var fw: Io.File.Writer = .init(.stdout(), io, &buf);
+    const w = &fw.interface;
+    try w.writeAll(head);
+    if (head.len != 0) try w.writeByte('\n');
+    try w.flush();
+    return 0;
+}
+
 const debug_usage =
     "usage: 2b4m debug accelerant <file> <line>\n" ++
     "       2b4m debug accelerant <file> <theorem> <step-label>\n" ++
@@ -360,6 +387,7 @@ pub fn main(init: std.process.Init) !u8 {
             \\usage: 2b4m check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] [--trace-facts] [--chaos[=SEED]] [-j<n>] [--io-threads=<n>] [--sync-io] [--io-delay=<us>] <file.b4m | dir> [theorem]
             \\       2b4m fmt [--check] <file.b4m|.md>
             \\       2b4m lint <file.b4m|.md>
+            \\       2b4m index <file.b4m>
             \\       2b4m debug accelerant <file> <line | theorem step-label>
             \\       2b4m debug taint <file> [theorem]
             \\       2b4m query outline <file.b4m> [theorem]
@@ -460,10 +488,14 @@ pub fn main(init: std.process.Init) !u8 {
     if (args.len >= 2 and std.mem.eql(u8, args[1], "lint")) {
         return lintCommand(arena, args[2..]);
     }
+    if (args.len >= 2 and std.mem.eql(u8, args[1], "index")) {
+        return indexCommand(arena, args[2..]);
+    }
     if (args.len >= 2 and std.mem.eql(u8, args[1], "debug")) {
         return debugCommand(arena, std_root, args[2..]);
     }
-    const usage = "usage: 2b4m check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] [--trace-facts] [--chaos[=SEED]] [-j<n>] [--io-threads=<n>] [--sync-io] [--io-delay=<us>] <file.b4m | dir> [theorem]\n       2b4m fmt [--check] <file.b4m|.md>\n       2b4m lint <file.b4m|.md>\n       2b4m debug accelerant <file> <line | theorem step-label>\n       2b4m debug taint <file> [theorem]\n       2b4m query outline <file.b4m> [theorem]\n       2b4m query claims <file.b4m> [theorem]\n       2b4m query theorem <file.b4m> <theorem> [--sig]\n       2b4m query whereis <file.b4m> <identifier>\n       2b4m query search <file.b4m|dir> <query>\n       2b4m query uses <file.b4m> [theorem]\n";
+    const usage = "usage: 2b4m check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] [--trace-facts] [--chaos[=SEED]] [-j<n>] [--io-threads=<n>] [--sync-io] [--io-delay=<us>] <file.b4m | dir> [theorem]\n       2b4m fmt [--check] <file.b4m|.md>\n       2b4m lint <file.b4m|.md>\n" ++
+        "       2b4m index <file.b4m>\n       2b4m debug accelerant <file> <line | theorem step-label>\n       2b4m debug taint <file> [theorem]\n       2b4m query outline <file.b4m> [theorem]\n       2b4m query claims <file.b4m> [theorem]\n       2b4m query theorem <file.b4m> <theorem> [--sig]\n       2b4m query whereis <file.b4m> <identifier>\n       2b4m query search <file.b4m|dir> <query>\n       2b4m query uses <file.b4m> [theorem]\n";
     if (args.len < 3 or !std.mem.eql(u8, args[1], "check")) {
         return fail(usage, .{});
     }
