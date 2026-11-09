@@ -84,6 +84,45 @@ oper productUpTo(s: Seq, k: NonNegZ) => Int
 axiom productUpToZero: forall s: Seq; productUpTo(s, ZERO) = ONE
 axiom productUpToSucc: forall s: Seq; forall k: NonNegZ; productUpTo(s, succ(k)) = mul(productUpTo(s, k), at(s, k))
 
+// What this file proves (verified manifest):
+intheory nonnegSuccZero
+intheory nonnegOne
+intheory productOneCombinesIdentity
+intheory lastEntryDividesProduct
+intheory everyEntryDividesProduct
+intheory memberDividesProduct
+intheory primeFactorExists
+
+axiom seqSingletonExists: forall x: Int;
+  exists s: Seq; at(s, ZERO) = x and productUpTo(s, ONE) = x
+
+// The concatenation s ++ t of the first j entries of s with the first k entries
+// of t: the result agrees with s less_than j, agrees with (shifted) t on the next k
+// slots, and its length-(j+k) product is the product of the two pieces. The
+// shifted indices add(j, i) / add(j, k) carry an explicit nonneg guard so they
+// typecheck as nonneg-ℤ indices.
+axiom seqConcatExists: forall s: Seq; forall t: Seq; forall j: NonNegZ; forall k: NonNegZ;
+  is_nonneg(add(j, k)) ->
+  exists u: Seq;
+  (forall i: NonNegZ; less_than(i, j) -> at(u, i) = at(s, i))
+  and (forall i: NonNegZ; is_nonneg(add(j, i)) -> less_than(i, k) -> at(u, add(j, i)) = at(t, i))
+  and productUpTo(u, add(j, k)) = mul(productUpTo(s, j), productUpTo(t, k))
+
+// The sequence s with the entry at index m (0 ≤ m ≤ k) deleted: its length-k
+// product times the removed entry recovers s's length-(k+1) product, and its
+// entries are those of s with index m skipped (unchanged less_than m, shifted up by
+// one at and above m). The entry-agreement clauses let a primality hypothesis on
+// s's first k+1 entries transfer to t's first k entries. The shifted index
+// succ(i) carries an explicit nonneg guard.
+axiom seqRemoveExists: forall s: Seq; forall k: NonNegZ; forall m: NonNegZ;
+  is_nonneg(succ(k)) -> less_than(m, succ(k)) ->
+  exists t: Seq;
+  mul(productUpTo(t, k), at(s, m)) = productUpTo(s, succ(k))
+  and (forall i: NonNegZ; less_than(i, m) -> at(t, i) = at(s, i))
+  and (forall i: NonNegZ; is_nonneg(succ(i)) -> at_most(m, i) -> less_than(i, k) -> at(t, i) = at(s, succ(i)))
+
+// -- the entry a bound leaves out still divides the successor product -------
+
 model IntSeq {
   sequence.Nat: NonNegZ
   sequence.ZERO: ZERO(nonnegZero)
@@ -97,15 +136,6 @@ model IntSeq {
   sequence.foldZero <- productUpToZero
   sequence.foldSucc <- productUpToSucc
 }
-
-// What this file proves (verified manifest):
-intheory nonnegSuccZero
-intheory nonnegOne
-intheory productOneCombinesIdentity
-intheory lastEntryDividesProduct
-intheory everyEntryDividesProduct
-intheory memberDividesProduct
-intheory primeFactorExists
 
 // nonneg(succ(ZERO)) and nonneg(ONE) as in-scope facts, so composite concrete-
 // index TCCs (e.g. the length-one product at index succ(ZERO), or at ONE)
@@ -174,36 +204,6 @@ qed
 // consumer of the product theory reaches them without a second import.
 fact seqPrependExists = seq.seqPrependExists
 fact seqShiftPastExists = seq.seqShiftPastExists
-
-axiom seqSingletonExists: forall x: Int;
-  exists s: Seq; at(s, ZERO) = x and productUpTo(s, ONE) = x
-
-// The concatenation s ++ t of the first j entries of s with the first k entries
-// of t: the result agrees with s less_than j, agrees with (shifted) t on the next k
-// slots, and its length-(j+k) product is the product of the two pieces. The
-// shifted indices add(j, i) / add(j, k) carry an explicit nonneg guard so they
-// typecheck as nonneg-ℤ indices.
-axiom seqConcatExists: forall s: Seq; forall t: Seq; forall j: NonNegZ; forall k: NonNegZ;
-  is_nonneg(add(j, k)) ->
-  exists u: Seq;
-  (forall i: NonNegZ; less_than(i, j) -> at(u, i) = at(s, i))
-  and (forall i: NonNegZ; is_nonneg(add(j, i)) -> less_than(i, k) -> at(u, add(j, i)) = at(t, i))
-  and productUpTo(u, add(j, k)) = mul(productUpTo(s, j), productUpTo(t, k))
-
-// The sequence s with the entry at index m (0 ≤ m ≤ k) deleted: its length-k
-// product times the removed entry recovers s's length-(k+1) product, and its
-// entries are those of s with index m skipped (unchanged less_than m, shifted up by
-// one at and above m). The entry-agreement clauses let a primality hypothesis on
-// s's first k+1 entries transfer to t's first k entries. The shifted index
-// succ(i) carries an explicit nonneg guard.
-axiom seqRemoveExists: forall s: Seq; forall k: NonNegZ; forall m: NonNegZ;
-  is_nonneg(succ(k)) -> less_than(m, succ(k)) ->
-  exists t: Seq;
-  mul(productUpTo(t, k), at(s, m)) = productUpTo(s, succ(k))
-  and (forall i: NonNegZ; less_than(i, m) -> at(t, i) = at(s, i))
-  and (forall i: NonNegZ; is_nonneg(succ(i)) -> at_most(m, i) -> less_than(i, k) -> at(t, i) = at(s, succ(i)))
-
-// -- the entry a bound leaves out still divides the successor product -------
 
 // at(s,k) divides productUpTo(s, succ k) = productUpTo(s, k) · at(s, k): the
 // factor being the SECOND multiplicand, commute the product to expose it, then

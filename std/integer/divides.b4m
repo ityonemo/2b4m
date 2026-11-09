@@ -62,22 +62,6 @@ fact induction = integer.induction
 // it rides along on `mul` (already mapped) when divisibility's theorems transfer.
 define divides(d, n) = exists k: Int; n = mul(d, k)
 
-// ℤ is a model of the abstract divisibility theory: its mul is associative with
-// right identity ONE and left-distributes over add, so the basic divisibility
-// facts (refl, mul, add) transfer instead of being re-proved.
-model IntegerDivisibility {
-  divisibility.Dividable: Int
-  divisibility.ONE: ONE
-  divisibility.mul: mul
-  divisibility.add: add
-  divisibility.mulOneRight <- mulOneRight
-  divisibility.mulIsAssociative <- mulIsAssociative
-  divisibility.mulAddDistribLeft <- mulAddDistribLeft
-}
-
-// -- powers (recursive on the exponent) -------------------------------------
-
-oper pow(base: Int, e: Int) => Int
 axiom powZero: forall b: Int; pow(b, ZERO) = ONE
 axiom powSucc: forall b, e: Int; pow(b, succ(e)) = mul(pow(b, e), b)
 
@@ -144,6 +128,40 @@ intheory euclidFromBezout
 
 // -- basic divisibility facts -----------------------------------------------
 
+axiom divModProperty: forall b, a: Int; less_than(ZERO, b) -> add(mul(b, div(a, b)), mod(a, b)) = a
+axiom modBound: forall b, a: Int; less_than(ZERO, b) -> less_than(mod(a, b), b)
+axiom modNonneg: forall b, a: Int; less_than(ZERO, b) -> is_nonneg(mod(a, b))
+
+// -- moved from the sequence/prime chapter: subtraction + divisor bounds ---
+
+axiom absOfNonneg: forall n: Int; is_nonneg(n) -> abs(n) = n
+axiom absOfNegative: forall n: Int; less_than(n, ZERO) -> abs(n) = neg(n)
+
+axiom gcdZero: forall a: Int; gcd(a, ZERO) = a
+axiom gcdStep: forall b, a: Int; less_than(ZERO, b) -> gcd(a, b) = gcd(b, mod(a, b))
+axiom gcdAbs: forall b, a: Int; gcd(a, b) = gcd(a, abs(b))
+
+axiom lcmNonneg: forall a, b: Int; is_nonneg(lcm(a, b))
+axiom lcmCommonMultipleLeft: forall a, b: Int; divides(a, lcm(a, b))
+axiom lcmCommonMultipleRight: forall a, b: Int; divides(b, lcm(a, b))
+axiom lcmLeast: forall a, b, n: Int; divides(a, n) -> divides(b, n) -> divides(lcm(a, b), n)
+
+// ℤ is a model of the abstract divisibility theory: its mul is associative with
+// right identity ONE and left-distributes over add, so the basic divisibility
+// facts (refl, mul, add) transfer instead of being re-proved.
+model IntegerDivisibility {
+  divisibility.Dividable: Int
+  divisibility.ONE: ONE
+  divisibility.mul: mul
+  divisibility.add: add
+  divisibility.mulOneRight <- mulOneRight
+  divisibility.mulIsAssociative <- mulIsAssociative
+  divisibility.mulAddDistribLeft <- mulAddDistribLeft
+}
+
+// -- powers (recursive on the exponent) -------------------------------------
+
+oper pow(base: Int, e: Int) => Int
 // d | d, witnessed by 1: d = d·1.
 theorem dividesRefl: forall d: Int; divides(d, d)
 proof
@@ -2788,12 +2806,6 @@ qed
 
 oper div(a: Int, b: Int) => Int requires less_than(ZERO, b)
 oper mod(a: Int, b: Int) => Int requires less_than(ZERO, b)
-axiom divModProperty: forall b, a: Int; less_than(ZERO, b) -> add(mul(b, div(a, b)), mod(a, b)) = a
-axiom modBound: forall b, a: Int; less_than(ZERO, b) -> less_than(mod(a, b), b)
-axiom modNonneg: forall b, a: Int; less_than(ZERO, b) -> is_nonneg(mod(a, b))
-
-// -- moved from the sequence/prime chapter: subtraction + divisor bounds ---
-
 // d | a and d | b give d | (a − b): d | (−b) because −b = mul(b, −1) is a
 // multiple of b's divisor d (dividesMul with −1), then dividesAdd on a and −b,
 // with sub(a, b) = add(a, neg(b)) (definitionOfSubtraction).
@@ -3101,9 +3113,6 @@ qed
 // pinned by the two sign-guarded axioms; always nonneg (absNonneg). Sign-
 // normalizes the divisor so the concrete gcd extends past the positive core.
 oper abs(n: Int) => Int
-axiom absOfNonneg: forall n: Int; is_nonneg(n) -> abs(n) = n
-axiom absOfNegative: forall n: Int; less_than(n, ZERO) -> abs(n) = neg(n)
-
 // abs(n) is nonneg for every n: signTrichotomy splits n; on the positive and
 // zero arms abs(n) = n is nonneg, on the negative arm abs(n) = neg(n) is nonneg
 // by negLessThanZero.
@@ -4071,10 +4080,6 @@ qed
 // divides it); both proved for nonneg b by strong induction on the DECREASING
 // modulus, then lifted to all b via abs.
 oper gcd(a: Int, b: Int) => Int
-axiom gcdZero: forall a: Int; gcd(a, ZERO) = a
-axiom gcdStep: forall b, a: Int; less_than(ZERO, b) -> gcd(a, b) = gcd(b, mod(a, b))
-axiom gcdAbs: forall b, a: Int; gcd(a, b) = gcd(a, abs(b))
-
 // gcd(a, b) divides both a and b, for nonneg b. Strong induction on b via
 // nonnegStrongInduction: base b = 0 uses gcdZero + dividesRefl/dividesZero; the
 // b = succ(m) arm recurses gcd(a, b) = gcd(b, mod(a,b)) [gcdStep], the modulus
@@ -5374,11 +5379,6 @@ qed
 // positive common multiples, the least of which is the lcm), and the axioms name
 // the least-common-multiple property directly.
 oper lcm(a: Int, b: Int) => Int
-axiom lcmNonneg: forall a, b: Int; is_nonneg(lcm(a, b))
-axiom lcmCommonMultipleLeft: forall a, b: Int; divides(a, lcm(a, b))
-axiom lcmCommonMultipleRight: forall a, b: Int; divides(b, lcm(a, b))
-axiom lcmLeast: forall a, b, n: Int; divides(a, n) -> divides(b, n) -> divides(lcm(a, b), n)
-
 // UNIQUENESS of the least common multiple (Judson's Exercise 23). Any positive m
 // that is itself a common multiple of a and b AND divides every common multiple
 // must equal lcm(a, b): lcm | m (lcm is least, m is a common multiple) and m | lcm

@@ -48,6 +48,21 @@ intheory raisingTheBoundAddsTheDiagonal
 intheory theEmptyRowCollectionIsUnchanged
 intheory theTriangleIsTheShortenedRows
 
+axiom rowZero: forall j: Nat; rowUpTo(j, ZERO) = IDENTITY
+axiom rowSucc: forall j, n: Nat;
+  rowUpTo(j, succ(n)) = combine(rowUpTo(j, n), term(j, n))
+
+axiom diagZero: forall i: Nat; diagUpTo(i, ZERO) = IDENTITY
+axiom diagSucc: forall i, c: Nat;
+  diagUpTo(i, succ(c)) = combine(diagUpTo(i, c), term(c, sub(i, c)))
+
+axiom triZero: triUpTo(ZERO) = IDENTITY
+axiom triSucc: forall n: Nat; triUpTo(succ(n)) = combine(triUpTo(n), antidiagonal(n))
+
+axiom shortenedRowsZero: forall n: Nat; shortenedRows(ZERO, n) = IDENTITY
+axiom shortenedRowsSucc: forall m, n: Nat;
+  shortenedRows(succ(m), n) = combine(shortenedRows(m, n), rowUpTo(m, sub(n, m)))
+
 // the third member of the AC triple `assoc_commut` wants: a(bc) = b(ac), by
 // re-associating left, commuting the outer pair, and re-associating right.
 theorem combineLeftSwap: forall a, b, c: Value;
@@ -96,33 +111,18 @@ oper term(j: Nat, k: Nat) => Value
 
 // `rowUpTo(j, n)` = term(j,0) + ... + term(j,n-1): ONE row, truncated at n.
 oper rowUpTo(j: Nat, n: Nat) => Value
-axiom rowZero: forall j: Nat; rowUpTo(j, ZERO) = IDENTITY
-axiom rowSucc: forall j, n: Nat;
-  rowUpTo(j, succ(n)) = combine(rowUpTo(j, n), term(j, n))
-
 // `diagUpTo(i, c)` = term(0,i) + term(1,i-1) + ... + term(c-1, i-c+1): the first c entries
 // of the i-th anti-diagonal. Recursion on the COUNT c, exactly like a row -- this is the
 // shape `convolution` already has in std/field/polynomial.b4m.
 oper diagUpTo(i: Nat, c: Nat) => Value
-axiom diagZero: forall i: Nat; diagUpTo(i, ZERO) = IDENTITY
-axiom diagSucc: forall i, c: Nat;
-  diagUpTo(i, succ(c)) = combine(diagUpTo(i, c), term(c, sub(i, c)))
-
 // the FULL i-th anti-diagonal has i+1 entries (j runs 0..i)
 define antidiagonal(i) = diagUpTo(i, succ(i))
 
 // `triUpTo(n)` = antidiagonal(0) + ... + antidiagonal(n-1): the TRIANGLE.
 oper triUpTo(n: Nat) => Value
-axiom triZero: triUpTo(ZERO) = IDENTITY
-axiom triSucc: forall n: Nat; triUpTo(succ(n)) = combine(triUpTo(n), antidiagonal(n))
-
 // `shortenedRows(m, n)` = sum over j<m of rowUpTo(j, n-j): the rows, each truncated so
 // the pair (j,k) is counted exactly when j+k < n.
 oper shortenedRows(m: Nat, n: Nat) => Value
-axiom shortenedRowsZero: forall n: Nat; shortenedRows(ZERO, n) = IDENTITY
-axiom shortenedRowsSucc: forall m, n: Nat;
-  shortenedRows(succ(m), n) = combine(shortenedRows(m, n), rowUpTo(m, sub(n, m)))
-
 // -- the key sublemma ---------------------------------------------------------------------
 //
 // THE CONTENT OF THE WHOLE LEMMA. Going from bound n to bound succ(n), every row j <= n

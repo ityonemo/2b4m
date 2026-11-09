@@ -35,34 +35,6 @@ axiom opHAssoc: forall a, b, c: H; opH(opH(a, b), c) = opH(a, opH(b, c))
 axiom opHIdentityLeft: forall a: H; opH(EH, a) = a
 axiom opHInverseLeft: forall a: H; opH(invH(a), a) = EH
 
-// G and H are groups, so their derived laws (right identity, right inverse, cancellation,
-// uniqueness of the identity) come from std/group.b4m rather than being re-proved.
-model GIsAGroup {
-  group.Grp: G
-  group.E: EG
-  group.op: opG
-  group.inverse: invG
-  group.opAssoc <- opGAssoc
-  group.opIdentityLeft <- opGIdentityLeft
-  group.opInverseLeft <- opGInverseLeft
-}
-
-model HIsAGroup {
-  group.Grp: H
-  group.E: EH
-  group.op: opH
-  group.inverse: invH
-  group.opAssoc <- opHAssoc
-  group.opIdentityLeft <- opHIdentityLeft
-  group.opInverseLeft <- opHInverseLeft
-}
-
-// -- the isomorphism --------------------------------------------------------------------------
-// φ : G → H, bijective and operation-preserving. `psi` is its inverse map, characterized by
-// the two round-trip axioms — which is what "bijective" buys and all the proofs below use.
-oper phi(a: G) => H
-oper psi(b: H) => G
-
 axiom phiPreservesOp: forall a, b: G; phi(opG(a, b)) = opH(phi(a), phi(b))
 axiom psiAfterPhi: forall a: G; psi(phi(a)) = a
 axiom phiAfterPsi: forall b: H; phi(psi(b)) = b
@@ -93,6 +65,58 @@ intheory aChainOfGroupIsomorphismsCollapses
 intheory theNamedIsomorphismsAreBackedByMaps
 
 // -- what an isomorphism preserves (Judson Thm 9.6) -------------------------------------------
+
+axiom composeApplyP: forall s, t: PermG; forall a: G; applyP(composeP(s, t), a) = applyP(s, applyP(t, a))
+axiom idApplyP: forall a: G; applyP(idP, a) = a
+axiom permExtensionality: forall s, t: PermG; (forall a: G; applyP(s, a) = applyP(t, a)) -> s = t
+
+axiom lamApply: forall g, a: G; applyP(lam(g), a) = opG(g, a)
+
+axiom inImageDef: forall s: PermG; inImage(s) iff (exists g: G; s = lam(g))
+
+axiom idGApply: forall a: G; idG(a) = a
+
+axiom opKAssoc: forall a, b, c: K; opK(opK(a, b), c) = opK(a, opK(b, c))
+axiom opKIdentityLeft: forall a: K; opK(EK, a) = a
+axiom opKInverseLeft: forall a: K; opK(invK(a), a) = EK
+
+axiom chiPreservesOp: forall x, y: H; chi(opH(x, y)) = opK(chi(x), chi(y))
+axiom chiInvAfterChi: forall x: H; chiInv(chi(x)) = x
+axiom chiAfterChiInv: forall z: K; chi(chiInv(z)) = z
+
+// THE BRIDGE: these three names are pairwise isomorphic, because this file exhibits the maps.
+// It is an axiom in the narrow sense of attaching a name to a construction — the constructions
+// themselves are the theorems above, and `theNamedIsomorphismsAreBackedByMaps` below records
+// that correspondence so the attachment is checkable rather than decorative.
+axiom namedGroupsAreIsomorphic: forall m, n: GroupName; groupIsomorphic(m, n)
+
+// G and H are groups, so their derived laws (right identity, right inverse, cancellation,
+// uniqueness of the identity) come from std/group.b4m rather than being re-proved.
+model GIsAGroup {
+  group.Grp: G
+  group.E: EG
+  group.op: opG
+  group.inverse: invG
+  group.opAssoc <- opGAssoc
+  group.opIdentityLeft <- opGIdentityLeft
+  group.opInverseLeft <- opGInverseLeft
+}
+
+model HIsAGroup {
+  group.Grp: H
+  group.E: EH
+  group.op: opH
+  group.inverse: invH
+  group.opAssoc <- opHAssoc
+  group.opIdentityLeft <- opHIdentityLeft
+  group.opInverseLeft <- opHInverseLeft
+}
+
+// -- the isomorphism --------------------------------------------------------------------------
+// φ : G → H, bijective and operation-preserving. `psi` is its inverse map, characterized by
+// the two round-trip axioms — which is what "bijective" buys and all the proofs below use.
+oper phi(a: G) => H
+oper psi(b: H) => G
 
 // φ is INJECTIVE: a left inverse forces it. (Judson's (1) and (2) "follow from the fact that
 // φ is a bijection"; this is that fact, made usable.)
@@ -366,14 +390,8 @@ sort PermG
 oper applyP(s: PermG, a: G) => G
 oper composeP(s: PermG, t: PermG) => PermG
 const idP: PermG
-axiom composeApplyP: forall s, t: PermG; forall a: G; applyP(composeP(s, t), a) = applyP(s, applyP(t, a))
-axiom idApplyP: forall a: G; applyP(idP, a) = a
-axiom permExtensionality: forall s, t: PermG; (forall a: G; applyP(s, a) = applyP(t, a)) -> s = t
-
 // the Cayley map: g |-> lambda_g
 oper lam(g: G) => PermG
-axiom lamApply: forall g, a: G; applyP(lam(g), a) = opG(g, a)
-
 // CAYLEY: the map g |-> lambda_g preserves the operation and is injective.
 theorem cayleyPreservesOp: forall g, h: G; lam(opG(g, h)) = composeP(lam(g), lam(h))
 proof
@@ -516,8 +534,6 @@ qed
 
 // THE IMAGE as a subgroup of PermG: "s is a left translation"
 pred inImage(s: PermG)
-axiom inImageDef: forall s: PermG; inImage(s) iff (exists g: G; s = lam(g))
-
 // the image contains the identity, is closed under composition and inverses —
 // i.e. it IS a group of permutations, which is Cayley's claim.
 theorem imageHasIdentity: inImage(idP)
@@ -676,8 +692,6 @@ qed
 // trivially and is its own inverse. `idG` is declared rather than reusing `phi`, since φ is
 // the fixed map to H.
 oper idG(a: G) => G
-axiom idGApply: forall a: G; idG(a) = a
-
 theorem reflexivityOfIsomorphism:
   (forall a, b: G; idG(opG(a, b)) = opG(idG(a), idG(b)))
   and (forall a: G; idG(idG(a)) = a)
@@ -744,10 +758,6 @@ sort K
 const EK: K
 oper opK(a: K, b: K) => K
 oper invK(a: K) => K
-axiom opKAssoc: forall a, b, c: K; opK(opK(a, b), c) = opK(a, opK(b, c))
-axiom opKIdentityLeft: forall a: K; opK(EK, a) = a
-axiom opKInverseLeft: forall a: K; opK(invK(a), a) = EK
-
 model KIsAGroup {
   group.Grp: K
   group.E: EK
@@ -761,10 +771,6 @@ model KIsAGroup {
 // the second isomorphism, H → K
 oper chi(b: H) => K
 oper chiInv(c: K) => H
-axiom chiPreservesOp: forall x, y: H; chi(opH(x, y)) = opK(chi(x), chi(y))
-axiom chiInvAfterChi: forall x: H; chiInv(chi(x)) = x
-axiom chiAfterChiInv: forall z: K; chi(chiInv(z)) = z
-
 // the COMPOSITE G → K preserves the operation, and its round trips close — so χ∘φ is an
 // isomorphism and ≅ is transitive.
 theorem transitivityOfIsomorphism:
@@ -910,12 +916,6 @@ const gName: GroupName
 const hName: GroupName
 const kName: GroupName
 pred groupIsomorphic(m: GroupName, n: GroupName)
-
-// THE BRIDGE: these three names are pairwise isomorphic, because this file exhibits the maps.
-// It is an axiom in the narrow sense of attaching a name to a construction — the constructions
-// themselves are the theorems above, and `theNamedIsomorphismsAreBackedByMaps` below records
-// that correspondence so the attachment is checkable rather than decorative.
-axiom namedGroupsAreIsomorphic: forall m, n: GroupName; groupIsomorphic(m, n)
 
 // the three obligations, as local theorems over the names
 theorem groupIsomorphicHasIdentityMaps: forall m: GroupName; groupIsomorphic(m, m)

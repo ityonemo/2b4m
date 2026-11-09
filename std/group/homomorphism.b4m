@@ -48,28 +48,6 @@ axiom opHAssoc: forall a, b, c: H; opH(opH(a, b), c) = opH(a, opH(b, c))
 axiom opHIdentityLeft: forall a: H; opH(EH, a) = a
 axiom opHInverseLeft: forall a: H; opH(invH(a), a) = EH
 
-// G and H are groups, so their derived laws come from std/group.b4m rather than being
-// re-proved here.
-model GIsAGroup {
-  group.Grp: G
-  group.E: EG
-  group.op: opG
-  group.inverse: invG
-  group.opAssoc <- opGAssoc
-  group.opIdentityLeft <- opGIdentityLeft
-  group.opInverseLeft <- opGInverseLeft
-}
-
-model HIsAGroup {
-  group.Grp: H
-  group.E: EH
-  group.op: opH
-  group.inverse: invH
-  group.opAssoc <- opHAssoc
-  group.opIdentityLeft <- opHIdentityLeft
-  group.opInverseLeft <- opHInverseLeft
-}
-
 // What this file proves (verified manifest):
 intheory cancelRightH
 intheory inverseUniqueH
@@ -98,6 +76,40 @@ intheory anInjectivePhiHasATrivialKernel
 // -- H's derived laws under bare local names --------------------------------------------------
 // A model-transferred fact has no bare name, and `specialize` resolves its head by name, so
 // each law used below gets a one-line shim.
+
+axiom phiPreservesOp: forall a, b: G; phi(opG(a, b)) = opH(phi(a), phi(b))
+
+axiom inKernelDef: forall g: G; inKernel(g) iff phi(g) = EH
+
+axiom sourceHasIdentity: inSource(EG)
+axiom sourceClosedOp: forall a, b: G; inSource(a) -> inSource(b) -> inSource(opG(a, b))
+axiom sourceClosedInverse: forall a: G; inSource(a) -> inSource(invG(a))
+
+axiom targetHasIdentity: inTarget(EH)
+axiom targetClosedOp: forall x, y: H; inTarget(x) -> inTarget(y) -> inTarget(opH(x, y))
+axiom targetClosedInverse: forall x: H; inTarget(x) -> inTarget(invH(x))
+
+// G and H are groups, so their derived laws come from std/group.b4m rather than being
+// re-proved here.
+model GIsAGroup {
+  group.Grp: G
+  group.E: EG
+  group.op: opG
+  group.inverse: invG
+  group.opAssoc <- opGAssoc
+  group.opIdentityLeft <- opGIdentityLeft
+  group.opInverseLeft <- opGInverseLeft
+}
+
+model HIsAGroup {
+  group.Grp: H
+  group.E: EH
+  group.op: opH
+  group.inverse: invH
+  group.opAssoc <- opHAssoc
+  group.opIdentityLeft <- opHIdentityLeft
+  group.opInverseLeft <- opHInverseLeft
+}
 
 theorem cancelRightH: forall b: H; forall a: H; forall c: H; opH(b, a) = opH(c, a) -> b = c
 proof
@@ -146,8 +158,6 @@ qed
 
 // THE HOMOMORPHISM -- one axiom, no bijectivity.
 oper phi(a: G) => H
-axiom phiPreservesOp: forall a, b: G; phi(opG(a, b)) = opH(phi(a), phi(b))
-
 // Judson Prop 11.4(1): phi(e) is the identity.
 // "e' phi(e) = phi(e) = phi(ee) = phi(e)phi(e). By cancellation, phi(e) = e'."
 theorem phiPreservesIdentity: phi(EG) = EH
@@ -215,8 +225,6 @@ qed
 
 // THE KERNEL, as a membership predicate on G.
 pred inKernel(g: G)
-axiom inKernelDef: forall g: G; inKernel(g) iff phi(g) = EH
-
 // Judson Thm 11.6: the kernel is a NORMAL subgroup of G.
 // Subgroup first: the identity is in it, and it is closed under op and inverses.
 theorem theKernelHasTheIdentity: inKernel(EG)
@@ -429,10 +437,6 @@ qed
 // having.
 
 pred inSource(g: G)
-axiom sourceHasIdentity: inSource(EG)
-axiom sourceClosedOp: forall a, b: G; inSource(a) -> inSource(b) -> inSource(opG(a, b))
-axiom sourceClosedInverse: forall a: G; inSource(a) -> inSource(invG(a))
-
 // x is in φ(H₁) when some source-subgroup element maps to it. A `define`, so the kernel only
 // ever sees the body — the same choice `coset.inCoset` and `generated.inGenerated` make.
 define inImage(x) = exists g: G; inSource(g) and x = phi(g)
@@ -607,10 +611,6 @@ qed
 // kernel's proof needs no subgroup predicate on H and is the one §11.2 actually cites.
 
 pred inTarget(x: H)
-axiom targetHasIdentity: inTarget(EH)
-axiom targetClosedOp: forall x, y: H; inTarget(x) -> inTarget(y) -> inTarget(opH(x, y))
-axiom targetClosedInverse: forall x: H; inTarget(x) -> inTarget(invH(x))
-
 define inPreimage(g) = inTarget(phi(g))
 
 theorem thePreimageHasTheIdentity: inPreimage(EG)

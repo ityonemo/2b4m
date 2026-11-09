@@ -49,16 +49,6 @@ axiom opGAssoc: forall a, b, c: G; opG(opG(a, b), c) = opG(a, opG(b, c))
 axiom opGIdentityLeft: forall a: G; opG(EG, a) = a
 axiom opGInverseLeft: forall a: G; opG(invG(a), a) = EG
 
-model GIsAGroup {
-  group.Grp: G
-  group.E: EG
-  group.op: opG
-  group.inverse: invG
-  group.opAssoc <- opGAssoc
-  group.opIdentityLeft <- opGIdentityLeft
-  group.opInverseLeft <- opGInverseLeft
-}
-
 // What this file proves (verified manifest):
 intheory inverseUniqueG
 intheory inverseIdentityG
@@ -75,6 +65,32 @@ intheory clsKernelIsN
 intheory theCongruenceIsReflexive
 intheory theCongruenceIsSymmetric
 intheory theClassOperationIsWellDefined
+
+axiom nHasIdentity: inN(EG)
+axiom nClosedOp: forall a, b: G; inN(a) -> inN(b) -> inN(opG(a, b))
+axiom nClosedInverse: forall a: G; inN(a) -> inN(invG(a))
+axiom nIsNormal: forall g: G; forall n: G; inN(n) -> inN(opG(opG(g, n), invG(g)))
+
+axiom clsSurjective: forall q: Quot; exists a: G; q = cls(a)
+axiom clsCongruent: forall a, b: G; cls(a) = cls(b) iff inN(opG(invG(a), b))
+
+axiom eqIsClsIdentity: EQ = cls(EG)
+axiom opQHom: forall a, b: G; opQ(cls(a), cls(b)) = cls(opG(a, b))
+axiom invQHom: forall a: G; invQ(cls(a)) = cls(invG(a))
+
+// -- the group axioms on G/N, LIFTED ----------------------------------------------------------
+// Each is the same four-move idiom: `clsSurjective` + `unpack` for representatives, push
+// through the `…Hom` axiom, apply G's law, fold back.
+
+model GIsAGroup {
+  group.Grp: G
+  group.E: EG
+  group.op: opG
+  group.inverse: invG
+  group.opAssoc <- opGAssoc
+  group.opIdentityLeft <- opGIdentityLeft
+  group.opInverseLeft <- opGInverseLeft
+}
 
 // G's inverse-uniqueness and the identity's inverse, needed by `clsKernelIsN` below.
 // (`group.inverseIdentity` lives in std/group/sequence.b4m, off the model's transfer path.)
@@ -102,11 +118,6 @@ qed
 // A membership predicate, as every subgroup in std is. Normality is the conjugation form, which
 // `normal.conjugationLandsInTheSubgroupIffCosetsCoincide` proves equivalent to the coset form.
 pred inN(g: G)
-axiom nHasIdentity: inN(EG)
-axiom nClosedOp: forall a, b: G; inN(a) -> inN(b) -> inN(opG(a, b))
-axiom nClosedInverse: forall a: G; inN(a) -> inN(invG(a))
-axiom nIsNormal: forall g: G; forall n: G; inN(n) -> inN(opG(opG(g, n), invG(g)))
-
 // N IS A SUBGROUP of G, said by a model of std/subgroup.b4m — which is what lets
 // `normal.theFactorOperationIsWellDefined` transfer onto these symbols below.
 model NIsANormalSubgroup {
@@ -142,21 +153,10 @@ qed
 // (`coset.cosetsCoincideIffQuotientIsInTheSubgroup`): gN = hN exactly when g⁻¹h is in N.
 sort Quot
 oper cls(a: G) => Quot
-axiom clsSurjective: forall q: Quot; exists a: G; q = cls(a)
-axiom clsCongruent: forall a, b: G; cls(a) = cls(b) iff inN(opG(invG(a), b))
-
 // the induced structure, posited as class-map homomorphism equations
 const EQ: Quot
 oper opQ(x: Quot, y: Quot) => Quot
 oper invQ(x: Quot) => Quot
-axiom eqIsClsIdentity: EQ = cls(EG)
-axiom opQHom: forall a, b: G; opQ(cls(a), cls(b)) = cls(opG(a, b))
-axiom invQHom: forall a: G; invQ(cls(a)) = cls(invG(a))
-
-// -- the group axioms on G/N, LIFTED ----------------------------------------------------------
-// Each is the same four-move idiom: `clsSurjective` + `unpack` for representatives, push
-// through the `…Hom` axiom, apply G's law, fold back.
-
 theorem opQAssoc: forall x, y, z: Quot; opQ(opQ(x, y), z) = opQ(x, opQ(y, z))
 proof
   @generalize-x |

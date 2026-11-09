@@ -79,17 +79,6 @@ intheory lessOrEqualAddBoth
 intheory squareStrictlyMonotone
 intheory squareBoundGivesBound
 
-// the clause under a citable name, for moving between the predicate and the disequation
-theorem nonzeroMeaning: forall a: Real; nonzero(a) iff (not (a = ZERO))
-proof
-  @conclusion |
-    forall a: Real; nonzero(a) iff (not (a = ZERO))
-    [by definition nonzero]
-qed
-
-oper recip(a: Real) => Real requires nonzero(a)
-pred less_than(a: Real, b: Real)
-
 // -- ordered-field axioms (discharge the ordered-field model below) ----------
 axiom addIsAssociative: forall a, b, c: Real; add(add(a, b), c) = add(a, add(b, c))
 axiom addZeroLeft: forall a: Real; add(ZERO, a) = a
@@ -108,6 +97,76 @@ axiom lessThanTrichotomy: forall a, b: Real; less_than(a, b) or a = b or less_th
 axiom lessThanAddRight: forall a, b, c: Real; less_than(a, b) -> less_than(add(a, c), add(b, c))
 axiom lessThanAddCancel: forall a, b, c: Real; less_than(add(a, c), add(b, c)) -> less_than(a, b)
 axiom positiveProduct: forall a, b: Real; less_than(ZERO, a) -> less_than(ZERO, b) -> less_than(ZERO, mul(a, b))
+
+// -- completeness (the least-upper-bound axiom) -----------------------------
+// The distinguishing property of ℝ, POSTULATED as a predicate-argument axiom
+// (like std/integer.b4m's nonnegInduction schema). A set of reals is given by a
+// predicate `s: Real -> Prop`. Completeness: any nonempty, bounded-above set has a
+// LEAST upper bound. The upper-bound / least-upper-bound conditions are spelled
+// inline (higher-order args are only allowed in axiom/schema headers, not `define`).
+//   nonempty:        exists x; s(x)
+//   bounded above:   exists m; forall x; s(x) -> x <= m
+//   least upper bnd: exists m; (forall x; s(x) -> x <= m)               [m bounds s]
+//                      and (forall b; (forall x; s(x) -> x <= b) -> m <= b)  [least]
+axiom completeness(s(Real)):
+  (exists x: Real; s(x))
+  -> (exists m: Real; forall x: Real; s(x) -> less_or_equal(x, m))
+  -> exists m: Real;
+  (forall x: Real; s(x) -> less_or_equal(x, m))
+  and (forall b: Real; (forall x: Real; s(x) -> less_or_equal(x, b)) -> less_or_equal(m, b))
+
+axiom isRationalZero: isRational(ZERO)
+axiom isRationalOne: isRational(ONE)
+axiom isRationalAdd: forall a, b: Real; isRational(a) -> isRational(b) -> isRational(add(a, b))
+axiom isRationalMul: forall a, b: Real; isRational(a) -> isRational(b) -> isRational(mul(a, b))
+axiom isRationalNeg: forall a: Real; isRational(a) -> isRational(neg(a))
+axiom isRationalRecip: forall a: Real; isRational(a) -> nonzero(a) -> isRational(recip(a))
+
+axiom isIntegerZero: isInteger(ZERO)
+axiom isIntegerOne: isInteger(ONE)
+axiom isIntegerAdd: forall a, b: Real; isInteger(a) -> isInteger(b) -> isInteger(add(a, b))
+axiom isIntegerMul: forall a, b: Real; isInteger(a) -> isInteger(b) -> isInteger(mul(a, b))
+axiom isIntegerNeg: forall a: Real; isInteger(a) -> isInteger(neg(a))
+
+axiom succDefinition: forall q: Real; succ(q) = add(q, ONE)
+axiom prevDefinition: forall q: Real; prev(q) = add(q, neg(ONE))
+axiom subDefinition: forall a, b: Real; sub(a, b) = add(a, neg(b))
+
+axiom isNaturalZero: isNatural(ZERO)
+axiom isNaturalSucc: forall q: Real; isNatural(q) -> isNatural(succ(q))
+axiom isNaturalIsInteger: forall q: Real; isNatural(q) -> isInteger(q)
+axiom isNaturalSuccNotZero: forall q: Real; isNatural(q) -> succ(q) != ZERO
+// every integer is a natural or the negation of one (ℤ = ℕ ∪ −ℕ) — the intCases
+// obligation of the integer model, on the cut.
+axiom integerCases: forall q: Real; isInteger(q) -> (isNatural(q) or isNatural(neg(q)))
+
+// -- integer succ/prev closure ----------------------------------------------
+axiom isIntegerSucc: forall q: Real; isInteger(q) -> isInteger(succ(q))
+axiom isIntegerPrev: forall q: Real; isInteger(q) -> isInteger(prev(q))
+
+// -- induction on the cuts (the minimality axioms) --------------------------
+// Neither induction principle is derivable from ℝ's ordered-field axioms — the
+// ordered-field theory has models with non-standard "integers" that satisfy every
+// closure axiom yet are not reached from 0 by finitely many ±1 steps. Induction is
+// exactly the minimality (smallest subring/submonoid containing 1) that pins the
+// cut to the STANDARD integers/naturals. So it is POSTULATED, mirroring peano's
+// `induction`, integer's `nonnegInduction`, and real's `completeness`. These
+// discharge the induction obligations of the ℤ / ℕ models.
+axiom naturalInduction(prop(Real)):
+  prop(ZERO)
+  -> (forall k: Real; isNatural(k) -> prop(k) -> prop(succ(k)))
+  -> forall n: Real; isNatural(n) -> prop(n)
+
+// the clause under a citable name, for moving between the predicate and the disequation
+theorem nonzeroMeaning: forall a: Real; nonzero(a) iff (not (a = ZERO))
+proof
+  @conclusion |
+    forall a: Real; nonzero(a) iff (not (a = ZERO))
+    [by definition nonzero]
+qed
+
+oper recip(a: Real) => Real requires nonzero(a)
+pred less_than(a: Real, b: Real)
 
 define less_or_equal(a, b) = less_than(a, b) or a = b
 
@@ -151,23 +210,6 @@ proof
     [using model(RealOrderedField) field_order.zeroLessThanOne]
 qed
 
-// -- completeness (the least-upper-bound axiom) -----------------------------
-// The distinguishing property of ℝ, POSTULATED as a predicate-argument axiom
-// (like std/integer.b4m's nonnegInduction schema). A set of reals is given by a
-// predicate `s: Real -> Prop`. Completeness: any nonempty, bounded-above set has a
-// LEAST upper bound. The upper-bound / least-upper-bound conditions are spelled
-// inline (higher-order args are only allowed in axiom/schema headers, not `define`).
-//   nonempty:        exists x; s(x)
-//   bounded above:   exists m; forall x; s(x) -> x <= m
-//   least upper bnd: exists m; (forall x; s(x) -> x <= m)               [m bounds s]
-//                      and (forall b; (forall x; s(x) -> x <= b) -> m <= b)  [least]
-axiom completeness(s(Real)):
-  (exists x: Real; s(x))
-  -> (exists m: Real; forall x: Real; s(x) -> less_or_equal(x, m))
-  -> exists m: Real;
-  (forall x: Real; s(x) -> less_or_equal(x, m))
-  and (forall b: Real; (forall x: Real; s(x) -> less_or_equal(x, b)) -> less_or_equal(m, b))
-
 // -- the rationals inside ℝ (a predicate, NOT an embedding function) ----------
 // `isRational` marks the rational subfield of ℝ — an OPAQUE predicate pinned down by
 // closure axioms: it contains 0 and 1 and is closed under +, ×, neg, AND recip (of a
@@ -175,13 +217,6 @@ axiom completeness(s(Real)):
 // to isInteger on ℚ, which stops at the subring. The predicate exists to STATE facts
 // about the rationals (√2 ∉ ℚ, density) and to seed a `Real where isRational` carve.
 pred isRational(x: Real)
-axiom isRationalZero: isRational(ZERO)
-axiom isRationalOne: isRational(ONE)
-axiom isRationalAdd: forall a, b: Real; isRational(a) -> isRational(b) -> isRational(add(a, b))
-axiom isRationalMul: forall a, b: Real; isRational(a) -> isRational(b) -> isRational(mul(a, b))
-axiom isRationalNeg: forall a: Real; isRational(a) -> isRational(neg(a))
-axiom isRationalRecip: forall a: Real; isRational(a) -> nonzero(a) -> isRational(recip(a))
-
 model RealField {
   field.Field: Real
   field.ZERO: ZERO
@@ -212,12 +247,6 @@ model RealField {
 // (a subRING) from a subfield. This is the carve a future `sort SomeInt = Real where
 // isInteger` + guarded ℤ-theorem-transfer model would build on.
 pred isInteger(q: Real)
-axiom isIntegerZero: isInteger(ZERO)
-axiom isIntegerOne: isInteger(ONE)
-axiom isIntegerAdd: forall a, b: Real; isInteger(a) -> isInteger(b) -> isInteger(add(a, b))
-axiom isIntegerMul: forall a, b: Real; isInteger(a) -> isInteger(b) -> isInteger(mul(a, b))
-axiom isIntegerNeg: forall a: Real; isInteger(a) -> isInteger(neg(a))
-
 // -- successor / predecessor on ℝ (the discrete step, for the integer model) --
 // ℤ's theory is built on succ/prev; to model it on ℝ's integers we realize the
 // step as +1 / −1. These are total on ℝ (they step ANY rational by one) but only
@@ -225,40 +254,11 @@ axiom isIntegerNeg: forall a: Real; isInteger(a) -> isInteger(neg(a))
 oper succ(q: Real) => Real
 oper prev(q: Real) => Real
 oper sub(a: Real, b: Real) => Real
-axiom succDefinition: forall q: Real; succ(q) = add(q, ONE)
-axiom prevDefinition: forall q: Real; prev(q) = add(q, neg(ONE))
-axiom subDefinition: forall a, b: Real; sub(a, b) = add(a, neg(b))
-
 // -- the naturals inside ℝ (nonneg integers) --------------------------------
 // `isNatural` marks the non-negative integers of ℝ — the ℕ cut. It is the ℤ cut
 // intersected with ≥0: contains 0, closed under succ, and every natural is an
 // integer. This is the source cut for the guarded ℕ (peano) model.
 pred isNatural(q: Real)
-axiom isNaturalZero: isNatural(ZERO)
-axiom isNaturalSucc: forall q: Real; isNatural(q) -> isNatural(succ(q))
-axiom isNaturalIsInteger: forall q: Real; isNatural(q) -> isInteger(q)
-axiom isNaturalSuccNotZero: forall q: Real; isNatural(q) -> succ(q) != ZERO
-// every integer is a natural or the negation of one (ℤ = ℕ ∪ −ℕ) — the intCases
-// obligation of the integer model, on the cut.
-axiom integerCases: forall q: Real; isInteger(q) -> (isNatural(q) or isNatural(neg(q)))
-
-// -- integer succ/prev closure ----------------------------------------------
-axiom isIntegerSucc: forall q: Real; isInteger(q) -> isInteger(succ(q))
-axiom isIntegerPrev: forall q: Real; isInteger(q) -> isInteger(prev(q))
-
-// -- induction on the cuts (the minimality axioms) --------------------------
-// Neither induction principle is derivable from ℝ's ordered-field axioms — the
-// ordered-field theory has models with non-standard "integers" that satisfy every
-// closure axiom yet are not reached from 0 by finitely many ±1 steps. Induction is
-// exactly the minimality (smallest subring/submonoid containing 1) that pins the
-// cut to the STANDARD integers/naturals. So it is POSTULATED, mirroring peano's
-// `induction`, integer's `nonnegInduction`, and real's `completeness`. These
-// discharge the induction obligations of the ℤ / ℕ models.
-axiom naturalInduction(prop(Real)):
-  prop(ZERO)
-  -> (forall k: Real; isNatural(k) -> prop(k) -> prop(succ(k)))
-  -> forall n: Real; isNatural(n) -> prop(n)
-
 // The SAME natural induction with a redundant `isInteger` guard on each bound
 // variable — the exact shape the IntegersInReal model's remap of ℤ's
 // `nonnegInduction` demands (ℤ's `Int` binder becomes isInteger, its `nonneg`

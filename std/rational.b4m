@@ -86,17 +86,6 @@ intheory mulPrevLeft
 intheory succInjective
 intheory integerInduction
 
-// the clause under a citable name, for moving between the predicate and the disequation
-theorem nonzeroMeaning: forall a: Q; nonzero(a) iff (not (a = ZERO))
-proof
-  @conclusion |
-    forall a: Q; nonzero(a) iff (not (a = ZERO))
-    [by definition nonzero]
-qed
-
-oper recip(a: Q) => Q requires nonzero(a)
-pred less_than(a: Q, b: Q)
-
 // -- ordered-field axioms (discharge the ordered-field model below) ----------
 axiom addIsAssociative: forall a, b, c: Q; add(add(a, b), c) = add(a, add(b, c))
 axiom addZeroLeft: forall a: Q; add(ZERO, a) = a
@@ -115,6 +104,71 @@ axiom lessThanTrichotomy: forall a, b: Q; less_than(a, b) or a = b or less_than(
 axiom lessThanAddRight: forall a, b, c: Q; less_than(a, b) -> less_than(add(a, c), add(b, c))
 axiom lessThanAddCancel: forall a, b, c: Q; less_than(add(a, c), add(b, c)) -> less_than(a, b)
 axiom positiveProduct: forall a, b: Q; less_than(ZERO, a) -> less_than(ZERO, b) -> less_than(ZERO, mul(a, b))
+
+axiom isIntegerAdd: forall a, b: Q; isInteger(a) -> isInteger(b) -> isInteger(add(a, b))
+axiom isIntegerMul: forall a, b: Q; isInteger(a) -> isInteger(b) -> isInteger(mul(a, b))
+axiom isIntegerNeg: forall a: Q; isInteger(a) -> isInteger(neg(a))
+
+// ℚ IS THE FIELD OF FRACTIONS of that subring: every rational is one integer over a
+// nonzero integer. Standard — it is what "the rationals" means — and it is what makes this
+// sort ℚ rather than some larger ordered field with ℚ's integers sitting inside it. ℝ with
+// its own integers satisfied every other axiom in this file, `naturalInduction` included,
+// so √2 was in `Q` until this was added.
+//
+// Nothing in the corpus noticed, because ℚ had only ever been used AS A FIELD: all 28
+// theorems here are field laws or ℤ-transfer support, real.b4m models ℚ's ordered-field
+// core, and the AATA chapters cite `addLeftSwap` / `mulLeftSwap` / `succInjective`. The gap
+// surfaced only when Judson's §17.3 Lemma 17.12 opened on "suppose
+// p(x) = b_0/c_0 + … + b_n/c_n x^n, where the b_i's and c_i's are integers".
+// The denominator's nonzero-ness is spelled with the PREDICATE, not as `c != ZERO`: it has to
+// GUARD the `recip(c)` in the same formula, and a guard is matched syntactically. Stated as a
+// disequation it would merely sit beside the division — true, and not load-bearing — which is
+// exactly the shape that lets a total `recip` divide by zero inside a verified proof.
+axiom everyRationalIsAQuotientOfIntegers: forall q: Q;
+  exists b, c: Q;
+  isInteger(b) and isInteger(c) and nonzero(c) and q = mul(b, recip(c))
+
+axiom succDefinition: forall q: Q; succ(q) = add(q, ONE)
+axiom prevDefinition: forall q: Q; prev(q) = add(q, neg(ONE))
+axiom subDefinition: forall a, b: Q; sub(a, b) = add(a, neg(b))
+
+axiom isNaturalZero: isNatural(ZERO)
+axiom isNaturalSucc: forall q: Q; isNatural(q) -> isNatural(succ(q))
+axiom isNaturalIsInteger: forall q: Q; isNatural(q) -> isInteger(q)
+axiom isNaturalSuccNotZero: forall q: Q; isNatural(q) -> succ(q) != ZERO
+// every integer is a natural or the negation of one (ℤ = ℕ ∪ −ℕ) — the intCases
+// obligation of the integer model, on the cut.
+axiom integerCases: forall q: Q; isInteger(q) -> (isNatural(q) or isNatural(neg(q)))
+
+// -- integer succ/prev closure (DERIVED, below) ------------------------------
+// `isIntegerSucc` / `isIntegerPrev` were axioms; they are not primitive. succ(q) is
+// q + ONE and prev(q) is q + neg(ONE), so each is `isIntegerAdd` against
+// `oneIsAnInteger`. Proved as `succOfAnIntegerIsAnInteger` /
+// `prevOfAnIntegerIsAnInteger` with the other derived facts.
+
+// -- induction on the cuts (the minimality axioms) --------------------------
+// Neither induction principle is derivable from ℚ's ordered-field axioms — the
+// ordered-field theory has models with non-standard "integers" that satisfy every
+// closure axiom yet are not reached from 0 by finitely many ±1 steps. Induction is
+// exactly the minimality (smallest subring/submonoid containing 1) that pins the
+// cut to the STANDARD integers/naturals. So it is POSTULATED, mirroring peano's
+// `induction`, integer's `nonnegInduction`, and real's `completeness`. These
+// discharge the induction obligations of the ℤ / ℕ models.
+axiom naturalInduction(prop(Q)):
+  prop(ZERO)
+  -> (forall k: Q; isNatural(k) -> prop(k) -> prop(succ(k)))
+  -> forall n: Q; isNatural(n) -> prop(n)
+
+// the clause under a citable name, for moving between the predicate and the disequation
+theorem nonzeroMeaning: forall a: Q; nonzero(a) iff (not (a = ZERO))
+proof
+  @conclusion |
+    forall a: Q; nonzero(a) iff (not (a = ZERO))
+    [by definition nonzero]
+qed
+
+oper recip(a: Q) => Q requires nonzero(a)
+pred less_than(a: Q, b: Q)
 
 // ℚ is an ordered field: its ALGEBRA model (cited for field/order theorems).
 model RationalOrderedField {
@@ -182,29 +236,6 @@ model RationalField {
 // `isNaturalIsInteger`) and are proved as `zeroIsAnInteger` / `oneIsAnInteger`. No
 // derivation touches the axiom it replaces; `--axioms` on each confirms it.
 pred isInteger(q: Q)
-axiom isIntegerAdd: forall a, b: Q; isInteger(a) -> isInteger(b) -> isInteger(add(a, b))
-axiom isIntegerMul: forall a, b: Q; isInteger(a) -> isInteger(b) -> isInteger(mul(a, b))
-axiom isIntegerNeg: forall a: Q; isInteger(a) -> isInteger(neg(a))
-
-// ℚ IS THE FIELD OF FRACTIONS of that subring: every rational is one integer over a
-// nonzero integer. Standard — it is what "the rationals" means — and it is what makes this
-// sort ℚ rather than some larger ordered field with ℚ's integers sitting inside it. ℝ with
-// its own integers satisfied every other axiom in this file, `naturalInduction` included,
-// so √2 was in `Q` until this was added.
-//
-// Nothing in the corpus noticed, because ℚ had only ever been used AS A FIELD: all 28
-// theorems here are field laws or ℤ-transfer support, real.b4m models ℚ's ordered-field
-// core, and the AATA chapters cite `addLeftSwap` / `mulLeftSwap` / `succInjective`. The gap
-// surfaced only when Judson's §17.3 Lemma 17.12 opened on "suppose
-// p(x) = b_0/c_0 + … + b_n/c_n x^n, where the b_i's and c_i's are integers".
-// The denominator's nonzero-ness is spelled with the PREDICATE, not as `c != ZERO`: it has to
-// GUARD the `recip(c)` in the same formula, and a guard is matched syntactically. Stated as a
-// disequation it would merely sit beside the division — true, and not load-bearing — which is
-// exactly the shape that lets a total `recip` divide by zero inside a verified proof.
-axiom everyRationalIsAQuotientOfIntegers: forall q: Q;
-  exists b, c: Q;
-  isInteger(b) and isInteger(c) and nonzero(c) and q = mul(b, recip(c))
-
 // -- successor / predecessor on ℚ (the discrete step, for the integer model) --
 // ℤ's theory is built on succ/prev; to model it on ℚ's integers we realize the
 // step as +1 / −1. These are total on ℚ (they step ANY rational by one) but only
@@ -212,42 +243,11 @@ axiom everyRationalIsAQuotientOfIntegers: forall q: Q;
 oper succ(q: Q) => Q
 oper prev(q: Q) => Q
 oper sub(a: Q, b: Q) => Q
-axiom succDefinition: forall q: Q; succ(q) = add(q, ONE)
-axiom prevDefinition: forall q: Q; prev(q) = add(q, neg(ONE))
-axiom subDefinition: forall a, b: Q; sub(a, b) = add(a, neg(b))
-
 // -- the naturals inside ℚ (nonneg integers) --------------------------------
 // `isNatural` marks the non-negative integers of ℚ — the ℕ cut. It is the ℤ cut
 // intersected with ≥0: contains 0, closed under succ, and every natural is an
 // integer. This is the source cut for the guarded ℕ (peano) model.
 pred isNatural(q: Q)
-axiom isNaturalZero: isNatural(ZERO)
-axiom isNaturalSucc: forall q: Q; isNatural(q) -> isNatural(succ(q))
-axiom isNaturalIsInteger: forall q: Q; isNatural(q) -> isInteger(q)
-axiom isNaturalSuccNotZero: forall q: Q; isNatural(q) -> succ(q) != ZERO
-// every integer is a natural or the negation of one (ℤ = ℕ ∪ −ℕ) — the intCases
-// obligation of the integer model, on the cut.
-axiom integerCases: forall q: Q; isInteger(q) -> (isNatural(q) or isNatural(neg(q)))
-
-// -- integer succ/prev closure (DERIVED, below) ------------------------------
-// `isIntegerSucc` / `isIntegerPrev` were axioms; they are not primitive. succ(q) is
-// q + ONE and prev(q) is q + neg(ONE), so each is `isIntegerAdd` against
-// `oneIsAnInteger`. Proved as `succOfAnIntegerIsAnInteger` /
-// `prevOfAnIntegerIsAnInteger` with the other derived facts.
-
-// -- induction on the cuts (the minimality axioms) --------------------------
-// Neither induction principle is derivable from ℚ's ordered-field axioms — the
-// ordered-field theory has models with non-standard "integers" that satisfy every
-// closure axiom yet are not reached from 0 by finitely many ±1 steps. Induction is
-// exactly the minimality (smallest subring/submonoid containing 1) that pins the
-// cut to the STANDARD integers/naturals. So it is POSTULATED, mirroring peano's
-// `induction`, integer's `nonnegInduction`, and real's `completeness`. These
-// discharge the induction obligations of the ℤ / ℕ models.
-axiom naturalInduction(prop(Q)):
-  prop(ZERO)
-  -> (forall k: Q; isNatural(k) -> prop(k) -> prop(succ(k)))
-  -> forall n: Q; isNatural(n) -> prop(n)
-
 // The SAME natural induction with a redundant `isInteger` guard on each bound
 // variable — the exact shape the IntegersInRational model's remap of ℤ's
 // `nonnegInduction` demands (ℤ's `Int` binder becomes isInteger, its `nonneg`

@@ -137,6 +137,34 @@ intheory zeroIsBelowTheLength
 intheory innerLoopDropsTwo
 intheory identityIsEvenLengthForAnySequence
 
+// -- THE REWRITING STEP: replacing two adjacent factors -------------------------------------
+// Each of Judson's identities rewrites the pair at positions (k, k+1) of a product. The
+// sequence surgery is an existence postulate in the style of this layer's other sequence
+// axioms; the PAYOFF below is that the product is unchanged when the new pair composes to the
+// old one. Entries outside the replaced positions are untouched, which is what lets the inner
+// induction carry "every entry above j fixes `a`" across a rewrite.
+axiom seqReplaceTwo: forall s: Seq; forall k: Nat; forall p: Fn; forall q: Fn;
+  invertible(p) -> invertible(q) ->
+  exists u: Seq;
+  at(u, k) = p
+  and at(u, succ(k)) = q
+  and (forall i: Nat; less_than(i, k) -> at(u, i) = at(s, i))
+  and (forall i: Nat; less_than(succ(k), i) -> at(u, i) = at(s, i))
+// Replacing the pair at (k, k+1) by a composite EQUAL to it leaves the product up to k+2
+// unchanged: productUpTo(u, k+2) = ((prefix)·p)·q and the prefix is shared.
+// -- DELETING the cancelling pair ------------------------------------------------------------
+// The cancel branch needs a sequence of length r − 2. Deleting positions (j, j+1) gives one,
+// and — following this layer's idiom, where a sequence postulate carries its own product law
+// (compare `seqConcat`, `seqReverse` in std/permutation/sequence.b4m) — the postulate states
+// the product directly rather than leaving a fold argument to the caller. Sound because the
+// deleted pair composes to the identity, so it contributes nothing to the fold.
+axiom seqDeleteCancellingPair: forall s: Seq; forall j: Nat; forall e: Nat;
+  compose(at(s, j), at(s, succ(j))) = identityFn ->
+  exists v: Seq;
+  (forall i: Nat; less_than(i, j) -> at(v, i) = at(s, i))
+  and (forall i: Nat; at(v, add(j, i)) = at(s, add(succ(succ(j)), i)))
+  and productUpTo(v, add(j, e)) = productUpTo(s, add(succ(succ(j)), e))
+
 // -- the value of a composite of two transpositions at a point -----------------------------
 // Every identity below is proved by the same shape: compute both sides at a fixed point by
 // `composeApply` plus the three action lemmas, then close by funcExtensionality. This helper
@@ -1168,21 +1196,6 @@ proof
     [by generalize generalize-a]
 qed
 
-// -- THE REWRITING STEP: replacing two adjacent factors -------------------------------------
-// Each of Judson's identities rewrites the pair at positions (k, k+1) of a product. The
-// sequence surgery is an existence postulate in the style of this layer's other sequence
-// axioms; the PAYOFF below is that the product is unchanged when the new pair composes to the
-// old one. Entries outside the replaced positions are untouched, which is what lets the inner
-// induction carry "every entry above j fixes `a`" across a rewrite.
-axiom seqReplaceTwo: forall s: Seq; forall k: Nat; forall p: Fn; forall q: Fn;
-  invertible(p) -> invertible(q) ->
-  exists u: Seq;
-  at(u, k) = p
-  and at(u, succ(k)) = q
-  and (forall i: Nat; less_than(i, k) -> at(u, i) = at(s, i))
-  and (forall i: Nat; less_than(succ(k), i) -> at(u, i) = at(s, i))
-// Replacing the pair at (k, k+1) by a composite EQUAL to it leaves the product up to k+2
-// unchanged: productUpTo(u, k+2) = ((prefix)·p)·q and the prefix is shared.
 theorem replacingAPairKeepsTheProduct: forall s: Seq; forall u: Seq; forall k: Nat;
   (forall i: Nat; less_than(i, k) -> at(u, i) = at(s, i)) ->
   compose(at(u, k), at(u, succ(k))) = compose(at(s, k), at(s, succ(k))) ->
@@ -4014,19 +4027,6 @@ proof
     forall j: Nat; forall r: Nat; less_than(succ(j), r) -> exists e: Nat; r = add(succ(succ(j)), e)
     [by generalize generalize-j]
 qed
-
-// -- DELETING the cancelling pair ------------------------------------------------------------
-// The cancel branch needs a sequence of length r − 2. Deleting positions (j, j+1) gives one,
-// and — following this layer's idiom, where a sequence postulate carries its own product law
-// (compare `seqConcat`, `seqReverse` in std/permutation/sequence.b4m) — the postulate states
-// the product directly rather than leaving a fold argument to the caller. Sound because the
-// deleted pair composes to the identity, so it contributes nothing to the fold.
-axiom seqDeleteCancellingPair: forall s: Seq; forall j: Nat; forall e: Nat;
-  compose(at(s, j), at(s, succ(j))) = identityFn ->
-  exists v: Seq;
-  (forall i: Nat; less_than(i, j) -> at(v, i) = at(s, i))
-  and (forall i: Nat; at(v, add(j, i)) = at(s, add(succ(succ(j)), i)))
-  and productUpTo(v, add(j, e)) = productUpTo(s, add(succ(succ(j)), e))
 
 // Its entries are all transpositions when `s`'s are: every entry is copied from `s`, either
 // from below j or from two positions further up.

@@ -89,6 +89,22 @@ intheory anAffineCipherWithAUnitMultiplierDecodes
 
 // -- the additive-group axioms on ℤ_n, LIFTED from ℤ ------------------------
 
+axiom znPowerDef: forall a, k: Int; znPower(cls(a), k) = cls(int_mul(k, a))
+
+axiom oneIsClsOne: ONE = cls(INT_ONE)
+axiom mulHom: forall a, b: Int; mul(cls(a), cls(b)) = cls(int_mul(a, b))
+
+axiom isUnitCharacterization: forall x: Zn; isUnit(x) iff (exists y: Zn; mul(x, y) = ONE and mul(y, x) = ONE)
+// on a unit, unitInverse is a two-sided inverse, and it is itself a unit.
+axiom unitInverseLeft: forall x: Units; mul(unitInverse(x), x) = ONE
+// closure facts, shaped over the BASE sort Zn with `isUnit` guards (as subgroup.b4m
+// shapes its closure axioms) so the guarded UnitsGroup model can discharge the closure
+// obligations `isUnit(op …)` / `isUnit(inverse …)` it generates: ONE is a unit, the
+// product of units is a unit, and the inverse of a unit is a unit.
+axiom oneIsUnit: isUnit(ONE)
+axiom unitsClosedMul: forall a, b: Zn; isUnit(a) -> isUnit(b) -> isUnit(mul(a, b))
+axiom unitInverseIsUnit: forall a: Zn; isUnit(a) -> isUnit(unitInverse(a))
+
 // associativity: (x+y)+z = x+(y+z). Unpack representatives; both sides are cls of
 // equal integers, ((a+b)+c) and (a+(b+c)), which agree by ℤ associativity.
 theorem addAssoc: forall x, y, z: Zn; add(add(x, y), z) = add(x, add(y, z))
@@ -357,8 +373,6 @@ oper int_mul = integer.mul
 const INT_ONE = integer.ONE
 
 oper znPower(x: Zn, k: Int) => Zn
-axiom znPowerDef: forall a, k: Int; znPower(cls(a), k) = cls(int_mul(k, a))
-
 // powerZero: znPower(x, 0) = 0. cls(0·a) = cls(0) = ZERO.
 theorem znPowerZero: forall x: Zn; znPower(x, INT_ZERO) = ZERO
 proof
@@ -614,9 +628,6 @@ qed
 
 const ONE: Zn
 oper mul(x: Zn, y: Zn) => Zn
-axiom oneIsClsOne: ONE = cls(INT_ONE)
-axiom mulHom: forall a, b: Int; mul(cls(a), cls(b)) = cls(int_mul(a, b))
-
 // addition commutes: x + y = y + x (cls(a+b) = cls(b+a) by ℤ add-commutativity).
 theorem addCommutes: forall x, y: Zn; add(x, y) = add(y, x)
 proof
@@ -1142,7 +1153,6 @@ qed
 // so it stays FOLDED through model transfer — a transparent `define` would unfold in
 // goal statements but not in the transferred theorem, blocking the match.
 pred isUnit(x: Zn)
-axiom isUnitCharacterization: forall x: Zn; isUnit(x) iff (exists y: Zn; mul(x, y) = ONE and mul(y, x) = ONE)
 sort Units = Zn where isUnit
 // GUARDED by `isUnit`: in ℤ/n only the units are invertible, so `unitInverse` of a non-unit
 // is not a term one can write — an application owes `isUnit(x)` where it appears. Before this
@@ -1150,16 +1160,6 @@ sort Units = Zn where isUnit
 // unusable in a proof but still WRITABLE in a statement. A verified program could then invert
 // a residue it never proved coprime to the modulus.
 oper unitInverse(x: Zn) => Zn requires isUnit(x)
-
-// on a unit, unitInverse is a two-sided inverse, and it is itself a unit.
-axiom unitInverseLeft: forall x: Units; mul(unitInverse(x), x) = ONE
-// closure facts, shaped over the BASE sort Zn with `isUnit` guards (as subgroup.b4m
-// shapes its closure axioms) so the guarded UnitsGroup model can discharge the closure
-// obligations `isUnit(op …)` / `isUnit(inverse …)` it generates: ONE is a unit, the
-// product of units is a unit, and the inverse of a unit is a unit.
-axiom oneIsUnit: isUnit(ONE)
-axiom unitsClosedMul: forall a, b: Zn; isUnit(a) -> isUnit(b) -> isUnit(mul(a, b))
-axiom unitInverseIsUnit: forall a: Zn; isUnit(a) -> isUnit(unitInverse(a))
 
 // the multiplicative identity holds on the units (relativized from mulOneLeft).
 theorem unitsIdentityLeft: forall x: Units; mul(ONE, x) = x

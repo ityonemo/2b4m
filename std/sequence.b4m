@@ -82,6 +82,27 @@ intheory foldOneCombinesIdentity
 
 // -- fold-structure theorems (transfer onto a modeling caller) --------------
 
+// The concatenation s ++ t of the first j entries of s with the first k entries
+// of t: the result agrees with s below j, agrees with (shifted) t on the next k
+// slots, and its length-(j+k) fold is the combine of the two pieces.
+axiom seqConcatExists: forall s: Seq; forall t: Seq; forall j: Nat; forall k: Nat;
+  exists u: Seq;
+  (forall i: Nat; less_than(i, j) -> at(u, i) = at(s, i))
+  and (forall i: Nat; less_than(i, k) -> at(u, add(j, i)) = at(t, i))
+  and foldUpTo(u, add(j, k)) = combine(foldUpTo(s, j), foldUpTo(t, k))
+
+// The sequence s with the entry at index m (0 ≤ m ≤ k) deleted: its length-k
+// fold combined with the removed entry recovers s's length-(k+1) fold, and its
+// entries are those of s with index m skipped (unchanged below m, shifted up by
+// one at and above m). The entry-agreement clauses let a per-entry hypothesis on
+// s's first k+1 entries transfer to t's first k entries.
+axiom seqRemoveExists: forall s: Seq; forall k: Nat; forall m: Nat;
+  less_than(m, succ(k)) ->
+  exists t: Seq;
+  combine(foldUpTo(t, k), at(s, m)) = foldUpTo(s, succ(k))
+  and (forall i: Nat; less_than(i, m) -> at(t, i) = at(s, i))
+  and (forall i: Nat; at_most(m, i) -> less_than(i, k) -> at(t, i) = at(s, succ(i)))
+
 // The length-one fold combines IDENTITY with the sole entry: foldUpTo(s, 1) =
 // combine(IDENTITY, at(s, 0)). Unfold foldSucc at ZERO, then foldZero. A caller
 // modeling combine:mul, IDENTITY:ONE transfers this to productUpTo(s, 1) =
@@ -104,24 +125,3 @@ proof
     forall s: Seq; foldUpTo(s, succ(ZERO)) = combine(IDENTITY, at(s, ZERO))
     [by generalize generalize-s]
 qed
-
-// The concatenation s ++ t of the first j entries of s with the first k entries
-// of t: the result agrees with s below j, agrees with (shifted) t on the next k
-// slots, and its length-(j+k) fold is the combine of the two pieces.
-axiom seqConcatExists: forall s: Seq; forall t: Seq; forall j: Nat; forall k: Nat;
-  exists u: Seq;
-  (forall i: Nat; less_than(i, j) -> at(u, i) = at(s, i))
-  and (forall i: Nat; less_than(i, k) -> at(u, add(j, i)) = at(t, i))
-  and foldUpTo(u, add(j, k)) = combine(foldUpTo(s, j), foldUpTo(t, k))
-
-// The sequence s with the entry at index m (0 ≤ m ≤ k) deleted: its length-k
-// fold combined with the removed entry recovers s's length-(k+1) fold, and its
-// entries are those of s with index m skipped (unchanged below m, shifted up by
-// one at and above m). The entry-agreement clauses let a per-entry hypothesis on
-// s's first k+1 entries transfer to t's first k entries.
-axiom seqRemoveExists: forall s: Seq; forall k: Nat; forall m: Nat;
-  less_than(m, succ(k)) ->
-  exists t: Seq;
-  combine(foldUpTo(t, k), at(s, m)) = foldUpTo(s, succ(k))
-  and (forall i: Nat; less_than(i, m) -> at(t, i) = at(s, i))
-  and (forall i: Nat; at_most(m, i) -> less_than(i, k) -> at(t, i) = at(s, succ(i)))

@@ -78,6 +78,29 @@ intheory aPrefixProductIsPointwiseDisjointFromADisjointEntry
 intheory aPrefixProductIsDisjointFromADisjointEntry
 intheory aProductFixesWhatItsFactorsFix
 
+axiom seqSingleton: forall x: Fn; invertible(x) ->
+  exists s: Seq; at(s, ZERO) = x and productUpTo(s, succ(ZERO)) = x
+
+// the prepend x :: s: head x (a permutation), tail s shifted up by one
+axiom seqPrepend: forall x: Fn; invertible(x) -> forall s: Seq;
+  exists u: Seq; at(u, ZERO) = x and (forall i: Nat; at(u, succ(i)) = at(s, i))
+
+axiom seqConcat: forall s: Seq; forall t: Seq; forall j: Nat; forall k: Nat;
+  exists u: Seq;
+  (forall i: Nat; less_than(i, j) -> at(u, i) = at(s, i))
+  and (forall i: Nat; less_than(i, k) -> at(u, add(j, i)) = at(t, i))
+  and productUpTo(u, add(j, k)) = compose(productUpTo(s, j), productUpTo(t, k))
+
+axiom seqReverse: forall s: Seq; forall n: Nat;
+  exists r: Seq;
+  (forall i: Nat; less_than(i, n) -> at(r, i) = at(s, sub(n, succ(i))))
+  and productUpTo(r, n) = revProductUpTo(s, n)
+
+// -- two inverse laws over plain maps ---------------------------------------------------
+//
+// Stated over `Fn` with `invertible` as a HYPOTHESIS (not over `Perm`), so a consumer can
+// apply them at a composite term whose invertibility it has in hand — a product, say.
+
 // Products of permutations are permutations — the closure facts the guarded model needs.
 theorem productUpToIsAPermutation: forall s: Seq; forall k: Nat; invertible(productUpTo(s, k))
 proof
@@ -187,29 +210,6 @@ qed
 // `invertible`. Only the postulates the parity theory of transpositions uses are stated
 // (singleton, prepend, concatenation, reversal); removal can be restated from the group file's
 // when a consumer needs it — a library carries no axiom nothing in it rests on.
-
-axiom seqSingleton: forall x: Fn; invertible(x) ->
-  exists s: Seq; at(s, ZERO) = x and productUpTo(s, succ(ZERO)) = x
-
-// the prepend x :: s: head x (a permutation), tail s shifted up by one
-axiom seqPrepend: forall x: Fn; invertible(x) -> forall s: Seq;
-  exists u: Seq; at(u, ZERO) = x and (forall i: Nat; at(u, succ(i)) = at(s, i))
-
-axiom seqConcat: forall s: Seq; forall t: Seq; forall j: Nat; forall k: Nat;
-  exists u: Seq;
-  (forall i: Nat; less_than(i, j) -> at(u, i) = at(s, i))
-  and (forall i: Nat; less_than(i, k) -> at(u, add(j, i)) = at(t, i))
-  and productUpTo(u, add(j, k)) = compose(productUpTo(s, j), productUpTo(t, k))
-
-axiom seqReverse: forall s: Seq; forall n: Nat;
-  exists r: Seq;
-  (forall i: Nat; less_than(i, n) -> at(r, i) = at(s, sub(n, succ(i))))
-  and productUpTo(r, n) = revProductUpTo(s, n)
-
-// -- two inverse laws over plain maps ---------------------------------------------------
-//
-// Stated over `Fn` with `invertible` as a HYPOTHESIS (not over `Perm`), so a consumer can
-// apply them at a composite term whose invertibility it has in hand — a product, say.
 
 // A left inverse IS the inverse: k = k(h h⁻¹) = (k h) h⁻¹ = h⁻¹.
 theorem leftInverseIsTheInverse: forall h: Fn; forall k: Fn;

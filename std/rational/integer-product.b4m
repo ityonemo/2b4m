@@ -65,24 +65,6 @@ axiom qSeqConcatExists: forall s, t: QSeq; forall j, k: Nat;
   and qProductUpTo(u, nat_add(j, k)) =
   rational.mul(qProductUpTo(s, j), qProductUpTo(t, k))
 
-// UNGUARDED: the value sort is all of ℚ, so this composes freely — no cut, no relativization.
-model RationalSeq {
-  sequence.Nat: Nat
-  sequence.ZERO: NAT_ZERO
-  sequence.succ: nat_succ
-  sequence.Value: Q
-  sequence.Seq: QSeq
-  sequence.at: qat
-  sequence.IDENTITY: ONE
-  sequence.combine: rational.mul
-  sequence.foldUpTo: qProductUpTo
-  sequence.foldZero <- qProductUpToZero
-  sequence.foldSucc <- qProductUpToSucc
-  sequence.seqPrependExists <- qSeqPrependExists
-  sequence.seqSingletonExists <- qSeqSingletonExists
-  sequence.seqConcatExists <- qSeqConcatExists
-}
-
 // What this file proves (verified manifest):
 intheory qSeqSingletonOnly
 intheory qSeqConcatOnly
@@ -176,6 +158,72 @@ intheory theDenominatorDividesTheLeadingCoefficient
 intheory aPrimeDividingAProductDividesAFactor
 intheory theProductOfDivisorsDividesTheProduct
 intheory thePrimeMissesOneConstantFactor
+
+axiom dividesIntegrallyMeaning: forall d, n: Q;
+  dividesIntegrally(d, n) iff
+  (exists k: Q; isInteger(k) and n = rational.mul(d, k))
+
+axiom denominatorMeaning: forall i: Nat; forall v: Q;
+  isADenominatorFor(i, v) iff
+  (isInteger(v) and less_than(ZERO, v) and rational.nonzero(v) and
+  (exists b: Q; isInteger(b) and
+  qpoly.qcoeff(theSubject, i) = rational.mul(b, recip(v))))
+
+axiom commonDivisorMeaning: forall d: Q; forall s: QSeq; forall n: Nat;
+  isACommonDivisorUpTo(d, s, n) iff
+  (forall i: Nat; nat_less_than(i, n) -> dividesIntegrally(d, qat(s, i)))
+
+axiom maximalCommonDivisorMeaning: forall d: Q; forall s: QSeq; forall n: Nat;
+  isAMaximalCommonDivisorUpTo(d, s, n) iff
+  (isInteger(d) and less_than(ZERO, d) and
+  rational.nonzero(d) and
+  isACommonDivisorUpTo(d, s, n) and
+  (forall e: Q; isInteger(e) -> isACommonDivisorUpTo(e, s, n) ->
+  dividesIntegrally(e, d)))
+
+axiom pairDivisorMeaning: forall g, a, b: Q;
+  isAMaximalCommonDivisorOfThePair(g, a, b) iff
+  (isInteger(g) and less_than(ZERO, g) and
+  rational.nonzero(g) and
+  dividesIntegrally(g, a) and dividesIntegrally(g, b) and
+  (forall e: Q; isInteger(e) -> dividesIntegrally(e, a) ->
+  dividesIntegrally(e, b) -> dividesIntegrally(e, g)))
+
+axiom quotientSequenceMeaning: forall d: Q; forall s, q: QSeq; forall n: Nat;
+  aQuotientSequenceFor(d, s, q, n) iff
+  (forall i: Nat; nat_less_than(i, n) ->
+  qat(s, i) = rational.mul(d, qat(q, i)))
+
+axiom quotientsCoprimeMeaning: forall q: QSeq; forall n: Nat;
+  theQuotientsAreCoprime(q, n) iff
+  (forall e: Q; isInteger(e) -> isACommonDivisorUpTo(e, q, n) ->
+  dividesIntegrally(e, ONE))
+
+axiom firstQuotientMeaning: forall s: QSeq; forall n: Nat; forall m: Q;
+  aFirstQuotientOf(s, n, m) iff
+  (exists d: Q; exists q: QSeq;
+  isInteger(d) and less_than(ZERO, d) and
+  isACommonDivisorUpTo(d, s, n) and
+  aQuotientSequenceFor(d, s, q, n) and
+  qat(q, NAT_ZERO) = m)
+
+// UNGUARDED: the value sort is all of ℚ, so this composes freely — no cut, no relativization.
+model RationalSeq {
+  sequence.Nat: Nat
+  sequence.ZERO: NAT_ZERO
+  sequence.succ: nat_succ
+  sequence.Value: Q
+  sequence.Seq: QSeq
+  sequence.at: qat
+  sequence.IDENTITY: ONE
+  sequence.combine: rational.mul
+  sequence.foldUpTo: qProductUpTo
+  sequence.foldZero <- qProductUpToZero
+  sequence.foldSucc <- qProductUpToSucc
+  sequence.seqPrependExists <- qSeqPrependExists
+  sequence.seqSingletonExists <- qSeqSingletonExists
+  sequence.seqConcatExists <- qSeqConcatExists
+}
 
 // `indexed`'s singleton and concat are WEAKER than `sequence`'s — no fold clause — so they
 // follow by dropping a conjunct.
@@ -550,10 +598,6 @@ qed
 // `std/rational/polynomial.b4m`'s, written out here because a `define` is a macro and cannot
 // be imported.
 pred dividesIntegrally(d: Q, n: Q)
-axiom dividesIntegrallyMeaning: forall d, n: Q;
-  dividesIntegrally(d, n) iff
-  (exists k: Q; isInteger(k) and n = rational.mul(d, k))
-
 // A product of integers is an integer: induction on the bound, using ℚ's `isIntegerMul`.
 theorem theProductOfIntegersIsAnInteger: forall s: QSeq; forall n: Nat;
   (forall i: Nat; nat_less_than(i, n) -> isInteger(qat(s, i))) ->
@@ -1644,12 +1688,6 @@ qed
 // pins — which is enough, because 17.12 is proved for an ARBITRARY but fixed p.
 oper theSubject() => qpoly.QPoly
 pred isADenominatorFor(i: Nat, v: Q)
-axiom denominatorMeaning: forall i: Nat; forall v: Q;
-  isADenominatorFor(i, v) iff
-  (isInteger(v) and less_than(ZERO, v) and rational.nonzero(v) and
-  (exists b: Q; isInteger(b) and
-  qpoly.qcoeff(theSubject, i) = rational.mul(b, recip(v))))
-
 // The spec HOLDS at every index — ℚ's fraction axiom read at the i-th coefficient. A theorem,
 // not an axiom: `everyCoefficientIsARatioOfIntegers` already provides the witness.
 theorem aDenominatorExistsForEveryIndex: forall i: Nat;
@@ -2111,10 +2149,6 @@ qed
 
 // `isACommonDivisorUpTo(d, s, n)` — d divides every entry below n.
 pred isACommonDivisorUpTo(d: Q, s: QSeq, n: Nat)
-axiom commonDivisorMeaning: forall d: Q; forall s: QSeq; forall n: Nat;
-  isACommonDivisorUpTo(d, s, n) iff
-  (forall i: Nat; nat_less_than(i, n) -> dividesIntegrally(d, qat(s, i)))
-
 // ONE is a common divisor of anything: every integer is ONE times itself.
 theorem oneIsACommonDivisor: forall s: QSeq; forall n: Nat;
   (forall i: Nat; nat_less_than(i, n) -> isInteger(qat(s, i))) ->
@@ -2204,14 +2238,6 @@ qed
 // Judson's "the a_i's are relatively prime"; stated relationally it is the obligation itself,
 // with no gcd value and no fold.
 pred isAMaximalCommonDivisorUpTo(d: Q, s: QSeq, n: Nat)
-axiom maximalCommonDivisorMeaning: forall d: Q; forall s: QSeq; forall n: Nat;
-  isAMaximalCommonDivisorUpTo(d, s, n) iff
-  (isInteger(d) and less_than(ZERO, d) and
-  rational.nonzero(d) and
-  isACommonDivisorUpTo(d, s, n) and
-  (forall e: Q; isInteger(e) -> isACommonDivisorUpTo(e, s, n) ->
-  dividesIntegrally(e, d)))
-
 // Cancellation at ℚ: a nonzero factor cancels. From `fieldInverse` directly — ℚ has no
 // cancellation lemma of its own, and `std/field/units.b4m`'s is over the Nonzero subsort.
 theorem aNonzeroFactorCancels: forall a, b, c: Q;
@@ -3127,14 +3153,6 @@ qed
 // `isAMaximalCommonDivisorOfThePair(g, a, b)` — g is a nonzero integer dividing both, and
 // every integer common divisor divides g.
 pred isAMaximalCommonDivisorOfThePair(g: Q, a: Q, b: Q)
-axiom pairDivisorMeaning: forall g, a, b: Q;
-  isAMaximalCommonDivisorOfThePair(g, a, b) iff
-  (isInteger(g) and less_than(ZERO, g) and
-  rational.nonzero(g) and
-  dividesIntegrally(g, a) and dividesIntegrally(g, b) and
-  (forall e: Q; isInteger(e) -> dividesIntegrally(e, a) ->
-  dividesIntegrally(e, b) -> dividesIntegrally(e, g)))
-
 // The quotients of a pair by their maximal common divisor are COPRIME.
 // Strategy: e divides both quotients, so g·e divides both originals (original = g·quotient),
 // so g·e | g by maximality, so e | ONE by `cancellingTheDivisorLeavesAUnit`.
@@ -3365,18 +3383,8 @@ qed
 
 // `aQuotientSequenceFor(d, s, q, n)` — q is the entrywise quotient of s by d, below n.
 pred aQuotientSequenceFor(d: Q, s: QSeq, q: QSeq, n: Nat)
-axiom quotientSequenceMeaning: forall d: Q; forall s, q: QSeq; forall n: Nat;
-  aQuotientSequenceFor(d, s, q, n) iff
-  (forall i: Nat; nat_less_than(i, n) ->
-  qat(s, i) = rational.mul(d, qat(q, i)))
-
 // The coprimality 17.12 asks of the quotients, named so the existence statement can carry it.
 pred theQuotientsAreCoprime(q: QSeq, n: Nat)
-axiom quotientsCoprimeMeaning: forall q: QSeq; forall n: Nat;
-  theQuotientsAreCoprime(q, n) iff
-  (forall e: Q; isInteger(e) -> isACommonDivisorUpTo(e, q, n) ->
-  dividesIntegrally(e, ONE))
-
 // ONE is always such a divisor, with the sequence itself as quotient — the inhabitation the
 // descent starts from.
 theorem theTrivialDivisorWorks: forall s: QSeq; forall n: Nat;
@@ -4173,14 +4181,6 @@ qed
 
 // "m is the first quotient of some positive-integer common divisor of s below n."
 pred aFirstQuotientOf(s: QSeq, n: Nat, m: Q)
-axiom firstQuotientMeaning: forall s: QSeq; forall n: Nat; forall m: Q;
-  aFirstQuotientOf(s, n, m) iff
-  (exists d: Q; exists q: QSeq;
-  isInteger(d) and less_than(ZERO, d) and
-  isACommonDivisorUpTo(d, s, n) and
-  aQuotientSequenceFor(d, s, q, n) and
-  qat(q, NAT_ZERO) = m)
-
 // A positive integer divisor with its quotient sequence witnesses its own first quotient —
 // the packaging the descent and the inhabitation both read.
 theorem aDivisorWitnessesItsFirstQuotient: forall s, q: QSeq; forall n: Nat; forall d: Q;

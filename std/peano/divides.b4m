@@ -51,25 +51,6 @@ fact succNotZero = peano.succNotZero
 // existential, produced with witness and consumed with unpack.
 define divides(d, n) = exists k: Nat; n = mul(d, k)
 
-// ℕ models the abstract divisibility theory (std/divisibility.b4m): mul/ONE/add
-// with the multiplicative axioms discharge its obligations, so the basic facts
-// (dividesRefl/dividesMul/dividesAdd/dividesTransitive) TRANSFER onto ℕ instead
-// of being re-proved. ℤ models it the same way (std/integer/divides.b4m) — that
-// shared reuse is what earns the abstract theory its keep.
-model PeanoDivisibility {
-  divisibility.Dividable: Nat
-  divisibility.ONE: ONE
-  divisibility.mul: mul
-  divisibility.add: add
-  divisibility.mulOneRight <- mulOneRight
-  divisibility.mulIsAssociative <- mulIsAssociative
-  divisibility.mulAddDistribLeft <- mulAddDistribLeft
-}
-
-// -- guarded Euclidean division ---------------------------------------------
-
-oper div(a: Nat, b: Nat) => Nat requires b != ZERO
-oper mod(a: Nat, b: Nat) => Nat requires b != ZERO
 axiom divModProperty: forall b, a: Nat; b != ZERO -> add(mul(b, div(a, b)), mod(a, b)) = a
 axiom modBound: forall b, a: Nat; b != ZERO -> less_than(mod(a, b), b)
 
@@ -93,6 +74,35 @@ intheory dividesOneIsOne
 
 // -- theorems ---------------------------------------------------------------
 
+axiom gcdZero: forall a: Nat; gcd(a, ZERO) = a
+axiom gcdStep: forall b, a: Nat; b != ZERO -> gcd(a, b) = gcd(b, mod(a, b))
+
+// -- forwarded theorems -----------------------------------------------------
+
+intheory gcdDividesBoth
+intheory gcdGreatest
+
+// -- correctness ------------------------------------------------------------
+
+// ℕ models the abstract divisibility theory (std/divisibility.b4m): mul/ONE/add
+// with the multiplicative axioms discharge its obligations, so the basic facts
+// (dividesRefl/dividesMul/dividesAdd/dividesTransitive) TRANSFER onto ℕ instead
+// of being re-proved. ℤ models it the same way (std/integer/divides.b4m) — that
+// shared reuse is what earns the abstract theory its keep.
+model PeanoDivisibility {
+  divisibility.Dividable: Nat
+  divisibility.ONE: ONE
+  divisibility.mul: mul
+  divisibility.add: add
+  divisibility.mulOneRight <- mulOneRight
+  divisibility.mulIsAssociative <- mulIsAssociative
+  divisibility.mulAddDistribLeft <- mulAddDistribLeft
+}
+
+// -- guarded Euclidean division ---------------------------------------------
+
+oper div(a: Nat, b: Nat) => Nat requires b != ZERO
+oper mod(a: Nat, b: Nat) => Nat requires b != ZERO
 // divides(d, d): witness k = ONE.
 // transferred from the abstract divisibility theory via PeanoDivisibility.
 theorem dividesRefl: forall d: Nat; divides(d, d)
@@ -986,16 +996,6 @@ qed
 // -- the Euclidean algorithm ------------------------------------------------
 
 oper gcd(a: Nat, b: Nat) => Nat
-axiom gcdZero: forall a: Nat; gcd(a, ZERO) = a
-axiom gcdStep: forall b, a: Nat; b != ZERO -> gcd(a, b) = gcd(b, mod(a, b))
-
-// -- forwarded theorems -----------------------------------------------------
-
-intheory gcdDividesBoth
-intheory gcdGreatest
-
-// -- correctness ------------------------------------------------------------
-
 theorem gcdDividesBoth: forall a, b: Nat; divides(gcd(a, b), a) and divides(gcd(a, b), b)
 proof
   // step of strong induction: (forall m; m<b -> P(m)) -> P(b),
