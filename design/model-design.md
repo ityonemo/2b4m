@@ -215,6 +215,27 @@ That is also why an incomplete discharge can surface far from its cause — see
 `../NESTED-MODEL-COMPOSITION-ISSUE.md`, where an unmapped F-level algebra fact reports
 itself as a sort mismatch inside the source theory's own proof.
 
+**A model is a FULL OVERLAY, not a filter scoped to its source theory.** Citing
+`[using model(M) other.thm]` where `M` says nothing about `other` is legal and sound: the
+overlay is the identity on everything it does not map, so the cited theorem transfers
+unchanged — it is the second row of the table above, not a mistake. Conversely, when `M`
+*does* map the cited theory's symbols, the same citation yields the statement under the
+mapping. The boundary is therefore not "which theory the theorem came from" but
+**"every axiom the proof actually cited is discharged"**.
+
+Four probes pin this down (`tests/cases/model/discharge/`), differing only in what the
+model maps:
+
+| probe | model | cited | strict |
+|---|---|---|---|
+| `omits_axiom_bad` | ring → T, commutativity NOT discharged | `ring.addZeroRight`, whose proof cites it | **rejected** |
+| `omits_axiom_ok` | the same, commutativity discharged | the same | OK |
+| `unrelated_theory_ok` | ring → T | `peano.addZeroRight` (ℕ, untouched) | OK — identity on it |
+| `overlay_applies_ok` | peano → T | `peano.addZeroRight` (mapped) | OK — statement about T |
+
+The first pair differs by ONE discharge line, which is what makes it evidence rather than
+assertion. `omits_axiom_bad` also passes `--fast`, per the section below.
+
 **The corollary for authors:** a fixed const/pred + axioms section IS a model source, and
 is indistinguishable from dead code — or from a restriction — until some fixture
 demonstrates the model. `std/group/order.b4m`'s `A`/`N` section and `coset.b4m`'s

@@ -1,0 +1,48 @@
+// EXPECTED TO FAIL (strict): a model that does NOT discharge `ring.addIsCommutative`,
+// citing `ring.addZeroRight` — whose proof cites that very axiom (std/ring.b4m:80).
+//
+// The failure is a SORT MISMATCH reported inside std/ring.b4m, not a named missing
+// obligation: an un-overloaded entity maps to ITSELF, so the citation stays at sort `Ring`
+// while its surroundings become `T`. That is the universe-fixpoint enforcement described in
+// design/model-design.md, "Why you can't cite an un-overloaded axiom over an abstract sort".
+//
+// `omits_axiom_ok.b4m` is the control: the SAME file with one discharge line added. This
+// file also PASSES `--fast`, which is the documented `model` trust boundary.
+theory ring <<< "std/ring.b4m"
+
+sort T
+const Z: T
+oper plus(a: T, b: T) => T
+oper times(a: T, b: T) => T
+oper minus(a: T) => T
+
+axiom plusAssoc: forall a, b, c: T; plus(plus(a, b), c) = plus(a, plus(b, c))
+axiom plusZeroLeft: forall a: T; plus(Z, a) = a
+axiom plusMinusLeft: forall a: T; plus(minus(a), a) = Z
+axiom timesAssoc: forall a, b, c: T; times(times(a, b), c) = times(a, times(b, c))
+axiom timesPlusDistribLeft: forall a, b, c: T; times(a, plus(b, c)) = plus(times(a, b), times(a, c))
+axiom timesPlusDistribRight: forall a, b, c: T; times(plus(a, b), c) = plus(times(a, c), times(b, c))
+
+intheory borrowsATheoremNeedingCommutativity
+
+// the model maps every symbol and discharges every ring axiom EXCEPT addIsCommutative
+model TIsARing {
+  ring.Ring: T
+  ring.ZERO: Z
+  ring.add: plus
+  ring.mul: times
+  ring.neg: minus
+  ring.addIsAssociative <- plusAssoc
+  ring.addZeroLeft <- plusZeroLeft
+  ring.addNegLeft <- plusMinusLeft
+  ring.mulIsAssociative <- timesAssoc
+  ring.mulAddDistribLeft <- timesPlusDistribLeft
+  ring.mulAddDistribRight <- timesPlusDistribRight
+}
+
+theorem borrowsATheoremNeedingCommutativity: forall a: T; plus(a, Z) = a
+proof
+  @conclusion |
+    forall a: T; plus(a, Z) = a
+    [using model(TIsARing) ring.addZeroRight]
+qed

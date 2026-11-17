@@ -1,0 +1,40 @@
+// The other half of unrelated_theory_ok.b4m: here the model DOES map the cited theorem's
+// symbols (peano's Nat/ZERO/succ/add onto T's), so citing `peano.addZeroRight` yields the
+// statement ABOUT T — the overlay applied.
+//
+// Together the two pin the rule: the boundary is not "which theory the theorem came from"
+// but "every axiom the proof actually cited is discharged".
+theory peano <<< "std/peano.b4m"
+
+sort T
+const Z: T
+oper plus(a: T, b: T) => T
+oper suc(a: T) => T
+
+axiom plusZeroLeft: forall a: T; plus(Z, a) = a
+axiom plusSucLeft: forall a, b: T; plus(suc(a), b) = suc(plus(a, b))
+axiom sucInjective: forall a, b: T; suc(a) = suc(b) -> a = b
+axiom sucNotZ: forall a: T; suc(a) != Z
+axiom tInduction(prop(T)): prop(Z) -> (forall k: T; prop(k) -> prop(suc(k))) -> forall n: T; prop(n)
+
+intheory borrowsPeanoAddZeroRightOntoT
+
+model TIsAPeanoish {
+  peano.Nat: T
+  peano.ZERO: Z
+  peano.succ: suc
+  peano.add: plus
+  peano.addZeroLeft <- plusZeroLeft
+  peano.addSuccLeft <- plusSucLeft
+  peano.succInjective <- sucInjective
+  peano.succNotZero <- sucNotZ
+  peano.induction <- tInduction
+}
+
+// the ring statement, now about T — the overlay applied to peano's own theorem
+theorem borrowsPeanoAddZeroRightOntoT: forall n: T; plus(n, Z) = n
+proof
+  @conclusion |
+    forall n: T; plus(n, Z) = n
+    [using model(TIsAPeanoish) peano.addZeroRight]
+qed

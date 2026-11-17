@@ -423,6 +423,23 @@ pub fn addTests(
     // and, when the whole proof is one such cluster concluding a carrier universal,
     // weakens that conclusion to the relativized statement. All seven transfer GREEN.
     ctx.okSilent(&.{ "check", "tests/cases/model/accel/model_accel_simplify.b4m" });
+
+    // WHAT A MODEL CHECKS, and where its boundary falls. A transfer RE-PROVES the source
+    // theorem under the mapping, and an un-overloaded entity maps to ITSELF — so a theorem
+    // whose proof cites an UNDISCHARGED axiom fails by statement mismatch (the citation
+    // stays in source space while the goal is in target space). The four fixtures differ
+    // only in what the model maps:
+    ctx.fail(&.{ "check", "tests/cases/model/discharge/omits_axiom_bad.b4m" }, "std/ring.b4m:80:44: error: expected sort 'Ring', got 'T'\n");
+    ctx.okSilent(&.{ "check", "tests/cases/model/discharge/omits_axiom_ok.b4m" });
+    // …and a model is a FULL OVERLAY, not a filter scoped to its source theory: citing a
+    // theorem from a theory the model does not touch is sound (identity on it), and citing
+    // one it DOES map yields the mapped statement.
+    ctx.okSilent(&.{ "check", "tests/cases/model/discharge/unrelated_theory_ok.b4m" });
+    ctx.okSilent(&.{ "check", "tests/cases/model/discharge/overlay_applies_ok.b4m" });
+    // The `--fast` boundary the warning in design/model-design.md names: a partial model
+    // passes `--fast` and fails strict, because `--fast` never inspects which source axioms
+    // the transferred proof reached.
+    ctx.okSilent(&.{ "check", "--fast", "tests/cases/model/discharge/omits_axiom_bad.b4m" });
     // ...and the case the above does NOT cover: the leaked guard sits on the accelerant's own
     // ABSTRACTED PARAM, not on a composite term, so closure recursion dead-ends. `paramGuards`
     // must emit it as an outermost antecedent — and must decide that by the param's sort UNDER

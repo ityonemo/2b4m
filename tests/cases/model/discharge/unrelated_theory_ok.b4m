@@ -1,0 +1,47 @@
+// A model is a FULL OVERLAY over the universe, not a filter scoped to its source theory.
+// `TIsARing` says nothing about ℕ, so citing `peano.addZeroRight` through it is legal and
+// sound — the overlay is the IDENTITY on everything it does not map, so the theorem
+// transfers unchanged.
+//
+// Pairs with overlay_applies_ok.b4m, where the model DOES map the cited theory.
+theory ring <<< "std/ring.b4m"
+theory peano <<< "std/peano.b4m"
+
+sort T
+const Z: T
+oper plus(a: T, b: T) => T
+oper times(a: T, b: T) => T
+oper minus(a: T) => T
+
+axiom plusAssoc: forall a, b, c: T; plus(plus(a, b), c) = plus(a, plus(b, c))
+axiom plusZeroLeft: forall a: T; plus(Z, a) = a
+axiom plusMinusLeft: forall a: T; plus(minus(a), a) = Z
+axiom plusComm: forall a, b: T; plus(a, b) = plus(b, a)
+axiom timesAssoc: forall a, b, c: T; times(times(a, b), c) = times(a, times(b, c))
+axiom timesPlusDistribLeft: forall a, b, c: T; times(a, plus(b, c)) = plus(times(a, b), times(a, c))
+axiom timesPlusDistribRight: forall a, b, c: T; times(plus(a, b), c) = plus(times(a, c), times(b, c))
+
+intheory citesAnUnrelatedTheoryThroughTheModel
+
+model TIsARing {
+  ring.Ring: T
+  ring.ZERO: Z
+  ring.add: plus
+  ring.mul: times
+  ring.neg: minus
+  ring.addIsAssociative <- plusAssoc
+  ring.addZeroLeft <- plusZeroLeft
+  ring.addNegLeft <- plusMinusLeft
+  ring.addIsCommutative <- plusComm
+  ring.mulIsAssociative <- timesAssoc
+  ring.mulAddDistribLeft <- timesPlusDistribLeft
+  ring.mulAddDistribRight <- timesPlusDistribRight
+}
+
+// `peano.addZeroRight` is `forall n: Nat; add(n, ZERO) = n` — nothing to do with T or ring.
+theorem citesAnUnrelatedTheoryThroughTheModel: forall n: peano.Nat; peano.add(n, peano.ZERO) = n
+proof
+  @conclusion |
+    forall n: peano.Nat; peano.add(n, peano.ZERO) = n
+    [using model(TIsARing) peano.addZeroRight]
+qed
