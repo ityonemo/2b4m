@@ -45,8 +45,9 @@ tell you a name was MENTIONED; only resolution can tell you it RESOLVES.**
    it" is locally decidable; "nothing needs this" is a whole-corpus question a parser cannot
    answer.
 2. **A façade re-exporting its sub-theories' vocabulary is the intended practice**, so
-   "unused in its own file" does not mean dead — there are 470 distinct downstream references
-   to non-`fact` forwards (835 total).
+   "unused in its own file" does not mean dead — std declares 1426 non-`fact` aliases
+   (re-measured 2026-11-17; was 835 when this was written, so the argument has only
+   strengthened).
 3. **The AGGREGATOR requirement is soundness, not convenience.** `std/peano.b4m` must keep
    `pred less_than` even though it never says `less_than` itself: 16 neighbouring `fact`
    re-exports are PHRASED in it. Deleting it leaves `peano.b4m` passing ALONE and failing the
