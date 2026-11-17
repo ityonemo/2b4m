@@ -547,6 +547,24 @@ fn elaborateCall(self: *Elab, c: ast.Expr.Call) Error!Typed {
         else
             @enumFromInt(@intFromEnum(self.interner.carrierOf(@enumFromInt(@intFromEnum(typed.sort)))));
         if (actual != expected) {
+            // AN UNMAPPED SYMBOL in a transfer, named rather than left as a type error. The
+            // sibling of the undischarged-AXIOM case in `Prove.zig`: there a cited fact
+            // arrives in source space, here a called SYMBOL does, because an un-overloaded
+            // entity maps to itself. Same test — the model maps the sort we WANTED onto the
+            // one we GOT, a pair only the overlay can relate — but the fix is a `:` mapping
+            // rather than a `<-` discharge. Composition made this the common case: the
+            // callee is often a MIDDLE layer's symbol the outer model never mentioned
+            // (NESTED-MODEL-COMPOSITION-ISSUE.md).
+            if (self.model != InternPool.Index.none and self.model != .universe) {
+                const want_img = self.interner.applyModel(self.model, expected_ix);
+                if (want_img != expected_ix and
+                    @intFromEnum(self.interner.carrierOf(want_img)) == @intFromEnum(self.interner.carrierOf(@enumFromInt(@intFromEnum(typed.sort)))))
+                {
+                    return self.fail(exprLoc(arg), "'{s}' is not mapped by the model: it still takes '{s}', the model's SOURCE sort, while the proof is in '{s}'. Add its `:` mapping to the model block — a transferred proof may only mention symbols the model interprets.", .{
+                        self.text(c.callee), self.sortName(expected), self.sortName(typed.sort),
+                    });
+                }
+            }
             return self.fail(exprLoc(arg), "expected sort '{s}', got '{s}'", .{
                 self.sortName(expected), self.sortName(typed.sort),
             });

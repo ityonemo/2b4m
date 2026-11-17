@@ -1,0 +1,27 @@
+// EXPECTED TO FAIL: composed_ok.b4m with the `middle.mop` SYMBOL not mapped. The sibling
+// failure to composed_missing_axiom_bad.b4m — an unmapped symbol rather than an undischarged
+// axiom, so the fix is a `:` mapping rather than a `<-` discharge, and the diagnostic says
+// which. This is the "one unmapped symbol at a time" of NESTED-MODEL-COMPOSITION-ISSUE.md.
+theory middle <<< "middle.b4m"
+
+sort Top
+const TZ: Top
+oper top_op(a: Top, b: Top) => Top
+axiom topUnitLeft: forall a: Top; top_op(TZ, a) = a
+axiom topAssoc: forall a, b, c: Top; top_op(top_op(a, b), c) = top_op(a, top_op(b, c))
+
+intheory topNeedsAssoc
+
+model TopIsMid {
+  middle.Mid: Top
+  middle.MZ: TZ
+  middle.mopUnitLeft <- topUnitLeft
+  middle.mopAssoc <- topAssoc
+}
+
+theorem topNeedsAssoc: forall a, b: Top; top_op(top_op(TZ, a), b) = top_op(a, b)
+proof
+  @conclusion |
+    forall a, b: Top; top_op(top_op(TZ, a), b) = top_op(a, b)
+    [using model(TopIsMid) middle.midNeedsAssoc]
+qed

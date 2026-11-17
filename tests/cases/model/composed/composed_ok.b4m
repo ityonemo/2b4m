@@ -1,0 +1,31 @@
+// A THREE-LAYER COMPOSITION: inner (abstract) <- middle (models inner, re-exports its
+// theorem as a transfer) <- this file (models middle, cites the transferred theorem).
+//
+// The outer model must discharge every axiom the INNER proof reaches, not only what the
+// statement mentions: `inner.needsAssoc` uses BOTH `opUnitLeft` and `opAssoc`, so this file
+// owes `middle.mopUnitLeft` AND `middle.mopAssoc`. std composes models routinely (40 such
+// citations: Q -> F -> ring, and the same for R and C) but had no test for it.
+theory middle <<< "middle.b4m"
+
+sort Top
+const TZ: Top
+oper top_op(a: Top, b: Top) => Top
+axiom topUnitLeft: forall a: Top; top_op(TZ, a) = a
+axiom topAssoc: forall a, b, c: Top; top_op(top_op(a, b), c) = top_op(a, top_op(b, c))
+
+intheory topNeedsAssoc
+
+model TopIsMid {
+  middle.Mid: Top
+  middle.MZ: TZ
+  middle.mop: top_op
+  middle.mopUnitLeft <- topUnitLeft
+  middle.mopAssoc <- topAssoc
+}
+
+theorem topNeedsAssoc: forall a, b: Top; top_op(top_op(TZ, a), b) = top_op(a, b)
+proof
+  @conclusion |
+    forall a, b: Top; top_op(top_op(TZ, a), b) = top_op(a, b)
+    [using model(TopIsMid) middle.midNeedsAssoc]
+qed
