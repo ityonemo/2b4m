@@ -34,7 +34,14 @@ axiom mentioning it is flagged. `qmulP` was mapped but lawless, and nothing said
 
 ## 2. A model only transfers what every symbol the PROOF mentions is mapped for
 
-Hit repeatedly across the chapter, and the error always surfaces *inside the source file*, far
+**DIAGNOSTIC FIXED 2026-11-17** (`322c31a`, `c8d6b78`): the error now names the unmapped
+entity and what to write for it — a `<-` discharge for an undischarged axiom, a `:` mapping
+for an unmapped symbol — instead of a bare sort mismatch. It still reports at the SOURCE
+file's line, because that is where the citation lives, but it no longer leaves you to infer
+the cause. Composition is gated by `tests/cases/model/composed/`. The underlying
+REQUIREMENT below is unchanged and correct.
+
+Hit repeatedly across the chapter, and the error always surfaced *inside the source file*, far
 from the model block:
 
 - `std/ring/polynomial.b4m` aliases `ring.Ring`, so a transfer onto a new coefficient sort must
