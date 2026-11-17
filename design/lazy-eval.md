@@ -42,7 +42,7 @@ binds to the target's existing `Index` rather than minting anything (see
 The consequence that bites: **a declaration is never demanded — only a proof demands
 anything.** So an alias whose target does not exist is never looked up, as long as no proof
 above it cites the alias. That is the uncited-alias hole
-(`../UNCITED-ALIAS-ISSUE.md`): a syntactic check can tell you a name was MENTIONED, but
+(`../PAINPOINTS.md`, entry 16c): a syntactic check can tell you a name was MENTIONED, but
 only resolution can tell you it RESOLVES.
 
 Two narrower cases are closed by syntactic checks in the parser, which is why they behave

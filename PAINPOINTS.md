@@ -224,6 +224,57 @@ three. The earlier four-way DUPLICATION is gone (they are proved once and import
 cost is just the misleading dependency — a block decomposition over any carrier imports the
 permutation counting theory for three Peano facts.
 
+## 16c. A DANGLING ALIAS passes `check` — and that is the cost of demand-driven resolution
+
+**SETTLED BY DESIGN, user ruling 2026-11-17 — not a defect to plug.** Recorded here because
+the behaviour is surprising and the reasons against each fix are not re-derivable.
+
+Both of these print `OK, exit 0`:
+
+    theory group_lagrange <<< "std/group/lagrange.b4m"   // the file exists
+    sort G = group_lagrange.Grp                          // makes the theory decl "used"
+    fact lagrange = group_lagrange.noSuchTheoremAtAll    // this name does NOT exist
+
+    theory lib <<< "no-such-file.b4m"                    // the FILE does not exist
+    sort A = lib.X
+    const Z: A                                           // else the unused-alias check fires
+
+One cause: **a DECLARATION is never demanded — only a proof demands anything.** Measured with
+`--trace-facts`: `Context.discover` allocates a FileId and never READS the file, so on the
+first repro `std/group/lagrange.b4m` is never parsed at all, not even by the `sort` alias.
+All five alias kinds accept a nonexistent target.
+
+**THE RULING: do not fix it by parsing at the import.** Racking a ParseTask per `theory`
+declaration works and was nearly built — it makes every reachable file parsed by quiescence,
+reducing the member check to a `declOf` lookup. It is still wrong: `[using import(I) thm]`
+exists so a proof pulls in exactly the facts it NAMES instead of traversing the file tree.
+Parsing at every import makes each of std's 916 `theory` declarations a traversal root and
+trades that property away for a narrow class of authoring error.
+
+**Three things any future attempt must respect:**
+
+1. **An import is a CONSUMPTION; a declaration is a PUBLICATION.** "This file never reaches
+   it" is locally decidable; "nothing needs this" is a whole-corpus question.
+2. **The AGGREGATOR requirement is SOUNDNESS, not convenience.** `std/peano.b4m` must keep
+   `pred less_than` even though it never says `less_than` itself, because 16 neighbouring
+   `fact` re-exports are PHRASED in it. Delete it and `peano.b4m` passes ALONE while the
+   LIBRARY sweep fails with `reference not found` — an undemanded `fact` is never resolved,
+   so only a whole-library strict run sees it. (std declares 1426 non-`fact` aliases, so
+   "unused in its own file" routinely does not mean dead.)
+3. **One breakage class is unfixable in a parser, in principle.** An accelerant resolves
+   lemmas by BARE NAME at proof time, so no syntactic analysis can predict a reference the
+   accelerant generates later.
+
+**If revisited, `--library` is the place** — every file is already a root there, so the parse
+is paid for and no laziness is traded. **The blocker there is that no symbol-usage graph
+exists:** the unused-axiom check rides on `ctx.axiom_taint` (per proven theorem, the facts its
+proof rests on), but sorts, consts, opers and preds are used by appearing in STATEMENTS AND
+TERMS rather than in a citation closure, and every `Context` side table is fact-level.
+Building that graph is the design question to answer first.
+
+The accurate narrow claim, worth keeping: **a syntactic check can tell you a name was
+MENTIONED; only resolution can tell you it RESOLVES.**
+
 ## 17. `2b4m check tests/cases` is a runaway
 
 The whole fixture directory as one sweep: pathological fixtures, 6.8 GB RSS, >8 min. Use
