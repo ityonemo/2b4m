@@ -1,7 +1,9 @@
 # The uncited-alias hole
 
 **An alias whose target does not exist still passes `2b4m check`, as long as nothing in the
-file uses the alias.** Status: OPEN, re-probed.
+file uses the alias.** Status: **WON'T FIX by eager parsing** (user ruling 2026-11-17, below) —
+the behaviour stands, because the laziness it follows from is the point of `using import`.
+Still open only in the sense that no cheap check exists; see the ruling for what would.
 
 ## What passes today
 
@@ -67,3 +69,29 @@ question to answer first.
 rather than on first citation. That closes the dangling-member case directly and retires the
 aliasing loophole an entire class of AATA defects depended on. It cuts against the
 demand-driven design, which is the trade to weigh.
+
+## USER RULING 2026-11-17: do NOT fix it by parsing at the import
+
+Both routes above were costed and declined. The attempt was to rack a `ParseTask` per
+`theory` declaration (fire-and-forget), which would make every reachable file parsed by
+quiescence and reduce the member check to a `declOf` lookup. It works, and it was nearly
+built. It is still wrong:
+
+**Laziness here is the POINT, not an optimization.** `[using import(I) thm]` exists so a
+proof pulls in exactly the facts it names instead of traversing the file tree. Parsing at
+every import makes each `theory` declaration a traversal root and defeats that design
+wholesale — 916 import declarations across the corpus, every one of them opening a file the
+proof may never touch.
+
+So the dangling alias is the COST OF A PROPERTY, not an unplugged hole. What remains true,
+and is the honest framing: a syntactic check can tell you a name was MENTIONED; only
+resolution tells you it RESOLVES, and resolution is demand-driven by design.
+
+Measured while deciding (`--trace-facts` on the repro): `discover` allocates a FileId and
+never reads the file, so on `dangling-member-passes.b4m` the target `std/group/lagrange.b4m`
+is **never parsed at all** — not even by `sort G = group_lagrange.Grp`. A declaration demands
+nothing. That also means a dangling import PATH (`theory nope <<< "no-such-file.b4m"`, with
+the alias used) passes `check` silently, which is the same defect one level up.
+
+If this is ever revisited, `--library` is still the place: every file is already a root there,
+so the parse is already paid for and no laziness is traded away.
