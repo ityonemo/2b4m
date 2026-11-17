@@ -1,6 +1,7 @@
 # `debug accelerant` through models, and through towers of them
 
-**Status: DESIGNED, not built.** User direction 2026-10-11: inspection must trace through
+**Status: DESIGNED, not built. Re-probed 2026-11-17 — every claim below still holds;
+only line references were refreshed.** User direction 2026-10-11: inspection must trace through
 models, possibly several layers; the surface should be repeated `--model` flags building the
 tower we care about. Not urgent.
 
@@ -14,7 +15,7 @@ two things block the multi-layer case.
 
 ### 1. A model-transfer citation is not inspectable at all
 
-`std/rational/units.b4m:100` is
+`std/rational/units.b4m:111` is
 
 ```2b4m
 [using model(RationalUnits) field_units.oneIsNonzero]
@@ -31,14 +32,14 @@ nothing lands in `synthetic_at` for it — but it is exactly the step a reader m
 expanded, because what the kernel checked is the source theorem RE-PROVED under the mapping.
 
 **Two-layer towers are the right test**, and `std/field/order.b4m` is full of them — e.g. its
-line 142 is `[using model(FieldIsOrdered) field.addNegRight]`, so a ℚ-level citation of an
+line 177 is `[using model(FieldIsOrdered) field.addNegRight]`, so a ℚ-level citation of an
 ordered-field theorem reads ℚ ← `RationalUnits` ← ordered field ← `FieldIsOrdered` ← field.
 Reading what was checked at the bottom means composing two mappings.
 
 ### 2. The registry cannot hold more than one space per step
 
 Generation IS model-aware — a synthetic produced under a model is renamed
-(`Prove.zig` ~3113):
+(`Prove.zig:2531`):
 
 ```zig
 if (self.model != .none and self.model != .universe) {
@@ -51,9 +52,9 @@ if (self.model != .none and self.model != .universe) {
 but the step registry is not:
 
 ```zig
-// Context.zig ~402 — "keep-first: a step's synthetic is produced once per space;
+// Context.zig:401 — "keep-first: a step's synthetic is produced once per space;
 // the first stays the answer"
-pub fn registerSynthetic(self: *Context, file: FileId, loc: u32, name: StrId) !void {
+pub fn registerSynthetic(self: *Context, file: FileId, loc: u32, name: InternPool.StrId) std.mem.Allocator.Error!void {
     const gop = try self.synthetic_at.getOrPut(self.arena, .{ .file = file, .loc = loc });
     if (!gop.found_existing) gop.value_ptr.* = .{ .file = file, .name = name };
 }
