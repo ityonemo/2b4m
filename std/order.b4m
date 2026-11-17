@@ -11,7 +11,7 @@
 // unconstrained gap would make the order total in the wrong direction. So a proof written
 // against ℕ's axioms is NOT valid over ℤ, and modelling one on the other is unsound.
 //
-// The way through is to notice WHICH facts actually touch the gap axioms. The four below do
+// The way through is to notice WHICH facts actually touch the gap axioms. The ones below do
 // not: they follow from the definition of `less_or_equal` plus transitivity, nothing else.
 // So transitivity is an OBLIGATION here — each tower keeps its own proof of it, by whatever
 // route its own axioms allow (ℕ by induction on the gap, ℤ through the sign of a difference)
@@ -39,6 +39,8 @@ axiom trichotomy: forall a, b: Ordered;
   less_than(a, b) or a = b or less_than(b, a)
 
 // What this file proves (verified manifest):
+intheory lessOrEqualThenLessThan
+intheory lessThanThenLessOrEqual
 intheory lessThanToLessOrEqual
 intheory lessOrEqualRefl
 intheory lessOrEqualSplit
@@ -658,5 +660,130 @@ proof
     }
   @conclusion |
     forall a, b: Ordered; less_or_equal(a, b) -> a != b -> less_than(a, b)
+    [by generalize generalize-a]
+qed
+
+// MIXED TRANSITIVITY: chaining a strict step with a non-strict one stays strict.
+theorem lessOrEqualThenLessThan: forall a, b, c: Ordered; less_or_equal(a, b) -> less_than(b, c) -> less_than(a, c)
+proof
+  @generalize-a |
+    fix a: Ordered {
+      @generalize-b |
+        fix b: Ordered {
+          @generalize-c |
+            fix c: Ordered {
+              @given-a-at-most-b |
+                assume less_or_equal(a, b) {
+                  @given-b-below-c |
+                    assume less_than(b, c) {
+                      @a-at-most-b |
+                        less_than(a, b) or a = b
+                        [by hypothesis given-a-at-most-b]
+                      @b-below-c |
+                        less_than(b, c)
+                        [by hypothesis given-b-below-c]
+                      @conclusion-a-below-c |
+                        less_than(a, c)
+                        case a-at-most-b {
+                          @when-below |
+                            assume less_than(a, b) {
+                              @a-below-b |
+                                less_than(a, b)
+                                [by hypothesis when-below]
+                              @conclusion-when-below |
+                                less_than(a, c)
+                                [using specialize lessThanTransitive(a, b, c) a-below-b b-below-c]
+                            }
+                          @when-equal |
+                            assume a = b {
+                              @a-is-b |
+                                a = b
+                                [by hypothesis when-equal]
+                              @conclusion-when-equal |
+                                less_than(a, c)
+                                [by rewrite a-is-b b-below-c]
+                            }
+                        }
+                    }
+                  @b-below-c-implies |
+                    less_than(b, c) -> less_than(a, c)
+                    [by discharge given-b-below-c]
+                }
+              @a-at-most-b-implies |
+                less_or_equal(a, b) -> less_than(b, c) -> less_than(a, c)
+                [by discharge given-a-at-most-b]
+            }
+          @discharge-c |
+            forall c: Ordered; less_or_equal(a, b) -> less_than(b, c) -> less_than(a, c)
+            [by generalize generalize-c]
+        }
+      @discharge-b |
+        forall b, c: Ordered; less_or_equal(a, b) -> less_than(b, c) -> less_than(a, c)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: Ordered; less_or_equal(a, b) -> less_than(b, c) -> less_than(a, c)
+    [by generalize generalize-a]
+qed
+
+theorem lessThanThenLessOrEqual: forall a, b, c: Ordered; less_than(a, b) -> less_or_equal(b, c) -> less_than(a, c)
+proof
+  @generalize-a |
+    fix a: Ordered {
+      @generalize-b |
+        fix b: Ordered {
+          @generalize-c |
+            fix c: Ordered {
+              @given-a-below-b |
+                assume less_than(a, b) {
+                  @given-b-at-most-c |
+                    assume less_or_equal(b, c) {
+                      @a-below-b |
+                        less_than(a, b)
+                        [by hypothesis given-a-below-b]
+                      @b-at-most-c |
+                        less_than(b, c) or b = c
+                        [by hypothesis given-b-at-most-c]
+                      @conclusion-a-below-c |
+                        less_than(a, c)
+                        case b-at-most-c {
+                          @when-below |
+                            assume less_than(b, c) {
+                              @b-below-c |
+                                less_than(b, c)
+                                [by hypothesis when-below]
+                              @conclusion-when-below |
+                                less_than(a, c)
+                                [using specialize lessThanTransitive(a, b, c) a-below-b b-below-c]
+                            }
+                          @when-equal |
+                            assume b = c {
+                              @b-is-c |
+                                b = c
+                                [by hypothesis when-equal]
+                              @conclusion-when-equal |
+                                less_than(a, c)
+                                [by rewrite b-is-c a-below-b]
+                            }
+                        }
+                    }
+                  @b-at-most-c-implies |
+                    less_or_equal(b, c) -> less_than(a, c)
+                    [by discharge given-b-at-most-c]
+                }
+              @a-below-b-implies |
+                less_than(a, b) -> less_or_equal(b, c) -> less_than(a, c)
+                [by discharge given-a-below-b]
+            }
+          @discharge-c |
+            forall c: Ordered; less_than(a, b) -> less_or_equal(b, c) -> less_than(a, c)
+            [by generalize generalize-c]
+        }
+      @discharge-b |
+        forall b, c: Ordered; less_than(a, b) -> less_or_equal(b, c) -> less_than(a, c)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: Ordered; less_than(a, b) -> less_or_equal(b, c) -> less_than(a, c)
     [by generalize generalize-a]
 qed

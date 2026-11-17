@@ -14,6 +14,7 @@
 // it from.
 
 theory field <<< "std/field.b4m"
+theory order <<< "std/order.b4m"
 
 sort OrderedField
 const ZERO: OrderedField
@@ -95,6 +96,17 @@ qed
 
 oper recip(a: OrderedField) => OrderedField requires nonzero(a)
 
+// An ordered field IS a strict total order: its three order axioms are exactly what
+// std/order.b4m asks, so everything that theory derives from `less_or_equal` plus
+// transitivity transfers rather than being reproved here.
+model OrderedFieldIsOrdered {
+  order.Ordered: OrderedField
+  order.less_than: less_than
+  order.lessThanTransitive <- lessThanTransitive
+  order.lessThanIrreflexive <- lessThanIrreflexive
+  order.trichotomy <- lessThanTrichotomy
+}
+
 model FieldIsOrdered {
   field.Field: OrderedField
   field.ZERO: ZERO
@@ -131,42 +143,9 @@ define less_or_equal(a, b) = less_than(a, b) or a = b
 // would give a<a).
 theorem lessThanAsymmetric: forall a, b: OrderedField; less_than(a, b) -> (not less_than(b, a))
 proof
-  @generalize-a |
-    fix a: OrderedField {
-      @generalize-b |
-        fix b: OrderedField {
-          @given-a-less-b |
-            assume less_than(a, b) {
-              @a-less-b |
-                less_than(a, b)
-                [by hypothesis given-a-less-b]
-              @given-b-less-a |
-                assume less_than(b, a) {
-                  @b-less-a |
-                    less_than(b, a)
-                    [by hypothesis given-b-less-a]
-                  @a-less-a |
-                    less_than(a, a)
-                    [using specialize lessThanTransitive(a, b, a) a-less-b b-less-a]
-                  @a-not-less-a |
-                    not less_than(a, a)
-                    [using specialize lessThanIrreflexive(a)]
-                }
-              @not-b-less-a |
-                not less_than(b, a)
-                [by contradiction given-b-less-a a-less-a a-not-less-a]
-            }
-          @discharge |
-            less_than(a, b) -> (not less_than(b, a))
-            [by discharge given-a-less-b]
-        }
-      @discharge-b |
-        forall b: OrderedField; less_than(a, b) -> (not less_than(b, a))
-        [by generalize generalize-b]
-    }
   @conclusion |
     forall a, b: OrderedField; less_than(a, b) -> (not less_than(b, a))
-    [by generalize generalize-a]
+    [using model(OrderedFieldIsOrdered) order.lessThanAsymmetric]
 qed
 
 // -- ring-lemma shims (for the order-lemma algebra below) --------------------
@@ -656,209 +635,32 @@ qed
 
 theorem lessOrEqualRefl: forall a: OrderedField; less_or_equal(a, a)
 proof
-  @generalize-a |
-    fix a: OrderedField {
-      @a-is-a |
-        a = a
-        [by reflexivity]
-      @conclusion-refl |
-        less_or_equal(a, a)
-        [using tautology a-is-a]
-    }
   @conclusion |
     forall a: OrderedField; less_or_equal(a, a)
-    [by generalize generalize-a]
+    [using model(OrderedFieldIsOrdered) order.lessOrEqualRefl]
 qed
 
 // a ≤ b and b < c ⟹ a < c.
 theorem lessOrEqualThenLessThan: forall a, b, c: OrderedField; less_or_equal(a, b) -> less_than(b, c) -> less_than(a, c)
 proof
-  @generalize-a |
-    fix a: OrderedField {
-      @generalize-b |
-        fix b: OrderedField {
-          @generalize-c |
-            fix c: OrderedField {
-              @given-a-at-most-b |
-                assume less_or_equal(a, b) {
-                  @given-b-below-c |
-                    assume less_than(b, c) {
-                      @a-at-most-b |
-                        less_than(a, b) or a = b
-                        [by hypothesis given-a-at-most-b]
-                      @b-below-c |
-                        less_than(b, c)
-                        [by hypothesis given-b-below-c]
-                      @conclusion-a-below-c |
-                        less_than(a, c)
-                        case a-at-most-b {
-                          @when-below |
-                            assume less_than(a, b) {
-                              @a-below-b |
-                                less_than(a, b)
-                                [by hypothesis when-below]
-                              @conclusion-when-below |
-                                less_than(a, c)
-                                [using specialize lessThanTransitive(a, b, c) a-below-b b-below-c]
-                            }
-                          @when-equal |
-                            assume a = b {
-                              @a-is-b |
-                                a = b
-                                [by hypothesis when-equal]
-                              @conclusion-when-equal |
-                                less_than(a, c)
-                                [by rewrite a-is-b b-below-c]
-                            }
-                        }
-                    }
-                  @b-below-c-implies |
-                    less_than(b, c) -> less_than(a, c)
-                    [by discharge given-b-below-c]
-                }
-              @a-at-most-b-implies |
-                less_or_equal(a, b) -> less_than(b, c) -> less_than(a, c)
-                [by discharge given-a-at-most-b]
-            }
-          @discharge-c |
-            forall c: OrderedField; less_or_equal(a, b) -> less_than(b, c) -> less_than(a, c)
-            [by generalize generalize-c]
-        }
-      @discharge-b |
-        forall b, c: OrderedField; less_or_equal(a, b) -> less_than(b, c) -> less_than(a, c)
-        [by generalize generalize-b]
-    }
   @conclusion |
     forall a, b, c: OrderedField; less_or_equal(a, b) -> less_than(b, c) -> less_than(a, c)
-    [by generalize generalize-a]
+    [using model(OrderedFieldIsOrdered) order.lessOrEqualThenLessThan]
 qed
 
 // a < b and b ≤ c ⟹ a < c.
 theorem lessThanThenLessOrEqual: forall a, b, c: OrderedField; less_than(a, b) -> less_or_equal(b, c) -> less_than(a, c)
 proof
-  @generalize-a |
-    fix a: OrderedField {
-      @generalize-b |
-        fix b: OrderedField {
-          @generalize-c |
-            fix c: OrderedField {
-              @given-a-below-b |
-                assume less_than(a, b) {
-                  @given-b-at-most-c |
-                    assume less_or_equal(b, c) {
-                      @a-below-b |
-                        less_than(a, b)
-                        [by hypothesis given-a-below-b]
-                      @b-at-most-c |
-                        less_than(b, c) or b = c
-                        [by hypothesis given-b-at-most-c]
-                      @conclusion-a-below-c |
-                        less_than(a, c)
-                        case b-at-most-c {
-                          @when-below |
-                            assume less_than(b, c) {
-                              @b-below-c |
-                                less_than(b, c)
-                                [by hypothesis when-below]
-                              @conclusion-when-below |
-                                less_than(a, c)
-                                [using specialize lessThanTransitive(a, b, c) a-below-b b-below-c]
-                            }
-                          @when-equal |
-                            assume b = c {
-                              @b-is-c |
-                                b = c
-                                [by hypothesis when-equal]
-                              @conclusion-when-equal |
-                                less_than(a, c)
-                                [by rewrite b-is-c a-below-b]
-                            }
-                        }
-                    }
-                  @b-at-most-c-implies |
-                    less_or_equal(b, c) -> less_than(a, c)
-                    [by discharge given-b-at-most-c]
-                }
-              @a-below-b-implies |
-                less_than(a, b) -> less_or_equal(b, c) -> less_than(a, c)
-                [by discharge given-a-below-b]
-            }
-          @discharge-c |
-            forall c: OrderedField; less_than(a, b) -> less_or_equal(b, c) -> less_than(a, c)
-            [by generalize generalize-c]
-        }
-      @discharge-b |
-        forall b, c: OrderedField; less_than(a, b) -> less_or_equal(b, c) -> less_than(a, c)
-        [by generalize generalize-b]
-    }
   @conclusion |
     forall a, b, c: OrderedField; less_than(a, b) -> less_or_equal(b, c) -> less_than(a, c)
-    [by generalize generalize-a]
+    [using model(OrderedFieldIsOrdered) order.lessThanThenLessOrEqual]
 qed
 
 theorem lessOrEqualTransitive: forall a, b, c: OrderedField; less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
 proof
-  @generalize-a |
-    fix a: OrderedField {
-      @generalize-b |
-        fix b: OrderedField {
-          @generalize-c |
-            fix c: OrderedField {
-              @given-a-at-most-b |
-                assume less_or_equal(a, b) {
-                  @given-b-at-most-c |
-                    assume less_or_equal(b, c) {
-                      @a-at-most-b |
-                        less_or_equal(a, b)
-                        [by hypothesis given-a-at-most-b]
-                      @b-at-most-c |
-                        less_than(b, c) or b = c
-                        [by hypothesis given-b-at-most-c]
-                      @conclusion-a-at-most-c |
-                        less_or_equal(a, c)
-                        case b-at-most-c {
-                          @when-below |
-                            assume less_than(b, c) {
-                              @b-below-c |
-                                less_than(b, c)
-                                [by hypothesis when-below]
-                              @a-below-c |
-                                less_than(a, c)
-                                [using specialize lessOrEqualThenLessThan(a, b, c) a-at-most-b b-below-c]
-                              @conclusion-when-below |
-                                less_or_equal(a, c)
-                                [using tautology a-below-c]
-                            }
-                          @when-equal |
-                            assume b = c {
-                              @b-is-c |
-                                b = c
-                                [by hypothesis when-equal]
-                              @conclusion-when-equal |
-                                less_or_equal(a, c)
-                                [by rewrite b-is-c a-at-most-b]
-                            }
-                        }
-                    }
-                  @b-at-most-c-implies |
-                    less_or_equal(b, c) -> less_or_equal(a, c)
-                    [by discharge given-b-at-most-c]
-                }
-              @a-at-most-b-implies |
-                less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
-                [by discharge given-a-at-most-b]
-            }
-          @discharge-c |
-            forall c: OrderedField; less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
-            [by generalize generalize-c]
-        }
-      @discharge-b |
-        forall b, c: OrderedField; less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
-        [by generalize generalize-b]
-    }
   @conclusion |
     forall a, b, c: OrderedField; less_or_equal(a, b) -> less_or_equal(b, c) -> less_or_equal(a, c)
-    [by generalize generalize-a]
+    [using model(OrderedFieldIsOrdered) order.lessOrEqualTransitive]
 qed
 
 // a ≤ b ⟹ a + c ≤ b + c.
