@@ -210,10 +210,19 @@ entity maps to *itself*. So a transfer reaching an undischarged abstract axiom r
 that axiom's SOURCE-space statement while the step's goal is in TARGET space, and the two
 do not match. The citation fails **by statement mismatch**.
 
-Worth knowing when reading a failure: the error names a formula, not a missing obligation.
-That is also why an incomplete discharge can surface far from its cause — see
+**The error now names the cause, by a sort test rather than by bookkeeping.** The mismatch
+is recognisable by shape: the proof is a transfer, and the model maps the sort the citation
+WANTED onto the sort the proof GOT. Only the overlay relates a pair that way, so the
+mismatch IS the undischarged citation, and the diagnostic says so — "this step cites a fact
+the model does not discharge … add that fact's `<-` obligation". No obligation ledger is
+kept; the test is local to the failing step, which is what keeps the mechanism free of the
+enumeration it deliberately avoids.
+
+It still surfaces at the SOURCE theory's own line (that is where the citation lives), and a
+failure that is not an argument sort-check — a composed model whose middle layer is
+incomplete — can still report as a bare mismatch: see
 `../NESTED-MODEL-COMPOSITION-ISSUE.md`, where an unmapped F-level algebra fact reports
-itself as a sort mismatch inside the source theory's own proof.
+itself as a sort error inside the source theory's proof.
 
 **A model is a FULL OVERLAY, not a filter scoped to its source theory.** Citing
 `[using model(M) other.thm]` where `M` says nothing about `other` is legal and sound: the

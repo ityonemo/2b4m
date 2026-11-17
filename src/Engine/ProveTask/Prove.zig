@@ -1635,6 +1635,25 @@ fn bindSchemaArgsUnder(self: *Prove, e: *Elab, rs: ResolvedSchema, c: ast.Step.C
             const want_carrier: InternPool.Index = if (want == Elab.prop_sort) @enumFromInt(@intFromEnum(want)) else self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(want)));
             const got_carrier = if (typed.sort == Elab.prop_sort) @intFromEnum(typed.sort) else @intFromEnum(self.ctx.interner.carrierOf(@enumFromInt(@intFromEnum(typed.sort))));
             if (@intFromEnum(want_carrier) != got_carrier) {
+                // UNDISCHARGED MODEL OBLIGATION, named rather than left as a type error.
+                // A transfer re-proves the source body under the overlay, and an
+                // un-overloaded entity maps to ITSELF — so a citation of an axiom the model
+                // never discharged arrives in SOURCE space while its args are already in
+                // TARGET space. Sound (design/model-design.md, "Why you can't cite an
+                // un-overloaded axiom over an abstract sort"), but it surfaces inside the
+                // SOURCE theory's file, which the author never wrote.
+                //
+                // THE TEST: this proof is a transfer, and the model maps the sort we WANTED
+                // onto the one we GOT. That pair can only be related this way by the overlay
+                // itself, so the mismatch IS the undischarged citation.
+                if (self.model != InternPool.Index.none and self.model != .universe) {
+                    const want_ix: InternPool.Index = @enumFromInt(@intFromEnum(want));
+                    if (@intFromEnum(self.ctx.interner.applyModel(self.model, want_ix)) == got_carrier) {
+                        return self.fail(Elab.exprLoc(arg_expr), "this step cites a fact the model does not discharge: it arrives over '{s}', the model's SOURCE sort, while the proof is in '{s}'. Add that fact's `<-` obligation to the model block — a transferred theorem may only cite source axioms the model discharges.", .{
+                            self.ctx.interner.sortName(@enumFromInt(@intFromEnum(want))), self.sortName(typed.sort),
+                        });
+                    }
+                }
                 return self.fail(Elab.exprLoc(arg_expr), "expected sort '{s}', got '{s}'", .{
                     self.ctx.interner.sortName(@enumFromInt(@intFromEnum(want))), self.sortName(typed.sort),
                 });
