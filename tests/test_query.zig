@@ -204,6 +204,72 @@ pub fn addTests(
 
     ctx.ok(&.{ "query", "theorem", "std/peano.b4m", "addZeroRight" }, std_theorem_text);
 
+    // `debug model <file> <Name>`: a model's mapping surface grouped by source theory, and
+    // the CHECKLIST — what that theory declares which this model never mentions. This is the
+    // up-front half of NESTED-MODEL-COMPOSITION-ISSUE.md: an omitted discharge otherwise
+    // surfaces as a sort mismatch inside the source theory's own proof, two files away.
+    // The `_ok` fixture's surface is complete, so there is no unmapped/undischarged line.
+    ctx.ok(&.{ "debug", "model", "tests/cases/model/composed/composed_ok.b4m" },
+        \\model TopIsMid  (tests/cases/model/composed/composed_ok.b4m:18)
+        \\
+        \\  from middle  <<< tests/cases/model/composed/middle.b4m
+        \\    Mid: Top
+        \\    MZ: TZ
+        \\    mop: top_op
+        \\    mopUnitLeft <- topUnitLeft
+        \\    mopAssoc <- topAssoc
+        \\
+    );
+
+    // the same model with its `mopAssoc` discharge REMOVED — the omission the check reports
+    // two layers down is named here as a one-line obligation.
+    ctx.ok(&.{ "debug", "model", "tests/cases/model/composed/composed_missing_axiom_bad.b4m" },
+        \\model TopIsMid  (tests/cases/model/composed/composed_missing_axiom_bad.b4m:14)
+        \\
+        \\  from middle  <<< tests/cases/model/composed/middle.b4m
+        \\    Mid: Top
+        \\    MZ: TZ
+        \\    mop: top_op
+        \\    mopUnitLeft <- topUnitLeft
+        \\    — 1 undischarged (<-): mopAssoc
+        \\
+    );
+
+    // the SYMBOL half of the same defect: an unmapped `:` entry, reported under its own
+    // heading because the fix differs (a `:` mapping, not a `<-` discharge).
+    ctx.ok(&.{ "debug", "model", "tests/cases/model/composed/composed_missing_symbol_bad.b4m" },
+        \\model TopIsMid  (tests/cases/model/composed/composed_missing_symbol_bad.b4m:15)
+        \\
+        \\  from middle  <<< tests/cases/model/composed/middle.b4m
+        \\    Mid: Top
+        \\    MZ: TZ
+        \\    mopUnitLeft <- topUnitLeft
+        \\    mopAssoc <- topAssoc
+        \\    — 1 unmapped (:): mop
+        \\
+    );
+
+    // a GUARDED mapping prints the dischargers it nominates on the `:` line (a refined-sort
+    // target takes `TGT(baseFact…)`, a closed operation `F -| closureFact…`) — those facts
+    // are part of what the model owes, so a bare "[guarded]" flag would hide them. This
+    // model's sources are UNQUALIFIED: it models a theory declared in its own file, so there
+    // is no namespace to resolve and the surface is the file already parsed.
+    ctx.ok(&.{ "debug", "model", "tests/cases/model/model_overlap_refinement.b4m" },
+        \\model PartIsThing  (tests/cases/model/model_overlap_refinement.b4m:87)
+        \\
+        \\  from this file  (tests/cases/model/model_overlap_refinement.b4m)
+        \\    Thing: Part
+        \\    UNIT: UNIT   [guarded refined sort: punitIsInPart]
+        \\    op: op   [guarded closed operation: partClosedUnderOp]
+        \\    opUnitLeft <- opUnitLeft
+        \\    opComm <- opComm
+        \\
+    );
+
+    // a file with no model at all, and a name that is not a model in the file.
+    ctx.ok(&.{ "debug", "model", "tests/cases/cli/outline.b4m" }, "tests/cases/cli/outline.b4m: no models\n");
+    ctx.fail(&.{ "debug", "model", "tests/cases/model/composed/composed_ok.b4m", "NoSuchModel" }, "error: no model 'NoSuchModel' in tests/cases/model/composed/composed_ok.b4m\n");
+
     // `debug accelerant <file> <line>`: reprint, as valid 2b4m source, the
     // synthetic theorem the accelerant step on that line produced (statement +
     // proof). The ground `simplify` on line 15 of the fixture has no

@@ -6,3 +6,5 @@
 pub const taint = @import("debug/taint.zig");
 /// reprint the synthetic theorem an accelerated step produced, as re-parseable 2b4m
 pub const accelerant = @import("debug/accelerant.zig");
+/// a model's mapping surface, and which of its source theories' declarations it leaves out
+pub const model = @import("debug/model.zig");

@@ -110,11 +110,13 @@ fn indexCommand(arena: std.mem.Allocator, rest: []const [:0]const u8) !u8 {
 const debug_usage =
     "usage: 2b4m debug accelerant <file> <line>\n" ++
     "       2b4m debug accelerant <file> <theorem> <step-label>\n" ++
-    "       2b4m debug taint <file> [theorem]\n";
+    "       2b4m debug taint <file> [theorem]\n" ++
+    "       2b4m debug model <file> [Name]\n";
 
 /// `2b4m debug <op>` — proof-machinery introspection.
 ///   accelerant — reprint the synthetic theorem an accelerated step produced.
 ///   taint      — per proof, every accelerated step at its file:line:col.
+///   model      — a model's mapping surface, and what it leaves unmapped.
 fn debugCommand(arena: std.mem.Allocator, std_root: []const u8, rest: []const [:0]const u8) !u8 {
     if (rest.len >= 1 and std.mem.eql(u8, rest[0], "accelerant")) {
         if (rest.len < 3) return fail(debug_usage, .{});
@@ -141,6 +143,17 @@ fn debugCommand(arena: std.mem.Allocator, std_root: []const u8, rest: []const [:
             else => return fail("error: cannot open '{s}': {t}\n", .{ path, e }),
         };
         const result = try b4m.debug.taint.taint(arena, path, source, thm);
+        return emitQuery(result.text, result.ok);
+    }
+    if (rest.len >= 1 and std.mem.eql(u8, rest[0], "model")) {
+        if (rest.len < 2 or rest.len > 3) return fail(debug_usage, .{});
+        const path = rest[1];
+        const name: ?[]const u8 = if (rest.len == 3) rest[2] else null;
+        const source = readSource(arena, path) catch |e| switch (e) {
+            error.FileNotFound => return fail("error: cannot open '{s}': file not found\n", .{path}),
+            else => return fail("error: cannot open '{s}': {t}\n", .{ path, e }),
+        };
+        const result = try b4m.debug.model.model(arena, path, source, name, null, queryReadFile, std_root);
         return emitQuery(result.text, result.ok);
     }
     return fail(debug_usage, .{});
@@ -390,6 +403,7 @@ pub fn main(init: std.process.Init) !u8 {
             \\       2b4m index <file.b4m>
             \\       2b4m debug accelerant <file> <line | theorem step-label>
             \\       2b4m debug taint <file> [theorem]
+            \\       2b4m debug model <file> [Name]
             \\       2b4m query outline <file.b4m> [theorem]
             \\       2b4m query claims <file.b4m> [theorem]
             \\       2b4m query theorem <file.b4m> <theorem> [--sig]
@@ -443,6 +457,10 @@ pub fn main(init: std.process.Init) !u8 {
             \\produced (statement + proof, as valid 2b4m that round-trips through
             \\check). Select the step by line number, or by enclosing theorem +
             \\step-label.
+            \\debug model prints a model's mapping surface grouped by source theory,
+            \\and which of each theory's declarations the model never mentions — the
+            \\checklist to read when a transfer fails on an undischarged obligation.
+            \\
             \\debug taint flags, per proof, every step whose rule can fall back to
             \\an accelerated verdict (arithmetic/tautology/polynomial/assoc_commut/
             \\assoc/extensionality), at its file:line:col — where trust enters the proof; a
@@ -495,7 +513,7 @@ pub fn main(init: std.process.Init) !u8 {
         return debugCommand(arena, std_root, args[2..]);
     }
     const usage = "usage: 2b4m check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] [--trace-facts] [--chaos[=SEED]] [-j<n>] [--io-threads=<n>] [--sync-io] [--io-delay=<us>] <file.b4m | dir> [theorem]\n       2b4m fmt [--check] <file.b4m|.md>\n       2b4m lint <file.b4m|.md>\n" ++
-        "       2b4m index <file.b4m>\n       2b4m debug accelerant <file> <line | theorem step-label>\n       2b4m debug taint <file> [theorem]\n       2b4m query outline <file.b4m> [theorem]\n       2b4m query claims <file.b4m> [theorem]\n       2b4m query theorem <file.b4m> <theorem> [--sig]\n       2b4m query whereis <file.b4m> <identifier>\n       2b4m query search <file.b4m|dir> <query>\n       2b4m query uses <file.b4m> [theorem]\n";
+        "       2b4m index <file.b4m>\n       2b4m debug accelerant <file> <line | theorem step-label>\n       2b4m debug taint <file> [theorem]\n       2b4m debug model <file> [Name]\n       2b4m query outline <file.b4m> [theorem]\n       2b4m query claims <file.b4m> [theorem]\n       2b4m query theorem <file.b4m> <theorem> [--sig]\n       2b4m query whereis <file.b4m> <identifier>\n       2b4m query search <file.b4m|dir> <query>\n       2b4m query uses <file.b4m> [theorem]\n";
     if (args.len < 3 or !std.mem.eql(u8, args[1], "check")) {
         return fail(usage, .{});
     }

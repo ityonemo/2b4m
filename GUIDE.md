@@ -2027,3 +2027,33 @@ every step whose rule can fall back to an accelerated verdict (`arithmetic`,
 variants), at its `file:line:col`. A syntactic upper bound — a flagged step may
 still certify — so a clean report guarantees every step is kernel-checked. Pure
 over the AST (no elaboration), like the `query` commands.
+
+`2b4m debug model <file> [Name]` prints a model's **mapping surface** grouped by
+source theory, and the checklist that matters: which of each theory's declarations
+the model never mentions — `unmapped (:)` for symbols, `undischarged (<-)` for
+axioms. Without a name it reports every model in the file. A guarded mapping shows
+the dischargers it nominates, since those are part of what the model owes.
+
+```
+$ 2b4m debug model tests/cases/model/composed/composed_missing_axiom_bad.b4m
+model TopIsMid  (tests/cases/model/composed/composed_missing_axiom_bad.b4m:14)
+
+  from middle  <<< tests/cases/model/composed/middle.b4m
+    Mid: Top
+    MZ: TZ
+    mop: top_op
+    mopUnitLeft <- topUnitLeft
+    — 1 undischarged (<-): mopAssoc
+```
+
+Read it when a transfer fails. An omitted discharge does not report as an omitted
+discharge: it surfaces as a sort mismatch inside the **source** theory's own proof,
+a file you may never have opened (the diagnostics now name the cause at the failure
+site; this is the up-front half).
+
+**A nonempty list is not an error.** A model need only cover what the theorems it
+transfers actually reach, and the obligation set is "whatever the proof cited" —
+known only at elaboration. Most `std` models are deliberately partial. So this is a
+checklist to read against a failure, and the thing to diff when a transfer that used
+to work stops. Pure over the AST, like `taint`; aliases are followed to their
+origin, so a re-export whose origin is mapped is not reported.

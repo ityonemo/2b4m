@@ -1,8 +1,9 @@
 # An incomplete model discharge reports as a sort mismatch in an unrelated file
 
-**Status: FIXED 2026-11-17.** Both failure shapes now name their cause AND their fix. Gated by
+**Status: CLOSED 2026-11-17.** Both failure shapes name their cause AND their fix, and the
+up-front obligation listing shipped as `2b4m debug model`. Gated by
 `tests/cases/model/composed/` (a three-layer composition, which `std` does in 40 places and
-had no test for). One item remains open: listing a model's obligations up front, below.
+had no test for) plus six `debug model` assertions in `tests/test_query.zig`.
 
 **When you transfer a theorem whose own proof is a transfer, the outer model must discharge
 every axiom the INNER proof reaches — not only the axioms its statement mentions.** That is
@@ -40,12 +41,34 @@ the fixtures.
 Composition is what makes the SYMBOL half the common case: the callee is often a middle
 layer's symbol the outer model never mentioned.
 
+**(2) DONE — the obligations are listed up front.** `2b4m debug model <file> [Name]`
+(`src/debug/model.zig`) prints a model's mapping surface grouped by source theory, then what
+each theory declares that the model never mentions: `unmapped (:)` for symbols,
+`undischarged (<-)` for axioms. On the `composed_missing_axiom_bad` fixture it names
+`mopAssoc` — the omission that otherwise surfaced two files down.
+
+It is SYNTACTIC, not elaboration-time, which is the honest scope. The obligation set for a
+given citation is "whatever that proof actually cited" and is only known while proving; what
+`debug model` reports is the declared SURFACE a model covers. So a nonempty list is not an
+error — a model need only cover what the theorems it transfers reach, and across `std`'s 83
+models only 14 theory sections are fully covered. It is the checklist to read against a
+failure, and the thing to diff when a working transfer stops.
+
+Three false-positive classes had to be excluded for the report to be worth reading, each a
+consequence of a real semantic rule rather than a coding slip:
+
+| excluded | why |
+|---|---|
+| aliases whose ORIGIN is mapped | identity-by-origin: `F` and `field_order.OrderedField` are the same entity (13 of 18 entries on the first model tried) |
+| the model's own TARGETS | a same-file model's file declares both theories, so the target side read as unmapped source |
+| guards of target sorts | `sort Part = Thing where inPart` — `inPart` is model vocabulary reached through the sort |
+
+Repeated names are collapsed with a count (`segment x2`): a definition block declares one
+axiom per CLAUSE under the operator's name, so arity otherwise reads as a bug.
+
 ## What a fix should still do
 
-1. **Consider listing a model's obligations.** A `debug model <Name>` printing what a model
-   must discharge for a given citation would turn this into a checklist; the information is
-   all present at elaboration time.
-2. Composition itself needs no change — `std` composes models routinely (40 citations whose
+1. Composition itself needs no change — `std` composes models routinely (40 citations whose
    source theorem is itself a transfer: ℚ → F → ring, and the same for ℝ and ℂ).
 
 ## Also affected

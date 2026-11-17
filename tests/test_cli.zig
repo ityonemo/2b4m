@@ -23,6 +23,7 @@ pub fn addTests(
             "       2b4m index <file.b4m>\n" ++
             "       2b4m debug accelerant <file> <line | theorem step-label>\n" ++
             "       2b4m debug taint <file> [theorem]\n" ++
+            "       2b4m debug model <file> [Name]\n" ++
             "       2b4m query outline <file.b4m> [theorem]\n" ++
             "       2b4m query claims <file.b4m> [theorem]\n" ++
             "       2b4m query theorem <file.b4m> <theorem> [--sig]\n" ++
