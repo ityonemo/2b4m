@@ -1,0 +1,34 @@
+// The shared definition-consistency schema discharges a REAL corpus obligation.
+//
+// `std/complex/polynomial.b4m` defines cpower by splitting on ZERO/succ:
+//     cpower(a, ZERO)       = ONE;
+//     cpower(a, succ(n))    = mul(a, cpower(a, n))
+// so its two arms owe "where both conditions hold, the results agree". They never
+// both hold, and `peano.zeroSuccSplitIsVacuous` is that fact packaged for reuse:
+// ONE instantiation closes the obligation whatever the two arms claim.
+//
+// This gates the reuse design (DEFINITION-SOUNDNESS-PLAN.md). If the schema's
+// shape drifts — notably if `prop` stops taking BOTH variables — the step stops
+// closing and this fails, which is the point: every recursive definition's step
+// arm mentions the predecessor, so a one-argument prop cannot state the consequent.
+theory peano <<< "std/peano.b4m"
+theory cpoly <<< "std/complex/polynomial.b4m"
+theory complex <<< "std/complex.b4m"
+
+intheory cpowerClausesAgree
+
+theorem cpowerClausesAgree: forall a: complex.Complex; forall k, n: peano.Nat;
+  (k = peano.ZERO and k = peano.succ(n)) -> complex.ONE = complex.mul(a, cpoly.cpower(a, n))
+proof
+  @generalize-a |
+    fix a: complex.Complex {
+      @vacuous |
+        forall k, n: peano.Nat;
+          (k = peano.ZERO and k = peano.succ(n)) -> complex.ONE = complex.mul(a, cpoly.cpower(a, n))
+        [using instantiation peano.zeroSuccSplitIsVacuous((fun kk, nn: peano.Nat => complex.ONE = complex.mul(a, cpoly.cpower(a, nn))))]
+    }
+  @conclusion |
+    forall a: complex.Complex; forall k, n: peano.Nat;
+      (k = peano.ZERO and k = peano.succ(n)) -> complex.ONE = complex.mul(a, cpoly.cpower(a, n))
+    [by generalize generalize-a]
+qed

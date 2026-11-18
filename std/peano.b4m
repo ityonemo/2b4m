@@ -73,6 +73,8 @@ intheory mulAddDistribLeft
 // ordering
 intheory addSuccNeverSelf
 intheory zeroOrSucc
+intheory noNatIsZeroAndSucc
+intheory zeroSuccSplitIsVacuous
 intheory addCancelLeft
 intheory addLeftSwap
 intheory mulLeftSwap
@@ -888,6 +890,93 @@ proof
   @conclusion |
     forall n: Nat; n = ZERO or (exists m: Nat; n = succ(m))
     [using instantiation induction((fun k: Nat => k = ZERO or (exists m: Nat; k = succ(m)))) base-case induction-step-for-all-k]
+qed
+
+// -- definition-block consistency: the two constructors are EXCLUSIVE ---------
+//
+// `zeroOrSucc` above says every Nat IS one of the two forms; these say no Nat is
+// BOTH. That is what a definition block splitting on ZERO/succ owes: its two
+// clauses both apply only where the index is simultaneously ZERO and a successor,
+// and there is no such index, so they can never disagree.
+//
+// Split in two deliberately. `noNatIsZeroAndSucc` is the ℕ-specific content and
+// the only place `succNotZero` is reached; `zeroSuccSplitIsVacuous` is the
+// reusable SCHEMA that turns it into whatever equation a given definition's two
+// arms happen to claim. Every such obligation in std is one instantiation of it,
+// so the scaffolding is written once here rather than per definition.
+theorem noNatIsZeroAndSucc: forall k, n: Nat; not (k = ZERO and k = succ(n))
+proof
+  @generalize-k |
+    fix k: Nat {
+      @generalize-n |
+        fix n: Nat {
+          @given |
+            assume k = ZERO and k = succ(n) {
+              @both |
+                k = ZERO and k = succ(n)
+                [by hypothesis given]
+              @k-is-zero |
+                k = ZERO
+                [by and_lhs both]
+              @k-is-succ |
+                k = succ(n)
+                [by and_rhs both]
+              @zero-is-succ |
+                ZERO = succ(n)
+                [by rewrite k-is-zero k-is-succ]
+              @succ-is-zero |
+                succ(n) = ZERO
+                [by symmetry zero-is-succ]
+              @succ-not-zero |
+                succ(n) != ZERO
+                [using specialize succNotZero(n)]
+            }
+          @exclusive |
+            not (k = ZERO and k = succ(n))
+            [by contradiction given succ-is-zero succ-not-zero]
+        }
+      @generalize-inner |
+        forall n: Nat; not (k = ZERO and k = succ(n))
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall k, n: Nat; not (k = ZERO and k = succ(n))
+    [by generalize generalize-k]
+qed
+
+// `prop` takes BOTH variables because a recursive definition's step arm always
+// mentions the predecessor: `cpower(a, succ(n)) = mul(a, cpower(a, n))` claims
+// something about `n`, so a one-argument prop could not express the consequent.
+theorem zeroSuccSplitIsVacuous(prop(Nat, Nat)): forall k, n: Nat;
+  (k = ZERO and k = succ(n)) -> prop(k, n)
+proof
+  @generalize-k |
+    fix k: Nat {
+      @generalize-n |
+        fix n: Nat {
+          @given |
+            assume k = ZERO and k = succ(n) {
+              @both |
+                k = ZERO and k = succ(n)
+                [by hypothesis given]
+              @impossible |
+                not (k = ZERO and k = succ(n))
+                [using specialize noNatIsZeroAndSucc(k, n)]
+              @anything |
+                prop(k, n)
+                [by ex_falso both impossible]
+            }
+          @vacuous |
+            (k = ZERO and k = succ(n)) -> prop(k, n)
+            [by discharge given]
+        }
+      @generalize-inner |
+        forall n: Nat; (k = ZERO and k = succ(n)) -> prop(k, n)
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall k, n: Nat; (k = ZERO and k = succ(n)) -> prop(k, n)
+    [by generalize generalize-k]
 qed
 
 // Strategy: a strictly positive multiplier succ(c) preserves the gap: the new
