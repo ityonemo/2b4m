@@ -562,7 +562,15 @@ One line each, so nobody re-derives them. Chapter of origin in brackets.
 - **An incomplete model discharge reports as a bare sort mismatch** [ch17 #2] — FIXED
   (`322c31a`, `c8d6b78`): both shapes now name the unmapped entity AND what to write for it
   (a `<-` discharge for an axiom, a `:` mapping for a symbol). Gated by
-  `tests/cases/model/composed/` and `tests/cases/model/discharge/`.
+  `tests/cases/model/composed/` and `tests/cases/model/discharge/`. The up-front half shipped
+  as `2b4m debug model` (`a6596db`): a model's mapping surface per source theory plus what it
+  leaves `unmapped (:)` / `undischarged (<-)`. SYNTACTIC by design — the real obligation set
+  is "whatever the proof cited", known only at elaboration — so a nonempty list is NOT an
+  error: across `std`'s 83 models only 14 theory sections are fully covered, because a model
+  need only cover what the theorems it transfers reach. Three false-positive classes stay
+  excluded, each from a real rule: aliases whose ORIGIN is mapped (identity-by-origin), the
+  model's own TARGETS (a same-file model's file declares both theories), and guards of target
+  sorts. See `[[debug-model-command]]`.
 - **The two schema-across-a-model diagnostics point opposite directions** [ch17 #3] — the
   message is now one clear sentence naming the undischarged schema obligation. The LIMIT
   (entry 4 above) is unchanged.

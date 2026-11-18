@@ -221,7 +221,7 @@ enumeration it deliberately avoids.
 It still surfaces at the SOURCE theory's own line (that is where the citation lives), and a
 failure that is not an argument sort-check — a composed model whose middle layer is
 incomplete — can still report as a bare mismatch: see
-`../NESTED-MODEL-COMPOSITION-ISSUE.md`, where an unmapped F-level algebra fact reports
+`../PAINPOINTS.md`, where an unmapped F-level algebra fact reports
 itself as a sort error inside the source theory's proof.
 
 **A model is a FULL OVERLAY, not a filter scoped to its source theory.** Citing

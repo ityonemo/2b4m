@@ -206,7 +206,7 @@ pub fn addTests(
 
     // `debug model <file> <Name>`: a model's mapping surface grouped by source theory, and
     // the CHECKLIST — what that theory declares which this model never mentions. This is the
-    // up-front half of NESTED-MODEL-COMPOSITION-ISSUE.md: an omitted discharge otherwise
+    // up-front half of the PAINPOINTS.md model-discharge entry: an omitted discharge otherwise
     // surfaces as a sort mismatch inside the source theory's own proof, two files away.
     // The `_ok` fixture's surface is complete, so there is no unmapped/undischarged line.
     ctx.ok(&.{ "debug", "model", "tests/cases/model/composed/composed_ok.b4m" },

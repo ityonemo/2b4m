@@ -2,7 +2,8 @@
 //!
 //! The reason this exists: an incomplete model does not report as an incomplete model. Omit
 //! one `<-` discharge and the failure surfaces as a sort mismatch inside the SOURCE theory's
-//! own proof — a file the author may never have opened (see NESTED-MODEL-COMPOSITION-ISSUE.md).
+//! own proof — a file the author may never have opened (see PAINPOINTS.md, "An incomplete
+//! model discharge reports as a bare sort mismatch").
 //! The diagnostics now name the cause at the failure site; this is the other half, the
 //! up-front checklist: for each source theory the model draws on, what does that theory
 //! DECLARE, and which of those does this model not mention?

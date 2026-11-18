@@ -554,7 +554,7 @@ fn elaborateCall(self: *Elab, c: ast.Expr.Call) Error!Typed {
             // one we GOT, a pair only the overlay can relate — but the fix is a `:` mapping
             // rather than a `<-` discharge. Composition made this the common case: the
             // callee is often a MIDDLE layer's symbol the outer model never mentioned
-            // (NESTED-MODEL-COMPOSITION-ISSUE.md).
+            // (PAINPOINTS.md, "An incomplete model discharge reports as a bare sort mismatch").
             if (self.model != InternPool.Index.none and self.model != .universe) {
                 const want_img = self.interner.applyModel(self.model, expected_ix);
                 if (want_img != expected_ix and

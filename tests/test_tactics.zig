@@ -446,7 +446,7 @@ pub fn addTests(
     // proof reaches. std does this in 40 places and had no test for it. Both failure shapes
     // name their cause and their FIX — a `<-` discharge for an axiom, a `:` mapping for a
     // symbol — rather than falling through to a bare sort mismatch in a file the author
-    // never opened (NESTED-MODEL-COMPOSITION-ISSUE.md).
+    // never opened (PAINPOINTS.md).
     ctx.okSilent(&.{ "check", "tests/cases/model/composed/composed_ok.b4m" });
     ctx.fail(&.{ "check", "tests/cases/model/composed/composed_missing_axiom_bad.b4m" }, "tests/cases/model/composed/inner.b4m:19:39: error: this step cites a fact the model does not discharge: it arrives over 'Mid', the model's SOURCE sort, while the proof is in 'Top'. Add that fact's `<-` obligation to the model block — a transferred theorem may only cite source axioms the model discharges.\n");
     ctx.fail(&.{ "check", "tests/cases/model/composed/composed_missing_symbol_bad.b4m" }, "tests/cases/model/composed/middle.b4m:22:50: error: 'mop' is not mapped by the model: it still takes 'Mid', the model's SOURCE sort, while the proof is in 'Top'. Add its `:` mapping to the model block — a transferred proof may only mention symbols the model interprets.\n");
