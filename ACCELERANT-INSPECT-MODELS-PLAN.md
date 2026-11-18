@@ -1,9 +1,10 @@
 # `debug accelerant` through models, and through towers of them
 
-**Status: DESIGNED, not built. Re-probed 2026-11-17 — every claim below still holds;
-only line references were refreshed.** User direction 2026-10-11: inspection must trace through
-models, possibly several layers; the surface should be repeated `--model` flags building the
-tower we care about. Not urgent.
+**Status: BUILT 2026-11-18** (items 1, 2, 3 partly, 5 of "What to build"). `--model` is
+repeatable and composes a tower; the registry is keyed by space. What remains is item 4 (name
+which mapping supplied each symbol) and the cross-file selector, both noted at the bottom.
+User direction 2026-10-11: inspection must trace through models, possibly several layers; the
+surface should be repeated `--model` flags building the tower we care about.
 
     2b4m debug accelerant <file> <line> --model <M1> --model <M2> --model <M3> …
 
@@ -70,22 +71,48 @@ allocation-ordered — the same class of defect fixed in `instanceHash` (commit 
 `[[schema-instance-crosstalk]]`). A name a user is asked to pass on a command line should not
 move between runs; expect to give the model the same `(name, loc)` treatment.
 
-## What to build
+## What was built
 
-1. **Key the registry by space.** `SyntheticKey` gains the model: `(file, loc, model)`. Then
-   every space's synthetic is reachable and keep-first stops discarding information. This is
-   the enabling change; the flag is useless without it.
-2. **Accept repeated `--model`,** resolving each name to its declaration in the file under
-   inspection (or in an import), and compose them into the overlay the inspection runs under —
-   left-to-right, outermost first, matching how the citation nests.
-3. **Make `model(...)` citations inspectable.** Reprint the source theorem's statement with the
-   mapping applied, so a reader sees the target-space formula the kernel re-checked rather
-   than the source-space one they can already read. The rendering is a reprint, not a second
-   producer — same discipline as the existing module.
+1. **DONE — the registry is keyed by space.** `Context.SyntheticKey` is
+   `(file, loc, model)`. Generation was ALREADY model-aware (the `…{m<N>}` rename), so the
+   distinct decls existed and only this index collapsed them; keep-first now applies within a
+   space rather than across all of them. Two read shapes, because the call sites want
+   different things: `syntheticAt(file, loc, model)` reads one space, and
+   `syntheticAtAnySpace(file, loc)` answers "is this offset inside a generated proof?" — which
+   is what `ProveTask`'s demand diagnostic asks, and a step reached only under a model has no
+   universe entry to find. `syntheticSpacesAt` enumerates them for the error path.
+2. **DONE — repeated `--model`.** Each name resolves through `IdentKV` under the root file's
+   universe namespace, then composes with `composeModel` (structurally interned, so the same
+   composition is the same model). **GOTCHA:** composing with `.universe` is NOT the identity —
+   `composeModel` reads `inner` as a model and panics on the universe — so the innermost flag
+   must be taken directly and each further one composed over it.
+3. **DONE for accelerant steps** — the model-space reprint IS the target-space formula, and a
+   transfer onto a refined sort shows its relativization (`good(p1) ->` per binder), so the
+   guarded-model caveat below is honoured. A bare `model(...)` CITATION step still has no
+   synthetic to reprint (it is a citation rule, not a producer); that half is unbuilt.
+5. **DONE — no flag means the universe space**, so existing behaviour is unchanged and the
+   flags are purely additive. Gated by a same-step/two-space pair in `tests/test_query.zig`.
+
+**GOTCHA worth keeping:** a model is an UNNAMED InternPool kind — `nameOf` is `unreachable` on
+it, because the name lives in `IdentKV` under the declaring namespace, not on the entity. To
+print a space as a `--model` argument the user can retype, walk the root file's `model` decls
+and match by Index. A composed space was never declared under one name, so it says so instead
+of inventing one.
+
+## Still to build
+
 4. **Report the tower, not just the leaf.** With `--model M1 --model M2`, say which mapping
    supplied each symbol. A composed overlay that silently loses a layer is worse than an error.
-5. **Default with no flag**: the universe-space synthetic, which is what it prints now — so the
-   existing behavior is unchanged and the flags are purely additive.
+   (`2b4m debug model` now prints a model's surface, which covers part of this need.)
+6. **The selector is ROOT-FILE ONLY** — pre-existing, not introduced by this work, but it is
+   what blocks the two-layer test the plan wanted. A step in a transitively-imported file has
+   its multi-space synthetics in the registry, yet cannot be addressed: `lineToStepOffset`
+   resolves against the root AST. A fixture whose root holds BOTH the accelerant step and the
+   transfer (`tests/cases/model/accel/model_accel_simplify.b4m`) exercises the feature; a true
+   ℚ → F → ring tower needs a `<file>:<line>` selector naming the inner file.
+7. **`{m<N>}` still interpolates the model's raw allocation-ordered Index** (see below). It is
+   TRIMMED from the reprint, so no user-visible name moves between runs today — but it would
+   if anything ever printed it.
 
 ## Watch out for
 

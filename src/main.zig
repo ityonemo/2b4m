@@ -108,8 +108,8 @@ fn indexCommand(arena: std.mem.Allocator, rest: []const [:0]const u8) !u8 {
 }
 
 const debug_usage =
-    "usage: 2b4m debug accelerant <file> <line>\n" ++
-    "       2b4m debug accelerant <file> <theorem> <step-label>\n" ++
+    "usage: 2b4m debug accelerant <file> <line> [--model <Name>]…\n" ++
+    "       2b4m debug accelerant <file> <theorem> <step-label> [--model <Name>]…\n" ++
     "       2b4m debug taint <file> [theorem]\n" ++
     "       2b4m debug model <file> [Name]\n";
 
@@ -119,19 +119,36 @@ const debug_usage =
 ///   model      — a model's mapping surface, and what it leaves unmapped.
 fn debugCommand(arena: std.mem.Allocator, std_root: []const u8, rest: []const [:0]const u8) !u8 {
     if (rest.len >= 1 and std.mem.eql(u8, rest[0], "accelerant")) {
-        if (rest.len < 3) return fail(debug_usage, .{});
-        const p = rest[1];
-        const selector: b4m.debug.accelerant.Selector = if (rest.len == 3)
-            (if (std.fmt.parseInt(usize, rest[2], 10)) |ln| .{ .line = ln } else |_| return fail(debug_usage, .{}))
-        else if (rest.len == 4)
-            .{ .step = .{ .theorem = rest[2], .label = rest[3] } }
+        // `--model <Name>` is repeatable and composes a tower; split it off so the
+        // positional selector keeps its existing 1-or-2 argument shape.
+        var positional: std.ArrayList([:0]const u8) = .empty;
+        var models: std.ArrayList([]const u8) = .empty;
+        var i: usize = 1;
+        while (i < rest.len) : (i += 1) {
+            if (std.mem.eql(u8, rest[i], "--model")) {
+                if (i + 1 >= rest.len) return fail("error: --model needs a model name\n", .{});
+                i += 1;
+                try models.append(arena, rest[i]);
+            } else if (std.mem.startsWith(u8, rest[i], "--model=")) {
+                try models.append(arena, rest[i]["--model=".len..]);
+            } else {
+                try positional.append(arena, rest[i]);
+            }
+        }
+        const pos = positional.items;
+        if (pos.len < 2) return fail(debug_usage, .{});
+        const p = pos[0];
+        const selector: b4m.debug.accelerant.Selector = if (pos.len == 2)
+            (if (std.fmt.parseInt(usize, pos[1], 10)) |ln| .{ .line = ln } else |_| return fail(debug_usage, .{}))
+        else if (pos.len == 3)
+            .{ .step = .{ .theorem = pos[1], .label = pos[2] } }
         else
             return fail(debug_usage, .{});
         const source = readSource(arena, p) catch |e| switch (e) {
             error.FileNotFound => return fail("error: cannot open '{s}': file not found\n", .{p}),
             else => return fail("error: cannot open '{s}': {t}\n", .{ p, e }),
         };
-        const result = try b4m.debug.accelerant.accelerant(io, arena, p, source, selector, null, readRaw, std_root);
+        const result = try b4m.debug.accelerant.accelerant(io, arena, p, source, selector, models.items, null, readRaw, std_root);
         return emitQuery(result.text, result.ok);
     }
     if (rest.len >= 1 and std.mem.eql(u8, rest[0], "taint")) {
@@ -401,7 +418,7 @@ pub fn main(init: std.process.Init) !u8 {
             \\       2b4m fmt [--check] <file.b4m|.md>
             \\       2b4m lint <file.b4m|.md>
             \\       2b4m index <file.b4m>
-            \\       2b4m debug accelerant <file> <line | theorem step-label>
+            \\       2b4m debug accelerant <file> <line | theorem step-label> [--model <Name>]…
             \\       2b4m debug taint <file> [theorem]
             \\       2b4m debug model <file> [Name]
             \\       2b4m query outline <file.b4m> [theorem]
@@ -513,7 +530,7 @@ pub fn main(init: std.process.Init) !u8 {
         return debugCommand(arena, std_root, args[2..]);
     }
     const usage = "usage: 2b4m check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] [--trace-facts] [--chaos[=SEED]] [-j<n>] [--io-threads=<n>] [--sync-io] [--io-delay=<us>] <file.b4m | dir> [theorem]\n       2b4m fmt [--check] <file.b4m|.md>\n       2b4m lint <file.b4m|.md>\n" ++
-        "       2b4m index <file.b4m>\n       2b4m debug accelerant <file> <line | theorem step-label>\n       2b4m debug taint <file> [theorem]\n       2b4m debug model <file> [Name]\n       2b4m query outline <file.b4m> [theorem]\n       2b4m query claims <file.b4m> [theorem]\n       2b4m query theorem <file.b4m> <theorem> [--sig]\n       2b4m query whereis <file.b4m> <identifier>\n       2b4m query search <file.b4m|dir> <query>\n       2b4m query uses <file.b4m> [theorem]\n";
+        "       2b4m index <file.b4m>\n       2b4m debug accelerant <file> <line | theorem step-label> [--model <Name>]…\n       2b4m debug taint <file> [theorem]\n       2b4m debug model <file> [Name]\n       2b4m query outline <file.b4m> [theorem]\n       2b4m query claims <file.b4m> [theorem]\n       2b4m query theorem <file.b4m> <theorem> [--sig]\n       2b4m query whereis <file.b4m> <identifier>\n       2b4m query search <file.b4m|dir> <query>\n       2b4m query uses <file.b4m> [theorem]\n";
     if (args.len < 3 or !std.mem.eql(u8, args[1], "check")) {
         return fail(usage, .{});
     }

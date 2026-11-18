@@ -9,6 +9,13 @@
 //! renders it back into the `theorem … proof … qed` form a human would have written, so you can
 //! read exactly what was kernel-checked.
 //!
+//! A step inside a theorem transferred through a model produces one synthetic PER SPACE, so
+//! `--model <Name>` (repeatable) selects which one to reprint: the names compose
+//! left-to-right, outermost first, matching how the citation nests. With no flag you get the
+//! universe-space synthetic — the ordinary un-modelled proof. With no synthetic in the space
+//! you asked for, the error LISTS the spaces that step actually produced, since a reader who
+//! gets the tower wrong needs to be told what the right one is.
+//!
 //! The rendering is separate code from the generation, and it is a READABLE reprint, not a
 //! byte-for-byte round-trip: the `{hash}`/`{mN}` name mangle is trimmed, `.symbol` identity
 //! tokens print their entity's name, and a hygienic `x#N` binder prints as `x` — so two distinct
@@ -45,6 +52,7 @@ pub fn accelerant(
     path: []const u8,
     source: []const u8,
     selector: Selector,
+    models: []const []const u8,
     read_ctx: ?*anyopaque,
     read_fn: root.ReadFileFn,
     std_root: []const u8,
@@ -81,8 +89,14 @@ pub fn accelerant(
     if (fallbackAt(file, target_offset)) |fb|
         return fail(arena, "proof by fallback: this `arithmetic` step is discharged by the manual theorem '{s}' (the certifiers declined), so there is no accelerant synthetic to reprint", .{source[fb.start..fb.end]});
 
-    const decl = loaded.context.syntheticAt(loaded.root_file, target_offset) orelse
-        return fail(arena, "no accelerant produced a theorem there (is it a `[using <tactic> …]` step?)", .{});
+    // the SPACE to read: compose the named models in order, or the universe with no flag.
+    const space = switch (try resolveTower(arena, loaded, models)) {
+        .ok => |ix| ix,
+        .err => |msg| return .{ .text = msg, .ok = false },
+    };
+
+    const decl = loaded.context.syntheticAt(loaded.root_file, target_offset, space) orelse
+        return missingSpace(arena, loaded, file, source, target_offset, models);
     const text = try renderDecl(arena, loaded.interner, source, decl);
     return .{ .text = text, .ok = true };
 }
@@ -577,6 +591,118 @@ fn renderDiagnostics(arena: Allocator, files: []const diagnostics.FileSrc, sink:
     var out: std.Io.Writer.Allocating = .init(arena);
     sink.render(&out.writer, files) catch return error.OutOfMemory;
     return .{ .text = try out.toOwnedSlice(), .ok = false };
+}
+
+/// The composed space for a `--model A --model B …` tower, or a rendered error.
+///
+/// `model` is a FULL OVERLAY over the universe, not a scoped rename, so a tower is composed
+/// with `composeModel` (which interns structurally — the same composition is the same model)
+/// and NOT by renaming in sequence. Order is left-to-right, outermost first, matching how the
+/// citation nests: `--model A --model B` is A's overlay applied over B's result, which is what
+/// `Prove` builds when a proof already under A cites through B.
+fn resolveTower(arena: Allocator, loaded: root.LoadedProject, models: []const []const u8) Allocator.Error!union(enum) {
+    ok: InternPool.Index,
+    err: []const u8,
+} {
+    if (models.len == 0) return .{ .ok = .universe };
+
+    const root_path = loaded.files[@intFromEnum(loaded.root_file)].path;
+    const file_ix = loaded.context.fileIndex(root_path) catch return error.OutOfMemory;
+    const ns = loaded.interner.namespace(.universe, file_ix) catch return error.OutOfMemory;
+
+    // compose from the INNERMOST outward, so the leftmost flag ends up the outer overlay.
+    var space: InternPool.Index = .universe;
+    var i = models.len;
+    while (i > 0) {
+        i -= 1;
+        const name = models[i];
+        const name_id = loaded.interner.internString(name) catch return error.OutOfMemory;
+        const st = loaded.context.idents.lookup(loaded.context.io, .{ .namespace = ns, .name = name_id }) orelse
+            return .{ .err = try std.fmt.allocPrint(arena, "error: no model '{s}' in this file\n", .{name}) };
+        const ix = switch (st) {
+            .done => |d| d,
+            .in_flight => return .{ .err = try std.fmt.allocPrint(arena, "error: '{s}' did not finish resolving\n", .{name}) },
+        };
+        if (loaded.interner.keyOf(ix) != .model)
+            return .{ .err = try std.fmt.allocPrint(arena, "error: '{s}' is not a model\n", .{name}) };
+        // the innermost flag IS the space; each further one composes OVER it. Composing with
+        // the universe is not the identity here — `composeModel` reads `inner` as a model —
+        // so the first iteration must take `ix` directly.
+        space = if (space == .universe)
+            ix
+        else
+            loaded.interner.composeModel(loaded.context.io, ix, space) catch return error.OutOfMemory;
+    }
+    return .{ .ok = space };
+}
+
+/// No synthetic in the space asked for. Name the spaces the step DID produce, because a
+/// reader who guessed the tower wrong cannot otherwise discover the right one — and a step
+/// reached only under a model has no universe-space synthetic at all, which is the common
+/// way to land here with no flag.
+fn missingSpace(
+    arena: Allocator,
+    loaded: root.LoadedProject,
+    file: ast.File,
+    source: []const u8,
+    offset: u32,
+    models: []const []const u8,
+) Allocator.Error!Result {
+    const spaces = try loaded.context.syntheticSpacesAt(arena, loaded.root_file, offset);
+    if (spaces.len == 0)
+        return fail(arena, "no accelerant produced a theorem there (is it a `[using <tactic> …]` step?)", .{});
+
+    var out: std.Io.Writer.Allocating = .init(arena);
+    const w = &out.writer;
+    if (models.len == 0) {
+        w.writeAll("error: that step produced no synthetic in the universe space") catch return error.OutOfMemory;
+    } else {
+        w.print("error: that step produced no synthetic in the space", .{}) catch return error.OutOfMemory;
+        for (models) |m| w.print(" {s}", .{m}) catch return error.OutOfMemory;
+    }
+    w.writeAll(" — it produced:\n") catch return error.OutOfMemory;
+    for (spaces) |sp| {
+        const label = if (sp.model == .universe or sp.model == InternPool.Index.none)
+            "the universe space (no --model)"
+        else
+            try modelLabel(arena, loaded, file, source, sp.model);
+        w.print("  {s}\n", .{label}) catch return error.OutOfMemory;
+    }
+    return .{ .text = try out.toOwnedSlice(), .ok = false };
+}
+
+/// A model Index as a `--model` argument the user can retype.
+///
+/// A model is an UNNAMED InternPool kind — `nameOf` is `unreachable` on it, because the name
+/// lives in `IdentKV` under the namespace that declared it, not on the entity. So recover it
+/// the way it was bound: walk the root file's `model` declarations and match by Index. A
+/// COMPOSED model was never declared under any one name and so matches nothing; say that
+/// rather than inventing a name the user cannot pass back.
+fn modelLabel(
+    arena: Allocator,
+    loaded: root.LoadedProject,
+    file: ast.File,
+    source: []const u8,
+    ix: InternPool.Index,
+) Allocator.Error![]const u8 {
+    const root_path = loaded.files[@intFromEnum(loaded.root_file)].path;
+    const file_ix = loaded.context.fileIndex(root_path) catch return error.OutOfMemory;
+    const ns = loaded.interner.namespace(.universe, file_ix) catch return error.OutOfMemory;
+    for (file.decls) |d| {
+        const m = switch (d) {
+            .model => |m| m,
+            else => continue,
+        };
+        const name = source[m.name.start..m.name.end];
+        const name_id = loaded.interner.internString(name) catch return error.OutOfMemory;
+        const st = loaded.context.idents.lookup(loaded.context.io, .{ .namespace = ns, .name = name_id }) orelse continue;
+        const declared = switch (st) {
+            .done => |dd| dd,
+            .in_flight => continue,
+        };
+        if (declared == ix) return try std.fmt.allocPrint(arena, "--model {s}", .{name});
+    }
+    return "a COMPOSED space (name its layers with repeated --model, outermost first)";
 }
 
 fn fail(arena: Allocator, comptime fmt: []const u8, args: anytype) Allocator.Error!Result {

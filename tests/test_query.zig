@@ -278,6 +278,57 @@ pub fn addTests(
     // The reprint is re-parseable: appending it to the fixture's declarations checks clean.
     ctx.ok(&.{ "debug", "accelerant", "tests/cases/cli/debug_accelerant.b4m", "20" }, debug_accelerant_text);
 
+    // `debug accelerant --model <Name>`: a step inside a theorem that is TRANSFERRED produces
+    // one synthetic PER SPACE, and the model-space one is what the kernel actually re-checked.
+    // Same step, same line, two different reprints: the universe space is in the SOURCE
+    // vocabulary (`plus`/`Z`), the model space in the TARGET's (`tplus`/`TZ`). Before the
+    // registry was keyed by space, only whichever was scheduled first was reachable.
+    ctx.ok(&.{ "debug", "accelerant", "tests/cases/model/accel/model_accel_simplify.b4m", "29" },
+        \\theorem simplify: plus(Z, Z) = Z
+        \\proof
+        \\  @simplify-3 |
+        \\    plus(Z, Z) = plus(Z, Z)
+        \\    [by reflexivity]
+        \\  @simplify-4 |
+        \\    forall b1: Src; plus(Z, b1) = b1
+        \\    [by cite plusZeroLeft]
+        \\  @simplify-5 |
+        \\    plus(Z, Z) = Z
+        \\    [by apply_at(Z) simplify-4]
+        \\  @simplify-6 |
+        \\    plus(Z, Z) = Z
+        \\    [by rewrite simplify-5 simplify-3]
+        \\qed
+        \\
+    );
+    ctx.ok(&.{ "debug", "accelerant", "tests/cases/model/accel/model_accel_simplify.b4m", "29", "--model", "SrcIsGood" },
+        \\theorem simplify: tplus(TZ, TZ) = TZ
+        \\proof
+        \\  @simplify-3 |
+        \\    tplus(TZ, TZ) = tplus(TZ, TZ)
+        \\    [by reflexivity]
+        \\  @simplify-4 |
+        \\    forall b1: Tgt; tplus(TZ, b1) = b1
+        \\    [by cite plusZeroLeft]
+        \\  @simplify-5 |
+        \\    tplus(TZ, TZ) = TZ
+        \\    [by apply_at(TZ) simplify-4]
+        \\  @simplify-6 |
+        \\    tplus(TZ, TZ) = TZ
+        \\    [by rewrite simplify-5 simplify-3]
+        \\qed
+        \\
+    );
+
+    // the GUARDED half: a transfer onto a refined sort RELATIVIZES, so the model-space
+    // synthetic carries a guard premise per binder (`good(p1) ->`). An inspection that
+    // printed the unrelativized statement would misreport what was checked.
+    ctx.okSilent(&.{ "debug", "accelerant", "tests/cases/model/accel/model_accel_simplify.b4m", "41", "--model", "SrcIsGood" });
+
+    // asking for a space the step did not produce LISTS the ones it did — a reader who gets
+    // the tower wrong cannot otherwise discover the right one.
+    ctx.fail(&.{ "debug", "accelerant", "tests/cases/cli/debug_accelerant.b4m", "20", "--model", "NoSuchModel" }, "error: no model 'NoSuchModel' in this file\n");
+
     // `debug accelerant` resolves a step inside a proof-carrying SCHEMA (not just plain
     // theorems) and reprints its accelerant synthetic — the schema's INSTANCE proof (the
     // only gate; there is no decl-time self-check) produced it. Exit 0 = the selector

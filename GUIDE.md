@@ -2015,6 +2015,14 @@ proof
 qed
 ```
 
+A step inside a theorem that gets TRANSFERRED produces one synthetic **per space**, so
+`--model <Name>` (repeatable) picks which to reprint; the names compose left-to-right,
+outermost first, matching how the citation nests. With no flag you get the universe space —
+the ordinary un-modelled proof. The difference is substantive: the universe reprint is in the
+SOURCE vocabulary, the model reprint is the TARGET-space formula the kernel actually
+re-checked, and a transfer onto a refined sort shows its relativization (a guard premise per
+binder). Asking for a space the step did not produce lists the spaces it did.
+
 The output round-trips: fed back through `2b4m check` it re-verifies from scratch.
 It loads through the full multi-file loader, so it works on files with imports
 (and on recursive synthetics like a `model` materialization citing another). The

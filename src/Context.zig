@@ -45,8 +45,18 @@ const ImportMap = std.AutoHashMapUnmanaged(InternPool.StrId, FileId);
 pub const DeclKey = struct { file: FileId, name: InternPool.StrId };
 
 /// Key into the synthetic-by-step map: the file + the byte offset of the citing step's rule
-/// token (the `loc` every accelerant stamps on its synthetic).
-pub const SyntheticKey = struct { file: FileId, loc: u32 };
+/// token (the `loc` every accelerant stamps on its synthetic) + the SPACE it was produced in.
+///
+/// The model is part of the key because one step produces one synthetic PER SPACE. A step
+/// inside a theorem transferred through two models yields three (universe, M1, M2) at a
+/// single `(file, loc)`; keyed without the model, keep-first silently kept whichever space
+/// was scheduled first and the rest were unreachable. Generation was already model-aware —
+/// a synthetic produced under a model is renamed `…{m<N>}` — so the distinct decls existed
+/// and only this index collapsed them.
+pub const SyntheticKey = struct { file: FileId, loc: u32, model: InternPool.Index };
+
+/// One space a step produced a synthetic in — what `syntheticSpacesAt` enumerates.
+pub const SyntheticSpace = struct { model: InternPool.Index, decl: *const ast.Decl };
 
 /// DURABLE allocator — the process-lifetime main arena (never reset). Holds the AST, InternPool,
 /// facts, task payloads, per-Pool nodes — everything read by pointer/Index after a task returns.
@@ -397,22 +407,61 @@ pub fn declOf(self: *const Context, file: FileId, name: InternPool.StrId) ?*cons
     return self.ast_index.get(.{ .file = file, .name = name });
 }
 
-/// Record that the step at `loc` in `file` produced the synthetic decl registered as `name`
-/// (keep-first: a step's synthetic is produced once per space; the first stays the answer).
-pub fn registerSynthetic(self: *Context, file: FileId, loc: u32, name: InternPool.StrId) std.mem.Allocator.Error!void {
+/// Record that the step at `loc` in `file`, proving in `model`, produced the synthetic decl
+/// registered as `name` (keep-first WITHIN a space: a step produces its synthetic once per
+/// space, and re-proving the same space is deterministic, so the first stays the answer).
+pub fn registerSynthetic(self: *Context, file: FileId, loc: u32, model: InternPool.Index, name: InternPool.StrId) std.mem.Allocator.Error!void {
     self.ast_lock.lock();
     defer self.ast_lock.unlock();
-    const gop = try self.synthetic_at.getOrPut(self.arena, .{ .file = file, .loc = loc });
+    const gop = try self.synthetic_at.getOrPut(self.arena, .{ .file = file, .loc = loc, .model = model });
     if (!gop.found_existing) gop.value_ptr.* = .{ .file = file, .name = name };
 }
 
-/// The synthetic decl the step at `loc` in `file` produced, if any.
-pub fn syntheticAt(self: *const Context, file: FileId, loc: u32) ?*const ast.Decl {
+/// The synthetic decl the step at `loc` in `file` produced IN `model`'s space, if any.
+/// `.universe` (equivalently `.none`) is the ordinary un-modelled space.
+pub fn syntheticAt(self: *const Context, file: FileId, loc: u32, model: InternPool.Index) ?*const ast.Decl {
     const lock = @constCast(&self.ast_lock);
     lock.lock();
     defer lock.unlock();
-    const key = self.synthetic_at.get(.{ .file = file, .loc = loc }) orelse return null;
+    const key = self.synthetic_at.get(.{ .file = file, .loc = loc, .model = model }) orelse return null;
     return self.ast_index.get(key);
+}
+
+/// Did the step at `loc` in `file` produce a synthetic in ANY space? For callers asking
+/// "is this offset inside a generated proof?" rather than reading one particular space —
+/// a step reached only under a model has no universe-space entry to find.
+pub fn syntheticAtAnySpace(self: *const Context, file: FileId, loc: u32) bool {
+    const lock = @constCast(&self.ast_lock);
+    lock.lock();
+    defer lock.unlock();
+    var it = self.synthetic_at.iterator();
+    while (it.next()) |e| {
+        if (e.key_ptr.file == file and e.key_ptr.loc == loc) return true;
+    }
+    return false;
+}
+
+/// Every space in which the step at `loc` in `file` produced a synthetic, as (model, decl)
+/// pairs — what `debug accelerant` enumerates when asked for a step's spaces. Allocated in
+/// `arena`; order is the map's, so callers that show it to a user should sort.
+pub fn syntheticSpacesAt(
+    self: *const Context,
+    arena: std.mem.Allocator,
+    file: FileId,
+    loc: u32,
+) std.mem.Allocator.Error![]const SyntheticSpace {
+    const Pair = SyntheticSpace;
+    const lock = @constCast(&self.ast_lock);
+    lock.lock();
+    defer lock.unlock();
+    var out: std.ArrayList(Pair) = .empty;
+    var it = self.synthetic_at.iterator();
+    while (it.next()) |e| {
+        if (e.key_ptr.file != file or e.key_ptr.loc != loc) continue;
+        const decl = self.ast_index.get(e.value_ptr.*) orelse continue;
+        try out.append(arena, .{ .model = e.key_ptr.model, .decl = decl });
+    }
+    return out.items;
 }
 
 /// Ensure `file`'s AST is available, the LAZY-PARSE demand step. Returns:

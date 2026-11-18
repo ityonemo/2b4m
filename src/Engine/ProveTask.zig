@@ -508,7 +508,7 @@ fn locate(self: *Context, task: *ProveTask, h: *Engine.Handle, ns: InternPool.In
         // generated proof (its tokens carry the step's rule offset): the accelerant cited a
         // well-known lemma by name and the citing file has no such name in scope.
         const loc_file = task.loc_file orelse task.file;
-        if (self.fileOf(loc_file)) |lfid| if (self.syntheticAt(lfid, task.loc) != null) {
+        if (self.fileOf(loc_file)) |lfid| if (self.syntheticAtAnySpace(lfid, task.loc)) {
             try demandDiag(self, task, "the generated proof of this step cites '{s}', which is not in scope here; alias it from the theory that states it (`theorem {s} = <module>.{s}`)", .{ name, name, name });
             return null;
         };
