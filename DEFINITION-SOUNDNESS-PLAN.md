@@ -51,22 +51,57 @@ user raised: `f(FOO) = FOO; f(BAR) = BAR` looks disjoint, but a model may map bo
 obligation becomes `ONLY = ONLY` under the mapping, and a transfer re-proves the body, so
 there is no gap between "checked in the source" and "true in the target".
 
-### The obligations are provable WITH NO AXIOMS
+### The obligations rest on ONE disequality axiom, and REUSE collapses them
 
-Measured, and it corrects the plan this supersedes. The obligation is NOT "prove the guards
-cannot both hold" (which would need a disequality); it is `conditions -> rhs_i = rhs_j`. For a
-constructor split the conditions ARE the two equations whose combination gives the conclusion
-by pure rewriting:
+**Corrected 2026-11-18 by probe.** An earlier draft of this plan claimed the obligations rest
+on NO axioms. That was measured on a bad probe whose consequent (`Z = s(m)`) was itself
+derivable from the hypothesis by rewriting. REAL obligations have unrelated right-hand sides,
+so the contradiction in the hypothesis must actually be USED:
 
-    forall x, m: N; (x = Z and x = s(m)) -> Z = s(m)      -- rests on NO axioms
+    forall a: Complex; forall k, n: Nat;
+      (k = ZERO and k = succ(n)) -> ONE = mul(a, cpower(a, n))
 
-`succNotZero` is neither used nor needed, so the "is the disequality reachable?" question is
-void. The proof is theory-independent boilerplate: introduce the conjunction, `and_lhs` /
-`and_rhs`, `rewrite`. 32 lines, of which ~30 are identical across every block.
+`ONE` and `mul(a, cpower(a, n))` are unrelated, so rewriting cannot close this and `tautology`
+declines with a countermodel. All 66 recursion obligations rest on `succNotZero` — which IS
+reachable everywhere (every ZERO/succ-splitting block imports peano; verified, 0 exceptions).
 
-**THEREFORE A DISCHARGE TACTIC MUST SHIP WITH THIS.** No existing word does it — `simplify`
-wants equations, `tautology` sees atoms and declines with a countermodel, `specialize` does
-not fit. Required-without-the-tactic would add ~2,200 lines of mechanical proof to `std`.
+**The collapse: ONE shared schema per constructor pair.** Verified end to end — three
+theorems, one axiom:
+
+```2b4m
+// (1) the theory-specific core. The ONLY place succNotZero appears.
+theorem noNatIsZeroAndSucc: forall k, n: Nat; not (k = ZERO and k = succ(n))
+
+// (2) the reusable schema: turn that into ANY consequent, via ex_falso.
+theorem splitVacuous(prop(Nat, Nat)): forall k, n: Nat;
+  (k = ZERO and k = succ(n)) -> prop(k, n)
+
+// (3) each of the 66 obligations: ONE step.
+[using instantiation splitVacuous((fun kk, nn: Nat => <rhs_i> = <rhs_j>))]
+```
+
+So the cost is ~75 lines written ONCE plus one short theorem per block, not ~2,900 lines of
+duplicated scaffolding. (The 2,900 estimate — 72 blocks, 2-6 binders, mean 4.3, at
+`14 + 6 x binders` — is what hand-proving would cost, and is the reason a tactic is not
+optional.)
+
+**`prop` MUST take both variables.** With a single argument the instantiation fails
+(`reference not found: 'n'`), because every one of the 66 consequents mentions the recursion
+variable — inevitably, since that is what recursion IS. Measured: 66 of 66.
+
+### ARM ORDER IS IMMATERIAL (so the canonical order is free to choose)
+
+Pair `(i,j)` and `(j,i)` differ only in which RHS lands on which side of the equation.
+Verified: the flipped obligation discharges by the SAME shared schema, with the equation
+flipped inside `prop`, in one step. So the generator emits each unordered pair ONCE, in
+lexicographic index order, and nothing is lost.
+
+### THE TACTIC IS THIN
+
+Given the above, the discharge word needs no decision procedure: recognize the obligation
+shape, look up the shared schema for that constructor pair, emit ONE `instantiation` step.
+That is a real certificate — a kernel step — not an admitted verdict, so it needs no `--fast`
+trust entry.
 
 ## SYNTAX
 
@@ -98,13 +133,22 @@ never wrote the synthesized conditions.
 
 User ruling — no unification, no generated names, no choice. The rule:
 
-1. **Binders**: the declaration's params in DECLARED order, then each clause's extra free
-   variables in first-appearance order, clause `i`'s before clause `j`'s. (The parser already
-   uses first-appearance order for single clauses — `parser.zig:stageDefinitionAxiom`.)
+1. **Binders**: the declaration's non-matched params in DECLARED order, THEN the
+   matched-position binder and the clause variables, grouped by sort. The tail order is not
+   free: it must match the shared schema's (`forall k, n: Nat`) or one `instantiation` cannot
+   close the obligation and the proof falls back to manual `fix`/`generalize`. Verified both
+   ways.
 2. **Conditions**: for argument position `p`, if a clause head writes a PATTERN there, emit
-   `<paramName_p> = <pattern>`; if it writes the parameter itself, emit nothing. A `when`
+   `<freshBinder_p> = <pattern>`; if it writes the parameter itself, emit nothing. A `when`
    guard is conjoined VERBATIM. An arrow-guard antecedent likewise.
-3. **Right-hand sides**: each clause's RHS exactly as written.
+
+   **The fresh binder is POSITIONAL (`arg2`), never the declared param name.** `cpower(a, n:
+   Nat)` has clause `cpower(a, succ(n))` — the clause variable SHADOWS the param, so
+   "`param_p = pattern`" would generate the nonsense `n = succ(n)`. Positional names are a
+   function of the declaration alone, so they stay deterministic under any clause's variable
+   choices.
+3. **Right-hand sides**: each clause's RHS exactly as written, in lexicographic pair order
+   (arm order is immaterial — see above).
 
 Worked example — `oper f(j: Nat, k: Nat)` with clauses `f(j, ZERO) = base(j)` and
 `f(j, succ(m)) = succ(f(succ(j), m))` (whose emitted axioms have DIFFERENT binder lists,
@@ -143,8 +187,10 @@ clause is a DOMAIN RESTRICTION, not a case split, and carries no obligation.
 
 ## BUILD ORDER
 
-1. **The discharge tactic first**, verified by hand against one of each corpus shape. Nothing
-   else can land before this without obligating 72 blocks with no way to pay.
+1. **The shared schemas + the discharge tactic first**, verified by hand against one of each
+   corpus shape. Nothing else can land before this without obligating 72 blocks with no way
+   to pay. The ZERO/succ pair is PROVED (see above); the 5 arrow-guarded `monomial` blocks and
+   `swap` need their own, and special-casing them is fine (user ruling).
 2. The parser change: `.` terminator + `consistency:` declaration, and the migration of all
    112 blocks.
 3. The synthesizer + the match check, with a both-sides mismatch diagnostic.
@@ -156,6 +202,13 @@ clause is a DOMAIN RESTRICTION, not a case split, and carries no obligation.
 - **Vacuous pairs**: does the single named theorem carry them as conjuncts (so the author
   proves all three for `swap`), or does the checker drop pairs whose conditions it can see are
   contradictory? "Conjunction of all pairs" argues the former — simpler and deterministic.
+  NOTE every ZERO/succ obligation is itself vacuous (the hypothesis is contradictory); what
+  makes them cheap is the shared schema, not dropping them.
+- **Where the shared schemas LIVE.** `noNatIsZeroAndSucc` is about ℕ, so `std/peano.b4m` is
+  its home — but then every file with a ZERO/succ definition must import peano for the
+  obligation (all 66 already do). A sort with its own constructors needs its own pair, which
+  is the generalization to settle before building: is the schema per-SORT, supplied by the
+  theory that declares the constructors?
 - **Does `--draft` suspend the requirement?** Every other author-hygiene check does.
 - **Well-foundedness** is NOT designed. `g(n) = s(g(n))` is detectable syntactically (same
   argument on both sides), and `rconvolution`'s decrease is syntactic too, but the criterion
