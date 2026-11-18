@@ -225,19 +225,36 @@ clause is a DOMAIN RESTRICTION, not a case split, and carries no obligation.
 4. Flip to required. The corpus must never pass through a state where blocks owe unwritten
    proofs.
 
+## SETTLED (user ruling 2026-11-18, confirming all three)
+
+- **Vacuous pairs are carried as conjuncts.** The named theorem is the conjunction of ALL
+  pairs; the checker never drops one because its conditions look contradictory. Simpler and
+  deterministic — and dropping would be the wrong instinct anyway, since EVERY ZERO/succ
+  obligation is vacuous in exactly that sense (its hypothesis is contradictory). What makes
+  them cheap is the shared schema, not elision. For `swap` the author proves all three
+  conjuncts, two of which are vacuous.
+
+- **The shared schema is PER-SORT, supplied by the theory that declares the constructors.**
+  `noNatIsZeroAndSucc` is about ℕ, so it lives in `std/peano.b4m` beside `succNotZero`, the
+  axiom it rests on. A sort with its own constructors supplies its own pair — the theory that
+  knows its constructors are distinct is the theory that can prove it.
+
+  **This costs nothing today.** Measured: EVERY constructor split in the corpus is ℕ's —
+  37 spelled `NAT_ZERO`/`succ` and 29 spelled `ZERO`/`succ`, differing only in local naming
+  and both resolving to peano, which all 66 already import. So ONE schema in `std/peano.b4m`
+  covers the whole corpus; the per-sort rule only activates when a new sort with constructors
+  is declared. (The remaining 5 multi-clause blocks pattern-match on nothing — they are the
+  arrow-guarded `monomial` family.)
+
+- **`--draft` suspends the requirement**, like every other author-hygiene check (`intheory`
+  required, lemmas cited, the `--library` header rule). `verify.draft` is the single coarse
+  work-in-progress bit these consult.
+
 ## STILL OPEN
 
-- **Vacuous pairs**: does the single named theorem carry them as conjuncts (so the author
-  proves all three for `swap`), or does the checker drop pairs whose conditions it can see are
-  contradictory? "Conjunction of all pairs" argues the former — simpler and deterministic.
-  NOTE every ZERO/succ obligation is itself vacuous (the hypothesis is contradictory); what
-  makes them cheap is the shared schema, not dropping them.
-- **Where the shared schemas LIVE.** `noNatIsZeroAndSucc` is about ℕ, so `std/peano.b4m` is
-  its home — but then every file with a ZERO/succ definition must import peano for the
-  obligation (all 66 already do). A sort with its own constructors needs its own pair, which
-  is the generalization to settle before building: is the schema per-SORT, supplied by the
-  theory that declares the constructors?
-- **Does `--draft` suspend the requirement?** Every other author-hygiene check does.
-- **Well-foundedness** is NOT designed. `g(n) = s(g(n))` is detectable syntactically (same
-  argument on both sides), and `rconvolution`'s decrease is syntactic too, but the criterion
-  and its syntax (`termination: <name>`?) are unspecified.
+- **Well-foundedness** is NOT designed — the second, independent property. `g(n) = s(g(n))`
+  is detectable syntactically (same argument on both sides) and `rconvolution`'s decrease is
+  syntactic too, but the criterion and its syntax (`termination: <name>`, in the
+  well-formedness section the `.` opens) are unspecified. The arrow-guarded `monomial` family
+  and `swap` also still need their own shared schemas for CONSISTENCY; special-casing them is
+  approved.
