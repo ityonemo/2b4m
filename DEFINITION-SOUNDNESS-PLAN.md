@@ -96,12 +96,40 @@ Verified: the flipped obligation discharges by the SAME shared schema, with the 
 flipped inside `prop`, in one step. So the generator emits each unordered pair ONCE, in
 lexicographic index order, and nothing is lost.
 
-### THE TACTIC IS THIN
+### THE TACTIC IS THIN, AND THE THEOREM STAYS NAMED
 
-Given the above, the discharge word needs no decision procedure: recognize the obligation
-shape, look up the shared schema for that constructor pair, emit ONE `instantiation` step.
-That is a real certificate — a kernel step — not an admitted verdict, so it needs no `--fast`
-trust entry.
+`consistency:` still names a REAL theorem (user ruling) — what the tactic buys is that in the
+trivial cases its proof is ONE LINE:
+
+```2b4m
+oper cpower(a: Complex, n: Nat) => Complex:
+  cpower(a, ZERO) = ONE;
+  cpower(a, succ(n)) = mul(a, cpower(a, n)).
+  consistency: cpowerConsistent
+
+theorem cpowerConsistent: forall a: Complex; forall k, n: Nat;
+  (k = ZERO and k = succ(n)) -> ONE = mul(a, cpower(a, n))
+proof
+  @conclusion |
+    forall a: Complex; forall k, n: Nat;
+      (k = ZERO and k = succ(n)) -> ONE = mul(a, cpower(a, n))
+    [using definition_consistency]
+qed
+```
+
+The STATEMENT is written out — it is the synthesized obligation and must match exactly — and
+the PROOF is one accelerant step, like any `[using model(…) thm]` transfer.
+
+**The word must open the outer binders itself.** A bare `[using instantiation splitVacuous(…)]`
+CANNOT close the goal: the non-matched param `a` is bound by the goal's own `forall`, so it is
+not in scope at the step (`reference not found: 'a'`), and the hand proof needed a `fix a` /
+`generalize` wrapper around the instantiation. The precedent is exact: `simplify_quantified`
+closes `forall p, q: Pair; fst(prodOp(p, q)) = opG(fst(p), fst(q))` in ONE step
+(`std/group/product.b4m:101`), doing the binder-opening internally and emitting the whole
+relativized proof as its certificate. The consistency word is the same shape.
+
+The certificate is a kernel step, always producible (a schema lookup, not a search), so the
+word never declines and `--fast` trust buys nothing.
 
 ## SYNTAX
 
