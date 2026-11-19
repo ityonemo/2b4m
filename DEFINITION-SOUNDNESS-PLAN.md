@@ -293,6 +293,23 @@ clause is a DOMAIN RESTRICTION, not a case split, and carries no obligation.
   is declared. (The remaining 5 multi-clause blocks pattern-match on nothing — they are the
   arrow-guarded `monomial` family.)
 
+- **WHEN the obligations are checked (user ruling 2026-11-19).** In NON-LIBRARY mode an
+  UNUSED definition does not have its consistency checked: it demands nothing, so nothing
+  checks it — the same rule as everything else in a demand-driven engine, and consistent with
+  the decl-time schema check having been REMOVED (#93: "uncited code isn't checked"). The
+  obligation is demanded when a clause of that block is.
+
+  **In `--library` mode every definition's obligations are checked**, because a library's
+  whole surface must be sound and a definition is as much of that surface as an axiom.
+
+  Note the two interact usefully: `--library` ALREADY rejects an unused definition (per
+  clause, by name and line — verified), so in library mode the consistency check only ever
+  applies to definitions that ARE used. An inconsistent dead definition is caught either way,
+  just by the earlier rule.
+
+  `--library` is DIRECTORY-scoped ("a library is its whole file set"), so the check belongs
+  with the other whole-set rules, not in the per-file path.
+
 - **`--draft` suspends the requirement**, like every other author-hygiene check (`intheory`
   required, lemmas cited, the `--library` header rule). `verify.draft` is the single coarse
   work-in-progress bit these consult.
