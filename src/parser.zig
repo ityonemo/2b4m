@@ -40,6 +40,57 @@ fn isKernelRule(name: []const u8) bool {
 
 /// Tactics that accept a `(theory)` argument naming the module their
 /// vocabulary + lemmas resolve against (reusing the claim's `schema` slot).
+/// The right-hand side of a clause's defining relation: the `=` of a function clause or the
+/// `iff` of a predicate one. Descends a leading `->`, because a clause may state its guard as
+/// an ANTECEDENT rather than with `when` (`(not (i = k)) -> coeff(monomial(a, k), i) = zeroR`
+/// — the shape the whole `monomial` family uses). Null for any other shape, which cannot
+/// state an obligation.
+fn rhsOf(e: *const ast.Expr) ?*const ast.Expr {
+    return switch (e.*) {
+        .binary => |b| switch (b.op) {
+            .equal, .iff => b.rhs,
+            .implies => rhsOf(b.rhs),
+            else => null,
+        },
+        else => null,
+    };
+}
+
+/// A clause's guard written as a leading `->` ANTECEDENT, else null. The `when` form and this
+/// one mean the same thing (the parser desugars `when` to exactly this), so a consistency
+/// obligation must read both.
+fn antecedentOf(e: *const ast.Expr) ?*const ast.Expr {
+    return switch (e.*) {
+        .binary => |b| if (b.op == .implies) b.lhs else null,
+        else => null,
+    };
+}
+
+/// The clause's application of the symbol being DEFINED, searched left-to-right. A clause
+/// states its symbol applied to the patterns it matches (`coeff(monomial(a, k), k) = a`
+/// applies `monomial`, nested inside another call), so the search descends.
+fn findApplication(e: *const ast.Expr, name: lexer.Token) ?ast.Expr.Call {
+    switch (e.*) {
+        .call => |c| {
+            if (c.callee.name == name.name) return c;
+            for (c.args) |a| if (findApplication(a, name)) |f| return f;
+            return null;
+        },
+        .binary => |b| return findApplication(b.lhs, name) orelse findApplication(b.rhs, name),
+        .not => |n| return findApplication(n.operand, name),
+        .quant => |q| return findApplication(q.body, name),
+        .lambda => |l| return findApplication(l.body, name),
+        .name => return null,
+    }
+}
+
+/// Append `b` unless a binder of that name is already present — first-appearance order, so
+/// the binder list is a function of the text.
+fn addBinder(arena: std.mem.Allocator, list: *std.ArrayList(ast.Binder), b: ast.Binder) std.mem.Allocator.Error!void {
+    for (list.items) |have| if (have.name.name == b.name.name) return;
+    try list.append(arena, b);
+}
+
 fn isTheoryRule(name: []const u8) bool {
     return std.mem.eql(u8, name, "arithmetic") or
         std.mem.eql(u8, name, "polynomial") or
@@ -250,6 +301,121 @@ pub const Parser = struct {
     }
 
     /// Report an error at the current token and begin recovery.
+    /// Synthesize one consistency obligation per unordered clause pair, in the canonical
+    /// (lexicographic) order `ast.Consistency.pairAt` walks:
+    ///
+    ///     forall <binders>; (<cond_i> and <cond_j>) -> <arm_i> = <arm_j>
+    ///
+    /// DETERMINISTIC FROM SOURCE TEXT (user ruling) — no unification, no generated names, no
+    /// choice. Each clause's condition is either its `when` guard verbatim, or, for a clause
+    /// that PATTERN-MATCHES in an argument slot, an equation `<slot> = <pattern>` on a fresh
+    /// POSITIONAL binder named for the slot (`arg1`, `arg2`, …).
+    ///
+    /// The binder must be positional and NOT the declared parameter name: `cpower(a, n: Nat)`
+    /// has the clause `cpower(a, succ(n))`, whose clause variable SHADOWS the param, so
+    /// `<param> = <pattern>` would generate the nonsense `n = succ(n)`.
+    ///
+    /// Sorts are left `inferred` exactly as `stageDefinitionAxiom` leaves a clause variable's:
+    /// the parser cannot know them, and the elaborator settles them from the declarations.
+    fn synthesizeObligations(self: *Parser, name: Token, params: []const ast.Binder, clauses: []const Clause) ParseError![]const *const ast.Expr {
+        var out: std.ArrayList(*const ast.Expr) = .empty;
+        var i: usize = 0;
+        while (i < clauses.len) : (i += 1) {
+            var j: usize = i + 1;
+            while (j < clauses.len) : (j += 1) {
+                try out.append(self.arena, try self.obligationFor(name, params, clauses[i], clauses[j]));
+            }
+        }
+        return out.items;
+    }
+
+    /// The obligation relating two clauses. Collects each side's condition, conjoins them, and
+    /// implies the equation between the two right-hand sides.
+    fn obligationFor(self: *Parser, name: Token, params: []const ast.Binder, ci: Clause, cj: Clause) ParseError!*const ast.Expr {
+        var binders: std.ArrayList(ast.Binder) = .empty;
+        var conds: std.ArrayList(*const ast.Expr) = .empty;
+        try self.conditionOf(name, params, ci, &binders, &conds);
+        try self.conditionOf(name, params, cj, &binders, &conds);
+
+        // the two arms' right-hand sides, equated
+        const lhs = rhsOf(ci.body) orelse return self.fail("a definition clause must be an equation (or `iff` for a predicate) for its consistency obligation to be stated", .{});
+        const rhs = rhsOf(cj.body) orelse return self.fail("a definition clause must be an equation (or `iff` for a predicate) for its consistency obligation to be stated", .{});
+        var body = try self.binary(.equal, name, lhs, rhs);
+
+        // conditions, left to right, conjoined into ONE flat antecedent (user ruling)
+        if (conds.items.len > 0) {
+            var cond = conds.items[0];
+            for (conds.items[1..]) |c| cond = try self.binary(.and_op, name, cond, c);
+            body = try self.binary(.implies, name, cond, body);
+        }
+
+        // quantify: the clause variables and positional slot binders, first-appearance order
+        var k = binders.items.len;
+        while (k > 0) {
+            k -= 1;
+            const one = try self.arena.alloc(ast.Binder, 1);
+            one[0] = binders.items[k];
+            const node = try self.arena.create(ast.Expr);
+            node.* = .{ .quant = .{ .q = .forall, .tok = name, .binders = one, .body = body } };
+            body = node;
+        }
+        return body;
+    }
+
+    /// One clause's condition, appended to `conds`, with any binders it introduces appended to
+    /// `binders` (deduplicated by name, first-appearance order).
+    ///
+    /// Two shapes, which is what the two triviality routes correspond to:
+    ///   - a `when` guard  -> the guard verbatim
+    ///   - a positional pattern (`f(a, ZERO)`) -> `argN = ZERO` on a fresh positional binder
+    /// A clause that writes the bare parameter in every slot and carries no guard contributes
+    /// NO condition — it applies everywhere, which is exactly why overlapping it is a hazard.
+    fn conditionOf(self: *Parser, name: Token, params: []const ast.Binder, c: Clause, binders: *std.ArrayList(ast.Binder), conds: *std.ArrayList(*const ast.Expr)) ParseError!void {
+        // the clause's own variables come first, as stageDefinitionAxiom orders them
+        var mentioned: std.ArrayList(ast.Binder) = .empty;
+        try self.collectClauseVars(c.body, &mentioned);
+        for (mentioned.items) |m| try addBinder(self.arena, binders, m);
+
+        if (c.guard orelse antecedentOf(c.body)) |g| {
+            try conds.append(self.arena, g);
+            return;
+        }
+        // positional patterns: find the clause's application of the DEFINED symbol and compare
+        // each argument against the declared parameter at that position.
+        const app = findApplication(c.body, name) orelse return;
+        for (app.args, 0..) |arg, pos| {
+            if (pos >= params.len) break;
+            if (arg.* == .name and arg.name.name == params[pos].name.name) continue; // bare param: no condition
+            const slot = try self.positionalBinder(name, pos);
+            try addBinder(self.arena, binders, slot);
+            const slot_ref = try self.arena.create(ast.Expr);
+            slot_ref.* = .{ .name = slot.name };
+            try conds.append(self.arena, try self.binary(.equal, name, slot_ref, arg));
+        }
+    }
+
+    /// A fresh binder for argument slot `pos`, named `argN` — a function of the DECLARATION
+    /// alone, so it is stable under any clause's choice of variable names.
+    fn positionalBinder(self: *Parser, name: Token, pos: usize) ParseError!ast.Binder {
+        var tok = name;
+        if (self.interner) |ip| {
+            const slot_name = std.fmt.allocPrint(self.arena, "arg{d}", .{pos + 1}) catch return error.OutOfMemory;
+            tok.name = ip.internString(slot_name) catch return error.OutOfMemory;
+        }
+        return .{ .name = tok, .sort = tok, .inferred = true };
+    }
+
+    fn binary(self: *Parser, op: ast.Expr.BinOp, tok: Token, lhs: *const ast.Expr, rhs: *const ast.Expr) ParseError!*const ast.Expr {
+        const node = try self.arena.create(ast.Expr);
+        node.* = .{ .binary = .{ .op = op, .tok = tok, .lhs = lhs, .rhs = rhs } };
+        return node;
+    }
+
+    /// One parsed definition clause, kept so the PAIRS can be synthesized. `guard` is the
+    /// `when` condition when written; the positional condition (a constructor pattern in an
+    /// argument slot) is recovered from `body` instead.
+    const Clause = struct { body: *const ast.Expr, guard: ?*const ast.Expr };
+
     fn fail(self: *Parser, comptime fmt: []const u8, args: anytype) ParseError {
         self.sink.add(self.file, self.tok.start, fmt, args) catch return error.OutOfMemory;
         return error.Recover;
@@ -709,18 +875,24 @@ pub const Parser = struct {
     /// DEFINITION-KEYWORD-PLAN).
     fn parseDefinitionClauses(self: *Parser, name: Token, params: []const ast.Binder) ParseError!?ast.Consistency {
         _ = try self.expect(.colon);
+        // Each clause is kept (not just staged) so the PAIRS can be synthesized below: a
+        // consistency obligation relates two clauses, which needs both their guards and both
+        // their equations.
+        var clauses: std.ArrayList(Clause) = .empty;
         var arm: usize = 0;
         while (true) {
             const clause = try self.parseExpr();
             var formula = clause;
+            var guard: ?*const ast.Expr = null;
             if (self.tok.tag == .keyword_when) {
                 const when_tok = self.tok;
                 _ = self.advance();
-                const guard = try self.parseExpr();
+                guard = try self.parseExpr();
                 const node = try self.arena.create(ast.Expr);
-                node.* = .{ .binary = .{ .op = .implies, .tok = when_tok, .lhs = guard, .rhs = clause } };
+                node.* = .{ .binary = .{ .op = .implies, .tok = when_tok, .lhs = guard.?, .rhs = clause } };
                 formula = node;
             }
+            try clauses.append(self.arena, .{ .body = clause, .guard = guard });
             try self.stageDefinitionAxiom(name, params, formula, arm);
             arm += 1;
             if (self.tok.tag != .semicolon) break;
@@ -735,7 +907,7 @@ pub const Parser = struct {
             return self.fail("expected ';' before the next clause or '.' to end the definition, got '{s}'", .{self.describe()});
         }
         _ = self.advance();
-        return self.parseWellformedness(arm);
+        return self.parseWellformedness(name, params, clauses.items);
     }
 
     /// A definition block's WELL-FORMEDNESS declarations, after the clause list's `.`:
@@ -750,7 +922,8 @@ pub const Parser = struct {
     ///
     /// `consistency` is a plain identifier, not a keyword: nothing in the corpus uses the name,
     /// and a block attribute does not need to be reserved vocabulary.
-    fn parseWellformedness(self: *Parser, arms: usize) ParseError!?ast.Consistency {
+    fn parseWellformedness(self: *Parser, name: Token, params: []const ast.Binder, clauses: []const Clause) ParseError!?ast.Consistency {
+        const arms = clauses.len;
         var found: ?ast.Consistency = null;
         while (self.tok.tag == .identifier and std.mem.eql(u8, self.text(self.tok), "consistency")) {
             _ = self.advance();
@@ -771,7 +944,8 @@ pub const Parser = struct {
                 return self.fail("`consistency:` needs one entry per clause pair — {d} clause(s) make {d} pair(s), got {d}", .{ arms, want, entries.items.len });
             }
             if (found != null) return self.fail("a definition block declares `consistency:` at most once", .{});
-            found = .{ .arms = arms, .entries = try entries.toOwnedSlice(self.arena) };
+            const list = try entries.toOwnedSlice(self.arena);
+            found = .{ .arms = arms, .entries = list, .obligations = try self.synthesizeObligations(name, params, clauses) };
         }
         return found;
     }
@@ -2010,4 +2184,123 @@ test "the unused-import check sleeps without an interner (fmt/lint/query parse t
     // ids are `.none` under plain `init`, so every qualifier would collide on one key;
     // the check is the engine's, not a formatter's.
     try testing.expectEqual(0, sink.list.items.len);
+}
+
+test "a definition block synthesizes one consistency obligation per clause pair" {
+    // The obligation is DETERMINISTIC from source text (no unification, no generated names).
+    // `f(a, ZERO)` / `f(a, succ(n))` matches in slot 2, so each clause's condition is an
+    // equation on the POSITIONAL binder `arg2` — never on the declared param `n`, which the
+    // step clause SHADOWS (`succ(n)` would otherwise generate the nonsense `n = succ(n)`).
+    const source =
+        \\sort N
+        \\const Z: N
+        \\oper s(a: N) => N
+        \\oper f(a: N, n: N) => N:
+        \\  f(a, Z) = a;
+        \\  f(a, s(n)) = s(f(a, n)).
+        \\  consistency: _
+    ;
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var ip: InternPool = try .init(arena);
+    var sink: Diagnostics.Sink = .init(arena);
+    var p: Parser = .initInterning(arena, source, &sink, &ip);
+    const file = try p.parseFile();
+    try testing.expectEqual(0, sink.list.items.len);
+
+    // find `f`'s declaration and its consistency record
+    var cons: ?ast.Consistency = null;
+    for (file.decls) |d| switch (d) {
+        .func => |fu| switch (fu) {
+            .local => |l| if (std.mem.eql(u8, ip.stringBytes(l.name.name), "f")) {
+                cons = l.consistency;
+            },
+            .alias => {},
+        },
+        else => {},
+    };
+    const c = cons orelse return error.TestUnexpectedResult;
+
+    // 2 clauses -> 1 pair -> 1 entry, 1 obligation
+    try testing.expectEqual(@as(usize, 2), c.arms);
+    try testing.expectEqual(@as(usize, 1), c.entries.len);
+    try testing.expectEqual(@as(usize, 1), c.obligations.len);
+    try testing.expect(c.entries[0] == null); // `_`
+
+    // the obligation's SHAPE: forall … ; (cond and cond) -> rhs = rhs
+    var e = c.obligations[0];
+    var binders: usize = 0;
+    while (e.* == .quant) : (binders += 1) e = e.quant.body;
+    try testing.expect(binders > 0);
+    try testing.expectEqual(ast.Expr.BinOp.implies, e.binary.op);
+    try testing.expectEqual(ast.Expr.BinOp.and_op, e.binary.lhs.binary.op);
+    try testing.expectEqual(ast.Expr.BinOp.equal, e.binary.rhs.binary.op);
+
+    // each condition is `arg2 = <pattern>`, on the positional binder
+    const c0 = e.binary.lhs.binary.lhs;
+    const c1 = e.binary.lhs.binary.rhs;
+    try testing.expectEqual(ast.Expr.BinOp.equal, c0.binary.op);
+    try testing.expectEqualStrings("arg2", ip.stringBytes(c0.binary.lhs.name.name));
+    try testing.expectEqualStrings("Z", ip.stringBytes(c0.binary.rhs.name.name));
+    try testing.expectEqualStrings("arg2", ip.stringBytes(c1.binary.lhs.name.name));
+    try testing.expectEqualStrings("s", ip.stringBytes(c1.binary.rhs.call.callee.name));
+
+    // the consequent equates the two arms' RIGHT-hand sides: `a` and `s(f(a, n))`
+    try testing.expectEqualStrings("a", ip.stringBytes(e.binary.rhs.binary.lhs.name.name));
+    try testing.expectEqualStrings("s", ip.stringBytes(e.binary.rhs.binary.rhs.call.callee.name));
+}
+
+test "an ARROW-guarded clause states its condition like `when` does" {
+    // The `monomial` family (5 blocks in std) writes its guard as a leading antecedent
+    // rather than with `when`. The parser desugars `when` to exactly that shape, so the two
+    // mean the same thing and the obligation must read both — otherwise those blocks could
+    // not state an obligation at all ("a definition clause must be an equation").
+    const source =
+        \\sort R
+        \\sort Nat
+        \\const zeroR: R
+        \\sort Poly
+        \\oper coeff(p: Poly, i: Nat) => R
+        \\oper monomial(a: R, k: Nat) => Poly:
+        \\  coeff(monomial(a, k), k) = a;
+        \\  (not (i = k)) -> coeff(monomial(a, k), i) = zeroR.
+        \\  consistency: _
+    ;
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var ip: InternPool = try .init(arena);
+    var sink: Diagnostics.Sink = .init(arena);
+    var p: Parser = .initInterning(arena, source, &sink, &ip);
+    const file = try p.parseFile();
+    try testing.expectEqual(0, sink.list.items.len);
+
+    var cons: ?ast.Consistency = null;
+    for (file.decls) |d| switch (d) {
+        .func => |fu| switch (fu) {
+            .local => |l| if (std.mem.eql(u8, ip.stringBytes(l.name.name), "monomial")) {
+                cons = l.consistency;
+            },
+            .alias => {},
+        },
+        else => {},
+    };
+    const c = cons orelse return error.TestUnexpectedResult;
+    try testing.expectEqual(@as(usize, 1), c.obligations.len);
+
+    var e = c.obligations[0];
+    while (e.* == .quant) e = e.quant.body;
+    // `not (i = k) -> a = zeroR`, and the consequent is the two arms' right-hand sides read
+    // THROUGH the arrow. Exactly ONE condition: clause 1 contributes its antecedent, while
+    // clause 0 contributes NONE — its slot-2 argument is `k`, the declared parameter itself,
+    // so that clause applies everywhere and constrains nothing. That asymmetry is the real
+    // content of this definition (one index pinned, every other index zero).
+    try testing.expectEqual(ast.Expr.BinOp.implies, e.binary.op);
+    try testing.expect(e.binary.lhs.* == .not);
+    try testing.expectEqual(ast.Expr.BinOp.equal, e.binary.rhs.binary.op);
+    try testing.expectEqualStrings("a", ip.stringBytes(e.binary.rhs.binary.lhs.name.name));
+    try testing.expectEqualStrings("zeroR", ip.stringBytes(e.binary.rhs.binary.rhs.name.name));
 }

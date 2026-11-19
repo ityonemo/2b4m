@@ -203,6 +203,10 @@ pub const Pred = union(enum) {
 pub const Consistency = struct {
     arms: usize,
     entries: []const ?Token,
+    /// The SYNTHESIZED obligation per pair, same order as `entries`: the statement a named
+    /// theorem must match, and the goal a `_` entry is discharged against. Generated from the
+    /// clauses so it is deterministic from source text — the author never writes it.
+    obligations: []const *const Expr = &.{},
 
     /// The clause pair at list position `p`, in the canonical order the parser enforces.
     pub fn pairAt(self: Consistency, p: usize) struct { i: usize, j: usize } {

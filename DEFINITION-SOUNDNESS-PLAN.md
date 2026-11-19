@@ -269,8 +269,27 @@ clause is a DOMAIN RESTRICTION, not a case split, and carries no obligation.
    blocks at once, which is the state this build order exists to avoid. Flipping it on is
    step 5.
 
-4. The synthesizer + the match check, with a both-sides mismatch diagnostic.
-4. Flip to required. The corpus must never pass through a state where blocks owe unwritten
+4. **PARTLY DONE — the synthesizer.** `Parser.synthesizeObligations` generates one obligation
+   per pair onto `ast.Consistency.obligations`, in the same canonical order as `entries`.
+   Deterministic from source text: each clause's condition is its guard verbatim, or
+   `argN = <pattern>` on a fresh POSITIONAL binder for a pattern-matched slot. Sorts are left
+   `inferred`, exactly as a clause variable's are, for the elaborator to settle.
+
+   **All THREE corpus shapes synthesize, so the `monomial` special case is not needed after
+   all.** An arrow-guarded clause (`(not (i = k)) -> coeff(…) = zeroR`, the shape all 5 of
+   that family use) states its guard as a leading ANTECEDENT rather than with `when` — and the
+   parser desugars `when` to exactly that, so the two mean the same thing. Reading both costs
+   one `rhsOf` recursion through `.implies` plus an `antecedentOf` helper.
+
+   Worth noting what the `monomial` obligation reveals: it has exactly ONE condition, because
+   clause 0's matched slot holds `k`, the declared PARAMETER itself — so that clause applies
+   everywhere and constrains nothing. The asymmetry is the definition's actual content (one
+   index pinned, every other index zero), and the synthesizer reproduces it rather than
+   inventing a condition.
+
+   Still to do: the per-position MATCH check (a named entry's theorem against its synthesized
+   obligation) with a both-sides mismatch diagnostic.
+5. Flip to required. The corpus must never pass through a state where blocks owe unwritten
    proofs.
 
 ## SETTLED (user ruling 2026-11-18, confirming all three)
