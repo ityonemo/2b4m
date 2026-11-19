@@ -690,6 +690,23 @@ pub fn main(init: std.process.Init) !u8 {
         try err.flush();
         return 1;
     }
+    // `--library`: a definition block's clauses must be DECLARED to agree where they overlap.
+    // Only here — in plain `check` an unused definition demands nothing, so nothing checks it.
+    if (result.consistency_gaps.len > 0) {
+        var ebuf: [4096]u8 = undefined;
+        var efw: Io.File.Writer = .init(.stderr(), io, &ebuf);
+        const err = &efw.interface;
+        try err.print("error: {d} definition block(s) with an unsettled `consistency:` declaration:\n", .{result.consistency_gaps.len});
+        for (result.consistency_gaps) |g| {
+            if (g.missing_name) |n| {
+                try err.print("  - {s}  ({s}:{d}) — '{s}' names no fact in this file (declared for clauses {d} and {d})\n", .{ g.symbol, g.path, g.line, n, g.pair_i, g.pair_j });
+            } else {
+                try err.print("  - {s}  ({s}:{d}) — no `consistency:` declaration; {d} clause pair(s) to settle (a name per pair, or `_` to discharge it with `definition_consistency`)\n", .{ g.symbol, g.path, g.line, g.pairs });
+            }
+        }
+        try err.flush();
+        return 1;
+    }
     // `--library`: a library must not ship assumptions nothing rests on. Every root-file
     // axiom no root theorem's proof reaches is an error (each named at its declaration).
     if (result.unused_axioms.len > 0) {

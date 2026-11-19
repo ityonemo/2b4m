@@ -109,6 +109,11 @@ pub fn addTests(
     ctx.fail(&.{ "check", "tests/cases/definition/consistency_satisfiable_bad.b4m" }, "tests/cases/definition/consistency_satisfiable_bad.b4m:20:12: error: step claims 'forall b1: Nat; forall b2: Nat; (b1 = ZERO and b1 = ZERO) -> ZERO = succ(ZERO)' but instantiate derives 'forall k: Nat; forall n: Nat; (k = ZERO and k = succ(n)) -> ZERO = succ(ZERO)'\n");
 
     // the three shape diagnostics, each located at the step.
+    // `--library` only: a `consistency:` declaration naming a theorem that does not exist
+    // settles nothing, so a library must not ship one. The SIBLING half (a multi-clause block
+    // with no declaration at all) is deliberately not enforced yet — see the fixture header.
+    ctx.fail(&.{ "check", "--library", "tests/cases/definition/library-consistency" }, "error: 1 definition block(s) with an unsettled `consistency:` declaration:\n  - f  (tests/cases/definition/library-consistency/bad.b4m:16) — 'noSuchTheorem' names no fact in this file (declared for clauses 0 and 1)\n");
+
     ctx.fail(&.{ "check", "tests/cases/definition/consistency_arity_bad.b4m" }, "tests/cases/definition/consistency_arity_bad.b4m:9:12: error: definition_consistency expects a goal of the form `forall …; (k = <base> and k = <step>(n)) -> <arm> = <arm>`; this goal has fewer than two quantifiers\n");
 
     // a schema instantiated at a lambda CAPTURING an enclosing `fix b`: the schema's own

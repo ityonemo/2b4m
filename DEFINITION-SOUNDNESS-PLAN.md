@@ -258,7 +258,18 @@ clause is a DOMAIN RESTRICTION, not a case split, and carries no obligation.
    special-casing them is fine (user ruling).
 2. The parser change: `.` terminator + `consistency:` declaration, and the migration of all
    112 blocks.
-3. The synthesizer + the match check, with a both-sides mismatch diagnostic.
+3. **PARTLY DONE** (`f7b68a0`, `8ab84f3`, and the `--library` consumer). The parser takes the
+   `.` terminator and the `consistency:` list, validates the entry count against
+   `arms*(arms-1)/2`, and carries the list on the AST decl (`ast.Consistency`, with `pairAt`
+   deriving a position's clause pair). 125 blocks migrated across 30 files.
+
+   `--library` enforces the half that can be enforced today: a declaration naming a theorem
+   that does not exist. The SIBLING half — a multi-clause block with NO declaration — is
+   written but GATED OFF, because turning it on fails `std --library` on all 72 multi-clause
+   blocks at once, which is the state this build order exists to avoid. Flipping it on is
+   step 5.
+
+4. The synthesizer + the match check, with a both-sides mismatch diagnostic.
 4. Flip to required. The corpus must never pass through a state where blocks owe unwritten
    proofs.
 

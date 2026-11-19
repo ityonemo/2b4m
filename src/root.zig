@@ -231,10 +231,31 @@ pub const ProjectResult = struct {
     /// `--library`: the root files' axioms NO root theorem rests on — a library must not ship
     /// assumptions nothing uses. Empty unless asked. Same shape as `axioms` (never a hole).
     unused_axioms: []const Axiom,
+    /// `--library`: definition blocks whose `consistency:` list is missing or whose named
+    /// theorems do not exist. A library's definitions must be sound, and their obligations
+    /// are only checked here — in plain `check` an UNUSED definition demands nothing, so
+    /// nothing checks it (user ruling; the `#93` "uncited code isn't checked" policy).
+    /// Empty unless asked.
+    consistency_gaps: []const ConsistencyGap,
     /// the axioms the checked theorem(s) transitively rest on — only computed when the caller
     /// asked (`--axioms`); empty otherwise. A HOLE reached by the proof appears here with
     /// `is_hole` set: it is an axiom to the kernel, and the report says so explicitly.
     axioms: []const Axiom,
+
+    /// One definition block whose consistency declaration is absent or unresolvable.
+    pub const ConsistencyGap = struct {
+        /// the definition block's symbol, as the author wrote it
+        symbol: []const u8,
+        path: []const u8,
+        line: usize,
+        /// how many clause pairs the block has
+        pairs: usize,
+        /// null = no `consistency:` at all; else the named theorem that does not resolve,
+        /// with the clause pair it was declared for
+        missing_name: ?[]const u8 = null,
+        pair_i: usize = 0,
+        pair_j: usize = 0,
+    };
 
     pub const Axiom = struct {
         name: []const u8,
@@ -459,6 +480,7 @@ fn summarize(arena: std.mem.Allocator, loaded: LoadedProject, roots: []const Con
         .files_checked = roots.len,
         .fact_trace = ctx.fact_trace.items,
         .unused_axioms = if (library) try collectUnusedAxioms(arena, ctx) else &.{},
+        .consistency_gaps = if (library) try collectConsistencyGaps(arena, ctx) else &.{},
     };
 }
 
@@ -532,6 +554,66 @@ fn usedAxioms(arena: std.mem.Allocator, ctx: *Context) !std.AutoHashMapUnmanaged
 /// An axiom never even demanded has no fact entry; one only elaborated as a root statement has
 /// an entry but is in nobody's closure. Both are unused. Holes are not axioms here (they are
 /// reported on their own terms).
+/// `--library`: every multi-clause definition block must DECLARE which theorem proves each
+/// clause pair, and every named theorem must resolve.
+///
+/// Only checked under `--library` (user ruling 2026-11-19): in plain `check` an UNUSED
+/// definition demands nothing, so nothing checks it — the demand-driven policy that also
+/// removed the decl-time schema check (#93). A library is different: its whole surface must be
+/// sound, and a definition is as much of that surface as an axiom. The two rules compose —
+/// `--library` already rejects an unused definition, so the consistency check only ever
+/// applies to definitions something uses.
+///
+/// A `_` entry needs no resolution: `definition_consistency` discharges it, and whether it
+/// SUCCEEDS is settled when the obligation is proved, not here.
+fn collectConsistencyGaps(arena: std.mem.Allocator, ctx: *Context) ![]const ProjectResult.ConsistencyGap {
+    var out: std.ArrayList(ProjectResult.ConsistencyGap) = .empty;
+    for (ctx.root_files.items) |rf| {
+        const root_idx = @intFromEnum(rf);
+        const f = ctx.files.get(root_idx);
+        const rns = try ctx.interner.namespace(.universe, try ctx.fileIndex(f.path));
+        for (ctx.parsed.get(root_idx).decls) |decl| {
+            const info: struct { name: lexer.Token, cons: ?ast.Consistency } = switch (decl) {
+                .func => |fu| switch (fu) {
+                    .local => |l| .{ .name = l.name, .cons = l.consistency },
+                    .alias => continue,
+                },
+                .pred => |pr| switch (pr) {
+                    .local => |l| .{ .name = l.name, .cons = l.consistency },
+                    .alias => continue,
+                },
+                else => continue,
+            };
+            // A MISSING declaration is not reported yet. The obligations cannot be paid
+            // until the synthesizer lands (plan step 4) and `_` covers both triviality
+            // routes, and enforcing early would fail `std --library` on all 72 multi-clause
+            // blocks at once — the state the build order exists to avoid. Flipping this on
+            // is step 5; the arm count comes from probing the mangled clause names
+            // (`definitionClauseName(symbol, n)`) until one is absent, as ModelTask does.
+            //
+            // What IS enforced now: a declaration that names a theorem which does not exist.
+            // Zero violations today, so it gates against new ones for free.
+            const cons = info.cons orelse continue;
+            // every NAMED entry must resolve to a fact in this file's namespace
+            for (cons.entries, 0..) |entry, p| {
+                const tok = entry orelse continue;
+                if (ctx.facts.lookup(ctx.io, .{ .namespace = rns, .name = tok.name }) != null) continue;
+                const pair = cons.pairAt(p);
+                try out.append(arena, .{
+                    .symbol = ctx.interner.stringBytes(info.name.name),
+                    .path = f.path,
+                    .line = std.zig.findLineColumn(f.source, tok.start).line + 1,
+                    .pairs = cons.entries.len,
+                    .missing_name = ctx.interner.stringBytes(tok.name),
+                    .pair_i = pair.i,
+                    .pair_j = pair.j,
+                });
+            }
+        }
+    }
+    return out.items;
+}
+
 fn collectUnusedAxioms(arena: std.mem.Allocator, ctx: *Context) ![]const ProjectResult.Axiom {
     var used = try usedAxioms(arena, ctx);
     defer used.deinit(arena);
