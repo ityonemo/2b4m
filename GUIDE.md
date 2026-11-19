@@ -420,6 +420,32 @@ becomes a standalone axiom, and axioms have no precedence. Two clauses that
 overlap and disagree are simply inconsistent — the checker does not (yet) catch
 that, exactly as it does not for hand-written axiom pairs.
 
+**Proving the clauses agree** is what a clause-pair CONSISTENCY obligation states:
+where two clauses' conditions both hold, their right-hand sides are equal.
+
+```2b4m
+theorem cpowerClausesAgree: forall a: Complex; forall k, n: Nat;
+  (k = ZERO and k = succ(n)) -> ONE = mul(a, cpower(a, n))
+proof
+  @conclusion |
+    forall a: Complex; forall k, n: Nat;
+      (k = ZERO and k = succ(n)) -> ONE = mul(a, cpower(a, n))
+    [using definition_consistency(peano)]
+qed
+```
+
+For a block splitting on a sort's CONSTRUCTORS the conditions never both hold, so
+the obligation is vacuous — but vacuously true is still something to prove, and the
+proof is the same every time. `definition_consistency(<theory>)` emits it: `fix` the
+binders the obligation quantifies, instantiate that theory's shared vacuity schema
+(`zeroSuccSplitIsVacuous` for ℕ, in `std/peano.b4m`) at the clause pair's own
+equation, and `generalize` back out. The selector names the theory that declares the
+constructors — the one that can prove they are distinct.
+
+The word proves nothing itself, which is why it cannot be unsound: it emits an
+`instantiation` and the kernel checks the fit. Conditions that CAN both hold do not
+match the schema's shape, so such a goal is rejected rather than discharged.
+
 **Citing a clause** uses `by definition`, with the clause number for a function
 (zero-indexed; a predicate has one clause and cites bare):
 

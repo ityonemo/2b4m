@@ -46,6 +46,7 @@ fn isTheoryRule(name: []const u8) bool {
         std.mem.eql(u8, name, "polynomial_quantified") or
         std.mem.eql(u8, name, "extensionality") or
         std.mem.eql(u8, name, "extensionality_quantified") or
+        std.mem.eql(u8, name, "definition_consistency") or
         std.mem.eql(u8, name, "model") or
         std.mem.eql(u8, name, "import");
 }

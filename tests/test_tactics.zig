@@ -97,6 +97,20 @@ pub fn addTests(
     // BOTH variables, since every recursive step arm mentions the predecessor.
     ctx.okSilent(&.{ "check", "tests/cases/definition/consistency_schema.b4m" });
 
+    // the one-line form: `[using definition_consistency(<theory>)]` emits that same proof.
+    // Two obligations, 1 and 3 non-matched binders — the word reads everything off the goal,
+    // so the clause structure never has to be passed in, and it must open those binders
+    // itself (they are bound by the goal's own `forall`, out of scope at a bare step).
+    ctx.okSilent(&.{ "check", "tests/cases/definition/consistency_tactic.b4m" });
+
+    // THE soundness property: the tactic proves nothing itself, so it cannot be unsound.
+    // Conditions that CAN both hold do not match the vacuity schema's shape, so the kernel's
+    // statement match rejects them — here with a FALSE consequent, which must not go through.
+    ctx.fail(&.{ "check", "tests/cases/definition/consistency_satisfiable_bad.b4m" }, "tests/cases/definition/consistency_satisfiable_bad.b4m:20:12: error: step claims 'forall b1: Nat; forall b2: Nat; (b1 = ZERO and b1 = ZERO) -> ZERO = succ(ZERO)' but instantiate derives 'forall k: Nat; forall n: Nat; (k = ZERO and k = succ(n)) -> ZERO = succ(ZERO)'\n");
+
+    // the three shape diagnostics, each located at the step.
+    ctx.fail(&.{ "check", "tests/cases/definition/consistency_arity_bad.b4m" }, "tests/cases/definition/consistency_arity_bad.b4m:9:12: error: definition_consistency expects a goal of the form `forall …; (k = <base> and k = <step>(n)) -> <arm> = <arm>`; this goal has fewer than two quantifiers\n");
+
     // a schema instantiated at a lambda CAPTURING an enclosing `fix b`: the schema's own
     // accelerant steps then run over a body mentioning a free `b` belonging to the
     // INSTANTIATING file. Every accelerant that abstracts free fvars must carry the

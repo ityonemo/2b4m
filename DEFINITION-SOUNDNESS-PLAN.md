@@ -215,10 +215,19 @@ clause is a DOMAIN RESTRICTION, not a case split, and carries no obligation.
 
 ## BUILD ORDER
 
-1. **The shared schemas + the discharge tactic first**, verified by hand against one of each
-   corpus shape. Nothing else can land before this without obligating 72 blocks with no way
-   to pay. The ZERO/succ pair is PROVED (see above); the 5 arrow-guarded `monomial` blocks and
-   `swap` need their own, and special-casing them is fine (user ruling).
+1. **DONE — the shared schemas (`2a305e0`) and the `definition_consistency` tactic.** The
+   ZERO/succ pair lives in `std/peano.b4m`; the word is a `theory_selector` tactic
+   (`[using definition_consistency(peano)]`) whose certificate is `fix` / `instantiation` /
+   `generalize`, generated from the GOAL ALONE — no clause structure is passed in, verified
+   at 1 and 3 non-matched binders. Gated by `tests/cases/definition/`.
+
+   **Why it cannot be unsound:** the word proves nothing itself. It emits an `instantiation`
+   and the KERNEL checks the fit, so a goal whose conditions can both hold fails the statement
+   match rather than being discharged (gated by `consistency_satisfiable_bad.b4m`, whose
+   consequent is false).
+
+   Still to do here: the 5 arrow-guarded `monomial` blocks and `swap` need their own schemas;
+   special-casing them is fine (user ruling).
 2. The parser change: `.` terminator + `consistency:` declaration, and the migration of all
    112 blocks.
 3. The synthesizer + the match check, with a both-sides mismatch diagnostic.

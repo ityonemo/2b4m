@@ -214,6 +214,7 @@ pub const Tactic = union(enum) {
     extensionality_quantified: @import("Accelerants/Extensionality.zig"),
     arithmetic: @import("Accelerants/Arithmetic.zig"),
     arithmetic_quantified: @import("Accelerants/Arithmetic.zig"),
+    definition_consistency: @import("Accelerants/DefinitionConsistency.zig"),
 
     /// The tactic a trustable word names, its payload constructed for that word's variant —
     /// or null for an engine word (`model`/`import`).
@@ -235,6 +236,7 @@ pub const Tactic = union(enum) {
             .extensionality_quantified => .{ .extensionality_quantified = .{ .quantified = true } },
             .arithmetic => .{ .arithmetic = .{} },
             .arithmetic_quantified => .{ .arithmetic_quantified = .{} },
+            .definition_consistency => .{ .definition_consistency = .{} },
         };
     }
 

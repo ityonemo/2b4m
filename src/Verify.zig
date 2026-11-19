@@ -42,6 +42,10 @@ pub const Word = enum {
     chain,
     extensionality,
     extensionality_quantified,
+    /// discharges a definition block's clause-pair consistency obligation by instantiating
+    /// the sort's shared vacuity schema; the certificate is a kernel `instantiation` step and
+    /// is always producible, so trusting this word buys nothing
+    definition_consistency,
 
     pub const Set = std.EnumSet(Word);
 

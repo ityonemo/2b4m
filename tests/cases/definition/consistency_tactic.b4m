@@ -1,0 +1,40 @@
+// `[using definition_consistency(<theory>)]` — the one-line form of the clause-pair
+// consistency obligation. The certificate it emits is the explicit proof in
+// consistency_schema.b4m: `fix` the non-matched binders, instantiate the theory's
+// shared vacuity schema at the two-binder predicate, `generalize` back out.
+//
+// The word must do the binder-opening itself: the non-matched params are bound by
+// the goal's own `forall`, so a hand-written `[using instantiation ...]` fails with
+// `reference not found` on them.
+theory peano <<< "std/peano.b4m"
+theory cpoly <<< "std/complex/polynomial.b4m"
+theory complex <<< "std/complex.b4m"
+
+intheory cpowerClausesAgree
+intheory cconvolutionClausesAgree
+
+// cpower: ONE non-matched binder.
+theorem cpowerClausesAgree: forall a: complex.Complex; forall k, n: peano.Nat;
+  (k = peano.ZERO and k = peano.succ(n)) -> complex.ONE = complex.mul(a, cpoly.cpower(a, n))
+proof
+  @conclusion |
+    forall a: complex.Complex; forall k, n: peano.Nat;
+      (k = peano.ZERO and k = peano.succ(n)) -> complex.ONE = complex.mul(a, cpoly.cpower(a, n))
+    [using definition_consistency(peano)]
+qed
+
+// cconvolution: THREE non-matched binders, the shape of the 6-binder `triple*` family
+// that would be the worst case by hand. The tactic reads everything off the goal, so
+// the clause structure never has to be passed in.
+theorem cconvolutionClausesAgree: forall p, q: cpoly.CPoly; forall j: peano.Nat; forall k, m: peano.Nat;
+  (k = peano.ZERO and k = peano.succ(m)) ->
+  complex.mul(cpoly.ccoeff(p, j), cpoly.ccoeff(q, peano.ZERO))
+  = complex.add(complex.mul(cpoly.ccoeff(p, j), cpoly.ccoeff(q, peano.succ(m))), cpoly.cconvolution(p, q, peano.succ(j), m))
+proof
+  @conclusion |
+    forall p, q: cpoly.CPoly; forall j: peano.Nat; forall k, m: peano.Nat;
+      (k = peano.ZERO and k = peano.succ(m)) ->
+      complex.mul(cpoly.ccoeff(p, j), cpoly.ccoeff(q, peano.ZERO))
+      = complex.add(complex.mul(cpoly.ccoeff(p, j), cpoly.ccoeff(q, peano.succ(m))), cpoly.cconvolution(p, q, peano.succ(j), m))
+    [using definition_consistency(peano)]
+qed
