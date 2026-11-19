@@ -105,6 +105,12 @@ pub const Parser = struct {
     /// working-directory check and for every literate `.md` (a document's prose drives its
     /// order), so the parser is unchanged outside a published-library check.
     library_structure: bool = false,
+    /// A definition block's `consistency:` list, one record per block, in declaration order.
+    /// One entry per unordered clause pair in canonical order; `null` means that pair is
+    /// discharged by `definition_consistency` rather than by a named theorem. Collected
+    /// here because the obligations are a LIBRARY-surface check (`--library`), not a
+    /// per-proof demand: a definition nothing cites still has to be sound in a library.
+    staged_consistency: std.ArrayList(StagedConsistency) = .empty,
     /// set by `checkHeaderStructure` at the first `theorem`/`lemma`/`model`
     past_header: bool = false,
 
@@ -250,6 +256,13 @@ pub const Parser = struct {
     }
 
     /// Report an error at the current token and begin recovery.
+    pub const StagedConsistency = struct {
+        /// the definition block's symbol, for the mangled obligation names and diagnostics
+        symbol: Token,
+        /// per canonical clause pair: the author's theorem, or null for `_`
+        entries: []const ?Token,
+    };
+
     fn fail(self: *Parser, comptime fmt: []const u8, args: anytype) ParseError {
         self.sink.add(self.file, self.tok.start, fmt, args) catch return error.OutOfMemory;
         return error.Recover;
@@ -725,6 +738,51 @@ pub const Parser = struct {
             arm += 1;
             if (self.tok.tag != .semicolon) break;
             _ = self.advance();
+        }
+        // The clause list is TERMINATED by `.`, which separates it from the block's
+        // WELL-FORMEDNESS declarations (`consistency:` today, `termination:` later). Without
+        // the terminator a dropped `;` just ends the block, and the next clause reports as
+        // "expected a declaration" at a line that looks fine — naming `;` or `.` here points
+        // at the actual mistake.
+        if (self.tok.tag != .dot) {
+            return self.fail("expected ';' before the next clause or '.' to end the definition, got '{s}'", .{self.describe()});
+        }
+        _ = self.advance();
+        try self.parseWellformedness(name, arm);
+    }
+
+    /// A definition block's WELL-FORMEDNESS declarations, after the clause list's `.`:
+    ///
+    ///     consistency: <name | _> [, <name | _>]…
+    ///
+    /// One entry per unordered clause PAIR in canonical (lexicographic) order — `(0,1)`,
+    /// `(0,2)`, … `(1,2)`, … A NAME points that pair at a theorem the author wrote; `_` says
+    /// discharge it with `definition_consistency`. Every position is written out even when
+    /// automatic, so a reader sees how many pairs exist and a miscount is an error rather than
+    /// a silent default. See DEFINITION-SOUNDNESS-PLAN.md.
+    ///
+    /// `consistency` is a plain identifier, not a keyword: nothing in the corpus uses the name,
+    /// and a block attribute does not need to be reserved vocabulary.
+    fn parseWellformedness(self: *Parser, name: Token, arms: usize) ParseError!void {
+        while (self.tok.tag == .identifier and std.mem.eql(u8, self.text(self.tok), "consistency")) {
+            _ = self.advance();
+            _ = try self.expect(.colon);
+            var entries: std.ArrayList(?Token) = .empty;
+            while (true) {
+                if (self.tok.tag == .identifier and std.mem.eql(u8, self.text(self.tok), "_")) {
+                    _ = self.advance();
+                    try entries.append(self.arena, null);
+                } else {
+                    try entries.append(self.arena, try self.expect(.identifier));
+                }
+                if (self.tok.tag != .comma) break;
+                _ = self.advance();
+            }
+            const want = arms * (arms - 1) / 2;
+            if (entries.items.len != want) {
+                return self.fail("`consistency:` needs one entry per clause pair — {d} clause(s) make {d} pair(s), got {d}", .{ arms, want, entries.items.len });
+            }
+            try self.staged_consistency.append(self.arena, .{ .symbol = name, .entries = try entries.toOwnedSlice(self.arena) });
         }
     }
 

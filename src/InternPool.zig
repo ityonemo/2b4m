@@ -940,6 +940,39 @@ pub fn definitionClauseName(self: *InternPool, arena: std.mem.Allocator, symbol:
     return self.internString(text);
 }
 
+/// The publication name of a definition block's CLAUSE-PAIR CONSISTENCY obligation:
+/// `definition-<symbol>-{i,j}` for the unordered pair `(i, j)`, `i < j`.
+///
+/// Unreachable from source two ways over, so it can never collide with an author's theorem:
+/// `{` is not an identifier character, and the kebab `definition-<symbol>` half is itself
+/// rejected in a declaration-name position. Derived from the symbol and the pair indices —
+/// source text, never a counter — so it is stable across runs and demand orders.
+///
+/// Only a `_` entry in a `consistency:` list synthesizes one. A NAMED entry keeps the
+/// author's own theorem name.
+pub fn consistencyPairName(self: *InternPool, arena: std.mem.Allocator, symbol: []const u8, i: usize, j: usize) std.mem.Allocator.Error!StrId {
+    const text = try std.fmt.allocPrint(arena, "definition-{s}-{{{d},{d}}}", .{ symbol, i, j });
+    return self.internString(text);
+}
+
+/// If `name` is a consistency obligation's mangled name, the symbol and the two clause
+/// indices it relates; else null — the inverse of `consistencyPairName`, so a diagnostic can
+/// say "`swap` clauses 0 and 1" instead of echoing a spelling the author never wrote.
+pub fn consistencyPairParts(name: []const u8) ?struct { symbol: []const u8, i: []const u8, j: []const u8 } {
+    const prefix = "definition-";
+    if (!std.mem.startsWith(u8, name, prefix)) return null;
+    if (name[name.len - 1] != '}') return null;
+    const open = std.mem.lastIndexOfScalar(u8, name, '{') orelse return null;
+    if (open < prefix.len + 2 or name[open - 1] != '-') return null;
+    const pair = name[open + 1 .. name.len - 1];
+    const comma = std.mem.indexOfScalar(u8, pair, ',') orelse return null;
+    return .{
+        .symbol = name[prefix.len .. open - 1],
+        .i = pair[0..comma],
+        .j = pair[comma + 1 ..],
+    };
+}
+
 /// If `name` is a definition clause's mangled publication name, the user-facing symbol and
 /// its arm; else null — the inverse of `definitionClauseName`, for reports.
 pub fn definitionClauseParts(name: []const u8) ?struct { symbol: []const u8, arm: []const u8 } {
@@ -1566,4 +1599,31 @@ test "dedup: lock-free readers never see a torn slot while a writer interns" {
         const nm = try std.fmt.bufPrint(&buf, "fresh{d}", .{i});
         try std.testing.expectEqual(try pool.internString(nm), pool.get(.{ .string = nm }).?);
     }
+}
+
+test "consistencyPairName round-trips, and rejects what it should" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var pool: InternPool = try .init(arena);
+
+    const id = try pool.consistencyPairName(arena, "swap", 0, 1);
+    const bytes = pool.stringBytes(id);
+    try std.testing.expectEqualStrings("definition-swap-{0,1}", bytes);
+
+    const parts = InternPool.consistencyPairParts(bytes) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("swap", parts.symbol);
+    try std.testing.expectEqualStrings("0", parts.i);
+    try std.testing.expectEqualStrings("1", parts.j);
+
+    // a kebab symbol survives the round trip (the LAST brace group is the pair)
+    const kebab = pool.stringBytes(try pool.consistencyPairName(arena, "my-op", 2, 10));
+    const kp = InternPool.consistencyPairParts(kebab) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("my-op", kp.symbol);
+    try std.testing.expectEqualStrings("2", kp.i);
+    try std.testing.expectEqualStrings("10", kp.j);
+
+    // NOT consistency names: an author theorem, and the sibling CLAUSE mangle
+    try std.testing.expect(InternPool.consistencyPairParts("swapOverlapAgrees") == null);
+    try std.testing.expect(InternPool.consistencyPairParts("definition{swap}{0}") == null);
 }

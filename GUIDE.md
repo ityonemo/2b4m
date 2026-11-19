@@ -378,15 +378,20 @@ about how it desugars.
 
 ```2b4m
 pred isZero(n: Nat):
-  isZero(n) iff n = ZERO
+  isZero(n) iff n = ZERO.
 
 oper double(n: Nat) => Nat:
-  double(n) = add(n, n)
+  double(n) = add(n, n).
 
 oper add(a: Nat, b: Nat) => Nat:
   add(ZERO, b) = b;
-  add(succ(k), b) = succ(add(k, b))
+  add(succ(k), b) = succ(add(k, b)).
 ```
+
+**The clause list ends with `.`** — it separates the clauses from the block's
+WELL-FORMEDNESS declarations, which follow it. Clauses are `;`-separated, so a
+dropped separator reports as "expected `;` before the next clause or `.` to end
+the definition" rather than as a puzzling error on the next line.
 
 A predicate has one clause and writes its own connective (`iff` for a
 proposition). A function may have several — a recursive definition needs one per
@@ -411,7 +416,7 @@ clause may carry a guard, `when` after the head:
 ```2b4m
 oper gcd(a: Nat, b: Nat) => Nat:
   gcd(a, b) = a                  when b = ZERO;
-  gcd(a, b) = gcd(b, mod(a, b))  when b != ZERO
+  gcd(a, b) = gcd(b, mod(a, b))  when b != ZERO.
 ```
 
 **Every clause states its own condition in full.** Unlike a pattern-matching
@@ -433,6 +438,22 @@ proof
     [using definition_consistency(peano)]
 qed
 ```
+
+A multi-clause block DECLARES which theorem proves each pair, after the clause list's `.`:
+
+```2b4m
+oper swap(u: Element, v: Element) => Fn:
+  apply(swap(u, v), x) = v when x = u;
+  apply(swap(u, v), x) = u when x = v;
+  apply(swap(u, v), x) = x when x != u and x != v.
+  consistency: swapOverlapAgrees, _, _
+```
+
+One entry per unordered clause PAIR, in canonical order — `(0,1)`, `(0,2)`, … `(1,2)`,
+… A NAME points that pair at a theorem you wrote; `_` discharges it with the tactic.
+Every position is written out even when automatic, so a reader sees how many pairs
+exist and a miscount is an error rather than a silent default. A single-clause block
+has no pairs and declares nothing.
 
 For a block splitting on a sort's CONSTRUCTORS the conditions never both hold, so
 the obligation is vacuous — but vacuously true is still something to prove, and the
