@@ -698,7 +698,11 @@ pub fn main(init: std.process.Init) !u8 {
         const err = &efw.interface;
         try err.print("error: {d} definition block(s) with an unsettled `consistency:` declaration:\n", .{result.consistency_gaps.len});
         for (result.consistency_gaps) |g| {
-            if (g.missing_name) |n| {
+            if (g.stated) |st| {
+                // BOTH sides: the author never wrote the obligation, so naming only what they
+                // did write would leave them guessing at the target.
+                try err.print("  - {s}  ({s}:{d}) — '{s}' does not state the obligation for clauses {d} and {d}\n      it states:  {s}\n      wanted:     {s}\n", .{ g.symbol, g.path, g.line, g.missing_name.?, g.pair_i, g.pair_j, st, g.wanted.? });
+            } else if (g.missing_name) |n| {
                 try err.print("  - {s}  ({s}:{d}) — '{s}' names no fact in this file (declared for clauses {d} and {d})\n", .{ g.symbol, g.path, g.line, n, g.pair_i, g.pair_j });
             } else {
                 try err.print("  - {s}  ({s}:{d}) — no `consistency:` declaration; {d} clause pair(s) to settle (a name per pair, or `_` to discharge it with `definition_consistency`)\n", .{ g.symbol, g.path, g.line, g.pairs });

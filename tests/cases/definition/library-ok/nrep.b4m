@@ -1,0 +1,48 @@
+// THE WHOLE PIPELINE, passing `--library`: synthesize -> match -> discharge.
+//
+// The block declares `consistency: nrepConsistent`; that theorem states EXACTLY the
+// obligation the checker synthesizes for clause pair (0,1) — binders in the order the
+// synthesizer emits (non-matched params, then the positional slot binder `arg2`, then the
+// clause variable), conditions conjoined into one flat antecedent, consequent equating the
+// two arms' right-hand sides. A theorem stating anything else is rejected with both sides
+// shown (see ../library-consistency-mismatch/).
+//
+// The proof is one `definition_consistency(peano)` step: the conditions are ℕ's two
+// constructors, so peano's vacuity schema discharges it.
+//
+// Both clauses are also CITED, because --library's other rule rejects an unused definition.
+theory peano <<< "std/peano.b4m"
+
+intheory nrepConsistent
+intheory nrepBase
+intheory nrepStep
+
+// a recursion over ℕ, so peano's vacuity schema applies
+oper nrep(a: peano.Nat, n: peano.Nat) => peano.Nat:
+  nrep(a, peano.ZERO) = a;
+  nrep(a, peano.succ(n)) = peano.succ(nrep(a, n)).
+  consistency: nrepConsistent
+
+theorem nrepConsistent: forall a: peano.Nat; forall arg2: peano.Nat; forall n: peano.Nat;
+  (arg2 = peano.ZERO and arg2 = peano.succ(n)) -> a = peano.succ(nrep(a, n))
+proof
+  @conclusion |
+    forall a: peano.Nat; forall arg2: peano.Nat; forall n: peano.Nat;
+      (arg2 = peano.ZERO and arg2 = peano.succ(n)) -> a = peano.succ(nrep(a, n))
+    [using definition_consistency(peano)]
+qed
+
+// cite both clauses so the definition is USED (the library's other rule)
+theorem nrepBase: forall a: peano.Nat; nrep(a, peano.ZERO) = a
+proof
+  @conclusion |
+    forall a: peano.Nat; nrep(a, peano.ZERO) = a
+    [by definition(0) nrep]
+qed
+
+theorem nrepStep: forall a, n: peano.Nat; nrep(a, peano.succ(n)) = peano.succ(nrep(a, n))
+proof
+  @conclusion |
+    forall a, n: peano.Nat; nrep(a, peano.succ(n)) = peano.succ(nrep(a, n))
+    [by definition(1) nrep]
+qed

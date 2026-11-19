@@ -287,8 +287,25 @@ clause is a DOMAIN RESTRICTION, not a case split, and carries no obligation.
    index pinned, every other index zero), and the synthesizer reproduces it rather than
    inventing a condition.
 
-   Still to do: the per-position MATCH check (a named entry's theorem against its synthesized
-   obligation) with a both-sides mismatch diagnostic.
+   **DONE — the per-position MATCH check.** `statementMatches` elaborates BOTH sides into one
+   scratch pool — the named theorem's own stated AST and the synthesized obligation — and
+   compares up to alpha-equivalence, the same test the kernel's claim-match uses. Both sides
+   come from AST, so one elaborator settles both and there is no reify/unreify asymmetry.
+
+   The diagnostic shows BOTH statements, because the author never wrote the obligation:
+
+       - nrep (…:17) — 'wrongStatement' does not state the obligation for clauses 0 and 1
+             it states:  ZERO = ZERO
+             wanted:     forall a: Nat; forall arg2: Nat; forall n: Nat;
+                           (arg2 = ZERO and arg2 = succ(n)) -> a = succ(nrep(a, n))
+
+   The `wanted` line is PASTEABLE — `tests/cases/definition/library-ok/` was built from it,
+   and that fixture is the whole pipeline passing `--library`: synthesize → match → discharge
+   by one `definition_consistency(peano)` step.
+
+   A statement that matches but whose SORT has no vacuity schema fails at the tactic
+   (`expected sort 'Nat', got 'N'`), which is the per-sort rule behaving correctly rather than
+   a gap: that sort's own theory would supply its schema.
 5. Flip to required. The corpus must never pass through a state where blocks owe unwritten
    proofs.
 

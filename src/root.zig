@@ -255,6 +255,10 @@ pub const ProjectResult = struct {
         missing_name: ?[]const u8 = null,
         pair_i: usize = 0,
         pair_j: usize = 0,
+        /// set when the named theorem RESOLVES but states something else: what it says, and
+        /// what the pair's obligation is. Both, because the author never wrote the latter.
+        stated: ?[]const u8 = null,
+        wanted: ?[]const u8 = null,
     };
 
     pub const Axiom = struct {
@@ -594,11 +598,27 @@ fn collectConsistencyGaps(arena: std.mem.Allocator, ctx: *Context) ![]const Proj
             // What IS enforced now: a declaration that names a theorem which does not exist.
             // Zero violations today, so it gates against new ones for free.
             const cons = info.cons orelse continue;
-            // every NAMED entry must resolve to a fact in this file's namespace
+            // every NAMED entry must resolve to a fact in this file's namespace AND state
+            // that pair's obligation — a theorem proving something else settles nothing.
             for (cons.entries, 0..) |entry, p| {
                 const tok = entry orelse continue;
-                if (ctx.facts.lookup(ctx.io, .{ .namespace = rns, .name = tok.name }) != null) continue;
                 const pair = cons.pairAt(p);
+                const state = ctx.facts.lookup(ctx.io, .{ .namespace = rns, .name = tok.name }) orelse {
+                    try out.append(arena, .{
+                        .symbol = ctx.interner.stringBytes(info.name.name),
+                        .path = f.path,
+                        .line = std.zig.findLineColumn(f.source, tok.start).line + 1,
+                        .pairs = cons.entries.len,
+                        .missing_name = ctx.interner.stringBytes(tok.name),
+                        .pair_i = pair.i,
+                        .pair_j = pair.j,
+                    });
+                    continue;
+                };
+                if (state != .proven) continue; // still in flight: not this check's business
+                if (p >= cons.obligations.len) continue; // defensive: parser keeps them aligned
+                const cmp = try statementMatches(arena, ctx, rf, rns, tok.name, cons.obligations[p]);
+                if (cmp == null) continue; // matched, or not comparable (diagnosed elsewhere)
                 try out.append(arena, .{
                     .symbol = ctx.interner.stringBytes(info.name.name),
                     .path = f.path,
@@ -607,11 +627,50 @@ fn collectConsistencyGaps(arena: std.mem.Allocator, ctx: *Context) ![]const Proj
                     .missing_name = ctx.interner.stringBytes(tok.name),
                     .pair_i = pair.i,
                     .pair_j = pair.j,
+                    .stated = cmp.?.stated,
+                    .wanted = cmp.?.wanted,
                 });
             }
         }
     }
     return out.items;
+}
+
+/// Does the named theorem STATE the obligation? Elaborates BOTH sides into one scratch pool —
+/// the theorem's own stated AST and the synthesized obligation — and compares up to
+/// alpha-equivalence, the same test the kernel's claim-match uses.
+///
+/// Both sides come from AST, not from a stored term: a statement lives on its decl as an
+/// `ast.Expr`, so one elaborator settles both and there is no reify/unreify asymmetry.
+///
+/// Returns null when they agree, or when either side cannot be elaborated — that is somebody
+/// else's diagnostic, and reporting it twice would be noise. Otherwise BOTH rendered
+/// statements, because the author never wrote the obligation and one side alone is useless.
+fn statementMatches(
+    arena: std.mem.Allocator,
+    ctx: *Context,
+    fid: Context.FileId,
+    ns: InternPool.Index,
+    name: InternPool.StrId,
+    obligation: *const ast.Expr,
+) !?struct { stated: []const u8, wanted: []const u8 } {
+    const decl = ctx.declOf(fid, name) orelse return null;
+    const fact = ast.factOf(decl) orelse return null; // an alias states nothing of its own
+    if (fact.params != null) return null; // a schema's statement is not a ground formula
+
+    const source = ctx.files.get(@intFromEnum(fid)).source;
+    var scratch: term.Pool = .init(arena, ctx.gpa);
+    var walk: Walk = Walk.init(arena, ctx.interner, source, ctx.sink);
+    var fresh: u32 = 0;
+    var e = Elab.init(arena, ctx.io, ctx, ctx.interner, &ctx.idents, &scratch, ctx.sink, source, &walk, ns, &fresh);
+
+    const stated = e.elaborateExpr(fact.formula) catch return null;
+    const wanted = e.elaborateExpr(obligation) catch return null;
+    if (scratch.alphaEq(stated.id, wanted.id)) return null;
+    return .{
+        .stated = print.render(arena, &scratch, ctx.interner, stated.id) catch return null,
+        .wanted = print.render(arena, &scratch, ctx.interner, wanted.id) catch return null,
+    };
 }
 
 fn collectUnusedAxioms(arena: std.mem.Allocator, ctx: *Context) ![]const ProjectResult.Axiom {
