@@ -105,12 +105,6 @@ pub const Parser = struct {
     /// working-directory check and for every literate `.md` (a document's prose drives its
     /// order), so the parser is unchanged outside a published-library check.
     library_structure: bool = false,
-    /// A definition block's `consistency:` list, one record per block, in declaration order.
-    /// One entry per unordered clause pair in canonical order; `null` means that pair is
-    /// discharged by `definition_consistency` rather than by a named theorem. Collected
-    /// here because the obligations are a LIBRARY-surface check (`--library`), not a
-    /// per-proof demand: a definition nothing cites still has to be sound in a library.
-    staged_consistency: std.ArrayList(StagedConsistency) = .empty,
     /// set by `checkHeaderStructure` at the first `theorem`/`lemma`/`model`
     past_header: bool = false,
 
@@ -256,13 +250,6 @@ pub const Parser = struct {
     }
 
     /// Report an error at the current token and begin recovery.
-    pub const StagedConsistency = struct {
-        /// the definition block's symbol, for the mangled obligation names and diagnostics
-        symbol: Token,
-        /// per canonical clause pair: the author's theorem, or null for `_`
-        entries: []const ?Token,
-    };
-
     fn fail(self: *Parser, comptime fmt: []const u8, args: anytype) ParseError {
         self.sink.add(self.file, self.tok.start, fmt, args) catch return error.OutOfMemory;
         return error.Recover;
@@ -495,8 +482,8 @@ pub const Parser = struct {
                     requires = try self.parseExpr();
                 }
                 // `func f(a: T) => U:` opens a DEFINITION BLOCK (see parseDefinitionClauses).
-                if (self.tok.tag == .colon) try self.parseDefinitionClauses(name, params);
-                return .{ .func = .{ .local = .{ .name = name, .params = params, .result = result, .requires = requires } } };
+                const fcons: ?ast.Consistency = if (self.tok.tag == .colon) try self.parseDefinitionClauses(name, params) else null;
+                return .{ .func = .{ .local = .{ .name = name, .params = params, .result = result, .requires = requires, .consistency = fcons } } };
             },
             .keyword_pred => {
                 _ = self.advance();
@@ -508,8 +495,8 @@ pub const Parser = struct {
                 const params = try self.parseParams(true);
                 // `pred p(x: T):` opens a DEFINITION BLOCK — the declaration carries the
                 // clauses that characterize it. Bare `pred p(x: T)` stays opaque.
-                if (self.tok.tag == .colon) try self.parseDefinitionClauses(name, params);
-                return .{ .pred = .{ .local = .{ .name = name, .params = params } } };
+                const pcons: ?ast.Consistency = if (self.tok.tag == .colon) try self.parseDefinitionClauses(name, params) else null;
+                return .{ .pred = .{ .local = .{ .name = name, .params = params, .consistency = pcons } } };
             },
             .keyword_fact => {
                 _ = self.advance();
@@ -720,7 +707,7 @@ pub const Parser = struct {
     /// formula becomes `guard -> clause`. Guards do NOT establish precedence — every clause
     /// states its own condition in full, because axioms have no order (see
     /// DEFINITION-KEYWORD-PLAN).
-    fn parseDefinitionClauses(self: *Parser, name: Token, params: []const ast.Binder) ParseError!void {
+    fn parseDefinitionClauses(self: *Parser, name: Token, params: []const ast.Binder) ParseError!?ast.Consistency {
         _ = try self.expect(.colon);
         var arm: usize = 0;
         while (true) {
@@ -748,7 +735,7 @@ pub const Parser = struct {
             return self.fail("expected ';' before the next clause or '.' to end the definition, got '{s}'", .{self.describe()});
         }
         _ = self.advance();
-        try self.parseWellformedness(name, arm);
+        return self.parseWellformedness(arm);
     }
 
     /// A definition block's WELL-FORMEDNESS declarations, after the clause list's `.`:
@@ -763,7 +750,8 @@ pub const Parser = struct {
     ///
     /// `consistency` is a plain identifier, not a keyword: nothing in the corpus uses the name,
     /// and a block attribute does not need to be reserved vocabulary.
-    fn parseWellformedness(self: *Parser, name: Token, arms: usize) ParseError!void {
+    fn parseWellformedness(self: *Parser, arms: usize) ParseError!?ast.Consistency {
+        var found: ?ast.Consistency = null;
         while (self.tok.tag == .identifier and std.mem.eql(u8, self.text(self.tok), "consistency")) {
             _ = self.advance();
             _ = try self.expect(.colon);
@@ -782,8 +770,10 @@ pub const Parser = struct {
             if (entries.items.len != want) {
                 return self.fail("`consistency:` needs one entry per clause pair — {d} clause(s) make {d} pair(s), got {d}", .{ arms, want, entries.items.len });
             }
-            try self.staged_consistency.append(self.arena, .{ .symbol = name, .entries = try entries.toOwnedSlice(self.arena) });
+            if (found != null) return self.fail("a definition block declares `consistency:` at most once", .{});
+            found = .{ .arms = arms, .entries = try entries.toOwnedSlice(self.arena) };
         }
+        return found;
     }
 
     /// Wrap one clause in `forall` over the declaration's params plus any extra free

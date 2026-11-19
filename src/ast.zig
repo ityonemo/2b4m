@@ -175,13 +175,48 @@ pub const Constant = union(enum) {
 };
 
 pub const Func = union(enum) {
-    local: struct { name: Token, params: []const Binder, result: Token, requires: ?*const Expr },
+    local: struct {
+        name: Token,
+        params: []const Binder,
+        result: Token,
+        requires: ?*const Expr,
+        /// A DEFINITION BLOCK's `consistency:` list, else null for a bare declaration or a
+        /// single-clause block (no pairs, nothing to declare). See `Consistency`.
+        consistency: ?Consistency = null,
+    },
     alias: Alias,
 };
 
 pub const Pred = union(enum) {
-    local: struct { name: Token, params: []const Binder },
+    local: struct { name: Token, params: []const Binder, consistency: ?Consistency = null },
     alias: Alias,
+};
+
+/// What a definition block declares about its clauses AGREEING where they overlap: one entry
+/// per unordered clause PAIR in canonical (lexicographic) order — `(0,1)`, `(0,2)`, …
+/// `(1,2)`, … A `null` entry is `_`: discharge that pair with `definition_consistency` rather
+/// than a named theorem.
+///
+/// `arms` is kept so a consumer can recompute the pairing without re-reading the clauses: the
+/// parser already validated `entries.len == arms*(arms-1)/2`, and the pair for position `p`
+/// is derived from `arms` alone.
+pub const Consistency = struct {
+    arms: usize,
+    entries: []const ?Token,
+
+    /// The clause pair at list position `p`, in the canonical order the parser enforces.
+    pub fn pairAt(self: Consistency, p: usize) struct { i: usize, j: usize } {
+        var n: usize = 0;
+        var i: usize = 0;
+        while (i < self.arms) : (i += 1) {
+            var j: usize = i + 1;
+            while (j < self.arms) : (j += 1) {
+                if (n == p) return .{ .i = i, .j = j };
+                n += 1;
+            }
+        }
+        unreachable; // p < entries.len == arms*(arms-1)/2, checked at parse
+    }
 };
 
 /// The stated proposition of an axiom/theorem/hole. `params` non-null ⇒ it is a SCHEMA (a
@@ -462,5 +497,30 @@ fn pushReversed(arena: std.mem.Allocator, stack: *std.ArrayList(DumpAct), acts: 
     while (i > 0) {
         i -= 1;
         try stack.append(arena, acts[i]);
+    }
+}
+
+test "Consistency.pairAt walks the canonical pair order" {
+    // The order the parser enforces and the entry positions mean: (0,1), (0,2), … (1,2), …
+    // Positional entries are only safe if this is exactly what a reader would count.
+    const three: Consistency = .{ .arms = 3, .entries = &.{ null, null, null } };
+    try std.testing.expectEqual(@as(usize, 0), three.pairAt(0).i);
+    try std.testing.expectEqual(@as(usize, 1), three.pairAt(0).j);
+    try std.testing.expectEqual(@as(usize, 0), three.pairAt(1).i);
+    try std.testing.expectEqual(@as(usize, 2), three.pairAt(1).j);
+    try std.testing.expectEqual(@as(usize, 1), three.pairAt(2).i);
+    try std.testing.expectEqual(@as(usize, 2), three.pairAt(2).j);
+
+    // the 71-block common case: one pair, (0,1)
+    const two: Consistency = .{ .arms = 2, .entries = &.{null} };
+    try std.testing.expectEqual(@as(usize, 0), two.pairAt(0).i);
+    try std.testing.expectEqual(@as(usize, 1), two.pairAt(0).j);
+
+    // four arms: six pairs, lexicographic throughout
+    const four: Consistency = .{ .arms = 4, .entries = &.{ null, null, null, null, null, null } };
+    const want = [_][2]usize{ .{ 0, 1 }, .{ 0, 2 }, .{ 0, 3 }, .{ 1, 2 }, .{ 1, 3 }, .{ 2, 3 } };
+    for (want, 0..) |w, p| {
+        try std.testing.expectEqual(w[0], four.pairAt(p).i);
+        try std.testing.expectEqual(w[1], four.pairAt(p).j);
     }
 }
