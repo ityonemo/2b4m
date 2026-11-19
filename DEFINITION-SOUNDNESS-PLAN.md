@@ -37,9 +37,18 @@ A single clause therefore needs NO consistency check but STILL needs well-founde
 ## THE OBLIGATION
 
 For a block with clauses `0..n`, one obligation per unordered pair, in lexicographic index
-order — `(0,1), (0,2), … (1,2), (1,3), … (2,3) …` — conjoined into ONE theorem:
+order — `(0,1), (0,2), … (1,2), (1,3), … (2,3) …`. Each is its OWN theorem:
 
     (cond_i and cond_j) -> rhs_i = rhs_j
+
+**PER-PAIR, not one conjunction** (user ruling 2026-11-19, superseding the earlier
+"conjunction of all pairs"). Two reasons, and the second is the one that matters:
+
+1. The statement stays short — n(n-1)/2 conjuncts become n(n-1)/2 separate statements, each
+   quantifying only the variables ITS pair mentions rather than the union over all pairs.
+2. **It makes PARTIAL application possible.** A conjunctive theorem forces the author to prove
+   every pair in one proof, so a single hard pair drags the trivial ones into hand-written
+   scaffolding — the opposite of what the tactic is for.
 
 **Conditions conjoined with `and`, one flat clause** (user ruling): not nested implications.
 That is the shape the author reads and the tactics handle.
@@ -144,6 +153,15 @@ oper gcd(a: Nat, b: Nat) => Nat:
 ```
 
 - **Required on multi-clause blocks** (user ruling), absent on single-clause ones.
+- **`consistency:` takes a LIST, one entry per pair in canonical order.** A NAME points that
+  pair at a theorem the author wrote; `_` says "discharge it with the tactic". So application
+  is PARTIAL per pair, and the pairs that need a real argument are pointed at specific
+  theorems (user requirement 2026-11-19):
+
+      consistency: swapOverlapAgrees, _, _
+
+  Every position is written out even when automatic, so a reader sees how many pairs exist
+  and a miscount is an error rather than a silent default.
 - The period also makes room for the second property without re-opening the syntax
   (`termination: <name>`), and improves the dropped-`;` diagnostic: today a missing semicolon
   reports "expected a declaration, got 'f'" at the orphaned clause instead of naming the
@@ -206,9 +224,19 @@ why the obligation is "overlaps AGREE", never "overlaps do not exist":
     apply(swap(u, v), x) = u when x = v;
     apply(swap(u, v), x) = x when x != u and x != v
 
-(0,1) overlaps exactly when `u = v`, and there both arms agree — obligation `v = u`, proved
-in 4 steps. (0,2) and (1,2) have self-contradictory conditions and are vacuous. A checker
-that REJECTED overlap rather than requiring agreement would wrongly reject `swap`.
+(0,1) overlaps exactly when `u = v`, and there both arms agree. (0,2) and (1,2) have
+self-contradictory conditions and are vacuous. A checker that REJECTED overlap rather than
+requiring agreement would wrongly reject `swap`.
+
+**It is also the worked example of PARTIAL application** — the reason `consistency:` is a list:
+
+    consistency: swapOverlapAgrees, _, _
+
+`swapOverlapAgrees` is `forall x, u, v: E; (x = u and x = v) -> v = u`, proved standalone and
+resting on NO axioms (the two hypotheses rewrite into the conclusion). It quantifies only
+`x, u, v` — its own variables — where a conjunctive form would quantify the union over all
+three pairs. The other two positions are `_`: the complementary-(in)equality route, also
+axiom-free.
 
 Note `size(a: Set) => Nat: hasSize(a, size(a)) when isFinite(a)` — a `when` on a SINGLE
 clause is a DOMAIN RESTRICTION, not a case split, and carries no obligation.
@@ -236,12 +264,22 @@ clause is a DOMAIN RESTRICTION, not a case split, and carries no obligation.
 
 ## SETTLED (user ruling 2026-11-18, confirming all three)
 
-- **Vacuous pairs are carried as conjuncts.** The named theorem is the conjunction of ALL
-  pairs; the checker never drops one because its conditions look contradictory. Simpler and
-  deterministic — and dropping would be the wrong instinct anyway, since EVERY ZERO/succ
-  obligation is vacuous in exactly that sense (its hypothesis is contradictory). What makes
-  them cheap is the shared schema, not elision. For `swap` the author proves all three
-  conjuncts, two of which are vacuous.
+- **TWO triviality routes, both of which `_` must cover.** Measured 2026-11-19, and they are
+  not the same mechanism:
+
+  | route | shape | discharge | axioms |
+  |---|---|---|---|
+  | constructor-disjoint | `k = ZERO and k = succ(n)` | instantiate the sort's vacuity schema | `succNotZero` |
+  | complementary (in)equality | `x = u and (x != u and …)` | `ex_falso` on the pair | **none** |
+
+  The second is `swap`'s two trivial pairs, and `tautology` CANNOT do it — it declines with a
+  countermodel, because it sees `x = u` and `x != u` as unrelated atoms. So the tactic needs
+  both routes; only the first is built today.
+
+- **Vacuous pairs are still EMITTED, never dropped.** Every pair gets a list position and an
+  obligation; the checker never elides one because its conditions look contradictory. Dropping
+  would be the wrong instinct anyway, since EVERY ZERO/succ obligation is vacuous in exactly
+  that sense. What makes them cheap is the tactic, not elision — which is what `_` spells.
 
 - **The shared schema is PER-SORT, supplied by the theory that declares the constructors.**
   `noNatIsZeroAndSucc` is about ℕ, so it lives in `std/peano.b4m` beside `succNotZero`, the
