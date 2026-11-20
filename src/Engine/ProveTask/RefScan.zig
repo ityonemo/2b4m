@@ -120,9 +120,21 @@ pub fn scanStep(self: *Scanner, step: *const ast.Step) Allocator.Error![]const R
                     // `using import(I) thm`: `I` (in c.schema) is an IMPORT ident; the cited
                     // theorem `thm` (c.refs[0]) resolves in I's namespace — emit it as a fact
                     // qualified by I (resolveRefs' `.fact` path follows the import → its file).
+                    //
+                    // `using import(I) definition(N) I.f` cites a definition CLAUSE across the
+                    // import, so the name must be MANGLED exactly as the `.definition` arm
+                    // above does it — the clause was published as `definition{f}{N}`, and the
+                    // bare symbol names a pred/func, not a fact. Without this the demand
+                    // resolved to the identifier and reported "names an identifier, not an
+                    // axiom/theorem", even though the parser accepts the syntax
+                    // (`definition(N)` gates on `isTheoryRule`, which includes `import`).
                     if (c.schema) |s| try self.add(.{ .ns = null, .name = s.name, .domain = .ident, .loc = s.start });
                     if (c.schema) |s| for (c.refs) |r| {
-                        try self.add(.{ .ns = s.name, .name = r.name, .domain = .fact, .loc = r.start });
+                        const name = if (c.definition_arm) |arm|
+                            self.interner.definitionClauseName(self.arena, self.interner.stringBytes(r.name), arm) catch return error.OutOfMemory
+                        else
+                            r.name;
+                        try self.add(.{ .ns = s.name, .name = name, .domain = .fact, .loc = r.start });
                     };
                 },
                 .accelerant => {

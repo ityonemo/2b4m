@@ -2395,11 +2395,22 @@ fn lowerImport(self: *Prove, c: ast.Step.Claim) Error!kernel.Justification {
         .import => |m| m.namespace,
         else => return self.fail(itok.start, "'{s}' is not an import", .{self.text(itok)}),
     };
+    // `definition(N)` cites a definition CLAUSE across the import: the parser published it
+    // under the mangled name `definition{f}{N}`, so re-mangle before resolving (the bare
+    // symbol names a pred/func). Deterministic in (symbol, arm), mirroring RefScan's read
+    // pass and the `[by definition(N) f]` same-file path.
+    var ftok = rtok;
+    if (c.definition_arm) |arm| {
+        // `tokName`, not `self.text`: a qualified token keeps the qualifier in its own field,
+        // so the SOURCE SPAN is `lib.p` while the name is the bare `p` the clause was mangled
+        // from. Using the span would build `definition{lib.p}{0}`, which matches nothing.
+        ftok.name = self.ctx.interner.definitionClauseName(self.ctx.arena, self.ctx.interner.stringBytes(tokName(rtok)), arm) catch return error.OutOfMemory;
+    }
     // the cited fact, resolved in I's namespace exactly as `[by cite I.thm]` resolves — the
     // TRANSFER redirect under a model (the read pass demanded the transferred copy in
     // `(model, I's file)`), the axiom overlay, the schema rejection, and the holes/axioms
     // bookkeeping (an axiom reached only through `import(I)` must still show in `--axioms`).
-    const fact = try self.resolveFactIn(rtok, imp_ns);
+    const fact = try self.resolveFactIn(ftok, imp_ns);
     // kind-agnostic like `by cite`: the kernel arm follows the RESOLVED fact's kind (an
     // imported axiom is as citable as an imported theorem).
     return .{ .cite_ref = .{ .stmt = fact, .loc = rtok.start } };

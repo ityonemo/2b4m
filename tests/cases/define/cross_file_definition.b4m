@@ -1,0 +1,31 @@
+// `[using import(I) definition(N) I.sym]` — citing a definition CLAUSE across an import.
+//
+// REGRESSION. This did not resolve: the parser accepted the syntax (`definition(N)` gates on
+// `isTheoryRule`, which includes `import`) but neither the read pass nor the process phase
+// MANGLED the name, so the demand resolved to the predicate rather than to its clause axiom
+// and reported "names an identifier, not an axiom/theorem".
+//
+// Two sites had to mangle, mirroring the same-file `[by definition(N) f]` path:
+//   - RefScan.zig's `.import` arm, which emitted c.refs[0] verbatim (its `.definition`
+//     sibling had always mangled);
+//   - Prove.zig's import-citation handler, before `resolveFactIn`.
+//
+// And the mangle must use the token's NAME, not its source span: a qualified token keeps the
+// qualifier in its own field, so the span is `lib.p` while the name is the bare `p` the
+// clause was published from. The span would build `definition{lib.p}{0}`, matching nothing.
+//
+// Found while formalizing a definition declared in a shared vocabulary file and consumed in
+// another — the multi-file shape that motivates having a definition in one place at all.
+theory lib <<< "cross_file_definition_lib.b4m"
+
+const a = lib.a
+pred p = lib.p
+
+intheory usesIt
+
+theorem usesIt: forall x: lib.T; p(x) iff x = a
+proof
+  @conclusion |
+    forall x: lib.T; p(x) iff x = a
+    [using import(lib) definition(0) lib.p]
+qed

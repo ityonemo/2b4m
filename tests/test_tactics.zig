@@ -90,6 +90,12 @@ pub fn addTests(
     ctx.okSilent(&.{ "check", "tests/cases/tactics/guard/simplify_generated_guard.b4m" });
     ctx.okSilent(&.{ "check", "tests/cases/tactics/guard/chain_generated_guard.b4m" });
 
+    // `[using import(I) definition(N) I.sym]` — a definition CLAUSE cited across an import.
+    // Regression: the parser accepted this but neither the read pass nor the process phase
+    // mangled the name to the clause's publication name, so it resolved to the predicate and
+    // reported "names an identifier, not an axiom/theorem".
+    ctx.okSilent(&.{ "check", "tests/cases/define/cross_file_definition.b4m" });
+
     // the shared definition-consistency schema (std/peano.b4m) discharges a REAL corpus
     // obligation: cpower splits on ZERO/succ, so its arms owe "where both conditions hold,
     // the results agree", and one `instantiation` of `zeroSuccSplitIsVacuous` closes it.
