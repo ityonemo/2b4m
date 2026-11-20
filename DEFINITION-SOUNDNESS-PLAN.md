@@ -320,7 +320,20 @@ clause is a DOMAIN RESTRICTION, not a case split, and carries no obligation.
    |---|---|
    | 9 | **a clause matching in MORE THAN ONE slot.** `csegmentOf(p, q, succ(j), c, succ(n))` matches slots 3 AND 5, so the obligation correctly carries three conditions — but the tactic's `peel` expects exactly two conjuncts. The synthesizer is right; the tactic is too narrow. |
    | 11 | **the `when`-variable sort limitation**, already recorded — and WIDER than thought: it hits the `monomial` family too, not only `swap`. |
-   | 2 | **the selector is unresolvable from the citing file** (`std/ring/polynomial.b4m`, `std/field/polynomial.b4m` reach ℕ without importing peano under that name). Those must name their theorem instead of writing `_`. |
+   | 2 | **the selector is unresolvable** — not a missing import: `std/ring/polynomial.b4m` and `std/field/polynomial.b4m` DO import peano, but spell their constructors UNQUALIFIED (`theCofactorIndex(i, j, ZERO)`), so there is no token qualifier to read and the step goes bare. |
+
+   **ACCEPTED FOR NOW (user, 2026-11-20): requiring a `peano` import is OK.** But it is a
+   NAMING COUPLING of exactly the kind `[[accelerator-naming-couplings]]` forbids, and the
+   canonical example in that memory is nearly identical — `ext` looked up its element sort by
+   the literal name `"Universe"`, broke when the sort was renamed, and was fixed by deriving
+   the sort STRUCTURALLY. Qualifier-sniffing works only when the author happens to write
+   `peano.succ`; an author who writes `ZERO`/`succ` bare, or imports peano under another name,
+   silently gets a bare step and an unresolvable schema.
+
+   **FOLLOW-UP, immediately after the emergency project (user ruling): require the bindings
+   for the "relevant number system" to be DECLARED EXPLICITLY** rather than sniffed. That
+   replaces the coupling with a stated binding, in the spirit of the rule — the override is the
+   language's own remapping, not a heuristic in the checker.
 
 6. **NEW — a QUERY that prints a block's `_` obligations** (user, 2026-11-20). The checker
    knows each obligation's exact statement; an author has no way to see it except by
