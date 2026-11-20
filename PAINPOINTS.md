@@ -131,12 +131,29 @@ std. What is proved is RSA-for-units, the case the chapter computes with.
 **The honest framing:** the group fact is the mathematics; the second case is an artifact of
 RSA being stated over all of ℤ_n rather than over U(n).
 
-## 8b. Matrices are OUT OF SCOPE, by ruling
+## 8b. Matrices are TEMPORARILY out of scope
 
 §7.1's last construction encrypts PAIRS of letters with an invertible 2×2 matrix over ℤ_26,
 and §9's `det : GL_2(R) -> R*` wants the same. There is no matrix theory in std and the user
-ruled matrices out of scope during Chapter 4, so both are recorded as prose. Listed here so
+deferred matrices during Chapter 4 — **deferred, not ruled out permanently** (user
+clarification 2026-11-20). Both aata sites are recorded as prose meanwhile. Listed here so
 the absence is not re-discovered as a gap.
+
+**The motivating consumer will probably not be aata.** Formalizing Masullo's GRH manuscript
+(`examples/music-of-primes/`) would need linear algebra at a different altitude: its 21 uses
+of "matrix" all mean the **matrix trace of a continuous operator with respect to a Schauder
+basis** — the trace of an infinite-dimensional operator as a convergent sum of diagonal
+entries — not finite arrays. It uses "basis"/"bases" 474 times and "vector space" 607, with
+Schauder bases (Def 4.1.1.1: a bi-orthogonal sequence in `E × E*` whose coefficient
+functionals are continuous) as the central object.
+
+So two distinct needs, and the cheap one does NOT subsume the hard one:
+  - aata: finite matrices over a ring, `det`, `GL_2` — small, self-contained.
+  - a manuscript-scale formalization: topological vector spaces, bi-orthogonal systems,
+    convergence of operator traces. That is Mathlib-scale and would want its own plan.
+
+Whichever is taken up first, do it because a consumer needs it, which is the standing rule
+for std additions.
 
 ## 9. The cube's motions need finite case work, not an induction
 
