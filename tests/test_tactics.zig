@@ -103,6 +103,12 @@ pub fn addTests(
     // itself (they are bound by the goal's own `forall`, out of scope at a bare step).
     ctx.okSilent(&.{ "check", "tests/cases/definition/consistency_tactic.b4m" });
 
+    // the SECOND triviality route: conditions holding a proposition and its own negation.
+    // A different mechanism from a constructor split — it rests on NO axioms (no schema to
+    // find, hence no `(theory)` selector), and `tautology` declines on it with a
+    // countermodel. This is `swap`'s two trivial pairs.
+    ctx.okSilent(&.{ "check", "tests/cases/definition/consistency_complementary.b4m" });
+
     // THE soundness property: the tactic proves nothing itself, so it cannot be unsound.
     // Conditions that CAN both hold do not match the vacuity schema's shape, so the kernel's
     // statement match rejects them — here with a FALSE consequent, which must not go through.
@@ -122,7 +128,7 @@ pub fn addTests(
 
     ctx.fail(&.{ "check", "--library", "tests/cases/definition/library-consistency" }, "error: 1 definition block(s) with an unsettled `consistency:` declaration:\n  - f  (tests/cases/definition/library-consistency/bad.b4m:16) — 'noSuchTheorem' names no fact in this file (declared for clauses 0 and 1)\n");
 
-    ctx.fail(&.{ "check", "tests/cases/definition/consistency_arity_bad.b4m" }, "tests/cases/definition/consistency_arity_bad.b4m:9:12: error: definition_consistency expects a goal of the form `forall …; (k = <base> and k = <step>(n)) -> <arm> = <arm>`; this goal has fewer than two quantifiers\n");
+    ctx.fail(&.{ "check", "tests/cases/definition/consistency_arity_bad.b4m" }, "tests/cases/definition/consistency_arity_bad.b4m:9:12: error: definition_consistency expects either a constructor split (`forall …; (k = <base> and k = <step>(n)) -> …`) or conditions containing a proposition and its negation; this goal is neither\n");
 
     // a schema instantiated at a lambda CAPTURING an enclosing `fix b`: the schema's own
     // accelerant steps then run over a body mentioning a free `b` belonging to the

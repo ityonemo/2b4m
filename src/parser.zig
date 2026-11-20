@@ -56,6 +56,20 @@ fn rhsOf(e: *const ast.Expr) ?*const ast.Expr {
     };
 }
 
+/// The LEFT-hand side of a clause's defining relation, descending a leading `->` the same way
+/// `rhsOf` does. This is the clause's defining APPLICATION, which pins each clause variable's
+/// sort by argument position.
+fn lhsOf(e: *const ast.Expr) ?*const ast.Expr {
+    return switch (e.*) {
+        .binary => |b| switch (b.op) {
+            .equal, .iff => b.lhs,
+            .implies => lhsOf(b.rhs),
+            else => null,
+        },
+        else => null,
+    };
+}
+
 /// A clause's guard written as a leading `->` ANTECEDENT, else null. The `when` form and this
 /// one mean the same thing (the parser desugars `when` to exactly this), so a consistency
 /// obligation must read both.
@@ -337,10 +351,22 @@ pub const Parser = struct {
         try self.conditionOf(name, params, ci, &binders, &conds);
         try self.conditionOf(name, params, cj, &binders, &conds);
 
-        // the two arms' right-hand sides, equated
-        const lhs = rhsOf(ci.body) orelse return self.fail("a definition clause must be an equation (or `iff` for a predicate) for its consistency obligation to be stated", .{});
-        const rhs = rhsOf(cj.body) orelse return self.fail("a definition clause must be an equation (or `iff` for a predicate) for its consistency obligation to be stated", .{});
-        var body = try self.binary(.equal, name, lhs, rhs);
+        // The two arms' right-hand sides, equated — the agreed shape
+        // `(conditions) -> rhs_i = rhs_j`.
+        //
+        // KNOWN LIMITATION, `when`-guarded blocks only: a clause VARIABLE that appears
+        // nowhere but the guard and the dropped defining application has no sort the
+        // ELABORATOR can infer, because its rule is argument-position only — `x = u` does not
+        // pin `x` from `u: E` even though equality determines it. `swap` is the one such block
+        // in std, and its obligation elaborates only once a named entry is compared. Fixing it
+        // means teaching the elaborator to infer across equality, which is a separate change;
+        // anchoring the clause's lhs as an extra conjunct also works but changes this shape and
+        // breaks the tactic's two-conjunct recognition, so it is not the right trade.
+        const li = lhsOf(ci.body) orelse return self.fail("a definition clause must be an equation (or `iff` for a predicate) for its consistency obligation to be stated", .{});
+        const ri = rhsOf(ci.body).?;
+        const rj = rhsOf(cj.body) orelse return self.fail("a definition clause must be an equation (or `iff` for a predicate) for its consistency obligation to be stated", .{});
+        _ = li;
+        var body = try self.binary(.equal, name, ri, rj);
 
         // conditions, left to right, conjoined into ONE flat antecedent (user ruling)
         if (conds.items.len > 0) {
@@ -371,10 +397,22 @@ pub const Parser = struct {
     /// A clause that writes the bare parameter in every slot and carries no guard contributes
     /// NO condition — it applies everywhere, which is exactly why overlapping it is a hazard.
     fn conditionOf(self: *Parser, name: Token, params: []const ast.Binder, c: Clause, binders: *std.ArrayList(ast.Binder), conds: *std.ArrayList(*const ast.Expr)) ParseError!void {
-        // the clause's own variables come first, as stageDefinitionAxiom orders them
+        // The clause's own variables come first, as stageDefinitionAxiom orders them — but a
+        // DECLARED PARAM takes its declared sort, not `inferred`. The clause axiom can leave a
+        // param inferred because it keeps the defining application (`at(sw(u, v), x)`), which
+        // pins each sort by argument position; the obligation drops that application and keeps
+        // only the two right-hand sides, so an inferred param there has nothing to pin it
+        // ("cannot infer the sort of 'u'").
         var mentioned: std.ArrayList(ast.Binder) = .empty;
         try self.collectClauseVars(c.body, &mentioned);
-        for (mentioned.items) |m| try addBinder(self.arena, binders, m);
+        for (mentioned.items) |m| {
+            var b = m;
+            for (params) |prm| if (prm.name.name == m.name.name) {
+                b = prm;
+                break;
+            };
+            try addBinder(self.arena, binders, b);
+        }
 
         if (c.guard orelse antecedentOf(c.body)) |g| {
             try conds.append(self.arena, g);

@@ -67,7 +67,17 @@ pub fn certify(self: @This(), site: *Site, w: *const Walk, e: *Elab, goal: TermI
 
 /// The obligation's shape, peeled from the goal: the binders to `fix`, the two
 /// constructor-split variables, and the consequent the two arms claim.
+/// WHICH triviality makes the obligation vacuous. The two are different mechanisms, not one:
+/// a constructor split needs the sort's disequality (via its vacuity schema), while a
+/// complementary pair is pure propositional contradiction and rests on NO axioms.
+const Route = enum { constructor_split, complementary };
+
 const Peeled = struct {
+    route: Route = .constructor_split,
+    /// `.complementary` only: the contradictory pair found in the conditions — a proposition
+    /// and its own negation, as TERMS (not binders).
+    pos: TermId = undefined,
+    neg: TermId = undefined,
     /// the non-matched binders (fixed, then generalized back) — `a` in cpower's obligation
     outer: []const term.Node.Fvar,
     /// the matched-position variable `k` and the predecessor `n`, in schema order
@@ -88,6 +98,8 @@ pub fn produce(site: *Site, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step.
     const p = try peel(site, goal, c);
 
     var b: Accelerants.Builder = .{ .arena = site.ctx.arena, .interner = site.ctx.interner, .pool = site.pool, .loc = c.rule.start };
+
+    if (p.route == .complementary) return produceComplementary(site, &b, p, goal, c);
 
     // `fun <k>, <n>: Nat => <consequent>` — the predicate the schema is instantiated at. BOTH
     // binders are needed: a recursive step arm always mentions the predecessor, so a
@@ -151,14 +163,7 @@ fn peel(site: *Site, goal: TermId, c: ast.Step.Claim) Error!Peeled {
         cur = try site.pool.open(node.quant.body, try site.pool.add(.{ .fvar = fv }));
         try peeled.append(site.ctx.arena, fv);
     }
-    if (peeled.items.len < 2) {
-        return site.fail(c.rule.start, "definition_consistency expects a goal of the form `forall …; (k = <base> and k = <step>(n)) -> <arm> = <arm>`; this goal has fewer than two quantifiers", .{});
-    }
-    const n = peeled.items[peeled.items.len - 1];
-    const k = peeled.items[peeled.items.len - 2];
-    try outer.appendSlice(site.ctx.arena, peeled.items[0 .. peeled.items.len - 2]);
-
-    // the body must be `(… and …) -> …`
+    // the body must be `(… and …) -> …` either way
     const imp = site.pool.get(cur);
     if (imp != .bin or imp.bin.op != .implies) {
         return site.fail(c.rule.start, "definition_consistency: the obligation's body must be an implication `(conditions) -> <arm> = <arm>`", .{});
@@ -167,7 +172,131 @@ fn peel(site: *Site, goal: TermId, c: ast.Step.Claim) Error!Peeled {
     if (conj != .bin or conj.bin.op != .and_op) {
         return site.fail(c.rule.start, "definition_consistency: the obligation's conditions must be conjoined with `and`", .{});
     }
+
+    // ROUTE 2 first, because it needs no particular binders: somewhere in the conditions sits
+    // a proposition and its own negation, so the antecedent is unsatisfiable by propositional
+    // logic alone and the consequent follows by ex_falso. This is `swap`'s two trivial pairs.
+    if (findComplementary(site, imp.bin.lhs)) |pairs| {
+        try outer.appendSlice(site.ctx.arena, peeled.items);
+        return .{
+            .route = .complementary,
+            .outer = outer.items,
+            .k = undefined,
+            .n = undefined,
+            .pos = pairs.pos,
+            .neg = pairs.neg,
+            .cond = imp.bin.lhs,
+            .consequent = imp.bin.rhs,
+        };
+    }
+
+    // ROUTE 1: a constructor split, whose last two binders are the schema's `k` and `n`.
+    if (peeled.items.len < 2) {
+        return site.fail(c.rule.start, "definition_consistency expects either a constructor split (`forall …; (k = <base> and k = <step>(n)) -> …`) or conditions containing a proposition and its negation; this goal is neither", .{});
+    }
+    const n = peeled.items[peeled.items.len - 1];
+    const k = peeled.items[peeled.items.len - 2];
+    try outer.appendSlice(site.ctx.arena, peeled.items[0 .. peeled.items.len - 2]);
     return .{ .outer = outer.items, .k = k, .n = n, .cond = imp.bin.lhs, .consequent = imp.bin.rhs };
+}
+
+/// ROUTE 2's certificate: the conditions contain a proposition and its own negation, so
+/// `assume` them, extract both conjuncts, and `ex_falso` to the consequent. Pure propositional
+/// contradiction — NO schema and NO axioms, unlike the constructor route which needs the
+/// sort's disequality. (`tautology` cannot do this: it sees `x = u` and `not (x = u)` as
+/// unrelated atoms and declines with a countermodel.)
+fn produceComplementary(site: *Site, b: *Accelerants.Builder, p: Peeled, goal: TermId, c: ast.Step.Claim) Error!?Accelerants.Synthetic {
+    const impl = try site.pool.add(.{ .bin = .{ .op = .implies, .lhs = p.cond, .rhs = p.consequent } });
+
+    // inside the assume: restate the hypothesis, project out the two conjuncts, ex_falso.
+    const hyp_label = try site.freshNamed("consistency-given");
+    var body: std.ArrayList(ast.Step) = .empty;
+    const both = try site.freshNamed("consistency-both");
+    try body.append(site.ctx.arena, try b.claimStep(both, try b.termExpr(p.cond), .by, try common.internStrRt(site, "hypothesis"), &.{}, try b.oneRef(hyp_label)));
+    const pos = try projectConjunct(site, b, &body, p.cond, both, p.pos);
+    const neg = try projectConjunct(site, b, &body, p.cond, both, p.neg);
+    const refs = try site.ctx.arena.alloc(lexer.Token, 2);
+    refs[0] = b.tok(pos);
+    refs[1] = b.tok(neg);
+    try body.append(site.ctx.arena, try b.claimStep(try site.freshNamed("consistency-absurd"), try b.termExpr(p.consequent), .by, try common.internStrRt(site, "ex_falso"), &.{}, refs));
+
+    var outer_steps: std.ArrayList(ast.Step) = .empty;
+    try outer_steps.append(site.ctx.arena, try b.assumeTerm(hyp_label, p.cond, body.items));
+    const disch = try site.freshNamed("consistency-discharge");
+    try outer_steps.append(site.ctx.arena, try b.claimStep(disch, try b.termExpr(impl), .by, try common.internStrRt(site, "discharge"), &.{}, try b.oneRef(hyp_label)));
+
+    const steps = try common.wrapSimplifyForall(site, b, p.outer, impl, outer_steps.items);
+    const name = try syntheticName(site, c);
+    return .{
+        .name = name,
+        .decl = .{ .theorem = .{ .local = .{
+            .fact = .{ .name = b.tok(name), .formula = try b.termExpr(goal), .params = &.{} },
+            .steps = steps,
+        } } },
+        .args = &.{},
+        .premises = &.{},
+        .seen = b.seen.items,
+        .assumed = b.assumed.items,
+        .fvar_binds = &.{},
+    };
+}
+
+/// Emit the `and_lhs`/`and_rhs` chain that projects `want` out of the conjunction `cond`
+/// (proved by step `from`), returning the label of the step that holds it. The conjunction may
+/// be nested either way round, so the path is walked rather than assumed.
+fn projectConjunct(site: *Site, b: *Accelerants.Builder, out: *std.ArrayList(ast.Step), cond: TermId, from: StrId, want: TermId) Error!StrId {
+    var cur = cond;
+    var cur_label = from;
+    while (!site.pool.alphaEq(cur, want)) {
+        const node = site.pool.get(cur);
+        if (node != .bin or node.bin.op != .and_op) return site.fail(b.loc, "internal: the contradictory conjunct is not reachable in the conditions", .{});
+        const take_left = containsConjunct(site, node.bin.lhs, want);
+        const next = if (take_left) node.bin.lhs else node.bin.rhs;
+        const rule = if (take_left) "and_lhs" else "and_rhs";
+        const label = try site.freshNamed("consistency-part");
+        try out.append(site.ctx.arena, try b.claimStep(label, try b.termExpr(next), .by, try common.internStrRt(site, rule), &.{}, try b.oneRef(cur_label)));
+        cur = next;
+        cur_label = label;
+    }
+    return cur_label;
+}
+
+/// Is `want` one of the conjuncts of `t` (at any depth)?
+fn containsConjunct(site: *Site, t: TermId, want: TermId) bool {
+    if (site.pool.alphaEq(t, want)) return true;
+    const node = site.pool.get(t);
+    if (node != .bin or node.bin.op != .and_op) return false;
+    return containsConjunct(site, node.bin.lhs, want) or containsConjunct(site, node.bin.rhs, want);
+}
+
+/// A proposition and its own negation among the conjoined conditions, or null.
+///
+/// Flattens the `and` tree (association is not canonical — `a and (b and c)` and
+/// `(a and b) and c` are both written in the corpus) and looks for a conjunct whose negation
+/// is also a conjunct. `x = u` beside `not (x = u)` is the `swap` case; this is strictly
+/// propositional, so it needs no axiom and no schema.
+fn findComplementary(site: *Site, cond: TermId) ?struct { pos: TermId, neg: TermId } {
+    var flat: std.ArrayList(TermId) = .empty;
+    flatten(site, cond, &flat) catch return null;
+    for (flat.items) |a| {
+        const na = site.pool.get(a);
+        if (na != .not) continue;
+        for (flat.items) |b| {
+            if (site.pool.alphaEq(na.not, b)) return .{ .pos = b, .neg = a };
+        }
+    }
+    return null;
+}
+
+/// The conjuncts of a (possibly nested) `and` tree, in left-to-right order.
+fn flatten(site: *Site, t: TermId, out: *std.ArrayList(TermId)) Allocator.Error!void {
+    const node = site.pool.get(t);
+    if (node == .bin and node.bin.op == .and_op) {
+        try flatten(site, node.bin.lhs, out);
+        try flatten(site, node.bin.rhs, out);
+        return;
+    }
+    try out.append(site.ctx.arena, t);
 }
 
 /// `fun <k>, <n>: S => <consequent>` — the two-argument predicate the schema takes.

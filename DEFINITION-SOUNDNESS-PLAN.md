@@ -320,8 +320,15 @@ clause is a DOMAIN RESTRICTION, not a case split, and carries no obligation.
   | complementary (in)equality | `x = u and (x != u and …)` | `ex_falso` on the pair | **none** |
 
   The second is `swap`'s two trivial pairs, and `tautology` CANNOT do it — it declines with a
-  countermodel, because it sees `x = u` and `x != u` as unrelated atoms. So the tactic needs
-  both routes; only the first is built today.
+  countermodel, because it sees `x = u` and `x != u` as unrelated atoms.
+
+  **BOTH ROUTES BUILT.** `peel` classifies, trying the complementary route FIRST because it
+  needs no particular binders: `findComplementary` flattens the `and` tree (association is not
+  canonical in the corpus) and looks for a conjunct whose negation is also a conjunct. Its
+  certificate assumes the conditions, walks the nested conjunction with `and_lhs`/`and_rhs`
+  (the path is searched, not assumed), and finishes with `ex_falso` — no schema, no selector,
+  and verified to rest on NO axioms. Both of `swap`'s trivial pairs discharge, so
+  `consistency: swapOverlapAgrees, _, _` is now serviceable.
 
 - **Vacuous pairs are still EMITTED, never dropped.** Every pair gets a list position and an
   obligation; the checker never elides one because its conditions look contradictory. Dropping
@@ -360,6 +367,19 @@ clause is a DOMAIN RESTRICTION, not a case split, and carries no obligation.
 - **`--draft` suspends the requirement**, like every other author-hygiene check (`intheory`
   required, lemmas cited, the `--library` header rule). `verify.draft` is the single coarse
   work-in-progress bit these consult.
+
+## KNOWN LIMITATION — a `when`-clause variable's sort
+
+A clause variable appearing ONLY in the guard and the dropped defining application has no sort
+the elaborator can infer: its rule is argument-position only, so `x = u` does not pin `x` from
+`u: E` even though equality determines it. `swap` is the one such block in `std`, and its
+obligation elaborates only when a named entry is compared — so nothing fails today, and the
+statement can be written with sorts spelled out.
+
+Two fixes, neither taken: teach the elaborator to infer across equality (a separate change,
+corpus-wide risk), or anchor the clause's own left-hand side as an extra conjunct — which
+works, and WAS tried, but changes the agreed `(conditions) -> rhs_i = rhs_j` shape and breaks
+the tactic's two-conjunct recognition. Not the right trade.
 
 ## STILL OPEN
 
