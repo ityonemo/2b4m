@@ -131,13 +131,21 @@ std. What is proved is RSA-for-units, the case the chapter computes with.
 **The honest framing:** the group fact is the mathematics; the second case is an artifact of
 RSA being stated over all of ℤ_n rather than over U(n).
 
-## 8b. Matrices are TEMPORARILY out of scope
+## 8b. Matrices are deferred PENDING A GOOD DESIGN
 
 §7.1's last construction encrypts PAIRS of letters with an invertible 2×2 matrix over ℤ_26,
 and §9's `det : GL_2(R) -> R*` wants the same. There is no matrix theory in std and the user
-deferred matrices during Chapter 4 — **deferred, not ruled out permanently** (user
-clarification 2026-11-20). Both aata sites are recorded as prose meanwhile. Listed here so
-the absence is not re-discovered as a gap.
+deferred matrices during Chapter 4 — **deferred, not ruled out, and the blocker is that
+there is no GOOD DESIGN yet** (user, 2026-11-20). Both aata sites are recorded as prose
+meanwhile. Listed here so the absence is not re-discovered as a gap.
+
+That framing is the useful part: this is not waiting on a free afternoon, it is waiting on
+someone working out the right shape. And the shape is genuinely unobvious here — 2b4m has
+NO PARAMETERIZED SORTS (`[[sort-parameterization-via-model]]`), so `Matrix(n, m, R)` is not
+expressible the way it would be elsewhere. A fixed-size matrix sort per shape does not
+generalize; an indexed-family encoding runs into the same wall `ℤ_n` hit, which was settled
+by a fixed-const quotient sort plus a homomorphism rather than by indexing
+(`[[zn-via-models-spike]]`). Whatever design lands has to answer that first.
 
 **The motivating consumer will probably not be aata.** Formalizing Masullo's GRH manuscript
 (`examples/music-of-primes/`) would need linear algebra at a different altitude: its 21 uses
