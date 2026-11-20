@@ -140,12 +140,26 @@ there is no GOOD DESIGN yet** (user, 2026-11-20). Both aata sites are recorded a
 meanwhile. Listed here so the absence is not re-discovered as a gap.
 
 That framing is the useful part: this is not waiting on a free afternoon, it is waiting on
-someone working out the right shape. And the shape is genuinely unobvious here — 2b4m has
-NO PARAMETERIZED SORTS (`[[sort-parameterization-via-model]]`), so `Matrix(n, m, R)` is not
-expressible the way it would be elsewhere. A fixed-size matrix sort per shape does not
-generalize; an indexed-family encoding runs into the same wall `ℤ_n` hit, which was settled
-by a fixed-const quotient sort plus a homomorphism rather than by indexing
-(`[[zn-via-models-spike]]`). Whatever design lands has to answer that first.
+someone working out the right shape.
+
+**It is NOT blocked on a missing mechanism.** Parameterization is done THROUGH `model`
+(`[[sort-parameterization-via-model]]`, user ruling 2026-10-21: "models are already
+parametrized"), and both patterns a matrix theory needs already exist:
+  - a sort over a SORT is a model with the theory's axioms restated — `std/collection.b4m`
+    (`set.Element: Set`, `set.Set: Collection`) IS `Set(Set)`;
+  - a sort over a VALUE is `const n` + a reading `pred` + `sort … where …`, then a GUARDED
+    model runs any theory inside it (the balloon's test 3).
+
+So `Matrix(n, m, R)` is expressible: fix the dimensions as consts, refine a sort by a
+reading predicate, and let a guarded model carry the ring axioms into it. What is missing is
+the DESIGN — which of those two shapes matrix entries want, how `det`/`GL` are stated so one
+theory serves several dimensions, and whether the entries live in the one-universe
+`Element` style std already half-uses or in a many-sorted style. That is a modelling
+decision, not a kernel feature.
+
+The one genuinely new ground in that memory is a parameter that is a BOUND variable (no
+model targets a `fix`-block eigenvariable). A matrix theory over FIXED dimension consts does
+not need it; a theorem quantifying "for all n" over dimensions would.
 
 **The motivating consumer will probably not be aata.** Formalizing Masullo's GRH manuscript
 (`examples/music-of-primes/`) would need linear algebra at a different altitude: its 21 uses
