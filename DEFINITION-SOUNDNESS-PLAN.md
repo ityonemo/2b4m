@@ -418,9 +418,14 @@ the tactic's two-conjunct recognition. Not the right trade.
 
 ## STILL OPEN
 
-- **Well-foundedness** is NOT designed — the second, independent property. `g(n) = s(g(n))`
-  is detectable syntactically (same argument on both sides) and `rconvolution`'s decrease is
-  syntactic too, but the criterion and its syntax (`termination: <name>`, in the
-  well-formedness section the `.` opens) are unspecified. The arrow-guarded `monomial` family
-  and `swap` also still need their own shared schemas for CONSISTENCY; special-casing them is
-  approved.
+- **Well-foundedness — DEFERRED, not being touched (user, 2026-11-20).** The second,
+  independent property: whether a recursive clause has a fixpoint at all. `g(n) = s(g(n))`
+  is an inconsistent assertion rather than a definition, and nothing checks it — accepted,
+  and out of scope for this work. Consistency ships without it; the `.` terminator already
+  leaves `termination: <name>` room in the well-formedness section when it is taken up.
+
+  When it IS taken up: detection looks syntactic (that example has the same argument on both
+  sides; `rconvolution`'s decrease is a position-wise comparison), but the criterion itself is
+  unspecified — and unlike consistency it may want no named theorem at all, since a
+  decreasing-argument claim is a check the compiler performs rather than a formula anyone
+  proves. Worth deciding deliberately rather than assuming symmetry with `consistency:`.
