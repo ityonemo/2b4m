@@ -56,6 +56,52 @@ fn rhsOf(e: *const ast.Expr) ?*const ast.Expr {
     };
 }
 
+/// The namespace a clause's CONSTRUCTOR pattern is qualified by, if any — `peano.succ(n)`
+/// yields `peano`. That is the theory whose vacuity schema `definition_consistency` needs, and
+/// reading it off the token's qualifier is purely syntactic (the parser has no sorts).
+///
+/// Read from the matched ARGUMENTS only, never the right-hand side: a clause's RHS is full of
+/// unrelated qualifiers (`cpower(a, NAT_ZERO) = complex.ONE` would yield `complex`), and it is
+/// the pattern that names the constructors. Searched across every clause, since a split
+/// commonly writes one side unqualified through a local alias (`NAT_ZERO`) and the other
+/// qualified (`peano.succ`). Null when no pattern is qualified: the file owns its
+/// constructors, so local resolution is right.
+fn constructorTheory(clauses: []const Parser.Clause, sym: lexer.Token) ?lexer.Token {
+    for (clauses) |c| {
+        const app = findApplication(c.body, sym) orelse continue;
+        for (app.args) |arg| {
+            if (qualifierIn(arg)) |q| return q;
+        }
+    }
+    return null;
+}
+
+fn qualifierIn(e: *const ast.Expr) ?lexer.Token {
+    switch (e.*) {
+        .call => |c| {
+            if (c.callee.qualifier != InternPool.StrId.none) {
+                var t = c.callee;
+                t.name = c.callee.qualifier;
+                t.qualifier = InternPool.StrId.none;
+                return t;
+            }
+            for (c.args) |a| if (qualifierIn(a)) |q| return q;
+            return null;
+        },
+        .binary => |b| return qualifierIn(b.lhs) orelse qualifierIn(b.rhs),
+        .not => |n| return qualifierIn(n.operand),
+        .quant => |q| return qualifierIn(q.body),
+        .lambda => |l| return qualifierIn(l.body),
+        .name => |t| {
+            if (t.qualifier == InternPool.StrId.none) return null;
+            var out = t;
+            out.name = t.qualifier;
+            out.qualifier = InternPool.StrId.none;
+            return out;
+        },
+    }
+}
+
 /// The LEFT-hand side of a clause's defining relation, descending a leading `->` the same way
 /// `rhsOf` does. This is the clause's defining APPLICATION, which pins each clause variable's
 /// sort by argument position.
@@ -315,6 +361,63 @@ pub const Parser = struct {
     }
 
     /// Report an error at the current token and begin recovery.
+    /// Stage the theorem a `_` entry stands for: `definition-<symbol>-{i,j}`, stating that
+    /// pair's synthesized obligation, proved by one `definition_consistency` step.
+    ///
+    /// The name is the user's mangle (`InternPool.consistencyPairName`) — unreachable from
+    /// source two ways over (`{` is not an identifier character, and the kebab
+    /// `definition-<symbol>` half is rejected in a declaration-name position), and derived
+    /// from the symbol and pair indices rather than a counter, so it is stable across runs.
+    ///
+    /// The step's theory SELECTOR is read off the clause patterns: a constructor written
+    /// `peano.succ(n)` carries its namespace as a token QUALIFIER, which is exactly the
+    /// theory whose vacuity schema the tactic needs — and reading it is syntactic, so the
+    /// parser needs no sorts. With no qualified pattern (a file that owns its own
+    /// constructors, or the complementary route, which needs no schema at all) the step goes
+    /// bare and the names resolve locally.
+    fn stageConsistencyTheorem(self: *Parser, name: Token, obligation: *const ast.Expr, p: usize, arms: usize, selector: ?Token) ParseError!void {
+        const ip = self.interner orelse return; // fmt/lint/query parse without interning
+        const cons: ast.Consistency = .{ .arms = arms, .entries = &.{} };
+        const pair = cons.pairAt(p);
+        var mangled = name;
+        mangled.name = ip.consistencyPairName(self.arena, self.text(name), pair.i, pair.j) catch {
+            self.intern_oom = true;
+            return;
+        };
+        const rule = ip.internString("definition_consistency") catch {
+            self.intern_oom = true;
+            return;
+        };
+        var rule_tok = name;
+        rule_tok.name = rule;
+        const label = ip.internString("conclusion") catch {
+            self.intern_oom = true;
+            return;
+        };
+        var label_tok = name;
+        label_tok.name = label;
+        const steps = try self.arena.alloc(ast.Step, 1);
+        steps[0] = .{ .label = label_tok, .body = .{ .claim = .{
+            .formula = obligation,
+            .kind = .using,
+            .rule = rule_tok,
+            .schema = selector,
+            .args = &.{},
+            .refs = &.{},
+        } } };
+        try self.pending.append(self.arena, .{
+            .theorem = .{
+                .local = .{
+                    // EXPORTED, not a lemma: the uncited-lemma check would reject it (nothing cites
+                    // an obligation — discharging it IS its purpose), and the name is unwritable from
+                    // source anyway, so exporting it reaches nobody.
+                    .fact = .{ .name = mangled, .formula = obligation },
+                    .steps = steps,
+                },
+            },
+        });
+    }
+
     /// Synthesize one consistency obligation per unordered clause pair, in the canonical
     /// (lexicographic) order `ast.Consistency.pairAt` walks:
     ///
@@ -452,7 +555,7 @@ pub const Parser = struct {
     /// One parsed definition clause, kept so the PAIRS can be synthesized. `guard` is the
     /// `when` condition when written; the positional condition (a constructor pattern in an
     /// argument slot) is recovered from `body` instead.
-    const Clause = struct { body: *const ast.Expr, guard: ?*const ast.Expr };
+    pub const Clause = struct { body: *const ast.Expr, guard: ?*const ast.Expr };
 
     fn fail(self: *Parser, comptime fmt: []const u8, args: anytype) ParseError {
         self.sink.add(self.file, self.tok.start, fmt, args) catch return error.OutOfMemory;
@@ -983,7 +1086,18 @@ pub const Parser = struct {
             }
             if (found != null) return self.fail("a definition block declares `consistency:` at most once", .{});
             const list = try entries.toOwnedSlice(self.arena);
-            found = .{ .arms = arms, .entries = list, .obligations = try self.synthesizeObligations(name, params, clauses) };
+            const obligations = try self.synthesizeObligations(name, params, clauses);
+            // A `_` entry has no theorem of the author's, so STAGE one: named by the pair's
+            // mangle, stating the synthesized obligation, proved by the one tactic step. That
+            // makes the entry real — `ParseTask` racks a ProveTask for any staged theorem with
+            // no params, so the obligation is actually DISCHARGED rather than just declared.
+            // A NAMED entry stages nothing; its own theorem is checked against the obligation.
+            for (list, 0..) |entry, p| {
+                if (entry != null) continue;
+                if (p >= obligations.len) break;
+                try self.stageConsistencyTheorem(name, obligations[p], p, arms, constructorTheory(clauses, name));
+            }
+            found = .{ .arms = arms, .entries = list, .obligations = obligations };
         }
         return found;
     }

@@ -306,7 +306,29 @@ clause is a DOMAIN RESTRICTION, not a case split, and carries no obligation.
    A statement that matches but whose SORT has no vacuity schema fails at the tactic
    (`expected sort 'Nat', got 'N'`), which is the per-sort rule behaving correctly rather than
    a gap: that sort's own theory would supply its schema.
-5. Flip to required. The corpus must never pass through a state where blocks owe unwritten
+5. **BLOCKED on three gaps, measured 2026-11-20.** Staging works — a `_` entry now mints a
+   real theorem (`definition-<sym>-{i,j}`, exported, manifest-exempt, proved by the one tactic
+   step) and `ParseTask` racks a ProveTask for it, so the obligation is DISCHARGED rather than
+   merely declared. The theory selector is read off the clause pattern's token QUALIFIER
+   (`peano.succ` ⇒ `peano`), which is syntactic and needs no sorts — it must come from the
+   matched ARGUMENTS, never the RHS, or `cpower(a, NAT_ZERO) = complex.ONE` yields `complex`.
+
+   Declaring all 72 and running `--library`: **50 discharge with a bare `_`.** The other 22
+   are three real gaps, not switch-flipping:
+
+   | n | gap |
+   |---|---|
+   | 9 | **a clause matching in MORE THAN ONE slot.** `csegmentOf(p, q, succ(j), c, succ(n))` matches slots 3 AND 5, so the obligation correctly carries three conditions — but the tactic's `peel` expects exactly two conjuncts. The synthesizer is right; the tactic is too narrow. |
+   | 11 | **the `when`-variable sort limitation**, already recorded — and WIDER than thought: it hits the `monomial` family too, not only `swap`. |
+   | 2 | **the selector is unresolvable from the citing file** (`std/ring/polynomial.b4m`, `std/field/polynomial.b4m` reach ℕ without importing peano under that name). Those must name their theorem instead of writing `_`. |
+
+6. **NEW — a QUERY that prints a block's `_` obligations** (user, 2026-11-20). The checker
+   knows each obligation's exact statement; an author has no way to see it except by
+   deliberately mis-declaring and reading the `wanted:` line. A `2b4m query consistency
+   <file> [symbol]` printing them, pasteable, is what makes the hard pairs writable — the
+   same role `debug model` plays for a model's obligations.
+
+7. Flip to required. The corpus must never pass through a state where blocks owe unwritten
    proofs.
 
 ## SETTLED (user ruling 2026-11-18, confirming all three)

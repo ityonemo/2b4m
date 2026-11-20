@@ -267,6 +267,11 @@ pub fn run(self: *Context, task: *ParseTask, h: *Engine.Handle) std.mem.Allocato
             if (decl != .theorem or decl.theorem != .local) continue;
             if (!decl.theorem.local.fact.exported) continue; // a lemma announces nothing
             const name = decl.theorem.local.fact.name;
+            // A SYNTHESIZED consistency obligation (`definition-<sym>-{i,j}`, staged for a `_`
+            // entry) announces nothing either: the manifest is a table of contents for what the
+            // author PUBLISHES, and this name is unwritable from source — nobody can add the
+            // entry, and nobody can cite it. Same exemption the mangled definition clauses get.
+            if (InternPool.consistencyPairParts(self.interner.stringBytes(name.name)) != null) continue;
             const declared = for (self.parsed.get(idx).decls) |d| {
                 if (d == .forward and d.forward.name.name == name.name) break true;
             } else false;
