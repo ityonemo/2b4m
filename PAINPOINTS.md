@@ -314,6 +314,34 @@ Building that graph is the design question to answer first.
 The accurate narrow claim, worth keeping: **a syntactic check can tell you a name was
 MENTIONED; only resolution can tell you it RESOLVES.**
 
+## 16d. `specialize` cannot cite a DEFINITION BLOCK's clause
+
+`[using specialize somePred(args) hyps]` fails when `somePred` is declared by a definition
+block rather than by a `pred` + named `axiom`:
+
+    standard/analysis.b4m:108:6: error: 'partitionsTheDomain' has no stated formula
+                                        (an alias or a non-fact)
+
+`specialize` reads its head's STATEMENT (`Context.elaborateFactStatement`), and a definition
+clause is not a stated fact — `ast.factOf` returns null for it. The diagnostic's "an alias
+or a non-fact" is accurate but points at the wrong suspect: a `fact` alias resolves fine
+(`factOrigin` chases the chain, including a qualified `ns.y` hop), so in practice this error
+means A DEFINITION BLOCK, not an alias.
+
+Workaround: keep the `cite`/`apply_at`/`modus_ponens` tower, or cite the clause directly with
+`[by definition(0) p]` / `[using import(I) definition(0) I.p]` and `apply_at` that. Four such
+towers in `examples/music-of-primes/trace-formula/trace-formula.b4m` could not be collapsed
+for this reason, where seven citing holes and theorems collapsed to one `specialize` each.
+
+Repro: a definition-block pred aliased across a file boundary, then `specialize`d —
+`[using specialize partitionsTheDomain(L) given]` against `std`-style
+`pred p(x: T): p(x) iff q(x)`.
+
+Whether this is worth fixing is a design call: a one-clause `iff` definition has an obvious
+statement to hand `specialize`, but a multi-clause `oper` definition does not, so the fix
+would have to be clause-indexed (`specialize p.0(args)`) or restricted to the single-clause
+case. Deferred, not diagnosed as a bug.
+
 ## 17. `2b4m check tests/cases` is a runaway
 
 The whole fixture directory as one sweep: pathological fixtures, 6.8 GB RSS, >8 min. Use
