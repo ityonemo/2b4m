@@ -342,6 +342,40 @@ statement to hand `specialize`, but a multi-clause `oper` definition does not, s
 would have to be clause-indexed (`specialize p.0(args)`) or restricted to the single-clause
 case. Deferred, not diagnosed as a bug.
 
+## 16e. No way to mark an `axiom` as a DEFINITION, so `--axioms` mislabels it
+
+A definition BLOCK is reported by `--axioms` as `— DEFINITION`, set apart from genuine
+assumptions. The long form — `pred p(...)` plus a separately-named `axiom` — is reported as a
+plain axiom, even when the axiom's content is purely definitional (it says what `p` MEANS and
+constrains nothing that existed before).
+
+That is usually a style question, but it becomes a correctness question whenever the axiom
+list is the deliverable. Measured instance (`examples/music-of-primes`, 2026-11-20): two
+definitional axioms sat in a 54-entry `--axioms` report beside 37 cited holes, and the
+published assumption count was wrong until an audit of the report caught them. The artifact's
+whole purpose was an honest accounting of what a proof rests on.
+
+Not a contrived case either — the long form was FORCED. A definition block cannot infer a
+bound variable's sort under a quantifier (entry 16), so any definitional `iff` whose body
+quantifies has to be written long:
+
+    pred noZerosRightOfTheCriticalLine()
+    axiom noZerosRightMeansNoZeroIsRight:
+      noZerosRightOfTheCriticalLine() iff
+      (forall r: Zero; isNonTrivialZero(r) -> (not rightOfTheCriticalLine(r)))
+
+So the two painpoints compose: 16 pushes you out of the definition block, and this one then
+mislabels what you wrote.
+
+Wanted: a way to say "this axiom is definitional" and have `--axioms` report it as a
+DEFINITION. Shape undecided — a `definition` keyword in place of `axiom`, a modifier, or
+simply fixing entry 16 so the block form accepts quantified bodies (which would dissolve this
+entry rather than solve it, and may be the better fix).
+
+DEFERRED by user 2026-11-20 — recorded, not scheduled. Current workaround is a comment at the
+declaration telling the reader to count it with the definitions, which is exactly the kind of
+thing a comment should not have to carry.
+
 ## 17. `2b4m check tests/cases` is a runaway
 
 The whole fixture directory as one sweep: pathological fixtures, 6.8 GB RSS, >8 min. Use
