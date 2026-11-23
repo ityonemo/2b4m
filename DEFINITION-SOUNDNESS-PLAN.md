@@ -528,6 +528,43 @@ The tactic form `[using definition_consistency(peano)]` stays — it is how a ha
 consistency theorem names the schema — but a `_` entry's staged theorem should take its
 selector from the DECLARATION rather than from a sniffed qualifier.
 
+### The two selectors are NOT the same kind of thing
+
+| | names the theory of | range |
+|---|---|---|
+| `consistency(…)` | whatever sort is being CASE-SPLIT | genuinely open |
+| `termination(…)` | the sort the recursion is STRUCTURAL over | ℕ in practice |
+
+**`consistency(…)` is open because the split sort need not be the value sort.** All five
+existing tactic uses say `peano`, and the reason is instructive rather than limiting —
+`cpower` is a COMPLEX-valued function recursing on a `Nat` index:
+
+```2b4m
+forall a: complex.Complex; forall k, n: peano.Nat;
+  (k = peano.ZERO and k = peano.succ(n)) -> complex.ONE = complex.mul(a, cpoly.cpower(a, n))
+  [using definition_consistency(peano)]
+```
+
+The selector is `peano` because the split variable `k` is a `Nat`, not because the function is
+about naturals. A definition case-splitting on some other sort's constructors would name that
+sort's theory — `consistency(complex)` or `consistency(reals)` are the shapes to expect, and
+nothing confines the selector to ℕ.
+
+**`termination(…)` is narrower, and for a structural reason.** Recursion needs an INDUCTIVELY
+GENERATED sort — one with constructors and an induction principle. ℕ is the only such sort in
+the corpus: ℝ and ℂ are not inductive, so nothing can recurse structurally over them. So
+`termination(peano)` is what every case will say today.
+
+Two consequences:
+
+- **Do not over-engineer `termination`'s selector resolution.** It will resolve to `peano`'s
+  induction and coverage facts; a general per-sort registry is speculative until a second
+  inductive sort exists.
+- **But it must still be WRITTEN, not assumed.** The theory IS aliased in the corpus today:
+  of 78 imports of `std/peano.b4m`, 76 say `peano` and **two say `ordering`**. Hardcoding the
+  name would break those two, and would be the same naming coupling the selector exists to fix.
+  (`grep -rhoE '^theory [a-z_]+ <<< "std/peano\.b4m"'` to re-measure.)
+
 ### What `termination(peano)` must resolve to
 
 Two per-sort facts, and only the first exists today:
