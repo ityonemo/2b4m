@@ -574,11 +574,21 @@ Two per-sort facts, and only the first exists today:
    its arm uses both `succ(k)` and `k`. So the selector cannot name a single fixed schema; the
    ARM STRUCTURE picks which principle applies, and the theory must offer both.
 
-2. **Constructor COVERAGE** — "every `Nat` is `ZERO` or `succ(ZERO)` or `succ(succ(k))`" — which
-   is what makes `fib`'s three arms exhaustive. **This is a different fact from distinctness**,
-   and `std` does not state it at this depth. Distinctness (`zeroSuccSplitIsVacuous`) says two
-   constructor patterns cannot both match; coverage says at least one must. `consistency:` needs
-   only the former; `termination:` needs the latter, and it is the piece that is missing.
+2. **Constructor COVERAGE** — and this is ALREADY THERE. `peano.zeroOrSucc`
+   (`std/peano.b4m:859`) states `forall n: Nat; n = ZERO or (exists m: Nat; n = succ(m))`,
+   which is the one-step form and the only one the selector needs to supply.
+
+   An earlier draft of this plan claimed coverage was missing and made it a blocking step 0.
+   **Wrong twice over.** First, `zeroOrSucc` exists. Second, the DEPTH-2 form `fib` needs
+   (`n = ZERO or n = succ(ZERO) or exists k; n = succ(succ(k))`) is not a per-sort fact at all
+   — it follows from `zeroOrSucc` applied twice, and it is needed *only because `fib` has two
+   base arms*. So it is a lemma in whatever file defines `fib`, proved like any other step, not
+   something the language or `std/peano.b4m` must provide.
+
+   The general rule: the selector supplies the sort's INDUCTION PRINCIPLE and its ONE-STEP
+   coverage. A definition whose arms reach deeper proves its own deeper coverage as a local
+   lemma. Distinctness (`zeroSuccSplitIsVacuous`) remains `consistency:`'s business and is a
+   separate fact — two patterns cannot both match, versus at least one must.
 
 ### THE SHAPE: the obligation is proved BY INDUCTION over the sort
 
@@ -634,11 +644,10 @@ Not settled:
   needs care. The honest reading may be that the obligation is about the clause set DETERMINING
   that value uniquely, i.e. the induction proves the recursion's equations have a unique
   solution. That is a different statement from "is defined", and it is the one to get right.
-- **Where the induction schema comes from per sort.** `peano.induction` is ℕ's. A recursive
-  definition over another inductive sort needs that sort's schema, and nothing currently
-  declares which schema belongs to which sort — the same gap `consistency:` fills with its
-  parenthesized theory selector (`definition_consistency(peano)`), so the same mechanism
-  probably serves.
+- **Which induction principle an arm needs.** `peano.induction` serves a one-step arm;
+  `peano/order.strongInduction` serves one reaching further back, as `fib`'s does. The theory
+  selector must offer both, and the ARM STRUCTURE picks — so the checker has to decide which
+  from the clause shapes, or the author has to say.
 - **Whether recursive `oper`s should exist at all.** Raised and considered. Probably yes: 46
   recursive symbols across ~11 concepts (convolution/power/evalUpTo families, repeated per
   coefficient ring), 17 files resting on the convolution family alone. The precedent cuts both
@@ -661,16 +670,9 @@ Three shapes the corpus relies on, each a potential false positive:
 
 ### Build order
 
-**Step 0 is the blocker, and it is not about `termination:` at all.** The per-sort CONSTRUCTOR
-COVERAGE fact does not exist in `std`. Without it there is nothing for the obligation to be
-proved from, so this comes first:
-
-0. **Constructor coverage per sort.** For ℕ: `forall n; n = ZERO or (exists k; n = succ(k))`,
-   and the depth-2 form `fib` needs. Decide whether this is a schema (like `induction`), a
-   theorem derivable from `induction`, or a new per-sort declaration. Check whether
-   `peano.induction` already yields it before adding anything.
-
-Then:
+**No blocking prerequisite.** An earlier draft made per-sort constructor coverage a step 0;
+`peano.zeroOrSucc` (`std/peano.b4m:859`) already provides it, and deeper coverage is a local
+lemma for the few definitions that need it rather than a language feature.
 
 1. `consistency(<theory>):` — add the selector, replacing `constructorTheory`'s sniffing
    (`parser.zig:69`). Standalone, worth doing first: it fixes a live naming coupling, and a
@@ -681,8 +683,8 @@ Then:
    one entry per recursive call, arity `= terminating arms + total calls`, at least one `_`.
    Mirrors `parseWellformedness`'s `consistency:` loop.
 4. Synthesize the obligation each entry must state, and verify the named theorem matches — the
-   `collectConsistencyGaps` pattern. Needs step 0 and the `isDefinedAt`/determinacy question
-   settled.
+   `collectConsistencyGaps` pattern. Needs the determinacy question settled (what the predicate
+   actually asserts — see STILL OPEN).
 5. Error when a recursive arm has no entry, or when `_` sits where an arm recurses.
 6. Gates: `std --library`, `aata`, theorem counts unchanged. All 48 recursive clauses need
    entries, so this is a real migration — budget for it rather than discovering it.
