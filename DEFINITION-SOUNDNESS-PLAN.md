@@ -416,16 +416,117 @@ corpus-wide risk), or anchor the clause's own left-hand side as an extra conjunc
 works, and WAS tried, but changes the agreed `(conditions) -> rhs_i = rhs_j` shape and breaks
 the tactic's two-conjunct recognition. Not the right trade.
 
-## STILL OPEN
+## WELL-FOUNDEDNESS — the remaining criterion
 
-- **Well-foundedness — DEFERRED, not being touched (user, 2026-11-20).** The second,
-  independent property: whether a recursive clause has a fixpoint at all. `g(n) = s(g(n))`
-  is an inconsistent assertion rather than a definition, and nothing checks it — accepted,
-  and out of scope for this work. Consistency ships without it; the `.` terminator already
-  leaves `termination: <name>` room in the well-formedness section when it is taken up.
+The second, independent property: does a recursive clause have a fixpoint at all? Still live
+against the current checker, re-probed 2026-11-23:
 
-  When it IS taken up: detection looks syntactic (that example has the same argument on both
-  sides; `rconvolution`'s decrease is a position-wise comparison), but the criterion itself is
-  unspecified — and unlike consistency it may want no named theorem at all, since a
-  decreasing-argument claim is a check the compiler performs rather than a formula anyone
-  proves. Worth deciding deliberately rather than assuming symmetry with `consistency:`.
+```2b4m
+oper g(n: N) => N:
+  g(n) = s(g(n)).
+
+theorem contradiction: Z = s(Z)        // checks, exit 0
+proof
+  @def    | forall n: N; g(n) = s(g(n))   [by definition(0) g]
+  @at-z   | g(Z) = s(g(Z))                [by apply_at(Z) def]
+  @nofix  | forall n: N; not (n = s(n))   [by cite sNoFixedPoint]
+  @nofix-at | not (g(Z) = s(g(Z)))        [by apply_at(g(Z)) nofix]
+  @conclusion | Z = s(Z)                  [by ex_falso at-z nofix-at]
+qed
+```
+
+Same class as PAINPOINTS 16f: the kernel does as it is told, and the user has built an
+inconsistent system with nothing warning them.
+
+### The criterion: SOME argument position decreases structurally
+
+Measured all 48 recursive clauses in `std/` (2026-11-23). **Every one is structurally
+recursive on a `succ` pattern**, and the criterion they all satisfy is:
+
+> In a clause `f(…pᵢ…) = … f(…qᵢ…) …`, there is a position `i` where the LHS argument is
+> `succ(x)` (a constructor application) and the corresponding RHS argument is `x` — its
+> immediate subterm.
+
+**Other positions may do anything, including INCREASE.** `rsegmentOf` is the case that proves
+this is the right rule rather than a stricter one:
+
+```2b4m
+rsegmentOf(p, q, succ(j), c, succ(n)) = … + rsegmentOf(p, q, j, succ(c), n)
+```
+
+Position 3 decreases (`succ(j) → j`), position 4 **increases** (`c → succ(c)`), position 5
+decreases (`succ(n) → n`). It terminates on position 5. A rule demanding that no position
+increase would reject it; a rule demanding ALL decrease would reject it. "At least one" is
+exactly right, and is standard structural recursion.
+
+`rtheCofactorIndex` is the other shape worth noting: its recursion is to a DIFFERENT symbol
+(`rtheGapTo`), so it is not self-recursive at all and needs no check — mutual recursion does
+not occur in the corpus, which is why the criterion can stay per-symbol.
+
+### NO named theorem — this is a compiler check
+
+Unlike `consistency:` and `existence:`/`uniqueness:`, well-foundedness should take **no
+author-written theorem**. Three reasons, and the asymmetry is deliberate rather than an
+oversight:
+
+1. **There is nothing to state.** "Argument 5 decreases structurally" is a property of the
+   source text, not a proposition about the mathematics. A theorem asserting it would be a
+   tautology the checker could verify directly.
+2. **Every corpus case passes automatically.** All 48 satisfy the rule, so a required
+   declaration would be 48 entries saying "yes, obviously" — noise, and the
+   `--library`-exercises-its-axioms rule would then demand each be cited.
+3. **The failure mode wants a DIAGNOSTIC, not an obligation.** `g(n) = s(g(n))` is not a
+   definition whose soundness is in question; it is a typo or a misunderstanding. The right
+   response names the position that fails to decrease, not "declare a theorem".
+
+So: a recursive clause with no structurally decreasing position is an **error**, named at the
+clause, with no syntax added. This also means well-foundedness needs no room in the
+well-formedness section after all — the `termination: <name>` slot the `.` terminator was
+reserving is not wanted.
+
+### What the check must NOT reject
+
+Three shapes the corpus relies on, each a potential false positive:
+
+- **A clause whose LHS nests the symbol in an accessor**: `coeff(monomial(a, k), i) = zeroR`
+  mentions `monomial` on the left inside `coeff`, and the RHS does not mention it at all. Not
+  recursive; the naive "symbol appears twice" test flags it. (It is also an IMPLICIT
+  definition, handled separately.)
+- **Recursion to a different symbol**: `rtheCofactorIndex` calls `rtheGapTo`. Per-symbol, so
+  invisible to this check.
+- **A non-recursive clause**: 113 of the 161 clauses in `std/`. The check applies only where
+  the defined symbol appears on the RHS.
+
+### Build order
+
+1. `clauseDecreases(clause, sym, params)` — find the RHS self-application (reuse
+   `findApplication`, which already recurses), compare each argument position against the
+   LHS's, return whether any is `succ(x) → x`. Unit-test the three real shapes:
+   `rconvolution` (one position), `rsegmentOf` (one decreasing, one increasing), `theGapTo`
+   (two decreasing).
+2. A fixture pair under `tests/cases/definition/termination/`: `g(n) = s(g(n))` expected to
+   fail, a structurally-recursive one expected to pass.
+3. Error at the clause when a recursive clause has no decreasing position, naming the symbol
+   and saying what was looked for.
+4. Gates: `std --library` and `aata` must be UNCHANGED (all 48 pass), theorem counts identical.
+
+### Open: what counts as a constructor
+
+The rule says "the LHS argument is a constructor application and the RHS argument is its
+subterm". In the corpus the constructor is always `peano.succ` (or a local alias). Options,
+in increasing generality:
+
+- **Hardcode `succ`** — covers 48/48, and is the naming coupling
+  [[accelerator-naming-couplings]] forbids. Rejected on that ground alone.
+- **Any unary `oper` applied to a bare variable, whose argument is the RHS's argument.** This
+  is purely structural: `f(g(x), …) = … f(x, …)` decreases at that position regardless of what
+  `g` is called. Covers the corpus, needs no name, and is the proposal.
+- **A declared constructor set per sort.** More precise, but requires new syntax to declare
+  constructors, which nothing else in the language needs yet.
+
+The middle option is unsound in principle — `g` could be a non-injective or non-decreasing
+function, so `f(g(x)) = f(x)` would pass while looping. It is a HEURISTIC that catches the
+real failure mode (`g(n) = s(g(n))`, where the argument is unchanged) without rejecting
+anything legitimate. Worth stating plainly in the diagnostic and the GUIDE that it is a
+structural check, not a proof of termination — the same honesty `--fast` documents about its
+own trust boundary.
