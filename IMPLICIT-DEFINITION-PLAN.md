@@ -440,15 +440,32 @@ theorem in chapter files, which the no-parameterized-sorts constraint forces
 
 ### Three caveats on this list
 
-1. **`neg` on a RING is NOT a candidate.** `addNegLeft` there is a group axiom — it asserts
-   that additive inverses EXIST, which is part of what makes the structure a ring. Converting
-   it to a definition would require proving existence, and there is nothing to prove it from:
-   the axiom IS the existence claim. Same for `inverse` on an abstract `Grp`.
+1. **ABSTRACT theories convert too — existence may be an AXIOM.** An earlier draft of this
+   plan claimed `neg` on a `Ring` was not a candidate, on the reasoning that `addNegLeft` IS
+   the existence postulate so there is nothing to prove it from. **That was wrong**, and the
+   error was conflating two different things:
 
-   **The test is whether existence is PROVABLE or POSTULATED.** For `recip` in ℝ or ℚ it is
-   provable from the construction; for `neg` in an abstract `Ring` it is postulated, because
-   an abstract theory has no construction. So the candidates split by whether the sort is
-   CONCRETE or ABSTRACT, and only the concrete ones can be converted.
+   - *is `neg` determined by `add(neg(a), a) = ZERO`?* — **yes**, and provably: the group
+     uniqueness argument needs only associativity and identity. It is already a theorem,
+     `group.inverseUnique` (`std/group.b4m:198`): `op(a, b) = E -> b = inverse(a)`.
+   - *does an inverse exist?* — that is the postulate.
+
+   Nothing in this design requires existence to be a THEOREM. The obligations demand both
+   facts be STATED and discharged; an abstract theory discharges existence with an axiom of
+   its own:
+
+   ```2b4m
+   axiom additiveInversesExist: forall a: Ring; exists y: Ring; add(y, a) = ZERO
+   ```
+
+   **And the conversion is an improvement, not a formality.** `addNegLeft` currently FUSES two
+   claims: "inverses exist" and "`neg` is one of them". Splitting them means `--axioms` reports
+   the existence postulate — which genuinely is an assumption a reader should weigh — while
+   `neg`'s characterization becomes a definition. Today both hide inside one axiom labelled as
+   a single assumption.
+
+   So the concrete/abstract distinction governs WHERE existence comes from (a construction vs.
+   a postulate), not whether the conversion is available.
 
 2. **`succ`/`prev` are false positives.** `prevSucc: prev(succ(n)) = n` matched the pattern,
    but these are CONSTRUCTORS — `succ` is primitive and `prevSucc` constrains `prev` against
@@ -470,9 +487,10 @@ same shape as `rPolyExtensionality` serving all five polynomial definitions.
 What is genuinely missing is EXISTENCE, as with the polynomial family. For a concrete field
 that is provable from the construction; for an abstract one it is the postulate itself.
 
-**Not `std/field.b4m`.** Its `fieldInverse` is an ABSTRACT theory's axiom — the postulate that
-inverses exist — so it is case A and must stay. That it shares a name and shape with the
-concrete ones is exactly the trap this scan exists to flag.
+**`std/field.b4m` converts too**, contrary to an earlier draft here: its `fieldInverse` is an
+abstract postulate, but per caveat 1 that only means existence is discharged by an axiom
+rather than a construction. The conversion still separates "inverses exist" from "`recip` is
+the inverse", which is the gain.
 
 And note the migration cost measured earlier: 15 files under `std/` cite `fieldInverse` by
 name, so even the concrete conversions need the naming question settled first.
