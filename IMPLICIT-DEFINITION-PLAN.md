@@ -417,6 +417,66 @@ breaks all 30 until each names them, so this is a migration, not an addition. Se
 is well under 30 proofs: the polynomial family shares one `polyExtensionality`-shaped
 uniqueness fact per sort, so what is genuinely new is the existence fact per definition.
 
+## Candidates: `oper`s that ARE implicit definitions but are written as axioms
+
+Scanned `std/` for the shape "a bare `oper` plus an axiom that pins it down". The clean family
+is **inverse-of-a-binary-op-gives-the-unit**, which is unambiguous: the axiom determines the
+symbol (inverses are unique where they exist), the symbol appears once, and the equation is
+exactly the characterizing property.
+
+| symbol | sites | axiom shape |
+|---|---|---|
+| `recip` | 5 — `field`, `field/order`, `real`, `rational`, `complex` | `nonzero(a) -> mul(a, recip(a)) = ONE` |
+| `neg` | 6 — `ring`, `field`, `field/order`, `real`, `rational`, `complex` | `add(neg(a), a) = ZERO` |
+| `inverse` | 4 — `function` (×2, guarded), `group`, `group/size` | `op(inverse(a), a) = E` |
+| `invG`/`invH`/`invK`/`invHH` | 9 — the group chapter's per-letter copies | `opG(invG(a), a) = EG` |
+| `negS`/`negA`/`negB`/`negC` | 4 — the ring-isomorphism chapter's copies | `addS(negS(a), a) = zeroS` |
+| `unitInverse` | 1 — `integer/mod-n` | `mul(unitInverse(x), x) = ONE` |
+| `phi`/`psi`/`chi`/`chiInv`/`phiInv` | 8 — isomorphism inverse pairs | `psi(phi(a)) = a` |
+
+**~37 sites, but far fewer distinct facts** — most are per-letter restatements of the same
+theorem in chapter files, which the no-parameterized-sorts constraint forces
+([[order-family-inherited]] is the worked precedent for that shape).
+
+### Three caveats on this list
+
+1. **`neg` on a RING is NOT a candidate.** `addNegLeft` there is a group axiom — it asserts
+   that additive inverses EXIST, which is part of what makes the structure a ring. Converting
+   it to a definition would require proving existence, and there is nothing to prove it from:
+   the axiom IS the existence claim. Same for `inverse` on an abstract `Grp`.
+
+   **The test is whether existence is PROVABLE or POSTULATED.** For `recip` in ℝ or ℚ it is
+   provable from the construction; for `neg` in an abstract `Ring` it is postulated, because
+   an abstract theory has no construction. So the candidates split by whether the sort is
+   CONCRETE or ABSTRACT, and only the concrete ones can be converted.
+
+2. **`succ`/`prev` are false positives.** `prevSucc: prev(succ(n)) = n` matched the pattern,
+   but these are CONSTRUCTORS — `succ` is primitive and `prevSucc` constrains `prev` against
+   it. Neither is implicitly defined.
+
+3. **The isomorphism pairs are mutual.** `psiAfterPhi` and `phiAfterPsi` together say `psi` is
+   `phi`'s two-sided inverse. Converting either alone would be wrong; the pair defines `psi`
+   FROM `phi` (or vice versa), so the direction has to be chosen, and the other axiom then
+   becomes a theorem.
+
+### The realistic first conversion
+
+**`recip` on a CONCRETE field — ℝ, ℚ, or ℂ — is the right first case.** And the uniqueness
+half is already done: `recipIsUnique` (`std/field/units.b4m:307`) proves
+`mul(a, b) = ONE -> b = recip(a)`, via `group.inverseUnique` through the `UnitsGroup` model.
+So a conversion would cite an existing theorem rather than needing a new one — which is the
+same shape as `rPolyExtensionality` serving all five polynomial definitions.
+
+What is genuinely missing is EXISTENCE, as with the polynomial family. For a concrete field
+that is provable from the construction; for an abstract one it is the postulate itself.
+
+**Not `std/field.b4m`.** Its `fieldInverse` is an ABSTRACT theory's axiom — the postulate that
+inverses exist — so it is case A and must stay. That it shares a name and shape with the
+concrete ones is exactly the trap this scan exists to flag.
+
+And note the migration cost measured earlier: 15 files under `std/` cite `fieldInverse` by
+name, so even the concrete conversions need the naming question settled first.
+
 ## Not in scope
 
 - Deciding whether an implicit definition is CONSERVATIVE (that adding it proves no new
