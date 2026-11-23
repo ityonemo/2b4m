@@ -71,6 +71,15 @@ oper coeff(p: Poly, i: Nat) => F
 axiom polyExtensionality: forall p, q: Poly;
   (forall i: Nat; coeff(p, i) = coeff(q, i)) -> p = q
 
+axiom aMulPExists: forall p: Poly; forall q: Poly;
+  exists r: Poly; forall i: Nat; (coeff(r, i) = convolution(p, q, ZERO, i))
+axiom aAddPExists: forall p: Poly; forall q: Poly;
+  exists r: Poly; forall i: Nat; (coeff(r, i) = addF(coeff(p, i), coeff(q, i)))
+axiom aNegPExists: forall p: Poly;
+  exists r: Poly; forall i: Nat; (coeff(r, i) = negF(coeff(p, i)))
+axiom aMonomialExists: forall a: F; forall k: Nat;
+  exists r: Poly; ((coeff(r, k) = a)) and (forall i: Nat; ((not (i = k)) -> coeff(r, i) = zeroF))
+
 const ZEROP: Poly
 axiom zeroPolyCoeff: forall i: Nat; coeff(ZEROP, i) = zeroF
 
@@ -106,6 +115,8 @@ oper convolution(p: Poly, q: Poly, j: Nat, m: Nat) => F:
 
 oper mulP(p: Poly, q: Poly) => Poly:
   coeff(mulP(p, q), i) = convolution(p, q, ZERO, i).
+  existence: aMulPExists,
+  uniqueness: polyExtensionality
 
 // Judson's Proposition 17.4 over a field: a product of nonzeros is nonzero, and the degree
 // of a product is the sum of the degrees. BOTH ARE THEOREMS, proved near the end of this
@@ -424,9 +435,13 @@ oper tripleRows(p: Poly, q: Poly, r: Poly, i: Nat, m: Nat, n: Nat) => F:
 // back here, now that there is a theorem that uses them.
 oper addP(p: Poly, q: Poly) => Poly:
   coeff(addP(p, q), i) = addF(coeff(p, i), coeff(q, i)).
+  existence: aAddPExists,
+  uniqueness: polyExtensionality
 
 oper negP(p: Poly) => Poly:
   coeff(negP(p), i) = negF(coeff(p, i)).
+  existence: aNegPExists,
+  uniqueness: polyExtensionality
 
 // `subP(p, q)` is `p - q`. Over a FIELD subtraction is total and honest — it is addition of
 // the negation, with no truncation anywhere — so this is a definition, not a guarded symbol.
@@ -475,6 +490,8 @@ qed
 oper monomial(a: F, k: Nat) => Poly:
   coeff(monomial(a, k), k) = a;
   (not (i = k)) -> coeff(monomial(a, k), i) = zeroF.
+  existence: aMonomialExists,
+  uniqueness: polyExtensionality
 // Transferred: generic in the coefficient ring, so it lives in
 // `std/ring/polynomial/monomial.b4m`.
 theorem aNonzeroMonomialHasItsIndexAsDegree: forall a: F; forall k: Nat;

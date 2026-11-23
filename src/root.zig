@@ -551,6 +551,30 @@ fn usedAxioms(arena: std.mem.Allocator, ctx: *Context) !std.AutoHashMapUnmanaged
     // a proof's citation closure, but it is exactly as consumed.
     var it = ctx.model_discharged.keyIterator();
     while (it.next()) |k| try used.put(arena, k.*, {});
+
+    // So is a fact an IMPLICIT definition names as its `existence:` or `uniqueness:` obligation.
+    // The block consumes it to earn the right to be a definition rather than an assumption —
+    // the same shape of consumption as a model discharger, and equally absent from any proof's
+    // citation closure.
+    for (ctx.root_files.items) |rf| {
+        const root_idx = @intFromEnum(rf);
+        const rsrc = ctx.files.get(root_idx).source;
+        const rns = try ctx.interner.namespace(.universe, try ctx.fileIndex(ctx.files.get(root_idx).path));
+        for (ctx.parsed.get(root_idx).decls) |decl| {
+            const det = switch (decl) {
+                .func => |f| switch (f) {
+                    .local => |l| l.determinacy,
+                    else => null,
+                },
+                else => null,
+            } orelse continue;
+            for ([_]lexer.Token{ det.existence, det.uniqueness }) |t| {
+                const nm = try ctx.interner.internString(rsrc[t.start..t.end]);
+                const st = ctx.facts.lookup(ctx.io, .{ .namespace = rns, .name = nm }) orelse continue;
+                if (st == .proven) try used.put(arena, st.proven, {});
+            }
+        }
+    }
     return used;
 }
 

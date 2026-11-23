@@ -84,6 +84,24 @@ oper coeff(p: Poly, i: Nat) => R
 axiom polyExtensionality: forall p, q: Poly;
   (forall i: Nat; coeff(p, i) = coeff(q, i)) -> p = q
 
+// -- EXISTENCE of the polynomials the definition blocks below characterize -----------------
+//
+// `addP`, `negP` and `mulP` are IMPLICIT definitions: each says what its result's coefficients
+// ARE rather than rewriting the symbol away, so each owes (a) that a polynomial with those
+// coefficients exists, and (b) that it is unique. (b) is `polyExtensionality` above, shared by
+// all three. (a) is these three axioms — the claim that R[x] is closed under the operation,
+// which is what makes it a ring rather than just a coefficient indexing.
+//
+// Stating them SEPARATES two things the definition clause alone conflated: that the operation
+// lands in Poly (an assumption about the construction, weighable in `--axioms`) and what its
+// coefficients are (the definition). Before this, one clause asserted both.
+axiom aSumPolynomialExists: forall p, q: Poly;
+  exists r: Poly; forall i: Nat; coeff(r, i) = addR(coeff(p, i), coeff(q, i))
+axiom aNegatedPolynomialExists: forall p: Poly;
+  exists r: Poly; forall i: Nat; coeff(r, i) = negR(coeff(p, i))
+axiom aProductPolynomialExists: forall p, q: Poly;
+  exists r: Poly; forall i: Nat; coeff(r, i) = convolution(p, q, ZERO, i)
+
 // -- degree as a coefficient bound --------------------------------------------------------
 // "every coefficient strictly above n is zero". The zero polynomial satisfies this for every
 // n, which is Judson's degree -infinity without a bottom element in the index sort.
@@ -106,11 +124,15 @@ axiom onePolyCoeffHigher: forall i: Nat; coeff(ONEP, succ(i)) = zeroR
 
 oper addP(p: Poly, q: Poly) => Poly:
   coeff(addP(p, q), i) = addR(coeff(p, i), coeff(q, i)).
+  existence: aSumPolynomialExists,
+  uniqueness: polyExtensionality
 
 // -- negation: the inverse of p is the polynomial of negated coefficients -----------------
 
 oper negP(p: Poly) => Poly:
   coeff(negP(p), i) = negR(coeff(p, i)).
+  existence: aNegatedPolynomialExists,
+  uniqueness: polyExtensionality
 
 // -- multiplication: the convolution c_i = sum_{k=0}^{i} a_k b_{i-k} ----------------------
 //
@@ -139,6 +161,8 @@ oper convolution(p: Poly, q: Poly, j: Nat, m: Nat) => R:
 
 oper mulP(p: Poly, q: Poly) => Poly:
   coeff(mulP(p, q), i) = convolution(p, q, ZERO, i).
+  existence: aProductPolynomialExists,
+  uniqueness: polyExtensionality
 
 // What this file proves (verified manifest):
 intheory addLeftSwapR

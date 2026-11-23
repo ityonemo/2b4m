@@ -41,10 +41,16 @@ const IZEROP: IntPoly
 const IONEP: IntPoly
 oper iaddP(p: IntPoly, q: IntPoly) => IntPoly:
   icoeff(iaddP(p, q), i) = integer.add(icoeff(p, i), icoeff(q, i)).
+  existence: aIaddPExists,
+  uniqueness: iPolyExtensionality
 oper inegP(p: IntPoly) => IntPoly:
   icoeff(inegP(p), i) = integer.neg(icoeff(p, i)).
+  existence: aInegPExists,
+  uniqueness: iPolyExtensionality
 oper imulP(p: IntPoly, q: IntPoly) => IntPoly:
   icoeff(imulP(p, q), i) = iconvolution(p, q, ZERO, i).
+  existence: aImulPExists,
+  uniqueness: iPolyExtensionality
 oper iconvolution(p: IntPoly, q: IntPoly, i: Nat, k: Nat) => Int:
   iconvolution(p, q, j, ZERO) = integer.mul(icoeff(p, j), icoeff(q, ZERO));
   iconvolution(p, q, j, peano.succ(m)) = integer.add(integer.mul(icoeff(p, j), icoeff(q, peano.succ(m))), iconvolution(p, q, peano.succ(j), m)).
@@ -53,6 +59,15 @@ pred idegreeAtMost(p: IntPoly, n: Nat)
 
 axiom iPolyExtensionality: forall p, q: IntPoly;
   (forall i: Nat; icoeff(p, i) = icoeff(q, i)) -> p = q
+
+axiom aIaddPExists: forall p: IntPoly; forall q: IntPoly;
+  exists r: IntPoly; forall i: Nat; (icoeff(r, i) = integer.add(icoeff(p, i), icoeff(q, i)))
+axiom aInegPExists: forall p: IntPoly;
+  exists r: IntPoly; forall i: Nat; (icoeff(r, i) = integer.neg(icoeff(p, i)))
+axiom aImulPExists: forall p: IntPoly; forall q: IntPoly;
+  exists r: IntPoly; forall i: Nat; (icoeff(r, i) = iconvolution(p, q, ZERO, i))
+axiom aReduceExists: forall p: IntPoly;
+  exists r: ZnPoly; forall i: Nat; (mod_n_poly.zcoeff(r, i) = mod_n.cls(icoeff(p, i)))
 axiom iDegreeAtMostMeaning: forall p: IntPoly; forall n: Nat;
   idegreeAtMost(p, n) iff
   (forall i: Nat; peano.less_than(n, i) -> icoeff(p, i) = INT_ZERO)
@@ -140,6 +155,8 @@ model IntegerPolynomials {
 // ℤ_p[x] obtained by reducing the coefficients of α₁(x) modulo p".
 oper reduce(p: IntPoly) => ZnPoly:
   mod_n_poly.zcoeff(reduce(p), i) = mod_n.cls(icoeff(p, i)).
+  existence: aReduceExists,
+  uniqueness: iPolyExtensionality
 
 // A polynomial with a coefficient the modulus misses reduces to something nonzero — which is
 // how Judson's "there exists a coefficient a_i such that p ∤ a_i" gives α₁'(x) ≠ 0.

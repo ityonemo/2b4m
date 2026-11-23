@@ -2521,16 +2521,26 @@ test "an ARROW-guarded clause states its condition like `when` does" {
     // rather than with `when`. The parser desugars `when` to exactly that shape, so the two
     // mean the same thing and the obligation must read both — otherwise those blocks could
     // not state an obligation at all ("a definition clause must be an equation").
+    //
+    // `monomial` is also an IMPLICIT definition (its clause characterizes the polynomial by
+    // its coefficients rather than rewriting the symbol away), so the block owes
+    // `existence:`/`uniqueness:` as well. That is orthogonal to what this test checks — the
+    // arrow-guard reading of the CONSISTENCY obligation — but the block will not parse
+    // without them.
     const source =
         \\sort R
         \\sort Nat
         \\const zeroR: R
         \\sort Poly
         \\oper coeff(p: Poly, i: Nat) => R
+        \\axiom ex: forall a: R; forall k: Nat; exists r: Poly; coeff(r, k) = a
+        \\axiom un: forall p, q: Poly; (forall i: Nat; coeff(p, i) = coeff(q, i)) -> p = q
         \\oper monomial(a: R, k: Nat) => Poly:
         \\  coeff(monomial(a, k), k) = a;
         \\  (not (i = k)) -> coeff(monomial(a, k), i) = zeroR.
         \\  consistency: _
+        \\  existence: ex
+        \\  uniqueness: un
     ;
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();

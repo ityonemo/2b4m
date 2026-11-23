@@ -29,6 +29,7 @@ const emptyset = set.emptyset
 pred member = set.member
 fact emptysetMember = set.emptysetMember
 fact extensionality = set.extensionality
+fact funcExtensionality = function.funcExtensionality
 oper union = set.union
 oper intersection = set.intersection
 oper difference = set.difference
@@ -116,10 +117,28 @@ define bijectsOnto(f, a, b) = mapsInto(f, a, b) and injectiveOn(f, a) and surjec
 //
 // Note what this route AVOIDS: the map is pinned by EQUATIONS on its values, so nothing
 // here needs an inverse, a definite description, or choice.
+// `swap` is an IMPLICIT definition: its clauses say what the function DOES at each point
+// rather than rewriting the symbol away, so it owes existence and uniqueness. Uniqueness is
+// function extensionality (two functions agreeing everywhere are equal); existence is that a
+// function with this action exists, which is the axiom below.
+axiom aSwapFunctionExists: forall u: Element; forall v: Element;
+  exists f: Fn; forall x: Element;
+  (x = u -> apply(f, x) = v) and (x = v -> apply(f, x) = u) and
+  ((x != u and x != v) -> apply(f, x) = x)
+
+// `size` is an IMPLICIT definition too — "a set's size is whatever size it has". EXISTENCE IS
+// ITS GUARD: `isFinite(a)` expands to `exists n: Nat; hasSize(a, n)`, which is exactly the
+// obligation, so this restates the guard in the obligation's shape rather than assuming
+// anything new. Uniqueness is `hasSizeIsUnique`, proved later in this file.
+axiom sizeExistsWhenFinite: forall a: Set;
+  isFinite(a) -> (exists n: Nat; hasSize(a, n))
+
 oper swap(u: Element, v: Element) => Fn:
   apply(swap(u, v), x) = v when x = u;
   apply(swap(u, v), x) = u when x = v;
   apply(swap(u, v), x) = x when x != u and x != v.
+  existence: aSwapFunctionExists,
+  uniqueness: funcExtensionality
 
 // -- equinumerosity ---------------------------------------------------------
 
@@ -2931,6 +2950,8 @@ qed
 // unconstrained value that nothing reasons about.
 oper size(a: Set) => Nat:
   hasSize(a, size(a)) when isFinite(a).
+  existence: sizeExistsWhenFinite,
+  uniqueness: hasSizeIsUnique
 
 // A set's size is whatever size it has: `size` agrees with `hasSize`.
 theorem sizeIsTheSize: forall a: Set; forall n: Nat; hasSize(a, n) -> size(a) = n
