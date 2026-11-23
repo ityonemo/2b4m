@@ -199,6 +199,67 @@ termination for the explicit case. This plan's existence/uniqueness pair is the 
 analogue of its `consistency:`, and should follow its build order and its ruling that a failed
 check is an error rather than a downgrade.
 
+## The obligations' shapes, worked out
+
+### Single clause — mechanical
+
+```2b4m
+oper recip(a: Field) => Field requires nonzero(a):
+  mul(a, recip(a)) = ONE.
+```
+
+Replace the defining application `recip(a)` by a fresh variable, then quantify: params to the
+outer `forall`, guard to the antecedent, result sort to the fresh variable.
+
+```2b4m
+existence:  forall a: Field; nonzero(a) -> exists y: Field; mul(a, y) = ONE
+uniqueness: forall a: Field; forall y, z: Field;
+              nonzero(a) -> mul(a, y) = ONE -> mul(a, z) = ONE -> y = z
+```
+
+### Multi-clause — the clauses CONJOIN, and the binders are two-tiered
+
+`rmonomial`'s two clauses are ONE definition split by a case on the index, so they must be
+conjoined under a single `exists`:
+
+```2b4m
+existence:  forall a: Real; forall k: Nat;
+              exists y: RPoly; rcoeff(y, k) = a
+                and (forall i: Nat; (not (i = k)) -> rcoeff(y, i) = ZERO)
+
+uniqueness: forall a: Real; forall k: Nat; forall y, z: RPoly;
+              <y satisfies both clauses> -> <z satisfies both clauses> -> y = z
+```
+
+**Note where `i` binds.** In the clause it is a free variable, implicitly universal over that
+clause. In the obligation it must bind INSIDE the `exists y`, because `y` must satisfy the
+condition for every `i`. Bind it outside and the obligation is weaker and wrong — it would
+only ask for a polynomial that works at one index.
+
+So the synthesis needs **two binder tiers**: declared params outside the `exists`,
+clause-local variables inside.
+
+### What is reusable, and what is not
+
+`parser.zig`'s `consistency:` synthesizer already has three of the four pieces:
+
+| | | |
+|---|---|---|
+| `collectClauseVars` (`:510`) | finds clause-local variables | reusable — it would find `i` |
+| the param-override loop (`:511-518`) | gives a declared param its DECLARED sort, not `inferred` | reusable, and necessary: the comment records that an inferred param with no defining application to pin it fails with "cannot infer the sort of 'u'" |
+| `antecedentOf(c.body)` (`:520`) | extracts an implication guard | reusable — it is exactly `rmonomial`'s second clause |
+| `conditionOf`'s FLAT binder list | one outer `forall` for everything | **not reusable** — the implicit case needs the two tiers above |
+
+And the obligation structure differs: `consistency:` is PAIRWISE (one per unordered clause
+pair, `synthesizeObligations:437-447`), while the implicit case conjoins ALL clauses into one
+existence and one uniqueness. So this needs its own synthesizer rather than a parameter on the
+existing one.
+
+A consequence worth noting: `uniqueness` repeats the whole conjoined condition twice, once per
+candidate. For `rmonomial` that is already unwieldy to write by hand, which argues for the
+checker stating the obligation and verifying the author's named theorem matches — the
+`collectConsistencyGaps` pattern — rather than expecting it typed out.
+
 ## Settled by probing
 
 1. **How the clause publishes.** As the explicit case does: `InternPool.definitionClauseName`
