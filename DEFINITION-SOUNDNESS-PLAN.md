@@ -438,95 +438,176 @@ qed
 Same class as PAINPOINTS 16f: the kernel does as it is told, and the user has built an
 inconsistent system with nothing warning them.
 
-### The criterion: SOME argument position decreases structurally
+### The criterion: a MEASURE that strictly decreases at every recursive call
 
-Measured all 48 recursive clauses in `std/` (2026-11-23). **Every one is structurally
-recursive on a `succ` pattern**, and the criterion they all satisfy is:
+**A syntactic check is not acceptable here** (user ruling 2026-11-23). "The argument looks
+smaller" can pass a looping definition: `f(g(x)) = f(x)` decreases structurally while `g` is
+free to be the identity. A soundness check cannot rest on a shape that admits a counterexample.
 
-> In a clause `f(…pᵢ…) = … f(…qᵢ…) …`, there is a position `i` where the LHS argument is
-> `succ(x)` (a constructor application) and the corresponding RHS argument is `x` — its
-> immediate subterm.
+So the obligation is a PROOF, in the user's framing:
 
-**Other positions may do anything, including INCREASE.** `rsegmentOf` is the case that proves
-this is the right rule rather than a stricter one:
+> Gather the arms that TERMINATE (no recursive content). Each RECURSING arm must then prove:
+> for all inputs, the inner call satisfies one of the terminating arms' patterns after
+> finitely many steps.
+
+In practice that is discharged as a **strictly decreasing measure on a well-ordered sort** —
+which is the same claim, and the form that is actually provable. The recursion reaches a base
+arm because the measure cannot descend forever.
 
 ```2b4m
-rsegmentOf(p, q, succ(j), c, succ(n)) = … + rsegmentOf(p, q, j, succ(c), n)
+// rconvolution: the base arm's pattern is arg4 = NAT_ZERO; the recursive arm calls at
+// arg4 = m from arg4 = succ(m). The measure is arg4.
+theorem rconvolutionDecreases: forall m: Nat; less_than(m, succ(m))   // lessThanSelf
 ```
 
-Position 3 decreases (`succ(j) → j`), position 4 **increases** (`c → succ(c)`), position 5
-decreases (`succ(n) → n`). It terminates on position 5. A rule demanding that no position
-increase would reject it; a rule demanding ALL decrease would reject it. "At least one" is
-exactly right, and is standard structural recursion.
+Verified provable against the three corpus shapes:
 
-`rtheCofactorIndex` is the other shape worth noting: its recursion is to a DIFFERENT symbol
-(`rtheGapTo`), so it is not self-recursive at all and needs no check — mutual recursion does
-not occur in the corpus, which is why the criterion can stay per-symbol.
+| | measure | obligation | proved from |
+|---|---|---|---|
+| `rconvolution` | arg 4 | `less_than(m, succ(m))` | `peano_order.lessThanSelf` |
+| `rsegmentOf` | arg 5 | `less_than(n, succ(n))` | same |
+| `fib` | arg 1 | TWO, see below | `lessThanSelf` + `lessThanSuccRight` |
 
-### NO named theorem — this is a compiler check
+`rsegmentOf` is why the measure must be NAMED rather than inferred from "the arguments": its
+arg 3 decreases, arg 4 **increases**, arg 5 decreases. Only arg 5 is the measure, and a check
+that tried every position or demanded none increase would get it wrong.
 
-Unlike `consistency:` and `existence:`/`uniqueness:`, well-foundedness should take **no
-author-written theorem**. Three reasons, and the asymmetry is deliberate rather than an
-oversight:
+### MULTIPLE RECURSIVE CALLS — one obligation per CALL, not per clause
 
-1. **There is nothing to state.** "Argument 5 decreases structurally" is a property of the
-   source text, not a proposition about the mathematics. A theorem asserting it would be a
-   tautology the checker could verify directly.
-2. **Every corpus case passes automatically.** All 48 satisfy the rule, so a required
-   declaration would be 48 entries saying "yes, obviously" — noise, and the
-   `--library`-exercises-its-axioms rule would then demand each be cited.
-3. **The failure mode wants a DIAGNOSTIC, not an obligation.** `g(n) = s(g(n))` is not a
-   definition whose soundness is in question; it is a typo or a misunderstanding. The right
-   response names the position that fails to decrease, not "declare a theorem".
+Measured: **no clause in `std` has more than one self-call**, and exactly one in the wider
+corpus does — `fib` (`aata/2.3-primes-exercises.md:106`):
 
-So: a recursive clause with no structurally decreasing position is an **error**, named at the
-clause, with no syntax added. This also means well-foundedness needs no room in the
-well-formedness section after all — the `termination: <name>` slot the `.` terminator was
-reserving is not wanted.
+```2b4m
+oper fib(n: Nat) => Nat:
+  fib(NAT_ZERO) = NAT_ZERO;                                   // terminating arm
+  fib(nat_succ(NAT_ZERO)) = NAT_ONE;                          // terminating arm
+  fib(nat_succ(nat_succ(k))) = nat_add(fib(nat_succ(k)), fib(k)).   // TWO calls
+```
+
+The two calls are at `succ(k)` and at `k`, from the pattern `succ(succ(k))`. Both decrease,
+**by different amounts and from different facts**:
+
+```2b4m
+theorem fibCallOneDecreases: forall k: Nat; less_than(succ(k), succ(succ(k)))
+  // lessThanSelf at succ(k)
+theorem fibCallTwoDecreases: forall k: Nat; less_than(k, succ(succ(k)))
+  // lessThanSelf at k, then lessThanSuccRight
+```
+
+Both verified to check. So the obligation structure is **per call site**, and that is forced
+rather than chosen: a single clause-level obligation could not have been discharged by one
+theorem here, since the two calls need different lemmas.
+
+Consequences for the syntax, all following from "per call":
+
+- **Entries are positional over the call sites of each recursive arm**, in source order — the
+  same discipline `consistency:` uses for clause pairs, and for the same reason: a miscount
+  should be an error rather than a silent default.
+- **A terminating arm declares nothing.** It is identified by having no self-call, and its
+  PATTERN is what the recursive arms must reach.
+- **A clause with two calls needs two entries.** `fib` would write
+  `termination: fibCallOneDecreases, fibCallTwoDecreases`.
+
+### SYNTAX: `termination:` with `_` for the terminating arms
+
+```2b4m
+termination: _, _, proof1, proof2, …
+```
+
+**Positional over the whole block**: one entry per terminating arm (written `_`), then one per
+recursive CALL, in source order. The declaration therefore shows the arm structure rather than
+making a reader reconstruct it.
+
+**A `_` MUST correspond to a terminating arm** (user ruling 2026-11-23) — it is not a
+"discharge this automatically" marker as it is in `consistency:`. Writing `_` where an arm
+recurses, or a name where an arm terminates, is an error. That makes the declaration a
+checkable claim about which arms are base cases, not just a list of proofs.
+
+Against the corpus:
+
+```2b4m
+oper rconvolution(p: RPoly, q: RPoly, j: Nat, m: Nat) => Real:
+  rconvolution(p, q, j, NAT_ZERO) = …;                       // arm 0: terminating
+  rconvolution(p, q, j, succ(m)) = … rconvolution(p, q, succ(j), m).   // arm 1: one call
+  termination: _, rconvolutionDecreases
+
+oper fib(n: Nat) => Nat:
+  fib(NAT_ZERO) = NAT_ZERO;                                  // arm 0: terminating
+  fib(succ(NAT_ZERO)) = NAT_ONE;                             // arm 1: terminating
+  fib(succ(succ(k))) = add(fib(succ(k)), fib(k)).            // arm 2: TWO calls
+  termination: _, _, fibCallOneDecreases, fibCallTwoDecreases
+```
+
+Note `fib`'s **4 entries for 3 arms**. The count is driven by call sites, not arms, which is
+forced by the per-call obligation: its two calls need different lemmas (`lessThanSelf` at
+`succ(k)`; `lessThanSelf` then `lessThanSuccRight` for `k`), so no single entry could
+discharge both.
+
+The arity rule, stated once: `entries = (number of terminating arms) + (total recursive calls
+across all arms)`. A miscount is an error naming both numbers, as `consistency:` does.
+
+**At least one `_` is required.** A block whose every arm recurses has no base case at all,
+so no measure argument can save it — `g(n) = s(g(n))` is exactly that, and the arity rule
+rejects it before any proof is considered. That is the cheapest possible diagnosis of the
+original exploit.
+
+### Why this is NOT symmetric with `consistency:` after all
+
+An earlier draft of this section argued well-foundedness should take no author-written
+theorem, because "argument 5 decreases" is a property of the source text. **That reasoning
+only holds for the syntactic check, which is rejected.** A measure decrease on a well-ordered
+sort IS a proposition about the mathematics — `less_than(m, succ(m))` is a theorem of
+`peano/order.b4m`, not a fact about parsing — so it wants a named theorem exactly as
+`consistency:` does.
+
+The `termination: <name>` slot the `.` terminator was reserving is therefore wanted after all.
 
 ### What the check must NOT reject
 
 Three shapes the corpus relies on, each a potential false positive:
 
 - **A clause whose LHS nests the symbol in an accessor**: `coeff(monomial(a, k), i) = zeroR`
-  mentions `monomial` on the left inside `coeff`, and the RHS does not mention it at all. Not
-  recursive; the naive "symbol appears twice" test flags it. (It is also an IMPLICIT
-  definition, handled separately.)
+  mentions `monomial` on the left inside `coeff` and not on the right at all. **19 such
+  clauses** in `std/`; the naive "symbol appears twice" test flags every one. (They are also
+  IMPLICIT definitions, handled separately.) The test must look at the RIGHT side only.
 - **Recursion to a different symbol**: `rtheCofactorIndex` calls `rtheGapTo`. Per-symbol, so
-  invisible to this check.
-- **A non-recursive clause**: 113 of the 161 clauses in `std/`. The check applies only where
-  the defined symbol appears on the RHS.
+  invisible here — and mutual recursion does not occur in the corpus, which is what lets the
+  check stay per-symbol.
+- **A non-recursive clause**: 113 of the 161 clauses in `std/`.
 
 ### Build order
 
-1. `clauseDecreases(clause, sym, params)` — find the RHS self-application (reuse
-   `findApplication`, which already recurses), compare each argument position against the
-   LHS's, return whether any is `succ(x) → x`. Unit-test the three real shapes:
-   `rconvolution` (one position), `rsegmentOf` (one decreasing, one increasing), `theGapTo`
-   (two decreasing).
-2. A fixture pair under `tests/cases/definition/termination/`: `g(n) = s(g(n))` expected to
-   fail, a structurally-recursive one expected to pass.
-3. Error at the clause when a recursive clause has no decreasing position, naming the symbol
-   and saying what was looked for.
-4. Gates: `std --library` and `aata` must be UNCHANGED (all 48 pass), theorem counts identical.
+1. `recursiveCalls(clause, sym)` — every self-application on the RHS, in source order. Reuses
+   `findApplication`'s recursion but collects all hits rather than the first.
+2. `termination:` parsing, positional over the recursive arms' call sites, mirroring
+   `parseWellformedness`'s `consistency:` loop.
+3. Synthesize each call's obligation so the checker can verify the named theorem states it —
+   the `collectConsistencyGaps` pattern. **This is the open piece**: the obligation mentions a
+   MEASURE (which argument position), and the checker cannot know which position the author
+   intends. Options below.
+4. Error when a recursive arm's call has no `termination:` entry.
+5. Gates: `std --library`, `aata`, theorem counts unchanged — all 48 recursive clauses need
+   entries, so this is a real migration, not a no-op.
 
-### Open: what counts as a constructor
+### Open: how the measure is named
 
-The rule says "the LHS argument is a constructor application and the RHS argument is its
-subterm". In the corpus the constructor is always `peano.succ` (or a local alias). Options,
-in increasing generality:
+The obligation's statement depends on which argument is the measure, and the checker cannot
+infer it — `rsegmentOf` has one decreasing, one increasing, one decreasing, and only the
+author knows arg 5 is the intended measure.
 
-- **Hardcode `succ`** — covers 48/48, and is the naming coupling
-  [[accelerator-naming-couplings]] forbids. Rejected on that ground alone.
-- **Any unary `oper` applied to a bare variable, whose argument is the RHS's argument.** This
-  is purely structural: `f(g(x), …) = … f(x, …)` decreases at that position regardless of what
-  `g` is called. Covers the corpus, needs no name, and is the proposal.
-- **A declared constructor set per sort.** More precise, but requires new syntax to declare
-  constructors, which nothing else in the language needs yet.
+Three options:
 
-The middle option is unsound in principle — `g` could be a non-injective or non-decreasing
-function, so `f(g(x)) = f(x)` would pass while looping. It is a HEURISTIC that catches the
-real failure mode (`g(n) = s(g(n))`, where the argument is unchanged) without rejecting
-anything legitimate. Worth stating plainly in the diagnostic and the GUIDE that it is a
-structural check, not a proof of termination — the same honesty `--fast` documents about its
+- **Infer by trying every position**, accepting the first for which the named theorem matches
+  a synthesized decrease. Fragile, and silently picks a position the author did not mean.
+- **Name the position in the declaration**: `termination: 5 by rsegmentOfDecreases`. Explicit,
+  verifiable, and the checker can synthesize the exact statement to match against.
+- **Let the theorem speak for itself** — accept any theorem whose statement is a strict
+  ordering between the call's argument and the pattern's at SOME position, and report which
+  position it matched. No new syntax; the checker discovers the measure from the proof.
+
+The third is the most appealing and needs a decision before step 3. It also raises the
+question of what ordering counts: `less_than` on `Nat` here, but the criterion should not
+hardcode a predicate name — [[accelerator-naming-couplings]] again. A well-founded-ordering
+notion per sort is the honest version, and `std/peano/order.b4m` already supplies the facts
+for ℕ.
 own trust boundary.
