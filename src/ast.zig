@@ -183,6 +183,11 @@ pub const Func = union(enum) {
         /// A DEFINITION BLOCK's `consistency:` list, else null for a bare declaration or a
         /// single-clause block (no pairs, nothing to declare). See `Consistency`.
         consistency: ?Consistency = null,
+        /// An IMPLICIT definition block's `existence:` / `uniqueness:` pair, else null. Only
+        /// `oper` can be implicitly defined: a `pred` gets both obligations for free, since it
+        /// is total (existence) and determined pointwise by any condition on it (uniqueness).
+        /// See `Determinacy` and IMPLICIT-DEFINITION-PLAN.md.
+        determinacy: ?Determinacy = null,
     },
     alias: Alias,
 };
@@ -200,6 +205,26 @@ pub const Pred = union(enum) {
 /// `arms` is kept so a consumer can recompute the pairing without re-reading the clauses: the
 /// parser already validated `entries.len == arms*(arms-1)/2`, and the pair for position `p`
 /// is derived from `arms` alone.
+/// A definition block's IMPLICIT-case obligations: the theorems that earn the right to call an
+/// implicit characterization a definition rather than an assumption.
+///
+/// `existence` discharges "a value with this property exists" — without it the symbol may
+/// denote nothing and the block is inconsistent (PAINPOINTS 16f). `uniqueness` discharges
+/// "at most one value has it" — without it the property picks out a SET, so the symbol is
+/// underdetermined, which is an axiom's job rather than a definition's.
+///
+/// Both are REQUIRED on an implicit block, and both are stated about the PROPERTY rather than
+/// about the defined symbol — they must be, or they are circular.
+pub const Determinacy = struct {
+    existence: Token,
+    uniqueness: Token,
+
+    /// The obligation each named theorem must state, synthesized from the clauses so the
+    /// author never writes it. See IMPLICIT-DEFINITION-PLAN.md for the shapes.
+    existence_obligation: ?*const Expr = null,
+    uniqueness_obligation: ?*const Expr = null,
+};
+
 pub const Consistency = struct {
     arms: usize,
     entries: []const ?Token,

@@ -600,6 +600,15 @@ pub const Parser = struct {
     /// `explicit` records whether the clause's LHS is the defined symbol (a rewrite — see
     /// `clauseIsExplicit`). It decides which well-formedness obligations the block owes:
     /// `consistency:` for explicit clauses, `existence:`/`uniqueness:` for implicit ones.
+    /// What a definition block's well-formedness section declared: the explicit case's
+    /// clause-pair `consistency:` list, and/or the implicit case's `existence:`/`uniqueness:`
+    /// pair. A block is one or the other, never both — `parseWellformedness` errors if the
+    /// declared kind does not match the clauses' shape.
+    pub const Wellformedness = struct {
+        consistency: ?ast.Consistency = null,
+        determinacy: ?ast.Determinacy = null,
+    };
+
     pub const Clause = struct {
         body: *const ast.Expr,
         guard: ?*const ast.Expr,
@@ -838,8 +847,8 @@ pub const Parser = struct {
                     requires = try self.parseExpr();
                 }
                 // `func f(a: T) => U:` opens a DEFINITION BLOCK (see parseDefinitionClauses).
-                const fcons: ?ast.Consistency = if (self.tok.tag == .colon) try self.parseDefinitionClauses(name, params) else null;
-                return .{ .func = .{ .local = .{ .name = name, .params = params, .result = result, .requires = requires, .consistency = fcons } } };
+                const fwf: Wellformedness = if (self.tok.tag == .colon) try self.parseDefinitionClauses(name, params) else .{};
+                return .{ .func = .{ .local = .{ .name = name, .params = params, .result = result, .requires = requires, .consistency = fwf.consistency, .determinacy = fwf.determinacy } } };
             },
             .keyword_pred => {
                 _ = self.advance();
@@ -851,8 +860,12 @@ pub const Parser = struct {
                 const params = try self.parseParams(true);
                 // `pred p(x: T):` opens a DEFINITION BLOCK — the declaration carries the
                 // clauses that characterize it. Bare `pred p(x: T)` stays opaque.
-                const pcons: ?ast.Consistency = if (self.tok.tag == .colon) try self.parseDefinitionClauses(name, params) else null;
-                return .{ .pred = .{ .local = .{ .name = name, .params = params, .consistency = pcons } } };
+                const pwf: Wellformedness = if (self.tok.tag == .colon) try self.parseDefinitionClauses(name, params) else .{};
+                // A `pred` cannot be implicitly defined — it is total (so existence is free)
+                // and determined pointwise by any condition on it (so uniqueness is free), and
+                // `parseWellformedness` rejects the obligations on an explicit block. So there
+                // is no determinacy to carry here.
+                return .{ .pred = .{ .local = .{ .name = name, .params = params, .consistency = pwf.consistency } } };
             },
             .keyword_fact => {
                 _ = self.advance();
@@ -1063,7 +1076,7 @@ pub const Parser = struct {
     /// formula becomes `guard -> clause`. Guards do NOT establish precedence — every clause
     /// states its own condition in full, because axioms have no order (see
     /// DEFINITION-KEYWORD-PLAN).
-    fn parseDefinitionClauses(self: *Parser, name: Token, params: []const ast.Binder) ParseError!?ast.Consistency {
+    fn parseDefinitionClauses(self: *Parser, name: Token, params: []const ast.Binder) ParseError!Wellformedness {
         _ = try self.expect(.colon);
         // Each clause is kept (not just staged) so the PAIRS can be synthesized below: a
         // consistency obligation relates two clauses, which needs both their guards and both
@@ -1112,9 +1125,23 @@ pub const Parser = struct {
     ///
     /// `consistency` is a plain identifier, not a keyword: nothing in the corpus uses the name,
     /// and a block attribute does not need to be reserved vocabulary.
-    fn parseWellformedness(self: *Parser, name: Token, params: []const ast.Binder, clauses: []const Clause) ParseError!?ast.Consistency {
+    fn parseWellformedness(self: *Parser, name: Token, params: []const ast.Binder, clauses: []const Clause) ParseError!Wellformedness {
         const arms = clauses.len;
         var found: ?ast.Consistency = null;
+        var ex_tok: ?Token = null;
+        var un_tok: ?Token = null;
+        // Is ANY clause implicit? One is enough: the block then characterizes its symbol by a
+        // property, and owes existence + uniqueness for the clause set as a whole. A block
+        // mixing the two kinds is rejected below — nothing in the corpus does it, and the
+        // obligations for a mixed block are not defined.
+        var implicit_arms: usize = 0;
+        for (clauses) |c| if (!c.explicit) {
+            implicit_arms += 1;
+        };
+        if (implicit_arms != 0 and implicit_arms != arms) {
+            return self.fail("definition '{s}' mixes explicit and implicit clauses ({d} of {d} are implicit) — an explicit clause rewrites its symbol, an implicit one characterizes it, and a block must be one or the other", .{ self.text(name), implicit_arms, arms });
+        }
+        const is_implicit = implicit_arms != 0;
         while (self.tok.tag == .identifier and std.mem.eql(u8, self.text(self.tok), "consistency")) {
             _ = self.advance();
             _ = try self.expect(.colon);
@@ -1148,7 +1175,43 @@ pub const Parser = struct {
             }
             found = .{ .arms = arms, .entries = list, .obligations = obligations };
         }
-        return found;
+
+        // The IMPLICIT case's pair. Both names are required, in either order, each once.
+        while (self.tok.tag == .identifier) {
+            const word = self.text(self.tok);
+            const is_ex = std.mem.eql(u8, word, "existence");
+            const is_un = std.mem.eql(u8, word, "uniqueness");
+            if (!is_ex and !is_un) break;
+            _ = self.advance();
+            _ = try self.expect(.colon);
+            const thm = try self.expect(.identifier);
+            if (is_ex) {
+                if (ex_tok != null) return self.fail("a definition block declares `existence:` at most once", .{});
+                ex_tok = thm;
+            } else {
+                if (un_tok != null) return self.fail("a definition block declares `uniqueness:` at most once", .{});
+                un_tok = thm;
+            }
+            if (self.tok.tag == .comma) _ = self.advance();
+        }
+
+        // An IMPLICIT block characterizes its symbol by a property it satisfies rather than
+        // rewriting it away, so the clause silently asserts that such a value EXISTS and that
+        // the property pins it DOWN. Both must be discharged, or the block is an assumption
+        // wearing a definition's clothes — PAINPOINTS 16f derives `ZERO = ONE` from one that
+        // was not.
+        if (is_implicit) {
+            if (ex_tok == null or un_tok == null) {
+                return self.fail("definition '{s}' is IMPLICIT (its clause characterizes '{s}' rather than rewriting it) and must declare both `existence:` and `uniqueness:` after the clause list's `.`", .{ self.text(name), self.text(name) });
+            }
+        } else if (ex_tok != null or un_tok != null) {
+            return self.fail("definition '{s}' is EXPLICIT (its clause rewrites '{s}' away), so `existence:`/`uniqueness:` do not apply — an explicit definition is eliminable and owes only `consistency:` across its clause pairs", .{ self.text(name), self.text(name) });
+        }
+        const determ: ?ast.Determinacy = if (ex_tok != null and un_tok != null)
+            .{ .existence = ex_tok.?, .uniqueness = un_tok.? }
+        else
+            null;
+        return .{ .consistency = found, .determinacy = determ };
     }
 
     /// Wrap one clause in `forall` over the declaration's params plus any extra free
