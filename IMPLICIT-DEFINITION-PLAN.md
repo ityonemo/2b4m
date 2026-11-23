@@ -260,6 +260,63 @@ candidate. For `rmonomial` that is already unwieldy to write by hand, which argu
 checker stating the obligation and verifying the author's named theorem matches — the
 `collectConsistencyGaps` pattern — rather than expecting it typed out.
 
+## How the corpus handles this today — and what it tells the design
+
+`std/real/polynomial.b4m` has five implicit definitions and handles them like this:
+
+```2b4m
+oper rmonomial(a: Real, k: Nat) => RPoly:
+  rcoeff(rmonomial(a, k), k) = a;
+  (not (i = k)) -> rcoeff(rmonomial(a, k), i) = ZERO.
+
+axiom rPolyExtensionality: forall p, q: RPoly;                      // line 45
+  (forall i: Nat; rcoeff(p, i) = rcoeff(q, i)) -> p = q
+```
+
+| | how it is handled today |
+|---|---|
+| the definition | block form, implicit (symbol inside the condition) |
+| **uniqueness** | `rPolyExtensionality` — **generic, one axiom serving all five definitions** |
+| **existence** | **absent** — probed: no `exists … Poly` claim in either polynomial layer |
+
+Two consequences, both of which make the plan cheaper and better shaped than drafted above.
+
+**1. Uniqueness is already corpus practice, just unlinked.** `rPolyExtensionality` is not about
+`rmonomial`; it says any two polynomials with equal coefficients are equal, which supplies
+uniqueness for `raddP`, `rnegP`, `rmulP`, `rmonomial` and `RZEROP` at once. So requiring
+`uniqueness:` largely FORMALIZES AN EXISTING CONVENTION rather than demanding new proofs.
+
+**2. Existence is the genuinely missing obligation**, and it is where the 16f exposure sits in
+real code. `rcoeff(rmonomial(a,k), k) = a` is ASSERTED by the clause, not derived from "a
+polynomial with these coefficients exists". That is structurally identical to the `natRecip`
+repro — the same unguarded construction, with a true conclusion instead of a false one.
+
+### Design consequence: the obligations must accept a GENERIC fact
+
+If `existence:` / `uniqueness:` had to name a theorem about THIS definition, the polynomial
+family would need five near-identical pairs. `rPolyExtensionality` shows the natural unit is
+**per-sort, not per-definition**.
+
+So the obligation should accept a generic fact and have the checker verify it IMPLIES the
+specific instance, rather than demanding a bespoke theorem per definition:
+
+```2b4m
+oper rmonomial(a: Real, k: Nat) => RPoly:
+  rcoeff(rmonomial(a, k), k) = a;
+  (not (i = k)) -> rcoeff(rmonomial(a, k), i) = ZERO.
+  existence: aMonomialExists,
+  uniqueness: rPolyExtensionality        // the SAME fact all five cite
+```
+
+That makes the migration: one new existence fact per implicit definition (genuinely new
+mathematics, and genuinely missing today), plus one shared uniqueness citation per sort. Not
+30 pairs.
+
+**Open:** whether "implies the specific instance" is checked by α-equivalence after
+instantiation (as `collectConsistencyGaps` does) or needs real inference. Extensionality
+instantiated at `y` and `z` gives uniqueness directly, so α-match may suffice — verify on
+`rmonomial` before committing to it.
+
 ## Settled by probing
 
 1. **How the clause publishes.** As the explicit case does: `InternPool.definitionClauseName`
