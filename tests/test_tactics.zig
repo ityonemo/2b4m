@@ -115,6 +115,18 @@ pub fn addTests(
     // countermodel. This is `swap`'s two trivial pairs.
     ctx.okSilent(&.{ "check", "tests/cases/definition/consistency_complementary.b4m" });
 
+    // `consistency(<theory>):` on the DECLARATION. The theory a `_` entry's staged proof
+    // cites was previously SNIFFED from whether a clause token happened to carry a qualifier
+    // (`constructorTheory`), so the SAME definition written through local aliases found no
+    // theory and staged a proof that could not reach the vacuity schema. These two fixtures
+    // are that pair: `aliased.b4m` is `nrep` with local `ZERO`/`succ` aliases, which fails
+    // without the declared selector and passes with it.
+    ctx.okSilent(&.{ "check", "tests/cases/definition/consistency-selector/aliased.b4m" });
+
+    // and the selector is OPTIONAL: a file owning its own constructors, and stating its own
+    // vacuity schema, needs no theory named — local resolution is right.
+    ctx.okSilent(&.{ "check", "tests/cases/definition/consistency-selector/local.b4m" });
+
     // THE soundness property: the tactic proves nothing itself, so it cannot be unsound.
     // Conditions that CAN both hold do not match the vacuity schema's shape, so the kernel's
     // statement match rejects them — here with a FALSE consequent, which must not go through.

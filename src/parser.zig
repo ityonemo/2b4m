@@ -1144,6 +1144,21 @@ pub const Parser = struct {
         const is_implicit = implicit_arms != 0;
         while (self.tok.tag == .identifier and std.mem.eql(u8, self.text(self.tok), "consistency")) {
             _ = self.advance();
+            // `consistency(<theory>):` — the theory whose VACUITY SCHEMA a `_` entry's staged
+            // proof cites. Optional, because a file owning its own constructors needs none.
+            //
+            // It exists because the alternative is to SNIFF it: `constructorTheory` reads the
+            // theory off whether the author happened to qualify a clause token, so
+            // `nrep(a, peano.ZERO)` found `peano` while the same definition written through
+            // local aliases (`nrep(a, ZERO)`) found nothing and staged a proof that could not
+            // cite the schema. Same mathematics, different behaviour by spelling — the naming
+            // coupling [[accelerator-naming-couplings]] forbids. Stating it is the fix.
+            var selector: ?Token = null;
+            if (self.tok.tag == .l_paren) {
+                _ = self.advance();
+                selector = try self.expect(.identifier);
+                _ = try self.expect(.r_paren);
+            }
             _ = try self.expect(.colon);
             var entries: std.ArrayList(?Token) = .empty;
             while (true) {
@@ -1171,7 +1186,9 @@ pub const Parser = struct {
             for (list, 0..) |entry, p| {
                 if (entry != null) continue;
                 if (p >= obligations.len) break;
-                try self.stageConsistencyTheorem(name, obligations[p], p, arms, constructorTheory(clauses, name));
+                // The DECLARED selector wins; `constructorTheory`'s sniff is the fallback so
+                // existing qualified-pattern blocks keep working unchanged.
+                try self.stageConsistencyTheorem(name, obligations[p], p, arms, selector orelse constructorTheory(clauses, name));
             }
             found = .{ .arms = arms, .entries = list, .obligations = obligations };
         }

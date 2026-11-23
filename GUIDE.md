@@ -455,6 +455,22 @@ Every position is written out even when automatic, so a reader sees how many pai
 exist and a miscount is an error rather than a silent default. A single-clause block
 has no pairs and declares nothing.
 
+**Name the sort's theory when a `_` entry needs its vacuity schema**, written
+`consistency(<theory>):`:
+
+```2b4m
+oper nrep(a: Nat, n: Nat) => Nat:
+  nrep(a, ZERO) = a;
+  nrep(a, succ(n)) = succ(nrep(a, n)).
+  consistency(peano): _
+```
+
+The selector is OPTIONAL and means "look here for the vacuity schema". Omit it when the
+file owns its own constructors and states its own schema — local resolution is then
+right. Give it whenever the constructors come from an import, INCLUDING through local
+aliases: `ZERO` and `succ` above are aliases of `peano.ZERO`/`peano.succ`, and without
+`(peano)` the staged proof cannot reach `zeroSuccSplitIsVacuous`.
+
 For a block splitting on a sort's CONSTRUCTORS the conditions never both hold, so
 the obligation is vacuous — but vacuously true is still something to prove, and the
 proof is the same every time. `definition_consistency(<theory>)` emits it: `fix` the
