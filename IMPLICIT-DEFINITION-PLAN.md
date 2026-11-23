@@ -1,4 +1,13 @@
-# Implicit definitions — when the defined symbol is not an l-value
+# Guarding implicit definitions — the form already exists and is unchecked
+
+**Scope correction, up front.** An earlier draft of this plan described adding an implicit
+definition form. That was wrong: the form is already in the language, already accepted by the
+parser, and already used 30 times in `std/`. `stageDefinitionAxiom` (`parser.zig:1107`) stages
+a clause "exactly as written" without inspecting its left-hand side, so a clause whose defined
+symbol sits inside the condition is staged as an axiom with no further question asked.
+
+This plan therefore adds no syntax. It adds the **obligations that form should have carried
+from the start**, and it is a migration of 30 existing clauses rather than a new feature.
 
 A symbol can be *defined* in two ways, and 2b4m only supports one of them.
 
@@ -16,8 +25,17 @@ oper f(n: N) => N:
 ```
 
 **Implicitly**, by a property the value uniquely satisfies. The symbol appears INSIDE the
-condition, so there is no rewrite direction — and 2b4m has no form for this at all. Today it
-must be written as an axiom:
+condition, so there is no rewrite direction.
+
+**2b4m already accepts this — unguarded.** `stageDefinitionAxiom` (`parser.zig:1107`) stages
+"the axiom is the clause exactly as written": it collects the clause's free variables,
+quantifies them, and stages the formula verbatim. It never inspects the left-hand side. So an
+implicit definition parses today and is used 30 times in `std/`.
+
+**This plan therefore CONSTRAINS an existing form rather than adding one.** The hard part —
+expressing an implicit definition — is built and in production. What is missing is the guard.
+
+The alternative today is to write it as a plain axiom:
 
 ```2b4m
 oper recip(a: Field) => Field requires nonzero(a)
@@ -37,7 +55,10 @@ the facts about it:
 | **B. implicitly defined** | `oper recip` + `fieldInverse` | characterizes a value that EXISTS and is UNIQUE | no — but determined |
 | **C. explicitly defined** | `pred nonzero(a): … iff …` | gives the value | **yes** |
 
-A and C have forms. **B does not**, so it borrows A's, and the report cannot tell them apart.
+All three are writable today. The problem is that **B and C share one syntax with one set of
+checks** — the block form accepts either and demands only `consistency:`, which is the wrong
+obligation for B — so an implicit definition is accepted with no existence check and reported
+as carrying no assumption.
 
 The difference between A and B is not stylistic. `mul` means *whatever satisfies* the ring
 axioms — many functions do, and that is the point of an abstract theory. `recip` means *the*
@@ -176,8 +197,8 @@ definition the checker merely cannot type. **It is PAINPOINTS 16**, and the bind
 annotated (`k: K`); the inferencer just does not use the annotation.
 
 This matters for sequencing: fixing 16 dissolves BOTH the pred cases and the 16e cases. What
-remains genuinely unaddressable by any existing form is only the `oper` implicit case — which
-is what this plan is for.
+remains is the `oper` implicit case — which is writable today and merely unguarded, and is
+what this plan is for.
 
 ## Relationship to the other plans, and to PAINPOINTS 16
 
@@ -192,7 +213,7 @@ So the work splits cleanly:
 | | fixes | how |
 |---|---|---|
 | **PAINPOINTS 16** (sort inference under a quantifier) | 16e, and the `pred` cases that fall back to `define` | elaboration change |
-| **this plan** | 16f, and `oper`s like `recip` that no form can express | parse + obligation check |
+| **this plan** | 16f — the implicit form is writable today but unguarded | parse-time validation + obligation check |
 
 `DEFINITION-SOUNDNESS-PLAN.md` owns clause-overlap consistency and structural-decrease
 termination for the explicit case. This plan's existence/uniqueness pair is the implicit-case
@@ -390,10 +411,11 @@ coefficient sequence of the right shape has a polynomial.
 So the practice is already correct — but by CONVENTION, not enforcement. Nothing links a
 clause to the axiom that licenses it, and nothing would complain if one were written without.
 
-**Two consequences for this plan.** First, the implicit form is clearly wanted: it is in the
-standard library 30 times, written as if the feature existed. Second, the migration is smaller
-than 30 proofs — the polynomial family shares one pair of facts, so most of those clauses would
-name the same `polyExtensionality`-shaped obligations. Confirm that before building.
+**Two consequences for this plan.** First, these are not evidence the form is WANTED — they
+are existing USERS of it, since the parser already accepts any clause. Requiring obligations
+breaks all 30 until each names them, so this is a migration, not an addition. Second, the cost
+is well under 30 proofs: the polynomial family shares one `polyExtensionality`-shaped
+uniqueness fact per sort, so what is genuinely new is the existence fact per definition.
 
 ## Not in scope
 

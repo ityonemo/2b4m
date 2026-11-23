@@ -432,8 +432,13 @@ mathematics, but only with two discharged obligations:
 Without existence the symbol may denote nothing and the definition is inconsistent (above).
 Without uniqueness it is underdetermined, which is an axiom's job rather than a definition's.
 
-`IMPLICIT-DEFINITION-PLAN.md` designs this: the block dispatches on whether the clause's LHS
-is an L-VALUE (`f(args)` alone — explicit, eliminable, `consistency:`) or not (implicit, so
+**Why the form exists at all:** `stageDefinitionAxiom` (`parser.zig:1107`) stages a clause
+"exactly as written" — it collects free variables, quantifies, and stages the formula verbatim,
+never inspecting the left-hand side. So the implicit form was never designed; it fell out of
+the clause being taken literally.
+
+`IMPLICIT-DEFINITION-PLAN.md` designs the guard: the block dispatches on whether the clause's
+LHS is an L-VALUE (`f(args)` alone — explicit, eliminable, `consistency:`) or not (implicit, so
 `existence:` + `uniqueness:` are required). No new keyword; the test is syntactic and decided
 at parse time.
 
