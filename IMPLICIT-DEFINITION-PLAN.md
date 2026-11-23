@@ -96,6 +96,48 @@ the status is only honest if the thing was checked.
    the existence obligation is naturally proved under the same guard. Nothing new is needed —
    but see the open questions.
 
+## Is there a parallel construction for `pred`? No — and the reason is instructive
+
+**No**, and not because preds are simpler: because an implicit definition's two obligations
+are both FREE for a predicate.
+
+- **Existence** is free. A predicate is total — `p(x)` is true or false at every `x`, with
+  nothing to construct. An `oper` must exhibit an inhabitant of its result sort; a `pred`
+  denotes into Prop, which is two-valued and always inhabited.
+- **Uniqueness** is automatic. A condition on the proposition `p(x)` determines it pointwise.
+
+So any condition that pins a predicate down can be SOLVED for `p(x)` and written as an `iff` —
+which is the explicit block. A condition that cannot be so solved (`p(x) -> Q(x)` with no
+converse) leaves `p` underdetermined, which is case A and belongs as an axiom. There is no
+middle case for the new form to occupy.
+
+`std/real.b4m`'s `less_than` is the case-A example: six axioms (irreflexive, transitive,
+trichotomy, add-right, add-cancel, …) constrain it and none determines it — many relations
+satisfy them, which is the point of an ordered-field axiomatization.
+
+**Caveat worth recording:** this argument uses classical logic with total predicates, which is
+what 2b4m has. Were predicates partial, or the logic intuitionistic, case B would open up for
+preds too and this section would need revisiting.
+
+### But preds DO hit a wall — a different one
+
+Predicates fail to use the block form regularly, and existentials are the trigger:
+
+```2b4m
+pred divides(d: T, n: T):
+  divides(d, n) iff (exists k: K; n = mul(d, k)).
+  // error: cannot infer the sort of 'k'
+```
+
+That is why `std/divisibility.b4m:23` uses a `define` macro instead. But this is NOT the
+implicit case — the body IS `iff`-shaped and IS eliminable, so it is a perfectly explicit
+definition the checker merely cannot type. **It is PAINPOINTS 16**, and the binder is even
+annotated (`k: K`); the inferencer just does not use the annotation.
+
+This matters for sequencing: fixing 16 dissolves BOTH the pred cases and the 16e cases
+(`DEFINITION-KEYWORD-STATUS-PLAN.md`). What remains genuinely unaddressable by any existing
+form is only the `oper` implicit case — which is what this plan is for.
+
 ## Relationship to the other two plans
 
 - **`DEFINITION-KEYWORD-STATUS-PLAN.md`** (PAINPOINTS 16e) proposes a bare `definition
