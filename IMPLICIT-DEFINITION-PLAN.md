@@ -338,6 +338,71 @@ instantiation (as `collectConsistencyGaps` does) or needs real inference. Extens
 instantiated at `y` and `z` gives uniqueness directly, so α-match may suffice — verify on
 `rmonomial` before committing to it.
 
+## The synthesis algorithm
+
+Given a block `oper f(p₁…pₙ) => R requires G:` with clauses `C₁…Cₘ`:
+
+1. **Locate the defining application.** `findApplication(Cᵢ, f)` (`parser.zig:132`) already
+   does this, and already recurses through `call`/`binary`/`not`/`quant`/`lambda` — so it finds
+   `recip(a)` nested inside `mul(a, recip(a))`.
+2. **Require the arguments be exactly the declared params, distinct.** Otherwise reject: this
+   is what keeps `f(s(n)) = s(f(n))` out of the implicit path (its argument is a pattern, not a
+   param), and it is the sibling of the l-value test.
+3. **Substitute** `f(p₁…pₙ) := y` throughout each clause, giving a body `Bᵢ[y]`.
+4. **Partition the free variables** into declared params (outer tier) and everything else
+   (inner tier), using `collectClauseVars` plus the param-override loop (`:510-518`).
+
+Then:
+
+```
+existence:  forall p₁…pₙ;  G  ->  exists y: R;  ⋀ᵢ (forall <locals of Cᵢ>; Bᵢ[y])
+
+uniqueness: forall p₁…pₙ;  forall y, z: R;  G
+              ->  ⋀ᵢ (forall <locals of Cᵢ>; Bᵢ[y])
+              ->  ⋀ᵢ (forall <locals of Cᵢ>; Bᵢ[z])
+              ->  y = z
+```
+
+Both tiers matter: a clause-local bound OUTSIDE the `exists` would ask only for a value that
+works at one index. See the `rmonomial` case below.
+
+### Checked against all three real shapes
+
+**`recip`** — one clause, no locals, guard present:
+
+```2b4m
+existence:  forall a: Field; nonzero(a) -> exists y: Field; mul(a, y) = ONE
+uniqueness: forall a: Field; forall y, z: Field;
+              nonzero(a) -> mul(a, y) = ONE -> mul(a, z) = ONE -> y = z
+```
+
+**`neg` on `Ring`** — one clause, no locals, no guard:
+
+```2b4m
+existence:  forall a: Ring; exists y: Ring; add(y, a) = ZERO
+uniqueness: forall a: Ring; forall y, z: Ring;
+              add(y, a) = ZERO -> add(z, a) = ZERO -> y = z
+```
+
+**`rmonomial`** — two clauses, `i` local to the second, which is implication-guarded:
+
+```2b4m
+existence:  forall a: Real; forall k: Nat;
+              exists y: RPoly;
+                rcoeff(y, k) = a
+                and (forall i: Nat; (not (i = k)) -> rcoeff(y, i) = ZERO)
+
+uniqueness: forall a: Real; forall k: Nat; forall y, z: RPoly;
+              (rcoeff(y, k) = a and (forall i: Nat; (not (i = k)) -> rcoeff(y, i) = ZERO)) ->
+              (rcoeff(z, k) = a and (forall i: Nat; (not (i = k)) -> rcoeff(z, i) = ZERO)) ->
+              y = z
+```
+
+**The `rmonomial` uniqueness obligation was PROVED as written**, not merely parsed: it checks
+from `rPolyExtensionality` plus one lemma for the per-index agreement (a case split on
+`i = k`). So the synthesized shape is usable, not just well-formed — which is the thing worth
+knowing before building the synthesizer.
+
 ## Settled by probing
 
 1. **How the clause publishes.** As the explicit case does: `InternPool.definitionClauseName`
