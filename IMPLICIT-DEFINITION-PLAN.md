@@ -82,6 +82,33 @@ assumption:
 - **uniqueness** — without it the property picks out a SET of candidates, so the symbol is
   underdetermined. That is an axiom's job, not a definition's.
 
+### A BARE `oper` plus axioms is untouched — this is the load-bearing invariant
+
+**Nothing here applies to a declaration with no definition block.** The dispatch happens
+INSIDE a block (`oper f(…):` followed by clauses); an `oper` declared bare and constrained by
+separately-named axioms is case A, is correct as it stands, and must keep working unchanged:
+
+```2b4m
+oper add(a: Ring, b: Ring) => Ring          // no block — nothing to dispatch on
+oper mul(a: Ring, b: Ring) => Ring
+
+axiom mulIsAssociative:  forall a, b, c: Ring; mul(mul(a, b), c) = mul(a, mul(b, c))
+axiom mulAddDistribLeft: forall a, b, c: Ring; mul(a, add(b, c)) = add(mul(a, b), mul(a, c))
+```
+
+`mul` here is a PRIMITIVE. It means whatever satisfies the ring axioms — many functions do,
+and that is the entire point of an abstract theory. There is no existence obligation to
+discharge (the theory asserts such an operation, that is what an axiomatization IS) and no
+uniqueness claim to make (there had better not be one; `Ring` has many models).
+
+So the rule must not be read as "an `oper` with facts about it owes obligations". It is: **a
+DEFINITION BLOCK whose clause is not an l-value owes obligations.** An axiom stated about a
+bare declaration is not a definition block and never becomes one.
+
+This is also why the existing `--axioms` behaviour for case A is RIGHT rather than a
+companion bug to 16f: `mulIsAssociative` genuinely is an assumption, and reporting it as one
+is the honest answer.
+
 ### Why mandatory obligations also fix typos
 
 Dispatching on shape raises the worry that a typo could silently move a clause between
@@ -206,10 +233,23 @@ check is an error rather than a downgrade.
 ## Still open
 
 - **What the clause-shape test accepts exactly.** "LHS is an application of the defined symbol
-  to distinct binders" is the intent. Edge cases to pin down: a clause with the symbol on BOTH
-  sides at l-value position (`f(s(n)) = s(f(n))` — explicit and structurally recursive, must
-  stay explicit); a `when`-guarded implicit clause; more than one implicit clause for the same
-  symbol.
+  to distinct binders" is the intent. Edge cases to pin down, each present in the corpus or
+  trivially reachable:
+  - **structural recursion**: `f(s(n)) = s(f(n))` has the symbol on both sides but the LHS IS
+    an l-value, so it must stay EXPLICIT. The test is about the left side only.
+  - **`rmonomial` — the hardest real case** (`std/real/polynomial.b4m:35`): TWO implicit
+    clauses, the second guarded by an implication rather than `when`, and no `consistency:`
+    declared.
+
+        oper rmonomial(a: Real, k: Nat) => RPoly:
+          rcoeff(rmonomial(a, k), k) = a;
+          (not (i = k)) -> rcoeff(rmonomial(a, k), i) = ZERO.
+
+    This is a single implicit definition SPLIT ACROSS TWO CLAUSES by a case on the index, so
+    existence and uniqueness are owed once for the pair, not once per clause — and the
+    existing pairwise `consistency:` shape does not fit. **Design against this case**; a rule
+    that handles only one implicit clause per symbol would fail the corpus on day one.
+  - whether a block may MIX l-value and non-l-value clauses (nothing in the corpus does).
 - **Whether `--library` should reject an implicit definition whose obligations are unproved**,
   or whether plain `check` should. The `consistency:` precedent puts the STATEMENT check in
   `--library` but discharges the obligation in the normal proof flow, which suggests the same
