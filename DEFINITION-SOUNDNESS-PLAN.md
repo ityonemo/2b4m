@@ -438,129 +438,176 @@ qed
 Same class as PAINPOINTS 16f: the kernel does as it is told, and the user has built an
 inconsistent system with nothing warning them.
 
-### The criterion: a MEASURE that strictly decreases at every recursive call
+### The criterion — TWICE REJECTED, and why
 
-**A syntactic check is not acceptable here** (user ruling 2026-11-23). "The argument looks
-smaller" can pass a looping definition: `f(g(x)) = f(x)` decreases structurally while `g` is
-free to be the identity. A soundness check cannot rest on a shape that admits a counterexample.
+Two framings were worked out in full and both fail. Recording them because the failures are
+what constrain the third attempt.
 
-So the obligation is a PROOF, in the user's framing:
+**REJECTED 1 — a syntactic decrease** ("the LHS argument is `succ(x)` and the RHS's is `x`").
+Not acceptable for a soundness check: `f(g(x)) = f(x)` passes while `g` is free to be the
+identity, so the shape admits a counterexample.
 
-> Gather the arms that TERMINATE (no recursive content). Each RECURSING arm must then prove:
-> for all inputs, the inner call satisfies one of the terminating arms' patterns after
-> finitely many steps.
+**REJECTED 2 — a strictly decreasing MEASURE.** The obligation would be
+`less_than(sub(k, ONE), k)` and friends, discharged from `subStrictlyDecreases` /
+`lessThanSelf`. Those proofs were written and they check. Two objections kill it anyway:
 
-In practice that is discharged as a **strictly decreasing measure on a well-ordered sort** —
-which is the same claim, and the form that is actually provable. The recursion reaches a base
-arm because the measure cannot descend forever.
+1. **"Decrease" is undefined.** A measure argument is well-founded only relative to a
+   WELL-FOUNDED RELATION, and 2b4m has no such notion. `less_than` on ℕ happens to be one,
+   but nothing in the language says so, and nothing stops an author citing a "decrease" in an
+   order with infinite descending chains. The obligation would look rigorous while resting on
+   a property never stated.
 
-```2b4m
-// rconvolution: the base arm's pattern is arg4 = NAT_ZERO; the recursive arm calls at
-// arg4 = m from arg4 = succ(m). The measure is arg4.
-theorem rconvolutionDecreases: forall m: Nat; less_than(m, succ(m))   // lessThanSelf
-```
+2. **Some legitimate recursions INCREASE.** Ladder operators are the clean example: `L⁺` maps
+   level `n` to level `n+1`, and a recursive definition of its action has no decreasing
+   measure at all. Such a definition is perfectly well-founded — but not because anything
+   descends.
 
-Verified provable against the three corpus shapes:
+So termination-by-descent is the wrong frame. It is one sufficient condition, not the
+property.
 
-| | measure | obligation | proved from |
-|---|---|---|---|
-| `rconvolution` | arg 4 | `less_than(m, succ(m))` | `peano_order.lessThanSelf` |
-| `rsegmentOf` | arg 5 | `less_than(n, succ(n))` | same |
-| `fib` | arg 1 | TWO, see below | `lessThanSelf` + `lessThanSuccRight` |
+### What actually makes a recursive definition well-founded
 
-`rsegmentOf` is why the measure must be NAMED rather than inferred from "the arguments": its
-arg 3 decreases, arg 4 **increases**, arg 5 decreases. Only arg 5 is the measure, and a check
-that tried every position or demanded none increase would get it wrong.
+The `L⁺` case points at it: the definition is well-founded because the SORT IS INDUCTIVELY
+GENERATED and each clause's pattern matches a distinct constructor. `fib(ZERO)`,
+`fib(succ(ZERO))`, `fib(succ(succ(k)))` is well-founded not because something shrinks but
+because every `Nat` is exactly one of those three shapes, and the recursive clause's arguments
+are *proper subterms of its own pattern*.
 
-### MULTIPLE RECURSIVE CALLS — one obligation per CALL, not per clause
+That is structural recursion over an inductive sort, and it is the standard criterion — the
+one Coq's `Fixpoint` and Lean's `termination_by` default to. Crucially it is about the
+PATTERN, not about any ordering, so it covers increasing recursions: `L⁺(succ(n))` defined
+from `L⁺(n)` is fine, and `L⁺(n) = …L⁺(succ(n))…` is not, regardless of which direction the
+VALUES go.
 
-Measured: **no clause in `std` has more than one self-call**, and exactly one in the wider
-corpus does — `fib` (`aata/2.3-primes-exercises.md:106`):
+**2b4m already has the needed per-sort knowledge.** `peano.zeroSuccSplitIsVacuous` is a
+schema asserting `ZERO` and `succ(n)` are distinct constructors, and `consistency:`'s
+`constructor_split` route already consumes it (`Accelerants/DefinitionConsistency.zig:73`).
+Whatever `termination:` becomes should rest on the same notion rather than inventing a second
+one.
+
+### THE THEORY SELECTOR — `termination(peano):`, and `consistency(peano):` too
+
+A well-formedness obligation needs the SORT's own machinery, and the declaration must say
+which theory supplies it:
 
 ```2b4m
 oper fib(n: Nat) => Nat:
-  fib(NAT_ZERO) = NAT_ZERO;                                   // terminating arm
-  fib(nat_succ(NAT_ZERO)) = NAT_ONE;                          // terminating arm
-  fib(nat_succ(nat_succ(k))) = nat_add(fib(nat_succ(k)), fib(k)).   // TWO calls
+  fib(ZERO) = ZERO;
+  fib(succ(ZERO)) = ONE;
+  fib(succ(succ(k))) = add(fib(succ(k)), fib(k)).
+  termination(peano): _, _, armStep
 ```
 
-The two calls are at `succ(k)` and at `k`, from the pattern `succ(succ(k))`. Both decrease,
-**by different amounts and from different facts**:
+| | needs from the sort's theory |
+|---|---|
+| `consistency:` | constructor **distinctness** — `zeroSuccSplitIsVacuous`, the vacuity schema |
+| `termination:` | the **induction principle** AND constructor **coverage** |
+
+**And `consistency:` needs one as well — it is currently SNIFFED, which is a defect.**
+`constructorTheory` (`parser.zig:69`) reads the theory off whether the author happened to
+QUALIFY a token in the clause pattern:
+
+- `nrep(a, peano.ZERO)` → selector `peano`
+- `nrep(a, ZERO)` through a local alias → selector **null**, and a `_` entry's auto-discharge
+  gets no vacuity schema at all
+
+Same definition, same mathematics, different selector depending on spelling. That is exactly
+what [[accelerator-naming-couplings]] forbids ("accelerators may hardcode DEFAULT names but
+every expected name MUST be overridable"), and it is the explicit-bindings change the user
+already ruled for on 2026-11-20 ("you have to explicitly declare the bindings for the relevant
+number system").
+
+So the selector belongs on BOTH declarations, parsed the same way:
 
 ```2b4m
-theorem fibCallOneDecreases: forall k: Nat; less_than(succ(k), succ(succ(k)))
-  // lessThanSelf at succ(k)
-theorem fibCallTwoDecreases: forall k: Nat; less_than(k, succ(succ(k)))
-  // lessThanSelf at k, then lessThanSuccRight
+consistency(peano): _
+termination(peano): _, _, armStep
 ```
 
-Both verified to check. So the obligation structure is **per call site**, and that is forced
-rather than chosen: a single clause-level obligation could not have been discharged by one
-theorem here, since the two calls need different lemmas.
+The tactic form `[using definition_consistency(peano)]` stays — it is how a hand-written
+consistency theorem names the schema — but a `_` entry's staged theorem should take its
+selector from the DECLARATION rather than from a sniffed qualifier.
 
-Consequences for the syntax, all following from "per call":
+### What `termination(peano)` must resolve to
 
-- **Entries are positional over the call sites of each recursive arm**, in source order — the
-  same discipline `consistency:` uses for clause pairs, and for the same reason: a miscount
-  should be an error rather than a silent default.
-- **A terminating arm declares nothing.** It is identified by having no self-call, and its
-  PATTERN is what the recursive arms must reach.
-- **A clause with two calls needs two entries.** `fib` would write
-  `termination: fibCallOneDecreases, fibCallTwoDecreases`.
+Two per-sort facts, and only the first exists today:
 
-### SYNTAX: `termination:` with `_` for the terminating arms
+1. **The induction principle.** `peano.induction` for one-step arms,
+   `peano/order.strongInduction` for arms reaching back further — `fib` needs the latter, since
+   its arm uses both `succ(k)` and `k`. So the selector cannot name a single fixed schema; the
+   ARM STRUCTURE picks which principle applies, and the theory must offer both.
+
+2. **Constructor COVERAGE** — "every `Nat` is `ZERO` or `succ(ZERO)` or `succ(succ(k))`" — which
+   is what makes `fib`'s three arms exhaustive. **This is a different fact from distinctness**,
+   and `std` does not state it at this depth. Distinctness (`zeroSuccSplitIsVacuous`) says two
+   constructor patterns cannot both match; coverage says at least one must. `consistency:` needs
+   only the former; `termination:` needs the latter, and it is the piece that is missing.
+
+### THE SHAPE: the obligation is proved BY INDUCTION over the sort
+
+This is what the two rejected framings were groping at. Termination-by-descent tried to state
+well-foundedness as a property of some ordering; the right move is to USE the sort's induction
+principle, which is where well-foundedness comes from in the first place.
+
+The obligation is: **the recursion determines a value at every input**, proved by induction
+over the sort's constructors. The terminating arms supply the base; each recursive arm supplies
+the step.
 
 ```2b4m
-termination: _, _, proof1, proof2, …
+// base arms cover the base constructor; the recursive arm covers the successor
+theorem theRecursionIsTotal: forall n: Nat; isDefinedAt(n)
+proof
+  @base | isDefinedAt(ZERO)                                   [by cite baseArmsCoverZero]
+  @step | forall k: Nat; isDefinedAt(k) -> isDefinedAt(succ(k)) [by cite recursiveArmCoversSucc]
+  @conclusion | forall n: Nat; isDefinedAt(n)
+    [using instantiation peano.induction((fun n: Nat => isDefinedAt(n))) base step]
+qed
 ```
 
-**Positional over the whole block**: one entry per terminating arm (written `_`), then one per
-recursive CALL, in source order. The declaration therefore shows the arm structure rather than
-making a reader reconstruct it.
+Verified: this checks against `peano.induction` (`std/peano.b4m:83`), the schema
+`prop(ZERO) -> (forall k; prop(k) -> prop(succ(k))) -> forall n; prop(n)`.
 
-**A `_` MUST correspond to a terminating arm** (user ruling 2026-11-23) — it is not a
-"discharge this automatically" marker as it is in `consistency:`. Writing `_` where an arm
-recurses, or a name where an arm terminates, is an error. That makes the declaration a
-checkable claim about which arms are base cases, not just a list of proofs.
+**Why this survives both earlier objections:**
 
-Against the corpus:
+- **"Decrease" never appears**, so it need not be defined. The proof principle is the sort's
+  own induction schema, not an ordering the author asserts is well-founded.
+- **Increasing recursions are fine.** `L⁺(succ(n))` defined from `L⁺(n)` gives the induction
+  step directly; nothing has to get smaller. The ladder-operator case that killed the measure
+  framing is simply the ordinary inductive step.
+- **Multi-call arms are fine.** `fib`'s arm needs `isDefinedAt(succ(k))` and `isDefinedAt(k)`
+  to conclude `isDefinedAt(succ(succ(k)))` — which is two-step induction, available as a
+  derived principle rather than a new mechanism, and NOT a tree-reachability claim.
 
-```2b4m
-oper rconvolution(p: RPoly, q: RPoly, j: Nat, m: Nat) => Real:
-  rconvolution(p, q, j, NAT_ZERO) = …;                       // arm 0: terminating
-  rconvolution(p, q, j, succ(m)) = … rconvolution(p, q, succ(j), m).   // arm 1: one call
-  termination: _, rconvolutionDecreases
+**And it explains the `_` rule.** `termination: _, _, proof` reads as "these two arms are the
+base, this one is the step" — the declaration states the induction's own structure. A block
+with no `_` has no base case, so no induction is available: which is why the arity rule alone
+rejects `g(n) = s(g(n))`.
 
-oper fib(n: Nat) => Nat:
-  fib(NAT_ZERO) = NAT_ZERO;                                  // arm 0: terminating
-  fib(succ(NAT_ZERO)) = NAT_ONE;                             // arm 1: terminating
-  fib(succ(succ(k))) = add(fib(succ(k)), fib(k)).            // arm 2: TWO calls
-  termination: _, _, fibCallOneDecreases, fibCallTwoDecreases
-```
+### STILL OPEN
 
-Note `fib`'s **4 entries for 3 arms**. The count is driven by call sites, not arms, which is
-forced by the per-call obligation: its two calls need different lemmas (`lessThanSelf` at
-`succ(k)`; `lessThanSelf` then `lessThanSuccRight` for `k`), so no single entry could
-discharge both.
+Settled: a PROOF obligation, not a syntactic check; `termination:` the keyword;
+`termination: _, _, proof…` with `_` per terminating arm and at least one required; and the
+obligation is discharged BY INDUCTION over the sort.
 
-The arity rule, stated once: `entries = (number of terminating arms) + (total recursive calls
-across all arms)`. A miscount is an error naming both numbers, as `consistency:` does.
+Not settled:
 
-**At least one `_` is required.** A block whose every arm recurses has no base case at all,
-so no measure argument can save it — `g(n) = s(g(n))` is exactly that, and the arity rule
-rejects it before any proof is considered. That is the cheapest possible diagnosis of the
-original exploit.
-
-### Why this is NOT symmetric with `consistency:` after all
-
-An earlier draft of this section argued well-foundedness should take no author-written
-theorem, because "argument 5 decreases" is a property of the source text. **That reasoning
-only holds for the syntactic check, which is rejected.** A measure decrease on a well-ordered
-sort IS a proposition about the mathematics — `less_than(m, succ(m))` is a theorem of
-`peano/order.b4m`, not a fact about parsing — so it wants a named theorem exactly as
-`consistency:` does.
-
-The `termination: <name>` slot the `.` terminator was reserving is therefore wanted after all.
+- **What `isDefinedAt` actually is.** The probe above used an opaque predicate to test the
+  SHAPE. For a real obligation the checker must synthesize the statement, and what it says
+  about a partial `oper` — which already has a value at every input, since `oper`s are total —
+  needs care. The honest reading may be that the obligation is about the clause set DETERMINING
+  that value uniquely, i.e. the induction proves the recursion's equations have a unique
+  solution. That is a different statement from "is defined", and it is the one to get right.
+- **Where the induction schema comes from per sort.** `peano.induction` is ℕ's. A recursive
+  definition over another inductive sort needs that sort's schema, and nothing currently
+  declares which schema belongs to which sort — the same gap `consistency:` fills with its
+  parenthesized theory selector (`definition_consistency(peano)`), so the same mechanism
+  probably serves.
+- **Whether recursive `oper`s should exist at all.** Raised and considered. Probably yes: 46
+  recursive symbols across ~11 concepts (convolution/power/evalUpTo families, repeated per
+  coefficient ring), 17 files resting on the convolution family alone. The precedent cuts both
+  ways — `std/integer/family-gcd.b4m` deliberately chose a RELATION over a recursive function
+  and documents why — so the relational alternative is real, at the cost of an existential and
+  a threaded witness in every downstream theorem.
 
 ### What the check must NOT reject
 
@@ -577,37 +624,34 @@ Three shapes the corpus relies on, each a potential false positive:
 
 ### Build order
 
-1. `recursiveCalls(clause, sym)` — every self-application on the RHS, in source order. Reuses
+**Step 0 is the blocker, and it is not about `termination:` at all.** The per-sort CONSTRUCTOR
+COVERAGE fact does not exist in `std`. Without it there is nothing for the obligation to be
+proved from, so this comes first:
+
+0. **Constructor coverage per sort.** For ℕ: `forall n; n = ZERO or (exists k; n = succ(k))`,
+   and the depth-2 form `fib` needs. Decide whether this is a schema (like `induction`), a
+   theorem derivable from `induction`, or a new per-sort declaration. Check whether
+   `peano.induction` already yields it before adding anything.
+
+Then:
+
+1. `consistency(<theory>):` — add the selector, replacing `constructorTheory`'s sniffing
+   (`parser.zig:69`). Standalone, worth doing first: it fixes a live naming coupling, and a
+   `_` entry through a local alias currently gets NO vacuity schema.
+2. `recursiveCalls(clause, sym)` — every self-application on the RHS, in source order. Reuses
    `findApplication`'s recursion but collects all hits rather than the first.
-2. `termination:` parsing, positional over the recursive arms' call sites, mirroring
-   `parseWellformedness`'s `consistency:` loop.
-3. Synthesize each call's obligation so the checker can verify the named theorem states it —
-   the `collectConsistencyGaps` pattern. **This is the open piece**: the obligation mentions a
-   MEASURE (which argument position), and the checker cannot know which position the author
-   intends. Options below.
-4. Error when a recursive arm's call has no `termination:` entry.
-5. Gates: `std --library`, `aata`, theorem counts unchanged — all 48 recursive clauses need
-   entries, so this is a real migration, not a no-op.
+3. `termination(<theory>):` parsing — positional over the whole block, `_` per terminating arm,
+   one entry per recursive call, arity `= terminating arms + total calls`, at least one `_`.
+   Mirrors `parseWellformedness`'s `consistency:` loop.
+4. Synthesize the obligation each entry must state, and verify the named theorem matches — the
+   `collectConsistencyGaps` pattern. Needs step 0 and the `isDefinedAt`/determinacy question
+   settled.
+5. Error when a recursive arm has no entry, or when `_` sits where an arm recurses.
+6. Gates: `std --library`, `aata`, theorem counts unchanged. All 48 recursive clauses need
+   entries, so this is a real migration — budget for it rather than discovering it.
 
-### Open: how the measure is named
+### Superseded: "how the measure is named"
 
-The obligation's statement depends on which argument is the measure, and the checker cannot
-infer it — `rsegmentOf` has one decreasing, one increasing, one decreasing, and only the
-author knows arg 5 is the intended measure.
-
-Three options:
-
-- **Infer by trying every position**, accepting the first for which the named theorem matches
-  a synthesized decrease. Fragile, and silently picks a position the author did not mean.
-- **Name the position in the declaration**: `termination: 5 by rsegmentOfDecreases`. Explicit,
-  verifiable, and the checker can synthesize the exact statement to match against.
-- **Let the theorem speak for itself** — accept any theorem whose statement is a strict
-  ordering between the call's argument and the pattern's at SOME position, and report which
-  position it matched. No new syntax; the checker discovers the measure from the proof.
-
-The third is the most appealing and needs a decision before step 3. It also raises the
-question of what ordering counts: `less_than` on `Nat` here, but the criterion should not
-hardcode a predicate name — [[accelerator-naming-couplings]] again. A well-founded-ordering
-notion per sort is the honest version, and `std/peano/order.b4m` already supplies the facts
-for ℕ.
-own trust boundary.
+An earlier draft left this open. It is MOOT — there is no measure. The obligation is proved by
+induction over the sort's constructors, so no argument position is privileged and no ordering
+is asserted. See *The criterion — TWICE REJECTED*.

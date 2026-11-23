@@ -1,0 +1,96 @@
+theory peano <<< "std/peano.b4m"
+theory ordering <<< "std/peano/order.b4m"
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+const ONE = peano.ONE
+oper succ = peano.succ
+oper add = peano.add
+pred less_than = ordering.less_than
+fact strongInduction = ordering.strongInduction
+
+// THE DEFINITION under scrutiny
+oper fib(n: Nat) => Nat:
+  fib(ZERO) = ZERO;
+  fib(succ(ZERO)) = ONE;
+  fib(succ(succ(k))) = add(fib(succ(k)), fib(k)).
+
+// `determined(n)` = the clause set fixes fib's value at n. Opaque here; the real
+// obligation would have the checker synthesize it.
+pred determined(n: Nat)
+
+// What each ARM contributes, which is what `termination: _, _, proof` names:
+hole armZero: determined(ZERO)
+hole armOne: determined(succ(ZERO))
+hole armStep: forall k: Nat;
+  (forall m: Nat; less_than(m, succ(succ(k))) -> determined(m)) -> determined(succ(succ(k)))
+
+// every Nat is ZERO, succ(ZERO), or succ(succ(k)) — the sort's constructor coverage,
+// which is what makes the three arms EXHAUSTIVE. This is the per-sort fact the obligation
+// needs, and the same notion `consistency:` gets from zeroSuccSplitIsVacuous.
+hole natIsZeroOneOrTwoPlus: forall n: Nat;
+  n = ZERO or n = succ(ZERO) or (exists k: Nat; n = succ(succ(k)))
+
+intheory fibIsDetermined
+theorem fibIsDetermined: forall n: Nat; determined(n)
+proof
+  @premise |
+    forall n: Nat;
+      (forall m: Nat; less_than(m, n) -> determined(m)) -> determined(n)
+    [by cite theStrongStep]
+  @conclusion | forall n: Nat; determined(n)
+    [using instantiation strongInduction((fun n: Nat => determined(n))) premise]
+qed
+
+intheory theStrongStep
+// THE REAL WORK: the strong-induction premise, derived by cases on n's constructor shape.
+// Each case is discharged by ONE arm of the definition — which is exactly what
+// `termination: _, _, armStep` declares.
+theorem theStrongStep: forall n: Nat;
+  (forall m: Nat; less_than(m, n) -> determined(m)) -> determined(n)
+proof
+  @generalize-n |
+    fix n: Nat {
+      @given-below |
+        assume (forall m: Nat; less_than(m, n) -> determined(m)) {
+          @below |
+            forall m: Nat; less_than(m, n) -> determined(m)
+            [by hypothesis given-below]
+          @shapes |
+            n = ZERO or n = succ(ZERO) or (exists k: Nat; n = succ(succ(k)))
+            [using specialize natIsZeroOneOrTwoPlus(n)]
+          @z | determined(ZERO) [by cite armZero]
+          @o | determined(succ(ZERO)) [by cite armOne]
+          @st |
+            forall k: Nat;
+              (forall m: Nat; less_than(m, succ(succ(k))) -> determined(m)) ->
+              determined(succ(succ(k)))
+            [by cite armStep]
+          @conclusion-case |
+            determined(n)
+            case shapes {
+              @when-zero |
+                assume n = ZERO {
+                  @eq | n = ZERO [by hypothesis when-zero]
+                  @got | determined(n) [by rewrite eq z]
+                }
+              @when-one-or-more |
+                assume (n = succ(ZERO) or (exists k: Nat; n = succ(succ(k)))) {
+                  @d | n = succ(ZERO) or (exists k: Nat; n = succ(succ(k)))
+                    [by hypothesis when-one-or-more]
+                  @got | determined(n) [by cite theInnerSplit]
+                }
+            }
+        }
+      @disc |
+        (forall m: Nat; less_than(m, n) -> determined(m)) -> determined(n)
+        [by discharge given-below]
+    }
+  @conclusion |
+    forall n: Nat;
+      (forall m: Nat; less_than(m, n) -> determined(m)) -> determined(n)
+    [by generalize generalize-n]
+qed
+
+// the remaining two-way split (succ(ZERO) vs succ(succ(k))), where the third arm's
+// case needs an unpack for k and then armStep at it.
+hole theInnerSplit: determined(ZERO)
