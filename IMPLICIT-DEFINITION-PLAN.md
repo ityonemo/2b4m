@@ -1,4 +1,4 @@
-# `definition … where` — implicit definition by characterizing property
+# Implicit definitions — when the defined symbol is not an l-value
 
 A symbol can be *defined* in two ways, and 2b4m only supports one of them.
 
@@ -45,35 +45,50 @@ inverse: in a field the inverse exists and is unique, so `fieldInverse` pins the
 completely. That uniqueness is a THEOREM, not something the axiom states, which is exactly why
 the current form cannot claim definitional status honestly.
 
-## The proposed form
+## The rule: dispatch on whether the LHS is an l-value
+
+**No new keyword.** The existing definition block carries both cases, and which one it is
+follows from the clause's shape:
+
+| the clause's LHS | kind | eliminable | obligations |
+|---|---|---|---|
+| `f(args)` **alone** — an l-value | explicit | yes, rewrite left-to-right | `consistency:`, one per clause pair |
+| anything else, with `f` inside the condition — **not an l-value** | implicit | no | **`existence:` + `uniqueness:`** |
+
+`f(Z) = Z` has `f(Z)` as an l-value: rewrite and `f` is gone. `mul(a, recip(a)) = ONE` has
+`mul(…)` on the left with `recip` buried inside — there is no position to rewrite from.
+
+The test is purely syntactic (is the LHS an application of the symbol being defined, to
+distinct binders), so it is decidable at parse time. That is the same kind of structural read
+the clause already performs for arity and arm count — not a naming coupling, since it inspects
+the shape of what was written rather than how it was spelled.
 
 ```2b4m
-oper recip(a: Field) => Field requires nonzero(a)
-
-definition recip(a) where mul(a, recip(a)) = ONE.
+oper recip(a: Field) => Field requires nonzero(a):
+  mul(a, recip(a)) = ONE.
   existence: everyNonzeroHasAnInverse,
   uniqueness: inversesAreUnique
 ```
 
-Read: *`recip(a)` is the value satisfying `mul(a, recip(a)) = ONE`; here is the proof it
-exists, and the proof it is unique.*
+Punctuation follows the explicit block exactly: the clause ends with `.`, then a
+comma-separated obligation list. `existence` and `uniqueness` are plain identifiers, as
+`consistency` already is (`parser.zig:1064`).
 
-**Punctuation follows the existing definition block**: the characterizing property ends with
-`.`, then the obligations as a `name: theorem` list, comma-separated — the same shape as
-`consistency:` after a clause list. `consistency` is already a plain identifier rather than
-reserved vocabulary (`parser.zig:1064`), and `existence` / `uniqueness` should be too.
+**Both obligations are REQUIRED**, and they are what make this a definition rather than an
+assumption:
 
-**The obligations are the whole point, and both are REQUIRED.** They are what make this a
-definition rather than an assumption:
+- **existence** — without it the symbol may denote nothing. Not hypothetical: see
+  PAINPOINTS 16f, where the absence of this check lets a user derive `ZERO = ONE`.
+- **uniqueness** — without it the property picks out a SET of candidates, so the symbol is
+  underdetermined. That is an axiom's job, not a definition's.
 
-- **existence** — without it the symbol may denote nothing, and the "definition" is vacuous
-  or inconsistent.
-- **uniqueness** — without it the property picks out a SET of candidate values, so the symbol
-  is underdetermined. That is case A, not case B, and should be written as an axiom.
+### Why mandatory obligations also fix typos
 
-A `definition … where` whose obligations are absent or unproved is an ERROR, not a downgrade.
-This is the same discipline `consistency:` applies to multi-clause blocks, and the same reason:
-the status is only honest if the thing was checked.
+Dispatching on shape raises the worry that a typo could silently move a clause between
+regimes. It cannot, *because the obligations are mandatory*: fat-finger an explicit clause into
+a non-l-value shape and the error is "this needs existence and uniqueness", which names the
+real problem — what was written is not the definition that was meant. The requirement is the
+typo detector.
 
 ## What it buys
 
@@ -82,11 +97,10 @@ the status is only honest if the thing was checked.
    obligations are theorems — so the assumption count drops by one and gains nothing, which is
    the correct accounting.
 
-2. **The status is CHECKED, not asserted.** This is the substantive difference from
-   `DEFINITION-KEYWORD-STATUS-PLAN.md`, which proposes a `definition` keyword whose tier is
-   self-asserted and unverifiable. Here the claim "this is a definition" has content: existence
-   and uniqueness are discharged. **If both plans land, this is the better one** — and it may
-   make the other unnecessary, see below.
+2. **The status is CHECKED, not asserted.** The claim "this is a definition" has content,
+   because existence and uniqueness are discharged. A `definition` keyword was considered and
+   REJECTED for exactly this reason: its tier would have been self-asserted and unverifiable,
+   so it would have added a way to say "do not count this" without a way to earn it.
 
 3. **It says what the author means.** A reader at `oper recip` currently sees a bare
    declaration and must hunt for `fieldInverse` to learn what `recip` is. The form keeps the
@@ -134,51 +148,94 @@ implicit case — the body IS `iff`-shaped and IS eliminable, so it is a perfect
 definition the checker merely cannot type. **It is PAINPOINTS 16**, and the binder is even
 annotated (`k: K`); the inferencer just does not use the annotation.
 
-This matters for sequencing: fixing 16 dissolves BOTH the pred cases and the 16e cases
-(`DEFINITION-KEYWORD-STATUS-PLAN.md`). What remains genuinely unaddressable by any existing
-form is only the `oper` implicit case — which is what this plan is for.
+This matters for sequencing: fixing 16 dissolves BOTH the pred cases and the 16e cases. What
+remains genuinely unaddressable by any existing form is only the `oper` implicit case — which
+is what this plan is for.
 
-## Relationship to the other two plans
+## Relationship to the other plans, and to PAINPOINTS 16
 
-- **`DEFINITION-KEYWORD-STATUS-PLAN.md`** (PAINPOINTS 16e) proposes a bare `definition
-  <name>: <formula>` for content that IS explicit but cannot use the block form, because a
-  clause cannot infer a bound variable's sort under a quantifier (PAINPOINTS 16). That is a
-  different case from this one and the two do not overlap. **But if PAINPOINTS 16 is fixed,
-  that plan dissolves and only this one is needed** — which argues for doing 16 and this,
-  rather than 16e.
-- **`DEFINITION-SOUNDNESS-PLAN.md`** owns clause-overlap consistency and structural-decrease
-  termination for EXPLICIT blocks. This plan's existence/uniqueness pair is the implicit-case
-  analogue of that file's `consistency:`, and should follow its build order and its ruling that
-  a failed check is an error rather than a downgrade.
+**There is no `definition` keyword, and 16e does not need one.** The two axioms that motivated
+16e (`shared/vocabulary.b4m:118`) are l-value shaped —
+`noZerosRightOfTheCriticalLine() iff …` — so they are EXPLICIT definitions that merely could
+not use the block form, because a clause cannot infer `r`'s sort under the `forall`
+(PAINPOINTS 16). Fix 16 and they become blocks, reported `— DEFINITION` automatically.
 
-## Open questions — settle before building
+So the work splits cleanly:
 
-1. **Does the characterizing property still generate a citable fact, and under what name?**
-   Today proofs cite `fieldInverse` directly (`std/field.b4m:74`, and widely downstream). The
-   form must either keep that name available or the migration breaks every consumer. Proposal:
-   the property IS the fact, named as the definition names it — i.e. `definition recip … `
-   publishes under a derived name the way a block clause does (`definition-recip-0`), with the
-   old name kept as a `fact` alias during migration. **Needs a decision before any std edit.**
+| | fixes | how |
+|---|---|---|
+| **PAINPOINTS 16** (sort inference under a quantifier) | 16e, and the `pred` cases that fall back to `define` | elaboration change |
+| **this plan** | 16f, and `oper`s like `recip` that no form can express | parse + obligation check |
 
-2. **Is `uniqueness` provable before the symbol exists?** `inversesAreUnique` would be stated
-   about the PROPERTY (`mul(a,y) = ONE and mul(a,z) = ONE -> y = z`), not about `recip` — it
-   must be, or it is circular. The form should probably REQUIRE that shape rather than accept
-   any theorem the author names, which is a stronger check than `consistency:` applies.
+`DEFINITION-SOUNDNESS-PLAN.md` owns clause-overlap consistency and structural-decrease
+termination for the explicit case. This plan's existence/uniqueness pair is the implicit-case
+analogue of its `consistency:`, and should follow its build order and its ruling that a failed
+check is an error rather than a downgrade.
 
-3. **What exactly does existence have to say?** `exists y: Field; mul(a, y) = ONE`, under the
-   guard, universally quantified over `a`. Mechanically derivable from the `where` clause, so
-   the checker can state the obligation itself and verify the named theorem matches — the way
-   `--library` already checks a `consistency:` theorem states its pair's obligation
-   (`root.zig:collectConsistencyGaps`).
+## Settled by probing
 
-4. **Should this subsume `requires`?** An implicit definition and a guard are closely related
-   — `recip` is defined exactly where `nonzero(a)` holds. Keeping them separate is simpler and
-   matches the current declaration, but it means the guard is stated twice (once on the `oper`,
-   once in the existence theorem's antecedent).
+1. **How the clause publishes.** As the explicit case does: `InternPool.definitionClauseName`
+   mangles `definition{symbol}{arm}` (`InternPool.zig:938`), which is unreachable from source,
+   so it is cited positionally with `[by definition(0) recip]` rather than by name. The
+   implicit form needs no new publication mechanism — same mangling, same citation syntax.
 
-5. **Does the explicit block form stay?** Yes — it is the eliminable case and it is what
-   `simplify` and `definition(N)` citations rewrite with. This adds a second form; it replaces
-   nothing.
+   **Migration consequence, and it is the blocking one:** 15 files under `std/` cite
+   `fieldInverse` by name. Converting it means either keeping `fact fieldInverse = …` as an
+   alias, or editing 15 files. Settle before touching `std`.
+
+2. **The obligations' required shapes.** Both are mechanically derivable from the clause, so
+   the checker states them and verifies the named theorem matches — exactly as `--library`
+   already checks a `consistency:` theorem states its pair's obligation
+   (`root.zig:collectConsistencyGaps`). Accepting any theorem the author names would make the
+   obligation decorative.
+
+   - existence: `forall <params>; <guard> -> exists y: <result>; <clause with f(params) := y>`
+   - uniqueness: `forall <params>; forall y, z: <result>; <guard> -> <clause[y]> -> <clause[z]> -> y = z`
+
+   Note both are stated about the PROPERTY, not about `f` — they must be, or they are circular.
+
+3. **Guards are not subsumed.** `requires nonzero(a)` stays on the declaration and appears as
+   the antecedent of both obligations. Stating it twice is the honest cost: the guard governs
+   where `f` may be WRITTEN, the obligations govern whether it DENOTES, and those are different
+   claims that happen to coincide here.
+
+4. **The explicit form is unchanged.** It is the eliminable case, and it is what `simplify` and
+   `definition(N)` citations rewrite with. This adds a second regime to the same syntax; it
+   replaces nothing.
+
+## Still open
+
+- **What the clause-shape test accepts exactly.** "LHS is an application of the defined symbol
+  to distinct binders" is the intent. Edge cases to pin down: a clause with the symbol on BOTH
+  sides at l-value position (`f(s(n)) = s(f(n))` — explicit and structurally recursive, must
+  stay explicit); a `when`-guarded implicit clause; more than one implicit clause for the same
+  symbol.
+- **Whether `--library` should reject an implicit definition whose obligations are unproved**,
+  or whether plain `check` should. The `consistency:` precedent puts the STATEMENT check in
+  `--library` but discharges the obligation in the normal proof flow, which suggests the same
+  split here.
+
+## The corpus already does this, 30 times
+
+Not greenfield. A scan for non-l-value clauses finds **30 in `std/`**, concentrated in the
+polynomial layers:
+
+    oper raddP(p: RPoly, q: RPoly) => RPoly:
+      rcoeff(raddP(p, q), i) = real.add(rcoeff(p, i), rcoeff(q, i)).
+
+`raddP(p,q)` is characterized by its coefficients, not given by a rewrite — a textbook
+implicit definition. They are sound, and for the right reason: each needs a polynomial to be
+determined by its coefficient sequence, which IS the uniqueness obligation, and the corpus
+states it as `polyExtensionality` (`std/ring/polynomial.b4m:84`). Existence holds because every
+coefficient sequence of the right shape has a polynomial.
+
+So the practice is already correct — but by CONVENTION, not enforcement. Nothing links a
+clause to the axiom that licenses it, and nothing would complain if one were written without.
+
+**Two consequences for this plan.** First, the implicit form is clearly wanted: it is in the
+standard library 30 times, written as if the feature existed. Second, the migration is smaller
+than 30 proofs — the polynomial family shares one pair of facts, so most of those clauses would
+name the same `polyExtensionality`-shaped obligations. Confirm that before building.
 
 ## Not in scope
 

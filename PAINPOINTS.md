@@ -376,6 +376,103 @@ DEFERRED by user 2026-11-20 — recorded, not scheduled. Current workaround is a
 declaration telling the reader to count it with the definitions, which is exactly the kind of
 thing a comment should not have to carry.
 
+## 16f. 2b4m does not stop a user building an inconsistent system from a definition block
+
+**NOT a kernel soundness bug.** A definition clause is a user-written axiom and the kernel
+does exactly what it is told; per the standing ruling, an unsound definition is a USER ERROR.
+What this entry reports is that 2b4m neither prevents nor discloses it.
+
+A single-clause block whose defined symbol appears on BOTH sides — an IMPLICIT definition — is
+accepted with nothing checking that any such value exists. The user gets an inconsistency, and
+the report says there is nothing to weigh.
+
+Minimal reproduction, over `std/peano.b4m` where we know no multiplicative inverse of ZERO
+exists:
+
+    oper natRecip(a: Nat) => Nat:
+      mul(a, natRecip(a)) = ONE.
+
+    theorem zeroHasAnInverse: mul(ZERO, natRecip(ZERO)) = ONE
+    proof
+      @all | forall a: Nat; mul(a, natRecip(a)) = ONE [by definition(0) natRecip]
+      @conclusion | mul(ZERO, natRecip(ZERO)) = ONE [by apply_at(ZERO) all]
+    qed
+
+    theorem contradiction: ZERO = ONE        // from peano's own mulZeroLeft
+    proof … qed
+
+`ZERO = ONE` checks. **It passes STRICT check** (no `--draft` needed), and `--axioms` reports
+the culprit as `natRecip (clause 0) — DEFINITION`, i.e. explicitly *not an assumption to
+weigh* — so a reader auditing the proof is told the only real assumption is `mulZeroLeft`.
+
+**The disclosure failure is the defect, not the acceptance.** A user who writes a bad axiom
+and is TOLD it is an axiom has been served correctly — they can weigh it and find it wanting.
+Here the user wrote something that reads like an abbreviation, got an existence assumption, and
+the report characterized it as carrying no assumption at all.
+
+### Why the existing machinery does not catch it
+
+`consistency:` checks that MULTIPLE CLAUSES AGREE where they overlap, one obligation per
+unordered pair. A single clause makes zero pairs, so the check correctly finds nothing to do.
+Existence is a different question and is outside its remit — `--library` passes too.
+
+The explicit case is fine, because the defined symbol does not appear on the right:
+`f(Z) = Z` is eliminable, and eliminability is what makes a definition conservative. The bug
+is that the block form does not REQUIRE eliminability; it just happens to hold for every
+block in the corpus today.
+
+### What distinguishes the sound case
+
+An implicit definition (`recip(a)` characterized by `mul(a, recip(a)) = ONE`) is legitimate
+mathematics, but only with two discharged obligations:
+
+- **existence** — `forall a; nonzero(a) -> exists y; mul(a, y) = ONE`
+- **uniqueness** — `mul(a,y) = ONE and mul(a,z) = ONE -> y = z`
+
+Without existence the symbol may denote nothing and the definition is inconsistent (above).
+Without uniqueness it is underdetermined, which is an axiom's job rather than a definition's.
+
+`IMPLICIT-DEFINITION-PLAN.md` designs this: the block dispatches on whether the clause's LHS
+is an L-VALUE (`f(args)` alone — explicit, eliminable, `consistency:`) or not (implicit, so
+`existence:` + `uniqueness:` are required). No new keyword; the test is syntactic and decided
+at parse time.
+
+Mandatory obligations also make a typo fail loudly rather than silently switching regime: a
+fat-fingered explicit clause reports "this needs existence and uniqueness", which names what
+actually went wrong.
+
+Minimum viable fix if that plan is not built: detect the shape and report it as an AXIOM
+rather than a DEFINITION. One predicate on the clause, and the disclosure is restored — the
+user then weighs what they wrote, which is all the standing ruling asks.
+
+### Scope — the corpus ALREADY uses implicit definitions, 30 of them
+
+A first draft of this entry claimed no corpus file exploits the gap. **That was wrong.** A
+scan for clauses whose LHS is not an application of the defined symbol finds **30 in `std/`**,
+concentrated in the polynomial layers:
+
+    oper raddP(p: RPoly, q: RPoly) => RPoly:
+      rcoeff(raddP(p, q), i) = real.add(rcoeff(p, i), rcoeff(q, i)).
+
+That is a textbook implicit definition: `raddP(p,q)` is characterized by what its coefficients
+are, not given by a rewrite. The polynomial is defined THROUGH `rcoeff`.
+
+**They are mathematically sound, and the reason is instructive.** Each needs a polynomial to be
+determined by its coefficient sequence — which is exactly the uniqueness obligation — and the
+corpus does state it: `polyExtensionality` (`std/ring/polynomial.b4m:84`), as a separate axiom.
+Existence is likewise fine, since every coefficient sequence of the right shape has a
+polynomial.
+
+So the corpus is correct, but **by convention rather than by enforcement**: nothing connects a
+definition clause to the extensionality axiom that licenses it, and nothing would complain if a
+file wrote such a clause without one. The 30 are the proof that the implicit form is WANTED,
+and the `natRecip` repro is the proof that it is currently unguarded.
+
+**Migration consequence:** whatever this costs, it is not greenfield. Requiring
+`existence:`/`uniqueness:` on non-l-value clauses makes 30 existing definitions fail until each
+names its obligations — and for the polynomial family that is one shared pair of facts, not 30
+new proofs. Worth confirming before building.
+
 ## 17. `2b4m check tests/cases` is a runaway
 
 The whole fixture directory as one sweep: pathological fixtures, 6.8 GB RSS, >8 min. Use
