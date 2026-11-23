@@ -126,6 +126,48 @@ fn antecedentOf(e: *const ast.Expr) ?*const ast.Expr {
     };
 }
 
+/// Is the clause EXPLICIT — the defined symbol standing alone as the left-hand side?
+///
+/// An explicit clause is a REWRITE (`f(Z) = Z`, `p(x) iff q(x)`): the symbol is eliminable,
+/// which is what makes the definition conservative, and the only obligation it owes is that
+/// its clauses AGREE where they overlap (`consistency:`).
+///
+/// An IMPLICIT clause has the symbol somewhere else — `mul(a, recip(a)) = ONE` characterizes
+/// `recip` by a property rather than giving its value. There is no rewrite direction, the
+/// symbol is not eliminable, and the clause asserts that a value with that property EXISTS.
+/// So it owes `existence:` and `uniqueness:` instead. Without them a user can derive a
+/// contradiction — see PAINPOINTS 16f, which reaches `ZERO = ONE` over `std/peano.b4m`.
+///
+/// The test reads the LEFT side only. `f(s(n)) = s(f(n))` is EXPLICIT even though `f` also
+/// appears on the right: the left side is still a rewrite target, and the right-hand
+/// recurrence is what `termination:` governs.
+///
+/// Called on the clause BODY, after any `when` guard has been split off, so a guarded clause
+/// is classified by its equation rather than its condition.
+fn clauseIsExplicit(e: *const ast.Expr, name: lexer.Token) bool {
+    // an implication guard (`(not (i = k)) -> coeff(...) = ZERO`) classifies by its CONSEQUENT
+    const body = switch (e.*) {
+        .binary => |b| if (b.op == .implies) b.rhs else e,
+        else => e,
+    };
+    // No top-level equation or biconditional = nothing to rewrite with, so IMPLICIT. Reached
+    // by a clause that is a bare predicate application: `hasSize(a, size(a)) when isFinite(a)`
+    // (`std/set/finite.b4m`) characterizes `size` without equating it to anything, and its own
+    // comment says so — "a set's size is whatever size it has".
+    const eq = switch (body.*) {
+        .binary => |b| switch (b.op) {
+            .equal, .iff => b,
+            else => return false,
+        },
+        else => return false,
+    };
+    return switch (eq.lhs.*) {
+        .call => |c| c.callee.name == name.name,
+        .name => |n| n.name == name.name,
+        else => false,
+    };
+}
+
 /// The clause's application of the symbol being DEFINED, searched left-to-right. A clause
 /// states its symbol applied to the patterns it matches (`coeff(monomial(a, k), k) = a`
 /// applies `monomial`, nested inside another call), so the search descends.
@@ -555,7 +597,14 @@ pub const Parser = struct {
     /// One parsed definition clause, kept so the PAIRS can be synthesized. `guard` is the
     /// `when` condition when written; the positional condition (a constructor pattern in an
     /// argument slot) is recovered from `body` instead.
-    pub const Clause = struct { body: *const ast.Expr, guard: ?*const ast.Expr };
+    /// `explicit` records whether the clause's LHS is the defined symbol (a rewrite — see
+    /// `clauseIsExplicit`). It decides which well-formedness obligations the block owes:
+    /// `consistency:` for explicit clauses, `existence:`/`uniqueness:` for implicit ones.
+    pub const Clause = struct {
+        body: *const ast.Expr,
+        guard: ?*const ast.Expr,
+        explicit: bool = true,
+    };
 
     fn fail(self: *Parser, comptime fmt: []const u8, args: anytype) ParseError {
         self.sink.add(self.file, self.tok.start, fmt, args) catch return error.OutOfMemory;
@@ -1033,7 +1082,7 @@ pub const Parser = struct {
                 node.* = .{ .binary = .{ .op = .implies, .tok = when_tok, .lhs = guard.?, .rhs = clause } };
                 formula = node;
             }
-            try clauses.append(self.arena, .{ .body = clause, .guard = guard });
+            try clauses.append(self.arena, .{ .body = clause, .guard = guard, .explicit = clauseIsExplicit(clause, name) });
             try self.stageDefinitionAxiom(name, params, formula, arm);
             arm += 1;
             if (self.tok.tag != .semicolon) break;
