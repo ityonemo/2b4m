@@ -478,6 +478,45 @@ and the `natRecip` repro is the proof that it is currently unguarded.
 names its obligations — and for the polynomial family that is one shared pair of facts, not 30
 new proofs. Worth confirming before building.
 
+## 16g. A NEGATIVELY self-referential pred definition is accepted, and is inconsistent
+
+Live, verified 2026-11-23. Independent of 16f and of the termination work — recorded because
+it was found while establishing that the generated `isGrounded` predicate is safe.
+
+    pred q(n: N):
+      q(n) iff (not q(n)).
+
+    theorem anything: q(c) and (not q(c))
+    proof
+      @def | forall n: N; q(n) iff (not q(n)) [by definition(0) q]
+      @at  | q(c) iff (not q(c))              [by apply_at(c) def]
+      @conclusion | q(c) and (not q(c))       [using tautology at]
+    qed
+
+Checks, exit 0. As with 16f this is NOT a kernel soundness bug — the clause is a user-written
+axiom and the kernel does as told — but the tool neither prevents nor discloses it.
+
+### What distinguishes the sound case
+
+A recursive pred definition constrains a truth assignment. A POSITIVE one always has a
+solution (`q(n) iff q(pred(n))` is satisfied by everything-true), so it is consistent. A
+NEGATIVE one — the defined predicate appearing under a `not`, or on the left of an `->`
+within its own body — may have none, and the above has none.
+
+So the criterion is POLARITY, not termination: the defined symbol must occur only positively
+in its own clause bodies. That is a syntactic check on the clause, and unlike a termination
+heuristic it is not an approximation of something harder — positivity IS the condition.
+
+### Scope
+
+Probed: no corpus pred definition is negatively self-referential, so nothing is broken today.
+The generated predicate of `DEFINITION-SOUNDNESS-PLAN.md`'s termination design cannot exhibit
+it either — the generator only substitutes `f(t) -> isGrounded(t)` at call sites, so the
+predicate appears exactly where the function did and can never land under a negation.
+
+This is therefore a hazard for HAND-WRITTEN preds only, and the fix is small: reject a clause
+whose body mentions the defined predicate negatively.
+
 ## 17. `2b4m check tests/cases` is a runaway
 
 The whole fixture directory as one sweep: pathological fixtures, 6.8 GB RSS, >8 min. Use

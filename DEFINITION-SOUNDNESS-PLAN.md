@@ -590,45 +590,101 @@ Two per-sort facts, and only the first exists today:
    lemma. Distinctness (`zeroSuccSplitIsVacuous`) remains `consistency:`'s business and is a
    separate fact — two patterns cannot both match, versus at least one must.
 
-### THE SHAPE: the obligation is proved BY INDUCTION over the sort
+### THE SHAPE (user design, 2026-11-23)
 
-This is what the two rejected framings were groping at. Termination-by-descent tried to state
-well-foundedness as a property of some ordering; the right move is to USE the sort's induction
-principle, which is where well-foundedness comes from in the first place.
-
-The obligation is: **the recursion determines a value at every input**, proved by induction
-over the sort's constructors. The terminating arms supply the base; each recursive arm supplies
-the step.
+Three constraints shaped this, each of which killed an earlier draft: **no generated axioms**
+(a soundness check that emits assumptions has handed back what it was supposed to remove), **no
+induction principle in the obligation** (the author picks how to prove it), and **recursive
+arms must be l-values** so the descent is written in terms the checker can quote.
 
 ```2b4m
-// base arms cover the base constructor; the recursive arm covers the successor
-theorem theRecursionIsTotal: forall n: Nat; isDefinedAt(n)
-proof
-  @base | isDefinedAt(ZERO)                                   [by cite baseArmsCoverZero]
-  @step | forall k: Nat; isDefinedAt(k) -> isDefinedAt(succ(k)) [by cite recursiveArmCoversSucc]
-  @conclusion | forall n: Nat; isDefinedAt(n)
-    [using instantiation peano.induction((fun n: Nat => isDefinedAt(n))) base step]
-qed
+oper fib(n: Nat) => Nat:
+  fib(ZERO) = ZERO;
+  fib(succ(ZERO)) = ONE;
+  fib(k) = add(fib(pred(k)), fib(pred(pred(k)))).
+  termination(peano): _, _, {fibTerminates, isGrounded}
+
+// GENERATED — one definition block, no axioms. The TERMINATING arms' conditions are
+// disjuncts; the recursive arm's calls are the final conjunction:
+pred isGrounded(k: Nat):
+  isGrounded(k) iff
+    (k = ZERO or k = succ(ZERO)
+     or (isGrounded(pred(k)) and isGrounded(pred(pred(k)))))
+
+// THE OBLIGATION — the author's, and unconditional:
+lemma fibTerminates: forall k: Nat; isGrounded(k)
 ```
 
-Verified: this checks against `peano.induction` (`std/peano.b4m:83`), the schema
-`prop(ZERO) -> (forall k; prop(k) -> prop(succ(k))) -> forall n; prop(n)`.
+**The generation rule is purely mechanical:** each `_` arm contributes its pattern as a
+DISJUNCT; each named arm contributes `f(t) -> isGrounded(t)` at its call sites, conjoined, as a
+further disjunct. The surrounding non-recursive structure disappears (`add` is gone).
 
-**Why this survives both earlier objections:**
+**The base cases must be in the OR POSITION, not only in the theorem.** An earlier draft put
+them in the obligation (`k = ZERO or k = succ(ZERO) or isGrounded(k)`) and left the predicate
+purely recursive. That is wrong, and the degenerate case shows why: for `g(k) = succ(g(k))`,
+which has no terminating arms, the predicate becomes
 
-- **"Decrease" never appears**, so it need not be defined. The proof principle is the sort's
-  own induction schema, not an ordering the author asserts is well-founded.
-- **Increasing recursions are fine.** `L⁺(succ(n))` defined from `L⁺(n)` gives the induction
-  step directly; nothing has to get smaller. The ladder-operator case that killed the measure
-  framing is simply the ordinary inductive step.
-- **Multi-call arms are fine.** `fib`'s arm needs `isDefinedAt(succ(k))` and `isDefinedAt(k)`
-  to conclude `isDefinedAt(succ(succ(k)))` — which is two-step induction, available as a
-  derived principle rather than a new mechanism, and NOT a tree-reachability claim.
+```2b4m
+pred isGrounded(k: Nat):
+  isGrounded(k) iff isGrounded(k)          // no base disjunct at all
+```
 
-**And it explains the `_` rule.** `termination: _, _, proof` reads as "these two arms are the
-base, this one is the step" — the declaration states the induction's own structure. A block
-with no `_` has no base case, so no induction is available: which is why the arity rule alone
-rejects `g(n) = s(g(n))`.
+so `forall k; isGrounded(k)` is unprovable BECAUSE THE DEFINITION OFFERS NO ENTRY POINT —
+which is the right reason. With the base cases hoisted into the theorem instead, the predicate
+was a tautology and the obligation blocked only incidentally.
+
+**Why the recursive arm must be an l-value.** `fib(succ(succ(k)))` pattern-matches, so its
+argument is a constructor application rather than a free variable or constant. Written that
+way the checker cannot express "what must hold of the call's argument", because the argument is
+only defined relative to a match. Rewritten as `fib(k) = add(fib(pred(k)), fib(pred(pred(k))))`
+the descent is a TERM in `k`, and the generated predicate quotes it directly. Base arms may
+stay patterns (`fib(ZERO)`, `fib(succ(ZERO))` — constants), since nothing is generated from
+them.
+
+Measured: `std` has 163 l-value arms and 136 pattern arms, but the restriction binds only on
+RECURSIVE definitions, so most pattern arms are unaffected. The cost of the rewrite still needs
+measuring per recursive symbol.
+
+**`{fibTerminates, isGrounded}`** names both the theorem the author writes and the predicate
+the checker generates, so the proof can refer to it.
+
+### Is this sound? Probed, with the residual stated
+
+The generated `iff` is SATISFIABLE — everything-true models it — so the question is whether
+the author can discharge the obligation vacuously. Two routes probed on the degenerate
+`isGrounded(k) iff isGrounded(k)`:
+
+- `[using tautology def]` — rejected, with a countermodel.
+- `[using instantiation induction(…)]` — needs `isGrounded(ZERO)` as its base, and there is
+  nothing to prove it from. Stuck.
+
+So no vacuous discharge was found. **But note the shape of that argument:** soundness here
+rests on the ABSENCE of a derivation, not on the axioms excluding the bad model. Two routes
+blocking is evidence, not a proof, and the honest residual is that some accelerant reasoning
+about `iff` more aggressively than `tautology` might close it. Worth re-probing when the
+generator lands, and worth stating in the GUIDE rather than implying the check is airtight.
+
+### Why the generated pred owes nothing itself
+
+`isGrounded` is recursive, which by this plan's own rule would owe a `termination:`
+obligation — the circularity that killed two earlier drafts. It does not, for two independent
+reasons:
+
+1. **Preds do not owe termination.** A recursive pred definition constrains a truth
+   assignment, and a POSITIVE one always has a solution (everything-true satisfies
+   `isGrounded(k) iff isGrounded(pred(k)) and isGrounded(pred(pred(k)))`). There is no value
+   to construct, so nothing can fail to exist. Contrast `g(n) = succ(g(n))`, which asserts a
+   `Nat` equal to its own successor — no such `Nat`, hence inconsistent.
+
+2. **Positivity is structural here, not a condition to check.** The generator only substitutes
+   `fib(t) -> isGrounded(t)` at call sites, so `isGrounded` appears exactly where `fib` did.
+   It can never land under a negation.
+
+**A caveat that is NOT about this design:** preds are not unconditionally safe.
+`pred q(n): q(n) iff (not q(n)).` is accepted today and proves `q(c) and not q(c)` — verified.
+That is NEGATIVE self-reference, a different hazard from non-termination, and it is a live
+hole for hand-written preds regardless of anything here. Recorded separately; the generated
+predicate cannot exhibit it.
 
 ### STILL OPEN
 
