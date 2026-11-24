@@ -118,7 +118,12 @@ oper crsegmentOf(p: CPoly, q: CPoly, j: Nat, c: Nat, n: Nat) => Complex:
 
 oper ctheGapTo(i: Nat, j: Nat) => Nat:
   ctheGapTo(i, NAT_ZERO) = i;
-  ctheGapTo(peano.succ(i), peano.succ(j)) = ctheGapTo(i, j).
+  ctheGapTo(i, j) = ctheGapTo(peano.prev(i), peano.prev(j)) when i != NAT_ZERO and j != NAT_ZERO;
+  ctheGapTo(NAT_ZERO, j) = NAT_ZERO when j != NAT_ZERO.
+  termination(peano): _, {
+  ctheGapToIsGrounded, ctheGapToGrounded
+}
+  , _
 
 oper ctheCofactorIndex(i: Nat, j: Nat, k: Nat) => Nat:
   ctheCofactorIndex(i, j, NAT_ZERO) = ctheGapTo(i, j);
@@ -182,6 +187,8 @@ intheory cRsegmentZero
 intheory cRsegmentSucc
 intheory cTheGapToAtZero
 intheory cTheGapToSteps
+intheory ctheGapToReachesABaseFromAPredecessor
+intheory ctheGapToIsGrounded
 intheory cTheCofactorIndexAtZero
 intheory cTheCofactorIndexSteps
 intheory cCappedRunZero
@@ -645,14 +652,63 @@ proof
     [by definition(0) ctheGapTo]
 qed
 
+// The `succ`/`succ` step, now DERIVED rather than transcribed: the definition descends by
+// `prev` (the l-value rule keeps patterns off the left), so this restates it at a successor
+// pair, where `prevOfSucc` collapses both `prev`s. The STATEMENT is unchanged, so every call
+// site below still cites this theorem and the clause's guard never reaches them.
 theorem cTheGapToSteps:
   forall i, j: Nat;
   ctheGapTo(peano.succ(i), peano.succ(j)) = ctheGapTo(i, j)
 proof
+  @the-recursive-clause |
+    forall i2: Nat; forall j2: Nat;
+      (i2 != NAT_ZERO and j2 != NAT_ZERO) ->
+      ctheGapTo(i2, j2) = ctheGapTo(peano.prev(i2), peano.prev(j2))
+    [by definition(1) ctheGapTo]
+  @prev-undoes-succ |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-i |
+    fix i: Nat {
+      @generalize-j |
+        fix j: Nat {
+          @succ-i-is-nonzero |
+            peano.succ(i) != NAT_ZERO
+            [using specialize a-successor-is-never-zero(i)]
+          @succ-j-is-nonzero |
+            peano.succ(j) != NAT_ZERO
+            [using specialize a-successor-is-never-zero(j)]
+          @both-are-nonzero |
+            peano.succ(i) != NAT_ZERO and peano.succ(j) != NAT_ZERO
+            [by both succ-i-is-nonzero succ-j-is-nonzero]
+          @clause-at-the-successor-pair |
+            ctheGapTo(peano.succ(i), peano.succ(j)) =
+              ctheGapTo(peano.prev(peano.succ(i)), peano.prev(peano.succ(j)))
+            [using specialize the-recursive-clause(peano.succ(i), peano.succ(j)) both-are-nonzero]
+          @prev-of-succ-i |
+            peano.prev(peano.succ(i)) = i
+            [using specialize prev-undoes-succ(i)]
+          @prev-of-succ-j |
+            peano.prev(peano.succ(j)) = j
+            [using specialize prev-undoes-succ(j)]
+          @first-prev-collapsed |
+            ctheGapTo(peano.succ(i), peano.succ(j)) = ctheGapTo(i, peano.prev(peano.succ(j)))
+            [by rewrite prev-of-succ-i clause-at-the-successor-pair]
+          @conclusion-step-at-i-j |
+            ctheGapTo(peano.succ(i), peano.succ(j)) = ctheGapTo(i, j)
+            [by rewrite prev-of-succ-j first-prev-collapsed]
+        }
+      @discharge-j |
+        forall j: Nat; ctheGapTo(peano.succ(i), peano.succ(j)) = ctheGapTo(i, j)
+        [by generalize generalize-j]
+    }
   @conclusion |
     forall i, j: Nat;
       ctheGapTo(peano.succ(i), peano.succ(j)) = ctheGapTo(i, j)
-    [by definition(1) ctheGapTo]
+    [by generalize generalize-i]
 qed
 
 theorem cTheCofactorIndexAtZero:
@@ -807,4 +863,138 @@ proof
       complex.add(ctripleRows(p, q, r, i, m, n),
       ctripleRow(p, q, r, i, m, ctheGapTo(n, m)))
     [by definition(1) ctripleRows]
+qed
+
+// -- the TERMINATION obligation for `ctheGapTo` ------------------------------------------------
+//
+// `termination(peano):` names `ctheGapToIsGrounded`, and the checker SYNTHESIZES the statement it
+// must have — the recursive arm's own guard implying the generated predicate. The predicate
+// itself is generated from the arm's call sites, one conjunct per site, each a disjunction of
+// that call grounded with its arguments hitting a terminating arm's pattern. Those base
+// disjuncts let the recursion bottom out, and all three are needed: `j` running out fires the
+// third, `i` running out first fires the second.
+
+// Strategy: induction on the SECOND argument. The one subtlety is that `peano.prev(i) != NAT_ZERO`
+// does NOT follow from `i != NAT_ZERO` (take i = 1), so the inductive hypothesis is not
+// applicable at `peano.prev(i)` — and need not be, since that is exactly the case the second
+// disjunct covers. `tautology` picks whichever disjunct holds.
+theorem ctheGapToReachesABaseFromAPredecessor: forall k: Nat;
+  (forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> ctheGapToGrounded(i2, k))
+  -> (forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> ctheGapToGrounded(i, peano.succ(k)))
+proof
+  @the-generated-clause |
+    forall i3: Nat; forall j3: Nat;
+      ctheGapToGrounded(i3, j3) iff
+      (ctheGapToGrounded(peano.prev(i3), peano.prev(j3)) or peano.prev(i3) = NAT_ZERO
+      or peano.prev(j3) = NAT_ZERO)
+    [by definition ctheGapToGrounded]
+  @prev-undoes-succ |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-k |
+    fix k: Nat {
+      @given-the-inductive-hypothesis |
+        assume forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> ctheGapToGrounded(i2, k) {
+          @inductive-hypothesis |
+            forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> ctheGapToGrounded(i2, k)
+            [by hypothesis given-the-inductive-hypothesis]
+          // `prev` is guarded, so this must precede every term writing `peano.prev(peano.succ(k))`.
+          @succ-k-is-nonzero |
+            peano.succ(k) != NAT_ZERO
+            [using specialize a-successor-is-never-zero(k)]
+          @prev-of-succ-k-is-k |
+            peano.prev(peano.succ(k)) = k
+            [using specialize prev-undoes-succ(k)]
+          @generalize-i |
+            fix i: Nat {
+              @given-i-nonzero-and-succ-k-nonzero |
+                assume i != NAT_ZERO and peano.succ(k) != NAT_ZERO {
+                  @i-is-nonzero-and-so-is-succ-k |
+                    i != NAT_ZERO and peano.succ(k) != NAT_ZERO
+                    [by hypothesis given-i-nonzero-and-succ-k-nonzero]
+                  @i-is-nonzero |
+                    i != NAT_ZERO
+                    [by and_lhs i-is-nonzero-and-so-is-succ-k]
+                  @clause-at-i-and-succ-k |
+                    ctheGapToGrounded(i, peano.succ(k)) iff
+                      (ctheGapToGrounded(peano.prev(i), peano.prev(peano.succ(k))) or peano.prev(i) = NAT_ZERO
+                      or peano.prev(peano.succ(k)) = NAT_ZERO)
+                    [using specialize the-generated-clause(i, peano.succ(k))]
+                  @clause-with-the-predecessor-collapsed |
+                    ctheGapToGrounded(i, peano.succ(k)) iff
+                      (ctheGapToGrounded(peano.prev(i), k) or peano.prev(i) = NAT_ZERO or k = NAT_ZERO)
+                    [by rewrite prev-of-succ-k-is-k clause-at-i-and-succ-k]
+                  @the-inductive-hypothesis-at-the-predecessor |
+                    (peano.prev(i) != NAT_ZERO and k != NAT_ZERO) -> ctheGapToGrounded(peano.prev(i), k)
+                    [using specialize inductive-hypothesis(peano.prev(i))]
+                  @conclusion-grounded-at-succ-k |
+                    ctheGapToGrounded(i, peano.succ(k))
+                    [using tautology clause-with-the-predecessor-collapsed
+                      the-inductive-hypothesis-at-the-predecessor]
+                }
+              @nonzero-implies-grounded-at-succ-k |
+                (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> ctheGapToGrounded(i, peano.succ(k))
+                [by discharge given-i-nonzero-and-succ-k-nonzero]
+            }
+          @conclusion-for-all-i |
+            forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> ctheGapToGrounded(i, peano.succ(k))
+            [by generalize generalize-i]
+        }
+      @the-hypothesis-implies-the-step |
+        (forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> ctheGapToGrounded(i2, k))
+          -> (forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> ctheGapToGrounded(i, peano.succ(k)))
+        [by discharge given-the-inductive-hypothesis]
+    }
+  @conclusion |
+    forall k: Nat;
+      (forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> ctheGapToGrounded(i2, k))
+      -> (forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> ctheGapToGrounded(i, peano.succ(k)))
+    [by generalize generalize-k]
+qed
+
+// Strategy: `peano.induction` on the second argument. The base is VACUOUS — at j = NAT_ZERO the
+// antecedent demands `NAT_ZERO != NAT_ZERO` — so all the content is in the step above.
+theorem ctheGapToIsGrounded: forall i: Nat; forall j: Nat;
+  (i != NAT_ZERO and j != NAT_ZERO) -> ctheGapToGrounded(i, j)
+proof
+  @zero-is-itself |
+    NAT_ZERO = NAT_ZERO
+    [by reflexivity]
+  // `tautology` reads a `forall` as one opaque atom, so the binder is opened before the
+  // vacuous antecedent can be refuted inside it.
+  @base-case-proof |
+    fix i: Nat {
+      @conclusion-vacuously-grounded-at-zero |
+        (i != NAT_ZERO and NAT_ZERO != NAT_ZERO) -> ctheGapToGrounded(i, NAT_ZERO)
+        [using tautology zero-is-itself]
+    }
+  @base-case |
+    forall i: Nat; (i != NAT_ZERO and NAT_ZERO != NAT_ZERO) -> ctheGapToGrounded(i, NAT_ZERO)
+    [by generalize base-case-proof]
+  @induction-step-for-all-k |
+    forall k: Nat;
+      (forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> ctheGapToGrounded(i2, k))
+      -> (forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> ctheGapToGrounded(i, peano.succ(k)))
+    [by cite ctheGapToReachesABaseFromAPredecessor]
+  @grounded-for-every-second-argument |
+    forall j: Nat; forall i: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> ctheGapToGrounded(i, j)
+    [using instantiation peano.induction((fun j: Nat => (forall i: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> ctheGapToGrounded(i, j)))) base-case induction-step-for-all-k]
+  @generalize-i |
+    fix i: Nat {
+      @generalize-j |
+        fix j: Nat {
+          @grounded-at-j-and-i |
+            (i != NAT_ZERO and j != NAT_ZERO) -> ctheGapToGrounded(i, j)
+            [using specialize grounded-for-every-second-argument(j, i)]
+        }
+      @discharge-j |
+        forall j: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> ctheGapToGrounded(i, j)
+        [by generalize generalize-j]
+    }
+  @conclusion |
+    forall i: Nat; forall j: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> ctheGapToGrounded(i, j)
+    [by generalize generalize-i]
 qed

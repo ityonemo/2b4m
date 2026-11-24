@@ -520,7 +520,7 @@ pub fn addTests(
     // 119, not 120: an `arithmetic` step whose decision ABSTAINS (its refutation rested on the
     // opaque `sumTo(succ(k))`) now falls straight through to the certifier, so strict no longer
     // demands the one extra declaration the old diagnostic path pulled in. Same 6 axioms.
-    ctx.ok(&.{ "check", "examples/gauss.b4m", "gaussSum" }, "OK: 124 declarations, 1 theorems proven\n");
+    ctx.ok(&.{ "check", "examples/gauss.b4m", "gaussSum" }, "OK: 128 declarations, 1 theorems proven\n");
     // `--axioms`: what a proof BOTTOMS OUT IN, per theorem — `direct` cites one axiom,
     // `viaLemma` inherits a second through the theorem it cites. A HOLE is an axiom to the
     // kernel, so it is listed and MARKED — and only reachable under --draft, since default
