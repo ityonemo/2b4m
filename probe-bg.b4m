@@ -1,0 +1,30 @@
+theory peano <<< "std/peano.b4m"
+theory subtraction <<< "std/peano/subtraction.b4m"
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+const ONE = peano.ONE
+const TWO: Nat
+oper succ = peano.succ
+oper sub = subtraction.sub
+
+pred isBase(k: Nat)
+axiom isBaseMeaning: forall k: Nat; isBase(k) iff (k = ZERO or k = succ(ZERO))
+
+pred isGrounded(k: Nat)
+axiom isGroundedMeaning: forall k: Nat;
+  isGrounded(k) iff
+    (isBase(k) or ((not isBase(k)) and isGrounded(sub(k, ONE)) and isGrounded(sub(k, TWO))))
+
+intheory baseHolds
+theorem baseHolds: isGrounded(ZERO)
+proof
+  @bm | isBase(ZERO) iff (ZERO = ZERO or ZERO = succ(ZERO))
+    [using specialize isBaseMeaning(ZERO)]
+  @r | ZERO = ZERO [by reflexivity]
+  @isb | isBase(ZERO) [using tautology bm r]
+  @gm | isGrounded(ZERO) iff
+    (isBase(ZERO) or ((not isBase(ZERO)) and isGrounded(sub(ZERO, ONE))
+      and isGrounded(sub(ZERO, TWO))))
+    [using specialize isGroundedMeaning(ZERO)]
+  @conclusion | isGrounded(ZERO) [using tautology gm isb]
+qed

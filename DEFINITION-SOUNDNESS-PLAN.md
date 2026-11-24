@@ -494,144 +494,57 @@ which theory supplies it:
 oper fib(n: Nat) => Nat:
   fib(ZERO) = ZERO;
   fib(succ(ZERO)) = ONE;
-  fib(succ(succ(k))) = add(fib(succ(k)), fib(k)).
-  termination(peano): _, _, armStep
-```
-
-| | needs from the sort's theory |
-|---|---|
-| `consistency:` | constructor **distinctness** — `zeroSuccSplitIsVacuous`, the vacuity schema |
-| `termination:` | the **induction principle** AND constructor **coverage** |
-
-**And `consistency:` needs one as well — it is currently SNIFFED, which is a defect.**
-`constructorTheory` (`parser.zig:69`) reads the theory off whether the author happened to
-QUALIFY a token in the clause pattern:
-
-- `nrep(a, peano.ZERO)` → selector `peano`
-- `nrep(a, ZERO)` through a local alias → selector **null**, and a `_` entry's auto-discharge
-  gets no vacuity schema at all
-
-Same definition, same mathematics, different selector depending on spelling. That is exactly
-what [[accelerator-naming-couplings]] forbids ("accelerators may hardcode DEFAULT names but
-every expected name MUST be overridable"), and it is the explicit-bindings change the user
-already ruled for on 2026-11-20 ("you have to explicitly declare the bindings for the relevant
-number system").
-
-So the selector belongs on BOTH declarations, parsed the same way:
-
-```2b4m
-consistency(peano): _
-termination(peano): _, _, armStep
-```
-
-The tactic form `[using definition_consistency(peano)]` stays — it is how a hand-written
-consistency theorem names the schema — but a `_` entry's staged theorem should take its
-selector from the DECLARATION rather than from a sniffed qualifier.
-
-### The two selectors are NOT the same kind of thing
-
-| | names the theory of | range |
-|---|---|---|
-| `consistency(…)` | whatever sort is being CASE-SPLIT | genuinely open |
-| `termination(…)` | the sort the recursion is STRUCTURAL over | ℕ in practice |
-
-**`consistency(…)` is open because the split sort need not be the value sort.** All five
-existing tactic uses say `peano`, and the reason is instructive rather than limiting —
-`cpower` is a COMPLEX-valued function recursing on a `Nat` index:
-
-```2b4m
-forall a: complex.Complex; forall k, n: peano.Nat;
-  (k = peano.ZERO and k = peano.succ(n)) -> complex.ONE = complex.mul(a, cpoly.cpower(a, n))
-  [using definition_consistency(peano)]
-```
-
-The selector is `peano` because the split variable `k` is a `Nat`, not because the function is
-about naturals. A definition case-splitting on some other sort's constructors would name that
-sort's theory — `consistency(complex)` or `consistency(reals)` are the shapes to expect, and
-nothing confines the selector to ℕ.
-
-**`termination(…)` is narrower, and for a structural reason.** Recursion needs an INDUCTIVELY
-GENERATED sort — one with constructors and an induction principle. ℕ is the only such sort in
-the corpus: ℝ and ℂ are not inductive, so nothing can recurse structurally over them. So
-`termination(peano)` is what every case will say today.
-
-Two consequences:
-
-- **Do not over-engineer `termination`'s selector resolution.** It will resolve to `peano`'s
-  induction and coverage facts; a general per-sort registry is speculative until a second
-  inductive sort exists.
-- **But it must still be WRITTEN, not assumed.** The theory IS aliased in the corpus today:
-  of 78 imports of `std/peano.b4m`, 76 say `peano` and **two say `ordering`**. Hardcoding the
-  name would break those two, and would be the same naming coupling the selector exists to fix.
-  (`grep -rhoE '^theory [a-z_]+ <<< "std/peano\.b4m"'` to re-measure.)
-
-### What `termination(peano)` must resolve to
-
-Two per-sort facts, and only the first exists today:
-
-1. **The induction principle.** `peano.induction` for one-step arms,
-   `peano/order.strongInduction` for arms reaching back further — `fib` needs the latter, since
-   its arm uses both `succ(k)` and `k`. So the selector cannot name a single fixed schema; the
-   ARM STRUCTURE picks which principle applies, and the theory must offer both.
-
-2. **Constructor COVERAGE** — and this is ALREADY THERE. `peano.zeroOrSucc`
-   (`std/peano.b4m:859`) states `forall n: Nat; n = ZERO or (exists m: Nat; n = succ(m))`,
-   which is the one-step form and the only one the selector needs to supply.
-
-   An earlier draft of this plan claimed coverage was missing and made it a blocking step 0.
-   **Wrong twice over.** First, `zeroOrSucc` exists. Second, the DEPTH-2 form `fib` needs
-   (`n = ZERO or n = succ(ZERO) or exists k; n = succ(succ(k))`) is not a per-sort fact at all
-   — it follows from `zeroOrSucc` applied twice, and it is needed *only because `fib` has two
-   base arms*. So it is a lemma in whatever file defines `fib`, proved like any other step, not
-   something the language or `std/peano.b4m` must provide.
-
-   The general rule: the selector supplies the sort's INDUCTION PRINCIPLE and its ONE-STEP
-   coverage. A definition whose arms reach deeper proves its own deeper coverage as a local
-   lemma. Distinctness (`zeroSuccSplitIsVacuous`) remains `consistency:`'s business and is a
-   separate fact — two patterns cannot both match, versus at least one must.
-
-### THE SHAPE (user design, 2026-11-23)
-
-Three constraints shaped this, each of which killed an earlier draft: **no generated axioms**
-(a soundness check that emits assumptions has handed back what it was supposed to remove), **no
-induction principle in the obligation** (the author picks how to prove it), and **recursive
-arms must be l-values** so the descent is written in terms the checker can quote.
-
-```2b4m
-oper fib(n: Nat) => Nat:
-  fib(ZERO) = ZERO;
-  fib(succ(ZERO)) = ONE;
-  fib(k) = add(fib(pred(k)), fib(pred(pred(k)))).
+  fib(k) = add(fib(sub(k, ONE)), fib(sub(k, TWO))).
   termination(peano): _, _, {fibTerminates, isGrounded}
 
-// GENERATED — one definition block, no axioms. The TERMINATING arms' conditions are
-// disjuncts; the recursive arm's calls are the final conjunction:
+// GENERATED — a pure transcription of the recursive arm, and nothing else:
 pred isGrounded(k: Nat):
-  isGrounded(k) iff
-    (k = ZERO or k = succ(ZERO)
-     or (isGrounded(pred(k)) and isGrounded(pred(pred(k)))))
+  isGrounded(k) iff isGrounded(sub(k, ONE)) and isGrounded(sub(k, TWO))
 
-// THE OBLIGATION — the author's, and unconditional:
-lemma fibTerminates: forall k: Nat; isGrounded(k)
+// THE OBLIGATION — the `_` arms' conditions become ANTECEDENTS:
+lemma fibTerminates: forall k: Nat;
+  k != ZERO -> k != succ(ZERO) -> isGrounded(k)
 ```
 
-**The generation rule is purely mechanical:** each `_` arm contributes its pattern as a
-DISJUNCT; each named arm contributes `f(t) -> isGrounded(t)` at its call sites, conjoined, as a
-further disjunct. The surrounding non-recursive structure disappears (`add` is gone).
+**The generation rule:** in the recursive arm, replace every `f(t)` with `isGrounded(t)` and
+drop the surrounding non-recursive structure (`add` disappears). Each `_` arm contributes its
+condition NEGATED as an antecedent of the obligation.
 
-**The base cases must be in the OR POSITION, not only in the theorem.** An earlier draft put
-them in the obligation (`k = ZERO or k = succ(ZERO) or isGrounded(k)`) and left the predicate
-purely recursive. That is wrong, and the degenerate case shows why: for `g(k) = succ(g(k))`,
-which has no terminating arms, the predicate becomes
+**Why the base conditions are ANTECEDENTS, not disjuncts of the predicate.** Two earlier
+drafts put them in the predicate (`isGrounded(k) iff (k = ZERO or … or (…))`) and both died on
+the same obstacle: instantiating the predicate at `ZERO` requires WRITING `sub(ZERO, TWO)`,
+which owes `TWO <= ZERO` — false. 2b4m's guard discharge is per-term, not flow-sensitive, so a
+guarded term is unwritable at an argument where its guard fails even behind a false conjunct.
+Verified: `cannot discharge the guard premise 'less_than(TWO, ZERO) or TWO = ZERO'`, and
+adding a `not isBase(k)` conjunct does not help.
 
-```2b4m
-pred isGrounded(k: Nat):
-  isGrounded(k) iff isGrounded(k)          // no base disjunct at all
-```
+As antecedents the conditions do the opposite work: `k != ZERO -> k != succ(ZERO)` is exactly
+what makes `TWO <= k` derivable, so the `sub` terms become writable inside the proof. The
+guard stops being an obstacle and becomes the thing the antecedents supply.
 
-so `forall k; isGrounded(k)` is unprovable BECAUSE THE DEFINITION OFFERS NO ENTRY POINT —
-which is the right reason. With the base cases hoisted into the theorem instead, the predicate
-was a tautology and the obligation blocked only incidentally.
+**And the degenerate case still fails, for the right reason.** `g(k) = succ(g(k))` has no
+terminating arms, so it transcribes to `isGrounded(k) iff isGrounded(k)` with NO antecedents,
+and `forall k; isGrounded(k)` is unprovable from it — verified, `tautology` rejects with a
+countermodel.
+
+### Rejected along the way
+
+Three shapes for the descent, and only the `sub` form survives:
+
+| arm form | guard problem | generator can transcribe |
+|---|---|---|
+| `fib(succ(succ(k)))` — pattern | none (`k` is bound, not computed) | yes |
+| `fib(k)` with `sub(k, ONE)` / `sub(k, TWO)` | yes, and the ANTECEDENTS solve it | yes |
+| `fib(k)` with `exists j; k = succ(succ(j))` | none | **NO** |
+
+The third deserves a note because it looked best. It proves the base cases and the step
+cleanly — all three were verified — but the generator cannot produce it: the arm says
+`sub(k, ONE)`, and turning that into `k = succ(succ(j))` requires reasoning that subtracting
+one and two is the same as being two successors up. That is arithmetic, not transcription.
+
+Note also that `prev` does NOT exist on `Nat` (it is `std/integer.b4m:28`, on ℤ where it is
+total). There is no total predecessor on ℕ and the no-totalization rule forbids inventing one,
+which is why the descent must be `sub` with its guard.
 
 **Why the recursive arm must be an l-value.** `fib(succ(succ(k)))` pattern-matches, so its
 argument is a constructor application rather than a free variable or constant. Written that
@@ -662,7 +575,18 @@ So no vacuous discharge was found. **But note the shape of that argument:** soun
 rests on the ABSENCE of a derivation, not on the axioms excluding the bad model. Two routes
 blocking is evidence, not a proof, and the honest residual is that some accelerant reasoning
 about `iff` more aggressively than `tautology` might close it. Worth re-probing when the
-generator lands, and worth stating in the GUIDE rather than implying the check is airtight.
+generator lands.
+
+**And NOT leaving it vacuous is the AUTHOR's obligation** (user, 2026-11-23). That is the
+right division and it resolves the residual rather than hiding it. The tool's job is to DEMAND
+the obligation and DISCLOSE it, exactly as with every other hole and citation in the system —
+a `hole` can be cited to a bogus source, an `axiom` can be asserted falsely. If an author
+contrives a vacuous proof of `forall k; isGrounded(k)` they have lied about their own
+definition, which is a USER ERROR and not a kernel failure, consistent with the standing
+ruling that an unsound definition is a user error.
+
+The sort also carries part of the weight: `sub` on ℕ terminates, so the descent cannot wander
+— the only question the obligation asks is whether the chain reaches a base condition.
 
 ### Why the generated pred owes nothing itself
 
