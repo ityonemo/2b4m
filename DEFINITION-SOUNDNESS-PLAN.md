@@ -495,23 +495,27 @@ oper fib(n: Nat) => Nat:
   fib(ZERO) = ZERO;
   fib(succ(ZERO)) = ONE;
   fib(k) = add(fib(sub(k, ONE)), fib(sub(k, TWO))).
-  termination(peano): _, _, {fibTerminates, isGrounded}
+  termination(peano): _, _, {fibTerminates, fibGrounded}
 
 // GENERATED — a pure transcription of the recursive arm, and nothing else:
-pred isGrounded(k: Nat):
-  isGrounded(k) iff isGrounded(sub(k, ONE)) and isGrounded(sub(k, TWO))
+pred fibGrounded(k: Nat):
+  fibGrounded(k) iff fibGrounded(sub(k, ONE)) and fibGrounded(sub(k, TWO))
 
 // THE OBLIGATION — the `_` arms' conditions become ANTECEDENTS:
 lemma fibTerminates: forall k: Nat;
-  k != ZERO -> k != succ(ZERO) -> isGrounded(k)
+  k != ZERO -> k != succ(ZERO) -> fibGrounded(k)
 ```
 
-**The generation rule:** in the recursive arm, replace every `f(t)` with `isGrounded(t)` and
+**The generation rule:** in the recursive arm, replace every `f(t)` with `<f>Grounded(t)` and
 drop the surrounding non-recursive structure (`add` disappears). Each `_` arm contributes its
 condition NEGATED as an antecedent of the obligation.
 
+**The predicate is named after the symbol** — `fibGrounded`, not a bare `isGrounded`. Required,
+not cosmetic: two recursive `oper`s in one file would collide on a fixed name, and the
+`{theorem, predicate}` pair the author writes has to name something unambiguous.
+
 **Why the base conditions are ANTECEDENTS, not disjuncts of the predicate.** Two earlier
-drafts put them in the predicate (`isGrounded(k) iff (k = ZERO or … or (…))`) and both died on
+drafts put them in the predicate (`fibGrounded(k) iff (k = ZERO or … or (…))`) and both died on
 the same obstacle: instantiating the predicate at `ZERO` requires WRITING `sub(ZERO, TWO)`,
 which owes `TWO <= ZERO` — false. 2b4m's guard discharge is per-term, not flow-sensitive, so a
 guarded term is unwritable at an argument where its guard fails even behind a false conjunct.
@@ -523,8 +527,8 @@ what makes `TWO <= k` derivable, so the `sub` terms become writable inside the p
 guard stops being an obstacle and becomes the thing the antecedents supply.
 
 **And the degenerate case still fails, for the right reason.** `g(k) = succ(g(k))` has no
-terminating arms, so it transcribes to `isGrounded(k) iff isGrounded(k)` with NO antecedents,
-and `forall k; isGrounded(k)` is unprovable from it — verified, `tautology` rejects with a
+terminating arms, so it transcribes to `fibGrounded(k) iff fibGrounded(k)` with NO antecedents,
+and `forall k; fibGrounded(k)` is unprovable from it — verified, `tautology` rejects with a
 countermodel.
 
 ### Rejected along the way
@@ -558,17 +562,17 @@ Measured: `std` has 163 l-value arms and 136 pattern arms, but the restriction b
 RECURSIVE definitions, so most pattern arms are unaffected. The cost of the rewrite still needs
 measuring per recursive symbol.
 
-**`{fibTerminates, isGrounded}`** names both the theorem the author writes and the predicate
+**`{fibTerminates, fibGrounded}`** names both the theorem the author writes and the predicate
 the checker generates, so the proof can refer to it.
 
 ### Is this sound? Probed, with the residual stated
 
 The generated `iff` is SATISFIABLE — everything-true models it — so the question is whether
 the author can discharge the obligation vacuously. Two routes probed on the degenerate
-`isGrounded(k) iff isGrounded(k)`:
+`fibGrounded(k) iff fibGrounded(k)`:
 
 - `[using tautology def]` — rejected, with a countermodel.
-- `[using instantiation induction(…)]` — needs `isGrounded(ZERO)` as its base, and there is
+- `[using instantiation induction(…)]` — needs `fibGrounded(ZERO)` as its base, and there is
   nothing to prove it from. Stuck.
 
 So no vacuous discharge was found. **But note the shape of that argument:** soundness here
@@ -581,7 +585,7 @@ generator lands.
 right division and it resolves the residual rather than hiding it. The tool's job is to DEMAND
 the obligation and DISCLOSE it, exactly as with every other hole and citation in the system —
 a `hole` can be cited to a bogus source, an `axiom` can be asserted falsely. If an author
-contrives a vacuous proof of `forall k; isGrounded(k)` they have lied about their own
+contrives a vacuous proof of `forall k; fibGrounded(k)` they have lied about their own
 definition, which is a USER ERROR and not a kernel failure, consistent with the standing
 ruling that an unsound definition is a user error.
 
@@ -590,18 +594,18 @@ The sort also carries part of the weight: `sub` on ℕ terminates, so the descen
 
 ### Why the generated pred owes nothing itself
 
-`isGrounded` is recursive, which by this plan's own rule would owe a `termination:`
+`fibGrounded` is recursive, which by this plan's own rule would owe a `termination:`
 obligation — the circularity that killed two earlier drafts. It does not, for two independent
 reasons:
 
 1. **Preds do not owe termination.** A recursive pred definition constrains a truth
    assignment, and a POSITIVE one always has a solution (everything-true satisfies
-   `isGrounded(k) iff isGrounded(pred(k)) and isGrounded(pred(pred(k)))`). There is no value
+   `fibGrounded(k) iff fibGrounded(pred(k)) and fibGrounded(pred(pred(k)))`). There is no value
    to construct, so nothing can fail to exist. Contrast `g(n) = succ(g(n))`, which asserts a
    `Nat` equal to its own successor — no such `Nat`, hence inconsistent.
 
 2. **Positivity is structural here, not a condition to check.** The generator only substitutes
-   `fib(t) -> isGrounded(t)` at call sites, so `isGrounded` appears exactly where `fib` did.
+   `fib(t) -> fibGrounded(t)` at call sites, so `fibGrounded` appears exactly where `fib` did.
    It can never land under a negation.
 
 **A caveat that is NOT about this design:** preds are not unconditionally safe.
