@@ -163,6 +163,14 @@ pub fn addTests(
     // `convolution(p, q, j, succ(m))`), so the two flips go together after that migration.
     ctx.okSilent(&.{ "check", "--draft", "tests/cases/definition/termination/generated-predicate.b4m" });
 
+    // A SOUNDNESS GATE: a recursive block whose clauses RENAME the declared parameters makes
+    // the generated predicate's base branch reflexive (`j = j`), which fires unconditionally
+    // and lets the termination obligation be discharged with no induction at all — verified
+    // before the fix. The generator reads base patterns by SLOT and cannot tell a renamed
+    // variable from a constant, so the agreement it depends on is enforced, not assumed.
+    // Found a fourth `std` instance (`qtailConvolution`) the migration had missed.
+    ctx.fail(&.{ "check", "tests/cases/definition/termination/binder-mismatch.b4m" }, "tests/cases/definition/termination/binder-mismatch.b4m:23:1: error: definition 'f' is RECURSIVE and its recursive clause writes argument 1 as 'j' where the declaration names that parameter 'i' — a recursive block's clauses must use the declared parameter names, because the termination check reads each base pattern by slot and a rename makes the generated predicate's base branch reflexive (provable by reflexivity, so the obligation would be vacuous)\n");
+
     // An entry must MATCH its arm, both ways. Positional declarations drift silently
     // otherwise: reorder the clauses and the recursive arm's obligation is quietly stated
     // about a terminating one.

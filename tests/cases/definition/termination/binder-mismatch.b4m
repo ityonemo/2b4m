@@ -1,0 +1,22 @@
+// EXPECTED TO FAIL: a recursive block whose CLAUSES rename the declared parameters.
+//
+// THIS IS A SOUNDNESS GATE, not style. `f(j, ZERO)` against declared params `(i, k)` makes
+// slot 0 read as a closed PATTERN -- the names differ, and the parser cannot tell a renamed
+// variable from a constant, both being lower-case single tokens absent from the param list.
+// So the generator emits a base branch `i = j`, which the obligation restates at the
+// parameters as `j = j`. That is TRUE, so the disjunct fires unconditionally, the generated
+// predicate holds everywhere, and the termination obligation is dischargeable by
+// `[by reflexivity]` plus `tautology` with NO INDUCTION AT ALL -- verified before the fix.
+//
+// That is the vacuous discharge DEFINITION-SOUNDNESS-PLAN.md's soundness argument had searched
+// for and not found, so the agreement the generator depends on is now enforced rather than
+// assumed. Four `std` declarations carried the mismatch; all are fixed.
+sort N
+const Z: N
+oper prev(n: N) => N requires n != Z
+oper add(a: N, b: N) => N
+
+oper f(i: N, k: N) => N:
+  f(j, Z) = j;
+  f(j, m) = add(j, f(j, prev(m))) when m != Z.
+  termination(peano): _, {fIsGrounded, fGrounded}

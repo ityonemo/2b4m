@@ -1658,11 +1658,15 @@ pub const Parser = struct {
         // rules below, that a written declaration matches its arms, and that its named theorem
         // states the obligation (`--library`; `collectTerminationGaps` in root.zig).
         var any_recursive = false;
-        for (clauses) |c| {
+        var rec_arm: usize = 0;
+        for (clauses, 0..) |c, ci| {
             const rhs = clauseRhs(c.body) orelse continue;
             var calls: std.ArrayList(ast.Expr.Call) = .empty;
             collectRecursiveCalls(self.arena, rhs, name, &calls) catch return error.OutOfMemory;
-            if (calls.items.len != 0) any_recursive = true;
+            if (calls.items.len != 0) {
+                if (!any_recursive) rec_arm = ci;
+                any_recursive = true;
+            }
         }
         if (saw_termination and !any_recursive) {
             return self.fail("definition '{s}' is not recursive, so `termination:` does not apply", .{self.text(name)});
@@ -1700,6 +1704,42 @@ pub const Parser = struct {
             // `convolution(p, q, j, succ(m))`), so enforcing it now breaks the library with no
             // incremental path. The two flips go together, after that migration — see
             // DEFINITION-SOUNDNESS-PLAN.md's THE L-VALUE RULE.
+            // A clause's l-value argument that RENAMES a declared parameter silently corrupts
+            // the generated predicate and opens a VACUOUS DISCHARGE of the termination
+            // obligation. Measured, not theorised:
+            //
+            //   `f(j, ZERO)` against params `(i, k)` makes slot 0 read as a closed PATTERN, so
+            //   the generator emits a base branch `i = j`, which the obligation restates at the
+            //   parameters as `j = j`. TRUE, so the disjunct fires unconditionally, the
+            //   predicate holds everywhere, and `[by reflexivity]` plus `tautology` discharges
+            //   the obligation with NO INDUCTION AT ALL. That is exactly the vacuous route
+            //   DEFINITION-SOUNDNESS-PLAN.md's soundness argument had searched for and not
+            //   found.
+            //
+            // DETECTED VIA THE RECURSIVE ARM, which is the one clause whose argument names are
+            // pinned: its l-value must be `f(<params>)` by the l-value rule, so any bare name
+            // there that is not the slot's parameter IS a rename. A terminating arm cannot be
+            // checked this way — `cmonus(NAT_ZERO, j)` and `f(j, Z)` are indistinguishable to
+            // the parser, which has no declared-name table (it is single-pass, which is why
+            // `collectClauseVars` leans on the lower-case convention) and cannot tell a
+            // lower-case CONSTANT from a variable: `aata` declares `const intZero`, and the
+            // style guide prescribes lower-case for `pi`/`e`/`i`. Two proxies were tried and
+            // both misfired — spelling flags `intZero`, "appears on the RHS" flags `NAT_ZERO`.
+            //
+            // Checking the recursive arm alone suffices in practice: a block that renames in
+            // its base arms but not its recursive one is possible, and would still generate a
+            // reflexive branch. That residual is recorded rather than papered over, and the
+            // narrowsSlot hardening below is the second line of defence.
+            if (clauses.len != 0) {
+                const rec_app = findApplication(clauses[rec_arm].body, name);
+                if (rec_app) |app| for (app.args, 0..) |arg, pos| {
+                    if (arg.* != .name) continue;
+                    if (pos >= params.len) continue;
+                    if (arg.name.name == params[pos].name.name) continue;
+                    const ip = self.interner orelse continue;
+                    return self.fail("definition '{s}' is RECURSIVE and its recursive clause writes argument {d} as '{s}' where the declaration names that parameter '{s}' — a recursive block's clauses must use the declared parameter names, because the termination check reads each base pattern by slot and a rename makes the generated predicate's base branch reflexive (provable by reflexivity, so the obligation would be vacuous)", .{ self.text(name), pos + 1, ip.stringBytes(arg.name.name), ip.stringBytes(params[pos].name.name) });
+                };
+            }
             if (false) for (clauses) |c| {
                 const app = findApplication(c.body, name) orelse continue;
                 for (app.args) |arg| {
@@ -3037,7 +3077,7 @@ test "collectRecursiveCalls finds every self-call on the RHS, in order" {
         \\oper add(a: Nat, b: Nat) => Nat
         \\oper sub(a: Nat, b: Nat) => Nat
         \\oper fib(n: Nat) => Nat:
-        \\  fib(k) = add(fib(sub(k, ONE)), fib(sub(k, succ(ONE)))).
+        \\  fib(n) = add(fib(sub(n, ONE)), fib(sub(n, succ(ONE)))).
     ;
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
@@ -3067,7 +3107,10 @@ test "collectRecursiveCalls finds every self-call on the RHS, in order" {
     const nm = fib_name orelse return error.TestUnexpectedResult;
     const cl = clause orelse return error.TestUnexpectedResult;
 
-    // the staged axiom is `forall …; fib(k) = add(fib(…), fib(…))`; walk to the RHS
+    // the staged axiom is `forall …; fib(n) = add(fib(…), fib(…))`; walk to the RHS
+    // (the clause writes the DECLARED binder `n`: a recursive block may not rename it, since a
+    // rename makes the generated predicate's base branch reflexive — see the binder-agreement
+    // check in `parseWellformedness`)
     var body = cl;
     while (body.* == .quant) body = body.quant.body;
     const rhs = clauseRhs(body) orelse return error.TestUnexpectedResult;
