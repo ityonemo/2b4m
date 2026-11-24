@@ -171,6 +171,52 @@ fn clauseIsExplicit(e: *const ast.Expr, name: lexer.Token) bool {
 /// The clause's application of the symbol being DEFINED, searched left-to-right. A clause
 /// states its symbol applied to the patterns it matches (`coeff(monomial(a, k), k) = a`
 /// applies `monomial`, nested inside another call), so the search descends.
+/// Every application of `name` on a clause's RIGHT-HAND SIDE, in source order — the clause's
+/// RECURSIVE CALLS. Collects all of them, where `findApplication` stops at the first: `fib`'s
+/// step arm calls twice (`fib(sub(k, ONE))`, `fib(sub(k, TWO))`) and the generated predicate
+/// transcribes both.
+///
+/// Reads the RIGHT side only. A clause whose LHS nests the symbol in an accessor
+/// (`coeff(monomial(a, k), i) = zeroR`) is not recursive at all — 19 such clauses in `std`,
+/// and the naive "symbol appears twice" test flags every one.
+fn collectRecursiveCalls(
+    arena: std.mem.Allocator,
+    e: *const ast.Expr,
+    name: lexer.Token,
+    out: *std.ArrayList(ast.Expr.Call),
+) std.mem.Allocator.Error!void {
+    switch (e.*) {
+        .call => |c| {
+            if (c.callee.name == name.name) try out.append(arena, c);
+            for (c.args) |a| try collectRecursiveCalls(arena, a, name, out);
+        },
+        .binary => |b| {
+            try collectRecursiveCalls(arena, b.lhs, name, out);
+            try collectRecursiveCalls(arena, b.rhs, name, out);
+        },
+        .not => |n| try collectRecursiveCalls(arena, n.operand, name, out),
+        .quant => |q| try collectRecursiveCalls(arena, q.body, name, out),
+        .lambda => |l| try collectRecursiveCalls(arena, l.body, name, out),
+        .name => {},
+    }
+}
+
+/// The RHS of a clause, after any `when`/implication guard has been split off. Null when the
+/// clause has no top-level equation or biconditional.
+fn clauseRhs(e: *const ast.Expr) ?*const ast.Expr {
+    const body = switch (e.*) {
+        .binary => |b| if (b.op == .implies) b.rhs else e,
+        else => e,
+    };
+    return switch (body.*) {
+        .binary => |b| switch (b.op) {
+            .equal, .iff => b.rhs,
+            else => null,
+        },
+        else => null,
+    };
+}
+
 fn findApplication(e: *const ast.Expr, name: lexer.Token) ?ast.Expr.Call {
     switch (e.*) {
         .call => |c| {
@@ -2531,6 +2577,58 @@ test "a definition block synthesizes one consistency obligation per clause pair"
     // the consequent equates the two arms' RIGHT-hand sides: `a` and `s(f(a, n))`
     try testing.expectEqualStrings("a", ip.stringBytes(e.binary.rhs.binary.lhs.name.name));
     try testing.expectEqualStrings("s", ip.stringBytes(e.binary.rhs.binary.rhs.call.callee.name));
+}
+
+test "collectRecursiveCalls finds every self-call on the RHS, in order" {
+    // fib's step arm calls TWICE at different arguments, which is why the collector exists:
+    // one obligation per call would need both, and `findApplication` stops at the first.
+    const source =
+        \\sort Nat
+        \\const ZERO: Nat
+        \\const ONE: Nat
+        \\oper succ(n: Nat) => Nat
+        \\oper add(a: Nat, b: Nat) => Nat
+        \\oper sub(a: Nat, b: Nat) => Nat
+        \\oper fib(n: Nat) => Nat:
+        \\  fib(k) = add(fib(sub(k, ONE)), fib(sub(k, succ(ONE)))).
+    ;
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var ip: InternPool = try .init(arena);
+    var sink: Diagnostics.Sink = .init(arena);
+    var p: Parser = .initInterning(arena, source, &sink, &ip);
+    const file = try p.parseFile();
+
+    var fib_name: ?Token = null;
+    var clause: ?*const ast.Expr = null;
+    for (file.decls) |d| switch (d) {
+        .func => |fu| switch (fu) {
+            .local => |l| if (std.mem.eql(u8, ip.stringBytes(l.name.name), "fib")) {
+                fib_name = l.name;
+            },
+            .alias => {},
+        },
+        // the clause is staged as an axiom; its formula is what we walk
+        .axiom => |a| switch (a) {
+            .local => |l| clause = l.formula,
+            else => {},
+        },
+        else => {},
+    };
+    const nm = fib_name orelse return error.TestUnexpectedResult;
+    const cl = clause orelse return error.TestUnexpectedResult;
+
+    // the staged axiom is `forall …; fib(k) = add(fib(…), fib(…))`; walk to the RHS
+    var body = cl;
+    while (body.* == .quant) body = body.quant.body;
+    const rhs = clauseRhs(body) orelse return error.TestUnexpectedResult;
+
+    var calls: std.ArrayList(ast.Expr.Call) = .empty;
+    try collectRecursiveCalls(arena, rhs, nm, &calls);
+    // TWO calls, and neither is the LHS's own `fib(k)` — the RHS only
+    try testing.expectEqual(@as(usize, 2), calls.items.len);
 }
 
 test "an ARROW-guarded clause states its condition like `when` does" {
