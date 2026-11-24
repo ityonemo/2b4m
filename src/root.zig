@@ -237,6 +237,11 @@ pub const ProjectResult = struct {
     /// nothing checks it (user ruling; the `#93` "uncited code isn't checked" policy).
     /// Empty unless asked.
     consistency_gaps: []const ConsistencyGap,
+    /// `--library`: recursive definition blocks whose `termination:` theorem does not exist or
+    /// does not state the synthesized obligation. Checked here for the same reason
+    /// `consistency_gaps` is — an unused definition demands nothing in plain `check`.
+    /// Empty unless asked.
+    termination_gaps: []const TerminationGap,
     /// the axioms the checked theorem(s) transitively rest on — only computed when the caller
     /// asked (`--axioms`); empty otherwise. A HOLE reached by the proof appears here with
     /// `is_hole` set: it is an axiom to the kernel, and the report says so explicitly.
@@ -257,6 +262,26 @@ pub const ProjectResult = struct {
         pair_j: usize = 0,
         /// set when the named theorem RESOLVES but states something else: what it says, and
         /// what the pair's obligation is. Both, because the author never wrote the latter.
+        stated: ?[]const u8 = null,
+        wanted: ?[]const u8 = null,
+    };
+
+    /// One recursive definition block whose termination theorem is absent or states something
+    /// else. Narrower than `ConsistencyGap`: the declaration is REQUIRED at parse time (a
+    /// recursive block without `termination:` is a hard error), so there is no "missing
+    /// declaration" case to report — only a name that does not resolve, or one that does and
+    /// says the wrong thing.
+    pub const TerminationGap = struct {
+        /// the definition block's symbol, as the author wrote it
+        symbol: []const u8,
+        path: []const u8,
+        line: usize,
+        /// the named theorem
+        theorem: []const u8,
+        /// which clause the entry was declared for
+        arm: usize,
+        /// set when the theorem RESOLVES but states something else: what it says, and what the
+        /// obligation is. Both, because the author never wrote the latter.
         stated: ?[]const u8 = null,
         wanted: ?[]const u8 = null,
     };
@@ -485,6 +510,7 @@ fn summarize(arena: std.mem.Allocator, loaded: LoadedProject, roots: []const Con
         .fact_trace = ctx.fact_trace.items,
         .unused_axioms = if (library) try collectUnusedAxioms(arena, ctx) else &.{},
         .consistency_gaps = if (library) try collectConsistencyGaps(arena, ctx) else &.{},
+        .termination_gaps = if (library) try collectTerminationGaps(arena, ctx) else &.{},
     };
 }
 
@@ -575,6 +601,30 @@ fn usedAxioms(arena: std.mem.Allocator, ctx: *Context) !std.AutoHashMapUnmanaged
             }
         }
     }
+
+    // And so is the theorem a RECURSIVE definition names as its `termination:` obligation.
+    // Same shape again: the block consumes it to earn the right to recurse, and nothing else
+    // cites it — discharging it IS its purpose.
+    for (ctx.root_files.items) |rf| {
+        const root_idx = @intFromEnum(rf);
+        const rsrc = ctx.files.get(root_idx).source;
+        const rns = try ctx.interner.namespace(.universe, try ctx.fileIndex(ctx.files.get(root_idx).path));
+        for (ctx.parsed.get(root_idx).decls) |decl| {
+            const declared = switch (decl) {
+                .func => |f| switch (f) {
+                    .local => |l| l.termination,
+                    else => null,
+                },
+                else => null,
+            } orelse continue;
+            for (declared.entries) |entry| {
+                const pair = entry orelse continue;
+                const nm = try ctx.interner.internString(rsrc[pair.theorem.start..pair.theorem.end]);
+                const st = ctx.facts.lookup(ctx.io, .{ .namespace = rns, .name = nm }) orelse continue;
+                if (st == .proven) try used.put(arena, st.proven, {});
+            }
+        }
+    }
     return used;
 }
 
@@ -651,6 +701,62 @@ fn collectConsistencyGaps(arena: std.mem.Allocator, ctx: *Context) ![]const Proj
                     .missing_name = ctx.interner.stringBytes(tok.name),
                     .pair_i = pair.i,
                     .pair_j = pair.j,
+                    .stated = cmp.?.stated,
+                    .wanted = cmp.?.wanted,
+                });
+            }
+        }
+    }
+    return out.items;
+}
+
+/// `--library`: a recursive definition block's `termination:` theorem must exist and must
+/// state the synthesized obligation.
+///
+/// Only checked under `--library`, for the same reason `collectConsistencyGaps` is: in plain
+/// `check` an unused definition demands nothing, so nothing checks it. The parser already
+/// enforces that a recursive block DECLARES `termination:` and that each entry matches its
+/// arm — those are syntactic, so they belong there. What is left is whether the named theorem
+/// says what the definition needs, which takes elaboration.
+fn collectTerminationGaps(arena: std.mem.Allocator, ctx: *Context) ![]const ProjectResult.TerminationGap {
+    var out: std.ArrayList(ProjectResult.TerminationGap) = .empty;
+    for (ctx.root_files.items) |rf| {
+        const root_idx = @intFromEnum(rf);
+        const f = ctx.files.get(root_idx);
+        const rns = try ctx.interner.namespace(.universe, try ctx.fileIndex(f.path));
+        for (ctx.parsed.get(root_idx).decls) |decl| {
+            const local = switch (decl) {
+                .func => |fu| switch (fu) {
+                    .local => |l| l,
+                    .alias => continue,
+                },
+                else => continue,
+            };
+            const declared = local.termination orelse continue;
+            for (declared.entries, 0..) |entry, arm| {
+                const pair = entry orelse continue;
+                const line = std.zig.findLineColumn(f.source, pair.theorem.start).line + 1;
+                const state = ctx.facts.lookup(ctx.io, .{ .namespace = rns, .name = pair.theorem.name }) orelse {
+                    try out.append(arena, .{
+                        .symbol = ctx.interner.stringBytes(local.name.name),
+                        .path = f.path,
+                        .line = line,
+                        .theorem = ctx.interner.stringBytes(pair.theorem.name),
+                        .arm = arm,
+                    });
+                    continue;
+                };
+                if (state != .proven) continue; // still in flight: not this check's business
+                if (arm >= declared.obligations.len) continue; // defensive: parser keeps them aligned
+                const want = declared.obligations[arm] orelse continue;
+                const cmp = try statementMatches(arena, ctx, rf, rns, pair.theorem.name, want);
+                if (cmp == null) continue; // matched, or not comparable (diagnosed elsewhere)
+                try out.append(arena, .{
+                    .symbol = ctx.interner.stringBytes(local.name.name),
+                    .path = f.path,
+                    .line = line,
+                    .theorem = ctx.interner.stringBytes(pair.theorem.name),
+                    .arm = arm,
                     .stated = cmp.?.stated,
                     .wanted = cmp.?.wanted,
                 });

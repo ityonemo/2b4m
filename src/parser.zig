@@ -201,6 +201,28 @@ fn collectRecursiveCalls(
     }
 }
 
+/// Does this arm's argument NARROW its slot? A pattern narrows — whether it is an application
+/// (`succ(ZERO)`) or a bare CONSTANT (`ZERO`). A bare VARIABLE does not: that slot is
+/// unconstrained, so there is nothing to negate.
+///
+/// The two bare-name cases are told apart by the declared parameter: a name matching it is the
+/// parameter itself, anything else is a global the arm matches on. That is the same
+/// convention `collectClauseVars` reads — lower-case single tokens are variables, and a
+/// declaration's own parameter list says which. It does mean an arm that RENAMES the parameter
+/// (`convolution(a, b, j, ZERO)` where the declaration says `p, q, j, m`) reads as narrowing
+/// slot 0 and generates a spurious `p != a` antecedent; no such clause exists in the corpus,
+/// and the narrower reading would need the elaborator's variable-vs-global verdict, which the
+/// parser does not have.
+///
+/// Compares SYNTACTICALLY, which is all the parser can do and all that is wanted: the
+/// obligation must be deterministic from source text.
+fn narrowsSlot(arm: *const ast.Expr, param: ast.Binder) bool {
+    return switch (arm.*) {
+        .name => |n| n.name != param.name.name,
+        else => true,
+    };
+}
+
 /// The RHS of a clause, after any `when`/implication guard has been split off. Null when the
 /// clause has no top-level equation or biconditional.
 fn clauseRhs(e: *const ast.Expr) ?*const ast.Expr {
@@ -506,6 +528,161 @@ pub const Parser = struct {
         });
     }
 
+    /// Stage the GENERATED predicate a recursive definition's termination obligation is stated
+    /// over: `<f>Grounded`, a pure TRANSCRIPTION of the recursive arm's call sites.
+    ///
+    /// The rule (DEFINITION-SOUNDNESS-PLAN.md): in the recursive arm, replace every `f(t…)`
+    /// with `<f>Grounded(t…)` and DROP the surrounding non-recursive structure — `fib(k) =
+    /// add(fib(sub(k,ONE)), fib(sub(k,TWO)))` transcribes to `fibGrounded(k) iff
+    /// fibGrounded(sub(k,ONE)) and fibGrounded(sub(k,TWO))`. The arm's own arithmetic
+    /// (`add`) is not termination's business; only WHERE it recurses is.
+    ///
+    /// The result is a DEFINITION BLOCK, not an axiom — eliminable, as the "no generated
+    /// axioms" rule demands. A recursive PRED owes nothing itself: it constrains a truth
+    /// assignment rather than constructing a value, and a POSITIVE one always has a solution.
+    /// Positivity is structural here, since the substitution puts `<f>Grounded` exactly where
+    /// `f` stood, which is never under a negation.
+    ///
+    /// The author NAMES this predicate in the `{theorem, predicate}` pair, so the declaration
+    /// is reachable from source — unlike the mangled consistency theorems. Naming it after the
+    /// symbol is required, not cosmetic: two recursive `oper`s in one file would collide on a
+    /// fixed name.
+    fn stageGroundedPredicate(
+        self: *Parser,
+        name: Token,
+        params: []const ast.Binder,
+        clause: Clause,
+        pred_name: Token,
+    ) ParseError!void {
+        const rhs = clauseRhs(clause.body) orelse return;
+        var calls: std.ArrayList(ast.Expr.Call) = .empty;
+        try collectRecursiveCalls(self.arena, rhs, name, &calls);
+        if (calls.items.len == 0) return;
+
+        // the predicate's own parameters mirror the oper's, so the transcribed call sites
+        // apply at the same arity. A pred has no result sort, so nothing else carries over.
+        const pred_params = try self.arena.dupe(ast.Binder, params);
+
+        // the clause's LHS application supplies the HEAD's arguments — whatever patterns the
+        // recursive arm matches on (`fib(k)` -> `fibGrounded(k)`).
+        const head_app = findApplication(clause.body, name) orelse return;
+        const head = try self.groundedCall(pred_name, head_app.args);
+
+        // the body: each recursive call transcribed, conjoined left to right in source order.
+        var body = try self.groundedCall(pred_name, calls.items[0].args);
+        for (calls.items[1..]) |c| {
+            body = try self.binary(.and_op, pred_name, body, try self.groundedCall(pred_name, c.args));
+        }
+
+        const defining = try self.binary(.iff, pred_name, head, body);
+        try self.pending.append(self.arena, .{ .pred = .{ .local = .{
+            .name = pred_name,
+            .params = pred_params,
+            // one clause, so no pairs: nothing to declare, exactly as a single-clause block.
+            .consistency = null,
+        } } });
+        try self.stageDefinitionAxiom(pred_name, pred_params, defining, 0);
+    }
+
+    /// The TERMINATION obligation: `forall <params>; <base conditions negated> -> <f>Grounded(<params>)`.
+    ///
+    /// Stated over the DECLARATION'S PARAMETERS, not over any arm's variables. For `fib(n: Nat)`:
+    ///
+    ///     forall n: Nat; n != ZERO -> n != succ(ZERO) -> fibGrounded(n)
+    ///
+    /// and for `convolution(p: Poly, q: Poly, j: Nat, m: Nat)`, whose recursive arm matches
+    /// `succ(m)`:
+    ///
+    ///     forall p: Poly; forall q: Poly; forall j: Nat; forall m: Nat;
+    ///       m != ZERO -> convGrounded(p, q, j, m)
+    ///
+    /// **The parameters, not the recursive arm's pattern** — and that is load-bearing, not a
+    /// style choice. Stating it at the pattern makes the obligation vacuous two ways over for
+    /// an arm that matches: `succ(m) != ZERO` is trivially true, so the base arm narrows
+    /// nothing; and `convGrounded(…, succ(m))` never claims anything at `ZERO`, so the
+    /// predicate's recursion has no base to reach and the obligation is unprovable. Over the
+    /// parameters both problems vanish — `m` ranges over the whole sort, so `m != ZERO` is a
+    /// real condition and the conclusion is the universal statement induction can establish.
+    ///
+    /// The conditions are ANTECEDENTS rather than disjuncts of the predicate, and that too is
+    /// load-bearing — two earlier drafts put them in the predicate and both died because
+    /// instantiating at `ZERO` requires WRITING `sub(ZERO, TWO)`, whose guard is false, and
+    /// 2b4m's guard discharge is per-term rather than flow-sensitive. As antecedents they do
+    /// the opposite work: `n != ZERO -> n != succ(ZERO)` is exactly what makes `TWO <= n`
+    /// derivable, so the `sub` terms become writable inside the author's proof.
+    ///
+    /// Each non-recursive arm contributes its condition NEGATED: a `when` guard verbatim under
+    /// a `not`, or one disequation per argument slot its pattern narrows (`fib(ZERO)` gives
+    /// `n != ZERO`; `convolution(p, q, j, ZERO)` gives `m != ZERO`, the other three slots being
+    /// bare variables that narrow nothing).
+    ///
+    /// The obligation names NO ordering and NO induction principle. How to prove it is the
+    /// author's choice (`peano.induction` for a one-step arm, strong induction for one reaching
+    /// further back), which is the design's one load-bearing insight.
+    fn terminationObligation(
+        self: *Parser,
+        name: Token,
+        params: []const ast.Binder,
+        clauses: []const Clause,
+        rec: usize,
+        pred_name: Token,
+    ) ParseError!?*const ast.Expr {
+        // the conclusion, at the parameters: `<f>Grounded(p1, …, pn)`.
+        const args = try self.arena.alloc(*const ast.Expr, params.len);
+        for (params, 0..) |p, i| {
+            const node = try self.arena.create(ast.Expr);
+            node.* = .{ .name = p.name };
+            args[i] = node;
+        }
+        var body = try self.groundedCall(pred_name, args);
+
+        // antecedents, RIGHT to left so the written order is arm order (`->` is right-assoc).
+        var i = clauses.len;
+        while (i > 0) {
+            i -= 1;
+            if (i == rec) continue;
+            const c = clauses[i];
+            if (c.guard orelse antecedentOf(c.body)) |g| {
+                const neg = try self.arena.create(ast.Expr);
+                neg.* = .{ .not = .{ .tok = pred_name, .operand = g } };
+                body = try self.binary(.implies, pred_name, neg, body);
+                continue;
+            }
+            // a PATTERN arm: one disequation per slot it narrows, against the PARAMETER at
+            // that position.
+            const app = findApplication(c.body, name) orelse continue;
+            var pos = app.args.len;
+            while (pos > 0) {
+                pos -= 1;
+                if (pos >= params.len) continue;
+                if (!narrowsSlot(app.args[pos], params[pos])) continue;
+                const slot = try self.arena.create(ast.Expr);
+                slot.* = .{ .name = params[pos].name };
+                const ne = try self.binary(.not_equal, pred_name, slot, app.args[pos]);
+                body = try self.binary(.implies, pred_name, ne, body);
+            }
+        }
+
+        // quantify every parameter, at its declared sort, in declaration order.
+        var k = params.len;
+        while (k > 0) {
+            k -= 1;
+            const one = try self.arena.alloc(ast.Binder, 1);
+            one[0] = params[k];
+            const node = try self.arena.create(ast.Expr);
+            node.* = .{ .quant = .{ .q = .forall, .tok = pred_name, .binders = one, .body = body } };
+            body = node;
+        }
+        return body;
+    }
+
+    /// `<f>Grounded(args…)` — one application of the generated predicate.
+    fn groundedCall(self: *Parser, pred_name: Token, args: []const *const ast.Expr) ParseError!*const ast.Expr {
+        const node = try self.arena.create(ast.Expr);
+        node.* = .{ .call = .{ .callee = pred_name, .args = try self.arena.dupe(*const ast.Expr, args) } };
+        return node;
+    }
+
     /// Synthesize one consistency obligation per unordered clause pair, in the canonical
     /// (lexicographic) order `ast.Consistency.pairAt` walks:
     ///
@@ -653,6 +830,7 @@ pub const Parser = struct {
     pub const Wellformedness = struct {
         consistency: ?ast.Consistency = null,
         determinacy: ?ast.Determinacy = null,
+        termination: ?ast.Termination = null,
     };
 
     pub const Clause = struct {
@@ -894,7 +1072,7 @@ pub const Parser = struct {
                 }
                 // `func f(a: T) => U:` opens a DEFINITION BLOCK (see parseDefinitionClauses).
                 const fwf: Wellformedness = if (self.tok.tag == .colon) try self.parseDefinitionClauses(name, params) else .{};
-                return .{ .func = .{ .local = .{ .name = name, .params = params, .result = result, .requires = requires, .consistency = fwf.consistency, .determinacy = fwf.determinacy } } };
+                return .{ .func = .{ .local = .{ .name = name, .params = params, .result = result, .requires = requires, .consistency = fwf.consistency, .determinacy = fwf.determinacy, .termination = fwf.termination } } };
             },
             .keyword_pred => {
                 _ = self.advance();
@@ -1239,6 +1417,68 @@ pub const Parser = struct {
             found = .{ .arms = arms, .entries = list, .obligations = obligations };
         }
 
+        // `termination(<theory>): _, _, {thm, pred}` — positional over the ARMS. A `_` marks a
+        // terminating arm (no recursive call); a `{thm, pred}` pair marks a recursive one and
+        // names the theorem the author proves plus the predicate the checker generates.
+        var term_theory: ?Token = null;
+        var term_entries: std.ArrayList(?ast.Termination.Pair) = .empty;
+        var saw_termination = false;
+        while (self.tok.tag == .identifier and std.mem.eql(u8, self.text(self.tok), "termination")) {
+            if (saw_termination) return self.fail("a definition block declares `termination:` at most once", .{});
+            saw_termination = true;
+            _ = self.advance();
+            if (self.tok.tag == .l_paren) {
+                _ = self.advance();
+                term_theory = try self.expect(.identifier);
+                _ = try self.expect(.r_paren);
+            }
+            _ = try self.expect(.colon);
+            while (true) {
+                if (self.tok.tag == .identifier and std.mem.eql(u8, self.text(self.tok), "_")) {
+                    _ = self.advance();
+                    try term_entries.append(self.arena, null);
+                } else {
+                    _ = try self.expect(.l_brace);
+                    const thm = try self.expect(.identifier);
+                    _ = try self.expect(.comma);
+                    const prd = try self.expect(.identifier);
+                    _ = try self.expect(.r_brace);
+                    try term_entries.append(self.arena, .{ .theorem = thm, .predicate = prd });
+                }
+                if (self.tok.tag != .comma) break;
+                _ = self.advance();
+            }
+            if (term_entries.items.len != arms) {
+                return self.fail("`termination:` needs one entry per clause — {d} clause(s), got {d}", .{ arms, term_entries.items.len });
+            }
+        }
+
+        // Each entry must MATCH its arm: `_` only where the arm does not recurse, a
+        // `{thm, pred}` pair only where it does. Positional declarations drift silently
+        // otherwise — an author who reorders the clauses would leave the recursive arm
+        // unchecked and the obligation stated about a terminating one.
+        var term_obligations: std.ArrayList(?*const ast.Expr) = .empty;
+        if (saw_termination) {
+            for (term_entries.items, clauses, 0..) |entry, c, i| {
+                const rhs = clauseRhs(c.body);
+                var calls: std.ArrayList(ast.Expr.Call) = .empty;
+                if (rhs) |r| try collectRecursiveCalls(self.arena, r, name, &calls);
+                const recurses = calls.items.len != 0;
+                if (recurses and entry == null) {
+                    return self.fail("`termination:` entry {d} is `_`, but clause {d} of '{s}' RECURSES — a recursive arm needs `{{theorem, predicate}}`", .{ i + 1, i, self.text(name) });
+                }
+                if (!recurses and entry != null) {
+                    return self.fail("`termination:` entry {d} names a theorem, but clause {d} of '{s}' does not recurse — a terminating arm takes `_`", .{ i + 1, i, self.text(name) });
+                }
+                const pair = entry orelse {
+                    try term_obligations.append(self.arena, null);
+                    continue;
+                };
+                try self.stageGroundedPredicate(name, params, c, pair.predicate);
+                try term_obligations.append(self.arena, try self.terminationObligation(name, params, clauses, i, pair.predicate));
+            }
+        }
+
         // The IMPLICIT case's pair. Both names are required, in either order, each once.
         while (self.tok.tag == .identifier) {
             const word = self.text(self.tok);
@@ -1270,11 +1510,46 @@ pub const Parser = struct {
         } else if (ex_tok != null or un_tok != null) {
             return self.fail("definition '{s}' is EXPLICIT (its clause rewrites '{s}' away), so `existence:`/`uniqueness:` do not apply — an explicit definition is eliminable and owes only `consistency:` across its clause pairs", .{ self.text(name), self.text(name) });
         }
+        // Does this block RECURSE? A recursive one ought to be REQUIRED to declare
+        // `termination:` — without it nothing checks the recursion reaches a base case, and
+        // the author can derive a contradiction (`g(n) = s(g(n))` plus a no-fixed-point axiom
+        // proves `Z = s(Z)`).
+        //
+        // That demand is DELIBERATELY NOT MADE YET, the same staging `consistency:` went
+        // through. The obligation a declaration leads to is currently UNPROVABLE for every
+        // shape in the corpus: the generated predicate transcribes the recursive arm only, so
+        // it has a step and no base (measured — see DEFINITION-SOUNDNESS-PLAN.md's "the
+        // obligation has no base"). Requiring the declaration now would fail all 61 recursive
+        // `std` blocks with no way to comply. Flipping it on is one `self.fail` here, once the
+        // base problem is solved.
+        //
+        // What IS enforced, so new violations are gated for free either way: a declaration
+        // that IS written must match its arms (here and below), and its named theorem must
+        // state the obligation (`--library`; `collectTerminationGaps` in root.zig).
+        var any_recursive = false;
+        for (clauses) |c| {
+            const rhs = clauseRhs(c.body) orelse continue;
+            var calls: std.ArrayList(ast.Expr.Call) = .empty;
+            collectRecursiveCalls(self.arena, rhs, name, &calls) catch return error.OutOfMemory;
+            if (calls.items.len != 0) any_recursive = true;
+        }
+        if (saw_termination and !any_recursive) {
+            return self.fail("definition '{s}' is not recursive, so `termination:` does not apply", .{self.text(name)});
+        }
+
         const determ: ?ast.Determinacy = if (ex_tok != null and un_tok != null)
             .{ .existence = ex_tok.?, .uniqueness = un_tok.? }
         else
             null;
-        return .{ .consistency = found, .determinacy = determ };
+        const term: ?ast.Termination = if (saw_termination)
+            .{
+                .theory = term_theory,
+                .entries = try term_entries.toOwnedSlice(self.arena),
+                .obligations = try term_obligations.toOwnedSlice(self.arena),
+            }
+        else
+            null;
+        return .{ .consistency = found, .determinacy = determ, .termination = term };
     }
 
     /// Wrap one clause in `forall` over the declaration's params plus any extra free

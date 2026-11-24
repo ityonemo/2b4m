@@ -1,0 +1,77 @@
+// What `termination(<theory>):` GENERATES, and what can be done with it.
+//
+// The declaration's named predicate is synthesized by the checker as a pure TRANSCRIPTION of
+// the recursive arm's call sites: every `f(t)` becomes `<f>Grounded(t)` and the arm's
+// surrounding arithmetic is dropped, since only WHERE it recurses is termination's business.
+// So `convolution`'s step arm, which computes with `addR`/`mulR`/`coeff` and recurses once,
+// transcribes to a single biconditional relating `succ(m)` to `m`.
+//
+// It is a DEFINITION, not an axiom -- eliminable, and citable with `by definition`, which is
+// what this file demonstrates. A recursive PRED owes nothing itself: it constrains a truth
+// assignment rather than constructing a value, and a positive one always has a solution.
+//
+// The obligation the declaration also synthesizes is NOT provable from this clause alone --
+// the transcription has a step and no base. That is the open problem recorded in
+// DEFINITION-SOUNDNESS-PLAN.md, and why the declaration is not yet required.
+theory peano <<< "std/peano.b4m"
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+oper succ = peano.succ
+sort R
+sort Poly
+oper coeff(p: Poly, i: Nat) => R
+oper addR(a: R, b: R) => R
+oper mulR(a: R, b: R) => R
+
+oper convolution(p: Poly, q: Poly, j: Nat, m: Nat) => R:
+  convolution(p, q, j, ZERO) = mulR(coeff(p, j), coeff(q, ZERO));
+  convolution(p, q, j, succ(m)) =
+  addR(mulR(coeff(p, j), coeff(q, succ(m))), convolution(p, q, succ(j), m)).
+  termination(peano): _, {
+  convolutionSteps, convolutionGrounded
+}
+
+// The STEP direction, derived from the generated clause -- so the transcription is faithful
+// and usable, even though the full obligation needs a base the clause does not supply.
+intheory convolutionSteps
+theorem convolutionSteps: forall p: Poly; forall q: Poly; forall j: Nat; forall m: Nat;
+  convolutionGrounded(p, q, succ(j), m) -> convolutionGrounded(p, q, j, succ(m))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-j |
+            fix j: Nat {
+              @generalize-m |
+                fix m: Nat {
+                  @generated-definition |
+                    forall p2: Poly; forall q2: Poly; forall j2: Nat; forall m2: Nat;
+                      convolutionGrounded(p2, q2, j2, succ(m2)) iff convolutionGrounded(p2, q2, succ(j2), m2)
+                    [by definition convolutionGrounded]
+                  @grounded-at-p-q-j-m |
+                    convolutionGrounded(p, q, j, succ(m)) iff convolutionGrounded(p, q, succ(j), m)
+                    [by apply_at(p, q, j, m) generated-definition]
+                  @conclusion-step-direction |
+                    convolutionGrounded(p, q, succ(j), m) -> convolutionGrounded(p, q, j, succ(m))
+                    [using tautology grounded-at-p-q-j-m]
+                }
+              @discharge-m |
+                forall m: Nat; convolutionGrounded(p, q, succ(j), m) -> convolutionGrounded(p, q, j, succ(m))
+                [by generalize generalize-m]
+            }
+          @discharge-j |
+            forall j: Nat; forall m: Nat;
+              convolutionGrounded(p, q, succ(j), m) -> convolutionGrounded(p, q, j, succ(m))
+            [by generalize generalize-j]
+        }
+      @discharge-q |
+        forall q: Poly; forall j: Nat; forall m: Nat;
+          convolutionGrounded(p, q, succ(j), m) -> convolutionGrounded(p, q, j, succ(m))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p: Poly; forall q: Poly; forall j: Nat; forall m: Nat;
+      convolutionGrounded(p, q, succ(j), m) -> convolutionGrounded(p, q, j, succ(m))
+    [by generalize generalize-p]
+qed

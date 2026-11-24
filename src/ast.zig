@@ -188,6 +188,9 @@ pub const Func = union(enum) {
         /// is total (existence) and determined pointwise by any condition on it (uniqueness).
         /// See `Determinacy` and IMPLICIT-DEFINITION-PLAN.md.
         determinacy: ?Determinacy = null,
+        /// A RECURSIVE definition block's `termination(<theory>):` list, else null. See
+        /// `Termination`.
+        termination: ?Termination = null,
     },
     alias: Alias,
 };
@@ -215,6 +218,33 @@ pub const Pred = union(enum) {
 ///
 /// Both are REQUIRED on an implicit block, and both are stated about the PROPERTY rather than
 /// about the defined symbol — they must be, or they are circular.
+/// A recursive definition's TERMINATION declaration: `termination(<theory>): _, _, {thm, pred}`.
+///
+/// Positional over the whole block — one entry per arm. A `_` marks a TERMINATING arm (no
+/// recursive call), and its condition becomes an antecedent of the obligation. A named entry
+/// marks a recursive arm and carries two names: the theorem the author proves, and the
+/// predicate the checker generates from the arm's call sites.
+///
+/// See DEFINITION-SOUNDNESS-PLAN.md's WELL-FOUNDEDNESS section — notably that the obligation
+/// names no ordering and no induction principle, so how to prove it is the author's choice.
+pub const Termination = struct {
+    /// the theory supplying the sort's machinery; `.none` name when not written
+    theory: ?Token = null,
+    /// one per arm, in source order. Null = `_`, a terminating arm.
+    entries: []const ?Pair,
+    /// The SYNTHESIZED obligation per NAMED entry, same order and length as `entries` (null
+    /// where the entry is `_`): the statement the named theorem must match. Generated from the
+    /// clauses so the author never writes it, as with `Consistency.obligations`.
+    obligations: []const ?*const Expr = &.{},
+
+    pub const Pair = struct {
+        /// the theorem the author writes
+        theorem: Token,
+        /// the predicate the checker generates (`fibGrounded` for `fib`)
+        predicate: Token,
+    };
+};
+
 pub const Determinacy = struct {
     existence: Token,
     uniqueness: Token,

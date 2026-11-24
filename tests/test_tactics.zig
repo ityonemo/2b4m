@@ -146,6 +146,30 @@ pub fn addTests(
 
     ctx.fail(&.{ "check", "--library", "tests/cases/definition/library-consistency" }, "error: 1 definition block(s) with an unsettled `consistency:` declaration:\n  - f  (tests/cases/definition/library-consistency/bad.b4m:16) — 'noSuchTheorem' names no fact in this file (declared for clauses 0 and 1)\n");
 
+    // -- `termination(<theory>):` on a RECURSIVE definition block ----------------------------
+    //
+    // What the checker GENERATES: `<f>Grounded`, a pure transcription of the recursive arm's
+    // call sites, as a DEFINITION (eliminable, citable with `by definition`) rather than an
+    // axiom. The fixture derives the step direction from it, which is what makes the
+    // transcription faithful AND usable.
+    //
+    // The declaration is NOT yet required on a recursive block, and the fixture header says
+    // why: the obligation it synthesizes has a step and no base, so it is currently
+    // unprovable for every shape in the corpus (measured — DEFINITION-SOUNDNESS-PLAN.md).
+    // Everything around that one gap is built and gated here.
+    ctx.okSilent(&.{ "check", "tests/cases/definition/termination/generated-predicate.b4m" });
+
+    // An entry must MATCH its arm, both ways. Positional declarations drift silently
+    // otherwise: reorder the clauses and the recursive arm's obligation is quietly stated
+    // about a terminating one.
+    ctx.fail(&.{ "check", "tests/cases/definition/termination/arm-mismatch.b4m" }, "tests/cases/definition/termination/arm-mismatch.b4m:17:1: error: `termination:` entry 3 is `_`, but clause 2 of 'fib' RECURSES — a recursive arm needs `{theorem, predicate}`\n");
+    ctx.fail(&.{ "check", "tests/cases/definition/termination/not-recursive.b4m" }, "tests/cases/definition/termination/not-recursive.b4m:15:1: error: `termination:` entry 2 names a theorem, but clause 1 of 'twice' does not recurse — a terminating arm takes `_`\n");
+
+    // `--library`: the named theorem must STATE the obligation. A theorem that resolves and
+    // is true but says something else settles nothing — and both sides are shown, since the
+    // author never wrote the obligation.
+    ctx.fail(&.{ "check", "--library", "tests/cases/definition/library-termination-mismatch" }, "error: 1 recursive definition block(s) with an unsettled `termination:` declaration:\n  - g  (tests/cases/definition/library-termination-mismatch/wrong.b4m:13) — 'gTerminates' does not state the termination obligation for clause 1\n      it states:  forall a: N; unrelated(a)\n      wanted:     forall n: N; n != Z -> gGrounded(n)\n");
+
     ctx.fail(&.{ "check", "tests/cases/definition/consistency_arity_bad.b4m" }, "tests/cases/definition/consistency_arity_bad.b4m:9:12: error: definition_consistency expects either a constructor split (`forall …; (k = <base> and k = <step>(n)) -> …`) or conditions containing a proposition and its negation; this goal is neither\n");
 
     // a schema instantiated at a lambda CAPTURING an enclosing `fix b`: the schema's own

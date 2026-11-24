@@ -711,6 +711,26 @@ pub fn main(init: std.process.Init) !u8 {
         try err.flush();
         return 1;
     }
+    // `--library`: a RECURSIVE definition block's termination theorem must state the
+    // obligation. The parser already required the declaration and matched each entry to its
+    // arm; what is left needs elaboration, so it lands here with the consistency check.
+    if (result.termination_gaps.len > 0) {
+        var ebuf: [4096]u8 = undefined;
+        var efw: Io.File.Writer = .init(.stderr(), io, &ebuf);
+        const err = &efw.interface;
+        try err.print("error: {d} recursive definition block(s) with an unsettled `termination:` declaration:\n", .{result.termination_gaps.len});
+        for (result.termination_gaps) |g| {
+            if (g.stated) |st| {
+                // BOTH sides: the author never wrote the obligation, so naming only what they
+                // did write would leave them guessing at the target.
+                try err.print("  - {s}  ({s}:{d}) — '{s}' does not state the termination obligation for clause {d}\n      it states:  {s}\n      wanted:     {s}\n", .{ g.symbol, g.path, g.line, g.theorem, g.arm, st, g.wanted.? });
+            } else {
+                try err.print("  - {s}  ({s}:{d}) — '{s}' names no fact in this file (declared for clause {d})\n", .{ g.symbol, g.path, g.line, g.theorem, g.arm });
+            }
+        }
+        try err.flush();
+        return 1;
+    }
     // `--library`: a library must not ship assumptions nothing rests on. Every root-file
     // axiom no root theorem's proof reaches is an error (each named at its declaration).
     if (result.unused_axioms.len > 0) {

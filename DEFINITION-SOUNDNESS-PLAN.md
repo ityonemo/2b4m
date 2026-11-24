@@ -580,6 +580,46 @@ That is NEGATIVE self-reference, a different hazard from non-termination, and it
 hole for hand-written preds regardless of anything here. Recorded separately; the generated
 predicate cannot exhibit it.
 
+### MEASURED AFTER IMPLEMENTING: the obligation has no base, so it is unprovable
+
+The generator and the obligation synthesizer are built and the shapes come out exactly as
+designed above. `fib`'s obligation is verbatim what this plan specifies, and `convolution`'s
+(the shape all 61 recursive `std` blocks have) comes out as
+
+    forall p: Poly; forall q: Poly; forall j: Nat; forall m: Nat;
+      m != ZERO -> convGrounded(p, q, j, m)
+
+from the generated
+
+    pred convGrounded(p: Poly, q: Poly, j: Nat, m: Nat):
+      convGrounded(p, q, j, succ(m)) iff convGrounded(p, q, succ(j), m)
+
+**And it cannot be proved.** Three probes, each against the checker:
+
+1. The STEP direction IS derivable — `convGrounded(p,q,succ(j),m) -> convGrounded(p,q,j,succ(m))`
+   kernel-checks from the generated clause. So the transcription is faithful and usable.
+2. `convGrounded(p, q, j, ZERO)` is NOT derivable — `tautology` refutes it with a
+   countermodel. The clause relates `succ(m)` to `m` and says nothing at `ZERO`.
+3. Therefore every chain is bottomless: induction supplies the step and never a base, and
+   `m != ZERO` in the antecedent excludes ZERO from the CONCLUSION without supplying the
+   predicate's base.
+
+**The cause, stated precisely.** The generator transcribes only the RECURSIVE arm, so the
+TERMINATING arms contribute to the obligation (as negated antecedents) but not to the
+predicate. The predicate therefore has a step and no base, which is exactly the half of
+structural recursion that makes a definition well-founded. Both earlier drafts put the base
+conditions in the predicate and died on guard-discharge; this draft moved them out entirely
+and died on the missing base. **The base has to appear in the predicate somewhere, and the
+guard obstacle is what makes that hard** — those two constraints are the real shape of the
+problem, and no framing tried so far satisfies both.
+
+Note what this does NOT invalidate: the parse, the arm/entry matching, the generated
+predicate's faithfulness, the obligation's quantifier structure, the `--library` comparison,
+and the degenerate-case rejection (`g(n) = succ(g(n))` is refuted with a countermodel) all
+work and are kept. What is missing is one thing: how the terminating arms make the generated
+predicate TRUE at the base without writing a guarded term at an argument where its guard
+fails.
+
 ### STILL OPEN
 
 Settled: a PROOF obligation, not a syntactic check; `termination:` the keyword;
