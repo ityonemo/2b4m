@@ -25,6 +25,20 @@
 sort Nat
 const ZERO: Nat
 oper succ(n: Nat) => Nat
+// The PREDECESSOR, guarded. ℕ has no total predecessor — `ZERO` has none, and no convention
+// supplies one the way `gcd(0, 0) = 0` is supplied — so a total `prev` would be asserted junk,
+// which the no-totalization rule exists to exclude. Guarded on the DECLARATION, so an
+// application owes `n != ZERO` at the site and `prev(ZERO)` cannot even be written.
+//
+// Spelled `prev` to match ℤ's (`std/integer.b4m`); `pred` is the predicate keyword. A ℤ pattern
+// that assumed totality therefore fails at the ℕ boundary with an undischargeable
+// `ZERO != ZERO`, which is the rule working rather than an inconvenience.
+//
+// It is what a RECURSIVE definition descends by: the l-value rule keeps patterns out of the
+// left side, so `f(n) = … f(prev(n)) … when n != ZERO` is the shape, and the arm's own guard
+// discharges the application. Cheaper than `sub(n, ONE)`, whose guard is
+// `less_or_equal(ONE, n)` and needs a bridging lemma.
+oper prev(n: Nat) => Nat requires n != ZERO
 oper add(a: Nat, b: Nat) => Nat
 oper mul(a: Nat, b: Nat) => Nat
 const ONE: Nat
@@ -33,6 +47,9 @@ const ONE: Nat
 
 // the successor structure of the naturals
 axiom succInjective: forall a, b: Nat; succ(a) = succ(b) -> a = b
+// `prev` undoes `succ`. One direction only: the other (`succ(prev(n)) = n` for nonzero `n`) is
+// a theorem, since every nonzero Nat is a successor.
+axiom prevOfSucc: forall n: Nat; prev(succ(n)) = n
 axiom succNotZero: forall a: Nat; succ(a) != ZERO
 
 // addition and multiplication, by recursion on the first argument
@@ -73,6 +90,7 @@ intheory mulAddDistribLeft
 // ordering
 intheory addSuccNeverSelf
 intheory zeroOrSucc
+intheory succOfPrev
 intheory noNatIsZeroAndSucc
 intheory zeroSuccSplitIsVacuous
 intheory addCancelLeft
@@ -890,6 +908,66 @@ proof
   @conclusion |
     forall n: Nat; n = ZERO or (exists m: Nat; n = succ(m))
     [using instantiation induction((fun k: Nat => k = ZERO or (exists m: Nat; k = succ(m)))) base-case induction-step-for-all-k]
+qed
+
+// The other direction of `prevOfSucc`: `prev` is a genuine inverse on the nonzero Nats.
+// Needs `zeroOrSucc` — a nonzero Nat IS a successor, and `prevOfSucc` then applies.
+theorem succOfPrev: forall n: Nat; n != ZERO -> succ(prev(n)) = n
+proof
+  @every-nat-is-zero-or-a-successor |
+    forall n: Nat; n = ZERO or (exists m: Nat; n = succ(m))
+    [by cite zeroOrSucc]
+  @prev-undoes-succ |
+    forall m: Nat; prev(succ(m)) = m
+    [by cite prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; succ(a) != ZERO
+    [by cite succNotZero]
+  @generalize-n |
+    fix n: Nat {
+      @given-n-nonzero |
+        assume n != ZERO {
+          @n-is-nonzero |
+            n != ZERO
+            [by hypothesis given-n-nonzero]
+          @n-is-zero-or-a-successor |
+            n = ZERO or (exists m: Nat; n = succ(m))
+            [by apply_at(n) every-nat-is-zero-or-a-successor]
+          @n-is-a-successor |
+            exists m: Nat; n = succ(m)
+            [using tautology n-is-zero-or-a-successor n-is-nonzero]
+          @with-predecessor-m |
+            unpack m: Nat from n-is-a-successor {
+              @n-equals-succ-m |
+                n = succ(m)
+                [by hypothesis with-predecessor-m]
+              @succ-m-is-nonzero |
+                succ(m) != ZERO
+                [by apply_at(m) a-successor-is-never-zero]
+              @prev-of-succ-m |
+                prev(succ(m)) = m
+                [by apply_at(m) prev-undoes-succ]
+              @succ-m-equals-itself |
+                succ(m) = succ(m)
+                [by reflexivity]
+              @succ-of-prev-succ-m |
+                succ(prev(succ(m))) = succ(m)
+                [by rewrite prev-of-succ-m succ-m-equals-itself]
+              @conclusion-succ-of-prev-is-n |
+                succ(prev(n)) = n
+                [by rewrite n-equals-succ-m succ-of-prev-succ-m]
+            }
+          @conclusion-unpacked |
+            succ(prev(n)) = n
+            [by unpacked with-predecessor-m]
+        }
+      @nonzero-implies-succ-of-prev |
+        n != ZERO -> succ(prev(n)) = n
+        [by discharge given-n-nonzero]
+    }
+  @conclusion |
+    forall n: Nat; n != ZERO -> succ(prev(n)) = n
+    [by generalize generalize-n]
 qed
 
 // -- definition-block consistency: the two constructors are EXCLUSIVE ---------
