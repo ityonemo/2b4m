@@ -651,6 +651,43 @@ And one obstacle that is NOT about guards: `tautology` sees `isGrounded(sub(succ
 and `isGrounded(j)` as unrelated atoms. Fold the guarded terms into the predecessors with
 `rewrite` steps BEFORE calling it.
 
+### `monus` vs `sub`, and `prev` vs `sub` — which descent belongs where
+
+Two questions asked and settled by measurement 2026-11-24, both worth keeping because the
+answers are not what a reading of the no-totalization rule alone would suggest.
+
+**`prev` is for DESCENT-BY-ONE, not a general replacement for `sub`.** A sweep of all 785 ℕ-`sub`
+call sites found: ZERO uses of `sub(_, TWO)` corpus-wide; every `sub(_, ONE)` in
+`std/integer/sum.b4m`, which is ℤ where `sub` is total and unguarded (Faulhaber sums — genuine
+algebra, not a decrement); and ~99% of the rest general `sub(x, k)` for variable `k`, which
+`prev` cannot express. The one ℕ cluster, in `std/permutation/dihedral.b4m`, is NOT convertible:
+its `sub(n, succ(ZERO))` terms are inherited from the general reflection axiom
+`apply(sigma, numeral(i)) = numeral(sub(n, i))` read at `i = 0`, so the term is the axiom's, not
+the proof's choice.
+
+**And `complementOfOne`'s "25 lines of guard assembly" are not removable.** Probed by deleting
+one: the `less_or_equal` steps that read as ceremony are GUARD DISCHARGERS, found implicitly by
+the checker rather than cited by name, and removing one fails with `cannot discharge the guard
+premise 'less_than(succ(ZERO), succ(m)) or succ(ZERO) = succ(m)'`. The proof is paying `sub`'s
+guard, which is what the guard is for. An earlier note in this plan called that waste; it was
+wrong.
+
+**`monus` is correctly used, and `sub` would be wrong there.** `monus` floors; `sub` demands the
+index be in range. The triple-product layer genuinely reaches the floor —
+`monusSelfVanishes: monus(n, n) = ZERO` is what makes the (n+1)-st row empty at bound `n`, so the
+shortened rows stop growing exactly where the triangle does, and `tripleTri` calls
+`monus(n, succ(n))` with the subtrahend PAST the minuend. With `sub` that would be an
+undischargeable obligation on a term the mathematics legitimately needs. Where in-range
+reasoning IS wanted, the lemmas say so explicitly (`theRaisedGapSteps` carries
+`less_or_equal(j, n)`, and its comment notes the identity fails beyond `n` because both sides
+floor).
+
+**The rule:** `monus` where the floor is reached and the flooring is the point; `sub` where the
+index is provably in range and the guard should document that precondition; `prev` for a
+recursion that steps by exactly one, where its disequation guard is already in hand. The corpus
+was already on the right side of every one of these lines — the rename to `monus` is what made
+the distinction checkable, since `theGapTo` read as bespoke bookkeeping.
+
 ### THE L-VALUE RULE for a recursive block (user, 2026-11-24)
 
 Once ANY arm recurses, the block owes all of this:
