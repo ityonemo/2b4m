@@ -54,9 +54,15 @@ oper cmonomial(a: Complex, k: Nat) => CPoly:
   uniqueness: cPolyExtensionality
 pred cdegreeAtMost(p: CPoly, n: Nat)
 oper cdegree(p: CPoly) => Nat
+// Descends by `peano.prev` on the SECOND index rather than matching `succ` on the left:
+// the l-value rule requires a recursive definition's l-value arguments to be parameters
+// or closed terms, so the descent must be readable on the RIGHT. The arm's own
+// `m != NAT_ZERO` discharges `prev`'s guard. `m` descends while `j` ascends; termination
+// asks only about the descent.
 oper cconvolution(p: CPoly, q: CPoly, j: Nat, m: Nat) => Complex:
   cconvolution(p, q, j, NAT_ZERO) = complex.mul(ccoeff(p, j), ccoeff(q, NAT_ZERO));
-  cconvolution(p, q, j, peano.succ(m)) = complex.add(complex.mul(ccoeff(p, j), ccoeff(q, peano.succ(m))), cconvolution(p, q, peano.succ(j), m)).
+  cconvolution(p, q, j, m) = complex.add(complex.mul(ccoeff(p, j), ccoeff(q, m)), cconvolution(p, q, peano.succ(j), peano.prev(m))) when m != NAT_ZERO.
+  termination(peano): _, {cConvolutionIsGrounded, cconvolutionGrounded}
 
 // the coefficient equations: ℂ[x]'s own primitives
 axiom cPolyExtensionality: forall p, q: CPoly;
@@ -83,9 +89,14 @@ axiom cDegreeBoundsTheCoefficients: forall p: CPoly;
 // so no index is ever subtracted.
 
 // -- evaluation ----------------------------------------------------------------------------
+// The recursion descends by `peano.prev` rather than matching `peano.succ` on the left: the
+// l-value rule requires a recursive definition to keep patterns off its left side, so the
+// descent is readable on the RIGHT where the termination check can see it. `prev` is
+// guarded (`requires n != ZERO`), and the arm's own condition discharges it.
 oper cpower(a: Complex, n: Nat) => Complex:
   cpower(a, NAT_ZERO) = complex.ONE;
-  cpower(a, peano.succ(n)) = complex.mul(a, cpower(a, n)).
+  cpower(a, n) = complex.mul(a, cpower(a, peano.prev(n))) when n != NAT_ZERO.
+  termination(peano): _, {cpowerIsGrounded, cpowerGrounded}
 
 oper cevalUpTo(p: CPoly, a: Complex, k: Nat) => Complex:
   cevalUpTo(p, a, NAT_ZERO) = ZERO;
@@ -172,6 +183,10 @@ intheory cMonomialCoeffAtItsIndex
 intheory cMonomialCoeffElsewhere
 intheory cConvolutionZero
 intheory cConvolutionSucc
+intheory cConvolutionReachesZeroFromAPredecessor
+intheory cConvolutionIsGrounded
+intheory cpowerReachesABaseFromAPredecessor
+intheory cpowerIsGrounded
 intheory cPowerZero
 intheory cPowerSucc
 intheory cEvalZero
@@ -513,18 +528,80 @@ proof
     [by definition(0) cconvolution]
 qed
 
+// DERIVED, not transcribed: the clause descends by `peano.prev`, so this restates it at a
+// successor where `prevOfSucc` collapses the `prev`. The STATEMENT is unchanged, which keeps
+// the clause's `m != NAT_ZERO` guard from reaching any call site.
 theorem cConvolutionSucc:
   forall p, q: CPoly; forall j, m: Nat;
   cconvolution(p, q, j, peano.succ(m)) =
   complex.add(complex.mul(ccoeff(p, j), ccoeff(q, peano.succ(m))),
   cconvolution(p, q, peano.succ(j), m))
 proof
+  @the-recursive-clause |
+    forall p2: CPoly; forall q2: CPoly; forall j2: Nat; forall m2: Nat;
+      m2 != NAT_ZERO ->
+      cconvolution(p2, q2, j2, m2) =
+      complex.add(complex.mul(ccoeff(p2, j2), ccoeff(q2, m2)),
+      cconvolution(p2, q2, peano.succ(j2), peano.prev(m2)))
+    [by definition(1) cconvolution]
+  @prev-undoes-succ |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-p |
+    fix p: CPoly {
+      @generalize-q |
+        fix q: CPoly {
+          @generalize-j |
+            fix j: Nat {
+              @generalize-m |
+                fix m: Nat {
+                  @succ-m-is-nonzero |
+                    peano.succ(m) != NAT_ZERO
+                    [using specialize a-successor-is-never-zero(m)]
+                  @clause-at-the-successor |
+                    cconvolution(p, q, j, peano.succ(m)) =
+                      complex.add(complex.mul(ccoeff(p, j), ccoeff(q, peano.succ(m))),
+                      cconvolution(p, q, peano.succ(j), peano.prev(peano.succ(m))))
+                    [using specialize the-recursive-clause(p, q, j, peano.succ(m)) succ-m-is-nonzero]
+                  @prev-of-succ-m |
+                    peano.prev(peano.succ(m)) = m
+                    [using specialize prev-undoes-succ(m)]
+                  @conclusion-step-at-m |
+                    cconvolution(p, q, j, peano.succ(m)) =
+                      complex.add(complex.mul(ccoeff(p, j), ccoeff(q, peano.succ(m))),
+                      cconvolution(p, q, peano.succ(j), m))
+                    [by rewrite prev-of-succ-m clause-at-the-successor]
+                }
+              @discharge-m |
+                forall m: Nat;
+                  cconvolution(p, q, j, peano.succ(m)) =
+                  complex.add(complex.mul(ccoeff(p, j), ccoeff(q, peano.succ(m))),
+                  cconvolution(p, q, peano.succ(j), m))
+                [by generalize generalize-m]
+            }
+          @discharge-j |
+            forall j, m: Nat;
+              cconvolution(p, q, j, peano.succ(m)) =
+              complex.add(complex.mul(ccoeff(p, j), ccoeff(q, peano.succ(m))),
+              cconvolution(p, q, peano.succ(j), m))
+            [by generalize generalize-j]
+        }
+      @discharge-q |
+        forall q: CPoly; forall j, m: Nat;
+          cconvolution(p, q, j, peano.succ(m)) =
+          complex.add(complex.mul(ccoeff(p, j), ccoeff(q, peano.succ(m))),
+          cconvolution(p, q, peano.succ(j), m))
+        [by generalize generalize-q]
+    }
   @conclusion |
     forall p, q: CPoly; forall j, m: Nat;
       cconvolution(p, q, j, peano.succ(m)) =
       complex.add(complex.mul(ccoeff(p, j), ccoeff(q, peano.succ(m))),
       cconvolution(p, q, peano.succ(j), m))
-    [by definition(1) cconvolution]
+    [by generalize generalize-p]
 qed
 
 theorem cPowerZero:
@@ -535,14 +612,177 @@ proof
     [by definition(0) cpower]
 qed
 
+// The successor step, now DERIVED rather than transcribed: the definition descends by `prev`,
+// so this restates it at a successor, where `prevOfSucc` collapses the `prev`. The STATEMENT is
+// unchanged, which keeps the migration confined — every call site cites this theorem rather
+// than the clause, so the clause's guard never reaches them.
 theorem cPowerSucc:
   forall a: Complex; forall n: Nat;
   cpower(a, peano.succ(n)) = complex.mul(a, cpower(a, n))
 proof
+  @the-recursive-clause |
+    forall a2: Complex; forall n2: Nat;
+      n2 != NAT_ZERO -> cpower(a2, n2) = complex.mul(a2, cpower(a2, peano.prev(n2)))
+    [by definition(1) cpower]
+  @prev-undoes-succ |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-a |
+    fix a: Complex {
+      @generalize-n |
+        fix n: Nat {
+          @succ-n-is-nonzero |
+            peano.succ(n) != NAT_ZERO
+            [using specialize a-successor-is-never-zero(n)]
+          @clause-at-the-successor |
+            cpower(a, peano.succ(n)) = complex.mul(a, cpower(a, peano.prev(peano.succ(n))))
+            [using specialize the-recursive-clause(a, peano.succ(n)) succ-n-is-nonzero]
+          @prev-of-succ-n |
+            peano.prev(peano.succ(n)) = n
+            [using specialize prev-undoes-succ(n)]
+          @conclusion-step-at-a-n |
+            cpower(a, peano.succ(n)) = complex.mul(a, cpower(a, n))
+            [by rewrite prev-of-succ-n clause-at-the-successor]
+        }
+      @discharge-n |
+        forall n: Nat; cpower(a, peano.succ(n)) = complex.mul(a, cpower(a, n))
+        [by generalize generalize-n]
+    }
   @conclusion |
     forall a: Complex; forall n: Nat;
       cpower(a, peano.succ(n)) = complex.mul(a, cpower(a, n))
-    [by definition(1) cpower]
+    [by generalize generalize-a]
+qed
+
+// -- the TERMINATION obligation for `cpower` ---------------------------------------------
+//
+// `termination(peano):` names `cpowerIsGrounded`, and the checker SYNTHESIZES the statement it must
+// have — the recursive arm's own guard implying the generated predicate:
+//
+//     forall a: Complex; forall n: Nat; n != NAT_ZERO -> cpowerGrounded(a, n)
+//
+// `cpowerGrounded` is GENERATED from the arm's one call site, a disjunction of that call grounded
+// with its argument hitting the terminating arm's pattern:
+//
+//     cpowerGrounded(a, n) iff (cpowerGrounded(a, peano.prev(n)) or peano.prev(n) = NAT_ZERO)
+//
+// The base disjunct is what lets the recursion bottom out: at n = 1 the predecessor IS zero.
+
+// Strategy: the step of an induction on the exponent. At `peano.succ(k)` the predecessor is `k`,
+// so either `k` is zero and the base disjunct fires outright, or the inductive hypothesis
+// applies at `k`. `tautology` picks whichever holds.
+theorem cpowerReachesABaseFromAPredecessor: forall k: Nat;
+  (forall a2: Complex; k != NAT_ZERO -> cpowerGrounded(a2, k))
+  -> (forall a: Complex; peano.succ(k) != NAT_ZERO -> cpowerGrounded(a, peano.succ(k)))
+proof
+  @the-generated-clause |
+    forall a3: Complex; forall n3: Nat;
+      cpowerGrounded(a3, n3) iff (cpowerGrounded(a3, peano.prev(n3)) or peano.prev(n3) = NAT_ZERO)
+    [by definition cpowerGrounded]
+  @prev-undoes-succ |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-k |
+    fix k: Nat {
+      @given-the-inductive-hypothesis |
+        assume forall a2: Complex; k != NAT_ZERO -> cpowerGrounded(a2, k) {
+          @inductive-hypothesis |
+            forall a2: Complex; k != NAT_ZERO -> cpowerGrounded(a2, k)
+            [by hypothesis given-the-inductive-hypothesis]
+          // `prev` is guarded, so this must precede every term writing `prev(peano.succ(k))`.
+          @succ-k-is-nonzero |
+            peano.succ(k) != NAT_ZERO
+            [using specialize a-successor-is-never-zero(k)]
+          @prev-of-succ-k-is-k |
+            peano.prev(peano.succ(k)) = k
+            [using specialize prev-undoes-succ(k)]
+          @generalize-a |
+            fix a: Complex {
+              @given-succ-k-nonzero |
+                assume peano.succ(k) != NAT_ZERO {
+                  @clause-at-a-and-succ-k |
+                    cpowerGrounded(a, peano.succ(k)) iff
+                      (cpowerGrounded(a, peano.prev(peano.succ(k))) or peano.prev(peano.succ(k)) = NAT_ZERO)
+                    [using specialize the-generated-clause(a, peano.succ(k))]
+                  @clause-with-the-predecessor-collapsed |
+                    cpowerGrounded(a, peano.succ(k)) iff (cpowerGrounded(a, k) or k = NAT_ZERO)
+                    [by rewrite prev-of-succ-k-is-k clause-at-a-and-succ-k]
+                  @the-inductive-hypothesis-at-a |
+                    k != NAT_ZERO -> cpowerGrounded(a, k)
+                    [using specialize inductive-hypothesis(a)]
+                  @conclusion-grounded-at-succ-k |
+                    cpowerGrounded(a, peano.succ(k))
+                    [using tautology clause-with-the-predecessor-collapsed
+                      the-inductive-hypothesis-at-a]
+                }
+              @nonzero-implies-grounded-at-succ-k |
+                peano.succ(k) != NAT_ZERO -> cpowerGrounded(a, peano.succ(k))
+                [by discharge given-succ-k-nonzero]
+            }
+          @conclusion-for-all-a |
+            forall a: Complex; peano.succ(k) != NAT_ZERO -> cpowerGrounded(a, peano.succ(k))
+            [by generalize generalize-a]
+        }
+      @the-hypothesis-implies-the-step |
+        (forall a2: Complex; k != NAT_ZERO -> cpowerGrounded(a2, k))
+          -> (forall a: Complex; peano.succ(k) != NAT_ZERO -> cpowerGrounded(a, peano.succ(k)))
+        [by discharge given-the-inductive-hypothesis]
+    }
+  @conclusion |
+    forall k: Nat;
+      (forall a2: Complex; k != NAT_ZERO -> cpowerGrounded(a2, k))
+      -> (forall a: Complex; peano.succ(k) != NAT_ZERO -> cpowerGrounded(a, peano.succ(k)))
+    [by generalize generalize-k]
+qed
+
+// Strategy: `peano.induction` on the exponent. The base is VACUOUS — at n = zero the
+// antecedent demands `NAT_ZERO != NAT_ZERO` — so every bit of content is in the step above.
+theorem cpowerIsGrounded: forall a: Complex; forall n: Nat;
+  n != NAT_ZERO -> cpowerGrounded(a, n)
+proof
+  @zero-is-itself |
+    NAT_ZERO = NAT_ZERO
+    [by reflexivity]
+  // `tautology` reads a `forall` as one opaque atom, so the binder is opened before the
+  // vacuous antecedent can be refuted inside it.
+  @base-case-proof |
+    fix a: Complex {
+      @conclusion-vacuously-grounded-at-zero |
+        NAT_ZERO != NAT_ZERO -> cpowerGrounded(a, NAT_ZERO)
+        [using tautology zero-is-itself]
+    }
+  @base-case |
+    forall a: Complex; NAT_ZERO != NAT_ZERO -> cpowerGrounded(a, NAT_ZERO)
+    [by generalize base-case-proof]
+  @induction-step-for-all-k |
+    forall k: Nat;
+      (forall a2: Complex; k != NAT_ZERO -> cpowerGrounded(a2, k))
+      -> (forall a: Complex; peano.succ(k) != NAT_ZERO -> cpowerGrounded(a, peano.succ(k)))
+    [by cite cpowerReachesABaseFromAPredecessor]
+  @grounded-for-every-exponent |
+    forall n: Nat; forall a: Complex; n != NAT_ZERO -> cpowerGrounded(a, n)
+    [using instantiation peano.induction((fun n: Nat => (forall a: Complex; n != NAT_ZERO -> cpowerGrounded(a, n)))) base-case induction-step-for-all-k]
+  @generalize-a |
+    fix a: Complex {
+      @generalize-n |
+        fix n: Nat {
+          @grounded-at-n-and-a |
+            n != NAT_ZERO -> cpowerGrounded(a, n)
+            [using specialize grounded-for-every-exponent(n, a)]
+        }
+      @discharge-n |
+        forall n: Nat; n != NAT_ZERO -> cpowerGrounded(a, n)
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall a: Complex; forall n: Nat; n != NAT_ZERO -> cpowerGrounded(a, n)
+    [by generalize generalize-a]
 qed
 
 theorem cEvalZero:
@@ -994,4 +1234,192 @@ proof
   @conclusion |
     forall i: Nat; forall j: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> cmonusGrounded(i, j)
     [by generalize generalize-i]
+qed
+
+// -- cconvolution's TERMINATION obligation ------------------------------------------
+//
+// The checker GENERATES the predicate from the recursive arm's one call site:
+//
+//     cconvolutionGrounded(p, q, j, m) iff
+//       (cconvolutionGrounded(p, q, peano.succ(j), peano.prev(m))
+//        or peano.prev(m) = NAT_ZERO)
+//
+// The `prev(m) = NAT_ZERO` disjunct is the base — the NAT_ZERO arm is the only terminating
+// one — and it is what lets the recursion bottom out. The ASCENDING `j` costs nothing: it
+// rides along untouched, because termination asks only whether the DESCENT reaches a base.
+
+// Strategy: the inductive step on the descending index. At `succ(k)` the clause's `prev`
+// collapses to `k`, leaving either `k = NAT_ZERO` (base disjunct) or the hypothesis at `k`;
+// `tautology` picks whichever holds. The ascending index is read at `succ(j)`.
+theorem cConvolutionReachesZeroFromAPredecessor: forall k: Nat;
+  (forall p2: CPoly; forall q2: CPoly; forall j2: Nat;
+  k != NAT_ZERO -> cconvolutionGrounded(p2, q2, j2, k))
+  -> (forall p: CPoly; forall q: CPoly; forall j: Nat;
+  peano.succ(k) != NAT_ZERO -> cconvolutionGrounded(p, q, j, peano.succ(k)))
+proof
+  @the-generated-clause |
+    forall p3: CPoly; forall q3: CPoly; forall j3: Nat; forall m3: Nat;
+      cconvolutionGrounded(p3, q3, j3, m3) iff
+      (cconvolutionGrounded(p3, q3, peano.succ(j3), peano.prev(m3))
+      or peano.prev(m3) = NAT_ZERO)
+    [by definition cconvolutionGrounded]
+  @prev-undoes-succ |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-k |
+    fix k: Nat {
+      @given-the-inductive-hypothesis |
+        assume forall p2: CPoly; forall q2: CPoly; forall j2: Nat;
+          k != NAT_ZERO -> cconvolutionGrounded(p2, q2, j2, k) {
+          @inductive-hypothesis |
+            forall p2: CPoly; forall q2: CPoly; forall j2: Nat;
+              k != NAT_ZERO -> cconvolutionGrounded(p2, q2, j2, k)
+            [by hypothesis given-the-inductive-hypothesis]
+          // `prev` is guarded, so the guard fact precedes every term writing `prev(succ(k))`.
+          @succ-k-is-nonzero |
+            peano.succ(k) != NAT_ZERO
+            [using specialize a-successor-is-never-zero(k)]
+          @prev-of-succ-k-is-k |
+            peano.prev(peano.succ(k)) = k
+            [using specialize prev-undoes-succ(k)]
+          @generalize-p |
+            fix p: CPoly {
+              @generalize-q |
+                fix q: CPoly {
+                  @generalize-j |
+                    fix j: Nat {
+                      @clause-at-succ-k |
+                        cconvolutionGrounded(p, q, j, peano.succ(k)) iff
+                          (cconvolutionGrounded(p, q, peano.succ(j),
+                          peano.prev(peano.succ(k)))
+                          or peano.prev(peano.succ(k)) = NAT_ZERO)
+                        [using specialize the-generated-clause(p, q, j, peano.succ(k))]
+                      @clause-with-the-predecessor-collapsed |
+                        cconvolutionGrounded(p, q, j, peano.succ(k)) iff
+                          (cconvolutionGrounded(p, q, peano.succ(j), k) or k = NAT_ZERO)
+                        [by rewrite prev-of-succ-k-is-k clause-at-succ-k]
+                      @the-inductive-hypothesis-at-the-raised-index |
+                        k != NAT_ZERO -> cconvolutionGrounded(p, q, peano.succ(j), k)
+                        [using specialize inductive-hypothesis(p, q, peano.succ(j))]
+                      @grounded-at-succ-k |
+                        cconvolutionGrounded(p, q, j, peano.succ(k))
+                        [using tautology clause-with-the-predecessor-collapsed
+                          the-inductive-hypothesis-at-the-raised-index]
+                      @conclusion-nonzero-implies-grounded |
+                        peano.succ(k) != NAT_ZERO
+                          -> cconvolutionGrounded(p, q, j, peano.succ(k))
+                        [using tautology grounded-at-succ-k]
+                    }
+                  @discharge-j |
+                    forall j: Nat;
+                      peano.succ(k) != NAT_ZERO
+                      -> cconvolutionGrounded(p, q, j, peano.succ(k))
+                    [by generalize generalize-j]
+                }
+              @discharge-q |
+                forall q: CPoly; forall j: Nat;
+                  peano.succ(k) != NAT_ZERO
+                  -> cconvolutionGrounded(p, q, j, peano.succ(k))
+                [by generalize generalize-q]
+            }
+          @conclusion-for-all-polynomials |
+            forall p: CPoly; forall q: CPoly; forall j: Nat;
+              peano.succ(k) != NAT_ZERO -> cconvolutionGrounded(p, q, j, peano.succ(k))
+            [by generalize generalize-p]
+        }
+      @the-hypothesis-implies-the-step |
+        (forall p2: CPoly; forall q2: CPoly; forall j2: Nat;
+          k != NAT_ZERO -> cconvolutionGrounded(p2, q2, j2, k))
+          -> (forall p: CPoly; forall q: CPoly; forall j: Nat;
+          peano.succ(k) != NAT_ZERO -> cconvolutionGrounded(p, q, j, peano.succ(k)))
+        [by discharge given-the-inductive-hypothesis]
+    }
+  @conclusion |
+    forall k: Nat;
+      (forall p2: CPoly; forall q2: CPoly; forall j2: Nat;
+      k != NAT_ZERO -> cconvolutionGrounded(p2, q2, j2, k))
+      -> (forall p: CPoly; forall q: CPoly; forall j: Nat;
+      peano.succ(k) != NAT_ZERO -> cconvolutionGrounded(p, q, j, peano.succ(k)))
+    [by generalize generalize-k]
+qed
+
+// Strategy: `peano.induction` on the descending index. The base is VACUOUS — at NAT_ZERO the
+// antecedent demands `NAT_ZERO != NAT_ZERO` — so all the content is in the step above.
+theorem cConvolutionIsGrounded:
+  forall p: CPoly; forall q: CPoly; forall j: Nat; forall m: Nat;
+  m != NAT_ZERO -> cconvolutionGrounded(p, q, j, m)
+proof
+  @zero-is-itself |
+    NAT_ZERO = NAT_ZERO
+    [by reflexivity]
+  // `tautology` reads a `forall` as one opaque atom, so the binders are opened before the
+  // vacuous antecedent can be refuted inside them.
+  @base-case-proof |
+    fix p: CPoly {
+      @generalize-q-at-zero |
+        fix q: CPoly {
+          @generalize-j-at-zero |
+            fix j: Nat {
+              @conclusion-vacuously-grounded-at-zero |
+                NAT_ZERO != NAT_ZERO -> cconvolutionGrounded(p, q, j, NAT_ZERO)
+                [using tautology zero-is-itself]
+            }
+          @discharge-j-at-zero |
+            forall j: Nat;
+              NAT_ZERO != NAT_ZERO -> cconvolutionGrounded(p, q, j, NAT_ZERO)
+            [by generalize generalize-j-at-zero]
+        }
+      @discharge-q-at-zero |
+        forall q: CPoly; forall j: Nat;
+          NAT_ZERO != NAT_ZERO -> cconvolutionGrounded(p, q, j, NAT_ZERO)
+        [by generalize generalize-q-at-zero]
+    }
+  @base-case |
+    forall p: CPoly; forall q: CPoly; forall j: Nat;
+      NAT_ZERO != NAT_ZERO -> cconvolutionGrounded(p, q, j, NAT_ZERO)
+    [by generalize base-case-proof]
+  @induction-step-for-all-k |
+    forall k: Nat;
+      (forall p2: CPoly; forall q2: CPoly; forall j2: Nat;
+      k != NAT_ZERO -> cconvolutionGrounded(p2, q2, j2, k))
+      -> (forall p: CPoly; forall q: CPoly; forall j: Nat;
+      peano.succ(k) != NAT_ZERO -> cconvolutionGrounded(p, q, j, peano.succ(k)))
+    [by cite cConvolutionReachesZeroFromAPredecessor]
+  @grounded-for-every-descending-index |
+    forall m: Nat; forall p: CPoly; forall q: CPoly; forall j: Nat;
+      m != NAT_ZERO -> cconvolutionGrounded(p, q, j, m)
+    [using instantiation peano.induction((fun m: Nat => (forall p: CPoly; forall q: CPoly; forall j: Nat; m != NAT_ZERO -> cconvolutionGrounded(p, q, j, m)))) base-case induction-step-for-all-k]
+  @generalize-p |
+    fix p: CPoly {
+      @generalize-q |
+        fix q: CPoly {
+          @generalize-j |
+            fix j: Nat {
+              @generalize-m |
+                fix m: Nat {
+                  @grounded-at-these-indices |
+                    m != NAT_ZERO -> cconvolutionGrounded(p, q, j, m)
+                    [using specialize grounded-for-every-descending-index(m, p, q, j)]
+                }
+              @discharge-m |
+                forall m: Nat; m != NAT_ZERO -> cconvolutionGrounded(p, q, j, m)
+                [by generalize generalize-m]
+            }
+          @discharge-j |
+            forall j: Nat; forall m: Nat;
+              m != NAT_ZERO -> cconvolutionGrounded(p, q, j, m)
+            [by generalize generalize-j]
+        }
+      @discharge-q |
+        forall q: CPoly; forall j: Nat; forall m: Nat;
+          m != NAT_ZERO -> cconvolutionGrounded(p, q, j, m)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p: CPoly; forall q: CPoly; forall j: Nat; forall m: Nat;
+      m != NAT_ZERO -> cconvolutionGrounded(p, q, j, m)
+    [by generalize generalize-p]
 qed

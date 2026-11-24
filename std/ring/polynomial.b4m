@@ -155,10 +155,18 @@ oper negP(p: Poly) => Poly:
 // its VALUE never mattered. That is the library's junk-value idiom, not the asserted-value
 // violation `subZeroLeft` was. Guarding would have forced a false hypothesis onto true
 // theorems; reindexing removes the obligation at its source.
+// The recursion descends by `prev` on the SECOND index rather than matching `succ` on the
+// left, which the l-value rule requires of a recursive definition — every l-value argument
+// must be a parameter or a closed term, so the descent has to be readable on the RIGHT.
+// `prev` is guarded (`requires n != ZERO`) and the arm's own `m != ZERO` discharges it.
+//
+// Note the two indices move OPPOSITE ways: `m` descends while `j` ascends. Termination asks
+// only about the descending one; an ascending argument is fine and needs no obligation.
 oper convolution(p: Poly, q: Poly, j: Nat, m: Nat) => R:
   convolution(p, q, j, ZERO) = mulR(coeff(p, j), coeff(q, ZERO));
-  convolution(p, q, j, succ(m)) =
-  addR(mulR(coeff(p, j), coeff(q, succ(m))), convolution(p, q, succ(j), m)).
+  convolution(p, q, j, m) =
+  addR(mulR(coeff(p, j), coeff(q, m)), convolution(p, q, succ(j), prev(m))) when m != ZERO.
+  termination(peano): _, {convolutionIsGrounded, convolutionGrounded}
 
 oper mulP(p: Poly, q: Poly) => Poly:
   coeff(mulP(p, q), i) = convolution(p, q, ZERO, i).
@@ -285,6 +293,8 @@ intheory addPolyCoeff
 intheory negPolyCoeff
 intheory convolutionZero
 intheory convolutionSucc
+intheory convolutionReachesZeroFromAPredecessor
+intheory convolutionIsGrounded
 intheory mulPolyCoeff
 intheory tailConvolutionZero
 intheory tailConvolutionSucc
@@ -9275,16 +9285,75 @@ proof
     [by definition(0) convolution]
 qed
 
+// The `succ` step, now DERIVED rather than transcribed: the definition descends by `prev`
+// (the l-value rule keeps patterns off the left), so this restates it at a successor, where
+// `prevOfSucc` collapses the `prev`. The STATEMENT is unchanged, which is what confines the
+// migration — every call site cites this theorem, not the clause, so the clause's `m != ZERO`
+// guard never reaches them.
 theorem convolutionSucc:
   forall p, q: Poly; forall j, m: Nat;
   convolution(p, q, j, succ(m)) =
   addR(mulR(coeff(p, j), coeff(q, succ(m))), convolution(p, q, succ(j), m))
 proof
+  @the-recursive-clause |
+    forall p2: Poly; forall q2: Poly; forall j2: Nat; forall m2: Nat;
+      m2 != ZERO ->
+      convolution(p2, q2, j2, m2) =
+      addR(mulR(coeff(p2, j2), coeff(q2, m2)), convolution(p2, q2, succ(j2), prev(m2)))
+    [by definition(1) convolution]
+  @prev-undoes-succ |
+    forall n: Nat; prev(succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; succ(a) != ZERO
+    [using import(peano) succNotZero]
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-j |
+            fix j: Nat {
+              @generalize-m |
+                fix m: Nat {
+                  @succ-m-is-nonzero |
+                    succ(m) != ZERO
+                    [using specialize a-successor-is-never-zero(m)]
+                  @clause-at-the-successor |
+                    convolution(p, q, j, succ(m)) =
+                      addR(mulR(coeff(p, j), coeff(q, succ(m))),
+                      convolution(p, q, succ(j), prev(succ(m))))
+                    [using specialize the-recursive-clause(p, q, j, succ(m)) succ-m-is-nonzero]
+                  @prev-of-succ-m |
+                    prev(succ(m)) = m
+                    [using specialize prev-undoes-succ(m)]
+                  @conclusion-step-at-m |
+                    convolution(p, q, j, succ(m)) =
+                      addR(mulR(coeff(p, j), coeff(q, succ(m))), convolution(p, q, succ(j), m))
+                    [by rewrite prev-of-succ-m clause-at-the-successor]
+                }
+              @discharge-m |
+                forall m: Nat;
+                  convolution(p, q, j, succ(m)) =
+                  addR(mulR(coeff(p, j), coeff(q, succ(m))), convolution(p, q, succ(j), m))
+                [by generalize generalize-m]
+            }
+          @discharge-j |
+            forall j, m: Nat;
+              convolution(p, q, j, succ(m)) =
+              addR(mulR(coeff(p, j), coeff(q, succ(m))), convolution(p, q, succ(j), m))
+            [by generalize generalize-j]
+        }
+      @discharge-q |
+        forall q: Poly; forall j, m: Nat;
+          convolution(p, q, j, succ(m)) =
+          addR(mulR(coeff(p, j), coeff(q, succ(m))), convolution(p, q, succ(j), m))
+        [by generalize generalize-q]
+    }
   @conclusion |
     forall p, q: Poly; forall j, m: Nat;
       convolution(p, q, j, succ(m)) =
       addR(mulR(coeff(p, j), coeff(q, succ(m))), convolution(p, q, succ(j), m))
-    [by definition(1) convolution]
+    [by generalize generalize-p]
 qed
 
 theorem mulPolyCoeff:
@@ -9733,4 +9802,189 @@ proof
       addR(cappedRun(q, r, g, n),
       mulR(coeff(q, n), coeff(r, monus(g, n))))
     [by definition(1) cappedRun]
+qed
+
+// -- the convolution's TERMINATION obligation ---------------------------------------------
+//
+// `termination(peano):` on the declaration names the theorem below, and the checker
+// GENERATES the predicate it is stated over as a transcription of the recursive arm's one
+// call site:
+//
+//     convolutionGrounded(p, q, j, m) iff
+//       (convolutionGrounded(p, q, succ(j), prev(m)) or prev(m) = ZERO)
+//
+// The `prev(m) = ZERO` disjunct is the base — the ZERO arm is the only terminating one, and
+// it narrows the fourth slot — and it is what lets the recursion bottom out.
+//
+// Note what the ASCENDING `j` costs: nothing. It rides along in both the predicate and the
+// obligation untouched, because termination asks only whether the DESCENT reaches a base.
+
+// Strategy: the inductive step on the descending index. At `succ(k)` the generated clause's
+// `prev` collapses to `k`, leaving either `k = ZERO` (the base disjunct fires) or the
+// inductive hypothesis at `k`. `tautology` picks whichever holds. The ascending `j` is
+// specialized at `succ(j)`, which is where the hypothesis has to be read.
+theorem convolutionReachesZeroFromAPredecessor: forall k: Nat;
+  (forall p2: Poly; forall q2: Poly; forall j2: Nat;
+  k != ZERO -> convolutionGrounded(p2, q2, j2, k))
+  -> (forall p: Poly; forall q: Poly; forall j: Nat;
+  succ(k) != ZERO -> convolutionGrounded(p, q, j, succ(k)))
+proof
+  @the-generated-clause |
+    forall p3: Poly; forall q3: Poly; forall j3: Nat; forall m3: Nat;
+      convolutionGrounded(p3, q3, j3, m3) iff
+      (convolutionGrounded(p3, q3, succ(j3), prev(m3)) or prev(m3) = ZERO)
+    [by definition convolutionGrounded]
+  @prev-undoes-succ |
+    forall n: Nat; prev(succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; succ(a) != ZERO
+    [using import(peano) succNotZero]
+  @generalize-k |
+    fix k: Nat {
+      @given-the-inductive-hypothesis |
+        assume forall p2: Poly; forall q2: Poly; forall j2: Nat;
+          k != ZERO -> convolutionGrounded(p2, q2, j2, k) {
+          @inductive-hypothesis |
+            forall p2: Poly; forall q2: Poly; forall j2: Nat;
+              k != ZERO -> convolutionGrounded(p2, q2, j2, k)
+            [by hypothesis given-the-inductive-hypothesis]
+          // `prev` is guarded, so BOTH of these precede every term writing `prev(succ(k))`:
+          // the guard fact first, then the collapse.
+          @succ-k-is-nonzero |
+            succ(k) != ZERO
+            [using specialize a-successor-is-never-zero(k)]
+          @prev-of-succ-k-is-k |
+            prev(succ(k)) = k
+            [using specialize prev-undoes-succ(k)]
+          @generalize-p |
+            fix p: Poly {
+              @generalize-q |
+                fix q: Poly {
+                  @generalize-j |
+                    fix j: Nat {
+                      @clause-at-succ-k |
+                        convolutionGrounded(p, q, j, succ(k)) iff
+                          (convolutionGrounded(p, q, succ(j), prev(succ(k)))
+                          or prev(succ(k)) = ZERO)
+                        [using specialize the-generated-clause(p, q, j, succ(k))]
+                      @clause-with-the-predecessor-collapsed |
+                        convolutionGrounded(p, q, j, succ(k)) iff
+                          (convolutionGrounded(p, q, succ(j), k) or k = ZERO)
+                        [by rewrite prev-of-succ-k-is-k clause-at-succ-k]
+                      @the-inductive-hypothesis-at-the-raised-index |
+                        k != ZERO -> convolutionGrounded(p, q, succ(j), k)
+                        [using specialize inductive-hypothesis(p, q, succ(j))]
+                      @grounded-at-succ-k |
+                        convolutionGrounded(p, q, j, succ(k))
+                        [using tautology clause-with-the-predecessor-collapsed
+                          the-inductive-hypothesis-at-the-raised-index]
+                      @conclusion-nonzero-implies-grounded |
+                        succ(k) != ZERO -> convolutionGrounded(p, q, j, succ(k))
+                        [using tautology grounded-at-succ-k]
+                    }
+                  @discharge-j |
+                    forall j: Nat;
+                      succ(k) != ZERO -> convolutionGrounded(p, q, j, succ(k))
+                    [by generalize generalize-j]
+                }
+              @discharge-q |
+                forall q: Poly; forall j: Nat;
+                  succ(k) != ZERO -> convolutionGrounded(p, q, j, succ(k))
+                [by generalize generalize-q]
+            }
+          @conclusion-for-all-polynomials |
+            forall p: Poly; forall q: Poly; forall j: Nat;
+              succ(k) != ZERO -> convolutionGrounded(p, q, j, succ(k))
+            [by generalize generalize-p]
+        }
+      @the-hypothesis-implies-the-step |
+        (forall p2: Poly; forall q2: Poly; forall j2: Nat;
+          k != ZERO -> convolutionGrounded(p2, q2, j2, k))
+          -> (forall p: Poly; forall q: Poly; forall j: Nat;
+          succ(k) != ZERO -> convolutionGrounded(p, q, j, succ(k)))
+        [by discharge given-the-inductive-hypothesis]
+    }
+  @conclusion |
+    forall k: Nat;
+      (forall p2: Poly; forall q2: Poly; forall j2: Nat;
+      k != ZERO -> convolutionGrounded(p2, q2, j2, k))
+      -> (forall p: Poly; forall q: Poly; forall j: Nat;
+      succ(k) != ZERO -> convolutionGrounded(p, q, j, succ(k)))
+    [by generalize generalize-k]
+qed
+
+// Strategy: `peano.induction` on the descending index. The base is VACUOUS — at m = ZERO the
+// antecedent demands `ZERO != ZERO` — so all the content is in the step above.
+theorem convolutionIsGrounded: forall p: Poly; forall q: Poly; forall j: Nat; forall m: Nat;
+  m != ZERO -> convolutionGrounded(p, q, j, m)
+proof
+  @zero-is-itself |
+    ZERO = ZERO
+    [by reflexivity]
+  // `tautology` reads a `forall` as one opaque atom, so the binders are opened before the
+  // vacuous antecedent can be refuted inside them.
+  @base-case-proof |
+    fix p: Poly {
+      @generalize-q-at-zero |
+        fix q: Poly {
+          @generalize-j-at-zero |
+            fix j: Nat {
+              @conclusion-vacuously-grounded-at-zero |
+                ZERO != ZERO -> convolutionGrounded(p, q, j, ZERO)
+                [using tautology zero-is-itself]
+            }
+          @discharge-j-at-zero |
+            forall j: Nat; ZERO != ZERO -> convolutionGrounded(p, q, j, ZERO)
+            [by generalize generalize-j-at-zero]
+        }
+      @discharge-q-at-zero |
+        forall q: Poly; forall j: Nat;
+          ZERO != ZERO -> convolutionGrounded(p, q, j, ZERO)
+        [by generalize generalize-q-at-zero]
+    }
+  @base-case |
+    forall p: Poly; forall q: Poly; forall j: Nat;
+      ZERO != ZERO -> convolutionGrounded(p, q, j, ZERO)
+    [by generalize base-case-proof]
+  @induction-step-for-all-k |
+    forall k: Nat;
+      (forall p2: Poly; forall q2: Poly; forall j2: Nat;
+      k != ZERO -> convolutionGrounded(p2, q2, j2, k))
+      -> (forall p: Poly; forall q: Poly; forall j: Nat;
+      succ(k) != ZERO -> convolutionGrounded(p, q, j, succ(k)))
+    [by cite convolutionReachesZeroFromAPredecessor]
+  @grounded-for-every-descending-index |
+    forall m: Nat; forall p: Poly; forall q: Poly; forall j: Nat;
+      m != ZERO -> convolutionGrounded(p, q, j, m)
+    [using instantiation peano.induction((fun m: Nat => (forall p: Poly; forall q: Poly; forall j: Nat; m != ZERO -> convolutionGrounded(p, q, j, m)))) base-case induction-step-for-all-k]
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-j |
+            fix j: Nat {
+              @generalize-m |
+                fix m: Nat {
+                  @grounded-at-these-indices |
+                    m != ZERO -> convolutionGrounded(p, q, j, m)
+                    [using specialize grounded-for-every-descending-index(m, p, q, j)]
+                }
+              @discharge-m |
+                forall m: Nat; m != ZERO -> convolutionGrounded(p, q, j, m)
+                [by generalize generalize-m]
+            }
+          @discharge-j |
+            forall j: Nat; forall m: Nat; m != ZERO -> convolutionGrounded(p, q, j, m)
+            [by generalize generalize-j]
+        }
+      @discharge-q |
+        forall q: Poly; forall j: Nat; forall m: Nat;
+          m != ZERO -> convolutionGrounded(p, q, j, m)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p: Poly; forall q: Poly; forall j: Nat; forall m: Nat;
+      m != ZERO -> convolutionGrounded(p, q, j, m)
+    [by generalize generalize-p]
 qed

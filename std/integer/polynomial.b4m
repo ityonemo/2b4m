@@ -51,9 +51,10 @@ oper imulP(p: IntPoly, q: IntPoly) => IntPoly:
   icoeff(imulP(p, q), i) = iconvolution(p, q, ZERO, i).
   existence: aImulPExists,
   uniqueness: iPolyExtensionality
-oper iconvolution(p: IntPoly, q: IntPoly, i: Nat, k: Nat) => Int:
+oper iconvolution(p: IntPoly, q: IntPoly, j: Nat, m: Nat) => Int:
   iconvolution(p, q, j, ZERO) = integer.mul(icoeff(p, j), icoeff(q, ZERO));
-  iconvolution(p, q, j, peano.succ(m)) = integer.add(integer.mul(icoeff(p, j), icoeff(q, peano.succ(m))), iconvolution(p, q, peano.succ(j), m)).
+  iconvolution(p, q, j, m) = integer.add(integer.mul(icoeff(p, j), icoeff(q, m)), iconvolution(p, q, peano.succ(j), peano.prev(m))) when m != ZERO.
+  termination(peano): _, {iConvolutionIsGrounded, iconvolutionGrounded}
 oper idegree(p: IntPoly) => Nat
 pred idegreeAtMost(p: IntPoly, n: Nat)
 
@@ -99,6 +100,8 @@ intheory iNegPolyCoeff
 intheory iMulPolyCoeff
 intheory iConvolutionZero
 intheory iConvolutionSucc
+intheory iConvolutionReachesZeroFromAPredecessor
+intheory iConvolutionIsGrounded
 intheory reduceCoefficientwise
 
 model IntegerPolynomials {
@@ -1168,12 +1171,71 @@ theorem iConvolutionSucc:
   integer.add(integer.mul(icoeff(p, j), icoeff(q, peano.succ(m))),
   iconvolution(p, q, peano.succ(j), m))
 proof
+  @the-recursive-clause |
+    forall p2: IntPoly; forall q2: IntPoly; forall j2: Nat; forall m2: Nat;
+      m2 != ZERO ->
+      iconvolution(p2, q2, j2, m2) =
+      integer.add(integer.mul(icoeff(p2, j2), icoeff(q2, m2)),
+      iconvolution(p2, q2, peano.succ(j2), peano.prev(m2)))
+    [by definition(1) iconvolution]
+  @prev-undoes-succ |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != ZERO
+    [using import(peano) succNotZero]
+  @generalize-p |
+    fix p: IntPoly {
+      @generalize-q |
+        fix q: IntPoly {
+          @generalize-j |
+            fix j: Nat {
+              @generalize-m |
+                fix m: Nat {
+                  @succ-m-is-nonzero |
+                    peano.succ(m) != ZERO
+                    [using specialize a-successor-is-never-zero(m)]
+                  @clause-at-the-successor |
+                    iconvolution(p, q, j, peano.succ(m)) =
+                      integer.add(integer.mul(icoeff(p, j), icoeff(q, peano.succ(m))),
+                      iconvolution(p, q, peano.succ(j), peano.prev(peano.succ(m))))
+                    [using specialize the-recursive-clause(p, q, j, peano.succ(m)) succ-m-is-nonzero]
+                  @prev-of-succ-m |
+                    peano.prev(peano.succ(m)) = m
+                    [using specialize prev-undoes-succ(m)]
+                  @conclusion-step-at-m |
+                    iconvolution(p, q, j, peano.succ(m)) =
+                      integer.add(integer.mul(icoeff(p, j), icoeff(q, peano.succ(m))),
+                      iconvolution(p, q, peano.succ(j), m))
+                    [by rewrite prev-of-succ-m clause-at-the-successor]
+                }
+              @discharge-m |
+                forall m: Nat;
+                  iconvolution(p, q, j, peano.succ(m)) =
+                  integer.add(integer.mul(icoeff(p, j), icoeff(q, peano.succ(m))),
+                  iconvolution(p, q, peano.succ(j), m))
+                [by generalize generalize-m]
+            }
+          @discharge-j |
+            forall j, m: Nat;
+              iconvolution(p, q, j, peano.succ(m)) =
+              integer.add(integer.mul(icoeff(p, j), icoeff(q, peano.succ(m))),
+              iconvolution(p, q, peano.succ(j), m))
+            [by generalize generalize-j]
+        }
+      @discharge-q |
+        forall q: IntPoly; forall j, m: Nat;
+          iconvolution(p, q, j, peano.succ(m)) =
+          integer.add(integer.mul(icoeff(p, j), icoeff(q, peano.succ(m))),
+          iconvolution(p, q, peano.succ(j), m))
+        [by generalize generalize-q]
+    }
   @conclusion |
     forall p, q: IntPoly; forall j, m: Nat;
       iconvolution(p, q, j, peano.succ(m)) =
       integer.add(integer.mul(icoeff(p, j), icoeff(q, peano.succ(m))),
       iconvolution(p, q, peano.succ(j), m))
-    [by definition(1) iconvolution]
+    [by generalize generalize-p]
 qed
 
 theorem reduceCoefficientwise:
@@ -1184,4 +1246,190 @@ proof
     forall p: IntPoly; forall i: Nat;
       mod_n_poly.zcoeff(reduce(p), i) = mod_n.cls(icoeff(p, i))
     [by definition reduce]
+qed
+
+// -- iconvolution's TERMINATION obligation ------------------------------------------
+//
+// The checker GENERATES the predicate from the recursive arm's one call site:
+//
+//     iconvolutionGrounded(p, q, j, m) iff
+//       (iconvolutionGrounded(p, q, peano.succ(j), peano.prev(m))
+//        or peano.prev(m) = ZERO)
+//
+// The `prev(m) = ZERO` disjunct is the base — the ZERO arm is the only terminating one — and
+// it is what lets the recursion bottom out. The ASCENDING `j` costs nothing: termination asks
+// only whether the DESCENT reaches a base.
+
+// Strategy: the inductive step on the descending index. At `succ(k)` the clause's `prev`
+// collapses to `k`, leaving either `k = ZERO` (base disjunct) or the hypothesis at `k`;
+// `tautology` picks whichever holds.
+theorem iConvolutionReachesZeroFromAPredecessor: forall k: Nat;
+  (forall p2: IntPoly; forall q2: IntPoly; forall j2: Nat;
+  k != ZERO -> iconvolutionGrounded(p2, q2, j2, k))
+  -> (forall p: IntPoly; forall q: IntPoly; forall j: Nat;
+  peano.succ(k) != ZERO -> iconvolutionGrounded(p, q, j, peano.succ(k)))
+proof
+  @the-generated-clause |
+    forall p3: IntPoly; forall q3: IntPoly; forall j3: Nat; forall m3: Nat;
+      iconvolutionGrounded(p3, q3, j3, m3) iff
+      (iconvolutionGrounded(p3, q3, peano.succ(j3), peano.prev(m3))
+      or peano.prev(m3) = ZERO)
+    [by definition iconvolutionGrounded]
+  @prev-undoes-succ |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != ZERO
+    [using import(peano) succNotZero]
+  @generalize-k |
+    fix k: Nat {
+      @given-the-inductive-hypothesis |
+        assume forall p2: IntPoly; forall q2: IntPoly; forall j2: Nat;
+          k != ZERO -> iconvolutionGrounded(p2, q2, j2, k) {
+          @inductive-hypothesis |
+            forall p2: IntPoly; forall q2: IntPoly; forall j2: Nat;
+              k != ZERO -> iconvolutionGrounded(p2, q2, j2, k)
+            [by hypothesis given-the-inductive-hypothesis]
+          // `prev` is guarded, so the guard fact precedes every term writing `prev(succ(k))`.
+          @succ-k-is-nonzero |
+            peano.succ(k) != ZERO
+            [using specialize a-successor-is-never-zero(k)]
+          @prev-of-succ-k-is-k |
+            peano.prev(peano.succ(k)) = k
+            [using specialize prev-undoes-succ(k)]
+          @generalize-p |
+            fix p: IntPoly {
+              @generalize-q |
+                fix q: IntPoly {
+                  @generalize-j |
+                    fix j: Nat {
+                      @clause-at-succ-k |
+                        iconvolutionGrounded(p, q, j, peano.succ(k)) iff
+                          (iconvolutionGrounded(p, q, peano.succ(j),
+                          peano.prev(peano.succ(k)))
+                          or peano.prev(peano.succ(k)) = ZERO)
+                        [using specialize the-generated-clause(p, q, j, peano.succ(k))]
+                      @clause-with-the-predecessor-collapsed |
+                        iconvolutionGrounded(p, q, j, peano.succ(k)) iff
+                          (iconvolutionGrounded(p, q, peano.succ(j), k) or k = ZERO)
+                        [by rewrite prev-of-succ-k-is-k clause-at-succ-k]
+                      @the-inductive-hypothesis-at-the-raised-index |
+                        k != ZERO -> iconvolutionGrounded(p, q, peano.succ(j), k)
+                        [using specialize inductive-hypothesis(p, q, peano.succ(j))]
+                      @grounded-at-succ-k |
+                        iconvolutionGrounded(p, q, j, peano.succ(k))
+                        [using tautology clause-with-the-predecessor-collapsed
+                          the-inductive-hypothesis-at-the-raised-index]
+                      @conclusion-nonzero-implies-grounded |
+                        peano.succ(k) != ZERO
+                          -> iconvolutionGrounded(p, q, j, peano.succ(k))
+                        [using tautology grounded-at-succ-k]
+                    }
+                  @discharge-j |
+                    forall j: Nat;
+                      peano.succ(k) != ZERO
+                      -> iconvolutionGrounded(p, q, j, peano.succ(k))
+                    [by generalize generalize-j]
+                }
+              @discharge-q |
+                forall q: IntPoly; forall j: Nat;
+                  peano.succ(k) != ZERO
+                  -> iconvolutionGrounded(p, q, j, peano.succ(k))
+                [by generalize generalize-q]
+            }
+          @conclusion-for-all-polynomials |
+            forall p: IntPoly; forall q: IntPoly; forall j: Nat;
+              peano.succ(k) != ZERO -> iconvolutionGrounded(p, q, j, peano.succ(k))
+            [by generalize generalize-p]
+        }
+      @the-hypothesis-implies-the-step |
+        (forall p2: IntPoly; forall q2: IntPoly; forall j2: Nat;
+          k != ZERO -> iconvolutionGrounded(p2, q2, j2, k))
+          -> (forall p: IntPoly; forall q: IntPoly; forall j: Nat;
+          peano.succ(k) != ZERO -> iconvolutionGrounded(p, q, j, peano.succ(k)))
+        [by discharge given-the-inductive-hypothesis]
+    }
+  @conclusion |
+    forall k: Nat;
+      (forall p2: IntPoly; forall q2: IntPoly; forall j2: Nat;
+      k != ZERO -> iconvolutionGrounded(p2, q2, j2, k))
+      -> (forall p: IntPoly; forall q: IntPoly; forall j: Nat;
+      peano.succ(k) != ZERO -> iconvolutionGrounded(p, q, j, peano.succ(k)))
+    [by generalize generalize-k]
+qed
+
+// Strategy: `peano.induction` on the descending index. The base is VACUOUS — at ZERO the
+// antecedent demands `ZERO != ZERO` — so all the content is in the step above.
+theorem iConvolutionIsGrounded:
+  forall p: IntPoly; forall q: IntPoly; forall j: Nat; forall m: Nat;
+  m != ZERO -> iconvolutionGrounded(p, q, j, m)
+proof
+  @zero-is-itself |
+    ZERO = ZERO
+    [by reflexivity]
+  // `tautology` reads a `forall` as one opaque atom, so the binders are opened before the
+  // vacuous antecedent can be refuted inside them.
+  @base-case-proof |
+    fix p: IntPoly {
+      @generalize-q-at-zero |
+        fix q: IntPoly {
+          @generalize-j-at-zero |
+            fix j: Nat {
+              @conclusion-vacuously-grounded-at-zero |
+                ZERO != ZERO -> iconvolutionGrounded(p, q, j, ZERO)
+                [using tautology zero-is-itself]
+            }
+          @discharge-j-at-zero |
+            forall j: Nat; ZERO != ZERO -> iconvolutionGrounded(p, q, j, ZERO)
+            [by generalize generalize-j-at-zero]
+        }
+      @discharge-q-at-zero |
+        forall q: IntPoly; forall j: Nat;
+          ZERO != ZERO -> iconvolutionGrounded(p, q, j, ZERO)
+        [by generalize generalize-q-at-zero]
+    }
+  @base-case |
+    forall p: IntPoly; forall q: IntPoly; forall j: Nat;
+      ZERO != ZERO -> iconvolutionGrounded(p, q, j, ZERO)
+    [by generalize base-case-proof]
+  @induction-step-for-all-k |
+    forall k: Nat;
+      (forall p2: IntPoly; forall q2: IntPoly; forall j2: Nat;
+      k != ZERO -> iconvolutionGrounded(p2, q2, j2, k))
+      -> (forall p: IntPoly; forall q: IntPoly; forall j: Nat;
+      peano.succ(k) != ZERO -> iconvolutionGrounded(p, q, j, peano.succ(k)))
+    [by cite iConvolutionReachesZeroFromAPredecessor]
+  @grounded-for-every-descending-index |
+    forall m: Nat; forall p: IntPoly; forall q: IntPoly; forall j: Nat;
+      m != ZERO -> iconvolutionGrounded(p, q, j, m)
+    [using instantiation peano.induction((fun m: Nat => (forall p: IntPoly; forall q: IntPoly; forall j: Nat; m != ZERO -> iconvolutionGrounded(p, q, j, m)))) base-case induction-step-for-all-k]
+  @generalize-p |
+    fix p: IntPoly {
+      @generalize-q |
+        fix q: IntPoly {
+          @generalize-j |
+            fix j: Nat {
+              @generalize-m |
+                fix m: Nat {
+                  @grounded-at-these-indices |
+                    m != ZERO -> iconvolutionGrounded(p, q, j, m)
+                    [using specialize grounded-for-every-descending-index(m, p, q, j)]
+                }
+              @discharge-m |
+                forall m: Nat; m != ZERO -> iconvolutionGrounded(p, q, j, m)
+                [by generalize generalize-m]
+            }
+          @discharge-j |
+            forall j: Nat; forall m: Nat; m != ZERO -> iconvolutionGrounded(p, q, j, m)
+            [by generalize generalize-j]
+        }
+      @discharge-q |
+        forall q: IntPoly; forall j: Nat; forall m: Nat;
+          m != ZERO -> iconvolutionGrounded(p, q, j, m)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p: IntPoly; forall q: IntPoly; forall j: Nat; forall m: Nat;
+      m != ZERO -> iconvolutionGrounded(p, q, j, m)
+    [by generalize generalize-p]
 qed
