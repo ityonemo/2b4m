@@ -120,10 +120,26 @@ pub fn format(arena: Allocator, source: []const u8) Allocator.Error![]const u8 {
     return (try check(arena, source)).text;
 }
 
+/// Is `toks[i]` (an `.l_brace`) a `termination:` ENTRY PAIR — `{theorem, predicate}` — rather
+/// than a block opener? The only `{` in the language that is not a block, so the formatter must
+/// keep it inline instead of breaking the line and shifting the indent.
+///
+/// Decided LOCALLY from the four tokens that follow, not from a state machine spanning the
+/// switch: a pair is exactly `{ identifier , identifier }`. A block header's brace is always
+/// followed by a label or a declaration keyword, never by that shape, so there is no overlap.
+fn isTerminationPair(toks: []const Token, i: usize) bool {
+    if (i + 4 >= toks.len) return false;
+    return toks[i + 1].tag == .identifier and
+        toks[i + 2].tag == .comma and
+        toks[i + 3].tag == .identifier and
+        toks[i + 4].tag == .r_brace;
+}
+
 fn render(w: *std.Io.Writer, source: []const u8, toks: []const Token) std.Io.Writer.Error!void {
     var depth: u32 = 0; // block depth inside a proof
     var in_proof = false;
     var in_bracket = false; // inside a [by ...] justification
+    var in_pair = false; // inside a `termination:` `{theorem, predicate}` entry (not a block)
     var line_empty = true; // nothing emitted on the current line yet
     var owner_indent: u32 = 0; // indent of the line being continued
     // the token after a step-label `|` opens the statement on its own line; it
@@ -180,7 +196,11 @@ fn render(w: *std.Io.Writer, source: []const u8, toks: []const Token) std.Io.Wri
                 // a `}` aligns with the block header that opened it (which sits
                 // one extra level in, on a label-continuation line), so it keeps
                 // this block's still-in-effect extra level.
-                .r_brace => break :decide .{ true, (depth - 1 + extra_depth) * 2 },
+                // ...unless it closes a `termination:` entry pair, which is inline.
+                .r_brace => {
+                    if (in_pair) break :decide .{ false, 0 };
+                    break :decide .{ true, (depth - 1 + extra_depth) * 2 };
+                },
                 else => break :decide .{ false, 0 },
             }
         };
@@ -209,7 +229,7 @@ fn render(w: *std.Io.Writer, source: []const u8, toks: []const Token) std.Io.Wri
                 if (after_pipe) owner_indent = line_indent;
             }
             after_pipe = false;
-        } else if (needSpace(prev_tag, tok.tag)) {
+        } else if (needSpace(prev_tag, tok.tag, in_pair)) {
             try w.writeAll(" ");
         }
         // a step label is emitted with the `@` sigil. `.at_label` text already
@@ -247,7 +267,10 @@ fn render(w: *std.Io.Writer, source: []const u8, toks: []const Token) std.Io.Wri
                     after_pipe = true;
                 }
             },
-            .l_brace => {
+            .l_brace => if (isTerminationPair(toks, i)) {
+                // a `termination:` entry pair stays INLINE: no newline, no depth change.
+                in_pair = true;
+            } else {
                 // in a proof, every block header (`fix …`, `assume …`,
                 // `case …`) sits on a label-continuation line, one level (+2)
                 // past its label; its body is one level past THAT, so the brace
@@ -260,7 +283,9 @@ fn render(w: *std.Io.Writer, source: []const u8, toks: []const Token) std.Io.Wri
                 try w.writeAll("\n");
                 line_empty = true;
             },
-            .r_brace => {
+            .r_brace => if (in_pair) {
+                in_pair = false;
+            } else {
                 if (in_proof) extra_depth -= 1;
                 depth -= 1;
                 try w.writeAll("\n");
@@ -293,8 +318,14 @@ fn newlineCount(s: []const u8) u32 {
     return n;
 }
 
-/// spacing between two adjacent tokens on the same line
-fn needSpace(prev: Tag, cur: Tag) bool {
+/// spacing between two adjacent tokens on the same line.
+///
+/// `in_pair` is set inside a `termination:` entry pair, whose braces hug their contents
+/// (`{thm, pred}`) rather than being spaced like a block's.
+fn needSpace(prev: Tag, cur: Tag, in_pair: bool) bool {
+    if (in_pair) {
+        if (cur == .r_brace or prev == .l_brace) return false;
+    }
     switch (cur) {
         .r_paren, .r_bracket, .comma, .dot, .colon, .semicolon => return false,
         // a step label reads `label |` — a space separates the tag from its pipe
@@ -631,6 +662,63 @@ test "a balanced file still formats (the guard does not fire on good input)" {
         \\proof
         \\  outer| assume p() { inner| p() [by hypothesis outer] }
         \\  conclusion| p() -> p() [by discharge outer]
+        \\qed
+        \\
+    ,
+        \\pred p()
+        \\theorem t: p() -> p()
+        \\proof
+        \\  @outer |
+        \\    assume p() {
+        \\      @inner |
+        \\        p()
+        \\        [by hypothesis outer]
+        \\    }
+        \\  @conclusion |
+        \\    p() -> p()
+        \\    [by discharge outer]
+        \\qed
+        \\
+    );
+}
+
+test "a `termination:` entry pair stays inline — the one `{` that is not a block" {
+    // REGRESSION: `{theorem, predicate}` was formatted as a block, so fmt broke the line,
+    // shifted the indent, and left a stray `}` at column 0 — and re-broke it every run, so an
+    // affected file could never reach a formatted fixed point. Three places had to agree: the
+    // newline decision, the depth bookkeeping, and the spacing rule.
+    try expectFmt(
+        \\sort N
+        \\const Z: N
+        \\oper prev(n: N) => N requires n != Z
+        \\oper g(i: N, j: N) => N:
+        \\  g(i, Z) = i;
+        \\  g(i, j) = g(prev(i), prev(j)) when i != Z and j != Z;
+        \\  g(Z, j) = Z when j != Z.
+        \\  termination(peano): _, {gIsGrounded, gGrounded}, _
+        \\
+    ,
+        \\sort N
+        \\const Z: N
+        \\oper prev(n: N) => N requires n != Z
+        \\oper g(i: N, j: N) => N:
+        \\  g(i, Z) = i;
+        \\  g(i, j) = g(prev(i), prev(j)) when i != Z and j != Z;
+        \\  g(Z, j) = Z when j != Z.
+        \\  termination(peano): _, {gIsGrounded, gGrounded}, _
+        \\
+    );
+}
+
+test "a BLOCK brace still breaks — the pair exception is narrow" {
+    // The pair is detected from the four tokens after `{` (`ident , ident }`), so a block
+    // header's brace is untouched. Guards against the exception widening into proof blocks.
+    try expectFmt(
+        \\pred p()
+        \\theorem t: p() -> p()
+        \\proof
+        \\  @outer | assume p() { @inner | p() [by hypothesis outer] }
+        \\  @conclusion | p() -> p() [by discharge outer]
         \\qed
         \\
     ,
