@@ -438,32 +438,32 @@ qed
 Same class as PAINPOINTS 16f: the kernel does as it is told, and the user has built an
 inconsistent system with nothing warning them.
 
-### The criterion — TWICE REJECTED, and why
+### READ THIS FIRST — five framings were tried and rejected
 
-Two framings were worked out in full and both fail. Recording them because the failures are
-what constrain the third attempt.
+The design below took a long detour, and every wrong turn was *plausible*. If you are picking
+this up fresh, these are the walls, so you do not rebuild them:
 
-**REJECTED 1 — a syntactic decrease** ("the LHS argument is `succ(x)` and the RHS's is `x`").
-Not acceptable for a soundness check: `f(g(x)) = f(x)` passes while `g` is free to be the
-identity, so the shape admits a counterexample.
+| framing | why it fails |
+|---|---|
+| **1. syntactic decrease** — "LHS arg is `succ(x)`, RHS arg is `x`" | `f(g(x)) = f(x)` passes while `g` is the identity. A soundness check cannot rest on a shape that admits a counterexample. |
+| **2. a decreasing MEASURE** — `less_than(sub(k,ONE), k)` | "Decrease" is undefined without a well-founded relation, and 2b4m has no such notion. Worse: **some legitimate recursions INCREASE** — a ladder operator `L⁺` maps level `n` to `n+1`, so nothing descends. Termination-by-descent is one sufficient condition, not the property. |
+| **3. reachability with an explicit N** — "exists N such that the inner call reaches a base" | Faithful, but unstatable. Iterating a MULTI-CALL step is not a function application, so `std/function/iterate.b4m` does not express it — `fib`'s recursion is a tree, not an iteration. |
+| **4. generated AXIOMS giving the predicate meaning** | A soundness check that emits assumptions has handed back exactly what it was supposed to remove. Everything generated must be a definition (eliminable) or nothing. |
+| **5. base cases as DISJUNCTS of the predicate** | Instantiating at `ZERO` requires WRITING `sub(ZERO, TWO)`, which owes `TWO <= ZERO` — false. Guard discharge is per-term, not flow-sensitive, so the term is unwritable even behind a false conjunct. A `not isBase(k)` conjunct does not help; verified. |
 
-**REJECTED 2 — a strictly decreasing MEASURE.** The obligation would be
-`less_than(sub(k, ONE), k)` and friends, discharged from `subStrictlyDecreases` /
-`lessThanSelf`. Those proofs were written and they check. Two objections kill it anyway:
+Two further traps worth knowing:
 
-1. **"Decrease" is undefined.** A measure argument is well-founded only relative to a
-   WELL-FOUNDED RELATION, and 2b4m has no such notion. `less_than` on ℕ happens to be one,
-   but nothing in the language says so, and nothing stops an author citing a "decrease" in an
-   order with infinite descending chains. The obligation would look rigorous while resting on
-   a property never stated.
+- **`prev` does not exist on `Nat`.** It is `std/integer.b4m:28`, on ℤ where it is total. There
+  is no total predecessor on ℕ and no-totalization forbids inventing one, so the descent must be
+  `sub` with its guard. I asserted `prev(ZERO) = ZERO` without grepping; it is not there.
+- **The `exists j; k = succ(succ(j))` form is the prettiest and still wrong.** It proves the
+  bases and the step cleanly — all verified — but the GENERATOR cannot produce it: the arm says
+  `sub(k, ONE)`, and turning that into successor form is arithmetic, not transcription.
 
-2. **Some legitimate recursions INCREASE.** Ladder operators are the clean example: `L⁺` maps
-   level `n` to level `n+1`, and a recursive definition of its action has no decreasing
-   measure at all. Such a definition is perfectly well-founded — but not because anything
-   descends.
-
-So termination-by-descent is the wrong frame. It is one sufficient condition, not the
-property.
+**The one load-bearing insight:** the obligation must name no ordering and no induction
+principle. It is a plain `forall` over a predicate that transcribes the recursive arm, and
+*how* to prove it is the author's choice. Everything else follows from that plus "no generated
+axioms".
 
 ### What actually makes a recursive definition well-founded
 
@@ -530,40 +530,6 @@ guard stops being an obstacle and becomes the thing the antecedents supply.
 terminating arms, so it transcribes to `fibGrounded(k) iff fibGrounded(k)` with NO antecedents,
 and `forall k; fibGrounded(k)` is unprovable from it — verified, `tautology` rejects with a
 countermodel.
-
-### Rejected along the way
-
-Three shapes for the descent, and only the `sub` form survives:
-
-| arm form | guard problem | generator can transcribe |
-|---|---|---|
-| `fib(succ(succ(k)))` — pattern | none (`k` is bound, not computed) | yes |
-| `fib(k)` with `sub(k, ONE)` / `sub(k, TWO)` | yes, and the ANTECEDENTS solve it | yes |
-| `fib(k)` with `exists j; k = succ(succ(j))` | none | **NO** |
-
-The third deserves a note because it looked best. It proves the base cases and the step
-cleanly — all three were verified — but the generator cannot produce it: the arm says
-`sub(k, ONE)`, and turning that into `k = succ(succ(j))` requires reasoning that subtracting
-one and two is the same as being two successors up. That is arithmetic, not transcription.
-
-Note also that `prev` does NOT exist on `Nat` (it is `std/integer.b4m:28`, on ℤ where it is
-total). There is no total predecessor on ℕ and the no-totalization rule forbids inventing one,
-which is why the descent must be `sub` with its guard.
-
-**Why the recursive arm must be an l-value.** `fib(succ(succ(k)))` pattern-matches, so its
-argument is a constructor application rather than a free variable or constant. Written that
-way the checker cannot express "what must hold of the call's argument", because the argument is
-only defined relative to a match. Rewritten as `fib(k) = add(fib(pred(k)), fib(pred(pred(k))))`
-the descent is a TERM in `k`, and the generated predicate quotes it directly. Base arms may
-stay patterns (`fib(ZERO)`, `fib(succ(ZERO))` — constants), since nothing is generated from
-them.
-
-Measured: `std` has 163 l-value arms and 136 pattern arms, but the restriction binds only on
-RECURSIVE definitions, so most pattern arms are unaffected. The cost of the rewrite still needs
-measuring per recursive symbol.
-
-**`{fibTerminates, fibGrounded}`** names both the theorem the author writes and the predicate
-the checker generates, so the proof can refer to it.
 
 ### Is this sound? Probed, with the residual stated
 
