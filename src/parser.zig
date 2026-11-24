@@ -551,9 +551,11 @@ pub const Parser = struct {
         self: *Parser,
         name: Token,
         params: []const ast.Binder,
-        clause: Clause,
+        clauses: []const Clause,
+        rec: usize,
         pred_name: Token,
     ) ParseError!void {
+        const clause = clauses[rec];
         const rhs = clauseRhs(clause.body) orelse return;
         var calls: std.ArrayList(ast.Expr.Call) = .empty;
         try collectRecursiveCalls(self.arena, rhs, name, &calls);
@@ -568,13 +570,47 @@ pub const Parser = struct {
         const head_app = findApplication(clause.body, name) orelse return;
         const head = try self.groundedCall(pred_name, head_app.args);
 
-        // the body: each recursive call transcribed, conjoined left to right in source order.
-        var body = try self.groundedCall(pred_name, calls.items[0].args);
-        for (calls.items[1..]) |c| {
-            body = try self.binary(.and_op, pred_name, body, try self.groundedCall(pred_name, c.args));
+        // The body: ONE CONJUNCT PER CALL SITE, each a DISJUNCTION of that call grounded with
+        // its argument hitting one of the terminating arms' patterns. This is what supplies the
+        // recursion's BASE (user, 2026-11-24): at `k = TWO`, `sub(k, TWO) = ZERO` fires its
+        // disjunct's base branch with NO recursive premise, so the chain bottoms out. An
+        // earlier form conjoined the bare grounded calls and had a step with no base, which
+        // made the obligation unprovable — measured, see the plan.
+        //
+        // The base patterns come from the TERMINATING arms' l-value arguments at the position
+        // the call descends in. They are closed terms by the l-value rule, so comparing a
+        // descent against one is always well-formed.
+        var body: ?*const ast.Expr = null;
+        for (calls.items) |c| {
+            var conjunct = try self.groundedCall(pred_name, c.args);
+            for (c.args, 0..) |arg, pos| {
+                for (clauses, 0..) |other, other_i| {
+                    if (!other.explicit) continue;
+                    // only a TERMINATING arm contributes a base branch. The recursive arm's own
+                    // l-value is `f(<params>)`, so without this it donates `sub(k, ONE) = k` —
+                    // a branch that is not a base and would let the predicate escape its
+                    // recursion.
+                    if (other_i == rec) continue;
+                    const oapp = findApplication(other.body, name) orelse continue;
+                    if (pos >= oapp.args.len) continue;
+                    const base = oapp.args[pos];
+                    // only a CLOSED base pattern is a value to compare against; a bare
+                    // parameter in that slot narrows nothing and contributes no branch.
+                    if (base.* == .name) {
+                        var is_param = false;
+                        for (params) |p| if (p.name.name == base.name.name) {
+                            is_param = true;
+                            break;
+                        };
+                        if (is_param) continue;
+                    }
+                    conjunct = try self.binary(.or_op, pred_name, conjunct, try self.binary(.equal, pred_name, arg, base));
+                }
+            }
+            body = if (body) |b| try self.binary(.and_op, pred_name, b, conjunct) else conjunct;
         }
 
-        const defining = try self.binary(.iff, pred_name, head, body);
+        const defining = try self.binary(.iff, pred_name, head, body.?);
         try self.pending.append(self.arena, .{ .pred = .{ .local = .{
             .name = pred_name,
             .params = pred_params,
@@ -636,6 +672,38 @@ pub const Parser = struct {
         }
         var body = try self.groundedCall(pred_name, args);
 
+        // THE RECURSIVE ARM'S OWN GUARD, when it has one, is the whole antecedent (user,
+        // 2026-11-24). `fib(k) = … when less_than(ONE, k)` yields
+        //
+        //     forall n: Nat; less_than(ONE, n) -> fibGrounded(n)
+        //
+        // which beats negating each base arm's condition three ways: ONE antecedent however
+        // many base arms there are; it is the AUTHOR'S OWN TEXT rather than a derivation; and
+        // it is directly usable — `less_than(ONE, k)` is what discharges `sub`'s guard, where
+        // the negated-bases form made the proof derive that through constructor coverage.
+        //
+        // The guard is stated at the PARAMETERS like the rest of the obligation, so a guard
+        // written in the arm's own variable names is substituted accordingly.
+        if (clauses[rec].guard) |g| {
+            const relocated = try self.substituteArmVarsForParams(g, name, clauses[rec], params);
+            body = try self.binary(.implies, pred_name, relocated, body);
+            var q = params.len;
+            while (q > 0) {
+                q -= 1;
+                const one = try self.arena.alloc(ast.Binder, 1);
+                one[0] = params[q];
+                const node = try self.arena.create(ast.Expr);
+                node.* = .{ .quant = .{ .q = .forall, .tok = pred_name, .binders = one, .body = body } };
+                body = node;
+            }
+            return body;
+        }
+
+        // No guard on the recursive arm: fall back to negating each terminating arm's
+        // condition. Both base forms stay legal (`fib(ZERO) = ZERO` and
+        // `fib(n) = ZERO when n = ZERO`), so this path is reached by a block written in pattern
+        // form throughout.
+        //
         // antecedents, RIGHT to left so the written order is arm order (`->` is right-assoc).
         var i = clauses.len;
         while (i > 0) {
@@ -809,6 +877,74 @@ pub const Parser = struct {
             tok.name = ip.internString(slot_name) catch return error.OutOfMemory;
         }
         return .{ .name = tok, .sort = tok, .inferred = true };
+    }
+
+    /// Rewrite an arm's GUARD into the declaration's parameter names. The obligation is stated
+    /// over the parameters, but a guard is written in whatever names the arm's l-value binds —
+    /// `fib(k) = … when less_than(ONE, k)` binds `k` where the declaration says `n`.
+    ///
+    /// Positional: the arm's l-value argument at slot `i` corresponds to parameter `i`. Only a
+    /// BARE-NAME argument is substituted; a closed base pattern binds nothing, and by the
+    /// l-value rule those are the only two cases a recursive block admits.
+    fn substituteArmVarsForParams(
+        self: *Parser,
+        guard: *const ast.Expr,
+        name: Token,
+        clause: Clause,
+        params: []const ast.Binder,
+    ) ParseError!*const ast.Expr {
+        const app = findApplication(clause.body, name) orelse return guard;
+        var out = guard;
+        for (app.args, 0..) |arg, pos| {
+            if (pos >= params.len) break;
+            if (arg.* != .name) continue;
+            if (arg.name.name == params[pos].name.name) continue;
+            out = try self.renameFreeName(out, arg.name.name, params[pos].name);
+        }
+        return out;
+    }
+
+    /// `out` with every free `.name` leaf spelled `from` respelled as `to`. Structural, no
+    /// capture analysis — a definition clause's guard has no binders of its own.
+    fn renameFreeName(self: *Parser, e: *const ast.Expr, from: InternPool.StrId, to: Token) ParseError!*const ast.Expr {
+        const node = try self.arena.create(ast.Expr);
+        switch (e.*) {
+            .name => |n| {
+                if (n.name != from) return e;
+                node.* = .{ .name = to };
+            },
+            .call => |c| {
+                const args = try self.arena.alloc(*const ast.Expr, c.args.len);
+                for (c.args, 0..) |a, i| args[i] = try self.renameFreeName(a, from, to);
+                node.* = .{ .call = .{ .callee = c.callee, .args = args } };
+            },
+            .binary => |b| node.* = .{ .binary = .{
+                .op = b.op,
+                .tok = b.tok,
+                .lhs = try self.renameFreeName(b.lhs, from, to),
+                .rhs = try self.renameFreeName(b.rhs, from, to),
+            } },
+            .not => |n| node.* = .{ .not = .{ .tok = n.tok, .operand = try self.renameFreeName(n.operand, from, to) } },
+            else => return e,
+        }
+        return node;
+    }
+
+    /// THE L-VALUE TEST for a recursive definition's clause argument: a bare PARAMETER, or a
+    /// term with NO FREE VARIABLES.
+    ///
+    /// "Free variable" follows the same convention `collectClauseVars` reads — a lower-case
+    /// single token that the declaration's parameter list does not claim is a clause variable;
+    /// anything upper-case or qualified is a global by convention. So `ZERO` and
+    /// `succ(succ(ZERO))` pass (closed), `k` passes (a parameter), and `succ(m)` fails for the
+    /// free `m` inside it.
+    fn argumentIsLegalLValue(self: *Parser, arg: *const ast.Expr, params: []const ast.Binder) bool {
+        if (arg.* == .name) {
+            for (params) |p| if (p.name.name == arg.name.name) return true;
+        }
+        var free: std.ArrayList(ast.Binder) = .empty;
+        self.collectClauseVars(arg, &free) catch return false;
+        return free.items.len == 0;
     }
 
     fn binary(self: *Parser, op: ast.Expr.BinOp, tok: Token, lhs: *const ast.Expr, rhs: *const ast.Expr) ParseError!*const ast.Expr {
@@ -1474,7 +1610,7 @@ pub const Parser = struct {
                     try term_obligations.append(self.arena, null);
                     continue;
                 };
-                try self.stageGroundedPredicate(name, params, c, pair.predicate);
+                try self.stageGroundedPredicate(name, params, clauses, i, pair.predicate);
                 try term_obligations.append(self.arena, try self.terminationObligation(name, params, clauses, i, pair.predicate));
             }
         }
@@ -1516,16 +1652,11 @@ pub const Parser = struct {
         // proves `Z = s(Z)`).
         //
         // That demand is DELIBERATELY NOT MADE YET, the same staging `consistency:` went
-        // through. The obligation a declaration leads to is currently UNPROVABLE for every
-        // shape in the corpus: the generated predicate transcribes the recursive arm only, so
-        // it has a step and no base (measured — see DEFINITION-SOUNDNESS-PLAN.md's "the
-        // obligation has no base"). Requiring the declaration now would fail all 61 recursive
-        // `std` blocks with no way to comply. Flipping it on is one `self.fail` here, once the
-        // base problem is solved.
-        //
-        // What IS enforced, so new violations are gated for free either way: a declaration
-        // that IS written must match its arms (here and below), and its named theorem must
-        // state the obligation (`--library`; `collectTerminationGaps` in root.zig).
+        // through: requiring it would fail all 61 recursive `std` blocks, every one of which
+        // also violates the l-value rule below. Flipping it on is one `self.fail` here, after
+        // that migration. What IS enforced either way, gating new violations for free: the two
+        // rules below, that a written declaration matches its arms, and that its named theorem
+        // states the obligation (`--library`; `collectTerminationGaps` in root.zig).
         var any_recursive = false;
         for (clauses) |c| {
             const rhs = clauseRhs(c.body) orelse continue;
@@ -1535,6 +1666,47 @@ pub const Parser = struct {
         }
         if (saw_termination and !any_recursive) {
             return self.fail("definition '{s}' is not recursive, so `termination:` does not apply", .{self.text(name)});
+        }
+        if (any_recursive) {
+            // ONE IMPLICIT ARM BANS RECURSION IN THE WHOLE BLOCK (user ruling 2026-11-24).
+            // An implicit clause characterizes the value by a property rather than constructing
+            // it, so a recursive one characterizes it by a property mentioning itself — with no
+            // call sites to transcribe into a grounding predicate and nothing to ground the
+            // recursion. There is no obligation to state, which is why this is a prohibition
+            // rather than a gap.
+            //
+            // The ban is on the BLOCK, not on the implicit arm: an implicit arm anywhere means
+            // the symbol is not eliminable, so no arm's recursion can be grounded, however the
+            // recursive arms themselves are written. Tested per clause rather than deduced from
+            // the all-explicit-or-all-implicit mixing check above — that check makes this
+            // equivalent today, and this rule should not silently weaken if it ever relaxes.
+            //
+            // FREE: zero violations in `std` (the accessor-nested l-values like
+            // `coeff(monomial(a, k), k) = a` are implicit but not recursive, which the RHS-only
+            // `collectRecursiveCalls` already distinguishes).
+            for (clauses) |c| {
+                if (c.explicit) continue;
+                return self.fail("definition '{s}' has an IMPLICIT clause (its left side does not rewrite '{s}' away) and the block is RECURSIVE — an implicit clause characterizes its value by a property, so the symbol is not eliminable and no arm's recursion can be grounded. Write every clause explicitly, or characterize the value without self-reference", .{ self.text(name), self.text(name) });
+            }
+            // THE L-VALUE RULE (user ruling 2026-11-24): every argument of every arm is a bare
+            // parameter, or a term with NO FREE VARIABLES. One test, not two cases — a closed
+            // term (`ZERO`, `succ(ZERO)`) is a value the generated predicate can compare a
+            // descent against; `succ(m)` is a DESTRUCTURING that puts the descent on the left,
+            // where the generator cannot read it. The RHS is unrestricted: whatever descent the
+            // author wants lives there, and that is where the call sites are collected from.
+            //
+            // STAGED OFF, like the `termination:` requirement above and for the same reason:
+            // all 61 recursive `std` blocks violate it (every one is written
+            // `convolution(p, q, j, succ(m))`), so enforcing it now breaks the library with no
+            // incremental path. The two flips go together, after that migration — see
+            // DEFINITION-SOUNDNESS-PLAN.md's THE L-VALUE RULE.
+            if (false) for (clauses) |c| {
+                const app = findApplication(c.body, name) orelse continue;
+                for (app.args) |arg| {
+                    if (self.argumentIsLegalLValue(arg, params)) continue;
+                    return self.fail("definition '{s}' is RECURSIVE, so every argument on the left of every clause must be a parameter or a term with no free variables — this one destructures, which puts the descent where the termination check cannot read it. Write the pattern's descent on the RIGHT instead", .{self.text(name)});
+                }
+            };
         }
 
         const determ: ?ast.Determinacy = if (ex_tok != null and un_tok != null)

@@ -148,16 +148,20 @@ pub fn addTests(
 
     // -- `termination(<theory>):` on a RECURSIVE definition block ----------------------------
     //
-    // What the checker GENERATES: `<f>Grounded`, a pure transcription of the recursive arm's
-    // call sites, as a DEFINITION (eliminable, citable with `by definition`) rather than an
-    // axiom. The fixture derives the step direction from it, which is what makes the
-    // transcription faithful AND usable.
+    // What the checker GENERATES: `<f>Grounded`, a transcription of the recursive arm's call
+    // sites — one conjunct per call site, each a DISJUNCTION of that call grounded with its
+    // argument hitting a terminating arm's pattern. The base alternatives are what make the
+    // recursion bottom out; an earlier form conjoined the bare calls, had no base, and made the
+    // obligation unprovable. Emitted as a DEFINITION (eliminable, citable with
+    // `by definition`), never an axiom.
     //
-    // The declaration is NOT yet required on a recursive block, and the fixture header says
-    // why: the obligation it synthesizes has a step and no base, so it is currently
-    // unprovable for every shape in the corpus (measured — DEFINITION-SOUNDNESS-PLAN.md).
-    // Everything around that one gap is built and gated here.
-    ctx.okSilent(&.{ "check", "tests/cases/definition/termination/generated-predicate.b4m" });
+    // And what it DEMANDS: the recursive arm's own guard, at the declaration's parameters —
+    // `less_than(ONE, n) -> fibGrounded(n)`. The fixture states both and confirms them.
+    //
+    // The declaration is not yet REQUIRED on a recursive block, nor is the l-value rule
+    // enforced: all 61 recursive `std` blocks violate both (every one is written
+    // `convolution(p, q, j, succ(m))`), so the two flips go together after that migration.
+    ctx.okSilent(&.{ "check", "--draft", "tests/cases/definition/termination/generated-predicate.b4m" });
 
     // An entry must MATCH its arm, both ways. Positional declarations drift silently
     // otherwise: reorder the clauses and the recursive arm's obligation is quietly stated

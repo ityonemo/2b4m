@@ -580,45 +580,147 @@ That is NEGATIVE self-reference, a different hazard from non-termination, and it
 hole for hand-written preds regardless of anything here. Recorded separately; the generated
 predicate cannot exhibit it.
 
-### MEASURED AFTER IMPLEMENTING: the obligation has no base, so it is unprovable
+### SETTLED BY MEASUREMENT: the base goes in the predicate, at each CALL SITE
 
-The generator and the obligation synthesizer are built and the shapes come out exactly as
-designed above. `fib`'s obligation is verbatim what this plan specifies, and `convolution`'s
-(the shape all 61 recursive `std` blocks have) comes out as
+The first implementation emitted a predicate transcribing only the recursive arm:
 
-    forall p: Poly; forall q: Poly; forall j: Nat; forall m: Nat;
-      m != ZERO -> convGrounded(p, q, j, m)
+    pred fibGrounded(n: Nat):
+      fibGrounded(n) iff (fibGrounded(sub(n, ONE)) and fibGrounded(sub(n, TWO)))
 
-from the generated
+with the terminating arms' conditions as the OBLIGATION's antecedents. **That has no base** —
+`fibGrounded` is false in a model where it is false everywhere, nothing contradicts it, and
+`fibGrounded(ZERO)` is underivable (probed: `tautology` refutes it with a countermodel). The
+obligation is unprovable, and the same held for `convolution`, the shape all 61 recursive `std`
+blocks have.
 
-    pred convGrounded(p: Poly, q: Poly, j: Nat, m: Nat):
-      convGrounded(p, q, j, succ(m)) iff convGrounded(p, q, succ(j), m)
+**The fix (user, 2026-11-24): the base test belongs at each CALL SITE, not on `n`.** Every
+recursive call becomes a disjunction — the call grounded, OR its argument hitting one of the
+terminating arms' patterns:
 
-**And it cannot be proved.** Three probes, each against the checker:
+```2b4m
+pred fibGrounded(k: Nat):
+  fibGrounded(k) iff
+    ((fibGrounded(sub(k, ONE)) or sub(k, ONE) = ZERO or sub(k, ONE) = succ(ZERO))
+     and (fibGrounded(sub(k, TWO)) or sub(k, TWO) = ZERO or sub(k, TWO) = succ(ZERO))).
 
-1. The STEP direction IS derivable — `convGrounded(p,q,succ(j),m) -> convGrounded(p,q,j,succ(m))`
-   kernel-checks from the generated clause. So the transcription is faithful and usable.
-2. `convGrounded(p, q, j, ZERO)` is NOT derivable — `tautology` refutes it with a
-   countermodel. The clause relates `succ(m)` to `m` and says nothing at `ZERO`.
-3. Therefore every chain is bottomless: induction supplies the step and never a base, and
-   `m != ZERO` in the antecedent excludes ZERO from the CONCLUSION without supplying the
-   predicate's base.
+lemma fibTerminates: forall k: Nat; k != ZERO -> k != succ(ZERO) -> fibGrounded(k)
+```
 
-**The cause, stated precisely.** The generator transcribes only the RECURSIVE arm, so the
-TERMINATING arms contribute to the obligation (as negated antecedents) but not to the
-predicate. The predicate therefore has a step and no base, which is exactly the half of
-structural recursion that makes a definition well-founded. Both earlier drafts put the base
-conditions in the predicate and died on guard-discharge; this draft moved them out entirely
-and died on the missing base. **The base has to appear in the predicate somewhere, and the
-guard obstacle is what makes that hard** — those two constraints are the real shape of the
-problem, and no framing tried so far satisfies both.
+**The generation rule:** one conjunct per recursive call site `f(t)`, each a disjunction of
+`<f>Grounded(t)` with `t = <base>` for every terminating arm's pattern. Both lists are already
+in hand — the call sites from `collectRecursiveCalls`, the base patterns from the same source
+the obligation's antecedents read. The obligation is unchanged.
 
-Note what this does NOT invalidate: the parse, the arm/entry matching, the generated
-predicate's faithfulness, the obligation's quantifier structure, the `--library` comparison,
-and the degenerate-case rejection (`g(n) = succ(g(n))` is refuted with a countermodel) all
-work and are kept. What is missing is one thing: how the terminating arms make the generated
-predicate TRUE at the base without writing a guarded term at an argument where its guard
-fails.
+Why this has a base where the first form did not: at `k = TWO`, `sub(k, TWO) = ZERO` fires its
+disjunct's base branch with NO recursive premise. The recursion bottoms out. And the
+obligation's antecedents are not decoration — they are what gives `TWO <= k`, which is what
+makes the `sub` terms writable inside the proof.
+
+### PROVED: `fibTerminates` under this form, strict check, zero holes
+
+`OK: 343 declarations, 3 theorems proven` under plain `check` — full kernel verification, no
+`--draft`, no `--fast`. Eleven axioms, all genuine Peano/order/subtraction primitives plus the
+`isGrounded` definition clause. Three lemmas:
+
+1. `stepAtDepthTwo` — from the IH below `succ(succ(j))`, derives `isGrounded(succ(succ(j)))`.
+2. `strongStep` — at arbitrary `k`, `order.aNatIsZeroOneTwoOrMore` gives four arms; the two
+   antecedents kill `ZERO` and `succ(ZERO)`; the surviving two both match `succ(succ(j))`
+   (a `case` block with an `unpack` on the existential arm).
+3. `fibTerminates` — one `[using instantiation order.strongInduction(…)]`.
+
+**THE GUARD IS NOT A WALL — it is verbosity.** Every obligation discharged from facts put in
+scope first. This retires the earlier "wall 2" write-up, which claimed `sub`'s guard made the
+form unprovable; it does not. The uniform pattern:
+
+> for any `sub(X, Y)` written ANYWHERE — step, hypothesis, or conclusion — have
+> `less_or_equal(Y, X)` as a proved step BEFORE it.
+
+`order.aSummandIsAtMostTheSum` + `subtraction.subAddCancel` + `peano.addSuccRight`/
+`addZeroRight` generate these mechanically.
+
+Two guard behaviours worth knowing, both measured:
+
+- **An `assume` hypothesis owes its terms' guards before the block opens.** `assume sub(succ(succ(j)), ONE) = succ(j)` fails until the bounds are hoisted ABOVE the `assume` — an
+  assumption is a written formula like any other.
+- **A REWRITTEN term is a new term and owes its guard afresh.** The conclusion
+  `sub(succ(succ(j)), TWO()) = j` owed its own bound even with the premise
+  `sub(add(j, TWO()), TWO()) = j` already proved. Cleared by carrying the bound along the same
+  equation: `[by rewrite <addition-fact> <summand-bound>]`.
+
+And one obstacle that is NOT about guards: `tautology` sees `isGrounded(sub(succ(succ(j)), TWO()))`
+and `isGrounded(j)` as unrelated atoms. Fold the guarded terms into the predecessors with
+`rewrite` steps BEFORE calling it.
+
+### THE L-VALUE RULE for a recursive block (user, 2026-11-24)
+
+Once ANY arm recurses, the block owes all of this:
+
+| condition | rule |
+|---|---|
+| every arm | must be EXPLICIT (LHS headed by the symbol) — implicit + recursive is banned |
+| every l-value argument, every arm | a bare parameter, OR a term with NO FREE VARIABLES |
+| the RHS | unrestricted — any descent the author wants |
+
+The argument rule is one test, not two cases: an argument is legal iff its free-variable set is
+empty or it is exactly one of the declaration's parameters. `succ(m)` is rejected for the free
+`m` inside it, not for being an application — `succ(ZERO)` and `succ(succ(ZERO))` are fine, being
+closed terms the generator can compare a descent against.
+
+**Both base forms stay legal** (user, asked and settled): `fib(ZERO) = ZERO` and
+`fib(n) = ZERO when n = ZERO` mean the same thing, and `conditionOf` already reads either — a
+`when` guard verbatim, or a positional condition derived from the pattern. No normalization, and
+guard form remains the only way to write arms patterns cannot distinguish
+(`gcd(a, b) = a when b = ZERO`).
+
+**Migration cost.** The implicit-recursive ban is FREE: zero violations in `std` (the six
+candidates a naive scan flags — `monomial`, `swap` and four aliases — are accessor-nested
+l-values like `coeff(monomial(a, k), k) = a`, which the shipped RHS-only
+`collectRecursiveCalls` already excludes). The argument rule costs 61 sites, all of the form
+`convolution(p, q, j, succ(m))`, each needing the pattern moved to the RHS plus a proved
+obligation. `fibTerminates` is the template.
+
+### NEXT SYSTEM: `totality(<theory>):` — the arms must COVER the domain
+
+Raised and scoped by the user 2026-11-24, deliberately NOT part of the termination work.
+
+`consistency:` asks whether the arms AGREE where they overlap. Nothing asks whether they
+COVER. The two are duals, and only one is built:
+
+| check | asks | failure mode |
+|---|---|---|
+| `consistency:` | do the arms agree where they overlap? | contradiction — a block proving `ZERO = ONE` |
+| **`totality:`** | do the arms cover the domain? | UNDERDETERMINATION — a symbol the block leaves unconstrained |
+
+The gap, concretely:
+
+```2b4m
+oper fib(n: Nat) => Nat:
+  fib(ZERO) = ZERO;
+  fib(k) = add(fib(sub(k, ONE)), fib(sub(k, TWO))) when less_than(ONE, k).
+```
+
+passes `consistency:` — the conditions `n = ZERO` and `less_than(ONE, k)` never both hold, so
+every pair is vacuous — while saying NOTHING about `fib(ONE)`. Not unsound (an `oper` is total,
+so `fib(ONE)` denotes something) but UNDERDETERMINED, which is exactly what a definition is
+supposed to rule out and an axiom is supposed to disclose. A reader sees a definition block and
+concludes the symbol is pinned down; here it is not.
+
+The obligation is the arms' conditions DISJOINED:
+
+    forall n: Nat; n = ZERO or n = ONE or less_than(ONE, n)
+
+**Generable from what already exists.** `conditionOf` already extracts one condition per arm —
+the `when` guard verbatim, or the positional condition derived from a pattern. Totality is
+their disjunction, universally quantified over the parameters. Same source, same determinism as
+the consistency obligations, no new analysis.
+
+**Needs a theory selector**, for the reason `consistency:` did: proving
+`n = ZERO or n = ONE or ONE < n` needs the sort's coverage machinery
+(`order.aNatIsZeroOneTwoOrMore`, `peano.zeroOrSucc`). So `totality(<theory>): <theorem>`.
+
+**Scope — the largest of the three migrations.** It applies to EVERY multi-arm definition
+block, not only recursive ones: 72 such blocks in `std`. Many will be trivial (a `ZERO` /
+`succ(k)` split is exactly `peano.zeroOrSucc`), but each needs a named theorem.
 
 ### STILL OPEN
 

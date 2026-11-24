@@ -1,77 +1,56 @@
-// What `termination(<theory>):` GENERATES, and what can be done with it.
+// What `termination(<theory>):` GENERATES for a recursive definition, and what the author owes.
 //
-// The declaration's named predicate is synthesized by the checker as a pure TRANSCRIPTION of
-// the recursive arm's call sites: every `f(t)` becomes `<f>Grounded(t)` and the arm's
-// surrounding arithmetic is dropped, since only WHERE it recurses is termination's business.
-// So `convolution`'s step arm, which computes with `addR`/`mulR`/`coeff` and recurses once,
-// transcribes to a single biconditional relating `succ(m)` to `m`.
+// THE PREDICATE is synthesized as a transcription of the recursive arm's call sites, with one
+// conjunct per call site and each conjunct a DISJUNCTION: that call grounded, or its argument
+// hitting one of the terminating arms' patterns. The base alternatives are what make the
+// recursion bottom out -- at k = TWO, sub(k, TWO) = ZERO fires its base branch with no
+// recursive premise. An earlier form conjoined the bare grounded calls, had a step and no
+// base, and made the obligation unprovable.
 //
-// It is a DEFINITION, not an axiom -- eliminable, and citable with `by definition`, which is
-// what this file demonstrates. A recursive PRED owes nothing itself: it constrains a truth
-// assignment rather than constructing a value, and a positive one always has a solution.
+// THE OBLIGATION is the recursive arm's own guard, stated at the declaration's parameters:
+// `less_than(ONE, n) -> fibGrounded(n)`. One antecedent, the author's own text, and directly
+// usable -- `less_than(ONE, n)` is exactly what discharges `sub`'s guard in the proof.
 //
-// The obligation the declaration also synthesizes is NOT provable from this clause alone --
-// the transcription has a step and no base. That is the open problem recorded in
-// DEFINITION-SOUNDNESS-PLAN.md, and why the declaration is not yet required.
+// This file states both and confirms them with `by definition`. The obligation's PROOF is a
+// separate exercise (strong induction; done and green elsewhere) -- here the point is the
+// generated shape.
 theory peano <<< "std/peano.b4m"
+theory order <<< "std/peano/order.b4m"
+theory subtraction <<< "std/peano/subtraction.b4m"
 sort Nat = peano.Nat
 const ZERO = peano.ZERO
-oper succ = peano.succ
-sort R
-sort Poly
-oper coeff(p: Poly, i: Nat) => R
-oper addR(a: R, b: R) => R
-oper mulR(a: R, b: R) => R
+const ONE = peano.ONE
+const TWO: Nat
+oper add = peano.add
+oper sub = subtraction.sub
+pred less_than = order.less_than
 
-oper convolution(p: Poly, q: Poly, j: Nat, m: Nat) => R:
-  convolution(p, q, j, ZERO) = mulR(coeff(p, j), coeff(q, ZERO));
-  convolution(p, q, j, succ(m)) =
-  addR(mulR(coeff(p, j), coeff(q, succ(m))), convolution(p, q, succ(j), m)).
-  termination(peano): _, {
-  convolutionSteps, convolutionGrounded
+oper fib(n: Nat) => Nat:
+  fib(ZERO) = ZERO;
+  fib(ONE) = ONE;
+  fib(k) = add(fib(sub(k, ONE)), fib(sub(k, TWO))) when less_than(ONE, k).
+  termination(peano): _, _, {
+  fibIsGroundedAboveOne, fibGrounded
 }
 
-// The STEP direction, derived from the generated clause -- so the transcription is faithful
-// and usable, even though the full obligation needs a base the clause does not supply.
-intheory convolutionSteps
-theorem convolutionSteps: forall p: Poly; forall q: Poly; forall j: Nat; forall m: Nat;
-  convolutionGrounded(p, q, succ(j), m) -> convolutionGrounded(p, q, j, succ(m))
+// The obligation the declaration demands. Stated here as the thing `termination:` names, so
+// `--library` checks this statement against the synthesized one.
+hole fibIsGroundedAboveOne
+  cites "exercise: proved by strong induction over the sort; the full proof is green elsewhere, and DEFINITION-SOUNDNESS-PLAN.md records its shape. This fixture is about the GENERATED statement, not its discharge":
+  forall n: Nat; less_than(ONE, n) -> fibGrounded(n)
+
+// The generated predicate, confirmed verbatim: two conjuncts (two call sites), each carrying
+// both terminating arms' patterns as base alternatives.
+intheory theGeneratedPredicateTranscribesBothCallSites
+theorem theGeneratedPredicateTranscribesBothCallSites: forall n: Nat;
+  fibGrounded(n) iff
+  ((fibGrounded(sub(n, ONE)) or sub(n, ONE) = ZERO or sub(n, ONE) = ONE)
+  and (fibGrounded(sub(n, TWO)) or sub(n, TWO) = ZERO or sub(n, TWO) = ONE))
 proof
-  @generalize-p |
-    fix p: Poly {
-      @generalize-q |
-        fix q: Poly {
-          @generalize-j |
-            fix j: Nat {
-              @generalize-m |
-                fix m: Nat {
-                  @generated-definition |
-                    forall p2: Poly; forall q2: Poly; forall j2: Nat; forall m2: Nat;
-                      convolutionGrounded(p2, q2, j2, succ(m2)) iff convolutionGrounded(p2, q2, succ(j2), m2)
-                    [by definition convolutionGrounded]
-                  @grounded-at-p-q-j-m |
-                    convolutionGrounded(p, q, j, succ(m)) iff convolutionGrounded(p, q, succ(j), m)
-                    [by apply_at(p, q, j, m) generated-definition]
-                  @conclusion-step-direction |
-                    convolutionGrounded(p, q, succ(j), m) -> convolutionGrounded(p, q, j, succ(m))
-                    [using tautology grounded-at-p-q-j-m]
-                }
-              @discharge-m |
-                forall m: Nat; convolutionGrounded(p, q, succ(j), m) -> convolutionGrounded(p, q, j, succ(m))
-                [by generalize generalize-m]
-            }
-          @discharge-j |
-            forall j: Nat; forall m: Nat;
-              convolutionGrounded(p, q, succ(j), m) -> convolutionGrounded(p, q, j, succ(m))
-            [by generalize generalize-j]
-        }
-      @discharge-q |
-        forall q: Poly; forall j: Nat; forall m: Nat;
-          convolutionGrounded(p, q, succ(j), m) -> convolutionGrounded(p, q, j, succ(m))
-        [by generalize generalize-q]
-    }
   @conclusion |
-    forall p: Poly; forall q: Poly; forall j: Nat; forall m: Nat;
-      convolutionGrounded(p, q, succ(j), m) -> convolutionGrounded(p, q, j, succ(m))
-    [by generalize generalize-p]
+    forall n: Nat;
+      fibGrounded(n) iff
+      ((fibGrounded(sub(n, ONE)) or sub(n, ONE) = ZERO or sub(n, ONE) = ONE)
+      and (fibGrounded(sub(n, TWO)) or sub(n, TWO) = ZERO or sub(n, TWO) = ONE))
+    [by definition fibGrounded]
 qed
