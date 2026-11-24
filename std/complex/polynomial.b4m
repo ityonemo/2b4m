@@ -103,7 +103,7 @@ axiom cIsZeroOfMeaning: forall a: Complex; forall p: CPoly;
 // reversal behind commutativity, the triple sums behind associativity). A model must map
 // every symbol a transferred proof names, so ℂ[x] declares them too. None involves a
 // subtraction: each decrementing index is a `succ` pattern, and the index arithmetic the
-// triple sums need is NAMED (`ctheGapTo`, `ctheCofactorIndex`).
+// triple sums need is NAMED (`cmonus`, `ctheCofactorIndex`).
 oper ctailConvolution(p: CPoly, q: CPoly, j: Nat, m: Nat) => Complex:
   ctailConvolution(p, q, NAT_ZERO, m) = complex.mul(ccoeff(p, NAT_ZERO), ccoeff(q, m));
   ctailConvolution(p, q, peano.succ(j), m) = complex.add(complex.mul(ccoeff(p, peano.succ(j)), ccoeff(q, m)), ctailConvolution(p, q, j, peano.succ(m))).
@@ -116,19 +116,19 @@ oper crsegmentOf(p: CPoly, q: CPoly, j: Nat, c: Nat, n: Nat) => Complex:
   crsegmentOf(p, q, j, c, NAT_ZERO) = complex.mul(ccoeff(p, j), ccoeff(q, c));
   crsegmentOf(p, q, j, peano.succ(c), peano.succ(n)) = complex.add(complex.mul(ccoeff(p, j), ccoeff(q, peano.succ(c))), crsegmentOf(p, q, peano.succ(j), c, n)).
 
-oper ctheGapTo(i: Nat, j: Nat) => Nat:
-  ctheGapTo(i, NAT_ZERO) = i;
-  ctheGapTo(i, j) = ctheGapTo(peano.prev(i), peano.prev(j)) when i != NAT_ZERO and j != NAT_ZERO;
-  ctheGapTo(NAT_ZERO, j) = NAT_ZERO when j != NAT_ZERO.
-  termination(peano): _, {ctheGapToIsGrounded, ctheGapToGrounded}, _
+oper cmonus(i: Nat, j: Nat) => Nat:
+  cmonus(i, NAT_ZERO) = i;
+  cmonus(i, j) = cmonus(peano.prev(i), peano.prev(j)) when i != NAT_ZERO and j != NAT_ZERO;
+  cmonus(NAT_ZERO, j) = NAT_ZERO when j != NAT_ZERO.
+  termination(peano): _, {cmonusIsGrounded, cmonusGrounded}, _
 
 oper ctheCofactorIndex(i: Nat, j: Nat, k: Nat) => Nat:
-  ctheCofactorIndex(i, j, NAT_ZERO) = ctheGapTo(i, j);
-  ctheCofactorIndex(i, j, peano.succ(k)) = ctheGapTo(ctheGapTo(i, j), peano.succ(k)).
+  ctheCofactorIndex(i, j, NAT_ZERO) = cmonus(i, j);
+  ctheCofactorIndex(i, j, peano.succ(k)) = cmonus(cmonus(i, j), peano.succ(k)).
 
 oper ccappedRun(q: CPoly, r: CPoly, g: Nat, n: Nat) => Complex:
   ccappedRun(q, r, g, NAT_ZERO) = ZERO;
-  ccappedRun(q, r, g, peano.succ(n)) = complex.add(ccappedRun(q, r, g, n), complex.mul(ccoeff(q, n), ccoeff(r, ctheGapTo(g, n)))).
+  ccappedRun(q, r, g, peano.succ(n)) = complex.add(ccappedRun(q, r, g, n), complex.mul(ccoeff(q, n), ccoeff(r, cmonus(g, n)))).
 
 oper ctripleTerm(p: CPoly, q: CPoly, r: CPoly, i: Nat, j: Nat, k: Nat) => Complex:
   ctripleTerm(p, q, r, i, j, k) = complex.mul(complex.mul(ccoeff(p, j), ccoeff(q, k)), ccoeff(r, ctheCofactorIndex(i, j, k))).
@@ -139,7 +139,7 @@ oper ctripleRow(p: CPoly, q: CPoly, r: CPoly, i: Nat, j: Nat, n: Nat) => Complex
 
 oper ctripleDiag(p: CPoly, q: CPoly, r: CPoly, i: Nat, m: Nat, c: Nat) => Complex:
   ctripleDiag(p, q, r, i, m, NAT_ZERO) = ZERO;
-  ctripleDiag(p, q, r, i, m, peano.succ(c)) = complex.add(ctripleDiag(p, q, r, i, m, c), ctripleTerm(p, q, r, i, c, ctheGapTo(m, c))).
+  ctripleDiag(p, q, r, i, m, peano.succ(c)) = complex.add(ctripleDiag(p, q, r, i, m, c), ctripleTerm(p, q, r, i, c, cmonus(m, c))).
 
 oper ctripleTri(p: CPoly, q: CPoly, r: CPoly, i: Nat, n: Nat) => Complex:
   ctripleTri(p, q, r, i, NAT_ZERO) = ZERO;
@@ -147,7 +147,7 @@ oper ctripleTri(p: CPoly, q: CPoly, r: CPoly, i: Nat, n: Nat) => Complex:
 
 oper ctripleRows(p: CPoly, q: CPoly, r: CPoly, i: Nat, m: Nat, n: Nat) => Complex:
   ctripleRows(p, q, r, i, NAT_ZERO, n) = ZERO;
-  ctripleRows(p, q, r, i, peano.succ(m), n) = complex.add(ctripleRows(p, q, r, i, m, n), ctripleRow(p, q, r, i, m, ctheGapTo(n, m))).
+  ctripleRows(p, q, r, i, peano.succ(m), n) = complex.add(ctripleRows(p, q, r, i, m, n), ctripleRow(p, q, r, i, m, cmonus(n, m))).
 
 // The unit polynomial, as its OWN constant with its own coefficient axioms — the shape
 // `ring_poly.ONEP` maps onto. F[x] instead derives it from `monomial(oneF, ZERO)`, which
@@ -182,10 +182,10 @@ intheory cSegmentZero
 intheory cSegmentSucc
 intheory cRsegmentZero
 intheory cRsegmentSucc
-intheory cTheGapToAtZero
-intheory cTheGapToSteps
-intheory ctheGapToReachesABaseFromAPredecessor
-intheory ctheGapToIsGrounded
+intheory cmonusAtZero
+intheory cmonusSteps
+intheory cmonusReachesABaseFromAPredecessor
+intheory cmonusIsGrounded
 intheory cTheCofactorIndexAtZero
 intheory cTheCofactorIndexSteps
 intheory cCappedRunZero
@@ -302,7 +302,7 @@ model ComplexPolynomials {
   fieldpoly.tailConvolution: ctailConvolution
   fieldpoly.segment: csegmentOf
   fieldpoly.rsegment: crsegmentOf
-  fieldpoly.theGapTo: ctheGapTo
+  fieldpoly.monus: cmonus
   fieldpoly.theCofactorIndex: ctheCofactorIndex
   fieldpoly.cappedRun: ccappedRun
   fieldpoly.tripleTerm: ctripleTerm
@@ -339,7 +339,7 @@ model ComplexPolynomials {
   fieldpoly.tailConvolution <- ctailConvolution
   fieldpoly.segment <- csegmentOf
   fieldpoly.rsegment <- crsegmentOf
-  fieldpoly.theGapTo <- ctheGapTo
+  fieldpoly.monus <- cmonus
   fieldpoly.theCofactorIndex <- ctheCofactorIndex
   fieldpoly.cappedRun <- ccappedRun
   fieldpoly.tripleTerm <- ctripleTerm
@@ -641,27 +641,27 @@ proof
     [by definition(1) crsegmentOf]
 qed
 
-theorem cTheGapToAtZero:
-  forall i: Nat; ctheGapTo(i, NAT_ZERO) = i
+theorem cmonusAtZero:
+  forall i: Nat; cmonus(i, NAT_ZERO) = i
 proof
   @conclusion |
-    forall i: Nat; ctheGapTo(i, NAT_ZERO) = i
-    [by definition(0) ctheGapTo]
+    forall i: Nat; cmonus(i, NAT_ZERO) = i
+    [by definition(0) cmonus]
 qed
 
 // The `succ`/`succ` step, now DERIVED rather than transcribed: the definition descends by
 // `prev` (the l-value rule keeps patterns off the left), so this restates it at a successor
 // pair, where `prevOfSucc` collapses both `prev`s. The STATEMENT is unchanged, so every call
 // site below still cites this theorem and the clause's guard never reaches them.
-theorem cTheGapToSteps:
+theorem cmonusSteps:
   forall i, j: Nat;
-  ctheGapTo(peano.succ(i), peano.succ(j)) = ctheGapTo(i, j)
+  cmonus(peano.succ(i), peano.succ(j)) = cmonus(i, j)
 proof
   @the-recursive-clause |
     forall i2: Nat; forall j2: Nat;
       (i2 != NAT_ZERO and j2 != NAT_ZERO) ->
-      ctheGapTo(i2, j2) = ctheGapTo(peano.prev(i2), peano.prev(j2))
-    [by definition(1) ctheGapTo]
+      cmonus(i2, j2) = cmonus(peano.prev(i2), peano.prev(j2))
+    [by definition(1) cmonus]
   @prev-undoes-succ |
     forall n: Nat; peano.prev(peano.succ(n)) = n
     [using import(peano) prevOfSucc]
@@ -682,8 +682,8 @@ proof
             peano.succ(i) != NAT_ZERO and peano.succ(j) != NAT_ZERO
             [by both succ-i-is-nonzero succ-j-is-nonzero]
           @clause-at-the-successor-pair |
-            ctheGapTo(peano.succ(i), peano.succ(j)) =
-              ctheGapTo(peano.prev(peano.succ(i)), peano.prev(peano.succ(j)))
+            cmonus(peano.succ(i), peano.succ(j)) =
+              cmonus(peano.prev(peano.succ(i)), peano.prev(peano.succ(j)))
             [using specialize the-recursive-clause(peano.succ(i), peano.succ(j)) both-are-nonzero]
           @prev-of-succ-i |
             peano.prev(peano.succ(i)) = i
@@ -692,41 +692,41 @@ proof
             peano.prev(peano.succ(j)) = j
             [using specialize prev-undoes-succ(j)]
           @first-prev-collapsed |
-            ctheGapTo(peano.succ(i), peano.succ(j)) = ctheGapTo(i, peano.prev(peano.succ(j)))
+            cmonus(peano.succ(i), peano.succ(j)) = cmonus(i, peano.prev(peano.succ(j)))
             [by rewrite prev-of-succ-i clause-at-the-successor-pair]
           @conclusion-step-at-i-j |
-            ctheGapTo(peano.succ(i), peano.succ(j)) = ctheGapTo(i, j)
+            cmonus(peano.succ(i), peano.succ(j)) = cmonus(i, j)
             [by rewrite prev-of-succ-j first-prev-collapsed]
         }
       @discharge-j |
-        forall j: Nat; ctheGapTo(peano.succ(i), peano.succ(j)) = ctheGapTo(i, j)
+        forall j: Nat; cmonus(peano.succ(i), peano.succ(j)) = cmonus(i, j)
         [by generalize generalize-j]
     }
   @conclusion |
     forall i, j: Nat;
-      ctheGapTo(peano.succ(i), peano.succ(j)) = ctheGapTo(i, j)
+      cmonus(peano.succ(i), peano.succ(j)) = cmonus(i, j)
     [by generalize generalize-i]
 qed
 
 theorem cTheCofactorIndexAtZero:
   forall i, j: Nat;
-  ctheCofactorIndex(i, j, NAT_ZERO) = ctheGapTo(i, j)
+  ctheCofactorIndex(i, j, NAT_ZERO) = cmonus(i, j)
 proof
   @conclusion |
     forall i, j: Nat;
-      ctheCofactorIndex(i, j, NAT_ZERO) = ctheGapTo(i, j)
+      ctheCofactorIndex(i, j, NAT_ZERO) = cmonus(i, j)
     [by definition(0) ctheCofactorIndex]
 qed
 
 theorem cTheCofactorIndexSteps:
   forall i, j, k: Nat;
   ctheCofactorIndex(i, j, peano.succ(k)) =
-  ctheGapTo(ctheGapTo(i, j), peano.succ(k))
+  cmonus(cmonus(i, j), peano.succ(k))
 proof
   @conclusion |
     forall i, j, k: Nat;
       ctheCofactorIndex(i, j, peano.succ(k)) =
-      ctheGapTo(ctheGapTo(i, j), peano.succ(k))
+      cmonus(cmonus(i, j), peano.succ(k))
     [by definition(1) ctheCofactorIndex]
 qed
 
@@ -744,13 +744,13 @@ theorem cCappedRunSucc:
   forall q, r: CPoly; forall g, n: Nat;
   ccappedRun(q, r, g, peano.succ(n)) =
   complex.add(ccappedRun(q, r, g, n),
-  complex.mul(ccoeff(q, n), ccoeff(r, ctheGapTo(g, n))))
+  complex.mul(ccoeff(q, n), ccoeff(r, cmonus(g, n))))
 proof
   @conclusion |
     forall q, r: CPoly; forall g, n: Nat;
       ccappedRun(q, r, g, peano.succ(n)) =
       complex.add(ccappedRun(q, r, g, n),
-      complex.mul(ccoeff(q, n), ccoeff(r, ctheGapTo(g, n))))
+      complex.mul(ccoeff(q, n), ccoeff(r, cmonus(g, n))))
     [by definition(1) ccappedRun]
 qed
 
@@ -804,13 +804,13 @@ theorem cTripleDiagSucc:
   forall p, q, r: CPoly; forall i, m, c: Nat;
   ctripleDiag(p, q, r, i, m, peano.succ(c)) =
   complex.add(ctripleDiag(p, q, r, i, m, c),
-  ctripleTerm(p, q, r, i, c, ctheGapTo(m, c)))
+  ctripleTerm(p, q, r, i, c, cmonus(m, c)))
 proof
   @conclusion |
     forall p, q, r: CPoly; forall i, m, c: Nat;
       ctripleDiag(p, q, r, i, m, peano.succ(c)) =
       complex.add(ctripleDiag(p, q, r, i, m, c),
-      ctripleTerm(p, q, r, i, c, ctheGapTo(m, c)))
+      ctripleTerm(p, q, r, i, c, cmonus(m, c)))
     [by definition(1) ctripleDiag]
 qed
 
@@ -852,19 +852,19 @@ theorem cTripleRowsSucc:
   forall p, q, r: CPoly; forall i, m, n: Nat;
   ctripleRows(p, q, r, i, peano.succ(m), n) =
   complex.add(ctripleRows(p, q, r, i, m, n),
-  ctripleRow(p, q, r, i, m, ctheGapTo(n, m)))
+  ctripleRow(p, q, r, i, m, cmonus(n, m)))
 proof
   @conclusion |
     forall p, q, r: CPoly; forall i, m, n: Nat;
       ctripleRows(p, q, r, i, peano.succ(m), n) =
       complex.add(ctripleRows(p, q, r, i, m, n),
-      ctripleRow(p, q, r, i, m, ctheGapTo(n, m)))
+      ctripleRow(p, q, r, i, m, cmonus(n, m)))
     [by definition(1) ctripleRows]
 qed
 
-// -- the TERMINATION obligation for `ctheGapTo` ------------------------------------------------
+// -- the TERMINATION obligation for `cmonus` ------------------------------------------------
 //
-// `termination(peano):` names `ctheGapToIsGrounded`, and the checker SYNTHESIZES the statement it
+// `termination(peano):` names `cmonusIsGrounded`, and the checker SYNTHESIZES the statement it
 // must have — the recursive arm's own guard implying the generated predicate. The predicate
 // itself is generated from the arm's call sites, one conjunct per site, each a disjunction of
 // that call grounded with its arguments hitting a terminating arm's pattern. Those base
@@ -875,16 +875,16 @@ qed
 // does NOT follow from `i != NAT_ZERO` (take i = 1), so the inductive hypothesis is not
 // applicable at `peano.prev(i)` — and need not be, since that is exactly the case the second
 // disjunct covers. `tautology` picks whichever disjunct holds.
-theorem ctheGapToReachesABaseFromAPredecessor: forall k: Nat;
-  (forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> ctheGapToGrounded(i2, k))
-  -> (forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> ctheGapToGrounded(i, peano.succ(k)))
+theorem cmonusReachesABaseFromAPredecessor: forall k: Nat;
+  (forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> cmonusGrounded(i2, k))
+  -> (forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> cmonusGrounded(i, peano.succ(k)))
 proof
   @the-generated-clause |
     forall i3: Nat; forall j3: Nat;
-      ctheGapToGrounded(i3, j3) iff
-      (ctheGapToGrounded(peano.prev(i3), peano.prev(j3)) or peano.prev(i3) = NAT_ZERO
+      cmonusGrounded(i3, j3) iff
+      (cmonusGrounded(peano.prev(i3), peano.prev(j3)) or peano.prev(i3) = NAT_ZERO
       or peano.prev(j3) = NAT_ZERO)
-    [by definition ctheGapToGrounded]
+    [by definition cmonusGrounded]
   @prev-undoes-succ |
     forall n: Nat; peano.prev(peano.succ(n)) = n
     [using import(peano) prevOfSucc]
@@ -894,9 +894,9 @@ proof
   @generalize-k |
     fix k: Nat {
       @given-the-inductive-hypothesis |
-        assume forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> ctheGapToGrounded(i2, k) {
+        assume forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> cmonusGrounded(i2, k) {
           @inductive-hypothesis |
-            forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> ctheGapToGrounded(i2, k)
+            forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> cmonusGrounded(i2, k)
             [by hypothesis given-the-inductive-hypothesis]
           // `prev` is guarded, so this must precede every term writing `peano.prev(peano.succ(k))`.
           @succ-k-is-nonzero |
@@ -916,46 +916,46 @@ proof
                     i != NAT_ZERO
                     [by and_lhs i-is-nonzero-and-so-is-succ-k]
                   @clause-at-i-and-succ-k |
-                    ctheGapToGrounded(i, peano.succ(k)) iff
-                      (ctheGapToGrounded(peano.prev(i), peano.prev(peano.succ(k))) or peano.prev(i) = NAT_ZERO
+                    cmonusGrounded(i, peano.succ(k)) iff
+                      (cmonusGrounded(peano.prev(i), peano.prev(peano.succ(k))) or peano.prev(i) = NAT_ZERO
                       or peano.prev(peano.succ(k)) = NAT_ZERO)
                     [using specialize the-generated-clause(i, peano.succ(k))]
                   @clause-with-the-predecessor-collapsed |
-                    ctheGapToGrounded(i, peano.succ(k)) iff
-                      (ctheGapToGrounded(peano.prev(i), k) or peano.prev(i) = NAT_ZERO or k = NAT_ZERO)
+                    cmonusGrounded(i, peano.succ(k)) iff
+                      (cmonusGrounded(peano.prev(i), k) or peano.prev(i) = NAT_ZERO or k = NAT_ZERO)
                     [by rewrite prev-of-succ-k-is-k clause-at-i-and-succ-k]
                   @the-inductive-hypothesis-at-the-predecessor |
-                    (peano.prev(i) != NAT_ZERO and k != NAT_ZERO) -> ctheGapToGrounded(peano.prev(i), k)
+                    (peano.prev(i) != NAT_ZERO and k != NAT_ZERO) -> cmonusGrounded(peano.prev(i), k)
                     [using specialize inductive-hypothesis(peano.prev(i))]
                   @conclusion-grounded-at-succ-k |
-                    ctheGapToGrounded(i, peano.succ(k))
+                    cmonusGrounded(i, peano.succ(k))
                     [using tautology clause-with-the-predecessor-collapsed
                       the-inductive-hypothesis-at-the-predecessor]
                 }
               @nonzero-implies-grounded-at-succ-k |
-                (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> ctheGapToGrounded(i, peano.succ(k))
+                (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> cmonusGrounded(i, peano.succ(k))
                 [by discharge given-i-nonzero-and-succ-k-nonzero]
             }
           @conclusion-for-all-i |
-            forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> ctheGapToGrounded(i, peano.succ(k))
+            forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> cmonusGrounded(i, peano.succ(k))
             [by generalize generalize-i]
         }
       @the-hypothesis-implies-the-step |
-        (forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> ctheGapToGrounded(i2, k))
-          -> (forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> ctheGapToGrounded(i, peano.succ(k)))
+        (forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> cmonusGrounded(i2, k))
+          -> (forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> cmonusGrounded(i, peano.succ(k)))
         [by discharge given-the-inductive-hypothesis]
     }
   @conclusion |
     forall k: Nat;
-      (forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> ctheGapToGrounded(i2, k))
-      -> (forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> ctheGapToGrounded(i, peano.succ(k)))
+      (forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> cmonusGrounded(i2, k))
+      -> (forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> cmonusGrounded(i, peano.succ(k)))
     [by generalize generalize-k]
 qed
 
 // Strategy: `peano.induction` on the second argument. The base is VACUOUS — at j = NAT_ZERO the
 // antecedent demands `NAT_ZERO != NAT_ZERO` — so all the content is in the step above.
-theorem ctheGapToIsGrounded: forall i: Nat; forall j: Nat;
-  (i != NAT_ZERO and j != NAT_ZERO) -> ctheGapToGrounded(i, j)
+theorem cmonusIsGrounded: forall i: Nat; forall j: Nat;
+  (i != NAT_ZERO and j != NAT_ZERO) -> cmonusGrounded(i, j)
 proof
   @zero-is-itself |
     NAT_ZERO = NAT_ZERO
@@ -965,33 +965,33 @@ proof
   @base-case-proof |
     fix i: Nat {
       @conclusion-vacuously-grounded-at-zero |
-        (i != NAT_ZERO and NAT_ZERO != NAT_ZERO) -> ctheGapToGrounded(i, NAT_ZERO)
+        (i != NAT_ZERO and NAT_ZERO != NAT_ZERO) -> cmonusGrounded(i, NAT_ZERO)
         [using tautology zero-is-itself]
     }
   @base-case |
-    forall i: Nat; (i != NAT_ZERO and NAT_ZERO != NAT_ZERO) -> ctheGapToGrounded(i, NAT_ZERO)
+    forall i: Nat; (i != NAT_ZERO and NAT_ZERO != NAT_ZERO) -> cmonusGrounded(i, NAT_ZERO)
     [by generalize base-case-proof]
   @induction-step-for-all-k |
     forall k: Nat;
-      (forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> ctheGapToGrounded(i2, k))
-      -> (forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> ctheGapToGrounded(i, peano.succ(k)))
-    [by cite ctheGapToReachesABaseFromAPredecessor]
+      (forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> cmonusGrounded(i2, k))
+      -> (forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> cmonusGrounded(i, peano.succ(k)))
+    [by cite cmonusReachesABaseFromAPredecessor]
   @grounded-for-every-second-argument |
-    forall j: Nat; forall i: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> ctheGapToGrounded(i, j)
-    [using instantiation peano.induction((fun j: Nat => (forall i: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> ctheGapToGrounded(i, j)))) base-case induction-step-for-all-k]
+    forall j: Nat; forall i: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> cmonusGrounded(i, j)
+    [using instantiation peano.induction((fun j: Nat => (forall i: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> cmonusGrounded(i, j)))) base-case induction-step-for-all-k]
   @generalize-i |
     fix i: Nat {
       @generalize-j |
         fix j: Nat {
           @grounded-at-j-and-i |
-            (i != NAT_ZERO and j != NAT_ZERO) -> ctheGapToGrounded(i, j)
+            (i != NAT_ZERO and j != NAT_ZERO) -> cmonusGrounded(i, j)
             [using specialize grounded-for-every-second-argument(j, i)]
         }
       @discharge-j |
-        forall j: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> ctheGapToGrounded(i, j)
+        forall j: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> cmonusGrounded(i, j)
         [by generalize generalize-j]
     }
   @conclusion |
-    forall i: Nat; forall j: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> ctheGapToGrounded(i, j)
+    forall i: Nat; forall j: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> cmonusGrounded(i, j)
     [by generalize generalize-i]
 qed

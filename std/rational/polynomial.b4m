@@ -164,10 +164,10 @@ intheory qEvalZero
 intheory qEvalSucc
 intheory qClearedSumZero
 intheory qClearedSumSucc
-intheory qTheGapToAtZero
-intheory qTheGapToSteps
-intheory qtheGapToReachesABaseFromAPredecessor
-intheory qtheGapToIsGrounded
+intheory qmonusAtZero
+intheory qmonusSteps
+intheory qmonusReachesABaseFromAPredecessor
+intheory qmonusIsGrounded
 intheory qTheCofactorIndexAtZero
 intheory qTheCofactorIndexSteps
 intheory qCappedRunZero
@@ -1142,7 +1142,7 @@ model RationalPolynomialsOverARing {
   ring_poly.rsegment: qrsegment
   ring_mono.monomial: qmonomial
   ring_mono.monomial <- qmonomial
-  ring_poly.theGapTo: qtheGapTo
+  ring_poly.monus: qmonus
   ring_poly.theCofactorIndex: qtheCofactorIndex
   ring_poly.cappedRun: qcappedRun
   ring_poly.tripleTerm: qtripleTerm
@@ -1150,7 +1150,7 @@ model RationalPolynomialsOverARing {
   ring_poly.tripleDiag: qtripleDiag
   ring_poly.tripleTri: qtripleTri
   ring_poly.tripleRows: qtripleRows
-  ring_poly.theGapTo <- qtheGapTo
+  ring_poly.monus <- qmonus
   ring_poly.theCofactorIndex <- qtheCofactorIndex
   ring_poly.cappedRun <- qcappedRun
   ring_poly.tripleTerm <- qtripleTerm
@@ -2619,19 +2619,19 @@ qed
 // The index arithmetic, NAMED rather than subtracted — the ring proof carries a term's three
 // exponents and computes the cofactor index with these, so nothing here writes
 // `sub(sub(i,j),k)` and nothing owes a subtraction guard.
-oper qtheGapTo(i: Nat, j: Nat) => Nat:
-  qtheGapTo(i, NAT_ZERO) = i;
-  qtheGapTo(i, j) = qtheGapTo(peano.prev(i), peano.prev(j)) when i != NAT_ZERO and j != NAT_ZERO;
-  qtheGapTo(NAT_ZERO, j) = NAT_ZERO when j != NAT_ZERO.
-  termination(peano): _, {qtheGapToIsGrounded, qtheGapToGrounded}, _
+oper qmonus(i: Nat, j: Nat) => Nat:
+  qmonus(i, NAT_ZERO) = i;
+  qmonus(i, j) = qmonus(peano.prev(i), peano.prev(j)) when i != NAT_ZERO and j != NAT_ZERO;
+  qmonus(NAT_ZERO, j) = NAT_ZERO when j != NAT_ZERO.
+  termination(peano): _, {qmonusIsGrounded, qmonusGrounded}, _
 
 oper qtheCofactorIndex(i: Nat, j: Nat, k: Nat) => Nat:
-  qtheCofactorIndex(i, j, NAT_ZERO) = qtheGapTo(i, j);
-  qtheCofactorIndex(i, j, peano.succ(k)) = qtheGapTo(qtheGapTo(i, j), peano.succ(k)).
+  qtheCofactorIndex(i, j, NAT_ZERO) = qmonus(i, j);
+  qtheCofactorIndex(i, j, peano.succ(k)) = qmonus(qmonus(i, j), peano.succ(k)).
 
 oper qcappedRun(q: QPoly, r: QPoly, g: Nat, n: Nat) => Q:
   qcappedRun(q, r, g, NAT_ZERO) = ZERO;
-  qcappedRun(q, r, g, peano.succ(n)) = rational.add(qcappedRun(q, r, g, n), rational.mul(qcoeff(q, n), qcoeff(r, qtheGapTo(g, n)))).
+  qcappedRun(q, r, g, peano.succ(n)) = rational.add(qcappedRun(q, r, g, n), rational.mul(qcoeff(q, n), qcoeff(r, qmonus(g, n)))).
 
 oper qtripleTerm(p: QPoly, q: QPoly, r: QPoly, i: Nat, j: Nat, k: Nat) => Q:
   qtripleTerm(p, q, r, i, j, k) = rational.mul(rational.mul(qcoeff(p, j), qcoeff(q, k)), qcoeff(r, qtheCofactorIndex(i, j, k))).
@@ -2642,7 +2642,7 @@ oper qtripleRow(p: QPoly, q: QPoly, r: QPoly, i: Nat, j: Nat, n: Nat) => Q:
 
 oper qtripleDiag(p: QPoly, q: QPoly, r: QPoly, i: Nat, m: Nat, c: Nat) => Q:
   qtripleDiag(p, q, r, i, m, NAT_ZERO) = ZERO;
-  qtripleDiag(p, q, r, i, m, peano.succ(c)) = rational.add(qtripleDiag(p, q, r, i, m, c), qtripleTerm(p, q, r, i, c, qtheGapTo(m, c))).
+  qtripleDiag(p, q, r, i, m, peano.succ(c)) = rational.add(qtripleDiag(p, q, r, i, m, c), qtripleTerm(p, q, r, i, c, qmonus(m, c))).
 
 oper qtripleTri(p: QPoly, q: QPoly, r: QPoly, i: Nat, n: Nat) => Q:
   qtripleTri(p, q, r, i, NAT_ZERO) = ZERO;
@@ -2650,7 +2650,7 @@ oper qtripleTri(p: QPoly, q: QPoly, r: QPoly, i: Nat, n: Nat) => Q:
 
 oper qtripleRows(p: QPoly, q: QPoly, r: QPoly, i: Nat, m: Nat, n: Nat) => Q:
   qtripleRows(p, q, r, i, NAT_ZERO, n) = ZERO;
-  qtripleRows(p, q, r, i, peano.succ(m), n) = rational.add(qtripleRows(p, q, r, i, m, n), qtripleRow(p, q, r, i, m, qtheGapTo(n, m))).
+  qtripleRows(p, q, r, i, peano.succ(m), n) = rational.add(qtripleRows(p, q, r, i, m, n), qtripleRow(p, q, r, i, m, qmonus(n, m))).
 
 // ℚ[x]'s associativity. TRANSFERRED straight from the ring layer: `ring_poly` proves
 // `polyMulIsAssociative` over the triple-sum families, and `RationalPolynomialsOverARing`
@@ -3204,27 +3204,27 @@ proof
     [by definition(1) qclearedSum]
 qed
 
-theorem qTheGapToAtZero:
-  forall i: Nat; qtheGapTo(i, NAT_ZERO) = i
+theorem qmonusAtZero:
+  forall i: Nat; qmonus(i, NAT_ZERO) = i
 proof
   @conclusion |
-    forall i: Nat; qtheGapTo(i, NAT_ZERO) = i
-    [by definition(0) qtheGapTo]
+    forall i: Nat; qmonus(i, NAT_ZERO) = i
+    [by definition(0) qmonus]
 qed
 
 // The `succ`/`succ` step, now DERIVED rather than transcribed: the definition descends by
 // `prev` (the l-value rule keeps patterns off the left), so this restates it at a successor
 // pair, where `prevOfSucc` collapses both `prev`s. The STATEMENT is unchanged, so every call
 // site below still cites this theorem and the clause's guard never reaches them.
-theorem qTheGapToSteps:
+theorem qmonusSteps:
   forall i, j: Nat;
-  qtheGapTo(peano.succ(i), peano.succ(j)) = qtheGapTo(i, j)
+  qmonus(peano.succ(i), peano.succ(j)) = qmonus(i, j)
 proof
   @the-recursive-clause |
     forall i2: Nat; forall j2: Nat;
       (i2 != NAT_ZERO and j2 != NAT_ZERO) ->
-      qtheGapTo(i2, j2) = qtheGapTo(peano.prev(i2), peano.prev(j2))
-    [by definition(1) qtheGapTo]
+      qmonus(i2, j2) = qmonus(peano.prev(i2), peano.prev(j2))
+    [by definition(1) qmonus]
   @prev-undoes-succ |
     forall n: Nat; peano.prev(peano.succ(n)) = n
     [using import(peano) prevOfSucc]
@@ -3245,8 +3245,8 @@ proof
             peano.succ(i) != NAT_ZERO and peano.succ(j) != NAT_ZERO
             [by both succ-i-is-nonzero succ-j-is-nonzero]
           @clause-at-the-successor-pair |
-            qtheGapTo(peano.succ(i), peano.succ(j)) =
-              qtheGapTo(peano.prev(peano.succ(i)), peano.prev(peano.succ(j)))
+            qmonus(peano.succ(i), peano.succ(j)) =
+              qmonus(peano.prev(peano.succ(i)), peano.prev(peano.succ(j)))
             [using specialize the-recursive-clause(peano.succ(i), peano.succ(j)) both-are-nonzero]
           @prev-of-succ-i |
             peano.prev(peano.succ(i)) = i
@@ -3255,41 +3255,41 @@ proof
             peano.prev(peano.succ(j)) = j
             [using specialize prev-undoes-succ(j)]
           @first-prev-collapsed |
-            qtheGapTo(peano.succ(i), peano.succ(j)) = qtheGapTo(i, peano.prev(peano.succ(j)))
+            qmonus(peano.succ(i), peano.succ(j)) = qmonus(i, peano.prev(peano.succ(j)))
             [by rewrite prev-of-succ-i clause-at-the-successor-pair]
           @conclusion-step-at-i-j |
-            qtheGapTo(peano.succ(i), peano.succ(j)) = qtheGapTo(i, j)
+            qmonus(peano.succ(i), peano.succ(j)) = qmonus(i, j)
             [by rewrite prev-of-succ-j first-prev-collapsed]
         }
       @discharge-j |
-        forall j: Nat; qtheGapTo(peano.succ(i), peano.succ(j)) = qtheGapTo(i, j)
+        forall j: Nat; qmonus(peano.succ(i), peano.succ(j)) = qmonus(i, j)
         [by generalize generalize-j]
     }
   @conclusion |
     forall i, j: Nat;
-      qtheGapTo(peano.succ(i), peano.succ(j)) = qtheGapTo(i, j)
+      qmonus(peano.succ(i), peano.succ(j)) = qmonus(i, j)
     [by generalize generalize-i]
 qed
 
 theorem qTheCofactorIndexAtZero:
   forall i, j: Nat;
-  qtheCofactorIndex(i, j, NAT_ZERO) = qtheGapTo(i, j)
+  qtheCofactorIndex(i, j, NAT_ZERO) = qmonus(i, j)
 proof
   @conclusion |
     forall i, j: Nat;
-      qtheCofactorIndex(i, j, NAT_ZERO) = qtheGapTo(i, j)
+      qtheCofactorIndex(i, j, NAT_ZERO) = qmonus(i, j)
     [by definition(0) qtheCofactorIndex]
 qed
 
 theorem qTheCofactorIndexSteps:
   forall i, j, k: Nat;
   qtheCofactorIndex(i, j, peano.succ(k)) =
-  qtheGapTo(qtheGapTo(i, j), peano.succ(k))
+  qmonus(qmonus(i, j), peano.succ(k))
 proof
   @conclusion |
     forall i, j, k: Nat;
       qtheCofactorIndex(i, j, peano.succ(k)) =
-      qtheGapTo(qtheGapTo(i, j), peano.succ(k))
+      qmonus(qmonus(i, j), peano.succ(k))
     [by definition(1) qtheCofactorIndex]
 qed
 
@@ -3307,13 +3307,13 @@ theorem qCappedRunSucc:
   forall q, r: QPoly; forall g, n: Nat;
   qcappedRun(q, r, g, peano.succ(n)) =
   rational.add(qcappedRun(q, r, g, n),
-  rational.mul(qcoeff(q, n), qcoeff(r, qtheGapTo(g, n))))
+  rational.mul(qcoeff(q, n), qcoeff(r, qmonus(g, n))))
 proof
   @conclusion |
     forall q, r: QPoly; forall g, n: Nat;
       qcappedRun(q, r, g, peano.succ(n)) =
       rational.add(qcappedRun(q, r, g, n),
-      rational.mul(qcoeff(q, n), qcoeff(r, qtheGapTo(g, n))))
+      rational.mul(qcoeff(q, n), qcoeff(r, qmonus(g, n))))
     [by definition(1) qcappedRun]
 qed
 
@@ -3369,13 +3369,13 @@ theorem qTripleDiagSucc:
   forall p, q, r: QPoly; forall i, m, c: Nat;
   qtripleDiag(p, q, r, i, m, peano.succ(c)) =
   rational.add(qtripleDiag(p, q, r, i, m, c),
-  qtripleTerm(p, q, r, i, c, qtheGapTo(m, c)))
+  qtripleTerm(p, q, r, i, c, qmonus(m, c)))
 proof
   @conclusion |
     forall p, q, r: QPoly; forall i, m, c: Nat;
       qtripleDiag(p, q, r, i, m, peano.succ(c)) =
       rational.add(qtripleDiag(p, q, r, i, m, c),
-      qtripleTerm(p, q, r, i, c, qtheGapTo(m, c)))
+      qtripleTerm(p, q, r, i, c, qmonus(m, c)))
     [by definition(1) qtripleDiag]
 qed
 
@@ -3417,19 +3417,19 @@ theorem qTripleRowsSucc:
   forall p, q, r: QPoly; forall i, m, n: Nat;
   qtripleRows(p, q, r, i, peano.succ(m), n) =
   rational.add(qtripleRows(p, q, r, i, m, n),
-  qtripleRow(p, q, r, i, m, qtheGapTo(n, m)))
+  qtripleRow(p, q, r, i, m, qmonus(n, m)))
 proof
   @conclusion |
     forall p, q, r: QPoly; forall i, m, n: Nat;
       qtripleRows(p, q, r, i, peano.succ(m), n) =
       rational.add(qtripleRows(p, q, r, i, m, n),
-      qtripleRow(p, q, r, i, m, qtheGapTo(n, m)))
+      qtripleRow(p, q, r, i, m, qmonus(n, m)))
     [by definition(1) qtripleRows]
 qed
 
-// -- the TERMINATION obligation for `qtheGapTo` ------------------------------------------------
+// -- the TERMINATION obligation for `qmonus` ------------------------------------------------
 //
-// `termination(peano):` names `qtheGapToIsGrounded`, and the checker SYNTHESIZES the statement it
+// `termination(peano):` names `qmonusIsGrounded`, and the checker SYNTHESIZES the statement it
 // must have — the recursive arm's own guard implying the generated predicate. The predicate
 // itself is generated from the arm's call sites, one conjunct per site, each a disjunction of
 // that call grounded with its arguments hitting a terminating arm's pattern. Those base
@@ -3440,16 +3440,16 @@ qed
 // does NOT follow from `i != NAT_ZERO` (take i = 1), so the inductive hypothesis is not
 // applicable at `peano.prev(i)` — and need not be, since that is exactly the case the second
 // disjunct covers. `tautology` picks whichever disjunct holds.
-theorem qtheGapToReachesABaseFromAPredecessor: forall k: Nat;
-  (forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> qtheGapToGrounded(i2, k))
-  -> (forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> qtheGapToGrounded(i, peano.succ(k)))
+theorem qmonusReachesABaseFromAPredecessor: forall k: Nat;
+  (forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> qmonusGrounded(i2, k))
+  -> (forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> qmonusGrounded(i, peano.succ(k)))
 proof
   @the-generated-clause |
     forall i3: Nat; forall j3: Nat;
-      qtheGapToGrounded(i3, j3) iff
-      (qtheGapToGrounded(peano.prev(i3), peano.prev(j3)) or peano.prev(i3) = NAT_ZERO
+      qmonusGrounded(i3, j3) iff
+      (qmonusGrounded(peano.prev(i3), peano.prev(j3)) or peano.prev(i3) = NAT_ZERO
       or peano.prev(j3) = NAT_ZERO)
-    [by definition qtheGapToGrounded]
+    [by definition qmonusGrounded]
   @prev-undoes-succ |
     forall n: Nat; peano.prev(peano.succ(n)) = n
     [using import(peano) prevOfSucc]
@@ -3459,9 +3459,9 @@ proof
   @generalize-k |
     fix k: Nat {
       @given-the-inductive-hypothesis |
-        assume forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> qtheGapToGrounded(i2, k) {
+        assume forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> qmonusGrounded(i2, k) {
           @inductive-hypothesis |
-            forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> qtheGapToGrounded(i2, k)
+            forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> qmonusGrounded(i2, k)
             [by hypothesis given-the-inductive-hypothesis]
           // `prev` is guarded, so this must precede every term writing `peano.prev(peano.succ(k))`.
           @succ-k-is-nonzero |
@@ -3481,46 +3481,46 @@ proof
                     i != NAT_ZERO
                     [by and_lhs i-is-nonzero-and-so-is-succ-k]
                   @clause-at-i-and-succ-k |
-                    qtheGapToGrounded(i, peano.succ(k)) iff
-                      (qtheGapToGrounded(peano.prev(i), peano.prev(peano.succ(k))) or peano.prev(i) = NAT_ZERO
+                    qmonusGrounded(i, peano.succ(k)) iff
+                      (qmonusGrounded(peano.prev(i), peano.prev(peano.succ(k))) or peano.prev(i) = NAT_ZERO
                       or peano.prev(peano.succ(k)) = NAT_ZERO)
                     [using specialize the-generated-clause(i, peano.succ(k))]
                   @clause-with-the-predecessor-collapsed |
-                    qtheGapToGrounded(i, peano.succ(k)) iff
-                      (qtheGapToGrounded(peano.prev(i), k) or peano.prev(i) = NAT_ZERO or k = NAT_ZERO)
+                    qmonusGrounded(i, peano.succ(k)) iff
+                      (qmonusGrounded(peano.prev(i), k) or peano.prev(i) = NAT_ZERO or k = NAT_ZERO)
                     [by rewrite prev-of-succ-k-is-k clause-at-i-and-succ-k]
                   @the-inductive-hypothesis-at-the-predecessor |
-                    (peano.prev(i) != NAT_ZERO and k != NAT_ZERO) -> qtheGapToGrounded(peano.prev(i), k)
+                    (peano.prev(i) != NAT_ZERO and k != NAT_ZERO) -> qmonusGrounded(peano.prev(i), k)
                     [using specialize inductive-hypothesis(peano.prev(i))]
                   @conclusion-grounded-at-succ-k |
-                    qtheGapToGrounded(i, peano.succ(k))
+                    qmonusGrounded(i, peano.succ(k))
                     [using tautology clause-with-the-predecessor-collapsed
                       the-inductive-hypothesis-at-the-predecessor]
                 }
               @nonzero-implies-grounded-at-succ-k |
-                (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> qtheGapToGrounded(i, peano.succ(k))
+                (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> qmonusGrounded(i, peano.succ(k))
                 [by discharge given-i-nonzero-and-succ-k-nonzero]
             }
           @conclusion-for-all-i |
-            forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> qtheGapToGrounded(i, peano.succ(k))
+            forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> qmonusGrounded(i, peano.succ(k))
             [by generalize generalize-i]
         }
       @the-hypothesis-implies-the-step |
-        (forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> qtheGapToGrounded(i2, k))
-          -> (forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> qtheGapToGrounded(i, peano.succ(k)))
+        (forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> qmonusGrounded(i2, k))
+          -> (forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> qmonusGrounded(i, peano.succ(k)))
         [by discharge given-the-inductive-hypothesis]
     }
   @conclusion |
     forall k: Nat;
-      (forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> qtheGapToGrounded(i2, k))
-      -> (forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> qtheGapToGrounded(i, peano.succ(k)))
+      (forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> qmonusGrounded(i2, k))
+      -> (forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> qmonusGrounded(i, peano.succ(k)))
     [by generalize generalize-k]
 qed
 
 // Strategy: `peano.induction` on the second argument. The base is VACUOUS — at j = NAT_ZERO the
 // antecedent demands `NAT_ZERO != NAT_ZERO` — so all the content is in the step above.
-theorem qtheGapToIsGrounded: forall i: Nat; forall j: Nat;
-  (i != NAT_ZERO and j != NAT_ZERO) -> qtheGapToGrounded(i, j)
+theorem qmonusIsGrounded: forall i: Nat; forall j: Nat;
+  (i != NAT_ZERO and j != NAT_ZERO) -> qmonusGrounded(i, j)
 proof
   @zero-is-itself |
     NAT_ZERO = NAT_ZERO
@@ -3530,33 +3530,33 @@ proof
   @base-case-proof |
     fix i: Nat {
       @conclusion-vacuously-grounded-at-zero |
-        (i != NAT_ZERO and NAT_ZERO != NAT_ZERO) -> qtheGapToGrounded(i, NAT_ZERO)
+        (i != NAT_ZERO and NAT_ZERO != NAT_ZERO) -> qmonusGrounded(i, NAT_ZERO)
         [using tautology zero-is-itself]
     }
   @base-case |
-    forall i: Nat; (i != NAT_ZERO and NAT_ZERO != NAT_ZERO) -> qtheGapToGrounded(i, NAT_ZERO)
+    forall i: Nat; (i != NAT_ZERO and NAT_ZERO != NAT_ZERO) -> qmonusGrounded(i, NAT_ZERO)
     [by generalize base-case-proof]
   @induction-step-for-all-k |
     forall k: Nat;
-      (forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> qtheGapToGrounded(i2, k))
-      -> (forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> qtheGapToGrounded(i, peano.succ(k)))
-    [by cite qtheGapToReachesABaseFromAPredecessor]
+      (forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> qmonusGrounded(i2, k))
+      -> (forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> qmonusGrounded(i, peano.succ(k)))
+    [by cite qmonusReachesABaseFromAPredecessor]
   @grounded-for-every-second-argument |
-    forall j: Nat; forall i: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> qtheGapToGrounded(i, j)
-    [using instantiation peano.induction((fun j: Nat => (forall i: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> qtheGapToGrounded(i, j)))) base-case induction-step-for-all-k]
+    forall j: Nat; forall i: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> qmonusGrounded(i, j)
+    [using instantiation peano.induction((fun j: Nat => (forall i: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> qmonusGrounded(i, j)))) base-case induction-step-for-all-k]
   @generalize-i |
     fix i: Nat {
       @generalize-j |
         fix j: Nat {
           @grounded-at-j-and-i |
-            (i != NAT_ZERO and j != NAT_ZERO) -> qtheGapToGrounded(i, j)
+            (i != NAT_ZERO and j != NAT_ZERO) -> qmonusGrounded(i, j)
             [using specialize grounded-for-every-second-argument(j, i)]
         }
       @discharge-j |
-        forall j: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> qtheGapToGrounded(i, j)
+        forall j: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> qmonusGrounded(i, j)
         [by generalize generalize-j]
     }
   @conclusion |
-    forall i: Nat; forall j: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> qtheGapToGrounded(i, j)
+    forall i: Nat; forall j: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> qmonusGrounded(i, j)
     [by generalize generalize-i]
 qed

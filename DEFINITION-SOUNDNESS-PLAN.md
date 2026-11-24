@@ -718,6 +718,32 @@ the consistency obligations, no new analysis.
 `n = ZERO or n = ONE or ONE < n` needs the sort's coverage machinery
 (`order.aNatIsZeroOneTwoOrMore`, `peano.zeroOrSucc`). So `totality(<theory>): <theorem>`.
 
+**A MOTIVATING INSTANCE, found by accident 2026-11-24.** `std/ring/polynomial.b4m`'s
+`theGapTo` is truncated subtraction (`i - j` floored at zero) — the r-exponent in a triple
+product, via `theCofactorIndex`. It was written:
+
+```2b4m
+oper theGapTo(i: Nat, j: Nat) => Nat:
+  theGapTo(i, ZERO) = i;
+  theGapTo(succ(i), succ(j)) = theGapTo(i, j).
+```
+
+`theGapTo(ZERO, succ(j))` matches NEITHER clause, so the symbol was UNDETERMINED exactly where
+`i < j` — **the flooring case, which is the whole reason the symbol exists.** The declaration's
+own comment claims the opposite ("they floor at ZERO by an explicit clause rather than by
+`sub`'s silent truncation"), describing a clause that was never written. Everything above
+inherits it: `theCofactorIndex(i, j, k)` is unconstrained whenever `j + k > i`, which for a
+triple-product coefficient is routine rather than exotic.
+
+Nothing flagged this. `consistency:` could not — the two clauses never overlap, so every pair
+is vacuous and the block is perfectly consistent. Only a coverage check sees it. It surfaced
+only because the l-value rule forced the arms into a form where "which inputs does this cover?"
+had to be answered explicitly, and the answer was "not all of them".
+
+(Whether any existing theorem is WRONG is a separate question — they may all carry in-range
+hypotheses. The defect is that the symbol was underdetermined in its principal case and the
+library could not tell.)
+
 **Scope — the largest of the three migrations.** It applies to EVERY multi-arm definition
 block, not only recursive ones: 72 such blocks in `std`. Many will be trivial (a `ZERO` /
 `succ(k)` split is exactly `peano.zeroOrSucc`), but each needs a named theorem.

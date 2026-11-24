@@ -95,7 +95,7 @@ axiom rIsZeroOfMeaning: forall a: Real; forall p: RPoly;
 // reversal behind commutativity, the triple sums behind associativity). A model must map
 // every symbol a transferred proof names, so ℝ[x] declares them too. None involves a
 // subtraction: each decrementing index is a `succ` pattern, and the index arithmetic the
-// triple sums need is NAMED (`rtheGapTo`, `rtheCofactorIndex`).
+// triple sums need is NAMED (`rmonus`, `rtheCofactorIndex`).
 oper rtailConvolution(p: RPoly, q: RPoly, j: Nat, m: Nat) => Real:
   rtailConvolution(p, q, NAT_ZERO, m) = real.mul(rcoeff(p, NAT_ZERO), rcoeff(q, m));
   rtailConvolution(p, q, peano.succ(j), m) = real.add(real.mul(rcoeff(p, peano.succ(j)), rcoeff(q, m)), rtailConvolution(p, q, j, peano.succ(m))).
@@ -108,19 +108,19 @@ oper rrsegmentOf(p: RPoly, q: RPoly, j: Nat, c: Nat, n: Nat) => Real:
   rrsegmentOf(p, q, j, c, NAT_ZERO) = real.mul(rcoeff(p, j), rcoeff(q, c));
   rrsegmentOf(p, q, j, peano.succ(c), peano.succ(n)) = real.add(real.mul(rcoeff(p, j), rcoeff(q, peano.succ(c))), rrsegmentOf(p, q, peano.succ(j), c, n)).
 
-oper rtheGapTo(i: Nat, j: Nat) => Nat:
-  rtheGapTo(i, NAT_ZERO) = i;
-  rtheGapTo(i, j) = rtheGapTo(peano.prev(i), peano.prev(j)) when i != NAT_ZERO and j != NAT_ZERO;
-  rtheGapTo(NAT_ZERO, j) = NAT_ZERO when j != NAT_ZERO.
-  termination(peano): _, {rtheGapToIsGrounded, rtheGapToGrounded}, _
+oper rmonus(i: Nat, j: Nat) => Nat:
+  rmonus(i, NAT_ZERO) = i;
+  rmonus(i, j) = rmonus(peano.prev(i), peano.prev(j)) when i != NAT_ZERO and j != NAT_ZERO;
+  rmonus(NAT_ZERO, j) = NAT_ZERO when j != NAT_ZERO.
+  termination(peano): _, {rmonusIsGrounded, rmonusGrounded}, _
 
 oper rtheCofactorIndex(i: Nat, j: Nat, k: Nat) => Nat:
-  rtheCofactorIndex(i, j, NAT_ZERO) = rtheGapTo(i, j);
-  rtheCofactorIndex(i, j, peano.succ(k)) = rtheGapTo(rtheGapTo(i, j), peano.succ(k)).
+  rtheCofactorIndex(i, j, NAT_ZERO) = rmonus(i, j);
+  rtheCofactorIndex(i, j, peano.succ(k)) = rmonus(rmonus(i, j), peano.succ(k)).
 
 oper rcappedRun(q: RPoly, r: RPoly, g: Nat, n: Nat) => Real:
   rcappedRun(q, r, g, NAT_ZERO) = ZERO;
-  rcappedRun(q, r, g, peano.succ(n)) = real.add(rcappedRun(q, r, g, n), real.mul(rcoeff(q, n), rcoeff(r, rtheGapTo(g, n)))).
+  rcappedRun(q, r, g, peano.succ(n)) = real.add(rcappedRun(q, r, g, n), real.mul(rcoeff(q, n), rcoeff(r, rmonus(g, n)))).
 
 oper rtripleTerm(p: RPoly, q: RPoly, r: RPoly, i: Nat, j: Nat, k: Nat) => Real:
   rtripleTerm(p, q, r, i, j, k) = real.mul(real.mul(rcoeff(p, j), rcoeff(q, k)), rcoeff(r, rtheCofactorIndex(i, j, k))).
@@ -131,7 +131,7 @@ oper rtripleRow(p: RPoly, q: RPoly, r: RPoly, i: Nat, j: Nat, n: Nat) => Real:
 
 oper rtripleDiag(p: RPoly, q: RPoly, r: RPoly, i: Nat, m: Nat, c: Nat) => Real:
   rtripleDiag(p, q, r, i, m, NAT_ZERO) = ZERO;
-  rtripleDiag(p, q, r, i, m, peano.succ(c)) = real.add(rtripleDiag(p, q, r, i, m, c), rtripleTerm(p, q, r, i, c, rtheGapTo(m, c))).
+  rtripleDiag(p, q, r, i, m, peano.succ(c)) = real.add(rtripleDiag(p, q, r, i, m, c), rtripleTerm(p, q, r, i, c, rmonus(m, c))).
 
 oper rtripleTri(p: RPoly, q: RPoly, r: RPoly, i: Nat, n: Nat) => Real:
   rtripleTri(p, q, r, i, NAT_ZERO) = ZERO;
@@ -139,7 +139,7 @@ oper rtripleTri(p: RPoly, q: RPoly, r: RPoly, i: Nat, n: Nat) => Real:
 
 oper rtripleRows(p: RPoly, q: RPoly, r: RPoly, i: Nat, m: Nat, n: Nat) => Real:
   rtripleRows(p, q, r, i, NAT_ZERO, n) = ZERO;
-  rtripleRows(p, q, r, i, peano.succ(m), n) = real.add(rtripleRows(p, q, r, i, m, n), rtripleRow(p, q, r, i, m, rtheGapTo(n, m))).
+  rtripleRows(p, q, r, i, peano.succ(m), n) = real.add(rtripleRows(p, q, r, i, m, n), rtripleRow(p, q, r, i, m, rmonus(n, m))).
 
 // The unit polynomial, as its OWN constant with its own coefficient axioms — the shape
 // `ring_poly.ONEP` maps onto. F[x] instead derives it from `monomial(oneF, ZERO)`, which
@@ -174,10 +174,10 @@ intheory rSegmentZero
 intheory rSegmentSucc
 intheory rRsegmentZero
 intheory rRsegmentSucc
-intheory rTheGapToAtZero
-intheory rTheGapToSteps
-intheory rtheGapToReachesABaseFromAPredecessor
-intheory rtheGapToIsGrounded
+intheory rmonusAtZero
+intheory rmonusSteps
+intheory rmonusReachesABaseFromAPredecessor
+intheory rmonusIsGrounded
 intheory rTheCofactorIndexAtZero
 intheory rTheCofactorIndexSteps
 intheory rCappedRunZero
@@ -294,7 +294,7 @@ model RealPolynomials {
   fieldpoly.tailConvolution: rtailConvolution
   fieldpoly.segment: rsegmentOf
   fieldpoly.rsegment: rrsegmentOf
-  fieldpoly.theGapTo: rtheGapTo
+  fieldpoly.monus: rmonus
   fieldpoly.theCofactorIndex: rtheCofactorIndex
   fieldpoly.cappedRun: rcappedRun
   fieldpoly.tripleTerm: rtripleTerm
@@ -331,7 +331,7 @@ model RealPolynomials {
   fieldpoly.tailConvolution <- rtailConvolution
   fieldpoly.segment <- rsegmentOf
   fieldpoly.rsegment <- rrsegmentOf
-  fieldpoly.theGapTo <- rtheGapTo
+  fieldpoly.monus <- rmonus
   fieldpoly.theCofactorIndex <- rtheCofactorIndex
   fieldpoly.cappedRun <- rcappedRun
   fieldpoly.tripleTerm <- rtripleTerm
@@ -633,27 +633,27 @@ proof
     [by definition(1) rrsegmentOf]
 qed
 
-theorem rTheGapToAtZero:
-  forall i: Nat; rtheGapTo(i, NAT_ZERO) = i
+theorem rmonusAtZero:
+  forall i: Nat; rmonus(i, NAT_ZERO) = i
 proof
   @conclusion |
-    forall i: Nat; rtheGapTo(i, NAT_ZERO) = i
-    [by definition(0) rtheGapTo]
+    forall i: Nat; rmonus(i, NAT_ZERO) = i
+    [by definition(0) rmonus]
 qed
 
 // The `succ`/`succ` step, now DERIVED rather than transcribed: the definition descends by
 // `prev` (the l-value rule keeps patterns off the left), so this restates it at a successor
 // pair, where `prevOfSucc` collapses both `prev`s. The STATEMENT is unchanged, so every call
 // site below still cites this theorem and the clause's guard never reaches them.
-theorem rTheGapToSteps:
+theorem rmonusSteps:
   forall i, j: Nat;
-  rtheGapTo(peano.succ(i), peano.succ(j)) = rtheGapTo(i, j)
+  rmonus(peano.succ(i), peano.succ(j)) = rmonus(i, j)
 proof
   @the-recursive-clause |
     forall i2: Nat; forall j2: Nat;
       (i2 != NAT_ZERO and j2 != NAT_ZERO) ->
-      rtheGapTo(i2, j2) = rtheGapTo(peano.prev(i2), peano.prev(j2))
-    [by definition(1) rtheGapTo]
+      rmonus(i2, j2) = rmonus(peano.prev(i2), peano.prev(j2))
+    [by definition(1) rmonus]
   @prev-undoes-succ |
     forall n: Nat; peano.prev(peano.succ(n)) = n
     [using import(peano) prevOfSucc]
@@ -674,8 +674,8 @@ proof
             peano.succ(i) != NAT_ZERO and peano.succ(j) != NAT_ZERO
             [by both succ-i-is-nonzero succ-j-is-nonzero]
           @clause-at-the-successor-pair |
-            rtheGapTo(peano.succ(i), peano.succ(j)) =
-              rtheGapTo(peano.prev(peano.succ(i)), peano.prev(peano.succ(j)))
+            rmonus(peano.succ(i), peano.succ(j)) =
+              rmonus(peano.prev(peano.succ(i)), peano.prev(peano.succ(j)))
             [using specialize the-recursive-clause(peano.succ(i), peano.succ(j)) both-are-nonzero]
           @prev-of-succ-i |
             peano.prev(peano.succ(i)) = i
@@ -684,41 +684,41 @@ proof
             peano.prev(peano.succ(j)) = j
             [using specialize prev-undoes-succ(j)]
           @first-prev-collapsed |
-            rtheGapTo(peano.succ(i), peano.succ(j)) = rtheGapTo(i, peano.prev(peano.succ(j)))
+            rmonus(peano.succ(i), peano.succ(j)) = rmonus(i, peano.prev(peano.succ(j)))
             [by rewrite prev-of-succ-i clause-at-the-successor-pair]
           @conclusion-step-at-i-j |
-            rtheGapTo(peano.succ(i), peano.succ(j)) = rtheGapTo(i, j)
+            rmonus(peano.succ(i), peano.succ(j)) = rmonus(i, j)
             [by rewrite prev-of-succ-j first-prev-collapsed]
         }
       @discharge-j |
-        forall j: Nat; rtheGapTo(peano.succ(i), peano.succ(j)) = rtheGapTo(i, j)
+        forall j: Nat; rmonus(peano.succ(i), peano.succ(j)) = rmonus(i, j)
         [by generalize generalize-j]
     }
   @conclusion |
     forall i, j: Nat;
-      rtheGapTo(peano.succ(i), peano.succ(j)) = rtheGapTo(i, j)
+      rmonus(peano.succ(i), peano.succ(j)) = rmonus(i, j)
     [by generalize generalize-i]
 qed
 
 theorem rTheCofactorIndexAtZero:
   forall i, j: Nat;
-  rtheCofactorIndex(i, j, NAT_ZERO) = rtheGapTo(i, j)
+  rtheCofactorIndex(i, j, NAT_ZERO) = rmonus(i, j)
 proof
   @conclusion |
     forall i, j: Nat;
-      rtheCofactorIndex(i, j, NAT_ZERO) = rtheGapTo(i, j)
+      rtheCofactorIndex(i, j, NAT_ZERO) = rmonus(i, j)
     [by definition(0) rtheCofactorIndex]
 qed
 
 theorem rTheCofactorIndexSteps:
   forall i, j, k: Nat;
   rtheCofactorIndex(i, j, peano.succ(k)) =
-  rtheGapTo(rtheGapTo(i, j), peano.succ(k))
+  rmonus(rmonus(i, j), peano.succ(k))
 proof
   @conclusion |
     forall i, j, k: Nat;
       rtheCofactorIndex(i, j, peano.succ(k)) =
-      rtheGapTo(rtheGapTo(i, j), peano.succ(k))
+      rmonus(rmonus(i, j), peano.succ(k))
     [by definition(1) rtheCofactorIndex]
 qed
 
@@ -736,13 +736,13 @@ theorem rCappedRunSucc:
   forall q, r: RPoly; forall g, n: Nat;
   rcappedRun(q, r, g, peano.succ(n)) =
   real.add(rcappedRun(q, r, g, n),
-  real.mul(rcoeff(q, n), rcoeff(r, rtheGapTo(g, n))))
+  real.mul(rcoeff(q, n), rcoeff(r, rmonus(g, n))))
 proof
   @conclusion |
     forall q, r: RPoly; forall g, n: Nat;
       rcappedRun(q, r, g, peano.succ(n)) =
       real.add(rcappedRun(q, r, g, n),
-      real.mul(rcoeff(q, n), rcoeff(r, rtheGapTo(g, n))))
+      real.mul(rcoeff(q, n), rcoeff(r, rmonus(g, n))))
     [by definition(1) rcappedRun]
 qed
 
@@ -796,13 +796,13 @@ theorem rTripleDiagSucc:
   forall p, q, r: RPoly; forall i, m, c: Nat;
   rtripleDiag(p, q, r, i, m, peano.succ(c)) =
   real.add(rtripleDiag(p, q, r, i, m, c),
-  rtripleTerm(p, q, r, i, c, rtheGapTo(m, c)))
+  rtripleTerm(p, q, r, i, c, rmonus(m, c)))
 proof
   @conclusion |
     forall p, q, r: RPoly; forall i, m, c: Nat;
       rtripleDiag(p, q, r, i, m, peano.succ(c)) =
       real.add(rtripleDiag(p, q, r, i, m, c),
-      rtripleTerm(p, q, r, i, c, rtheGapTo(m, c)))
+      rtripleTerm(p, q, r, i, c, rmonus(m, c)))
     [by definition(1) rtripleDiag]
 qed
 
@@ -844,19 +844,19 @@ theorem rTripleRowsSucc:
   forall p, q, r: RPoly; forall i, m, n: Nat;
   rtripleRows(p, q, r, i, peano.succ(m), n) =
   real.add(rtripleRows(p, q, r, i, m, n),
-  rtripleRow(p, q, r, i, m, rtheGapTo(n, m)))
+  rtripleRow(p, q, r, i, m, rmonus(n, m)))
 proof
   @conclusion |
     forall p, q, r: RPoly; forall i, m, n: Nat;
       rtripleRows(p, q, r, i, peano.succ(m), n) =
       real.add(rtripleRows(p, q, r, i, m, n),
-      rtripleRow(p, q, r, i, m, rtheGapTo(n, m)))
+      rtripleRow(p, q, r, i, m, rmonus(n, m)))
     [by definition(1) rtripleRows]
 qed
 
-// -- the TERMINATION obligation for `rtheGapTo` ------------------------------------------------
+// -- the TERMINATION obligation for `rmonus` ------------------------------------------------
 //
-// `termination(peano):` names `rtheGapToIsGrounded`, and the checker SYNTHESIZES the statement it
+// `termination(peano):` names `rmonusIsGrounded`, and the checker SYNTHESIZES the statement it
 // must have — the recursive arm's own guard implying the generated predicate. The predicate
 // itself is generated from the arm's call sites, one conjunct per site, each a disjunction of
 // that call grounded with its arguments hitting a terminating arm's pattern. Those base
@@ -867,16 +867,16 @@ qed
 // does NOT follow from `i != NAT_ZERO` (take i = 1), so the inductive hypothesis is not
 // applicable at `peano.prev(i)` — and need not be, since that is exactly the case the second
 // disjunct covers. `tautology` picks whichever disjunct holds.
-theorem rtheGapToReachesABaseFromAPredecessor: forall k: Nat;
-  (forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> rtheGapToGrounded(i2, k))
-  -> (forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> rtheGapToGrounded(i, peano.succ(k)))
+theorem rmonusReachesABaseFromAPredecessor: forall k: Nat;
+  (forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> rmonusGrounded(i2, k))
+  -> (forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> rmonusGrounded(i, peano.succ(k)))
 proof
   @the-generated-clause |
     forall i3: Nat; forall j3: Nat;
-      rtheGapToGrounded(i3, j3) iff
-      (rtheGapToGrounded(peano.prev(i3), peano.prev(j3)) or peano.prev(i3) = NAT_ZERO
+      rmonusGrounded(i3, j3) iff
+      (rmonusGrounded(peano.prev(i3), peano.prev(j3)) or peano.prev(i3) = NAT_ZERO
       or peano.prev(j3) = NAT_ZERO)
-    [by definition rtheGapToGrounded]
+    [by definition rmonusGrounded]
   @prev-undoes-succ |
     forall n: Nat; peano.prev(peano.succ(n)) = n
     [using import(peano) prevOfSucc]
@@ -886,9 +886,9 @@ proof
   @generalize-k |
     fix k: Nat {
       @given-the-inductive-hypothesis |
-        assume forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> rtheGapToGrounded(i2, k) {
+        assume forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> rmonusGrounded(i2, k) {
           @inductive-hypothesis |
-            forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> rtheGapToGrounded(i2, k)
+            forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> rmonusGrounded(i2, k)
             [by hypothesis given-the-inductive-hypothesis]
           // `prev` is guarded, so this must precede every term writing `peano.prev(peano.succ(k))`.
           @succ-k-is-nonzero |
@@ -908,46 +908,46 @@ proof
                     i != NAT_ZERO
                     [by and_lhs i-is-nonzero-and-so-is-succ-k]
                   @clause-at-i-and-succ-k |
-                    rtheGapToGrounded(i, peano.succ(k)) iff
-                      (rtheGapToGrounded(peano.prev(i), peano.prev(peano.succ(k))) or peano.prev(i) = NAT_ZERO
+                    rmonusGrounded(i, peano.succ(k)) iff
+                      (rmonusGrounded(peano.prev(i), peano.prev(peano.succ(k))) or peano.prev(i) = NAT_ZERO
                       or peano.prev(peano.succ(k)) = NAT_ZERO)
                     [using specialize the-generated-clause(i, peano.succ(k))]
                   @clause-with-the-predecessor-collapsed |
-                    rtheGapToGrounded(i, peano.succ(k)) iff
-                      (rtheGapToGrounded(peano.prev(i), k) or peano.prev(i) = NAT_ZERO or k = NAT_ZERO)
+                    rmonusGrounded(i, peano.succ(k)) iff
+                      (rmonusGrounded(peano.prev(i), k) or peano.prev(i) = NAT_ZERO or k = NAT_ZERO)
                     [by rewrite prev-of-succ-k-is-k clause-at-i-and-succ-k]
                   @the-inductive-hypothesis-at-the-predecessor |
-                    (peano.prev(i) != NAT_ZERO and k != NAT_ZERO) -> rtheGapToGrounded(peano.prev(i), k)
+                    (peano.prev(i) != NAT_ZERO and k != NAT_ZERO) -> rmonusGrounded(peano.prev(i), k)
                     [using specialize inductive-hypothesis(peano.prev(i))]
                   @conclusion-grounded-at-succ-k |
-                    rtheGapToGrounded(i, peano.succ(k))
+                    rmonusGrounded(i, peano.succ(k))
                     [using tautology clause-with-the-predecessor-collapsed
                       the-inductive-hypothesis-at-the-predecessor]
                 }
               @nonzero-implies-grounded-at-succ-k |
-                (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> rtheGapToGrounded(i, peano.succ(k))
+                (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> rmonusGrounded(i, peano.succ(k))
                 [by discharge given-i-nonzero-and-succ-k-nonzero]
             }
           @conclusion-for-all-i |
-            forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> rtheGapToGrounded(i, peano.succ(k))
+            forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> rmonusGrounded(i, peano.succ(k))
             [by generalize generalize-i]
         }
       @the-hypothesis-implies-the-step |
-        (forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> rtheGapToGrounded(i2, k))
-          -> (forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> rtheGapToGrounded(i, peano.succ(k)))
+        (forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> rmonusGrounded(i2, k))
+          -> (forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> rmonusGrounded(i, peano.succ(k)))
         [by discharge given-the-inductive-hypothesis]
     }
   @conclusion |
     forall k: Nat;
-      (forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> rtheGapToGrounded(i2, k))
-      -> (forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> rtheGapToGrounded(i, peano.succ(k)))
+      (forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> rmonusGrounded(i2, k))
+      -> (forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> rmonusGrounded(i, peano.succ(k)))
     [by generalize generalize-k]
 qed
 
 // Strategy: `peano.induction` on the second argument. The base is VACUOUS — at j = NAT_ZERO the
 // antecedent demands `NAT_ZERO != NAT_ZERO` — so all the content is in the step above.
-theorem rtheGapToIsGrounded: forall i: Nat; forall j: Nat;
-  (i != NAT_ZERO and j != NAT_ZERO) -> rtheGapToGrounded(i, j)
+theorem rmonusIsGrounded: forall i: Nat; forall j: Nat;
+  (i != NAT_ZERO and j != NAT_ZERO) -> rmonusGrounded(i, j)
 proof
   @zero-is-itself |
     NAT_ZERO = NAT_ZERO
@@ -957,33 +957,33 @@ proof
   @base-case-proof |
     fix i: Nat {
       @conclusion-vacuously-grounded-at-zero |
-        (i != NAT_ZERO and NAT_ZERO != NAT_ZERO) -> rtheGapToGrounded(i, NAT_ZERO)
+        (i != NAT_ZERO and NAT_ZERO != NAT_ZERO) -> rmonusGrounded(i, NAT_ZERO)
         [using tautology zero-is-itself]
     }
   @base-case |
-    forall i: Nat; (i != NAT_ZERO and NAT_ZERO != NAT_ZERO) -> rtheGapToGrounded(i, NAT_ZERO)
+    forall i: Nat; (i != NAT_ZERO and NAT_ZERO != NAT_ZERO) -> rmonusGrounded(i, NAT_ZERO)
     [by generalize base-case-proof]
   @induction-step-for-all-k |
     forall k: Nat;
-      (forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> rtheGapToGrounded(i2, k))
-      -> (forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> rtheGapToGrounded(i, peano.succ(k)))
-    [by cite rtheGapToReachesABaseFromAPredecessor]
+      (forall i2: Nat; (i2 != NAT_ZERO and k != NAT_ZERO) -> rmonusGrounded(i2, k))
+      -> (forall i: Nat; (i != NAT_ZERO and peano.succ(k) != NAT_ZERO) -> rmonusGrounded(i, peano.succ(k)))
+    [by cite rmonusReachesABaseFromAPredecessor]
   @grounded-for-every-second-argument |
-    forall j: Nat; forall i: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> rtheGapToGrounded(i, j)
-    [using instantiation peano.induction((fun j: Nat => (forall i: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> rtheGapToGrounded(i, j)))) base-case induction-step-for-all-k]
+    forall j: Nat; forall i: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> rmonusGrounded(i, j)
+    [using instantiation peano.induction((fun j: Nat => (forall i: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> rmonusGrounded(i, j)))) base-case induction-step-for-all-k]
   @generalize-i |
     fix i: Nat {
       @generalize-j |
         fix j: Nat {
           @grounded-at-j-and-i |
-            (i != NAT_ZERO and j != NAT_ZERO) -> rtheGapToGrounded(i, j)
+            (i != NAT_ZERO and j != NAT_ZERO) -> rmonusGrounded(i, j)
             [using specialize grounded-for-every-second-argument(j, i)]
         }
       @discharge-j |
-        forall j: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> rtheGapToGrounded(i, j)
+        forall j: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> rmonusGrounded(i, j)
         [by generalize generalize-j]
     }
   @conclusion |
-    forall i: Nat; forall j: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> rtheGapToGrounded(i, j)
+    forall i: Nat; forall j: Nat; (i != NAT_ZERO and j != NAT_ZERO) -> rmonusGrounded(i, j)
     [by generalize generalize-i]
 qed

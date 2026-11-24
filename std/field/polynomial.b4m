@@ -232,10 +232,10 @@ intheory segmentZero
 intheory segmentSucc
 intheory rsegmentZero
 intheory rsegmentSucc
-intheory theGapToAtZero
-intheory theGapToSteps
-intheory theGapToReachesABaseFromAPredecessor
-intheory theGapToIsGrounded
+intheory monusAtZero
+intheory monusSteps
+intheory monusReachesABaseFromAPredecessor
+intheory monusIsGrounded
 intheory theCofactorIndexAtZero
 intheory theCofactorIndexSteps
 intheory cappedRunZero
@@ -390,23 +390,23 @@ oper rsegment(p: Poly, q: Poly, j: Nat, c: Nat, n: Nat) => F:
 // `std/ring/polynomial.b4m` proves `polyMulIsAssociative` over the triple-sum families below;
 // a model must map every symbol a transferred proof mentions, so F[x] declares them too.
 // Note what is NOT here: a subtraction. The ring version carries a term's three EXPONENTS and
-// names the index arithmetic (`theGapTo`, `theCofactorIndex`) rather than writing
+// names the index arithmetic (`monus`, `theCofactorIndex`) rather than writing
 // `sub(sub(i,j),k)` — which is what retired the old standalone F[x] associativity file.
-oper theGapTo(i: Nat, j: Nat) => Nat:
-  theGapTo(i, ZERO) = i;
-  theGapTo(i, j) = theGapTo(prev(i), prev(j)) when i != ZERO and j != ZERO;
-  theGapTo(ZERO, j) = ZERO when j != ZERO.
-  termination(peano): _, {theGapToIsGrounded, theGapToGrounded}, _
+oper monus(i: Nat, j: Nat) => Nat:
+  monus(i, ZERO) = i;
+  monus(i, j) = monus(prev(i), prev(j)) when i != ZERO and j != ZERO;
+  monus(ZERO, j) = ZERO when j != ZERO.
+  termination(peano): _, {monusIsGrounded, monusGrounded}, _
 
 oper theCofactorIndex(i: Nat, j: Nat, k: Nat) => Nat:
-  theCofactorIndex(i, j, ZERO) = theGapTo(i, j);
-  theCofactorIndex(i, j, succ(k)) = theGapTo(theGapTo(i, j), succ(k)).
+  theCofactorIndex(i, j, ZERO) = monus(i, j);
+  theCofactorIndex(i, j, succ(k)) = monus(monus(i, j), succ(k)).
 
 oper cappedRun(q: Poly, r: Poly, g: Nat, n: Nat) => F:
   cappedRun(q, r, g, ZERO) = zeroF;
   cappedRun(q, r, g, succ(n)) =
   addF(cappedRun(q, r, g, n),
-  mulF(coeff(q, n), coeff(r, theGapTo(g, n)))).
+  mulF(coeff(q, n), coeff(r, monus(g, n)))).
 
 oper tripleTerm(p: Poly, q: Poly, r: Poly, i: Nat, j: Nat, k: Nat) => F:
   tripleTerm(p, q, r, i, j, k) =
@@ -421,7 +421,7 @@ oper tripleDiag(p: Poly, q: Poly, r: Poly, i: Nat, m: Nat, c: Nat) => F:
   tripleDiag(p, q, r, i, m, ZERO) = zeroF;
   tripleDiag(p, q, r, i, m, succ(c)) =
   addF(tripleDiag(p, q, r, i, m, c),
-  tripleTerm(p, q, r, i, c, theGapTo(m, c))).
+  tripleTerm(p, q, r, i, c, monus(m, c))).
 
 oper tripleTri(p: Poly, q: Poly, r: Poly, i: Nat, n: Nat) => F:
   tripleTri(p, q, r, i, ZERO) = zeroF;
@@ -432,7 +432,7 @@ oper tripleRows(p: Poly, q: Poly, r: Poly, i: Nat, m: Nat, n: Nat) => F:
   tripleRows(p, q, r, i, ZERO, n) = zeroF;
   tripleRows(p, q, r, i, succ(m), n) =
   addF(tripleRows(p, q, r, i, m, n),
-  tripleRow(p, q, r, i, m, theGapTo(n, m))).
+  tripleRow(p, q, r, i, m, monus(n, m))).
 
 // -- addition, negation, and the difference the construction subtracts --------------------
 //
@@ -1213,7 +1213,7 @@ model FieldPolyModelsRingPoly {
   ring_poly.tailConvolution <- tailConvolution
   ring_poly.segment <- segment
   ring_poly.rsegment: rsegment
-  ring_poly.theGapTo: theGapTo
+  ring_poly.monus: monus
   ring_poly.theCofactorIndex: theCofactorIndex
   ring_poly.cappedRun: cappedRun
   ring_poly.tripleTerm: tripleTerm
@@ -1221,7 +1221,7 @@ model FieldPolyModelsRingPoly {
   ring_poly.tripleDiag: tripleDiag
   ring_poly.tripleTri: tripleTri
   ring_poly.tripleRows: tripleRows
-  ring_poly.theGapTo <- theGapTo
+  ring_poly.monus <- monus
   ring_poly.theCofactorIndex <- theCofactorIndex
   ring_poly.cappedRun <- cappedRun
   ring_poly.tripleTerm <- tripleTerm
@@ -7005,26 +7005,26 @@ proof
     [by definition(1) rsegment]
 qed
 
-theorem theGapToAtZero:
-  forall i: Nat; theGapTo(i, ZERO) = i
+theorem monusAtZero:
+  forall i: Nat; monus(i, ZERO) = i
 proof
   @conclusion |
-    forall i: Nat; theGapTo(i, ZERO) = i
-    [by definition(0) theGapTo]
+    forall i: Nat; monus(i, ZERO) = i
+    [by definition(0) monus]
 qed
 
 // The `succ`/`succ` step, now DERIVED rather than transcribed: the definition descends by
 // `prev` (the l-value rule keeps patterns off the left), so this restates it at a successor
 // pair, where `prevOfSucc` collapses both `prev`s. The STATEMENT is unchanged, so every call
 // site below still cites this theorem and the clause's guard never reaches them.
-theorem theGapToSteps:
+theorem monusSteps:
   forall i, j: Nat;
-  theGapTo(succ(i), succ(j)) = theGapTo(i, j)
+  monus(succ(i), succ(j)) = monus(i, j)
 proof
   @the-recursive-clause |
     forall i2: Nat; forall j2: Nat;
-      (i2 != ZERO and j2 != ZERO) -> theGapTo(i2, j2) = theGapTo(prev(i2), prev(j2))
-    [by definition(1) theGapTo]
+      (i2 != ZERO and j2 != ZERO) -> monus(i2, j2) = monus(prev(i2), prev(j2))
+    [by definition(1) monus]
   @prev-undoes-succ |
     forall n: Nat; prev(succ(n)) = n
     [using import(peano) prevOfSucc]
@@ -7045,7 +7045,7 @@ proof
             succ(i) != ZERO and succ(j) != ZERO
             [by both succ-i-is-nonzero succ-j-is-nonzero]
           @clause-at-the-successor-pair |
-            theGapTo(succ(i), succ(j)) = theGapTo(prev(succ(i)), prev(succ(j)))
+            monus(succ(i), succ(j)) = monus(prev(succ(i)), prev(succ(j)))
             [using specialize the-recursive-clause(succ(i), succ(j)) both-are-nonzero]
           @prev-of-succ-i |
             prev(succ(i)) = i
@@ -7054,39 +7054,39 @@ proof
             prev(succ(j)) = j
             [using specialize prev-undoes-succ(j)]
           @first-prev-collapsed |
-            theGapTo(succ(i), succ(j)) = theGapTo(i, prev(succ(j)))
+            monus(succ(i), succ(j)) = monus(i, prev(succ(j)))
             [by rewrite prev-of-succ-i clause-at-the-successor-pair]
           @conclusion-step-at-i-j |
-            theGapTo(succ(i), succ(j)) = theGapTo(i, j)
+            monus(succ(i), succ(j)) = monus(i, j)
             [by rewrite prev-of-succ-j first-prev-collapsed]
         }
       @discharge-j |
-        forall j: Nat; theGapTo(succ(i), succ(j)) = theGapTo(i, j)
+        forall j: Nat; monus(succ(i), succ(j)) = monus(i, j)
         [by generalize generalize-j]
     }
   @conclusion |
     forall i, j: Nat;
-      theGapTo(succ(i), succ(j)) = theGapTo(i, j)
+      monus(succ(i), succ(j)) = monus(i, j)
     [by generalize generalize-i]
 qed
 
 theorem theCofactorIndexAtZero:
   forall i, j: Nat;
-  theCofactorIndex(i, j, ZERO) = theGapTo(i, j)
+  theCofactorIndex(i, j, ZERO) = monus(i, j)
 proof
   @conclusion |
     forall i, j: Nat;
-      theCofactorIndex(i, j, ZERO) = theGapTo(i, j)
+      theCofactorIndex(i, j, ZERO) = monus(i, j)
     [by definition(0) theCofactorIndex]
 qed
 
 theorem theCofactorIndexSteps:
   forall i, j, k: Nat;
-  theCofactorIndex(i, j, succ(k)) = theGapTo(theGapTo(i, j), succ(k))
+  theCofactorIndex(i, j, succ(k)) = monus(monus(i, j), succ(k))
 proof
   @conclusion |
     forall i, j, k: Nat;
-      theCofactorIndex(i, j, succ(k)) = theGapTo(theGapTo(i, j), succ(k))
+      theCofactorIndex(i, j, succ(k)) = monus(monus(i, j), succ(k))
     [by definition(1) theCofactorIndex]
 qed
 
@@ -7104,13 +7104,13 @@ theorem cappedRunSucc:
   forall q, r: Poly; forall g, n: Nat;
   cappedRun(q, r, g, succ(n)) =
   addF(cappedRun(q, r, g, n),
-  mulF(coeff(q, n), coeff(r, theGapTo(g, n))))
+  mulF(coeff(q, n), coeff(r, monus(g, n))))
 proof
   @conclusion |
     forall q, r: Poly; forall g, n: Nat;
       cappedRun(q, r, g, succ(n)) =
       addF(cappedRun(q, r, g, n),
-      mulF(coeff(q, n), coeff(r, theGapTo(g, n))))
+      mulF(coeff(q, n), coeff(r, monus(g, n))))
     [by definition(1) cappedRun]
 qed
 
@@ -7162,13 +7162,13 @@ theorem tripleDiagSucc:
   forall p, q, r: Poly; forall i, m, c: Nat;
   tripleDiag(p, q, r, i, m, succ(c)) =
   addF(tripleDiag(p, q, r, i, m, c),
-  tripleTerm(p, q, r, i, c, theGapTo(m, c)))
+  tripleTerm(p, q, r, i, c, monus(m, c)))
 proof
   @conclusion |
     forall p, q, r: Poly; forall i, m, c: Nat;
       tripleDiag(p, q, r, i, m, succ(c)) =
       addF(tripleDiag(p, q, r, i, m, c),
-      tripleTerm(p, q, r, i, c, theGapTo(m, c)))
+      tripleTerm(p, q, r, i, c, monus(m, c)))
     [by definition(1) tripleDiag]
 qed
 
@@ -7208,13 +7208,13 @@ theorem tripleRowsSucc:
   forall p, q, r: Poly; forall i, m, n: Nat;
   tripleRows(p, q, r, i, succ(m), n) =
   addF(tripleRows(p, q, r, i, m, n),
-  tripleRow(p, q, r, i, m, theGapTo(n, m)))
+  tripleRow(p, q, r, i, m, monus(n, m)))
 proof
   @conclusion |
     forall p, q, r: Poly; forall i, m, n: Nat;
       tripleRows(p, q, r, i, succ(m), n) =
       addF(tripleRows(p, q, r, i, m, n),
-      tripleRow(p, q, r, i, m, theGapTo(n, m)))
+      tripleRow(p, q, r, i, m, monus(n, m)))
     [by definition(1) tripleRows]
 qed
 
@@ -7290,9 +7290,9 @@ proof
     [by definition(1) evalUpTo]
 qed
 
-// -- the TERMINATION obligation for `theGapTo` ------------------------------------------------
+// -- the TERMINATION obligation for `monus` ------------------------------------------------
 //
-// `termination(peano):` names `theGapToIsGrounded`, and the checker SYNTHESIZES the statement it
+// `termination(peano):` names `monusIsGrounded`, and the checker SYNTHESIZES the statement it
 // must have — the recursive arm's own guard implying the generated predicate. The predicate
 // itself is generated from the arm's call sites, one conjunct per site, each a disjunction of
 // that call grounded with its arguments hitting a terminating arm's pattern. Those base
@@ -7303,16 +7303,16 @@ qed
 // does NOT follow from `i != ZERO` (take i = 1), so the inductive hypothesis is not
 // applicable at `prev(i)` — and need not be, since that is exactly the case the second
 // disjunct covers. `tautology` picks whichever disjunct holds.
-theorem theGapToReachesABaseFromAPredecessor: forall k: Nat;
-  (forall i2: Nat; (i2 != ZERO and k != ZERO) -> theGapToGrounded(i2, k))
-  -> (forall i: Nat; (i != ZERO and succ(k) != ZERO) -> theGapToGrounded(i, succ(k)))
+theorem monusReachesABaseFromAPredecessor: forall k: Nat;
+  (forall i2: Nat; (i2 != ZERO and k != ZERO) -> monusGrounded(i2, k))
+  -> (forall i: Nat; (i != ZERO and succ(k) != ZERO) -> monusGrounded(i, succ(k)))
 proof
   @the-generated-clause |
     forall i3: Nat; forall j3: Nat;
-      theGapToGrounded(i3, j3) iff
-      (theGapToGrounded(prev(i3), prev(j3)) or prev(i3) = ZERO
+      monusGrounded(i3, j3) iff
+      (monusGrounded(prev(i3), prev(j3)) or prev(i3) = ZERO
       or prev(j3) = ZERO)
-    [by definition theGapToGrounded]
+    [by definition monusGrounded]
   @prev-undoes-succ |
     forall n: Nat; prev(succ(n)) = n
     [using import(peano) prevOfSucc]
@@ -7322,9 +7322,9 @@ proof
   @generalize-k |
     fix k: Nat {
       @given-the-inductive-hypothesis |
-        assume forall i2: Nat; (i2 != ZERO and k != ZERO) -> theGapToGrounded(i2, k) {
+        assume forall i2: Nat; (i2 != ZERO and k != ZERO) -> monusGrounded(i2, k) {
           @inductive-hypothesis |
-            forall i2: Nat; (i2 != ZERO and k != ZERO) -> theGapToGrounded(i2, k)
+            forall i2: Nat; (i2 != ZERO and k != ZERO) -> monusGrounded(i2, k)
             [by hypothesis given-the-inductive-hypothesis]
           // `prev` is guarded, so this must precede every term writing `prev(succ(k))`.
           @succ-k-is-nonzero |
@@ -7344,46 +7344,46 @@ proof
                     i != ZERO
                     [by and_lhs i-is-nonzero-and-so-is-succ-k]
                   @clause-at-i-and-succ-k |
-                    theGapToGrounded(i, succ(k)) iff
-                      (theGapToGrounded(prev(i), prev(succ(k))) or prev(i) = ZERO
+                    monusGrounded(i, succ(k)) iff
+                      (monusGrounded(prev(i), prev(succ(k))) or prev(i) = ZERO
                       or prev(succ(k)) = ZERO)
                     [using specialize the-generated-clause(i, succ(k))]
                   @clause-with-the-predecessor-collapsed |
-                    theGapToGrounded(i, succ(k)) iff
-                      (theGapToGrounded(prev(i), k) or prev(i) = ZERO or k = ZERO)
+                    monusGrounded(i, succ(k)) iff
+                      (monusGrounded(prev(i), k) or prev(i) = ZERO or k = ZERO)
                     [by rewrite prev-of-succ-k-is-k clause-at-i-and-succ-k]
                   @the-inductive-hypothesis-at-the-predecessor |
-                    (prev(i) != ZERO and k != ZERO) -> theGapToGrounded(prev(i), k)
+                    (prev(i) != ZERO and k != ZERO) -> monusGrounded(prev(i), k)
                     [using specialize inductive-hypothesis(prev(i))]
                   @conclusion-grounded-at-succ-k |
-                    theGapToGrounded(i, succ(k))
+                    monusGrounded(i, succ(k))
                     [using tautology clause-with-the-predecessor-collapsed
                       the-inductive-hypothesis-at-the-predecessor]
                 }
               @nonzero-implies-grounded-at-succ-k |
-                (i != ZERO and succ(k) != ZERO) -> theGapToGrounded(i, succ(k))
+                (i != ZERO and succ(k) != ZERO) -> monusGrounded(i, succ(k))
                 [by discharge given-i-nonzero-and-succ-k-nonzero]
             }
           @conclusion-for-all-i |
-            forall i: Nat; (i != ZERO and succ(k) != ZERO) -> theGapToGrounded(i, succ(k))
+            forall i: Nat; (i != ZERO and succ(k) != ZERO) -> monusGrounded(i, succ(k))
             [by generalize generalize-i]
         }
       @the-hypothesis-implies-the-step |
-        (forall i2: Nat; (i2 != ZERO and k != ZERO) -> theGapToGrounded(i2, k))
-          -> (forall i: Nat; (i != ZERO and succ(k) != ZERO) -> theGapToGrounded(i, succ(k)))
+        (forall i2: Nat; (i2 != ZERO and k != ZERO) -> monusGrounded(i2, k))
+          -> (forall i: Nat; (i != ZERO and succ(k) != ZERO) -> monusGrounded(i, succ(k)))
         [by discharge given-the-inductive-hypothesis]
     }
   @conclusion |
     forall k: Nat;
-      (forall i2: Nat; (i2 != ZERO and k != ZERO) -> theGapToGrounded(i2, k))
-      -> (forall i: Nat; (i != ZERO and succ(k) != ZERO) -> theGapToGrounded(i, succ(k)))
+      (forall i2: Nat; (i2 != ZERO and k != ZERO) -> monusGrounded(i2, k))
+      -> (forall i: Nat; (i != ZERO and succ(k) != ZERO) -> monusGrounded(i, succ(k)))
     [by generalize generalize-k]
 qed
 
 // Strategy: `peano.induction` on the second argument. The base is VACUOUS — at j = ZERO the
 // antecedent demands `ZERO != ZERO` — so all the content is in the step above.
-theorem theGapToIsGrounded: forall i: Nat; forall j: Nat;
-  (i != ZERO and j != ZERO) -> theGapToGrounded(i, j)
+theorem monusIsGrounded: forall i: Nat; forall j: Nat;
+  (i != ZERO and j != ZERO) -> monusGrounded(i, j)
 proof
   @zero-is-itself |
     ZERO = ZERO
@@ -7393,33 +7393,33 @@ proof
   @base-case-proof |
     fix i: Nat {
       @conclusion-vacuously-grounded-at-zero |
-        (i != ZERO and ZERO != ZERO) -> theGapToGrounded(i, ZERO)
+        (i != ZERO and ZERO != ZERO) -> monusGrounded(i, ZERO)
         [using tautology zero-is-itself]
     }
   @base-case |
-    forall i: Nat; (i != ZERO and ZERO != ZERO) -> theGapToGrounded(i, ZERO)
+    forall i: Nat; (i != ZERO and ZERO != ZERO) -> monusGrounded(i, ZERO)
     [by generalize base-case-proof]
   @induction-step-for-all-k |
     forall k: Nat;
-      (forall i2: Nat; (i2 != ZERO and k != ZERO) -> theGapToGrounded(i2, k))
-      -> (forall i: Nat; (i != ZERO and succ(k) != ZERO) -> theGapToGrounded(i, succ(k)))
-    [by cite theGapToReachesABaseFromAPredecessor]
+      (forall i2: Nat; (i2 != ZERO and k != ZERO) -> monusGrounded(i2, k))
+      -> (forall i: Nat; (i != ZERO and succ(k) != ZERO) -> monusGrounded(i, succ(k)))
+    [by cite monusReachesABaseFromAPredecessor]
   @grounded-for-every-second-argument |
-    forall j: Nat; forall i: Nat; (i != ZERO and j != ZERO) -> theGapToGrounded(i, j)
-    [using instantiation peano.induction((fun j: Nat => (forall i: Nat; (i != ZERO and j != ZERO) -> theGapToGrounded(i, j)))) base-case induction-step-for-all-k]
+    forall j: Nat; forall i: Nat; (i != ZERO and j != ZERO) -> monusGrounded(i, j)
+    [using instantiation peano.induction((fun j: Nat => (forall i: Nat; (i != ZERO and j != ZERO) -> monusGrounded(i, j)))) base-case induction-step-for-all-k]
   @generalize-i |
     fix i: Nat {
       @generalize-j |
         fix j: Nat {
           @grounded-at-j-and-i |
-            (i != ZERO and j != ZERO) -> theGapToGrounded(i, j)
+            (i != ZERO and j != ZERO) -> monusGrounded(i, j)
             [using specialize grounded-for-every-second-argument(j, i)]
         }
       @discharge-j |
-        forall j: Nat; (i != ZERO and j != ZERO) -> theGapToGrounded(i, j)
+        forall j: Nat; (i != ZERO and j != ZERO) -> monusGrounded(i, j)
         [by generalize generalize-j]
     }
   @conclusion |
-    forall i: Nat; forall j: Nat; (i != ZERO and j != ZERO) -> theGapToGrounded(i, j)
+    forall i: Nat; forall j: Nat; (i != ZERO and j != ZERO) -> monusGrounded(i, j)
     [by generalize generalize-i]
 qed

@@ -251,7 +251,7 @@ intheory theRaisedGapStep
 intheory raisingTheBoundAddsTheDiagonal
 intheory theIncrementBase
 intheory theIncrementStep
-intheory theGapToSelfVanishes
+intheory monusSelfVanishes
 intheory theTriangleIsTheShortenedRows
 intheory theTriangleRowsBase
 intheory theTriangleRowsStep
@@ -292,11 +292,11 @@ intheory segmentZero
 intheory segmentSucc
 intheory rsegmentZero
 intheory rsegmentSucc
-intheory theGapToAtZero
-intheory theGapToSteps
-intheory theGapToFloorsAtZero
-intheory theGapToReachesABaseFromAPredecessor
-intheory theGapToIsGrounded
+intheory monusAtZero
+intheory monusSteps
+intheory monusFloorsAtZero
+intheory monusReachesABaseFromAPredecessor
+intheory monusIsGrounded
 intheory theCofactorIndexAtZero
 intheory theCofactorIndexSteps
 intheory tripleTermMeaning
@@ -5758,14 +5758,19 @@ qed
 // Checked the base case before writing the proof — `term(a,b,1)` against `term(a,b,0)` — which
 // is the cheapest place to catch it.
 //
-// NO SUBTRACTION. The entry's r-index is `(i - j) - k`, which the pre-de-totalization version
-// wrote as `sub(sub(i, j), k)` — making the axiom itself ill-formed under a guarded `sub`, and
-// pushing two obligations through every statement. Here it is NAMED, so the arithmetic lives
-// at the one declaration that computes it and no theorem below mentions a difference.
+// NO GUARDED SUBTRACTION IN THE STATEMENTS. The entry's r-index is `(i - j) - k`, which the
+// pre-de-totalization version wrote as `sub(sub(i, j), k)` — making the axiom itself ill-formed
+// under a guarded `sub`, and pushing two obligations through every statement. Here it is NAMED
+// (`monus`, `theCofactorIndex`), so the arithmetic lives at the two declarations that compute it
+// and no theorem below mentions a difference.
 //
-// `theGapTo` IS truncated subtraction, and the FLOOR is the third arm: `theGapTo(ZERO, j) =
+// `monus` is the standard name for truncated subtraction (`i ∸ j`), and it earned the rename:
+// as `theGapTo` the symbol read as bespoke index bookkeeping, which is how the missing floor
+// clause below went unnoticed. A recognizable name invites the comparison that catches it.
+//
+// `monus` IS truncated subtraction, and the FLOOR is the third arm: `monus(ZERO, j) =
 // ZERO when j != ZERO`. That arm is load-bearing and was missing — the earlier two-clause
-// version (`theGapTo(i, ZERO) = i` plus a `succ`/`succ` step) left `i < j` matching NEITHER
+// version (`monus(i, ZERO) = i` plus a `succ`/`succ` step) left `i < j` matching NEITHER
 // clause, so the symbol was UNDETERMINED exactly where the flooring was supposed to happen.
 // It satisfies the no-totalizing rule now because the floor is written down; before, it only
 // looked as though it did. Finding that gap is what the `termination:` obligation below is
@@ -5774,15 +5779,15 @@ qed
 // The recursion descends by `prev` rather than matching `succ` on the left, which the l-value
 // rule requires of a recursive definition — the descent must be readable on the RIGHT. `prev`
 // is guarded (`requires n != ZERO`), and each arm's own condition discharges it.
-oper theGapTo(i: Nat, j: Nat) => Nat:
-  theGapTo(i, ZERO) = i;
-  theGapTo(i, j) = theGapTo(prev(i), prev(j)) when i != ZERO and j != ZERO;
-  theGapTo(ZERO, j) = ZERO when j != ZERO.
-  termination(peano): _, {theGapToIsGrounded, theGapToGrounded}, _
+oper monus(i: Nat, j: Nat) => Nat:
+  monus(i, ZERO) = i;
+  monus(i, j) = monus(prev(i), prev(j)) when i != ZERO and j != ZERO;
+  monus(ZERO, j) = ZERO when j != ZERO.
+  termination(peano): _, {monusIsGrounded, monusGrounded}, _
 
 oper theCofactorIndex(i: Nat, j: Nat, k: Nat) => Nat:
-  theCofactorIndex(i, j, ZERO) = theGapTo(i, j);
-  theCofactorIndex(i, j, succ(k)) = theGapTo(theGapTo(i, j), succ(k)).
+  theCofactorIndex(i, j, ZERO) = monus(i, j);
+  theCofactorIndex(i, j, succ(k)) = monus(monus(i, j), succ(k)).
 
 // term(j,k) at output index i = p_j q_k r_{(i-j)-k}.
 oper tripleTerm(p: Poly, q: Poly, r: Poly, i: Nat, j: Nat, k: Nat) => R:
@@ -5800,7 +5805,7 @@ oper tripleDiag(p: Poly, q: Poly, r: Poly, i: Nat, m: Nat, c: Nat) => R:
   tripleDiag(p, q, r, i, m, ZERO) = zeroR;
   tripleDiag(p, q, r, i, m, succ(c)) =
   addR(tripleDiag(p, q, r, i, m, c),
-  tripleTerm(p, q, r, i, c, theGapTo(m, c))).
+  tripleTerm(p, q, r, i, c, monus(m, c))).
 
 // the TRIANGLE: anti-diagonals 0..n-1, each complete.
 oper tripleTri(p: Poly, q: Poly, r: Poly, i: Nat, n: Nat) => R:
@@ -5808,12 +5813,12 @@ oper tripleTri(p: Poly, q: Poly, r: Poly, i: Nat, n: Nat) => R:
   tripleTri(p, q, r, i, succ(n)) =
   addR(tripleTri(p, q, r, i, n), tripleDiag(p, q, r, i, n, succ(n))).
 
-// the SHORTENED ROWS: rows 0..m-1, row j truncated at the gap to n.
+// the SHORTENED ROWS: rows 0..m-1, row j truncated at `monus(n, j)`.
 oper tripleRows(p: Poly, q: Poly, r: Poly, i: Nat, m: Nat, n: Nat) => R:
   tripleRows(p, q, r, i, ZERO, n) = zeroR;
   tripleRows(p, q, r, i, succ(m), n) =
   addR(tripleRows(p, q, r, i, m, n),
-  tripleRow(p, q, r, i, m, theGapTo(n, m))).
+  tripleRow(p, q, r, i, m, monus(n, m))).
 
 // Raising the total raises the gap, for an index within it. The bound is genuine: at `j`
 // beyond `n` both sides floor at ZERO and the identity fails, which is the same mathematical
@@ -5821,77 +5826,77 @@ oper tripleRows(p: Poly, q: Poly, r: Poly, i: Nat, m: Nat, n: Nat) => R:
 // with no well-formedness obligation riding along.
 theorem theRaisedGapSteps: forall j, n: Nat;
   peano_order.less_or_equal(j, n) ->
-  theGapTo(succ(n), j) = succ(theGapTo(n, j))
+  monus(succ(n), j) = succ(monus(n, j))
 proof
   @base-case |
     forall n: Nat;
       peano_order.less_or_equal(ZERO, n) ->
-      theGapTo(succ(n), ZERO) = succ(theGapTo(n, ZERO))
+      monus(succ(n), ZERO) = succ(monus(n, ZERO))
     [using specialize theRaisedGapBase]
   @induction-step-for-all-j |
     forall j: Nat;
       (forall n: Nat;
       peano_order.less_or_equal(j, n) ->
-      theGapTo(succ(n), j) = succ(theGapTo(n, j))) ->
+      monus(succ(n), j) = succ(monus(n, j))) ->
       (forall n: Nat;
       peano_order.less_or_equal(succ(j), n) ->
-      theGapTo(succ(n), succ(j)) = succ(theGapTo(n, succ(j))))
+      monus(succ(n), succ(j)) = succ(monus(n, succ(j))))
     [using specialize theRaisedGapStep]
   @conclusion |
     forall j: Nat; forall n: Nat;
       peano_order.less_or_equal(j, n) ->
-      theGapTo(succ(n), j) = succ(theGapTo(n, j))
-    [using instantiation peano.induction((fun z: Nat => forall n: Nat; peano_order.less_or_equal(z, n) -> theGapTo(succ(n), z) = succ(theGapTo(n, z)))) base-case induction-step-for-all-j]
+      monus(succ(n), j) = succ(monus(n, j))
+    [using instantiation peano.induction((fun z: Nat => forall n: Nat; peano_order.less_or_equal(z, n) -> monus(succ(n), z) = succ(monus(n, z)))) base-case induction-step-for-all-j]
 qed
 
 // The base: both sides are succ(n), by the ZERO clause on each.
 theorem theRaisedGapBase: forall n: Nat;
   peano_order.less_or_equal(ZERO, n) ->
-  theGapTo(succ(n), ZERO) = succ(theGapTo(n, ZERO))
+  monus(succ(n), ZERO) = succ(monus(n, ZERO))
 proof
   @generalize-n |
     fix n: Nat {
       @the-raised-gap |
-        theGapTo(succ(n), ZERO) = succ(n)
-        [using specialize theGapToAtZero(succ(n))]
+        monus(succ(n), ZERO) = succ(n)
+        [using specialize monusAtZero(succ(n))]
       @the-gap |
-        theGapTo(n, ZERO) = n
-        [using specialize theGapToAtZero(n)]
+        monus(n, ZERO) = n
+        [using specialize monusAtZero(n)]
       @the-equality |
-        theGapTo(succ(n), ZERO) = succ(theGapTo(n, ZERO))
+        monus(succ(n), ZERO) = succ(monus(n, ZERO))
         [using simplify the-raised-gap the-gap]
       @conclusion-inner |
         peano_order.less_or_equal(ZERO, n) ->
-          theGapTo(succ(n), ZERO) = succ(theGapTo(n, ZERO))
+          monus(succ(n), ZERO) = succ(monus(n, ZERO))
         [using tautology the-equality]
     }
   @conclusion |
     forall n: Nat;
       peano_order.less_or_equal(ZERO, n) ->
-      theGapTo(succ(n), ZERO) = succ(theGapTo(n, ZERO))
+      monus(succ(n), ZERO) = succ(monus(n, ZERO))
     [by generalize generalize-n]
 qed
 
-// The step: at succ(j) the bound forces n to be a successor too, and both `theGapTo`
+// The step: at succ(j) the bound forces n to be a successor too, and both `monus`
 // applications then step down by their succ/succ clause onto the hypothesis.
 theorem theRaisedGapStep: forall j: Nat;
   (forall n: Nat;
   peano_order.less_or_equal(j, n) ->
-  theGapTo(succ(n), j) = succ(theGapTo(n, j))) ->
+  monus(succ(n), j) = succ(monus(n, j))) ->
   (forall n: Nat;
   peano_order.less_or_equal(succ(j), n) ->
-  theGapTo(succ(n), succ(j)) = succ(theGapTo(n, succ(j))))
+  monus(succ(n), succ(j)) = succ(monus(n, succ(j))))
 proof
   @generalize-j |
     fix j: Nat {
       @given-the-hypothesis |
         assume forall n: Nat;
           peano_order.less_or_equal(j, n) ->
-          theGapTo(succ(n), j) = succ(theGapTo(n, j)) {
+          monus(succ(n), j) = succ(monus(n, j)) {
           @the-hypothesis |
             forall n: Nat;
               peano_order.less_or_equal(j, n) ->
-              theGapTo(succ(n), j) = succ(theGapTo(n, j))
+              monus(succ(n), j) = succ(monus(n, j))
             [by hypothesis given-the-hypothesis]
           @generalize-n |
             fix n: Nat {
@@ -5916,8 +5921,8 @@ proof
                         [using specialize
                           peano_order.noSuccessorIsAtMostZero(j)]
                       @conclusion-vacuous |
-                        theGapTo(succ(n), succ(j)) =
-                          succ(theGapTo(n, succ(j)))
+                        monus(succ(n), succ(j)) =
+                          succ(monus(n, succ(j)))
                         [by ex_falso the-bound-at-zero
                           nothing-is-below-zero]
                     }
@@ -5940,67 +5945,67 @@ proof
                               peano_order.succReflectsAtMost(j, w)
                               the-bound-steps]
                           @the-hypothesis-at-w |
-                            theGapTo(succ(w), j) = succ(theGapTo(w, j))
+                            monus(succ(w), j) = succ(monus(w, j))
                             [using specialize the-hypothesis(w)
                               j-is-within-w]
                           @the-raised-gap-steps-down |
-                            theGapTo(succ(succ(w)), succ(j)) =
-                              theGapTo(succ(w), j)
+                            monus(succ(succ(w)), succ(j)) =
+                              monus(succ(w), j)
                             [using specialize
-                              theGapToSteps(succ(w), j)]
+                              monusSteps(succ(w), j)]
                           @the-gap-steps-down |
-                            theGapTo(succ(w), succ(j)) = theGapTo(w, j)
-                            [using specialize theGapToSteps(w, j)]
+                            monus(succ(w), succ(j)) = monus(w, j)
+                            [using specialize monusSteps(w, j)]
                           @the-equality-at-w |
-                            theGapTo(succ(succ(w)), succ(j)) =
-                              succ(theGapTo(succ(w), succ(j)))
+                            monus(succ(succ(w)), succ(j)) =
+                              succ(monus(succ(w), succ(j)))
                             [using simplify the-raised-gap-steps-down
                               the-hypothesis-at-w the-gap-steps-down]
                           @conclusion-positive |
-                            theGapTo(succ(n), succ(j)) =
-                              succ(theGapTo(n, succ(j)))
+                            monus(succ(n), succ(j)) =
+                              succ(monus(n, succ(j)))
                             [by rewrite n-steps the-equality-at-w]
                         }
                       @conclusion-the-positive-case |
-                        theGapTo(succ(n), succ(j)) =
-                          succ(theGapTo(n, succ(j)))
+                        monus(succ(n), succ(j)) =
+                          succ(monus(n, succ(j)))
                         [by unpacked with-the-predecessor]
                     }
                   @conclusion-either-way |
-                    theGapTo(succ(n), succ(j)) =
-                      succ(theGapTo(n, succ(j)))
+                    monus(succ(n), succ(j)) =
+                      succ(monus(n, succ(j)))
                     [by common_conclusion n-is-positive
                       when-n-is-zero when-n-is-positive]
                 }
               @the-bound-gives-it |
                 peano_order.less_or_equal(succ(j), n) ->
-                  theGapTo(succ(n), succ(j)) =
-                  succ(theGapTo(n, succ(j)))
+                  monus(succ(n), succ(j)) =
+                  succ(monus(n, succ(j)))
                 [by discharge given-the-bound]
             }
           @all-totals |
             forall n: Nat;
               peano_order.less_or_equal(succ(j), n) ->
-              theGapTo(succ(n), succ(j)) = succ(theGapTo(n, succ(j)))
+              monus(succ(n), succ(j)) = succ(monus(n, succ(j)))
             [by generalize generalize-n]
         }
       @the-hypothesis-gives-it |
         (forall n: Nat;
           peano_order.less_or_equal(j, n) ->
-          theGapTo(succ(n), j) = succ(theGapTo(n, j))) ->
+          monus(succ(n), j) = succ(monus(n, j))) ->
           (forall n: Nat;
           peano_order.less_or_equal(succ(j), n) ->
-          theGapTo(succ(n), succ(j)) = succ(theGapTo(n, succ(j))))
+          monus(succ(n), succ(j)) = succ(monus(n, succ(j))))
         [by discharge given-the-hypothesis]
     }
   @conclusion |
     forall j: Nat;
       (forall n: Nat;
       peano_order.less_or_equal(j, n) ->
-      theGapTo(succ(n), j) = succ(theGapTo(n, j))) ->
+      monus(succ(n), j) = succ(monus(n, j))) ->
       (forall n: Nat;
       peano_order.less_or_equal(succ(j), n) ->
-      theGapTo(succ(n), succ(j)) = succ(theGapTo(n, succ(j))))
+      monus(succ(n), succ(j)) = succ(monus(n, succ(j))))
     [by generalize generalize-j]
 qed
 
@@ -6251,46 +6256,46 @@ proof
                                       addR(tripleRows(p, q, r, i, k,
                                       succ(n)),
                                       tripleRow(p, q, r, i, k,
-                                      theGapTo(succ(n), k)))
+                                      monus(succ(n), k)))
                                     [using specialize
                                       tripleRowsSucc(p, q, r, i, k, succ(n))]
                                   @the-base-side-peels |
                                     tripleRows(p, q, r, i, succ(k), n) =
                                       addR(tripleRows(p, q, r, i, k, n),
                                       tripleRow(p, q, r, i, k,
-                                      theGapTo(n, k)))
+                                      monus(n, k)))
                                     [using specialize
                                       tripleRowsSucc(p, q, r, i, k, n)]
                                   @the-diagonal-peels |
                                     tripleDiag(p, q, r, i, n, succ(k)) =
                                       addR(tripleDiag(p, q, r, i, n, k),
                                       tripleTerm(p, q, r, i, k,
-                                      theGapTo(n, k)))
+                                      monus(n, k)))
                                     [using specialize
                                       tripleDiagSucc(p, q, r, i, n, k)]
                                   // the raised row is one longer
                                   @the-raised-length |
-                                    theGapTo(succ(n), k) =
-                                      succ(theGapTo(n, k))
+                                    monus(succ(n), k) =
+                                      succ(monus(n, k))
                                     [using specialize
                                       theRaisedGapSteps(k, n) k-is-within-n]
                                   @the-longer-row-peels |
                                     tripleRow(p, q, r, i, k,
-                                      succ(theGapTo(n, k))) =
+                                      succ(monus(n, k))) =
                                       addR(tripleRow(p, q, r, i, k,
-                                      theGapTo(n, k)),
+                                      monus(n, k)),
                                       tripleTerm(p, q, r, i, k,
-                                      theGapTo(n, k)))
+                                      monus(n, k)))
                                     [using specialize
                                       tripleRowSucc(p, q, r, i, k,
-                                      theGapTo(n, k))]
+                                      monus(n, k))]
                                   @the-raised-row-gains-its-last-entry |
                                     tripleRow(p, q, r, i, k,
-                                      theGapTo(succ(n), k)) =
+                                      monus(succ(n), k)) =
                                       addR(tripleRow(p, q, r, i, k,
-                                      theGapTo(n, k)),
+                                      monus(n, k)),
                                       tripleTerm(p, q, r, i, k,
-                                      theGapTo(n, k)))
+                                      monus(n, k)))
                                     [by rewrite the-raised-length
                                       the-longer-row-peels]
                                   // substitute into each side
@@ -6300,9 +6305,9 @@ proof
                                       addR(addR(tripleRows(p, q, r, i, k, n),
                                       tripleDiag(p, q, r, i, n, k)),
                                       addR(tripleRow(p, q, r, i, k,
-                                      theGapTo(n, k)),
+                                      monus(n, k)),
                                       tripleTerm(p, q, r, i, k,
-                                      theGapTo(n, k))))
+                                      monus(n, k))))
                                     [using simplify the-raised-side-peels
                                       the-hypothesis-applies
                                       the-raised-row-gains-its-last-entry]
@@ -6311,10 +6316,10 @@ proof
                                       tripleDiag(p, q, r, i, n, succ(k))) =
                                       addR(addR(tripleRows(p, q, r, i, k, n),
                                       tripleRow(p, q, r, i, k,
-                                      theGapTo(n, k))),
+                                      monus(n, k))),
                                       addR(tripleDiag(p, q, r, i, n, k),
                                       tripleTerm(p, q, r, i, k,
-                                      theGapTo(n, k))))
+                                      monus(n, k))))
                                     [using simplify the-base-side-peels
                                       the-diagonal-peels]
                                   // the SAME four summands, reassociated
@@ -6322,24 +6327,24 @@ proof
                                     addR(addR(tripleRows(p, q, r, i, k, n),
                                       tripleDiag(p, q, r, i, n, k)),
                                       addR(tripleRow(p, q, r, i, k,
-                                      theGapTo(n, k)),
+                                      monus(n, k)),
                                       tripleTerm(p, q, r, i, k,
-                                      theGapTo(n, k)))) =
+                                      monus(n, k)))) =
                                       addR(addR(tripleRows(p, q, r, i, k, n),
                                       tripleRow(p, q, r, i, k,
-                                      theGapTo(n, k))),
+                                      monus(n, k))),
                                       addR(tripleDiag(p, q, r, i, n, k),
                                       tripleTerm(p, q, r, i, k,
-                                      theGapTo(n, k))))
+                                      monus(n, k))))
                                     [using assoc_commut(addIsAssociativeR,
                                       addIsCommutativeR, addLeftSwapR)]
                                   @the-target-side-flipped |
                                     addR(addR(tripleRows(p, q, r, i, k, n),
                                       tripleRow(p, q, r, i, k,
-                                      theGapTo(n, k))),
+                                      monus(n, k))),
                                       addR(tripleDiag(p, q, r, i, n, k),
                                       tripleTerm(p, q, r, i, k,
-                                      theGapTo(n, k)))) =
+                                      monus(n, k)))) =
                                       addR(tripleRows(p, q, r, i, succ(k),
                                       n),
                                       tripleDiag(p, q, r, i, n, succ(k)))
@@ -6447,46 +6452,46 @@ proof
     [by generalize generalize-p]
 qed
 
-// theGapTo(n, n) = ZERO: no slack remains when the index reaches the total. This is what
+// monus(n, n) = ZERO: no slack remains when the index reaches the total. This is what
 // makes the (n+1)-st row empty at bound n, so the shortened rows stop growing exactly where
 // the triangle does.
-theorem theGapToSelfVanishes: forall n: Nat; theGapTo(n, n) = ZERO
+theorem monusSelfVanishes: forall n: Nat; monus(n, n) = ZERO
 proof
   @base-case |
-    theGapTo(ZERO, ZERO) = ZERO
-    [using specialize theGapToAtZero(ZERO)]
+    monus(ZERO, ZERO) = ZERO
+    [using specialize monusAtZero(ZERO)]
   @induction-step |
     fix k: Nat {
       @given-the-hypothesis |
-        assume theGapTo(k, k) = ZERO {
+        assume monus(k, k) = ZERO {
           @the-hypothesis |
-            theGapTo(k, k) = ZERO
+            monus(k, k) = ZERO
             [by hypothesis given-the-hypothesis]
           @the-gap-steps-down |
-            theGapTo(succ(k), succ(k)) = theGapTo(k, k)
-            [using specialize theGapToSteps(k, k)]
+            monus(succ(k), succ(k)) = monus(k, k)
+            [using specialize monusSteps(k, k)]
           @conclusion-at-succ-k |
-            theGapTo(succ(k), succ(k)) = ZERO
+            monus(succ(k), succ(k)) = ZERO
             [using chain the-gap-steps-down the-hypothesis]
         }
       @induction-step-at-k |
-        (theGapTo(k, k) = ZERO) -> (theGapTo(succ(k), succ(k)) = ZERO)
+        (monus(k, k) = ZERO) -> (monus(succ(k), succ(k)) = ZERO)
         [by discharge given-the-hypothesis]
     }
   @induction-step-for-all-k |
     forall k: Nat;
-      (theGapTo(k, k) = ZERO) -> (theGapTo(succ(k), succ(k)) = ZERO)
+      (monus(k, k) = ZERO) -> (monus(succ(k), succ(k)) = ZERO)
     [by generalize induction-step]
   @conclusion |
-    forall n: Nat; theGapTo(n, n) = ZERO
-    [using instantiation peano.induction((fun z: Nat => theGapTo(z, z) = ZERO)) base-case induction-step-for-all-k]
+    forall n: Nat; monus(n, n) = ZERO
+    [using instantiation peano.induction((fun z: Nat => monus(z, z) = ZERO)) base-case induction-step-for-all-k]
 qed
 
 // -- THE TRIANGLE IS THE SHORTENED ROWS ----------------------------------------------------
 // The outer induction, three lines on top of the pivot: the triangle gains its n-th
 // anti-diagonal (`tripleTriSucc`), the rows gain exactly that anti-diagonal
 // (`raisingTheBoundAddsTheDiagonal` at m = succ n), and the shorter row collection at bound n
-// IS the triangle at n — because the (n+1)-st row is empty there, `theGapTo(n, n)` being ZERO.
+// IS the triangle at n — because the (n+1)-st row is empty there, `monus(n, n)` being ZERO.
 theorem theTriangleIsTheShortenedRows: forall p, q, r: Poly; forall i, n: Nat;
   tripleTri(p, q, r, i, n) = tripleRows(p, q, r, i, n, n)
 proof
@@ -6585,7 +6590,7 @@ qed
 
 // The step: the triangle gains its k-th anti-diagonal; the rows gain exactly that
 // anti-diagonal by the pivot at m = succ(k); and the shorter row collection at bound k is the
-// triangle at k, because its extra row has length `theGapTo(k, k)` = ZERO and so contributes
+// triangle at k, because its extra row has length `monus(k, k)` = ZERO and so contributes
 // nothing.
 theorem theTriangleRowsStep: forall p, q, r: Poly; forall i: Nat;
   forall k: Nat;
@@ -6630,12 +6635,12 @@ proof
                           @the-extra-row-peels |
                             tripleRows(p, q, r, i, succ(k), k) =
                               addR(tripleRows(p, q, r, i, k, k),
-                              tripleRow(p, q, r, i, k, theGapTo(k, k)))
+                              tripleRow(p, q, r, i, k, monus(k, k)))
                             [using specialize
                               tripleRowsSucc(p, q, r, i, k, k)]
                           @the-last-row-has-no-length |
-                            theGapTo(k, k) = ZERO
-                            [using specialize theGapToSelfVanishes(k)]
+                            monus(k, k) = ZERO
+                            [using specialize monusSelfVanishes(k)]
                           @the-empty-row |
                             tripleRow(p, q, r, i, k, ZERO) = zeroR
                             [using specialize tripleRowZero(p, q, r, i, k)]
@@ -6723,13 +6728,13 @@ qed
 // a triple ROW peels at the back, on its count, because that is what makes it a prefix family
 // and the whole increment argument work. Matching a row against a front-peeling run fails
 // term-by-term (checked: the two orders agree only at the FULL row, not at a partial one), so
-// the row needs the run that walks the way it does. Two axioms, and `theGapTo` keeps the
+// the row needs the run that walks the way it does. Two axioms, and `monus` keeps the
 // slack subtraction-free.
 oper cappedRun(q: Poly, r: Poly, g: Nat, n: Nat) => R:
   cappedRun(q, r, g, ZERO) = zeroR;
   cappedRun(q, r, g, succ(n)) =
   addR(cappedRun(q, r, g, n),
-  mulR(coeff(q, n), coeff(r, theGapTo(g, n)))).
+  mulR(coeff(q, n), coeff(r, monus(g, n)))).
 
 // -- LEMMA D: a row IS the capped run, scaled by p_j -----------------------------------------
 // Every entry carries `coeff(p, j)`, which the summation index does not touch, so it pulls
@@ -6737,7 +6742,7 @@ oper cappedRun(q: Poly, r: Poly, g: Nat, n: Nat) => R:
 // back on the same count, so the induction is a term-by-term match.
 theorem aRowIsTheScaledRun: forall p, q, r: Poly; forall n, i, j: Nat;
   tripleRow(p, q, r, i, j, n) =
-  mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), n))
+  mulR(coeff(p, j), cappedRun(q, r, monus(i, j), n))
 proof
   @generalize-p |
     fix p: Poly {
@@ -6749,41 +6754,41 @@ proof
                 forall i, j: Nat;
                   tripleRow(p, q, r, i, j, ZERO) =
                   mulR(coeff(p, j),
-                  cappedRun(q, r, theGapTo(i, j), ZERO))
+                  cappedRun(q, r, monus(i, j), ZERO))
                 [using specialize theRowRunBase(p, q, r)]
               @induction-step-for-all-n |
                 forall n: Nat;
                   (forall i, j: Nat;
                   tripleRow(p, q, r, i, j, n) =
                   mulR(coeff(p, j),
-                  cappedRun(q, r, theGapTo(i, j), n))) ->
+                  cappedRun(q, r, monus(i, j), n))) ->
                   (forall i, j: Nat;
                   tripleRow(p, q, r, i, j, succ(n)) =
                   mulR(coeff(p, j),
-                  cappedRun(q, r, theGapTo(i, j), succ(n))))
+                  cappedRun(q, r, monus(i, j), succ(n))))
                 [using specialize theRowRunStep(p, q, r)]
               @all-counts |
                 forall n: Nat; forall i, j: Nat;
                   tripleRow(p, q, r, i, j, n) =
-                  mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), n))
-                [using instantiation peano.induction((fun z: Nat => forall i, j: Nat; tripleRow(p, q, r, i, j, z) = mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), z)))) base-case induction-step-for-all-n]
+                  mulR(coeff(p, j), cappedRun(q, r, monus(i, j), n))
+                [using instantiation peano.induction((fun z: Nat => forall i, j: Nat; tripleRow(p, q, r, i, j, z) = mulR(coeff(p, j), cappedRun(q, r, monus(i, j), z)))) base-case induction-step-for-all-n]
             }
           @discharge-r |
             forall r: Poly; forall n, i, j: Nat;
               tripleRow(p, q, r, i, j, n) =
-              mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), n))
+              mulR(coeff(p, j), cappedRun(q, r, monus(i, j), n))
             [by generalize generalize-r]
         }
       @discharge-q |
         forall q, r: Poly; forall n, i, j: Nat;
           tripleRow(p, q, r, i, j, n) =
-          mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), n))
+          mulR(coeff(p, j), cappedRun(q, r, monus(i, j), n))
         [by generalize generalize-q]
     }
   @conclusion |
     forall p, q, r: Poly; forall n, i, j: Nat;
       tripleRow(p, q, r, i, j, n) =
-      mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), n))
+      mulR(coeff(p, j), cappedRun(q, r, monus(i, j), n))
     [by generalize generalize-p]
 qed
 
@@ -6791,7 +6796,7 @@ qed
 theorem theRowRunBase: forall p, q, r: Poly;
   forall i, j: Nat;
   tripleRow(p, q, r, i, j, ZERO) =
-  mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), ZERO))
+  mulR(coeff(p, j), cappedRun(q, r, monus(i, j), ZERO))
 proof
   @generalize-p |
     fix p: Poly {
@@ -6807,16 +6812,16 @@ proof
                         tripleRow(p, q, r, i, j, ZERO) = zeroR
                         [using specialize tripleRowZero(p, q, r, i, j)]
                       @the-empty-run |
-                        cappedRun(q, r, theGapTo(i, j), ZERO) = zeroR
+                        cappedRun(q, r, monus(i, j), ZERO) = zeroR
                         [using specialize
-                          cappedRunZero(q, r, theGapTo(i, j))]
+                          cappedRunZero(q, r, monus(i, j))]
                       @scaling-zero |
                         mulR(coeff(p, j), zeroR) = zeroR
                         [using specialize mulZeroRightR(coeff(p, j))]
                       @conclusion-the-base |
                         tripleRow(p, q, r, i, j, ZERO) =
                           mulR(coeff(p, j),
-                          cappedRun(q, r, theGapTo(i, j), ZERO))
+                          cappedRun(q, r, monus(i, j), ZERO))
                         [using simplify the-empty-row the-empty-run
                           scaling-zero]
                     }
@@ -6824,45 +6829,45 @@ proof
                     forall j: Nat;
                       tripleRow(p, q, r, i, j, ZERO) =
                       mulR(coeff(p, j),
-                      cappedRun(q, r, theGapTo(i, j), ZERO))
+                      cappedRun(q, r, monus(i, j), ZERO))
                     [by generalize generalize-j]
                 }
               @discharge-i |
                 forall i, j: Nat;
                   tripleRow(p, q, r, i, j, ZERO) =
                   mulR(coeff(p, j),
-                  cappedRun(q, r, theGapTo(i, j), ZERO))
+                  cappedRun(q, r, monus(i, j), ZERO))
                 [by generalize generalize-i]
             }
           @discharge-r |
             forall r: Poly; forall i, j: Nat;
               tripleRow(p, q, r, i, j, ZERO) =
-              mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), ZERO))
+              mulR(coeff(p, j), cappedRun(q, r, monus(i, j), ZERO))
             [by generalize generalize-r]
         }
       @discharge-q |
         forall q, r: Poly; forall i, j: Nat;
           tripleRow(p, q, r, i, j, ZERO) =
-          mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), ZERO))
+          mulR(coeff(p, j), cappedRun(q, r, monus(i, j), ZERO))
         [by generalize generalize-q]
     }
   @conclusion |
     forall p, q, r: Poly; forall i, j: Nat;
       tripleRow(p, q, r, i, j, ZERO) =
-      mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), ZERO))
+      mulR(coeff(p, j), cappedRun(q, r, monus(i, j), ZERO))
     [by generalize generalize-p]
 qed
 
 // The step: both peel their last term. The row's is `p_j q_n r_{cofactor(i,j,n)}` and the
-// run's is `q_n r_{theGapTo(g, n)}` scaled — the same term, since the cofactor index IS the
+// run's is `q_n r_{monus(g, n)}` scaled — the same term, since the cofactor index IS the
 // gap's gap. R distributes to recombine the scalar.
 theorem theRowRunStep: forall p, q, r: Poly; forall n: Nat;
   (forall i, j: Nat;
   tripleRow(p, q, r, i, j, n) =
-  mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), n))) ->
+  mulR(coeff(p, j), cappedRun(q, r, monus(i, j), n))) ->
   (forall i, j: Nat;
   tripleRow(p, q, r, i, j, succ(n)) =
-  mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), succ(n))))
+  mulR(coeff(p, j), cappedRun(q, r, monus(i, j), succ(n))))
 proof
   @generalize-p |
     fix p: Poly {
@@ -6876,12 +6881,12 @@ proof
                     assume forall i, j: Nat;
                       tripleRow(p, q, r, i, j, n) =
                       mulR(coeff(p, j),
-                      cappedRun(q, r, theGapTo(i, j), n)) {
+                      cappedRun(q, r, monus(i, j), n)) {
                       @the-hypothesis |
                         forall i, j: Nat;
                           tripleRow(p, q, r, i, j, n) =
                           mulR(coeff(p, j),
-                          cappedRun(q, r, theGapTo(i, j), n))
+                          cappedRun(q, r, monus(i, j), n))
                         [by hypothesis given-the-hypothesis]
                       @generalize-i |
                         fix i: Nat {
@@ -6901,53 +6906,53 @@ proof
                                   tripleTermMeaning(p, q, r, i, j, n)]
                               @the-cofactor-is-the-gaps-gap |
                                 theCofactorIndex(i, j, n) =
-                                  theGapTo(theGapTo(i, j), n)
+                                  monus(monus(i, j), n)
                                 [using specialize
                                   theCofactorIsTheGapsGap(i, j, n)]
                               @the-row-applies |
                                 tripleRow(p, q, r, i, j, n) =
                                   mulR(coeff(p, j),
-                                  cappedRun(q, r, theGapTo(i, j), n))
+                                  cappedRun(q, r, monus(i, j), n))
                                 [using specialize the-hypothesis(i, j)]
                               @the-run-grows |
-                                cappedRun(q, r, theGapTo(i, j), succ(n)) =
-                                  addR(cappedRun(q, r, theGapTo(i, j), n),
+                                cappedRun(q, r, monus(i, j), succ(n)) =
+                                  addR(cappedRun(q, r, monus(i, j), n),
                                   mulR(coeff(q, n),
-                                  coeff(r, theGapTo(theGapTo(i, j), n))))
+                                  coeff(r, monus(monus(i, j), n))))
                                 [using specialize
-                                  cappedRunSucc(q, r, theGapTo(i, j), n)]
+                                  cappedRunSucc(q, r, monus(i, j), n)]
                               @the-scaling-distributes |
                                 mulR(coeff(p, j),
-                                  addR(cappedRun(q, r, theGapTo(i, j), n),
+                                  addR(cappedRun(q, r, monus(i, j), n),
                                   mulR(coeff(q, n),
                                   coeff(r,
-                                  theGapTo(theGapTo(i, j), n))))) =
+                                  monus(monus(i, j), n))))) =
                                   addR(mulR(coeff(p, j),
-                                  cappedRun(q, r, theGapTo(i, j), n)),
+                                  cappedRun(q, r, monus(i, j), n)),
                                   mulR(coeff(p, j),
                                   mulR(coeff(q, n),
                                   coeff(r,
-                                  theGapTo(theGapTo(i, j), n)))))
+                                  monus(monus(i, j), n)))))
                                 [using specialize mulAddDistribLeftR(
                                   coeff(p, j),
-                                  cappedRun(q, r, theGapTo(i, j), n),
+                                  cappedRun(q, r, monus(i, j), n),
                                   mulR(coeff(q, n),
-                                  coeff(r, theGapTo(theGapTo(i, j), n))))]
+                                  coeff(r, monus(monus(i, j), n))))]
                               @the-entry-regroups |
                                 mulR(mulR(coeff(p, j), coeff(q, n)),
                                   coeff(r,
-                                  theGapTo(theGapTo(i, j), n))) =
+                                  monus(monus(i, j), n))) =
                                   mulR(coeff(p, j),
                                   mulR(coeff(q, n),
                                   coeff(r,
-                                  theGapTo(theGapTo(i, j), n))))
+                                  monus(monus(i, j), n))))
                                 [using specialize mulIsAssociativeR(
                                   coeff(p, j), coeff(q, n),
-                                  coeff(r, theGapTo(theGapTo(i, j), n)))]
+                                  coeff(r, monus(monus(i, j), n)))]
                               @conclusion-the-step |
                                 tripleRow(p, q, r, i, j, succ(n)) =
                                   mulR(coeff(p, j),
-                                  cappedRun(q, r, theGapTo(i, j), succ(n)))
+                                  cappedRun(q, r, monus(i, j), succ(n)))
                                 [using simplify the-row-grows
                                   the-new-entry
                                   the-cofactor-is-the-gaps-gap
@@ -6958,25 +6963,25 @@ proof
                             forall j: Nat;
                               tripleRow(p, q, r, i, j, succ(n)) =
                               mulR(coeff(p, j),
-                              cappedRun(q, r, theGapTo(i, j), succ(n)))
+                              cappedRun(q, r, monus(i, j), succ(n)))
                             [by generalize generalize-j]
                         }
                       @all-indices |
                         forall i, j: Nat;
                           tripleRow(p, q, r, i, j, succ(n)) =
                           mulR(coeff(p, j),
-                          cappedRun(q, r, theGapTo(i, j), succ(n)))
+                          cappedRun(q, r, monus(i, j), succ(n)))
                         [by generalize generalize-i]
                     }
                   @the-hypothesis-gives-it |
                     (forall i, j: Nat;
                       tripleRow(p, q, r, i, j, n) =
                       mulR(coeff(p, j),
-                      cappedRun(q, r, theGapTo(i, j), n))) ->
+                      cappedRun(q, r, monus(i, j), n))) ->
                       (forall i, j: Nat;
                       tripleRow(p, q, r, i, j, succ(n)) =
                       mulR(coeff(p, j),
-                      cappedRun(q, r, theGapTo(i, j), succ(n))))
+                      cappedRun(q, r, monus(i, j), succ(n))))
                     [by discharge given-the-hypothesis]
                 }
               @discharge-n |
@@ -6984,49 +6989,49 @@ proof
                   (forall i, j: Nat;
                   tripleRow(p, q, r, i, j, n) =
                   mulR(coeff(p, j),
-                  cappedRun(q, r, theGapTo(i, j), n))) ->
+                  cappedRun(q, r, monus(i, j), n))) ->
                   (forall i, j: Nat;
                   tripleRow(p, q, r, i, j, succ(n)) =
                   mulR(coeff(p, j),
-                  cappedRun(q, r, theGapTo(i, j), succ(n))))
+                  cappedRun(q, r, monus(i, j), succ(n))))
                 [by generalize generalize-n]
             }
           @discharge-r |
             forall r: Poly; forall n: Nat;
               (forall i, j: Nat;
               tripleRow(p, q, r, i, j, n) =
-              mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), n))) ->
+              mulR(coeff(p, j), cappedRun(q, r, monus(i, j), n))) ->
               (forall i, j: Nat;
               tripleRow(p, q, r, i, j, succ(n)) =
               mulR(coeff(p, j),
-              cappedRun(q, r, theGapTo(i, j), succ(n))))
+              cappedRun(q, r, monus(i, j), succ(n))))
             [by generalize generalize-r]
         }
       @discharge-q |
         forall q, r: Poly; forall n: Nat;
           (forall i, j: Nat;
           tripleRow(p, q, r, i, j, n) =
-          mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), n))) ->
+          mulR(coeff(p, j), cappedRun(q, r, monus(i, j), n))) ->
           (forall i, j: Nat;
           tripleRow(p, q, r, i, j, succ(n)) =
-          mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), succ(n))))
+          mulR(coeff(p, j), cappedRun(q, r, monus(i, j), succ(n))))
         [by generalize generalize-q]
     }
   @conclusion |
     forall p, q, r: Poly; forall n: Nat;
       (forall i, j: Nat;
       tripleRow(p, q, r, i, j, n) =
-      mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), n))) ->
+      mulR(coeff(p, j), cappedRun(q, r, monus(i, j), n))) ->
       (forall i, j: Nat;
       tripleRow(p, q, r, i, j, succ(n)) =
-      mulR(coeff(p, j), cappedRun(q, r, theGapTo(i, j), succ(n))))
+      mulR(coeff(p, j), cappedRun(q, r, monus(i, j), succ(n))))
     [by generalize generalize-p]
 qed
 
 // The cofactor index IS the gap's gap: `(i - j) - k` either way. At k = ZERO both sides are
 // the gap; above it the two clauses agree by construction.
 theorem theCofactorIsTheGapsGap: forall i, j, k: Nat;
-  theCofactorIndex(i, j, k) = theGapTo(theGapTo(i, j), k)
+  theCofactorIndex(i, j, k) = monus(monus(i, j), k)
 proof
   @generalize-i |
     fix i: Nat {
@@ -7043,18 +7048,18 @@ proof
                     k = ZERO
                     [by hypothesis when-k-is-zero]
                   @the-cofactor-at-zero |
-                    theCofactorIndex(i, j, ZERO) = theGapTo(i, j)
+                    theCofactorIndex(i, j, ZERO) = monus(i, j)
                     [using specialize theCofactorIndexAtZero(i, j)]
                   @the-gap-at-zero |
-                    theGapTo(theGapTo(i, j), ZERO) = theGapTo(i, j)
-                    [using specialize theGapToAtZero(theGapTo(i, j))]
+                    monus(monus(i, j), ZERO) = monus(i, j)
+                    [using specialize monusAtZero(monus(i, j))]
                   @the-equality-at-zero |
                     theCofactorIndex(i, j, ZERO) =
-                      theGapTo(theGapTo(i, j), ZERO)
+                      monus(monus(i, j), ZERO)
                     [using simplify the-cofactor-at-zero the-gap-at-zero]
                   @conclusion-zero |
                     theCofactorIndex(i, j, k) =
-                      theGapTo(theGapTo(i, j), k)
+                      monus(monus(i, j), k)
                     [by rewrite k-is-zero the-equality-at-zero]
                 }
               @when-k-is-positive |
@@ -7069,37 +7074,37 @@ proof
                         [by hypothesis with-the-predecessor]
                       @the-cofactor-steps |
                         theCofactorIndex(i, j, succ(w)) =
-                          theGapTo(theGapTo(i, j), succ(w))
+                          monus(monus(i, j), succ(w))
                         [using specialize
                           theCofactorIndexSteps(i, j, w)]
                       @conclusion-positive |
                         theCofactorIndex(i, j, k) =
-                          theGapTo(theGapTo(i, j), k)
+                          monus(monus(i, j), k)
                         [by rewrite k-steps the-cofactor-steps]
                     }
                   @conclusion-the-positive-case |
                     theCofactorIndex(i, j, k) =
-                      theGapTo(theGapTo(i, j), k)
+                      monus(monus(i, j), k)
                     [by unpacked with-the-predecessor]
                 }
               @conclusion-either-way |
-                theCofactorIndex(i, j, k) = theGapTo(theGapTo(i, j), k)
+                theCofactorIndex(i, j, k) = monus(monus(i, j), k)
                 [by common_conclusion the-case-split
                   when-k-is-zero when-k-is-positive]
             }
           @discharge-k |
             forall k: Nat;
-              theCofactorIndex(i, j, k) = theGapTo(theGapTo(i, j), k)
+              theCofactorIndex(i, j, k) = monus(monus(i, j), k)
             [by generalize generalize-k]
         }
       @discharge-j |
         forall j, k: Nat;
-          theCofactorIndex(i, j, k) = theGapTo(theGapTo(i, j), k)
+          theCofactorIndex(i, j, k) = monus(monus(i, j), k)
         [by generalize generalize-j]
     }
   @conclusion |
     forall i, j, k: Nat;
-      theCofactorIndex(i, j, k) = theGapTo(theGapTo(i, j), k)
+      theCofactorIndex(i, j, k) = monus(monus(i, j), k)
     [by generalize generalize-i]
 qed
 
@@ -7114,87 +7119,87 @@ qed
 theorem aCommonAmountCancels: forall c, i, m: Nat;
   peano_order.less_or_equal(c, m) ->
   peano_order.less_or_equal(m, i) ->
-  theGapTo(theGapTo(i, c), theGapTo(m, c)) = theGapTo(i, m)
+  monus(monus(i, c), monus(m, c)) = monus(i, m)
 proof
   @base-case |
     forall i, m: Nat;
       peano_order.less_or_equal(ZERO, m) ->
       peano_order.less_or_equal(m, i) ->
-      theGapTo(theGapTo(i, ZERO), theGapTo(m, ZERO)) = theGapTo(i, m)
+      monus(monus(i, ZERO), monus(m, ZERO)) = monus(i, m)
     [using specialize theCancelBase]
   @induction-step-for-all-c |
     forall c: Nat;
       (forall i, m: Nat;
       peano_order.less_or_equal(c, m) ->
       peano_order.less_or_equal(m, i) ->
-      theGapTo(theGapTo(i, c), theGapTo(m, c)) = theGapTo(i, m)) ->
+      monus(monus(i, c), monus(m, c)) = monus(i, m)) ->
       (forall i, m: Nat;
       peano_order.less_or_equal(succ(c), m) ->
       peano_order.less_or_equal(m, i) ->
-      theGapTo(theGapTo(i, succ(c)), theGapTo(m, succ(c))) =
-      theGapTo(i, m))
+      monus(monus(i, succ(c)), monus(m, succ(c))) =
+      monus(i, m))
     [using specialize theCancelStep]
   @conclusion |
     forall c: Nat; forall i, m: Nat;
       peano_order.less_or_equal(c, m) ->
       peano_order.less_or_equal(m, i) ->
-      theGapTo(theGapTo(i, c), theGapTo(m, c)) = theGapTo(i, m)
-    [using instantiation peano.induction((fun z: Nat => forall i, m: Nat; peano_order.less_or_equal(z, m) -> peano_order.less_or_equal(m, i) -> theGapTo(theGapTo(i, z), theGapTo(m, z)) = theGapTo(i, m))) base-case induction-step-for-all-c]
+      monus(monus(i, c), monus(m, c)) = monus(i, m)
+    [using instantiation peano.induction((fun z: Nat => forall i, m: Nat; peano_order.less_or_equal(z, m) -> peano_order.less_or_equal(m, i) -> monus(monus(i, z), monus(m, z)) = monus(i, m))) base-case induction-step-for-all-c]
 qed
 
 // The base: cancelling nothing, so both gaps are themselves.
 theorem theCancelBase: forall i, m: Nat;
   peano_order.less_or_equal(ZERO, m) ->
   peano_order.less_or_equal(m, i) ->
-  theGapTo(theGapTo(i, ZERO), theGapTo(m, ZERO)) = theGapTo(i, m)
+  monus(monus(i, ZERO), monus(m, ZERO)) = monus(i, m)
 proof
   @generalize-i |
     fix i: Nat {
       @generalize-m |
         fix m: Nat {
           @the-outer-gap |
-            theGapTo(i, ZERO) = i
-            [using specialize theGapToAtZero(i)]
+            monus(i, ZERO) = i
+            [using specialize monusAtZero(i)]
           @the-inner-gap |
-            theGapTo(m, ZERO) = m
-            [using specialize theGapToAtZero(m)]
+            monus(m, ZERO) = m
+            [using specialize monusAtZero(m)]
           @the-equality |
-            theGapTo(theGapTo(i, ZERO), theGapTo(m, ZERO)) =
-              theGapTo(i, m)
+            monus(monus(i, ZERO), monus(m, ZERO)) =
+              monus(i, m)
             [using simplify the-outer-gap the-inner-gap]
           @conclusion-inner |
             peano_order.less_or_equal(ZERO, m) ->
               peano_order.less_or_equal(m, i) ->
-              theGapTo(theGapTo(i, ZERO), theGapTo(m, ZERO)) =
-              theGapTo(i, m)
+              monus(monus(i, ZERO), monus(m, ZERO)) =
+              monus(i, m)
             [using tautology the-equality]
         }
       @discharge-m |
         forall m: Nat;
           peano_order.less_or_equal(ZERO, m) ->
           peano_order.less_or_equal(m, i) ->
-          theGapTo(theGapTo(i, ZERO), theGapTo(m, ZERO)) = theGapTo(i, m)
+          monus(monus(i, ZERO), monus(m, ZERO)) = monus(i, m)
         [by generalize generalize-m]
     }
   @conclusion |
     forall i, m: Nat;
       peano_order.less_or_equal(ZERO, m) ->
       peano_order.less_or_equal(m, i) ->
-      theGapTo(theGapTo(i, ZERO), theGapTo(m, ZERO)) = theGapTo(i, m)
+      monus(monus(i, ZERO), monus(m, ZERO)) = monus(i, m)
     [by generalize generalize-i]
 qed
 
-// The step: at succ(c) both bounds force m and i to be successors, and all three `theGapTo`
+// The step: at succ(c) both bounds force m and i to be successors, and all three `monus`
 // applications step down by their succ/succ clause onto the hypothesis.
 theorem theCancelStep: forall c: Nat;
   (forall i, m: Nat;
   peano_order.less_or_equal(c, m) ->
   peano_order.less_or_equal(m, i) ->
-  theGapTo(theGapTo(i, c), theGapTo(m, c)) = theGapTo(i, m)) ->
+  monus(monus(i, c), monus(m, c)) = monus(i, m)) ->
   (forall i, m: Nat;
   peano_order.less_or_equal(succ(c), m) ->
   peano_order.less_or_equal(m, i) ->
-  theGapTo(theGapTo(i, succ(c)), theGapTo(m, succ(c))) = theGapTo(i, m))
+  monus(monus(i, succ(c)), monus(m, succ(c))) = monus(i, m))
 proof
   @generalize-c |
     fix c: Nat {
@@ -7202,12 +7207,12 @@ proof
         assume forall i, m: Nat;
           peano_order.less_or_equal(c, m) ->
           peano_order.less_or_equal(m, i) ->
-          theGapTo(theGapTo(i, c), theGapTo(m, c)) = theGapTo(i, m) {
+          monus(monus(i, c), monus(m, c)) = monus(i, m) {
           @the-hypothesis |
             forall i, m: Nat;
               peano_order.less_or_equal(c, m) ->
               peano_order.less_or_equal(m, i) ->
-              theGapTo(theGapTo(i, c), theGapTo(m, c)) = theGapTo(i, m)
+              monus(monus(i, c), monus(m, c)) = monus(i, m)
             [by hypothesis given-the-hypothesis]
           @generalize-i |
             fix i: Nat {
@@ -7239,8 +7244,8 @@ proof
                                 [using specialize
                                   peano_order.noSuccessorIsAtMostZero(c)]
                               @conclusion-vacuous |
-                                theGapTo(theGapTo(i, succ(c)),
-                                  theGapTo(m, succ(c))) = theGapTo(i, m)
+                                monus(monus(i, succ(c)),
+                                  monus(m, succ(c))) = monus(i, m)
                                 [by ex_falso the-bound-at-zero
                                   nothing-is-at-most-zero]
                             }
@@ -7277,9 +7282,9 @@ proof
                                           peano_order.noSuccessorIsAtMostZero(
                                           u)]
                                       @conclusion-i-vacuous |
-                                        theGapTo(theGapTo(i, succ(c)),
-                                          theGapTo(m, succ(c))) =
-                                          theGapTo(i, m)
+                                        monus(monus(i, succ(c)),
+                                          monus(m, succ(c))) =
+                                          monus(i, m)
                                         [by ex_falso m-within-zero
                                           nothing-at-most-zero]
                                     }
@@ -7319,106 +7324,106 @@ proof
                                               peano_order.succReflectsAtMost(
                                               u, v) the-raised-m-bound]
                                           @the-hypothesis-applies |
-                                            theGapTo(theGapTo(v, c),
-                                              theGapTo(u, c)) =
-                                              theGapTo(v, u)
+                                            monus(monus(v, c),
+                                              monus(u, c)) =
+                                              monus(v, u)
                                             [using specialize
                                               the-hypothesis(v, u)
                                               c-within-u u-within-v]
                                           @the-outer-steps |
-                                            theGapTo(succ(v), succ(c)) =
-                                              theGapTo(v, c)
+                                            monus(succ(v), succ(c)) =
+                                              monus(v, c)
                                             [using specialize
-                                              theGapToSteps(v, c)]
+                                              monusSteps(v, c)]
                                           @the-inner-steps |
-                                            theGapTo(succ(u), succ(c)) =
-                                              theGapTo(u, c)
+                                            monus(succ(u), succ(c)) =
+                                              monus(u, c)
                                             [using specialize
-                                              theGapToSteps(u, c)]
+                                              monusSteps(u, c)]
                                           @the-target-steps |
-                                            theGapTo(succ(v), succ(u)) =
-                                              theGapTo(v, u)
+                                            monus(succ(v), succ(u)) =
+                                              monus(v, u)
                                             [using specialize
-                                              theGapToSteps(v, u)]
+                                              monusSteps(v, u)]
                                           @the-equality-at-predecessors |
-                                            theGapTo(theGapTo(succ(v),
+                                            monus(monus(succ(v),
                                               succ(c)),
-                                              theGapTo(succ(u), succ(c))) =
-                                              theGapTo(succ(v), succ(u))
+                                              monus(succ(u), succ(c))) =
+                                              monus(succ(v), succ(u))
                                             [using simplify the-outer-steps
                                               the-inner-steps
                                               the-hypothesis-applies
                                               the-target-steps]
                                           @conclusion-positive |
-                                            theGapTo(theGapTo(i, succ(c)),
-                                              theGapTo(m, succ(c))) =
-                                              theGapTo(i, m)
+                                            monus(monus(i, succ(c)),
+                                              monus(m, succ(c))) =
+                                              monus(i, m)
                                             [using simplify i-steps m-steps
                                               the-equality-at-predecessors]
                                         }
                                       @conclusion-i-positive |
-                                        theGapTo(theGapTo(i, succ(c)),
-                                          theGapTo(m, succ(c))) =
-                                          theGapTo(i, m)
+                                        monus(monus(i, succ(c)),
+                                          monus(m, succ(c))) =
+                                          monus(i, m)
                                         [by unpacked with-the-i-predecessor]
                                     }
                                   @conclusion-either-i |
-                                    theGapTo(theGapTo(i, succ(c)),
-                                      theGapTo(m, succ(c))) =
-                                      theGapTo(i, m)
+                                    monus(monus(i, succ(c)),
+                                      monus(m, succ(c))) =
+                                      monus(i, m)
                                     [by common_conclusion i-is-positive
                                       when-i-is-zero when-i-is-positive]
                                 }
                               @conclusion-m-positive |
-                                theGapTo(theGapTo(i, succ(c)),
-                                  theGapTo(m, succ(c))) = theGapTo(i, m)
+                                monus(monus(i, succ(c)),
+                                  monus(m, succ(c))) = monus(i, m)
                                 [by unpacked with-the-m-predecessor]
                             }
                           @conclusion-either-m |
-                            theGapTo(theGapTo(i, succ(c)),
-                              theGapTo(m, succ(c))) = theGapTo(i, m)
+                            monus(monus(i, succ(c)),
+                              monus(m, succ(c))) = monus(i, m)
                             [by common_conclusion m-is-positive
                               when-m-is-zero when-m-is-positive]
                         }
                       @m-bound-gives-it |
                         peano_order.less_or_equal(m, i) ->
-                          theGapTo(theGapTo(i, succ(c)),
-                          theGapTo(m, succ(c))) = theGapTo(i, m)
+                          monus(monus(i, succ(c)),
+                          monus(m, succ(c))) = monus(i, m)
                         [by discharge given-m-within-i]
                     }
                   @c-bound-gives-it |
                     peano_order.less_or_equal(succ(c), m) ->
                       peano_order.less_or_equal(m, i) ->
-                      theGapTo(theGapTo(i, succ(c)),
-                      theGapTo(m, succ(c))) = theGapTo(i, m)
+                      monus(monus(i, succ(c)),
+                      monus(m, succ(c))) = monus(i, m)
                     [by discharge given-c-within-m]
                 }
               @discharge-m |
                 forall m: Nat;
                   peano_order.less_or_equal(succ(c), m) ->
                   peano_order.less_or_equal(m, i) ->
-                  theGapTo(theGapTo(i, succ(c)),
-                  theGapTo(m, succ(c))) = theGapTo(i, m)
+                  monus(monus(i, succ(c)),
+                  monus(m, succ(c))) = monus(i, m)
                 [by generalize generalize-m]
             }
           @all-indices |
             forall i, m: Nat;
               peano_order.less_or_equal(succ(c), m) ->
               peano_order.less_or_equal(m, i) ->
-              theGapTo(theGapTo(i, succ(c)),
-              theGapTo(m, succ(c))) = theGapTo(i, m)
+              monus(monus(i, succ(c)),
+              monus(m, succ(c))) = monus(i, m)
             [by generalize generalize-i]
         }
       @the-hypothesis-gives-it |
         (forall i, m: Nat;
           peano_order.less_or_equal(c, m) ->
           peano_order.less_or_equal(m, i) ->
-          theGapTo(theGapTo(i, c), theGapTo(m, c)) = theGapTo(i, m)) ->
+          monus(monus(i, c), monus(m, c)) = monus(i, m)) ->
           (forall i, m: Nat;
           peano_order.less_or_equal(succ(c), m) ->
           peano_order.less_or_equal(m, i) ->
-          theGapTo(theGapTo(i, succ(c)),
-          theGapTo(m, succ(c))) = theGapTo(i, m))
+          monus(monus(i, succ(c)),
+          monus(m, succ(c))) = monus(i, m))
         [by discharge given-the-hypothesis]
     }
   @conclusion |
@@ -7426,12 +7431,12 @@ proof
       (forall i, m: Nat;
       peano_order.less_or_equal(c, m) ->
       peano_order.less_or_equal(m, i) ->
-      theGapTo(theGapTo(i, c), theGapTo(m, c)) = theGapTo(i, m)) ->
+      monus(monus(i, c), monus(m, c)) = monus(i, m)) ->
       (forall i, m: Nat;
       peano_order.less_or_equal(succ(c), m) ->
       peano_order.less_or_equal(m, i) ->
-      theGapTo(theGapTo(i, succ(c)),
-      theGapTo(m, succ(c))) = theGapTo(i, m))
+      monus(monus(i, succ(c)),
+      monus(m, succ(c))) = monus(i, m))
     [by generalize generalize-c]
 qed
 
@@ -7448,7 +7453,7 @@ theorem aDiagonalIsTheScaledRun: forall p, q, r: Poly; forall c, i, m: Nat;
   peano_order.less_or_equal(c, succ(m)) ->
   peano_order.less_or_equal(m, i) ->
   tripleDiag(p, q, r, i, m, c) =
-  mulR(cappedRun(p, q, m, c), coeff(r, theGapTo(i, m)))
+  mulR(cappedRun(p, q, m, c), coeff(r, monus(i, m)))
 proof
   @generalize-p |
     fix p: Poly {
@@ -7462,7 +7467,7 @@ proof
                   peano_order.less_or_equal(m, i) ->
                   tripleDiag(p, q, r, i, m, ZERO) =
                   mulR(cappedRun(p, q, m, ZERO),
-                  coeff(r, theGapTo(i, m)))
+                  coeff(r, monus(i, m)))
                 [using specialize theDiagRunBase(p, q, r)]
               @induction-step-for-all-c |
                 forall c: Nat;
@@ -7471,28 +7476,28 @@ proof
                   peano_order.less_or_equal(m, i) ->
                   tripleDiag(p, q, r, i, m, c) =
                   mulR(cappedRun(p, q, m, c),
-                  coeff(r, theGapTo(i, m)))) ->
+                  coeff(r, monus(i, m)))) ->
                   (forall i, m: Nat;
                   peano_order.less_or_equal(succ(c), succ(m)) ->
                   peano_order.less_or_equal(m, i) ->
                   tripleDiag(p, q, r, i, m, succ(c)) =
                   mulR(cappedRun(p, q, m, succ(c)),
-                  coeff(r, theGapTo(i, m))))
+                  coeff(r, monus(i, m))))
                 [using specialize theDiagRunStep(p, q, r)]
               @all-counts |
                 forall c: Nat; forall i, m: Nat;
                   peano_order.less_or_equal(c, succ(m)) ->
                   peano_order.less_or_equal(m, i) ->
                   tripleDiag(p, q, r, i, m, c) =
-                  mulR(cappedRun(p, q, m, c), coeff(r, theGapTo(i, m)))
-                [using instantiation peano.induction((fun z: Nat => forall i, m: Nat; peano_order.less_or_equal(z, succ(m)) -> peano_order.less_or_equal(m, i) -> tripleDiag(p, q, r, i, m, z) = mulR(cappedRun(p, q, m, z), coeff(r, theGapTo(i, m))))) base-case induction-step-for-all-c]
+                  mulR(cappedRun(p, q, m, c), coeff(r, monus(i, m)))
+                [using instantiation peano.induction((fun z: Nat => forall i, m: Nat; peano_order.less_or_equal(z, succ(m)) -> peano_order.less_or_equal(m, i) -> tripleDiag(p, q, r, i, m, z) = mulR(cappedRun(p, q, m, z), coeff(r, monus(i, m))))) base-case induction-step-for-all-c]
             }
           @discharge-r |
             forall r: Poly; forall c, i, m: Nat;
               peano_order.less_or_equal(c, succ(m)) ->
               peano_order.less_or_equal(m, i) ->
               tripleDiag(p, q, r, i, m, c) =
-              mulR(cappedRun(p, q, m, c), coeff(r, theGapTo(i, m)))
+              mulR(cappedRun(p, q, m, c), coeff(r, monus(i, m)))
             [by generalize generalize-r]
         }
       @discharge-q |
@@ -7500,7 +7505,7 @@ proof
           peano_order.less_or_equal(c, succ(m)) ->
           peano_order.less_or_equal(m, i) ->
           tripleDiag(p, q, r, i, m, c) =
-          mulR(cappedRun(p, q, m, c), coeff(r, theGapTo(i, m)))
+          mulR(cappedRun(p, q, m, c), coeff(r, monus(i, m)))
         [by generalize generalize-q]
     }
   @conclusion |
@@ -7508,7 +7513,7 @@ proof
       peano_order.less_or_equal(c, succ(m)) ->
       peano_order.less_or_equal(m, i) ->
       tripleDiag(p, q, r, i, m, c) =
-      mulR(cappedRun(p, q, m, c), coeff(r, theGapTo(i, m)))
+      mulR(cappedRun(p, q, m, c), coeff(r, monus(i, m)))
     [by generalize generalize-p]
 qed
 
@@ -7518,7 +7523,7 @@ theorem theDiagRunBase: forall p, q, r: Poly;
   peano_order.less_or_equal(ZERO, succ(m)) ->
   peano_order.less_or_equal(m, i) ->
   tripleDiag(p, q, r, i, m, ZERO) =
-  mulR(cappedRun(p, q, m, ZERO), coeff(r, theGapTo(i, m)))
+  mulR(cappedRun(p, q, m, ZERO), coeff(r, monus(i, m)))
 proof
   @generalize-p |
     fix p: Poly {
@@ -7537,13 +7542,13 @@ proof
                         cappedRun(p, q, m, ZERO) = zeroR
                         [using specialize cappedRunZero(p, q, m)]
                       @zero-scales-away |
-                        mulR(zeroR, coeff(r, theGapTo(i, m))) = zeroR
+                        mulR(zeroR, coeff(r, monus(i, m))) = zeroR
                         [using specialize
-                          mulZeroLeftR(coeff(r, theGapTo(i, m)))]
+                          mulZeroLeftR(coeff(r, monus(i, m)))]
                       @the-equality |
                         tripleDiag(p, q, r, i, m, ZERO) =
                           mulR(cappedRun(p, q, m, ZERO),
-                          coeff(r, theGapTo(i, m)))
+                          coeff(r, monus(i, m)))
                         [using simplify the-empty-diagonal the-empty-run
                           zero-scales-away]
                       @conclusion-the-base |
@@ -7551,7 +7556,7 @@ proof
                           peano_order.less_or_equal(m, i) ->
                           tripleDiag(p, q, r, i, m, ZERO) =
                           mulR(cappedRun(p, q, m, ZERO),
-                          coeff(r, theGapTo(i, m)))
+                          coeff(r, monus(i, m)))
                         [using tautology the-equality]
                     }
                   @discharge-m |
@@ -7560,7 +7565,7 @@ proof
                       peano_order.less_or_equal(m, i) ->
                       tripleDiag(p, q, r, i, m, ZERO) =
                       mulR(cappedRun(p, q, m, ZERO),
-                      coeff(r, theGapTo(i, m)))
+                      coeff(r, monus(i, m)))
                     [by generalize generalize-m]
                 }
               @discharge-i |
@@ -7569,7 +7574,7 @@ proof
                   peano_order.less_or_equal(m, i) ->
                   tripleDiag(p, q, r, i, m, ZERO) =
                   mulR(cappedRun(p, q, m, ZERO),
-                  coeff(r, theGapTo(i, m)))
+                  coeff(r, monus(i, m)))
                 [by generalize generalize-i]
             }
           @discharge-r |
@@ -7577,7 +7582,7 @@ proof
               peano_order.less_or_equal(ZERO, succ(m)) ->
               peano_order.less_or_equal(m, i) ->
               tripleDiag(p, q, r, i, m, ZERO) =
-              mulR(cappedRun(p, q, m, ZERO), coeff(r, theGapTo(i, m)))
+              mulR(cappedRun(p, q, m, ZERO), coeff(r, monus(i, m)))
             [by generalize generalize-r]
         }
       @discharge-q |
@@ -7585,7 +7590,7 @@ proof
           peano_order.less_or_equal(ZERO, succ(m)) ->
           peano_order.less_or_equal(m, i) ->
           tripleDiag(p, q, r, i, m, ZERO) =
-          mulR(cappedRun(p, q, m, ZERO), coeff(r, theGapTo(i, m)))
+          mulR(cappedRun(p, q, m, ZERO), coeff(r, monus(i, m)))
         [by generalize generalize-q]
     }
   @conclusion |
@@ -7593,7 +7598,7 @@ proof
       peano_order.less_or_equal(ZERO, succ(m)) ->
       peano_order.less_or_equal(m, i) ->
       tripleDiag(p, q, r, i, m, ZERO) =
-      mulR(cappedRun(p, q, m, ZERO), coeff(r, theGapTo(i, m)))
+      mulR(cappedRun(p, q, m, ZERO), coeff(r, monus(i, m)))
     [by generalize generalize-p]
 qed
 
@@ -7606,12 +7611,12 @@ theorem theDiagRunStep: forall p, q, r: Poly; forall c: Nat;
   peano_order.less_or_equal(c, succ(m)) ->
   peano_order.less_or_equal(m, i) ->
   tripleDiag(p, q, r, i, m, c) =
-  mulR(cappedRun(p, q, m, c), coeff(r, theGapTo(i, m)))) ->
+  mulR(cappedRun(p, q, m, c), coeff(r, monus(i, m)))) ->
   (forall i, m: Nat;
   peano_order.less_or_equal(succ(c), succ(m)) ->
   peano_order.less_or_equal(m, i) ->
   tripleDiag(p, q, r, i, m, succ(c)) =
-  mulR(cappedRun(p, q, m, succ(c)), coeff(r, theGapTo(i, m))))
+  mulR(cappedRun(p, q, m, succ(c)), coeff(r, monus(i, m))))
 proof
   @generalize-p |
     fix p: Poly {
@@ -7627,14 +7632,14 @@ proof
                       peano_order.less_or_equal(m, i) ->
                       tripleDiag(p, q, r, i, m, c) =
                       mulR(cappedRun(p, q, m, c),
-                      coeff(r, theGapTo(i, m))) {
+                      coeff(r, monus(i, m))) {
                       @the-hypothesis |
                         forall i, m: Nat;
                           peano_order.less_or_equal(c, succ(m)) ->
                           peano_order.less_or_equal(m, i) ->
                           tripleDiag(p, q, r, i, m, c) =
                           mulR(cappedRun(p, q, m, c),
-                          coeff(r, theGapTo(i, m)))
+                          coeff(r, monus(i, m)))
                         [by hypothesis given-the-hypothesis]
                       @generalize-i |
                         fix i: Nat {
@@ -7674,7 +7679,7 @@ proof
                                       @the-hypothesis-applies |
                                         tripleDiag(p, q, r, i, m, c) =
                                           mulR(cappedRun(p, q, m, c),
-                                          coeff(r, theGapTo(i, m)))
+                                          coeff(r, monus(i, m)))
                                         [using specialize
                                           the-hypothesis(i, m)
                                           c-within-succ-m m-within-i]
@@ -7682,39 +7687,39 @@ proof
                                         tripleDiag(p, q, r, i, m, succ(c)) =
                                           addR(tripleDiag(p, q, r, i, m, c),
                                           tripleTerm(p, q, r, i, c,
-                                          theGapTo(m, c)))
+                                          monus(m, c)))
                                         [using specialize
                                           tripleDiagSucc(p, q, r, i, m, c)]
                                       @the-new-entry |
                                         tripleTerm(p, q, r, i, c,
-                                          theGapTo(m, c)) =
+                                          monus(m, c)) =
                                           mulR(mulR(coeff(p, c),
-                                          coeff(q, theGapTo(m, c))),
+                                          coeff(q, monus(m, c))),
                                           coeff(r, theCofactorIndex(i, c,
-                                          theGapTo(m, c))))
+                                          monus(m, c))))
                                         [using specialize
                                           tripleTermMeaning(p, q, r, i, c,
-                                          theGapTo(m, c))]
+                                          monus(m, c))]
                                       @the-cofactor-is-the-gaps-gap |
                                         theCofactorIndex(i, c,
-                                          theGapTo(m, c)) =
-                                          theGapTo(theGapTo(i, c),
-                                          theGapTo(m, c))
+                                          monus(m, c)) =
+                                          monus(monus(i, c),
+                                          monus(m, c))
                                         [using specialize
                                           theCofactorIsTheGapsGap(i, c,
-                                          theGapTo(m, c))]
+                                          monus(m, c))]
                                       @the-common-amount-cancels |
-                                        theGapTo(theGapTo(i, c),
-                                          theGapTo(m, c)) = theGapTo(i, m)
+                                        monus(monus(i, c),
+                                          monus(m, c)) = monus(i, m)
                                         [using specialize
                                           aCommonAmountCancels(c, i, m)
                                           c-within-m-weaker m-within-i]
                                       @the-entry-reads-the-constant |
                                         tripleTerm(p, q, r, i, c,
-                                          theGapTo(m, c)) =
+                                          monus(m, c)) =
                                           mulR(mulR(coeff(p, c),
-                                          coeff(q, theGapTo(m, c))),
-                                          coeff(r, theGapTo(i, m)))
+                                          coeff(q, monus(m, c))),
+                                          coeff(r, monus(i, m)))
                                         [using simplify the-new-entry
                                           the-cofactor-is-the-gaps-gap
                                           the-common-amount-cancels]
@@ -7722,29 +7727,29 @@ proof
                                         cappedRun(p, q, m, succ(c)) =
                                           addR(cappedRun(p, q, m, c),
                                           mulR(coeff(p, c),
-                                          coeff(q, theGapTo(m, c))))
+                                          coeff(q, monus(m, c))))
                                         [using specialize
                                           cappedRunSucc(p, q, m, c)]
                                       @the-scalar-distributes |
                                         mulR(addR(cappedRun(p, q, m, c),
                                           mulR(coeff(p, c),
-                                          coeff(q, theGapTo(m, c)))),
-                                          coeff(r, theGapTo(i, m))) =
+                                          coeff(q, monus(m, c)))),
+                                          coeff(r, monus(i, m))) =
                                           addR(mulR(cappedRun(p, q, m, c),
-                                          coeff(r, theGapTo(i, m))),
+                                          coeff(r, monus(i, m))),
                                           mulR(mulR(coeff(p, c),
-                                          coeff(q, theGapTo(m, c))),
-                                          coeff(r, theGapTo(i, m))))
+                                          coeff(q, monus(m, c))),
+                                          coeff(r, monus(i, m))))
                                         [using specialize
                                           mulAddDistribRightR(
                                           cappedRun(p, q, m, c),
                                           mulR(coeff(p, c),
-                                          coeff(q, theGapTo(m, c))),
-                                          coeff(r, theGapTo(i, m)))]
+                                          coeff(q, monus(m, c))),
+                                          coeff(r, monus(i, m)))]
                                       @conclusion-the-step |
                                         tripleDiag(p, q, r, i, m, succ(c)) =
                                           mulR(cappedRun(p, q, m, succ(c)),
-                                          coeff(r, theGapTo(i, m)))
+                                          coeff(r, monus(i, m)))
                                         [using simplify the-diagonal-grows
                                           the-hypothesis-applies
                                           the-entry-reads-the-constant
@@ -7755,7 +7760,7 @@ proof
                                     peano_order.less_or_equal(m, i) ->
                                       tripleDiag(p, q, r, i, m, succ(c)) =
                                       mulR(cappedRun(p, q, m, succ(c)),
-                                      coeff(r, theGapTo(i, m)))
+                                      coeff(r, monus(i, m)))
                                     [by discharge given-m-within-i]
                                 }
                               @c-bound-gives-it |
@@ -7763,7 +7768,7 @@ proof
                                   peano_order.less_or_equal(m, i) ->
                                   tripleDiag(p, q, r, i, m, succ(c)) =
                                   mulR(cappedRun(p, q, m, succ(c)),
-                                  coeff(r, theGapTo(i, m)))
+                                  coeff(r, monus(i, m)))
                                 [by discharge given-c-within-m]
                             }
                           @discharge-m |
@@ -7772,7 +7777,7 @@ proof
                               peano_order.less_or_equal(m, i) ->
                               tripleDiag(p, q, r, i, m, succ(c)) =
                               mulR(cappedRun(p, q, m, succ(c)),
-                              coeff(r, theGapTo(i, m)))
+                              coeff(r, monus(i, m)))
                             [by generalize generalize-m]
                         }
                       @all-indices |
@@ -7781,7 +7786,7 @@ proof
                           peano_order.less_or_equal(m, i) ->
                           tripleDiag(p, q, r, i, m, succ(c)) =
                           mulR(cappedRun(p, q, m, succ(c)),
-                          coeff(r, theGapTo(i, m)))
+                          coeff(r, monus(i, m)))
                         [by generalize generalize-i]
                     }
                   @the-hypothesis-gives-it |
@@ -7790,13 +7795,13 @@ proof
                       peano_order.less_or_equal(m, i) ->
                       tripleDiag(p, q, r, i, m, c) =
                       mulR(cappedRun(p, q, m, c),
-                      coeff(r, theGapTo(i, m)))) ->
+                      coeff(r, monus(i, m)))) ->
                       (forall i, m: Nat;
                       peano_order.less_or_equal(succ(c), succ(m)) ->
                       peano_order.less_or_equal(m, i) ->
                       tripleDiag(p, q, r, i, m, succ(c)) =
                       mulR(cappedRun(p, q, m, succ(c)),
-                      coeff(r, theGapTo(i, m))))
+                      coeff(r, monus(i, m))))
                     [by discharge given-the-hypothesis]
                 }
               @discharge-c |
@@ -7806,13 +7811,13 @@ proof
                   peano_order.less_or_equal(m, i) ->
                   tripleDiag(p, q, r, i, m, c) =
                   mulR(cappedRun(p, q, m, c),
-                  coeff(r, theGapTo(i, m)))) ->
+                  coeff(r, monus(i, m)))) ->
                   (forall i, m: Nat;
                   peano_order.less_or_equal(succ(c), succ(m)) ->
                   peano_order.less_or_equal(m, i) ->
                   tripleDiag(p, q, r, i, m, succ(c)) =
                   mulR(cappedRun(p, q, m, succ(c)),
-                  coeff(r, theGapTo(i, m))))
+                  coeff(r, monus(i, m))))
                 [by generalize generalize-c]
             }
           @discharge-r |
@@ -7821,13 +7826,13 @@ proof
               peano_order.less_or_equal(c, succ(m)) ->
               peano_order.less_or_equal(m, i) ->
               tripleDiag(p, q, r, i, m, c) =
-              mulR(cappedRun(p, q, m, c), coeff(r, theGapTo(i, m)))) ->
+              mulR(cappedRun(p, q, m, c), coeff(r, monus(i, m)))) ->
               (forall i, m: Nat;
               peano_order.less_or_equal(succ(c), succ(m)) ->
               peano_order.less_or_equal(m, i) ->
               tripleDiag(p, q, r, i, m, succ(c)) =
               mulR(cappedRun(p, q, m, succ(c)),
-              coeff(r, theGapTo(i, m))))
+              coeff(r, monus(i, m))))
             [by generalize generalize-r]
         }
       @discharge-q |
@@ -7836,12 +7841,12 @@ proof
           peano_order.less_or_equal(c, succ(m)) ->
           peano_order.less_or_equal(m, i) ->
           tripleDiag(p, q, r, i, m, c) =
-          mulR(cappedRun(p, q, m, c), coeff(r, theGapTo(i, m)))) ->
+          mulR(cappedRun(p, q, m, c), coeff(r, monus(i, m)))) ->
           (forall i, m: Nat;
           peano_order.less_or_equal(succ(c), succ(m)) ->
           peano_order.less_or_equal(m, i) ->
           tripleDiag(p, q, r, i, m, succ(c)) =
-          mulR(cappedRun(p, q, m, succ(c)), coeff(r, theGapTo(i, m))))
+          mulR(cappedRun(p, q, m, succ(c)), coeff(r, monus(i, m))))
         [by generalize generalize-q]
     }
   @conclusion |
@@ -7850,12 +7855,12 @@ proof
       peano_order.less_or_equal(c, succ(m)) ->
       peano_order.less_or_equal(m, i) ->
       tripleDiag(p, q, r, i, m, c) =
-      mulR(cappedRun(p, q, m, c), coeff(r, theGapTo(i, m)))) ->
+      mulR(cappedRun(p, q, m, c), coeff(r, monus(i, m)))) ->
       (forall i, m: Nat;
       peano_order.less_or_equal(succ(c), succ(m)) ->
       peano_order.less_or_equal(m, i) ->
       tripleDiag(p, q, r, i, m, succ(c)) =
-      mulR(cappedRun(p, q, m, succ(c)), coeff(r, theGapTo(i, m))))
+      mulR(cappedRun(p, q, m, succ(c)), coeff(r, monus(i, m))))
     [by generalize generalize-p]
 qed
 
@@ -7864,33 +7869,33 @@ qed
 // successor on the left makes the two differ.
 theorem theGapRisesWhenLessIsTaken: forall n, g: Nat;
   peano_order.less_or_equal(succ(n), g) ->
-  succ(theGapTo(g, succ(n))) = theGapTo(g, n)
+  succ(monus(g, succ(n))) = monus(g, n)
 proof
   @base-case |
     forall g: Nat;
       peano_order.less_or_equal(succ(ZERO), g) ->
-      succ(theGapTo(g, succ(ZERO))) = theGapTo(g, ZERO)
+      succ(monus(g, succ(ZERO))) = monus(g, ZERO)
     [using specialize theGapRiseBase]
   @induction-step-for-all-n |
     forall n: Nat;
       (forall g: Nat;
       peano_order.less_or_equal(succ(n), g) ->
-      succ(theGapTo(g, succ(n))) = theGapTo(g, n)) ->
+      succ(monus(g, succ(n))) = monus(g, n)) ->
       (forall g: Nat;
       peano_order.less_or_equal(succ(succ(n)), g) ->
-      succ(theGapTo(g, succ(succ(n)))) = theGapTo(g, succ(n)))
+      succ(monus(g, succ(succ(n)))) = monus(g, succ(n)))
     [using specialize theGapRiseStep]
   @conclusion |
     forall n: Nat; forall g: Nat;
       peano_order.less_or_equal(succ(n), g) ->
-      succ(theGapTo(g, succ(n))) = theGapTo(g, n)
-    [using instantiation peano.induction((fun z: Nat => forall g: Nat; peano_order.less_or_equal(succ(z), g) -> succ(theGapTo(g, succ(z))) = theGapTo(g, z))) base-case induction-step-for-all-n]
+      succ(monus(g, succ(n))) = monus(g, n)
+    [using instantiation peano.induction((fun z: Nat => forall g: Nat; peano_order.less_or_equal(succ(z), g) -> succ(monus(g, succ(z))) = monus(g, z))) base-case induction-step-for-all-n]
 qed
 
 // The base: g is a successor by the bound, and both sides read it directly.
 theorem theGapRiseBase: forall g: Nat;
   peano_order.less_or_equal(succ(ZERO), g) ->
-  succ(theGapTo(g, succ(ZERO))) = theGapTo(g, ZERO)
+  succ(monus(g, succ(ZERO))) = monus(g, ZERO)
 proof
   @generalize-g |
     fix g: Nat {
@@ -7915,7 +7920,7 @@ proof
                 [using specialize
                   peano_order.noSuccessorIsAtMostZero(ZERO)]
               @conclusion-vacuous |
-                succ(theGapTo(g, succ(ZERO))) = theGapTo(g, ZERO)
+                succ(monus(g, succ(ZERO))) = monus(g, ZERO)
                 [by ex_falso the-bound-at-zero nothing-is-at-most-zero]
             }
           @when-g-is-positive |
@@ -7929,41 +7934,41 @@ proof
                     g = succ(w)
                     [by hypothesis with-the-predecessor]
                   @the-taken-gap |
-                    theGapTo(succ(w), succ(ZERO)) = theGapTo(w, ZERO)
-                    [using specialize theGapToSteps(w, ZERO)]
+                    monus(succ(w), succ(ZERO)) = monus(w, ZERO)
+                    [using specialize monusSteps(w, ZERO)]
                   @the-gap-at-w |
-                    theGapTo(w, ZERO) = w
-                    [using specialize theGapToAtZero(w)]
+                    monus(w, ZERO) = w
+                    [using specialize monusAtZero(w)]
                   @the-full-gap |
-                    theGapTo(succ(w), ZERO) = succ(w)
-                    [using specialize theGapToAtZero(succ(w))]
+                    monus(succ(w), ZERO) = succ(w)
+                    [using specialize monusAtZero(succ(w))]
                   @the-equality-at-w |
-                    succ(theGapTo(succ(w), succ(ZERO))) =
-                      theGapTo(succ(w), ZERO)
+                    succ(monus(succ(w), succ(ZERO))) =
+                      monus(succ(w), ZERO)
                     [using simplify the-taken-gap the-gap-at-w
                       the-full-gap]
                   @conclusion-positive |
-                    succ(theGapTo(g, succ(ZERO))) = theGapTo(g, ZERO)
+                    succ(monus(g, succ(ZERO))) = monus(g, ZERO)
                     [by rewrite g-steps the-equality-at-w]
                 }
               @conclusion-the-positive-case |
-                succ(theGapTo(g, succ(ZERO))) = theGapTo(g, ZERO)
+                succ(monus(g, succ(ZERO))) = monus(g, ZERO)
                 [by unpacked with-the-predecessor]
             }
           @conclusion-either-way |
-            succ(theGapTo(g, succ(ZERO))) = theGapTo(g, ZERO)
+            succ(monus(g, succ(ZERO))) = monus(g, ZERO)
             [by common_conclusion g-is-positive
               when-g-is-zero when-g-is-positive]
         }
       @the-bound-gives-it |
         peano_order.less_or_equal(succ(ZERO), g) ->
-          succ(theGapTo(g, succ(ZERO))) = theGapTo(g, ZERO)
+          succ(monus(g, succ(ZERO))) = monus(g, ZERO)
         [by discharge given-the-bound]
     }
   @conclusion |
     forall g: Nat;
       peano_order.less_or_equal(succ(ZERO), g) ->
-      succ(theGapTo(g, succ(ZERO))) = theGapTo(g, ZERO)
+      succ(monus(g, succ(ZERO))) = monus(g, ZERO)
     [by generalize generalize-g]
 qed
 
@@ -7972,21 +7977,21 @@ qed
 theorem theGapRiseStep: forall n: Nat;
   (forall g: Nat;
   peano_order.less_or_equal(succ(n), g) ->
-  succ(theGapTo(g, succ(n))) = theGapTo(g, n)) ->
+  succ(monus(g, succ(n))) = monus(g, n)) ->
   (forall g: Nat;
   peano_order.less_or_equal(succ(succ(n)), g) ->
-  succ(theGapTo(g, succ(succ(n)))) = theGapTo(g, succ(n)))
+  succ(monus(g, succ(succ(n)))) = monus(g, succ(n)))
 proof
   @generalize-n |
     fix n: Nat {
       @given-the-hypothesis |
         assume forall g: Nat;
           peano_order.less_or_equal(succ(n), g) ->
-          succ(theGapTo(g, succ(n))) = theGapTo(g, n) {
+          succ(monus(g, succ(n))) = monus(g, n) {
           @the-hypothesis |
             forall g: Nat;
               peano_order.less_or_equal(succ(n), g) ->
-              succ(theGapTo(g, succ(n))) = theGapTo(g, n)
+              succ(monus(g, succ(n))) = monus(g, n)
             [by hypothesis given-the-hypothesis]
           @generalize-g |
             fix g: Nat {
@@ -8011,8 +8016,8 @@ proof
                         [using specialize
                           peano_order.noSuccessorIsAtMostZero(succ(n))]
                       @conclusion-vacuous |
-                        succ(theGapTo(g, succ(succ(n)))) =
-                          theGapTo(g, succ(n))
+                        succ(monus(g, succ(succ(n)))) =
+                          monus(g, succ(n))
                         [by ex_falso the-bound-at-zero
                           nothing-is-at-most-zero]
                     }
@@ -8036,67 +8041,67 @@ proof
                               peano_order.succReflectsAtMost(succ(n), w)
                               the-bound-steps]
                           @the-hypothesis-applies |
-                            succ(theGapTo(w, succ(n))) = theGapTo(w, n)
+                            succ(monus(w, succ(n))) = monus(w, n)
                             [using specialize the-hypothesis(w)
                               the-lower-bound]
                           @the-taken-gap-steps |
-                            theGapTo(succ(w), succ(succ(n))) =
-                              theGapTo(w, succ(n))
+                            monus(succ(w), succ(succ(n))) =
+                              monus(w, succ(n))
                             [using specialize
-                              theGapToSteps(w, succ(n))]
+                              monusSteps(w, succ(n))]
                           @the-target-gap-steps |
-                            theGapTo(succ(w), succ(n)) = theGapTo(w, n)
-                            [using specialize theGapToSteps(w, n)]
+                            monus(succ(w), succ(n)) = monus(w, n)
+                            [using specialize monusSteps(w, n)]
                           @the-equality-at-w |
-                            succ(theGapTo(succ(w), succ(succ(n)))) =
-                              theGapTo(succ(w), succ(n))
+                            succ(monus(succ(w), succ(succ(n)))) =
+                              monus(succ(w), succ(n))
                             [using simplify the-taken-gap-steps
                               the-hypothesis-applies
                               the-target-gap-steps]
                           @conclusion-positive |
-                            succ(theGapTo(g, succ(succ(n)))) =
-                              theGapTo(g, succ(n))
+                            succ(monus(g, succ(succ(n)))) =
+                              monus(g, succ(n))
                             [by rewrite g-steps the-equality-at-w]
                         }
                       @conclusion-the-positive-case |
-                        succ(theGapTo(g, succ(succ(n)))) =
-                          theGapTo(g, succ(n))
+                        succ(monus(g, succ(succ(n)))) =
+                          monus(g, succ(n))
                         [by unpacked with-the-predecessor]
                     }
                   @conclusion-either-way |
-                    succ(theGapTo(g, succ(succ(n)))) =
-                      theGapTo(g, succ(n))
+                    succ(monus(g, succ(succ(n)))) =
+                      monus(g, succ(n))
                     [by common_conclusion g-is-positive
                       when-g-is-zero when-g-is-positive]
                 }
               @the-bound-gives-it |
                 peano_order.less_or_equal(succ(succ(n)), g) ->
-                  succ(theGapTo(g, succ(succ(n)))) = theGapTo(g, succ(n))
+                  succ(monus(g, succ(succ(n)))) = monus(g, succ(n))
                 [by discharge given-the-bound]
             }
           @all-gaps |
             forall g: Nat;
               peano_order.less_or_equal(succ(succ(n)), g) ->
-              succ(theGapTo(g, succ(succ(n)))) = theGapTo(g, succ(n))
+              succ(monus(g, succ(succ(n)))) = monus(g, succ(n))
             [by generalize generalize-g]
         }
       @the-hypothesis-gives-it |
         (forall g: Nat;
           peano_order.less_or_equal(succ(n), g) ->
-          succ(theGapTo(g, succ(n))) = theGapTo(g, n)) ->
+          succ(monus(g, succ(n))) = monus(g, n)) ->
           (forall g: Nat;
           peano_order.less_or_equal(succ(succ(n)), g) ->
-          succ(theGapTo(g, succ(succ(n)))) = theGapTo(g, succ(n)))
+          succ(monus(g, succ(succ(n)))) = monus(g, succ(n)))
         [by discharge given-the-hypothesis]
     }
   @conclusion |
     forall n: Nat;
       (forall g: Nat;
       peano_order.less_or_equal(succ(n), g) ->
-      succ(theGapTo(g, succ(n))) = theGapTo(g, n)) ->
+      succ(monus(g, succ(n))) = monus(g, n)) ->
       (forall g: Nat;
       peano_order.less_or_equal(succ(succ(n)), g) ->
-      succ(theGapTo(g, succ(succ(n)))) = theGapTo(g, succ(n)))
+      succ(monus(g, succ(succ(n)))) = monus(g, succ(n)))
     [by generalize generalize-n]
 qed
 
@@ -8106,12 +8111,12 @@ qed
 // reversal — and once related, `aFullSegmentReadsForwards` carries a full capped run to the
 // convolution, which is what both associativity bridges need.
 //
-// Stated with the count free of the gap (`segment(p, q, n, theGapTo(g, n), n)`), so the
+// Stated with the count free of the gap (`segment(p, q, n, monus(g, n), n)`), so the
 // induction can run on the count while the gap stays put; `theGapRisesWhenLessIsTaken` is what
 // lets the segment's second exponent step.
 theorem aCappedRunReadsAsASegment: forall p, q: Poly; forall n, g: Nat;
   peano_order.less_or_equal(n, g) ->
-  cappedRun(p, q, g, succ(n)) = segment(p, q, n, theGapTo(g, n), n)
+  cappedRun(p, q, g, succ(n)) = segment(p, q, n, monus(g, n), n)
 proof
   @generalize-p |
     fix p: Poly {
@@ -8121,36 +8126,36 @@ proof
             forall g: Nat;
               peano_order.less_or_equal(ZERO, g) ->
               cappedRun(p, q, g, succ(ZERO)) =
-              segment(p, q, ZERO, theGapTo(g, ZERO), ZERO)
+              segment(p, q, ZERO, monus(g, ZERO), ZERO)
             [using specialize theReadsAsBase(p, q)]
           @induction-step-for-all-n |
             forall n: Nat;
               (forall g: Nat;
               peano_order.less_or_equal(n, g) ->
               cappedRun(p, q, g, succ(n)) =
-              segment(p, q, n, theGapTo(g, n), n)) ->
+              segment(p, q, n, monus(g, n), n)) ->
               (forall g: Nat;
               peano_order.less_or_equal(succ(n), g) ->
               cappedRun(p, q, g, succ(succ(n))) =
-              segment(p, q, succ(n), theGapTo(g, succ(n)), succ(n)))
+              segment(p, q, succ(n), monus(g, succ(n)), succ(n)))
             [using specialize theReadsAsStep(p, q)]
           @all-counts |
             forall n: Nat; forall g: Nat;
               peano_order.less_or_equal(n, g) ->
               cappedRun(p, q, g, succ(n)) =
-              segment(p, q, n, theGapTo(g, n), n)
-            [using instantiation peano.induction((fun z: Nat => forall g: Nat; peano_order.less_or_equal(z, g) -> cappedRun(p, q, g, succ(z)) = segment(p, q, z, theGapTo(g, z), z))) base-case induction-step-for-all-n]
+              segment(p, q, n, monus(g, n), n)
+            [using instantiation peano.induction((fun z: Nat => forall g: Nat; peano_order.less_or_equal(z, g) -> cappedRun(p, q, g, succ(z)) = segment(p, q, z, monus(g, z), z))) base-case induction-step-for-all-n]
         }
       @discharge-q |
         forall q: Poly; forall n, g: Nat;
           peano_order.less_or_equal(n, g) ->
-          cappedRun(p, q, g, succ(n)) = segment(p, q, n, theGapTo(g, n), n)
+          cappedRun(p, q, g, succ(n)) = segment(p, q, n, monus(g, n), n)
         [by generalize generalize-q]
     }
   @conclusion |
     forall p, q: Poly; forall n, g: Nat;
       peano_order.less_or_equal(n, g) ->
-      cappedRun(p, q, g, succ(n)) = segment(p, q, n, theGapTo(g, n), n)
+      cappedRun(p, q, g, succ(n)) = segment(p, q, n, monus(g, n), n)
     [by generalize generalize-p]
 qed
 
@@ -8159,7 +8164,7 @@ theorem theReadsAsBase: forall p, q: Poly;
   forall g: Nat;
   peano_order.less_or_equal(ZERO, g) ->
   cappedRun(p, q, g, succ(ZERO)) =
-  segment(p, q, ZERO, theGapTo(g, ZERO), ZERO)
+  segment(p, q, ZERO, monus(g, ZERO), ZERO)
 proof
   @generalize-p |
     fix p: Poly {
@@ -8170,52 +8175,52 @@ proof
               @the-run-at-one |
                 cappedRun(p, q, g, succ(ZERO)) =
                   addR(cappedRun(p, q, g, ZERO),
-                  mulR(coeff(p, ZERO), coeff(q, theGapTo(g, ZERO))))
+                  mulR(coeff(p, ZERO), coeff(q, monus(g, ZERO))))
                 [using specialize cappedRunSucc(p, q, g, ZERO)]
               @the-empty-run |
                 cappedRun(p, q, g, ZERO) = zeroR
                 [using specialize cappedRunZero(p, q, g)]
               @adding-nothing |
                 addR(zeroR,
-                  mulR(coeff(p, ZERO), coeff(q, theGapTo(g, ZERO)))) =
-                  mulR(coeff(p, ZERO), coeff(q, theGapTo(g, ZERO)))
+                  mulR(coeff(p, ZERO), coeff(q, monus(g, ZERO)))) =
+                  mulR(coeff(p, ZERO), coeff(q, monus(g, ZERO)))
                 [using specialize addZeroLeftR(mulR(coeff(p, ZERO),
-                  coeff(q, theGapTo(g, ZERO))))]
+                  coeff(q, monus(g, ZERO))))]
               @the-segment-at-zero |
-                segment(p, q, ZERO, theGapTo(g, ZERO), ZERO) =
-                  mulR(coeff(p, ZERO), coeff(q, theGapTo(g, ZERO)))
+                segment(p, q, ZERO, monus(g, ZERO), ZERO) =
+                  mulR(coeff(p, ZERO), coeff(q, monus(g, ZERO)))
                 [using specialize
-                  segmentZero(p, q, ZERO, theGapTo(g, ZERO))]
+                  segmentZero(p, q, ZERO, monus(g, ZERO))]
               @the-equality |
                 cappedRun(p, q, g, succ(ZERO)) =
-                  segment(p, q, ZERO, theGapTo(g, ZERO), ZERO)
+                  segment(p, q, ZERO, monus(g, ZERO), ZERO)
                 [using simplify the-run-at-one the-empty-run
                   adding-nothing the-segment-at-zero]
               @conclusion-the-base |
                 peano_order.less_or_equal(ZERO, g) ->
                   cappedRun(p, q, g, succ(ZERO)) =
-                  segment(p, q, ZERO, theGapTo(g, ZERO), ZERO)
+                  segment(p, q, ZERO, monus(g, ZERO), ZERO)
                 [using tautology the-equality]
             }
           @discharge-g |
             forall g: Nat;
               peano_order.less_or_equal(ZERO, g) ->
               cappedRun(p, q, g, succ(ZERO)) =
-              segment(p, q, ZERO, theGapTo(g, ZERO), ZERO)
+              segment(p, q, ZERO, monus(g, ZERO), ZERO)
             [by generalize generalize-g]
         }
       @discharge-q |
         forall q: Poly; forall g: Nat;
           peano_order.less_or_equal(ZERO, g) ->
           cappedRun(p, q, g, succ(ZERO)) =
-          segment(p, q, ZERO, theGapTo(g, ZERO), ZERO)
+          segment(p, q, ZERO, monus(g, ZERO), ZERO)
         [by generalize generalize-q]
     }
   @conclusion |
     forall p, q: Poly; forall g: Nat;
       peano_order.less_or_equal(ZERO, g) ->
       cappedRun(p, q, g, succ(ZERO)) =
-      segment(p, q, ZERO, theGapTo(g, ZERO), ZERO)
+      segment(p, q, ZERO, monus(g, ZERO), ZERO)
     [by generalize generalize-p]
 qed
 
@@ -8226,11 +8231,11 @@ qed
 theorem theReadsAsStep: forall p, q: Poly; forall n: Nat;
   (forall g: Nat;
   peano_order.less_or_equal(n, g) ->
-  cappedRun(p, q, g, succ(n)) = segment(p, q, n, theGapTo(g, n), n)) ->
+  cappedRun(p, q, g, succ(n)) = segment(p, q, n, monus(g, n), n)) ->
   (forall g: Nat;
   peano_order.less_or_equal(succ(n), g) ->
   cappedRun(p, q, g, succ(succ(n))) =
-  segment(p, q, succ(n), theGapTo(g, succ(n)), succ(n)))
+  segment(p, q, succ(n), monus(g, succ(n)), succ(n)))
 proof
   @generalize-p |
     fix p: Poly {
@@ -8242,12 +8247,12 @@ proof
                 assume forall g: Nat;
                   peano_order.less_or_equal(n, g) ->
                   cappedRun(p, q, g, succ(n)) =
-                  segment(p, q, n, theGapTo(g, n), n) {
+                  segment(p, q, n, monus(g, n), n) {
                   @the-hypothesis |
                     forall g: Nat;
                       peano_order.less_or_equal(n, g) ->
                       cappedRun(p, q, g, succ(n)) =
-                      segment(p, q, n, theGapTo(g, n), n)
+                      segment(p, q, n, monus(g, n), n)
                     [by hypothesis given-the-hypothesis]
                   @generalize-g |
                     fix g: Nat {
@@ -8268,76 +8273,76 @@ proof
                               the-bound]
                           @the-hypothesis-applies |
                             cappedRun(p, q, g, succ(n)) =
-                              segment(p, q, n, theGapTo(g, n), n)
+                              segment(p, q, n, monus(g, n), n)
                             [using specialize the-hypothesis(g)
                               the-lower-bound]
                           @the-run-grows |
                             cappedRun(p, q, g, succ(succ(n))) =
                               addR(cappedRun(p, q, g, succ(n)),
                               mulR(coeff(p, succ(n)),
-                              coeff(q, theGapTo(g, succ(n)))))
+                              coeff(q, monus(g, succ(n)))))
                             [using specialize
                               cappedRunSucc(p, q, g, succ(n))]
                           @the-segment-peels |
                             segment(p, q, succ(n),
-                              theGapTo(g, succ(n)), succ(n)) =
+                              monus(g, succ(n)), succ(n)) =
                               addR(mulR(coeff(p, succ(n)),
-                              coeff(q, theGapTo(g, succ(n)))),
+                              coeff(q, monus(g, succ(n)))),
                               segment(p, q, n,
-                              succ(theGapTo(g, succ(n))), n))
+                              succ(monus(g, succ(n))), n))
                             [using specialize segmentSucc(p, q, n,
-                              theGapTo(g, succ(n)), n)]
+                              monus(g, succ(n)), n)]
                           @the-gap-rises |
-                            succ(theGapTo(g, succ(n))) = theGapTo(g, n)
+                            succ(monus(g, succ(n))) = monus(g, n)
                             [using specialize
                               theGapRisesWhenLessIsTaken(n, g) the-bound]
                           @the-segment-tail-matches |
                             segment(p, q, n,
-                              succ(theGapTo(g, succ(n))), n) =
-                              segment(p, q, n, theGapTo(g, n), n)
+                              succ(monus(g, succ(n))), n) =
+                              segment(p, q, n, monus(g, n), n)
                             [by rewrite the-gap-rises
                               the-tail-reflexivity]
                           @the-tail-reflexivity |
-                            segment(p, q, n, theGapTo(g, n), n) =
-                              segment(p, q, n, theGapTo(g, n), n)
+                            segment(p, q, n, monus(g, n), n) =
+                              segment(p, q, n, monus(g, n), n)
                             [by reflexivity]
                           @the-segment-expanded |
                             segment(p, q, succ(n),
-                              theGapTo(g, succ(n)), succ(n)) =
+                              monus(g, succ(n)), succ(n)) =
                               addR(mulR(coeff(p, succ(n)),
-                              coeff(q, theGapTo(g, succ(n)))),
-                              segment(p, q, n, theGapTo(g, n), n))
+                              coeff(q, monus(g, succ(n)))),
+                              segment(p, q, n, monus(g, n), n))
                             [using simplify the-segment-peels
                               the-segment-tail-matches]
                           @the-run-expanded |
                             cappedRun(p, q, g, succ(succ(n))) =
-                              addR(segment(p, q, n, theGapTo(g, n), n),
+                              addR(segment(p, q, n, monus(g, n), n),
                               mulR(coeff(p, succ(n)),
-                              coeff(q, theGapTo(g, succ(n)))))
+                              coeff(q, monus(g, succ(n)))))
                             [using simplify the-run-grows
                               the-hypothesis-applies]
                           @the-summands-swap |
-                            addR(segment(p, q, n, theGapTo(g, n), n),
+                            addR(segment(p, q, n, monus(g, n), n),
                               mulR(coeff(p, succ(n)),
-                              coeff(q, theGapTo(g, succ(n))))) =
+                              coeff(q, monus(g, succ(n))))) =
                               addR(mulR(coeff(p, succ(n)),
-                              coeff(q, theGapTo(g, succ(n)))),
-                              segment(p, q, n, theGapTo(g, n), n))
+                              coeff(q, monus(g, succ(n)))),
+                              segment(p, q, n, monus(g, n), n))
                             [using specialize addIsCommutativeR(
-                              segment(p, q, n, theGapTo(g, n), n),
+                              segment(p, q, n, monus(g, n), n),
                               mulR(coeff(p, succ(n)),
-                              coeff(q, theGapTo(g, succ(n)))))]
+                              coeff(q, monus(g, succ(n)))))]
                           @the-segment-flipped |
                             addR(mulR(coeff(p, succ(n)),
-                              coeff(q, theGapTo(g, succ(n)))),
-                              segment(p, q, n, theGapTo(g, n), n)) =
+                              coeff(q, monus(g, succ(n)))),
+                              segment(p, q, n, monus(g, n), n)) =
                               segment(p, q, succ(n),
-                              theGapTo(g, succ(n)), succ(n))
+                              monus(g, succ(n)), succ(n))
                             [by symmetry the-segment-expanded]
                           @conclusion-the-step |
                             cappedRun(p, q, g, succ(succ(n))) =
                               segment(p, q, succ(n),
-                              theGapTo(g, succ(n)), succ(n))
+                              monus(g, succ(n)), succ(n))
                             [using chain the-run-expanded
                               the-summands-swap the-segment-flipped]
                         }
@@ -8345,7 +8350,7 @@ proof
                         peano_order.less_or_equal(succ(n), g) ->
                           cappedRun(p, q, g, succ(succ(n))) =
                           segment(p, q, succ(n),
-                          theGapTo(g, succ(n)), succ(n))
+                          monus(g, succ(n)), succ(n))
                         [by discharge given-the-bound]
                     }
                   @all-gaps |
@@ -8353,19 +8358,19 @@ proof
                       peano_order.less_or_equal(succ(n), g) ->
                       cappedRun(p, q, g, succ(succ(n))) =
                       segment(p, q, succ(n),
-                      theGapTo(g, succ(n)), succ(n))
+                      monus(g, succ(n)), succ(n))
                     [by generalize generalize-g]
                 }
               @the-hypothesis-gives-it |
                 (forall g: Nat;
                   peano_order.less_or_equal(n, g) ->
                   cappedRun(p, q, g, succ(n)) =
-                  segment(p, q, n, theGapTo(g, n), n)) ->
+                  segment(p, q, n, monus(g, n), n)) ->
                   (forall g: Nat;
                   peano_order.less_or_equal(succ(n), g) ->
                   cappedRun(p, q, g, succ(succ(n))) =
                   segment(p, q, succ(n),
-                  theGapTo(g, succ(n)), succ(n)))
+                  monus(g, succ(n)), succ(n)))
                 [by discharge given-the-hypothesis]
             }
           @discharge-n |
@@ -8373,11 +8378,11 @@ proof
               (forall g: Nat;
               peano_order.less_or_equal(n, g) ->
               cappedRun(p, q, g, succ(n)) =
-              segment(p, q, n, theGapTo(g, n), n)) ->
+              segment(p, q, n, monus(g, n), n)) ->
               (forall g: Nat;
               peano_order.less_or_equal(succ(n), g) ->
               cappedRun(p, q, g, succ(succ(n))) =
-              segment(p, q, succ(n), theGapTo(g, succ(n)), succ(n)))
+              segment(p, q, succ(n), monus(g, succ(n)), succ(n)))
             [by generalize generalize-n]
         }
       @discharge-q |
@@ -8385,11 +8390,11 @@ proof
           (forall g: Nat;
           peano_order.less_or_equal(n, g) ->
           cappedRun(p, q, g, succ(n)) =
-          segment(p, q, n, theGapTo(g, n), n)) ->
+          segment(p, q, n, monus(g, n), n)) ->
           (forall g: Nat;
           peano_order.less_or_equal(succ(n), g) ->
           cappedRun(p, q, g, succ(succ(n))) =
-          segment(p, q, succ(n), theGapTo(g, succ(n)), succ(n)))
+          segment(p, q, succ(n), monus(g, succ(n)), succ(n)))
         [by generalize generalize-q]
     }
   @conclusion |
@@ -8397,11 +8402,11 @@ proof
       (forall g: Nat;
       peano_order.less_or_equal(n, g) ->
       cappedRun(p, q, g, succ(n)) =
-      segment(p, q, n, theGapTo(g, n), n)) ->
+      segment(p, q, n, monus(g, n), n)) ->
       (forall g: Nat;
       peano_order.less_or_equal(succ(n), g) ->
       cappedRun(p, q, g, succ(succ(n))) =
-      segment(p, q, succ(n), theGapTo(g, succ(n)), succ(n)))
+      segment(p, q, succ(n), monus(g, succ(n)), succ(n)))
     [by generalize generalize-p]
 qed
 
@@ -8426,14 +8431,14 @@ proof
                 [using specialize peano_order.lessOrEqualRefl(g)]
               @the-run-reads-as-a-segment |
                 cappedRun(p, q, g, succ(g)) =
-                  segment(p, q, g, theGapTo(g, g), g)
+                  segment(p, q, g, monus(g, g), g)
                 [using specialize aCappedRunReadsAsASegment(p, q, g, g)
                   g-is-at-most-itself]
               @the-gap-closes |
-                theGapTo(g, g) = ZERO
-                [using specialize theGapToSelfVanishes(g)]
+                monus(g, g) = ZERO
+                [using specialize monusSelfVanishes(g)]
               @the-segment-at-zero |
-                segment(p, q, g, theGapTo(g, g), g) =
+                segment(p, q, g, monus(g, g), g) =
                   segment(p, q, g, ZERO, g)
                 [by rewrite the-gap-closes]
               @the-segment-reads-forwards |
@@ -8688,7 +8693,7 @@ proof
                               @the-diagonal-scales |
                                 tripleDiag(p, q, r, i, n, succ(n)) =
                                   mulR(cappedRun(p, q, n, succ(n)),
-                                  coeff(r, theGapTo(i, n)))
+                                  coeff(r, monus(i, n)))
                                 [using specialize
                                   aDiagonalIsTheScaledRun(p, q, r,
                                   succ(n), i, n) the-count-is-within
@@ -8703,7 +8708,7 @@ proof
                                 cappedRun(mulP(p, q), r, i, succ(n)) =
                                   addR(cappedRun(mulP(p, q), r, i, n),
                                   mulR(coeff(mulP(p, q), n),
-                                  coeff(r, theGapTo(i, n))))
+                                  coeff(r, monus(i, n))))
                                 [using specialize
                                   cappedRunSucc(mulP(p, q), r, i, n)]
                               @conclusion-the-step |
@@ -8787,9 +8792,9 @@ proof
 qed
 
 // -- BRIDGE 2: the shortened rows ARE the right run -----------------------------------------
-// Row `m` at bound `succ(i)` runs `theGapTo(succ i, m)` = `succ(theGapTo(i, m))` entries —
+// Row `m` at bound `succ(i)` runs `monus(succ i, m)` = `succ(monus(i, m))` entries —
 // the full inner run — so Lemma D plus the full-run bridge make it `p_m` times
-// `coeff(qr, theGapTo(i, m))`, which is the term `cappedRun(p, qr, i, ·)` gains at count m.
+// `coeff(qr, monus(i, m))`, which is the term `cappedRun(p, qr, i, ·)` gains at count m.
 // The bound `m <= i` travels inside, for `theRaisedGapSteps` to raise the row's length.
 theorem theShortenedRowsAreTheRightRun: forall p, q, r: Poly; forall m, i: Nat;
   peano_order.less_or_equal(m, succ(i)) ->
@@ -8908,9 +8913,9 @@ proof
     [by generalize generalize-p]
 qed
 
-// The step: the rows gain row `m` at length `theGapTo(succ i, m)`, which `theRaisedGapSteps`
-// identifies with `succ(theGapTo(i, m))` — the FULL inner run — so Lemma D and the full-run
-// bridge make it `p_m` times `coeff(qr, theGapTo(i, m))`, the term the run gains at count m.
+// The step: the rows gain row `m` at length `monus(succ i, m)`, which `theRaisedGapSteps`
+// identifies with `succ(monus(i, m))` — the FULL inner run — so Lemma D and the full-run
+// bridge make it `p_m` times `coeff(qr, monus(i, m))`, the term the run gains at count m.
 theorem theRightRunStep: forall p, q, r: Poly; forall m: Nat;
   (forall i: Nat;
   peano_order.less_or_equal(m, succ(i)) ->
@@ -8972,48 +8977,48 @@ proof
                                 tripleRows(p, q, r, i, succ(m), succ(i)) =
                                   addR(tripleRows(p, q, r, i, m, succ(i)),
                                   tripleRow(p, q, r, i, m,
-                                  theGapTo(succ(i), m)))
+                                  monus(succ(i), m)))
                                 [using specialize
                                   tripleRowsSucc(p, q, r, i, m, succ(i))]
                               @the-row-length-is-full |
-                                theGapTo(succ(i), m) =
-                                  succ(theGapTo(i, m))
+                                monus(succ(i), m) =
+                                  succ(monus(i, m))
                                 [using specialize
                                   theRaisedGapSteps(m, i) m-is-within-i]
                               @the-row-reflexivity |
                                 tripleRow(p, q, r, i, m,
-                                  succ(theGapTo(i, m))) =
+                                  succ(monus(i, m))) =
                                   tripleRow(p, q, r, i, m,
-                                  succ(theGapTo(i, m)))
+                                  succ(monus(i, m)))
                                 [by reflexivity]
                               @the-row-at-the-full-length |
                                 tripleRow(p, q, r, i, m,
-                                  theGapTo(succ(i), m)) =
+                                  monus(succ(i), m)) =
                                   tripleRow(p, q, r, i, m,
-                                  succ(theGapTo(i, m)))
+                                  succ(monus(i, m)))
                                 [by rewrite the-row-length-is-full
                                   the-row-reflexivity]
                               @the-row-scales |
                                 tripleRow(p, q, r, i, m,
-                                  succ(theGapTo(i, m))) =
+                                  succ(monus(i, m))) =
                                   mulR(coeff(p, m),
-                                  cappedRun(q, r, theGapTo(i, m),
-                                  succ(theGapTo(i, m))))
+                                  cappedRun(q, r, monus(i, m),
+                                  succ(monus(i, m))))
                                 [using specialize
                                   aRowIsTheScaledRun(p, q, r,
-                                  succ(theGapTo(i, m)), i, m)]
+                                  succ(monus(i, m)), i, m)]
                               @the-inner-full-run |
-                                cappedRun(q, r, theGapTo(i, m),
-                                  succ(theGapTo(i, m))) =
-                                  coeff(mulP(q, r), theGapTo(i, m))
+                                cappedRun(q, r, monus(i, m),
+                                  succ(monus(i, m))) =
+                                  coeff(mulP(q, r), monus(i, m))
                                 [using specialize
                                   aFullCappedRunIsTheProductCoefficient(q,
-                                  r, theGapTo(i, m))]
+                                  r, monus(i, m))]
                               @the-run-grows |
                                 cappedRun(p, mulP(q, r), i, succ(m)) =
                                   addR(cappedRun(p, mulP(q, r), i, m),
                                   mulR(coeff(p, m),
-                                  coeff(mulP(q, r), theGapTo(i, m))))
+                                  coeff(mulP(q, r), monus(i, m))))
                                 [using specialize
                                   cappedRunSucc(p, mulP(q, r), i, m)]
                               @conclusion-the-step |
@@ -9364,12 +9369,12 @@ proof
     [by definition(1) rsegment]
 qed
 
-theorem theGapToAtZero:
-  forall i: Nat; theGapTo(i, ZERO) = i
+theorem monusAtZero:
+  forall i: Nat; monus(i, ZERO) = i
 proof
   @conclusion |
-    forall i: Nat; theGapTo(i, ZERO) = i
-    [by definition(0) theGapTo]
+    forall i: Nat; monus(i, ZERO) = i
+    [by definition(0) monus]
 qed
 
 // The `succ`/`succ` step, now DERIVED rather than transcribed: the definition descends by
@@ -9377,14 +9382,14 @@ qed
 // pair, where `prevOfSucc` collapses both `prev`s. The STATEMENT is unchanged, which is what
 // keeps the migration confined — all four call sites below cite this theorem, not the clause,
 // so the clause's guard never reaches them.
-theorem theGapToSteps:
+theorem monusSteps:
   forall i, j: Nat;
-  theGapTo(succ(i), succ(j)) = theGapTo(i, j)
+  monus(succ(i), succ(j)) = monus(i, j)
 proof
   @the-recursive-clause |
     forall i2: Nat; forall j2: Nat;
-      (i2 != ZERO and j2 != ZERO) -> theGapTo(i2, j2) = theGapTo(prev(i2), prev(j2))
-    [by definition(1) theGapTo]
+      (i2 != ZERO and j2 != ZERO) -> monus(i2, j2) = monus(prev(i2), prev(j2))
+    [by definition(1) monus]
   @prev-undoes-succ |
     forall n: Nat; prev(succ(n)) = n
     [using import(peano) prevOfSucc]
@@ -9405,7 +9410,7 @@ proof
             succ(i) != ZERO and succ(j) != ZERO
             [by both succ-i-is-nonzero succ-j-is-nonzero]
           @clause-at-the-successor-pair |
-            theGapTo(succ(i), succ(j)) = theGapTo(prev(succ(i)), prev(succ(j)))
+            monus(succ(i), succ(j)) = monus(prev(succ(i)), prev(succ(j)))
             [using specialize the-recursive-clause(succ(i), succ(j)) both-are-nonzero]
           @prev-of-succ-i |
             prev(succ(i)) = i
@@ -9414,46 +9419,46 @@ proof
             prev(succ(j)) = j
             [using specialize prev-undoes-succ(j)]
           @first-prev-collapsed |
-            theGapTo(succ(i), succ(j)) = theGapTo(i, prev(succ(j)))
+            monus(succ(i), succ(j)) = monus(i, prev(succ(j)))
             [by rewrite prev-of-succ-i clause-at-the-successor-pair]
           @conclusion-step-at-i-j |
-            theGapTo(succ(i), succ(j)) = theGapTo(i, j)
+            monus(succ(i), succ(j)) = monus(i, j)
             [by rewrite prev-of-succ-j first-prev-collapsed]
         }
       @discharge-j |
-        forall j: Nat; theGapTo(succ(i), succ(j)) = theGapTo(i, j)
+        forall j: Nat; monus(succ(i), succ(j)) = monus(i, j)
         [by generalize generalize-j]
     }
   @conclusion |
     forall i, j: Nat;
-      theGapTo(succ(i), succ(j)) = theGapTo(i, j)
+      monus(succ(i), succ(j)) = monus(i, j)
     [by generalize generalize-i]
 qed
 
-// The FLOOR arm, exposed as a theorem like the other two. `theGapTo` is truncated
+// The FLOOR arm, exposed as a theorem like the other two. `monus` is truncated
 // subtraction, so once the first argument runs out the result stays at ZERO however much is
 // left to subtract. This arm did not exist before the termination work: the two-clause version
 // left `i < j` matching no clause at all.
-theorem theGapToFloorsAtZero:
-  forall j: Nat; j != ZERO -> theGapTo(ZERO, j) = ZERO
+theorem monusFloorsAtZero:
+  forall j: Nat; j != ZERO -> monus(ZERO, j) = ZERO
 proof
   @conclusion |
-    forall j: Nat; j != ZERO -> theGapTo(ZERO, j) = ZERO
-    [by definition(2) theGapTo]
+    forall j: Nat; j != ZERO -> monus(ZERO, j) = ZERO
+    [by definition(2) monus]
 qed
 
-// -- the TERMINATION obligation for `theGapTo` ---------------------------------------------
+// -- the TERMINATION obligation for `monus` ---------------------------------------------
 //
-// `termination(peano):` names `theGapToIsGrounded`, and the checker SYNTHESIZES the statement
+// `termination(peano):` names `monusIsGrounded`, and the checker SYNTHESIZES the statement
 // it must have — the recursive arm's own guard implying the generated predicate:
 //
-//     forall i, j: Nat; (i != ZERO and j != ZERO) -> theGapToGrounded(i, j)
+//     forall i, j: Nat; (i != ZERO and j != ZERO) -> monusGrounded(i, j)
 //
-// `theGapToGrounded` is GENERATED from the arm's call sites, one conjunct per site and each a
+// `monusGrounded` is GENERATED from the arm's call sites, one conjunct per site and each a
 // disjunction of that call grounded with its arguments hitting a terminating arm's pattern:
 //
-//     theGapToGrounded(i, j) iff
-//       (theGapToGrounded(prev(i), prev(j)) or prev(i) = ZERO or prev(j) = ZERO)
+//     monusGrounded(i, j) iff
+//       (monusGrounded(prev(i), prev(j)) or prev(i) = ZERO or prev(j) = ZERO)
 //
 // Those base disjuncts are what let the recursion bottom out, and all three are needed: `j`
 // running out fires the third, `i` running out first fires the second.
@@ -9462,15 +9467,15 @@ qed
 // subtlety is that `prev(i) != ZERO` does NOT follow from `i != ZERO` (take i = 1), so the
 // inductive hypothesis is not applicable at `prev(i)` — and does not need to be, because that
 // is exactly the case the second disjunct covers. `tautology` picks whichever disjunct holds.
-theorem theGapToReachesABaseFromAPredecessor: forall k: Nat;
-  (forall i2: Nat; (i2 != ZERO and k != ZERO) -> theGapToGrounded(i2, k))
-  -> (forall i: Nat; (i != ZERO and succ(k) != ZERO) -> theGapToGrounded(i, succ(k)))
+theorem monusReachesABaseFromAPredecessor: forall k: Nat;
+  (forall i2: Nat; (i2 != ZERO and k != ZERO) -> monusGrounded(i2, k))
+  -> (forall i: Nat; (i != ZERO and succ(k) != ZERO) -> monusGrounded(i, succ(k)))
 proof
   @the-generated-clause |
     forall i3: Nat; forall j3: Nat;
-      theGapToGrounded(i3, j3) iff
-      (theGapToGrounded(prev(i3), prev(j3)) or prev(i3) = ZERO or prev(j3) = ZERO)
-    [by definition theGapToGrounded]
+      monusGrounded(i3, j3) iff
+      (monusGrounded(prev(i3), prev(j3)) or prev(i3) = ZERO or prev(j3) = ZERO)
+    [by definition monusGrounded]
   @prev-undoes-succ |
     forall n: Nat; prev(succ(n)) = n
     [using import(peano) prevOfSucc]
@@ -9480,9 +9485,9 @@ proof
   @generalize-k |
     fix k: Nat {
       @given-the-inductive-hypothesis |
-        assume forall i2: Nat; (i2 != ZERO and k != ZERO) -> theGapToGrounded(i2, k) {
+        assume forall i2: Nat; (i2 != ZERO and k != ZERO) -> monusGrounded(i2, k) {
           @inductive-hypothesis |
-            forall i2: Nat; (i2 != ZERO and k != ZERO) -> theGapToGrounded(i2, k)
+            forall i2: Nat; (i2 != ZERO and k != ZERO) -> monusGrounded(i2, k)
             [by hypothesis given-the-inductive-hypothesis]
           // `prev` is guarded, so this must precede every term that writes `prev(succ(k))`.
           @succ-k-is-nonzero |
@@ -9502,46 +9507,46 @@ proof
                     i != ZERO
                     [by and_lhs i-is-nonzero-and-so-is-succ-k]
                   @clause-at-i-and-succ-k |
-                    theGapToGrounded(i, succ(k)) iff
-                      (theGapToGrounded(prev(i), prev(succ(k))) or prev(i) = ZERO
+                    monusGrounded(i, succ(k)) iff
+                      (monusGrounded(prev(i), prev(succ(k))) or prev(i) = ZERO
                       or prev(succ(k)) = ZERO)
                     [using specialize the-generated-clause(i, succ(k))]
                   @clause-with-the-predecessor-collapsed |
-                    theGapToGrounded(i, succ(k)) iff
-                      (theGapToGrounded(prev(i), k) or prev(i) = ZERO or k = ZERO)
+                    monusGrounded(i, succ(k)) iff
+                      (monusGrounded(prev(i), k) or prev(i) = ZERO or k = ZERO)
                     [by rewrite prev-of-succ-k-is-k clause-at-i-and-succ-k]
                   @the-inductive-hypothesis-at-the-predecessor |
-                    (prev(i) != ZERO and k != ZERO) -> theGapToGrounded(prev(i), k)
+                    (prev(i) != ZERO and k != ZERO) -> monusGrounded(prev(i), k)
                     [using specialize inductive-hypothesis(prev(i))]
                   @conclusion-grounded-at-succ-k |
-                    theGapToGrounded(i, succ(k))
+                    monusGrounded(i, succ(k))
                     [using tautology clause-with-the-predecessor-collapsed
                       the-inductive-hypothesis-at-the-predecessor]
                 }
               @nonzero-implies-grounded-at-succ-k |
-                (i != ZERO and succ(k) != ZERO) -> theGapToGrounded(i, succ(k))
+                (i != ZERO and succ(k) != ZERO) -> monusGrounded(i, succ(k))
                 [by discharge given-i-nonzero-and-succ-k-nonzero]
             }
           @conclusion-for-all-i |
-            forall i: Nat; (i != ZERO and succ(k) != ZERO) -> theGapToGrounded(i, succ(k))
+            forall i: Nat; (i != ZERO and succ(k) != ZERO) -> monusGrounded(i, succ(k))
             [by generalize generalize-i]
         }
       @the-hypothesis-implies-the-step |
-        (forall i2: Nat; (i2 != ZERO and k != ZERO) -> theGapToGrounded(i2, k))
-          -> (forall i: Nat; (i != ZERO and succ(k) != ZERO) -> theGapToGrounded(i, succ(k)))
+        (forall i2: Nat; (i2 != ZERO and k != ZERO) -> monusGrounded(i2, k))
+          -> (forall i: Nat; (i != ZERO and succ(k) != ZERO) -> monusGrounded(i, succ(k)))
         [by discharge given-the-inductive-hypothesis]
     }
   @conclusion |
     forall k: Nat;
-      (forall i2: Nat; (i2 != ZERO and k != ZERO) -> theGapToGrounded(i2, k))
-      -> (forall i: Nat; (i != ZERO and succ(k) != ZERO) -> theGapToGrounded(i, succ(k)))
+      (forall i2: Nat; (i2 != ZERO and k != ZERO) -> monusGrounded(i2, k))
+      -> (forall i: Nat; (i != ZERO and succ(k) != ZERO) -> monusGrounded(i, succ(k)))
     [by generalize generalize-k]
 qed
 
 // Strategy: `peano.induction` on the second argument. The base is VACUOUS — at j = ZERO the
 // antecedent demands `ZERO != ZERO` — so every bit of content is in the step above.
-theorem theGapToIsGrounded: forall i: Nat; forall j: Nat;
-  (i != ZERO and j != ZERO) -> theGapToGrounded(i, j)
+theorem monusIsGrounded: forall i: Nat; forall j: Nat;
+  (i != ZERO and j != ZERO) -> monusGrounded(i, j)
 proof
   @zero-is-itself |
     ZERO = ZERO
@@ -9551,54 +9556,54 @@ proof
   @base-case-proof |
     fix i: Nat {
       @conclusion-vacuously-grounded-at-zero |
-        (i != ZERO and ZERO != ZERO) -> theGapToGrounded(i, ZERO)
+        (i != ZERO and ZERO != ZERO) -> monusGrounded(i, ZERO)
         [using tautology zero-is-itself]
     }
   @base-case |
-    forall i: Nat; (i != ZERO and ZERO != ZERO) -> theGapToGrounded(i, ZERO)
+    forall i: Nat; (i != ZERO and ZERO != ZERO) -> monusGrounded(i, ZERO)
     [by generalize base-case-proof]
   @induction-step-for-all-k |
     forall k: Nat;
-      (forall i2: Nat; (i2 != ZERO and k != ZERO) -> theGapToGrounded(i2, k))
-      -> (forall i: Nat; (i != ZERO and succ(k) != ZERO) -> theGapToGrounded(i, succ(k)))
-    [by cite theGapToReachesABaseFromAPredecessor]
+      (forall i2: Nat; (i2 != ZERO and k != ZERO) -> monusGrounded(i2, k))
+      -> (forall i: Nat; (i != ZERO and succ(k) != ZERO) -> monusGrounded(i, succ(k)))
+    [by cite monusReachesABaseFromAPredecessor]
   @grounded-for-every-second-argument |
-    forall j: Nat; forall i: Nat; (i != ZERO and j != ZERO) -> theGapToGrounded(i, j)
-    [using instantiation peano.induction((fun j: Nat => (forall i: Nat; (i != ZERO and j != ZERO) -> theGapToGrounded(i, j)))) base-case induction-step-for-all-k]
+    forall j: Nat; forall i: Nat; (i != ZERO and j != ZERO) -> monusGrounded(i, j)
+    [using instantiation peano.induction((fun j: Nat => (forall i: Nat; (i != ZERO and j != ZERO) -> monusGrounded(i, j)))) base-case induction-step-for-all-k]
   @generalize-i |
     fix i: Nat {
       @generalize-j |
         fix j: Nat {
           @grounded-at-j-and-i |
-            (i != ZERO and j != ZERO) -> theGapToGrounded(i, j)
+            (i != ZERO and j != ZERO) -> monusGrounded(i, j)
             [using specialize grounded-for-every-second-argument(j, i)]
         }
       @discharge-j |
-        forall j: Nat; (i != ZERO and j != ZERO) -> theGapToGrounded(i, j)
+        forall j: Nat; (i != ZERO and j != ZERO) -> monusGrounded(i, j)
         [by generalize generalize-j]
     }
   @conclusion |
-    forall i: Nat; forall j: Nat; (i != ZERO and j != ZERO) -> theGapToGrounded(i, j)
+    forall i: Nat; forall j: Nat; (i != ZERO and j != ZERO) -> monusGrounded(i, j)
     [by generalize generalize-i]
 qed
 
 theorem theCofactorIndexAtZero:
   forall i, j: Nat;
-  theCofactorIndex(i, j, ZERO) = theGapTo(i, j)
+  theCofactorIndex(i, j, ZERO) = monus(i, j)
 proof
   @conclusion |
     forall i, j: Nat;
-      theCofactorIndex(i, j, ZERO) = theGapTo(i, j)
+      theCofactorIndex(i, j, ZERO) = monus(i, j)
     [by definition(0) theCofactorIndex]
 qed
 
 theorem theCofactorIndexSteps:
   forall i, j, k: Nat;
-  theCofactorIndex(i, j, succ(k)) = theGapTo(theGapTo(i, j), succ(k))
+  theCofactorIndex(i, j, succ(k)) = monus(monus(i, j), succ(k))
 proof
   @conclusion |
     forall i, j, k: Nat;
-      theCofactorIndex(i, j, succ(k)) = theGapTo(theGapTo(i, j), succ(k))
+      theCofactorIndex(i, j, succ(k)) = monus(monus(i, j), succ(k))
     [by definition(1) theCofactorIndex]
 qed
 
@@ -9650,13 +9655,13 @@ theorem tripleDiagSucc:
   forall p, q, r: Poly; forall i, m, c: Nat;
   tripleDiag(p, q, r, i, m, succ(c)) =
   addR(tripleDiag(p, q, r, i, m, c),
-  tripleTerm(p, q, r, i, c, theGapTo(m, c)))
+  tripleTerm(p, q, r, i, c, monus(m, c)))
 proof
   @conclusion |
     forall p, q, r: Poly; forall i, m, c: Nat;
       tripleDiag(p, q, r, i, m, succ(c)) =
       addR(tripleDiag(p, q, r, i, m, c),
-      tripleTerm(p, q, r, i, c, theGapTo(m, c)))
+      tripleTerm(p, q, r, i, c, monus(m, c)))
     [by definition(1) tripleDiag]
 qed
 
@@ -9696,13 +9701,13 @@ theorem tripleRowsSucc:
   forall p, q, r: Poly; forall i, m, n: Nat;
   tripleRows(p, q, r, i, succ(m), n) =
   addR(tripleRows(p, q, r, i, m, n),
-  tripleRow(p, q, r, i, m, theGapTo(n, m)))
+  tripleRow(p, q, r, i, m, monus(n, m)))
 proof
   @conclusion |
     forall p, q, r: Poly; forall i, m, n: Nat;
       tripleRows(p, q, r, i, succ(m), n) =
       addR(tripleRows(p, q, r, i, m, n),
-      tripleRow(p, q, r, i, m, theGapTo(n, m)))
+      tripleRow(p, q, r, i, m, monus(n, m)))
     [by definition(1) tripleRows]
 qed
 
@@ -9720,12 +9725,12 @@ theorem cappedRunSucc:
   forall q, r: Poly; forall g, n: Nat;
   cappedRun(q, r, g, succ(n)) =
   addR(cappedRun(q, r, g, n),
-  mulR(coeff(q, n), coeff(r, theGapTo(g, n))))
+  mulR(coeff(q, n), coeff(r, monus(g, n))))
 proof
   @conclusion |
     forall q, r: Poly; forall g, n: Nat;
       cappedRun(q, r, g, succ(n)) =
       addR(cappedRun(q, r, g, n),
-      mulR(coeff(q, n), coeff(r, theGapTo(g, n))))
+      mulR(coeff(q, n), coeff(r, monus(g, n))))
     [by definition(1) cappedRun]
 qed
