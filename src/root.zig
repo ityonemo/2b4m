@@ -677,7 +677,15 @@ fn collectConsistencyGaps(arena: std.mem.Allocator, ctx: *Context) ![]const Proj
             for (cons.entries, 0..) |entry, p| {
                 const tok = entry orelse continue;
                 const pair = cons.pairAt(p);
-                const state = ctx.facts.lookup(ctx.io, .{ .namespace = rns, .name = tok.name }) orelse {
+                // A name the file DECLARES but the run never PROVED — a `hole`, chiefly — is
+                // absent from the facts table, which holds proven facts only. Reporting that as
+                // "names no fact" is wrong twice over: the declaration is right there, and its
+                // stated formula is comparable whether or not anything proved it. So resolve
+                // through the AST (`statementMatches` does, via `declOf`/`factOf`) and reserve
+                // the undeclared report for a name that really is absent.
+                const state = ctx.facts.lookup(ctx.io, .{ .namespace = rns, .name = tok.name });
+                if (state != null and state.? == .in_flight) continue; // mid-proof: not this check's business
+                if (state == null and ctx.declOf(rf, tok.name) == null) {
                     try out.append(arena, .{
                         .symbol = ctx.interner.stringBytes(info.name.name),
                         .path = f.path,
@@ -688,8 +696,7 @@ fn collectConsistencyGaps(arena: std.mem.Allocator, ctx: *Context) ![]const Proj
                         .pair_j = pair.j,
                     });
                     continue;
-                };
-                if (state != .proven) continue; // still in flight: not this check's business
+                }
                 if (p >= cons.obligations.len) continue; // defensive: parser keeps them aligned
                 const cmp = try statementMatches(arena, ctx, rf, rns, tok.name, cons.obligations[p]);
                 if (cmp == null) continue; // matched, or not comparable (diagnosed elsewhere)
@@ -736,7 +743,15 @@ fn collectTerminationGaps(arena: std.mem.Allocator, ctx: *Context) ![]const Proj
             for (declared.entries, 0..) |entry, arm| {
                 const pair = entry orelse continue;
                 const line = std.zig.findLineColumn(f.source, pair.theorem.start).line + 1;
-                const state = ctx.facts.lookup(ctx.io, .{ .namespace = rns, .name = pair.theorem.name }) orelse {
+                // A name the file DECLARES but the run never PROVED — a `hole`, chiefly — is
+                // absent from the facts table, which holds proven facts only. Reporting that as
+                // "names no fact" is wrong twice over: the declaration is right there, and its
+                // stated formula is comparable whether or not anything proved it. So resolve
+                // through the AST (`statementMatches` does, via `declOf`/`factOf`) and reserve
+                // the undeclared report for a name that really is absent.
+                const state = ctx.facts.lookup(ctx.io, .{ .namespace = rns, .name = pair.theorem.name });
+                if (state != null and state.? == .in_flight) continue; // mid-proof: not this check's business
+                if (state == null and ctx.declOf(rf, pair.theorem.name) == null) {
                     try out.append(arena, .{
                         .symbol = ctx.interner.stringBytes(local.name.name),
                         .path = f.path,
@@ -745,8 +760,7 @@ fn collectTerminationGaps(arena: std.mem.Allocator, ctx: *Context) ![]const Proj
                         .arm = arm,
                     });
                     continue;
-                };
-                if (state != .proven) continue; // still in flight: not this check's business
+                }
                 if (arm >= declared.obligations.len) continue; // defensive: parser keeps them aligned
                 const want = declared.obligations[arm] orelse continue;
                 const cmp = try statementMatches(arena, ctx, rf, rns, pair.theorem.name, want);

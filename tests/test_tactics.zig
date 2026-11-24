@@ -169,6 +169,13 @@ pub fn addTests(
     ctx.fail(&.{ "check", "tests/cases/definition/termination/arm-mismatch.b4m" }, "tests/cases/definition/termination/arm-mismatch.b4m:17:1: error: `termination:` entry 3 is `_`, but clause 2 of 'fib' RECURSES — a recursive arm needs `{theorem, predicate}`\n");
     ctx.fail(&.{ "check", "tests/cases/definition/termination/not-recursive.b4m" }, "tests/cases/definition/termination/not-recursive.b4m:15:1: error: `termination:` entry 2 names a theorem, but clause 1 of 'twice' does not recurse — a terminating arm takes `_`\n");
 
+    // REGRESSION: a HOLE named as the obligation resolves through the AST, not the facts table
+    // (which holds proven facts only). It used to report "names no fact in this file" — wrong
+    // twice over, since the declaration is present and its statement is comparable unproved.
+    // A hole stating the WRONG obligation must still be reported with both sides. The same bug
+    // was in the `consistency:` collector, this one's template, and is fixed alongside.
+    ctx.fail(&.{ "check", "--draft", "--library", "tests/cases/definition/library-termination-hole" }, "error: 1 recursive definition block(s) with an unsettled `termination:` declaration:\n  - g  (tests/cases/definition/library-termination-hole/wrong.b4m:20) — 'gTerminates' does not state the termination obligation for clause 1\n      it states:  forall n: N; gGrounded(n)\n      wanted:     forall n: N; n != Z -> gGrounded(n)\n");
+
     // `--library`: the named theorem must STATE the obligation. A theorem that resolves and
     // is true but says something else settles nothing — and both sides are shown, since the
     // author never wrote the obligation.
