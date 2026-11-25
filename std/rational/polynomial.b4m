@@ -199,6 +199,8 @@ intheory qEvalZero
 intheory qEvalSucc
 intheory qClearedSumZero
 intheory qClearedSumSucc
+intheory qClearedSumReachesABaseFromAPredecessor
+intheory qClearedSumIsGrounded
 intheory qmonusAtZero
 intheory qmonusSteps
 intheory qmonusReachesABaseFromAPredecessor
@@ -1421,9 +1423,16 @@ qed
 // as the induction variable, the cleared sum has its own recursion and no subtraction
 // anywhere — `sum_{i<k} a_i r^i s^(k-i)` grows at the top as
 // `S(k+1) = s·(S(k) + a_k·r^k)`, since the new term's s-exponent is exactly 1.
+//
+// `k` is the bound and the only descent, moved to the RIGHT as `peano.prev(k)`: the l-value
+// rule keeps patterns off the left of a recursive block, so the termination check can read the
+// descent. All THREE former bare uses of the clause variable become `prev(k)` — the recursive
+// call and both payload factors — since the parameter now denotes what the old arm matched as
+// `succ(k)`.
 oper qclearedSum(p: QPoly, r: Q, s: Q, k: peano.Nat) => Q:
   qclearedSum(p, r, s, peano.ZERO) = ZERO;
-  qclearedSum(p, r, s, peano.succ(k)) = rational.mul(s, rational.add(qclearedSum(p, r, s, k), rational.mul(qcoeff(p, k), qpower(r, k)))).
+  qclearedSum(p, r, s, k) = rational.mul(s, rational.add(qclearedSum(p, r, s, peano.prev(k)), rational.mul(qcoeff(p, peano.prev(k)), qpower(r, peano.prev(k))))) when k != peano.ZERO.
+  termination(peano): _, {qClearedSumIsGrounded, qclearedSumGrounded}
 
 // A product's power splits, by induction on the exponent.
 theorem aProductsPowerSplits: forall a, b: Q; forall k: peano.Nat;
@@ -3782,12 +3791,231 @@ theorem qClearedSumSucc:
   rational.mul(s, rational.add(qclearedSum(p, r, s, k),
   rational.mul(qcoeff(p, k), qpower(r, k))))
 proof
+  @the-recursive-clause |
+    forall p2: QPoly; forall r2, s2: Q; forall k2: peano.Nat;
+      k2 != NAT_ZERO -> qclearedSum(p2, r2, s2, k2) =
+      rational.mul(s2, rational.add(qclearedSum(p2, r2, s2, peano.prev(k2)),
+      rational.mul(qcoeff(p2, peano.prev(k2)), qpower(r2, peano.prev(k2)))))
+    [by definition(1) qclearedSum]
+  @prev-undoes-succ |
+    forall n: peano.Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: peano.Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-p |
+    fix p: QPoly {
+      @generalize-r |
+        fix r: Q {
+          @generalize-s |
+            fix s: Q {
+              @generalize-k |
+                fix k: peano.Nat {
+                  // `prev` is guarded, so the bound precedes every term writing `prev(succ(k))`.
+                  @succ-k-is-nonzero |
+                    peano.succ(k) != NAT_ZERO
+                    [using specialize a-successor-is-never-zero(k)]
+                  @clause-at-the-successor |
+                    qclearedSum(p, r, s, peano.succ(k)) =
+                      rational.mul(s, rational.add(qclearedSum(p, r, s, peano.prev(peano.succ(k))),
+                      rational.mul(qcoeff(p, peano.prev(peano.succ(k))), qpower(r, peano.prev(peano.succ(k))))))
+                    [using specialize the-recursive-clause(p, r, s, peano.succ(k)) succ-k-is-nonzero]
+                  @prev-of-succ-k-is-k |
+                    peano.prev(peano.succ(k)) = k
+                    [using specialize prev-undoes-succ(k)]
+                  @conclusion-peel-at-k |
+                    qclearedSum(p, r, s, peano.succ(k)) =
+                      rational.mul(s, rational.add(qclearedSum(p, r, s, k),
+                      rational.mul(qcoeff(p, k), qpower(r, k))))
+                    [by rewrite prev-of-succ-k-is-k clause-at-the-successor]
+                }
+              @discharge-k |
+                forall k: peano.Nat;
+                  qclearedSum(p, r, s, peano.succ(k)) =
+                  rational.mul(s, rational.add(qclearedSum(p, r, s, k),
+                  rational.mul(qcoeff(p, k), qpower(r, k))))
+                [by generalize generalize-k]
+            }
+          @discharge-s |
+            forall s: Q; forall k: peano.Nat;
+              qclearedSum(p, r, s, peano.succ(k)) =
+              rational.mul(s, rational.add(qclearedSum(p, r, s, k),
+              rational.mul(qcoeff(p, k), qpower(r, k))))
+            [by generalize generalize-s]
+        }
+      @discharge-r |
+        forall r, s: Q; forall k: peano.Nat;
+          qclearedSum(p, r, s, peano.succ(k)) =
+          rational.mul(s, rational.add(qclearedSum(p, r, s, k),
+          rational.mul(qcoeff(p, k), qpower(r, k))))
+        [by generalize generalize-r]
+    }
   @conclusion |
     forall p: QPoly; forall r, s: Q; forall k: peano.Nat;
       qclearedSum(p, r, s, peano.succ(k)) =
       rational.mul(s, rational.add(qclearedSum(p, r, s, k),
       rational.mul(qcoeff(p, k), qpower(r, k))))
-    [by definition(1) qclearedSum]
+    [by generalize generalize-p]
+qed
+
+// TERMINATION for `qclearedSum`. The generated predicate transcribes the one recursive call
+// site, with the terminating arm's pattern as its base alternative:
+//
+//     qclearedSumGrounded(p, r, s, k) iff (qclearedSumGrounded(p, r, s, peano.prev(k)) or peano.prev(k) = NAT_ZERO)
+//
+// `p`, `r` and `s` ride through — only the bound `k` descends — so the induction is on `k`.
+
+// The step: groundedness below `peano.succ(k)` gives it at `peano.succ(k)`. Either the predecessor `k` is
+// itself the base (the right disjunct fires) or the inductive hypothesis supplies it.
+theorem qClearedSumReachesABaseFromAPredecessor: forall k: peano.Nat;
+  (forall p2: QPoly; forall r2, s2: Q; k != NAT_ZERO -> qclearedSumGrounded(p2, r2, s2, k))
+  -> (forall p: QPoly; forall r, s: Q; peano.succ(k) != NAT_ZERO -> qclearedSumGrounded(p, r, s, peano.succ(k)))
+proof
+  @the-generated-clause |
+    forall p3: QPoly; forall r3, s3: Q; forall k3: peano.Nat;
+      qclearedSumGrounded(p3, r3, s3, k3) iff
+      (qclearedSumGrounded(p3, r3, s3, peano.prev(k3)) or peano.prev(k3) = NAT_ZERO)
+    [by definition qclearedSumGrounded]
+  @prev-undoes-succ |
+    forall n: peano.Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: peano.Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-k |
+    fix k: peano.Nat {
+      @given-the-inductive-hypothesis |
+        assume forall p2: QPoly; forall r2, s2: Q; k != NAT_ZERO -> qclearedSumGrounded(p2, r2, s2, k) {
+          @inductive-hypothesis |
+            forall p2: QPoly; forall r2, s2: Q; k != NAT_ZERO -> qclearedSumGrounded(p2, r2, s2, k)
+            [by hypothesis given-the-inductive-hypothesis]
+          // `prev` is guarded, so these precede every term writing `peano.prev(peano.succ(k))`.
+          @succ-k-is-nonzero |
+            peano.succ(k) != NAT_ZERO
+            [using specialize a-successor-is-never-zero(k)]
+          @prev-of-succ-k-is-k |
+            peano.prev(peano.succ(k)) = k
+            [using specialize prev-undoes-succ(k)]
+          @generalize-p |
+            fix p: QPoly {
+              @generalize-r |
+                fix r: Q {
+                  @generalize-s |
+                    fix s: Q {
+                      @given-succ-k-nonzero |
+                        assume peano.succ(k) != NAT_ZERO {
+                          @clause-at-the-successor |
+                            qclearedSumGrounded(p, r, s, peano.succ(k)) iff
+                              (qclearedSumGrounded(p, r, s, peano.prev(peano.succ(k))) or peano.prev(peano.succ(k)) = NAT_ZERO)
+                            [using specialize the-generated-clause(p, r, s, peano.succ(k))]
+                          @clause-with-the-predecessor-collapsed |
+                            qclearedSumGrounded(p, r, s, peano.succ(k)) iff
+                              (qclearedSumGrounded(p, r, s, k) or k = NAT_ZERO)
+                            [by rewrite prev-of-succ-k-is-k clause-at-the-successor]
+                          @the-inductive-hypothesis-here |
+                            k != NAT_ZERO -> qclearedSumGrounded(p, r, s, k)
+                            [using specialize inductive-hypothesis(p, r, s)]
+                          @conclusion-grounded-at-the-successor |
+                            qclearedSumGrounded(p, r, s, peano.succ(k))
+                            [using tautology clause-with-the-predecessor-collapsed the-inductive-hypothesis-here]
+                        }
+                      @conclusion-nonzero-gives-grounded |
+                        peano.succ(k) != NAT_ZERO -> qclearedSumGrounded(p, r, s, peano.succ(k))
+                        [by discharge given-succ-k-nonzero]
+                    }
+                  @discharge-s |
+                    forall s: Q; peano.succ(k) != NAT_ZERO -> qclearedSumGrounded(p, r, s, peano.succ(k))
+                    [by generalize generalize-s]
+                }
+              @discharge-r |
+                forall r, s: Q; peano.succ(k) != NAT_ZERO -> qclearedSumGrounded(p, r, s, peano.succ(k))
+                [by generalize generalize-r]
+            }
+          @conclusion-grounded-for-every-argument |
+            forall p: QPoly; forall r, s: Q; peano.succ(k) != NAT_ZERO -> qclearedSumGrounded(p, r, s, peano.succ(k))
+            [by generalize generalize-p]
+        }
+      @conclusion-the-step-at-k |
+        (forall p2: QPoly; forall r2, s2: Q; k != NAT_ZERO -> qclearedSumGrounded(p2, r2, s2, k))
+          -> (forall p: QPoly; forall r, s: Q; peano.succ(k) != NAT_ZERO -> qclearedSumGrounded(p, r, s, peano.succ(k)))
+        [by discharge given-the-inductive-hypothesis]
+    }
+  @conclusion |
+    forall k: peano.Nat;
+      (forall p2: QPoly; forall r2, s2: Q; k != NAT_ZERO -> qclearedSumGrounded(p2, r2, s2, k))
+      -> (forall p: QPoly; forall r, s: Q; peano.succ(k) != NAT_ZERO -> qclearedSumGrounded(p, r, s, peano.succ(k)))
+    [by generalize generalize-k]
+qed
+
+// THE OBLIGATION. Induction on `k`; the base is VACUOUS, its antecedent `NAT_ZERO != NAT_ZERO` being
+// false, and the step is the theorem above.
+theorem qClearedSumIsGrounded: forall p: QPoly; forall r, s: Q; forall k: peano.Nat;
+  k != NAT_ZERO -> qclearedSumGrounded(p, r, s, k)
+proof
+  @zero-is-itself |
+    NAT_ZERO = NAT_ZERO
+    [by reflexivity]
+  // `tautology` reads a `forall` as one opaque atom, so the binders are opened before the
+  // vacuous antecedent can be refuted inside them.
+  @base-case-proof |
+    fix p: QPoly {
+      @generalize-r-at-zero |
+        fix r: Q {
+          @generalize-s-at-zero |
+            fix s: Q {
+              @conclusion-vacuously-grounded |
+                NAT_ZERO != NAT_ZERO -> qclearedSumGrounded(p, r, s, NAT_ZERO)
+                [using tautology zero-is-itself]
+            }
+          @discharge-s-at-zero |
+            forall s: Q; NAT_ZERO != NAT_ZERO -> qclearedSumGrounded(p, r, s, NAT_ZERO)
+            [by generalize generalize-s-at-zero]
+        }
+      @discharge-r-at-zero |
+        forall r, s: Q; NAT_ZERO != NAT_ZERO -> qclearedSumGrounded(p, r, s, NAT_ZERO)
+        [by generalize generalize-r-at-zero]
+    }
+  @base-case |
+    forall p: QPoly; forall r, s: Q; NAT_ZERO != NAT_ZERO -> qclearedSumGrounded(p, r, s, NAT_ZERO)
+    [by generalize base-case-proof]
+  @induction-step-for-all-k |
+    forall k: peano.Nat;
+      (forall p2: QPoly; forall r2, s2: Q; k != NAT_ZERO -> qclearedSumGrounded(p2, r2, s2, k))
+      -> (forall p: QPoly; forall r, s: Q; peano.succ(k) != NAT_ZERO -> qclearedSumGrounded(p, r, s, peano.succ(k)))
+    [by cite qClearedSumReachesABaseFromAPredecessor]
+  @grounded-for-every-bound |
+    forall k: peano.Nat; forall p: QPoly; forall r, s: Q; k != NAT_ZERO -> qclearedSumGrounded(p, r, s, k)
+    [using instantiation peano.induction((fun k: peano.Nat => (forall p: QPoly; forall r, s: Q; k != NAT_ZERO -> qclearedSumGrounded(p, r, s, k)))) base-case induction-step-for-all-k]
+  @generalize-p |
+    fix p: QPoly {
+      @generalize-r |
+        fix r: Q {
+          @generalize-s |
+            fix s: Q {
+              @generalize-k |
+                fix k: peano.Nat {
+                  @grounded-at-k |
+                    forall p4: QPoly; forall r4, s4: Q; k != NAT_ZERO -> qclearedSumGrounded(p4, r4, s4, k)
+                    [using specialize grounded-for-every-bound(k)]
+                  @conclusion-grounded-here |
+                    k != NAT_ZERO -> qclearedSumGrounded(p, r, s, k)
+                    [using specialize grounded-at-k(p, r, s)]
+                }
+              @discharge-k |
+                forall k: peano.Nat; k != NAT_ZERO -> qclearedSumGrounded(p, r, s, k)
+                [by generalize generalize-k]
+            }
+          @discharge-s |
+            forall s: Q; forall k: peano.Nat; k != NAT_ZERO -> qclearedSumGrounded(p, r, s, k)
+            [by generalize generalize-s]
+        }
+      @discharge-r |
+        forall r, s: Q; forall k: peano.Nat; k != NAT_ZERO -> qclearedSumGrounded(p, r, s, k)
+        [by generalize generalize-r]
+    }
+  @conclusion |
+    forall p: QPoly; forall r, s: Q; forall k: peano.Nat; k != NAT_ZERO -> qclearedSumGrounded(p, r, s, k)
+    [by generalize generalize-p]
 qed
 
 theorem qmonusAtZero:
