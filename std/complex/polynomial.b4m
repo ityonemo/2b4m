@@ -195,9 +195,16 @@ oper ctripleTri(p: CPoly, q: CPoly, r: CPoly, i: Nat, n: Nat) => Complex:
   complex.add(ctripleTri(p, q, r, i, peano.prev(n)), ctripleDiag(p, q, r, i, peano.prev(n), n)) when n != NAT_ZERO.
   termination(peano): _, {ctripleTriIsGrounded, ctripleTriGrounded}
 
+// The recursion descends by `peano.prev`, which the l-value rule requires. NOTE the descent is
+// on `m`, the FIFTH of six arguments — `n` rides through AFTER it, so the base arm's pattern
+// sits mid-list and the generated predicate narrows that slot. Three former bare `m`s became
+// `peano.prev(m)`: the accumulated rows, the row index, and the index `cmonus` subtracts from.
 oper ctripleRows(p: CPoly, q: CPoly, r: CPoly, i: Nat, m: Nat, n: Nat) => Complex:
   ctripleRows(p, q, r, i, NAT_ZERO, n) = ZERO;
-  ctripleRows(p, q, r, i, peano.succ(m), n) = complex.add(ctripleRows(p, q, r, i, m, n), ctripleRow(p, q, r, i, m, cmonus(n, m))).
+  ctripleRows(p, q, r, i, m, n) =
+  complex.add(ctripleRows(p, q, r, i, peano.prev(m), n),
+  ctripleRow(p, q, r, i, peano.prev(m), cmonus(n, peano.prev(m)))) when m != NAT_ZERO.
+  termination(peano): _, {ctripleRowsIsGrounded, ctripleRowsGrounded}
 
 // The unit polynomial, as its OWN constant with its own coefficient axioms — the shape
 // `ring_poly.ONEP` maps onto. F[x] instead derives it from `monomial(oneF, ZERO)`, which
@@ -226,6 +233,8 @@ intheory cConvolutionReachesZeroFromAPredecessor
 intheory ctripleRowReachesABaseFromAPredecessor
 intheory ctripleDiagReachesABaseFromAPredecessor
 intheory ctripleTriReachesABaseFromAPredecessor
+intheory ctripleRowsReachesABaseFromAPredecessor
+intheory ctripleRowsIsGrounded
 intheory ctripleTriIsGrounded
 intheory ctripleDiagIsGrounded
 intheory ctripleRowIsGrounded
@@ -1635,18 +1644,99 @@ proof
     [by definition(0) ctripleRows]
 qed
 
+// The successor step, now DERIVED rather than transcribed: the definition descends by `prev`
+// on `m`, so this restates it at a successor there, where `prevOfSucc` collapses all three
+// `prev`s in one rewrite. The STATEMENT is unchanged, which keeps the migration confined.
 theorem cTripleRowsSucc:
   forall p, q, r: CPoly; forall i, m, n: Nat;
   ctripleRows(p, q, r, i, peano.succ(m), n) =
   complex.add(ctripleRows(p, q, r, i, m, n),
   ctripleRow(p, q, r, i, m, cmonus(n, m)))
 proof
+  @the-recursive-clause |
+    forall p2, q2, r2: CPoly; forall i2, m2, n2: Nat;
+      m2 != NAT_ZERO ->
+      ctripleRows(p2, q2, r2, i2, m2, n2) =
+      complex.add(ctripleRows(p2, q2, r2, i2, peano.prev(m2), n2),
+      ctripleRow(p2, q2, r2, i2, peano.prev(m2), cmonus(n2, peano.prev(m2))))
+    [by definition(1) ctripleRows]
+  @prev-undoes-succ |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-p |
+    fix p: CPoly {
+      @generalize-q |
+        fix q: CPoly {
+          @generalize-r |
+            fix r: CPoly {
+              @generalize-i |
+                fix i: Nat {
+                  @generalize-m |
+                    fix m: Nat {
+                      @generalize-n |
+                        fix n: Nat {
+                          @succ-m-is-nonzero |
+                            peano.succ(m) != NAT_ZERO
+                            [using specialize a-successor-is-never-zero(m)]
+                          @clause-at-the-successor |
+                            ctripleRows(p, q, r, i, peano.succ(m), n) =
+                              complex.add(ctripleRows(p, q, r, i, peano.prev(peano.succ(m)), n),
+                              ctripleRow(p, q, r, i, peano.prev(peano.succ(m)), cmonus(n, peano.prev(peano.succ(m)))))
+                            [using specialize the-recursive-clause(p, q, r, i, peano.succ(m), n)
+                              succ-m-is-nonzero]
+                          @prev-of-succ-m |
+                            peano.prev(peano.succ(m)) = m
+                            [using specialize prev-undoes-succ(m)]
+                          @conclusion-step-at-m |
+                            ctripleRows(p, q, r, i, peano.succ(m), n) =
+                              complex.add(ctripleRows(p, q, r, i, m, n),
+                              ctripleRow(p, q, r, i, m, cmonus(n, m)))
+                            [by rewrite prev-of-succ-m clause-at-the-successor]
+                        }
+                      @discharge-n |
+                        forall n: Nat;
+                          ctripleRows(p, q, r, i, peano.succ(m), n) =
+                          complex.add(ctripleRows(p, q, r, i, m, n),
+                          ctripleRow(p, q, r, i, m, cmonus(n, m)))
+                        [by generalize generalize-n]
+                    }
+                  @discharge-m |
+                    forall m, n: Nat;
+                      ctripleRows(p, q, r, i, peano.succ(m), n) =
+                      complex.add(ctripleRows(p, q, r, i, m, n),
+                      ctripleRow(p, q, r, i, m, cmonus(n, m)))
+                    [by generalize generalize-m]
+                }
+              @discharge-i |
+                forall i, m, n: Nat;
+                  ctripleRows(p, q, r, i, peano.succ(m), n) =
+                  complex.add(ctripleRows(p, q, r, i, m, n),
+                  ctripleRow(p, q, r, i, m, cmonus(n, m)))
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r: CPoly; forall i, m, n: Nat;
+              ctripleRows(p, q, r, i, peano.succ(m), n) =
+              complex.add(ctripleRows(p, q, r, i, m, n),
+              ctripleRow(p, q, r, i, m, cmonus(n, m)))
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: CPoly; forall i, m, n: Nat;
+          ctripleRows(p, q, r, i, peano.succ(m), n) =
+          complex.add(ctripleRows(p, q, r, i, m, n),
+          ctripleRow(p, q, r, i, m, cmonus(n, m)))
+        [by generalize generalize-q]
+    }
   @conclusion |
     forall p, q, r: CPoly; forall i, m, n: Nat;
       ctripleRows(p, q, r, i, peano.succ(m), n) =
       complex.add(ctripleRows(p, q, r, i, m, n),
       ctripleRow(p, q, r, i, m, cmonus(n, m)))
-    [by definition(1) ctripleRows]
+    [by generalize generalize-p]
 qed
 
 // -- the TERMINATION obligation for `cmonus` ------------------------------------------------
@@ -2746,5 +2836,209 @@ proof
     }
   @conclusion |
     forall p, q, r: CPoly; forall i, n: Nat; n != NAT_ZERO -> ctripleTriGrounded(p, q, r, i, n)
+    [by generalize generalize-p]
+qed
+
+// -- the TERMINATION obligation for `ctripleRows` -------------------------------------------
+//
+// `termination(peano):` names `ctripleRowsIsGrounded`, and the checker SYNTHESIZES the statement
+// it must have — the recursive arm's own guard implying the generated predicate:
+//
+//     forall p, q, r: CPoly; forall i, m, n: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, m, n)
+//
+// `ctripleRowsGrounded` is GENERATED from the arm's one recursive call site, a disjunction of
+// that call grounded with its argument hitting the terminating arm's pattern:
+//
+//     ctripleRowsGrounded(p, q, r, i, m, n) iff
+//       (ctripleRowsGrounded(p, q, r, i, peano.prev(m), n) or peano.prev(m) = NAT_ZERO)
+//
+// The descent is on `m`, the FIFTH of six arguments — `n` rides through AFTER it, which is the
+// only way this differs from the three families above.
+
+// Strategy: the step of an induction on the row count. At `peano.succ(m)` the predecessor is `m`, so
+// either `m = NAT_ZERO` and the base disjunct fires outright, or the inductive hypothesis applies
+// at `m`. `tautology` picks whichever holds.
+theorem ctripleRowsReachesABaseFromAPredecessor: forall m: Nat;
+  (forall p2, q2, r2: CPoly; forall i2, n2: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p2, q2, r2, i2, m, n2))
+  -> (forall p, q, r: CPoly; forall i, n: Nat; peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, peano.succ(m), n))
+proof
+  @the-generated-clause |
+    forall p3, q3, r3: CPoly; forall i3, m3, n3: Nat;
+      ctripleRowsGrounded(p3, q3, r3, i3, m3, n3) iff
+      (ctripleRowsGrounded(p3, q3, r3, i3, peano.prev(m3), n3) or peano.prev(m3) = NAT_ZERO)
+    [by definition ctripleRowsGrounded]
+  @prev-undoes-succ |
+    forall k: Nat; peano.prev(peano.succ(k)) = k
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-m |
+    fix m: Nat {
+      @given-the-inductive-hypothesis |
+        assume forall p2, q2, r2: CPoly; forall i2, n2: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p2, q2, r2, i2, m, n2) {
+          @inductive-hypothesis |
+            forall p2, q2, r2: CPoly; forall i2, n2: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p2, q2, r2, i2, m, n2)
+            [by hypothesis given-the-inductive-hypothesis]
+          // `prev` is guarded, so these precede every term that writes `peano.prev(peano.succ(m))`.
+          @succ-m-is-nonzero |
+            peano.succ(m) != NAT_ZERO
+            [using specialize a-successor-is-never-zero(m)]
+          @prev-of-succ-m-is-m |
+            peano.prev(peano.succ(m)) = m
+            [using specialize prev-undoes-succ(m)]
+          @generalize-p |
+            fix p: CPoly {
+              @generalize-q |
+                fix q: CPoly {
+                  @generalize-r |
+                    fix r: CPoly {
+                      @generalize-i |
+                        fix i: Nat {
+                          @generalize-n |
+                            fix n: Nat {
+                              @given-succ-m-nonzero |
+                                assume peano.succ(m) != NAT_ZERO {
+                                  @clause-at-the-successor |
+                                    ctripleRowsGrounded(p, q, r, i, peano.succ(m), n) iff
+                                      (ctripleRowsGrounded(p, q, r, i, peano.prev(peano.succ(m)), n) or peano.prev(peano.succ(m)) = NAT_ZERO)
+                                    [using specialize the-generated-clause(p, q, r, i, peano.succ(m), n)]
+                                  @clause-with-the-predecessor-collapsed |
+                                    ctripleRowsGrounded(p, q, r, i, peano.succ(m), n) iff
+                                      (ctripleRowsGrounded(p, q, r, i, m, n) or m = NAT_ZERO)
+                                    [by rewrite prev-of-succ-m-is-m clause-at-the-successor]
+                                  @the-inductive-hypothesis-here |
+                                    m != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, m, n)
+                                    [using specialize inductive-hypothesis(p, q, r, i, n)]
+                                  @conclusion-grounded-at-succ-m |
+                                    ctripleRowsGrounded(p, q, r, i, peano.succ(m), n)
+                                    [using tautology clause-with-the-predecessor-collapsed
+                                      the-inductive-hypothesis-here]
+                                }
+                              @nonzero-implies-grounded |
+                                peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, peano.succ(m), n)
+                                [by discharge given-succ-m-nonzero]
+                            }
+                          @discharge-n |
+                            forall n: Nat; peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, peano.succ(m), n)
+                            [by generalize generalize-n]
+                        }
+                      @discharge-i |
+                        forall i, n: Nat; peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, peano.succ(m), n)
+                        [by generalize generalize-i]
+                    }
+                  @discharge-r |
+                    forall r: CPoly; forall i, n: Nat; peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, peano.succ(m), n)
+                    [by generalize generalize-r]
+                }
+              @discharge-q |
+                forall q, r: CPoly; forall i, n: Nat; peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, peano.succ(m), n)
+                [by generalize generalize-q]
+            }
+          @conclusion-for-all-arguments |
+            forall p, q, r: CPoly; forall i, n: Nat; peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, peano.succ(m), n)
+            [by generalize generalize-p]
+        }
+      @the-hypothesis-implies-the-step |
+        (forall p2, q2, r2: CPoly; forall i2, n2: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p2, q2, r2, i2, m, n2))
+          -> (forall p, q, r: CPoly; forall i, n: Nat; peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, peano.succ(m), n))
+        [by discharge given-the-inductive-hypothesis]
+    }
+  @conclusion |
+    forall m: Nat;
+      (forall p2, q2, r2: CPoly; forall i2, n2: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p2, q2, r2, i2, m, n2))
+      -> (forall p, q, r: CPoly; forall i, n: Nat; peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, peano.succ(m), n))
+    [by generalize generalize-m]
+qed
+
+// Strategy: `peano.induction` on the row count. The base is VACUOUS — at m = NAT_ZERO the
+// antecedent demands `NAT_ZERO != NAT_ZERO` — so every bit of content is in the step above.
+theorem ctripleRowsIsGrounded: forall p, q, r: CPoly; forall i, m, n: Nat;
+  m != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, m, n)
+proof
+  @zero-is-itself |
+    NAT_ZERO = NAT_ZERO
+    [by reflexivity]
+  // `tautology` reads a `forall` as one opaque atom, so the binders are opened before the
+  // vacuous antecedent can be refuted inside them.
+  @base-case-proof |
+    fix p: CPoly {
+      @generalize-q-at-zero |
+        fix q: CPoly {
+          @generalize-r-at-zero |
+            fix r: CPoly {
+              @generalize-i-at-zero |
+                fix i: Nat {
+                  @generalize-n-at-zero |
+                    fix n: Nat {
+                      @conclusion-vacuously-grounded |
+                        NAT_ZERO != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, NAT_ZERO, n)
+                        [using tautology zero-is-itself]
+                    }
+                  @discharge-n-at-zero |
+                    forall n: Nat; NAT_ZERO != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, NAT_ZERO, n)
+                    [by generalize generalize-n-at-zero]
+                }
+              @discharge-i-at-zero |
+                forall i, n: Nat; NAT_ZERO != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, NAT_ZERO, n)
+                [by generalize generalize-i-at-zero]
+            }
+          @discharge-r-at-zero |
+            forall r: CPoly; forall i, n: Nat; NAT_ZERO != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, NAT_ZERO, n)
+            [by generalize generalize-r-at-zero]
+        }
+      @discharge-q-at-zero |
+        forall q, r: CPoly; forall i, n: Nat; NAT_ZERO != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, NAT_ZERO, n)
+        [by generalize generalize-q-at-zero]
+    }
+  @base-case |
+    forall p, q, r: CPoly; forall i, n: Nat; NAT_ZERO != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, NAT_ZERO, n)
+    [by generalize base-case-proof]
+  @induction-step-for-all-m |
+    forall m: Nat;
+      (forall p2, q2, r2: CPoly; forall i2, n2: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p2, q2, r2, i2, m, n2))
+      -> (forall p, q, r: CPoly; forall i, n: Nat; peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, peano.succ(m), n))
+    [by cite ctripleRowsReachesABaseFromAPredecessor]
+  @grounded-for-every-row-count |
+    forall m: Nat; forall p, q, r: CPoly; forall i, n: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, m, n)
+    [using instantiation peano.induction((fun m: Nat => (forall p, q, r: CPoly; forall i, n: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, m, n)))) base-case induction-step-for-all-m]
+  @generalize-p |
+    fix p: CPoly {
+      @generalize-q |
+        fix q: CPoly {
+          @generalize-r |
+            fix r: CPoly {
+              @generalize-i |
+                fix i: Nat {
+                  @generalize-m |
+                    fix m: Nat {
+                      @generalize-n |
+                        fix n: Nat {
+                          @grounded-here |
+                            m != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, m, n)
+                            [using specialize grounded-for-every-row-count(m, p, q, r, i, n)]
+                        }
+                      @discharge-n |
+                        forall n: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, m, n)
+                        [by generalize generalize-n]
+                    }
+                  @discharge-m |
+                    forall m, n: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, m, n)
+                    [by generalize generalize-m]
+                }
+              @discharge-i |
+                forall i, m, n: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, m, n)
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r: CPoly; forall i, m, n: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, m, n)
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: CPoly; forall i, m, n: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, m, n)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: CPoly; forall i, m, n: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, m, n)
     [by generalize generalize-p]
 qed
