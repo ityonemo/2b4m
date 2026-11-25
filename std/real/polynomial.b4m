@@ -162,13 +162,30 @@ oper rtripleRow(p: RPoly, q: RPoly, r: RPoly, i: Nat, j: Nat, n: Nat) => Real:
   real.add(rtripleRow(p, q, r, i, j, peano.prev(n)), rtripleTerm(p, q, r, i, j, peano.prev(n))) when n != NAT_ZERO.
   termination(peano): _, {rtripleRowIsGrounded, rtripleRowGrounded}
 
+// The recursion descends by `peano.prev`, which the l-value rule requires — the descent must
+// be readable on the RIGHT. THREE former bare `c`s became `peano.prev(c)`: the accumulated
+// sum, the term's own index, and the index inside `rmonus`. The parameter now denotes what the
+// old arm matched as `peano.succ(c)`, so every one of them steps back.
+//
+// `rmonus` is TOTAL (it floors at zero), so `rmonus(m, peano.prev(c))` owes nothing beyond
+// `peano.prev(c)`'s own `c != NAT_ZERO`, which the arm's guard supplies.
 oper rtripleDiag(p: RPoly, q: RPoly, r: RPoly, i: Nat, m: Nat, c: Nat) => Real:
   rtripleDiag(p, q, r, i, m, NAT_ZERO) = ZERO;
-  rtripleDiag(p, q, r, i, m, peano.succ(c)) = real.add(rtripleDiag(p, q, r, i, m, c), rtripleTerm(p, q, r, i, c, rmonus(m, c))).
+  rtripleDiag(p, q, r, i, m, c) =
+  real.add(rtripleDiag(p, q, r, i, m, peano.prev(c)),
+  rtripleTerm(p, q, r, i, peano.prev(c), rmonus(m, peano.prev(c)))) when c != NAT_ZERO.
+  termination(peano): _, {rtripleDiagIsGrounded, rtripleDiagGrounded}
 
+// The recursion descends by `peano.prev`, which the l-value rule requires. The payload's two
+// indices move DIFFERENTLY, the subtlety here: the accumulated triangle steps back to
+// `peano.prev(n)`, but the anti-diagonal's LENGTH was `peano.succ(n)` against the old matched
+// argument, and the parameter now IS that `peano.succ(n)` — so it becomes plain `n`, not
+// `peano.succ(peano.prev(n))`.
 oper rtripleTri(p: RPoly, q: RPoly, r: RPoly, i: Nat, n: Nat) => Real:
   rtripleTri(p, q, r, i, NAT_ZERO) = ZERO;
-  rtripleTri(p, q, r, i, peano.succ(n)) = real.add(rtripleTri(p, q, r, i, n), rtripleDiag(p, q, r, i, n, peano.succ(n))).
+  rtripleTri(p, q, r, i, n) =
+  real.add(rtripleTri(p, q, r, i, peano.prev(n)), rtripleDiag(p, q, r, i, peano.prev(n), n)) when n != NAT_ZERO.
+  termination(peano): _, {rtripleTriIsGrounded, rtripleTriGrounded}
 
 oper rtripleRows(p: RPoly, q: RPoly, r: RPoly, i: Nat, m: Nat, n: Nat) => Real:
   rtripleRows(p, q, r, i, NAT_ZERO, n) = ZERO;
@@ -199,6 +216,10 @@ intheory rConvolutionZero
 intheory rConvolutionSucc
 intheory rConvolutionReachesZeroFromAPredecessor
 intheory rtripleRowReachesABaseFromAPredecessor
+intheory rtripleDiagReachesABaseFromAPredecessor
+intheory rtripleTriReachesABaseFromAPredecessor
+intheory rtripleTriIsGrounded
+intheory rtripleDiagIsGrounded
 intheory rtripleRowIsGrounded
 intheory rConvolutionIsGrounded
 intheory rpowerReachesABaseFromAPredecessor
@@ -1411,18 +1432,100 @@ proof
     [by definition(0) rtripleDiag]
 qed
 
+// The successor step, now DERIVED rather than transcribed: the definition descends by `prev`,
+// so this restates it at a successor, where `prevOfSucc` collapses all three `prev`s in one
+// rewrite (they are the same term). The STATEMENT is unchanged, which keeps the migration
+// confined — every call site cites this theorem rather than the clause.
 theorem rTripleDiagSucc:
   forall p, q, r: RPoly; forall i, m, c: Nat;
   rtripleDiag(p, q, r, i, m, peano.succ(c)) =
   real.add(rtripleDiag(p, q, r, i, m, c),
   rtripleTerm(p, q, r, i, c, rmonus(m, c)))
 proof
+  @the-recursive-clause |
+    forall p2, q2, r2: RPoly; forall i2, m2, c2: Nat;
+      c2 != NAT_ZERO ->
+      rtripleDiag(p2, q2, r2, i2, m2, c2) =
+      real.add(rtripleDiag(p2, q2, r2, i2, m2, peano.prev(c2)),
+      rtripleTerm(p2, q2, r2, i2, peano.prev(c2), rmonus(m2, peano.prev(c2))))
+    [by definition(1) rtripleDiag]
+  @prev-undoes-succ |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-p |
+    fix p: RPoly {
+      @generalize-q |
+        fix q: RPoly {
+          @generalize-r |
+            fix r: RPoly {
+              @generalize-i |
+                fix i: Nat {
+                  @generalize-m |
+                    fix m: Nat {
+                      @generalize-c |
+                        fix c: Nat {
+                          @succ-c-is-nonzero |
+                            peano.succ(c) != NAT_ZERO
+                            [using specialize a-successor-is-never-zero(c)]
+                          @clause-at-the-successor |
+                            rtripleDiag(p, q, r, i, m, peano.succ(c)) =
+                              real.add(rtripleDiag(p, q, r, i, m, peano.prev(peano.succ(c))),
+                              rtripleTerm(p, q, r, i, peano.prev(peano.succ(c)), rmonus(m, peano.prev(peano.succ(c)))))
+                            [using specialize the-recursive-clause(p, q, r, i, m, peano.succ(c))
+                              succ-c-is-nonzero]
+                          @prev-of-succ-c |
+                            peano.prev(peano.succ(c)) = c
+                            [using specialize prev-undoes-succ(c)]
+                          @conclusion-step-at-c |
+                            rtripleDiag(p, q, r, i, m, peano.succ(c)) =
+                              real.add(rtripleDiag(p, q, r, i, m, c),
+                              rtripleTerm(p, q, r, i, c, rmonus(m, c)))
+                            [by rewrite prev-of-succ-c clause-at-the-successor]
+                        }
+                      @discharge-c |
+                        forall c: Nat;
+                          rtripleDiag(p, q, r, i, m, peano.succ(c)) =
+                          real.add(rtripleDiag(p, q, r, i, m, c),
+                          rtripleTerm(p, q, r, i, c, rmonus(m, c)))
+                        [by generalize generalize-c]
+                    }
+                  @discharge-m |
+                    forall m, c: Nat;
+                      rtripleDiag(p, q, r, i, m, peano.succ(c)) =
+                      real.add(rtripleDiag(p, q, r, i, m, c),
+                      rtripleTerm(p, q, r, i, c, rmonus(m, c)))
+                    [by generalize generalize-m]
+                }
+              @discharge-i |
+                forall i, m, c: Nat;
+                  rtripleDiag(p, q, r, i, m, peano.succ(c)) =
+                  real.add(rtripleDiag(p, q, r, i, m, c),
+                  rtripleTerm(p, q, r, i, c, rmonus(m, c)))
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r: RPoly; forall i, m, c: Nat;
+              rtripleDiag(p, q, r, i, m, peano.succ(c)) =
+              real.add(rtripleDiag(p, q, r, i, m, c),
+              rtripleTerm(p, q, r, i, c, rmonus(m, c)))
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: RPoly; forall i, m, c: Nat;
+          rtripleDiag(p, q, r, i, m, peano.succ(c)) =
+          real.add(rtripleDiag(p, q, r, i, m, c),
+          rtripleTerm(p, q, r, i, c, rmonus(m, c)))
+        [by generalize generalize-q]
+    }
   @conclusion |
     forall p, q, r: RPoly; forall i, m, c: Nat;
       rtripleDiag(p, q, r, i, m, peano.succ(c)) =
       real.add(rtripleDiag(p, q, r, i, m, c),
       rtripleTerm(p, q, r, i, c, rmonus(m, c)))
-    [by definition(1) rtripleDiag]
+    [by generalize generalize-p]
 qed
 
 theorem rTripleTriZero:
@@ -1435,18 +1538,83 @@ proof
     [by definition(0) rtripleTri]
 qed
 
+// The successor step, now DERIVED rather than transcribed. One `rewrite` collapses the single
+// `peano.prev(peano.succ(n))` the clause writes; the anti-diagonal's length argument is already `peano.succ(n)`
+// in both forms and needs nothing. The STATEMENT is unchanged, which keeps the migration
+// confined — every call site cites this theorem rather than the clause.
 theorem rTripleTriSucc:
   forall p, q, r: RPoly; forall i, n: Nat;
   rtripleTri(p, q, r, i, peano.succ(n)) =
-  real.add(rtripleTri(p, q, r, i, n),
-  rtripleDiag(p, q, r, i, n, peano.succ(n)))
+  real.add(rtripleTri(p, q, r, i, n), rtripleDiag(p, q, r, i, n, peano.succ(n)))
 proof
+  @the-recursive-clause |
+    forall p2, q2, r2: RPoly; forall i2, n2: Nat;
+      n2 != NAT_ZERO ->
+      rtripleTri(p2, q2, r2, i2, n2) =
+      real.add(rtripleTri(p2, q2, r2, i2, peano.prev(n2)), rtripleDiag(p2, q2, r2, i2, peano.prev(n2), n2))
+    [by definition(1) rtripleTri]
+  @prev-undoes-succ |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-p |
+    fix p: RPoly {
+      @generalize-q |
+        fix q: RPoly {
+          @generalize-r |
+            fix r: RPoly {
+              @generalize-i |
+                fix i: Nat {
+                  @generalize-n |
+                    fix n: Nat {
+                      @succ-n-is-nonzero |
+                        peano.succ(n) != NAT_ZERO
+                        [using specialize a-successor-is-never-zero(n)]
+                      @clause-at-the-successor |
+                        rtripleTri(p, q, r, i, peano.succ(n)) =
+                          real.add(rtripleTri(p, q, r, i, peano.prev(peano.succ(n))),
+                          rtripleDiag(p, q, r, i, peano.prev(peano.succ(n)), peano.succ(n)))
+                        [using specialize the-recursive-clause(p, q, r, i, peano.succ(n))
+                          succ-n-is-nonzero]
+                      @prev-of-succ-n |
+                        peano.prev(peano.succ(n)) = n
+                        [using specialize prev-undoes-succ(n)]
+                      @conclusion-step-at-n |
+                        rtripleTri(p, q, r, i, peano.succ(n)) =
+                          real.add(rtripleTri(p, q, r, i, n), rtripleDiag(p, q, r, i, n, peano.succ(n)))
+                        [by rewrite prev-of-succ-n clause-at-the-successor]
+                    }
+                  @discharge-n |
+                    forall n: Nat;
+                      rtripleTri(p, q, r, i, peano.succ(n)) =
+                      real.add(rtripleTri(p, q, r, i, n), rtripleDiag(p, q, r, i, n, peano.succ(n)))
+                    [by generalize generalize-n]
+                }
+              @discharge-i |
+                forall i, n: Nat;
+                  rtripleTri(p, q, r, i, peano.succ(n)) =
+                  real.add(rtripleTri(p, q, r, i, n), rtripleDiag(p, q, r, i, n, peano.succ(n)))
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r: RPoly; forall i, n: Nat;
+              rtripleTri(p, q, r, i, peano.succ(n)) =
+              real.add(rtripleTri(p, q, r, i, n), rtripleDiag(p, q, r, i, n, peano.succ(n)))
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: RPoly; forall i, n: Nat;
+          rtripleTri(p, q, r, i, peano.succ(n)) =
+          real.add(rtripleTri(p, q, r, i, n), rtripleDiag(p, q, r, i, n, peano.succ(n)))
+        [by generalize generalize-q]
+    }
   @conclusion |
     forall p, q, r: RPoly; forall i, n: Nat;
       rtripleTri(p, q, r, i, peano.succ(n)) =
-      real.add(rtripleTri(p, q, r, i, n),
-      rtripleDiag(p, q, r, i, n, peano.succ(n)))
-    [by definition(1) rtripleTri]
+      real.add(rtripleTri(p, q, r, i, n), rtripleDiag(p, q, r, i, n, peano.succ(n)))
+    [by generalize generalize-p]
 qed
 
 theorem rTripleRowsZero:
@@ -2181,5 +2349,394 @@ proof
     }
   @conclusion |
     forall p, q, r: RPoly; forall i, j, n: Nat; n != NAT_ZERO -> rtripleRowGrounded(p, q, r, i, j, n)
+    [by generalize generalize-p]
+qed
+
+// -- the TERMINATION obligation for `rtripleDiag` -------------------------------------------
+//
+// `termination(peano):` names `rtripleDiagIsGrounded`, and the checker SYNTHESIZES the statement
+// it must have — the recursive arm's own guard implying the generated predicate:
+//
+//     forall p, q, r: RPoly; forall i, m, c: Nat; c != NAT_ZERO -> rtripleDiagGrounded(p, q, r, i, m, c)
+//
+// `rtripleDiagGrounded` is GENERATED from the arm's one recursive call site, a disjunction of
+// that call grounded with its argument hitting the terminating arm's pattern:
+//
+//     rtripleDiagGrounded(p, q, r, i, m, c) iff
+//       (rtripleDiagGrounded(p, q, r, i, m, peano.prev(c)) or peano.prev(c) = NAT_ZERO)
+//
+// Five of the six binders ride along untouched; only `c` descends, so this is `evalUpTo`'s
+// shape with more scaffolding and no more mathematics.
+
+// Strategy: the step of an induction on the anti-diagonal length. At `peano.succ(c)` the predecessor is `c`, so
+// either `c = NAT_ZERO` and the base disjunct fires outright, or the inductive hypothesis applies
+// at `c`. `tautology` picks whichever holds.
+theorem rtripleDiagReachesABaseFromAPredecessor: forall c: Nat;
+  (forall p2, q2, r2: RPoly; forall i2, m2: Nat; c != NAT_ZERO -> rtripleDiagGrounded(p2, q2, r2, i2, m2, c))
+  -> (forall p, q, r: RPoly; forall i, m: Nat; peano.succ(c) != NAT_ZERO -> rtripleDiagGrounded(p, q, r, i, m, peano.succ(c)))
+proof
+  @the-generated-clause |
+    forall p3, q3, r3: RPoly; forall i3, m3, c3: Nat;
+      rtripleDiagGrounded(p3, q3, r3, i3, m3, c3) iff
+      (rtripleDiagGrounded(p3, q3, r3, i3, m3, peano.prev(c3)) or peano.prev(c3) = NAT_ZERO)
+    [by definition rtripleDiagGrounded]
+  @prev-undoes-succ |
+    forall c: Nat; peano.prev(peano.succ(c)) = c
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-c |
+    fix c: Nat {
+      @given-the-inductive-hypothesis |
+        assume forall p2, q2, r2: RPoly; forall i2, m2: Nat; c != NAT_ZERO -> rtripleDiagGrounded(p2, q2, r2, i2, m2, c) {
+          @inductive-hypothesis |
+            forall p2, q2, r2: RPoly; forall i2, m2: Nat; c != NAT_ZERO -> rtripleDiagGrounded(p2, q2, r2, i2, m2, c)
+            [by hypothesis given-the-inductive-hypothesis]
+          // `prev` is guarded, so these precede every term that writes `peano.prev(peano.succ(c))`.
+          @succ-c-is-nonzero |
+            peano.succ(c) != NAT_ZERO
+            [using specialize a-successor-is-never-zero(c)]
+          @prev-of-succ-c-is-c |
+            peano.prev(peano.succ(c)) = c
+            [using specialize prev-undoes-succ(c)]
+          @generalize-p |
+            fix p: RPoly {
+              @generalize-q |
+                fix q: RPoly {
+                  @generalize-r |
+                    fix r: RPoly {
+                      @generalize-i |
+                        fix i: Nat {
+                          @generalize-m |
+                            fix m: Nat {
+                              @given-succ-c-nonzero |
+                                assume peano.succ(c) != NAT_ZERO {
+                                  @clause-at-the-successor |
+                                    rtripleDiagGrounded(p, q, r, i, m, peano.succ(c)) iff
+                                      (rtripleDiagGrounded(p, q, r, i, m, peano.prev(peano.succ(c))) or peano.prev(peano.succ(c)) = NAT_ZERO)
+                                    [using specialize the-generated-clause(p, q, r, i, m, peano.succ(c))]
+                                  @clause-with-the-predecessor-collapsed |
+                                    rtripleDiagGrounded(p, q, r, i, m, peano.succ(c)) iff
+                                      (rtripleDiagGrounded(p, q, r, i, m, c) or c = NAT_ZERO)
+                                    [by rewrite prev-of-succ-c-is-c clause-at-the-successor]
+                                  @the-inductive-hypothesis-here |
+                                    c != NAT_ZERO -> rtripleDiagGrounded(p, q, r, i, m, c)
+                                    [using specialize inductive-hypothesis(p, q, r, i, m)]
+                                  @conclusion-grounded-at-succ-c |
+                                    rtripleDiagGrounded(p, q, r, i, m, peano.succ(c))
+                                    [using tautology clause-with-the-predecessor-collapsed
+                                      the-inductive-hypothesis-here]
+                                }
+                              @nonzero-implies-grounded |
+                                peano.succ(c) != NAT_ZERO -> rtripleDiagGrounded(p, q, r, i, m, peano.succ(c))
+                                [by discharge given-succ-c-nonzero]
+                            }
+                          @discharge-m |
+                            forall m: Nat; peano.succ(c) != NAT_ZERO -> rtripleDiagGrounded(p, q, r, i, m, peano.succ(c))
+                            [by generalize generalize-m]
+                        }
+                      @discharge-i |
+                        forall i, m: Nat; peano.succ(c) != NAT_ZERO -> rtripleDiagGrounded(p, q, r, i, m, peano.succ(c))
+                        [by generalize generalize-i]
+                    }
+                  @discharge-r |
+                    forall r: RPoly; forall i, m: Nat; peano.succ(c) != NAT_ZERO -> rtripleDiagGrounded(p, q, r, i, m, peano.succ(c))
+                    [by generalize generalize-r]
+                }
+              @discharge-q |
+                forall q, r: RPoly; forall i, m: Nat; peano.succ(c) != NAT_ZERO -> rtripleDiagGrounded(p, q, r, i, m, peano.succ(c))
+                [by generalize generalize-q]
+            }
+          @conclusion-for-all-arguments |
+            forall p, q, r: RPoly; forall i, m: Nat; peano.succ(c) != NAT_ZERO -> rtripleDiagGrounded(p, q, r, i, m, peano.succ(c))
+            [by generalize generalize-p]
+        }
+      @the-hypothesis-implies-the-step |
+        (forall p2, q2, r2: RPoly; forall i2, m2: Nat; c != NAT_ZERO -> rtripleDiagGrounded(p2, q2, r2, i2, m2, c))
+          -> (forall p, q, r: RPoly; forall i, m: Nat; peano.succ(c) != NAT_ZERO -> rtripleDiagGrounded(p, q, r, i, m, peano.succ(c)))
+        [by discharge given-the-inductive-hypothesis]
+    }
+  @conclusion |
+    forall c: Nat;
+      (forall p2, q2, r2: RPoly; forall i2, m2: Nat; c != NAT_ZERO -> rtripleDiagGrounded(p2, q2, r2, i2, m2, c))
+      -> (forall p, q, r: RPoly; forall i, m: Nat; peano.succ(c) != NAT_ZERO -> rtripleDiagGrounded(p, q, r, i, m, peano.succ(c)))
+    [by generalize generalize-c]
+qed
+
+// Strategy: `peano.induction` on the anti-diagonal length. The base is VACUOUS — at c = NAT_ZERO the
+// antecedent demands `NAT_ZERO != NAT_ZERO` — so every bit of content is in the step above.
+theorem rtripleDiagIsGrounded: forall p, q, r: RPoly; forall i, m, c: Nat;
+  c != NAT_ZERO -> rtripleDiagGrounded(p, q, r, i, m, c)
+proof
+  @zero-is-itself |
+    NAT_ZERO = NAT_ZERO
+    [by reflexivity]
+  // `tautology` reads a `forall` as one opaque atom, so the binders are opened before the
+  // vacuous antecedent can be refuted inside them.
+  @base-case-proof |
+    fix p: RPoly {
+      @generalize-q-at-zero |
+        fix q: RPoly {
+          @generalize-r-at-zero |
+            fix r: RPoly {
+              @generalize-i-at-zero |
+                fix i: Nat {
+                  @generalize-m-at-zero |
+                    fix m: Nat {
+                      @conclusion-vacuously-grounded |
+                        NAT_ZERO != NAT_ZERO -> rtripleDiagGrounded(p, q, r, i, m, NAT_ZERO)
+                        [using tautology zero-is-itself]
+                    }
+                  @discharge-m-at-zero |
+                    forall m: Nat; NAT_ZERO != NAT_ZERO -> rtripleDiagGrounded(p, q, r, i, m, NAT_ZERO)
+                    [by generalize generalize-m-at-zero]
+                }
+              @discharge-i-at-zero |
+                forall i, m: Nat; NAT_ZERO != NAT_ZERO -> rtripleDiagGrounded(p, q, r, i, m, NAT_ZERO)
+                [by generalize generalize-i-at-zero]
+            }
+          @discharge-r-at-zero |
+            forall r: RPoly; forall i, m: Nat; NAT_ZERO != NAT_ZERO -> rtripleDiagGrounded(p, q, r, i, m, NAT_ZERO)
+            [by generalize generalize-r-at-zero]
+        }
+      @discharge-q-at-zero |
+        forall q, r: RPoly; forall i, m: Nat; NAT_ZERO != NAT_ZERO -> rtripleDiagGrounded(p, q, r, i, m, NAT_ZERO)
+        [by generalize generalize-q-at-zero]
+    }
+  @base-case |
+    forall p, q, r: RPoly; forall i, m: Nat; NAT_ZERO != NAT_ZERO -> rtripleDiagGrounded(p, q, r, i, m, NAT_ZERO)
+    [by generalize base-case-proof]
+  @induction-step-for-all-c |
+    forall c: Nat;
+      (forall p2, q2, r2: RPoly; forall i2, m2: Nat; c != NAT_ZERO -> rtripleDiagGrounded(p2, q2, r2, i2, m2, c))
+      -> (forall p, q, r: RPoly; forall i, m: Nat; peano.succ(c) != NAT_ZERO -> rtripleDiagGrounded(p, q, r, i, m, peano.succ(c)))
+    [by cite rtripleDiagReachesABaseFromAPredecessor]
+  @grounded-for-every-length |
+    forall c: Nat; forall p, q, r: RPoly; forall i, m: Nat; c != NAT_ZERO -> rtripleDiagGrounded(p, q, r, i, m, c)
+    [using instantiation peano.induction((fun c: Nat => (forall p, q, r: RPoly; forall i, m: Nat; c != NAT_ZERO -> rtripleDiagGrounded(p, q, r, i, m, c)))) base-case induction-step-for-all-c]
+  @generalize-p |
+    fix p: RPoly {
+      @generalize-q |
+        fix q: RPoly {
+          @generalize-r |
+            fix r: RPoly {
+              @generalize-i |
+                fix i: Nat {
+                  @generalize-m |
+                    fix m: Nat {
+                      @generalize-c |
+                        fix c: Nat {
+                          @grounded-here |
+                            c != NAT_ZERO -> rtripleDiagGrounded(p, q, r, i, m, c)
+                            [using specialize grounded-for-every-length(c, p, q, r, i, m)]
+                        }
+                      @discharge-c |
+                        forall c: Nat; c != NAT_ZERO -> rtripleDiagGrounded(p, q, r, i, m, c)
+                        [by generalize generalize-c]
+                    }
+                  @discharge-m |
+                    forall m, c: Nat; c != NAT_ZERO -> rtripleDiagGrounded(p, q, r, i, m, c)
+                    [by generalize generalize-m]
+                }
+              @discharge-i |
+                forall i, m, c: Nat; c != NAT_ZERO -> rtripleDiagGrounded(p, q, r, i, m, c)
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r: RPoly; forall i, m, c: Nat; c != NAT_ZERO -> rtripleDiagGrounded(p, q, r, i, m, c)
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: RPoly; forall i, m, c: Nat; c != NAT_ZERO -> rtripleDiagGrounded(p, q, r, i, m, c)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: RPoly; forall i, m, c: Nat; c != NAT_ZERO -> rtripleDiagGrounded(p, q, r, i, m, c)
+    [by generalize generalize-p]
+qed
+
+// -- the TERMINATION obligation for `rtripleTri` --------------------------------------------
+//
+// `termination(peano):` names `rtripleTriIsGrounded`, and the checker SYNTHESIZES the statement
+// it must have — the recursive arm's own guard implying the generated predicate:
+//
+//     forall p, q, r: RPoly; forall i, n: Nat; n != NAT_ZERO -> rtripleTriGrounded(p, q, r, i, n)
+//
+// `rtripleTriGrounded` is GENERATED from the arm's one recursive call site, a disjunction of
+// that call grounded with its argument hitting the terminating arm's pattern:
+//
+//     rtripleTriGrounded(p, q, r, i, n) iff
+//       (rtripleTriGrounded(p, q, r, i, peano.prev(n)) or peano.prev(n) = NAT_ZERO)
+//
+// Four of the five binders ride along untouched; only `n` descends.
+
+// Strategy: the step of an induction on the triangle size. At `peano.succ(n)` the predecessor is `n`,
+// so either `n = NAT_ZERO` and the base disjunct fires outright, or the inductive hypothesis
+// applies at `n`. `tautology` picks whichever holds.
+theorem rtripleTriReachesABaseFromAPredecessor: forall n: Nat;
+  (forall p2, q2, r2: RPoly; forall i2: Nat; n != NAT_ZERO -> rtripleTriGrounded(p2, q2, r2, i2, n))
+  -> (forall p, q, r: RPoly; forall i: Nat; peano.succ(n) != NAT_ZERO -> rtripleTriGrounded(p, q, r, i, peano.succ(n)))
+proof
+  @the-generated-clause |
+    forall p3, q3, r3: RPoly; forall i3, n3: Nat;
+      rtripleTriGrounded(p3, q3, r3, i3, n3) iff
+      (rtripleTriGrounded(p3, q3, r3, i3, peano.prev(n3)) or peano.prev(n3) = NAT_ZERO)
+    [by definition rtripleTriGrounded]
+  @prev-undoes-succ |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-n |
+    fix n: Nat {
+      @given-the-inductive-hypothesis |
+        assume forall p2, q2, r2: RPoly; forall i2: Nat; n != NAT_ZERO -> rtripleTriGrounded(p2, q2, r2, i2, n) {
+          @inductive-hypothesis |
+            forall p2, q2, r2: RPoly; forall i2: Nat; n != NAT_ZERO -> rtripleTriGrounded(p2, q2, r2, i2, n)
+            [by hypothesis given-the-inductive-hypothesis]
+          // `prev` is guarded, so these precede every term that writes `peano.prev(peano.succ(n))`.
+          @succ-n-is-nonzero |
+            peano.succ(n) != NAT_ZERO
+            [using specialize a-successor-is-never-zero(n)]
+          @prev-of-succ-n-is-n |
+            peano.prev(peano.succ(n)) = n
+            [using specialize prev-undoes-succ(n)]
+          @generalize-p |
+            fix p: RPoly {
+              @generalize-q |
+                fix q: RPoly {
+                  @generalize-r |
+                    fix r: RPoly {
+                      @generalize-i |
+                        fix i: Nat {
+                          @given-succ-n-nonzero |
+                            assume peano.succ(n) != NAT_ZERO {
+                              @clause-at-the-successor |
+                                rtripleTriGrounded(p, q, r, i, peano.succ(n)) iff
+                                  (rtripleTriGrounded(p, q, r, i, peano.prev(peano.succ(n))) or peano.prev(peano.succ(n)) = NAT_ZERO)
+                                [using specialize the-generated-clause(p, q, r, i, peano.succ(n))]
+                              @clause-with-the-predecessor-collapsed |
+                                rtripleTriGrounded(p, q, r, i, peano.succ(n)) iff
+                                  (rtripleTriGrounded(p, q, r, i, n) or n = NAT_ZERO)
+                                [by rewrite prev-of-succ-n-is-n clause-at-the-successor]
+                              @the-inductive-hypothesis-here |
+                                n != NAT_ZERO -> rtripleTriGrounded(p, q, r, i, n)
+                                [using specialize inductive-hypothesis(p, q, r, i)]
+                              @conclusion-grounded-at-succ-n |
+                                rtripleTriGrounded(p, q, r, i, peano.succ(n))
+                                [using tautology clause-with-the-predecessor-collapsed
+                                  the-inductive-hypothesis-here]
+                            }
+                          @nonzero-implies-grounded |
+                            peano.succ(n) != NAT_ZERO -> rtripleTriGrounded(p, q, r, i, peano.succ(n))
+                            [by discharge given-succ-n-nonzero]
+                        }
+                      @discharge-i |
+                        forall i: Nat; peano.succ(n) != NAT_ZERO -> rtripleTriGrounded(p, q, r, i, peano.succ(n))
+                        [by generalize generalize-i]
+                    }
+                  @discharge-r |
+                    forall r: RPoly; forall i: Nat; peano.succ(n) != NAT_ZERO -> rtripleTriGrounded(p, q, r, i, peano.succ(n))
+                    [by generalize generalize-r]
+                }
+              @discharge-q |
+                forall q, r: RPoly; forall i: Nat; peano.succ(n) != NAT_ZERO -> rtripleTriGrounded(p, q, r, i, peano.succ(n))
+                [by generalize generalize-q]
+            }
+          @conclusion-for-all-arguments |
+            forall p, q, r: RPoly; forall i: Nat; peano.succ(n) != NAT_ZERO -> rtripleTriGrounded(p, q, r, i, peano.succ(n))
+            [by generalize generalize-p]
+        }
+      @the-hypothesis-implies-the-step |
+        (forall p2, q2, r2: RPoly; forall i2: Nat; n != NAT_ZERO -> rtripleTriGrounded(p2, q2, r2, i2, n))
+          -> (forall p, q, r: RPoly; forall i: Nat; peano.succ(n) != NAT_ZERO -> rtripleTriGrounded(p, q, r, i, peano.succ(n)))
+        [by discharge given-the-inductive-hypothesis]
+    }
+  @conclusion |
+    forall n: Nat;
+      (forall p2, q2, r2: RPoly; forall i2: Nat; n != NAT_ZERO -> rtripleTriGrounded(p2, q2, r2, i2, n))
+      -> (forall p, q, r: RPoly; forall i: Nat; peano.succ(n) != NAT_ZERO -> rtripleTriGrounded(p, q, r, i, peano.succ(n)))
+    [by generalize generalize-n]
+qed
+
+// Strategy: `peano.induction` on the triangle size. The base is VACUOUS — at n = NAT_ZERO the
+// antecedent demands `NAT_ZERO != NAT_ZERO` — so every bit of content is in the step above.
+theorem rtripleTriIsGrounded: forall p, q, r: RPoly; forall i, n: Nat;
+  n != NAT_ZERO -> rtripleTriGrounded(p, q, r, i, n)
+proof
+  @zero-is-itself |
+    NAT_ZERO = NAT_ZERO
+    [by reflexivity]
+  // `tautology` reads a `forall` as one opaque atom, so the binders are opened before the
+  // vacuous antecedent can be refuted inside them.
+  @base-case-proof |
+    fix p: RPoly {
+      @generalize-q-at-zero |
+        fix q: RPoly {
+          @generalize-r-at-zero |
+            fix r: RPoly {
+              @generalize-i-at-zero |
+                fix i: Nat {
+                  @conclusion-vacuously-grounded |
+                    NAT_ZERO != NAT_ZERO -> rtripleTriGrounded(p, q, r, i, NAT_ZERO)
+                    [using tautology zero-is-itself]
+                }
+              @discharge-i-at-zero |
+                forall i: Nat; NAT_ZERO != NAT_ZERO -> rtripleTriGrounded(p, q, r, i, NAT_ZERO)
+                [by generalize generalize-i-at-zero]
+            }
+          @discharge-r-at-zero |
+            forall r: RPoly; forall i: Nat; NAT_ZERO != NAT_ZERO -> rtripleTriGrounded(p, q, r, i, NAT_ZERO)
+            [by generalize generalize-r-at-zero]
+        }
+      @discharge-q-at-zero |
+        forall q, r: RPoly; forall i: Nat; NAT_ZERO != NAT_ZERO -> rtripleTriGrounded(p, q, r, i, NAT_ZERO)
+        [by generalize generalize-q-at-zero]
+    }
+  @base-case |
+    forall p, q, r: RPoly; forall i: Nat; NAT_ZERO != NAT_ZERO -> rtripleTriGrounded(p, q, r, i, NAT_ZERO)
+    [by generalize base-case-proof]
+  @induction-step-for-all-n |
+    forall n: Nat;
+      (forall p2, q2, r2: RPoly; forall i2: Nat; n != NAT_ZERO -> rtripleTriGrounded(p2, q2, r2, i2, n))
+      -> (forall p, q, r: RPoly; forall i: Nat; peano.succ(n) != NAT_ZERO -> rtripleTriGrounded(p, q, r, i, peano.succ(n)))
+    [by cite rtripleTriReachesABaseFromAPredecessor]
+  @grounded-for-every-size |
+    forall n: Nat; forall p, q, r: RPoly; forall i: Nat; n != NAT_ZERO -> rtripleTriGrounded(p, q, r, i, n)
+    [using instantiation peano.induction((fun n: Nat => (forall p, q, r: RPoly; forall i: Nat; n != NAT_ZERO -> rtripleTriGrounded(p, q, r, i, n)))) base-case induction-step-for-all-n]
+  @generalize-p |
+    fix p: RPoly {
+      @generalize-q |
+        fix q: RPoly {
+          @generalize-r |
+            fix r: RPoly {
+              @generalize-i |
+                fix i: Nat {
+                  @generalize-n |
+                    fix n: Nat {
+                      @grounded-here |
+                        n != NAT_ZERO -> rtripleTriGrounded(p, q, r, i, n)
+                        [using specialize grounded-for-every-size(n, p, q, r, i)]
+                    }
+                  @discharge-n |
+                    forall n: Nat; n != NAT_ZERO -> rtripleTriGrounded(p, q, r, i, n)
+                    [by generalize generalize-n]
+                }
+              @discharge-i |
+                forall i, n: Nat; n != NAT_ZERO -> rtripleTriGrounded(p, q, r, i, n)
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r: RPoly; forall i, n: Nat; n != NAT_ZERO -> rtripleTriGrounded(p, q, r, i, n)
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: RPoly; forall i, n: Nat; n != NAT_ZERO -> rtripleTriGrounded(p, q, r, i, n)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: RPoly; forall i, n: Nat; n != NAT_ZERO -> rtripleTriGrounded(p, q, r, i, n)
     [by generalize generalize-p]
 qed

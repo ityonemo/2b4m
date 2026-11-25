@@ -173,6 +173,10 @@ intheory qConvolutionZero
 intheory qConvolutionSucc
 intheory qConvolutionReachesZeroFromAPredecessor
 intheory qtripleRowReachesABaseFromAPredecessor
+intheory qtripleDiagReachesABaseFromAPredecessor
+intheory qtripleTriReachesABaseFromAPredecessor
+intheory qtripleTriIsGrounded
+intheory qtripleDiagIsGrounded
 intheory qtripleRowIsGrounded
 intheory qConvolutionIsGrounded
 intheory qTailConvolutionZero
@@ -2688,13 +2692,30 @@ oper qtripleRow(p: QPoly, q: QPoly, r: QPoly, i: Nat, j: Nat, n: Nat) => Q:
   rational.add(qtripleRow(p, q, r, i, j, peano.prev(n)), qtripleTerm(p, q, r, i, j, peano.prev(n))) when n != NAT_ZERO.
   termination(peano): _, {qtripleRowIsGrounded, qtripleRowGrounded}
 
+// The recursion descends by `peano.prev`, which the l-value rule requires — the descent must
+// be readable on the RIGHT. THREE former bare `c`s became `peano.prev(c)`: the accumulated
+// sum, the term's own index, and the index inside `qmonus`. The parameter now denotes what the
+// old arm matched as `peano.succ(c)`, so every one of them steps back.
+//
+// `qmonus` is TOTAL (it floors at zero), so `qmonus(m, peano.prev(c))` owes nothing beyond
+// `peano.prev(c)`'s own `c != NAT_ZERO`, which the arm's guard supplies.
 oper qtripleDiag(p: QPoly, q: QPoly, r: QPoly, i: Nat, m: Nat, c: Nat) => Q:
   qtripleDiag(p, q, r, i, m, NAT_ZERO) = ZERO;
-  qtripleDiag(p, q, r, i, m, peano.succ(c)) = rational.add(qtripleDiag(p, q, r, i, m, c), qtripleTerm(p, q, r, i, c, qmonus(m, c))).
+  qtripleDiag(p, q, r, i, m, c) =
+  rational.add(qtripleDiag(p, q, r, i, m, peano.prev(c)),
+  qtripleTerm(p, q, r, i, peano.prev(c), qmonus(m, peano.prev(c)))) when c != NAT_ZERO.
+  termination(peano): _, {qtripleDiagIsGrounded, qtripleDiagGrounded}
 
+// The recursion descends by `peano.prev`, which the l-value rule requires. The payload's two
+// indices move DIFFERENTLY, the subtlety here: the accumulated triangle steps back to
+// `peano.prev(n)`, but the anti-diagonal's LENGTH was `peano.succ(n)` against the old matched
+// argument, and the parameter now IS that `peano.succ(n)` — so it becomes plain `n`, not
+// `peano.succ(peano.prev(n))`.
 oper qtripleTri(p: QPoly, q: QPoly, r: QPoly, i: Nat, n: Nat) => Q:
   qtripleTri(p, q, r, i, NAT_ZERO) = ZERO;
-  qtripleTri(p, q, r, i, peano.succ(n)) = rational.add(qtripleTri(p, q, r, i, n), qtripleDiag(p, q, r, i, n, peano.succ(n))).
+  qtripleTri(p, q, r, i, n) =
+  rational.add(qtripleTri(p, q, r, i, peano.prev(n)), qtripleDiag(p, q, r, i, peano.prev(n), n)) when n != NAT_ZERO.
+  termination(peano): _, {qtripleTriIsGrounded, qtripleTriGrounded}
 
 oper qtripleRows(p: QPoly, q: QPoly, r: QPoly, i: Nat, m: Nat, n: Nat) => Q:
   qtripleRows(p, q, r, i, NAT_ZERO, n) = ZERO;
@@ -3985,18 +4006,100 @@ proof
     [by definition(0) qtripleDiag]
 qed
 
+// The successor step, now DERIVED rather than transcribed: the definition descends by `prev`,
+// so this restates it at a successor, where `prevOfSucc` collapses all three `prev`s in one
+// rewrite (they are the same term). The STATEMENT is unchanged, which keeps the migration
+// confined — every call site cites this theorem rather than the clause.
 theorem qTripleDiagSucc:
   forall p, q, r: QPoly; forall i, m, c: Nat;
   qtripleDiag(p, q, r, i, m, peano.succ(c)) =
   rational.add(qtripleDiag(p, q, r, i, m, c),
   qtripleTerm(p, q, r, i, c, qmonus(m, c)))
 proof
+  @the-recursive-clause |
+    forall p2, q2, r2: QPoly; forall i2, m2, c2: Nat;
+      c2 != NAT_ZERO ->
+      qtripleDiag(p2, q2, r2, i2, m2, c2) =
+      rational.add(qtripleDiag(p2, q2, r2, i2, m2, peano.prev(c2)),
+      qtripleTerm(p2, q2, r2, i2, peano.prev(c2), qmonus(m2, peano.prev(c2))))
+    [by definition(1) qtripleDiag]
+  @prev-undoes-succ |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-p |
+    fix p: QPoly {
+      @generalize-q |
+        fix q: QPoly {
+          @generalize-r |
+            fix r: QPoly {
+              @generalize-i |
+                fix i: Nat {
+                  @generalize-m |
+                    fix m: Nat {
+                      @generalize-c |
+                        fix c: Nat {
+                          @succ-c-is-nonzero |
+                            peano.succ(c) != NAT_ZERO
+                            [using specialize a-successor-is-never-zero(c)]
+                          @clause-at-the-successor |
+                            qtripleDiag(p, q, r, i, m, peano.succ(c)) =
+                              rational.add(qtripleDiag(p, q, r, i, m, peano.prev(peano.succ(c))),
+                              qtripleTerm(p, q, r, i, peano.prev(peano.succ(c)), qmonus(m, peano.prev(peano.succ(c)))))
+                            [using specialize the-recursive-clause(p, q, r, i, m, peano.succ(c))
+                              succ-c-is-nonzero]
+                          @prev-of-succ-c |
+                            peano.prev(peano.succ(c)) = c
+                            [using specialize prev-undoes-succ(c)]
+                          @conclusion-step-at-c |
+                            qtripleDiag(p, q, r, i, m, peano.succ(c)) =
+                              rational.add(qtripleDiag(p, q, r, i, m, c),
+                              qtripleTerm(p, q, r, i, c, qmonus(m, c)))
+                            [by rewrite prev-of-succ-c clause-at-the-successor]
+                        }
+                      @discharge-c |
+                        forall c: Nat;
+                          qtripleDiag(p, q, r, i, m, peano.succ(c)) =
+                          rational.add(qtripleDiag(p, q, r, i, m, c),
+                          qtripleTerm(p, q, r, i, c, qmonus(m, c)))
+                        [by generalize generalize-c]
+                    }
+                  @discharge-m |
+                    forall m, c: Nat;
+                      qtripleDiag(p, q, r, i, m, peano.succ(c)) =
+                      rational.add(qtripleDiag(p, q, r, i, m, c),
+                      qtripleTerm(p, q, r, i, c, qmonus(m, c)))
+                    [by generalize generalize-m]
+                }
+              @discharge-i |
+                forall i, m, c: Nat;
+                  qtripleDiag(p, q, r, i, m, peano.succ(c)) =
+                  rational.add(qtripleDiag(p, q, r, i, m, c),
+                  qtripleTerm(p, q, r, i, c, qmonus(m, c)))
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r: QPoly; forall i, m, c: Nat;
+              qtripleDiag(p, q, r, i, m, peano.succ(c)) =
+              rational.add(qtripleDiag(p, q, r, i, m, c),
+              qtripleTerm(p, q, r, i, c, qmonus(m, c)))
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: QPoly; forall i, m, c: Nat;
+          qtripleDiag(p, q, r, i, m, peano.succ(c)) =
+          rational.add(qtripleDiag(p, q, r, i, m, c),
+          qtripleTerm(p, q, r, i, c, qmonus(m, c)))
+        [by generalize generalize-q]
+    }
   @conclusion |
     forall p, q, r: QPoly; forall i, m, c: Nat;
       qtripleDiag(p, q, r, i, m, peano.succ(c)) =
       rational.add(qtripleDiag(p, q, r, i, m, c),
       qtripleTerm(p, q, r, i, c, qmonus(m, c)))
-    [by definition(1) qtripleDiag]
+    [by generalize generalize-p]
 qed
 
 theorem qTripleTriZero:
@@ -4009,18 +4112,83 @@ proof
     [by definition(0) qtripleTri]
 qed
 
+// The successor step, now DERIVED rather than transcribed. One `rewrite` collapses the single
+// `peano.prev(peano.succ(n))` the clause writes; the anti-diagonal's length argument is already `peano.succ(n)`
+// in both forms and needs nothing. The STATEMENT is unchanged, which keeps the migration
+// confined — every call site cites this theorem rather than the clause.
 theorem qTripleTriSucc:
   forall p, q, r: QPoly; forall i, n: Nat;
   qtripleTri(p, q, r, i, peano.succ(n)) =
-  rational.add(qtripleTri(p, q, r, i, n),
-  qtripleDiag(p, q, r, i, n, peano.succ(n)))
+  rational.add(qtripleTri(p, q, r, i, n), qtripleDiag(p, q, r, i, n, peano.succ(n)))
 proof
+  @the-recursive-clause |
+    forall p2, q2, r2: QPoly; forall i2, n2: Nat;
+      n2 != NAT_ZERO ->
+      qtripleTri(p2, q2, r2, i2, n2) =
+      rational.add(qtripleTri(p2, q2, r2, i2, peano.prev(n2)), qtripleDiag(p2, q2, r2, i2, peano.prev(n2), n2))
+    [by definition(1) qtripleTri]
+  @prev-undoes-succ |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-p |
+    fix p: QPoly {
+      @generalize-q |
+        fix q: QPoly {
+          @generalize-r |
+            fix r: QPoly {
+              @generalize-i |
+                fix i: Nat {
+                  @generalize-n |
+                    fix n: Nat {
+                      @succ-n-is-nonzero |
+                        peano.succ(n) != NAT_ZERO
+                        [using specialize a-successor-is-never-zero(n)]
+                      @clause-at-the-successor |
+                        qtripleTri(p, q, r, i, peano.succ(n)) =
+                          rational.add(qtripleTri(p, q, r, i, peano.prev(peano.succ(n))),
+                          qtripleDiag(p, q, r, i, peano.prev(peano.succ(n)), peano.succ(n)))
+                        [using specialize the-recursive-clause(p, q, r, i, peano.succ(n))
+                          succ-n-is-nonzero]
+                      @prev-of-succ-n |
+                        peano.prev(peano.succ(n)) = n
+                        [using specialize prev-undoes-succ(n)]
+                      @conclusion-step-at-n |
+                        qtripleTri(p, q, r, i, peano.succ(n)) =
+                          rational.add(qtripleTri(p, q, r, i, n), qtripleDiag(p, q, r, i, n, peano.succ(n)))
+                        [by rewrite prev-of-succ-n clause-at-the-successor]
+                    }
+                  @discharge-n |
+                    forall n: Nat;
+                      qtripleTri(p, q, r, i, peano.succ(n)) =
+                      rational.add(qtripleTri(p, q, r, i, n), qtripleDiag(p, q, r, i, n, peano.succ(n)))
+                    [by generalize generalize-n]
+                }
+              @discharge-i |
+                forall i, n: Nat;
+                  qtripleTri(p, q, r, i, peano.succ(n)) =
+                  rational.add(qtripleTri(p, q, r, i, n), qtripleDiag(p, q, r, i, n, peano.succ(n)))
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r: QPoly; forall i, n: Nat;
+              qtripleTri(p, q, r, i, peano.succ(n)) =
+              rational.add(qtripleTri(p, q, r, i, n), qtripleDiag(p, q, r, i, n, peano.succ(n)))
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: QPoly; forall i, n: Nat;
+          qtripleTri(p, q, r, i, peano.succ(n)) =
+          rational.add(qtripleTri(p, q, r, i, n), qtripleDiag(p, q, r, i, n, peano.succ(n)))
+        [by generalize generalize-q]
+    }
   @conclusion |
     forall p, q, r: QPoly; forall i, n: Nat;
       qtripleTri(p, q, r, i, peano.succ(n)) =
-      rational.add(qtripleTri(p, q, r, i, n),
-      qtripleDiag(p, q, r, i, n, peano.succ(n)))
-    [by definition(1) qtripleTri]
+      rational.add(qtripleTri(p, q, r, i, n), qtripleDiag(p, q, r, i, n, peano.succ(n)))
+    [by generalize generalize-p]
 qed
 
 theorem qTripleRowsZero:
@@ -4755,5 +4923,394 @@ proof
     }
   @conclusion |
     forall p, q, r: QPoly; forall i, j, n: Nat; n != NAT_ZERO -> qtripleRowGrounded(p, q, r, i, j, n)
+    [by generalize generalize-p]
+qed
+
+// -- the TERMINATION obligation for `qtripleDiag` -------------------------------------------
+//
+// `termination(peano):` names `qtripleDiagIsGrounded`, and the checker SYNTHESIZES the statement
+// it must have — the recursive arm's own guard implying the generated predicate:
+//
+//     forall p, q, r: QPoly; forall i, m, c: Nat; c != NAT_ZERO -> qtripleDiagGrounded(p, q, r, i, m, c)
+//
+// `qtripleDiagGrounded` is GENERATED from the arm's one recursive call site, a disjunction of
+// that call grounded with its argument hitting the terminating arm's pattern:
+//
+//     qtripleDiagGrounded(p, q, r, i, m, c) iff
+//       (qtripleDiagGrounded(p, q, r, i, m, peano.prev(c)) or peano.prev(c) = NAT_ZERO)
+//
+// Five of the six binders ride along untouched; only `c` descends, so this is `evalUpTo`'s
+// shape with more scaffolding and no more mathematics.
+
+// Strategy: the step of an induction on the anti-diagonal length. At `peano.succ(c)` the predecessor is `c`, so
+// either `c = NAT_ZERO` and the base disjunct fires outright, or the inductive hypothesis applies
+// at `c`. `tautology` picks whichever holds.
+theorem qtripleDiagReachesABaseFromAPredecessor: forall c: Nat;
+  (forall p2, q2, r2: QPoly; forall i2, m2: Nat; c != NAT_ZERO -> qtripleDiagGrounded(p2, q2, r2, i2, m2, c))
+  -> (forall p, q, r: QPoly; forall i, m: Nat; peano.succ(c) != NAT_ZERO -> qtripleDiagGrounded(p, q, r, i, m, peano.succ(c)))
+proof
+  @the-generated-clause |
+    forall p3, q3, r3: QPoly; forall i3, m3, c3: Nat;
+      qtripleDiagGrounded(p3, q3, r3, i3, m3, c3) iff
+      (qtripleDiagGrounded(p3, q3, r3, i3, m3, peano.prev(c3)) or peano.prev(c3) = NAT_ZERO)
+    [by definition qtripleDiagGrounded]
+  @prev-undoes-succ |
+    forall c: Nat; peano.prev(peano.succ(c)) = c
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-c |
+    fix c: Nat {
+      @given-the-inductive-hypothesis |
+        assume forall p2, q2, r2: QPoly; forall i2, m2: Nat; c != NAT_ZERO -> qtripleDiagGrounded(p2, q2, r2, i2, m2, c) {
+          @inductive-hypothesis |
+            forall p2, q2, r2: QPoly; forall i2, m2: Nat; c != NAT_ZERO -> qtripleDiagGrounded(p2, q2, r2, i2, m2, c)
+            [by hypothesis given-the-inductive-hypothesis]
+          // `prev` is guarded, so these precede every term that writes `peano.prev(peano.succ(c))`.
+          @succ-c-is-nonzero |
+            peano.succ(c) != NAT_ZERO
+            [using specialize a-successor-is-never-zero(c)]
+          @prev-of-succ-c-is-c |
+            peano.prev(peano.succ(c)) = c
+            [using specialize prev-undoes-succ(c)]
+          @generalize-p |
+            fix p: QPoly {
+              @generalize-q |
+                fix q: QPoly {
+                  @generalize-r |
+                    fix r: QPoly {
+                      @generalize-i |
+                        fix i: Nat {
+                          @generalize-m |
+                            fix m: Nat {
+                              @given-succ-c-nonzero |
+                                assume peano.succ(c) != NAT_ZERO {
+                                  @clause-at-the-successor |
+                                    qtripleDiagGrounded(p, q, r, i, m, peano.succ(c)) iff
+                                      (qtripleDiagGrounded(p, q, r, i, m, peano.prev(peano.succ(c))) or peano.prev(peano.succ(c)) = NAT_ZERO)
+                                    [using specialize the-generated-clause(p, q, r, i, m, peano.succ(c))]
+                                  @clause-with-the-predecessor-collapsed |
+                                    qtripleDiagGrounded(p, q, r, i, m, peano.succ(c)) iff
+                                      (qtripleDiagGrounded(p, q, r, i, m, c) or c = NAT_ZERO)
+                                    [by rewrite prev-of-succ-c-is-c clause-at-the-successor]
+                                  @the-inductive-hypothesis-here |
+                                    c != NAT_ZERO -> qtripleDiagGrounded(p, q, r, i, m, c)
+                                    [using specialize inductive-hypothesis(p, q, r, i, m)]
+                                  @conclusion-grounded-at-succ-c |
+                                    qtripleDiagGrounded(p, q, r, i, m, peano.succ(c))
+                                    [using tautology clause-with-the-predecessor-collapsed
+                                      the-inductive-hypothesis-here]
+                                }
+                              @nonzero-implies-grounded |
+                                peano.succ(c) != NAT_ZERO -> qtripleDiagGrounded(p, q, r, i, m, peano.succ(c))
+                                [by discharge given-succ-c-nonzero]
+                            }
+                          @discharge-m |
+                            forall m: Nat; peano.succ(c) != NAT_ZERO -> qtripleDiagGrounded(p, q, r, i, m, peano.succ(c))
+                            [by generalize generalize-m]
+                        }
+                      @discharge-i |
+                        forall i, m: Nat; peano.succ(c) != NAT_ZERO -> qtripleDiagGrounded(p, q, r, i, m, peano.succ(c))
+                        [by generalize generalize-i]
+                    }
+                  @discharge-r |
+                    forall r: QPoly; forall i, m: Nat; peano.succ(c) != NAT_ZERO -> qtripleDiagGrounded(p, q, r, i, m, peano.succ(c))
+                    [by generalize generalize-r]
+                }
+              @discharge-q |
+                forall q, r: QPoly; forall i, m: Nat; peano.succ(c) != NAT_ZERO -> qtripleDiagGrounded(p, q, r, i, m, peano.succ(c))
+                [by generalize generalize-q]
+            }
+          @conclusion-for-all-arguments |
+            forall p, q, r: QPoly; forall i, m: Nat; peano.succ(c) != NAT_ZERO -> qtripleDiagGrounded(p, q, r, i, m, peano.succ(c))
+            [by generalize generalize-p]
+        }
+      @the-hypothesis-implies-the-step |
+        (forall p2, q2, r2: QPoly; forall i2, m2: Nat; c != NAT_ZERO -> qtripleDiagGrounded(p2, q2, r2, i2, m2, c))
+          -> (forall p, q, r: QPoly; forall i, m: Nat; peano.succ(c) != NAT_ZERO -> qtripleDiagGrounded(p, q, r, i, m, peano.succ(c)))
+        [by discharge given-the-inductive-hypothesis]
+    }
+  @conclusion |
+    forall c: Nat;
+      (forall p2, q2, r2: QPoly; forall i2, m2: Nat; c != NAT_ZERO -> qtripleDiagGrounded(p2, q2, r2, i2, m2, c))
+      -> (forall p, q, r: QPoly; forall i, m: Nat; peano.succ(c) != NAT_ZERO -> qtripleDiagGrounded(p, q, r, i, m, peano.succ(c)))
+    [by generalize generalize-c]
+qed
+
+// Strategy: `peano.induction` on the anti-diagonal length. The base is VACUOUS — at c = NAT_ZERO the
+// antecedent demands `NAT_ZERO != NAT_ZERO` — so every bit of content is in the step above.
+theorem qtripleDiagIsGrounded: forall p, q, r: QPoly; forall i, m, c: Nat;
+  c != NAT_ZERO -> qtripleDiagGrounded(p, q, r, i, m, c)
+proof
+  @zero-is-itself |
+    NAT_ZERO = NAT_ZERO
+    [by reflexivity]
+  // `tautology` reads a `forall` as one opaque atom, so the binders are opened before the
+  // vacuous antecedent can be refuted inside them.
+  @base-case-proof |
+    fix p: QPoly {
+      @generalize-q-at-zero |
+        fix q: QPoly {
+          @generalize-r-at-zero |
+            fix r: QPoly {
+              @generalize-i-at-zero |
+                fix i: Nat {
+                  @generalize-m-at-zero |
+                    fix m: Nat {
+                      @conclusion-vacuously-grounded |
+                        NAT_ZERO != NAT_ZERO -> qtripleDiagGrounded(p, q, r, i, m, NAT_ZERO)
+                        [using tautology zero-is-itself]
+                    }
+                  @discharge-m-at-zero |
+                    forall m: Nat; NAT_ZERO != NAT_ZERO -> qtripleDiagGrounded(p, q, r, i, m, NAT_ZERO)
+                    [by generalize generalize-m-at-zero]
+                }
+              @discharge-i-at-zero |
+                forall i, m: Nat; NAT_ZERO != NAT_ZERO -> qtripleDiagGrounded(p, q, r, i, m, NAT_ZERO)
+                [by generalize generalize-i-at-zero]
+            }
+          @discharge-r-at-zero |
+            forall r: QPoly; forall i, m: Nat; NAT_ZERO != NAT_ZERO -> qtripleDiagGrounded(p, q, r, i, m, NAT_ZERO)
+            [by generalize generalize-r-at-zero]
+        }
+      @discharge-q-at-zero |
+        forall q, r: QPoly; forall i, m: Nat; NAT_ZERO != NAT_ZERO -> qtripleDiagGrounded(p, q, r, i, m, NAT_ZERO)
+        [by generalize generalize-q-at-zero]
+    }
+  @base-case |
+    forall p, q, r: QPoly; forall i, m: Nat; NAT_ZERO != NAT_ZERO -> qtripleDiagGrounded(p, q, r, i, m, NAT_ZERO)
+    [by generalize base-case-proof]
+  @induction-step-for-all-c |
+    forall c: Nat;
+      (forall p2, q2, r2: QPoly; forall i2, m2: Nat; c != NAT_ZERO -> qtripleDiagGrounded(p2, q2, r2, i2, m2, c))
+      -> (forall p, q, r: QPoly; forall i, m: Nat; peano.succ(c) != NAT_ZERO -> qtripleDiagGrounded(p, q, r, i, m, peano.succ(c)))
+    [by cite qtripleDiagReachesABaseFromAPredecessor]
+  @grounded-for-every-length |
+    forall c: Nat; forall p, q, r: QPoly; forall i, m: Nat; c != NAT_ZERO -> qtripleDiagGrounded(p, q, r, i, m, c)
+    [using instantiation peano.induction((fun c: Nat => (forall p, q, r: QPoly; forall i, m: Nat; c != NAT_ZERO -> qtripleDiagGrounded(p, q, r, i, m, c)))) base-case induction-step-for-all-c]
+  @generalize-p |
+    fix p: QPoly {
+      @generalize-q |
+        fix q: QPoly {
+          @generalize-r |
+            fix r: QPoly {
+              @generalize-i |
+                fix i: Nat {
+                  @generalize-m |
+                    fix m: Nat {
+                      @generalize-c |
+                        fix c: Nat {
+                          @grounded-here |
+                            c != NAT_ZERO -> qtripleDiagGrounded(p, q, r, i, m, c)
+                            [using specialize grounded-for-every-length(c, p, q, r, i, m)]
+                        }
+                      @discharge-c |
+                        forall c: Nat; c != NAT_ZERO -> qtripleDiagGrounded(p, q, r, i, m, c)
+                        [by generalize generalize-c]
+                    }
+                  @discharge-m |
+                    forall m, c: Nat; c != NAT_ZERO -> qtripleDiagGrounded(p, q, r, i, m, c)
+                    [by generalize generalize-m]
+                }
+              @discharge-i |
+                forall i, m, c: Nat; c != NAT_ZERO -> qtripleDiagGrounded(p, q, r, i, m, c)
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r: QPoly; forall i, m, c: Nat; c != NAT_ZERO -> qtripleDiagGrounded(p, q, r, i, m, c)
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: QPoly; forall i, m, c: Nat; c != NAT_ZERO -> qtripleDiagGrounded(p, q, r, i, m, c)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: QPoly; forall i, m, c: Nat; c != NAT_ZERO -> qtripleDiagGrounded(p, q, r, i, m, c)
+    [by generalize generalize-p]
+qed
+
+// -- the TERMINATION obligation for `qtripleTri` --------------------------------------------
+//
+// `termination(peano):` names `qtripleTriIsGrounded`, and the checker SYNTHESIZES the statement
+// it must have — the recursive arm's own guard implying the generated predicate:
+//
+//     forall p, q, r: QPoly; forall i, n: Nat; n != NAT_ZERO -> qtripleTriGrounded(p, q, r, i, n)
+//
+// `qtripleTriGrounded` is GENERATED from the arm's one recursive call site, a disjunction of
+// that call grounded with its argument hitting the terminating arm's pattern:
+//
+//     qtripleTriGrounded(p, q, r, i, n) iff
+//       (qtripleTriGrounded(p, q, r, i, peano.prev(n)) or peano.prev(n) = NAT_ZERO)
+//
+// Four of the five binders ride along untouched; only `n` descends.
+
+// Strategy: the step of an induction on the triangle size. At `peano.succ(n)` the predecessor is `n`,
+// so either `n = NAT_ZERO` and the base disjunct fires outright, or the inductive hypothesis
+// applies at `n`. `tautology` picks whichever holds.
+theorem qtripleTriReachesABaseFromAPredecessor: forall n: Nat;
+  (forall p2, q2, r2: QPoly; forall i2: Nat; n != NAT_ZERO -> qtripleTriGrounded(p2, q2, r2, i2, n))
+  -> (forall p, q, r: QPoly; forall i: Nat; peano.succ(n) != NAT_ZERO -> qtripleTriGrounded(p, q, r, i, peano.succ(n)))
+proof
+  @the-generated-clause |
+    forall p3, q3, r3: QPoly; forall i3, n3: Nat;
+      qtripleTriGrounded(p3, q3, r3, i3, n3) iff
+      (qtripleTriGrounded(p3, q3, r3, i3, peano.prev(n3)) or peano.prev(n3) = NAT_ZERO)
+    [by definition qtripleTriGrounded]
+  @prev-undoes-succ |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-n |
+    fix n: Nat {
+      @given-the-inductive-hypothesis |
+        assume forall p2, q2, r2: QPoly; forall i2: Nat; n != NAT_ZERO -> qtripleTriGrounded(p2, q2, r2, i2, n) {
+          @inductive-hypothesis |
+            forall p2, q2, r2: QPoly; forall i2: Nat; n != NAT_ZERO -> qtripleTriGrounded(p2, q2, r2, i2, n)
+            [by hypothesis given-the-inductive-hypothesis]
+          // `prev` is guarded, so these precede every term that writes `peano.prev(peano.succ(n))`.
+          @succ-n-is-nonzero |
+            peano.succ(n) != NAT_ZERO
+            [using specialize a-successor-is-never-zero(n)]
+          @prev-of-succ-n-is-n |
+            peano.prev(peano.succ(n)) = n
+            [using specialize prev-undoes-succ(n)]
+          @generalize-p |
+            fix p: QPoly {
+              @generalize-q |
+                fix q: QPoly {
+                  @generalize-r |
+                    fix r: QPoly {
+                      @generalize-i |
+                        fix i: Nat {
+                          @given-succ-n-nonzero |
+                            assume peano.succ(n) != NAT_ZERO {
+                              @clause-at-the-successor |
+                                qtripleTriGrounded(p, q, r, i, peano.succ(n)) iff
+                                  (qtripleTriGrounded(p, q, r, i, peano.prev(peano.succ(n))) or peano.prev(peano.succ(n)) = NAT_ZERO)
+                                [using specialize the-generated-clause(p, q, r, i, peano.succ(n))]
+                              @clause-with-the-predecessor-collapsed |
+                                qtripleTriGrounded(p, q, r, i, peano.succ(n)) iff
+                                  (qtripleTriGrounded(p, q, r, i, n) or n = NAT_ZERO)
+                                [by rewrite prev-of-succ-n-is-n clause-at-the-successor]
+                              @the-inductive-hypothesis-here |
+                                n != NAT_ZERO -> qtripleTriGrounded(p, q, r, i, n)
+                                [using specialize inductive-hypothesis(p, q, r, i)]
+                              @conclusion-grounded-at-succ-n |
+                                qtripleTriGrounded(p, q, r, i, peano.succ(n))
+                                [using tautology clause-with-the-predecessor-collapsed
+                                  the-inductive-hypothesis-here]
+                            }
+                          @nonzero-implies-grounded |
+                            peano.succ(n) != NAT_ZERO -> qtripleTriGrounded(p, q, r, i, peano.succ(n))
+                            [by discharge given-succ-n-nonzero]
+                        }
+                      @discharge-i |
+                        forall i: Nat; peano.succ(n) != NAT_ZERO -> qtripleTriGrounded(p, q, r, i, peano.succ(n))
+                        [by generalize generalize-i]
+                    }
+                  @discharge-r |
+                    forall r: QPoly; forall i: Nat; peano.succ(n) != NAT_ZERO -> qtripleTriGrounded(p, q, r, i, peano.succ(n))
+                    [by generalize generalize-r]
+                }
+              @discharge-q |
+                forall q, r: QPoly; forall i: Nat; peano.succ(n) != NAT_ZERO -> qtripleTriGrounded(p, q, r, i, peano.succ(n))
+                [by generalize generalize-q]
+            }
+          @conclusion-for-all-arguments |
+            forall p, q, r: QPoly; forall i: Nat; peano.succ(n) != NAT_ZERO -> qtripleTriGrounded(p, q, r, i, peano.succ(n))
+            [by generalize generalize-p]
+        }
+      @the-hypothesis-implies-the-step |
+        (forall p2, q2, r2: QPoly; forall i2: Nat; n != NAT_ZERO -> qtripleTriGrounded(p2, q2, r2, i2, n))
+          -> (forall p, q, r: QPoly; forall i: Nat; peano.succ(n) != NAT_ZERO -> qtripleTriGrounded(p, q, r, i, peano.succ(n)))
+        [by discharge given-the-inductive-hypothesis]
+    }
+  @conclusion |
+    forall n: Nat;
+      (forall p2, q2, r2: QPoly; forall i2: Nat; n != NAT_ZERO -> qtripleTriGrounded(p2, q2, r2, i2, n))
+      -> (forall p, q, r: QPoly; forall i: Nat; peano.succ(n) != NAT_ZERO -> qtripleTriGrounded(p, q, r, i, peano.succ(n)))
+    [by generalize generalize-n]
+qed
+
+// Strategy: `peano.induction` on the triangle size. The base is VACUOUS — at n = NAT_ZERO the
+// antecedent demands `NAT_ZERO != NAT_ZERO` — so every bit of content is in the step above.
+theorem qtripleTriIsGrounded: forall p, q, r: QPoly; forall i, n: Nat;
+  n != NAT_ZERO -> qtripleTriGrounded(p, q, r, i, n)
+proof
+  @zero-is-itself |
+    NAT_ZERO = NAT_ZERO
+    [by reflexivity]
+  // `tautology` reads a `forall` as one opaque atom, so the binders are opened before the
+  // vacuous antecedent can be refuted inside them.
+  @base-case-proof |
+    fix p: QPoly {
+      @generalize-q-at-zero |
+        fix q: QPoly {
+          @generalize-r-at-zero |
+            fix r: QPoly {
+              @generalize-i-at-zero |
+                fix i: Nat {
+                  @conclusion-vacuously-grounded |
+                    NAT_ZERO != NAT_ZERO -> qtripleTriGrounded(p, q, r, i, NAT_ZERO)
+                    [using tautology zero-is-itself]
+                }
+              @discharge-i-at-zero |
+                forall i: Nat; NAT_ZERO != NAT_ZERO -> qtripleTriGrounded(p, q, r, i, NAT_ZERO)
+                [by generalize generalize-i-at-zero]
+            }
+          @discharge-r-at-zero |
+            forall r: QPoly; forall i: Nat; NAT_ZERO != NAT_ZERO -> qtripleTriGrounded(p, q, r, i, NAT_ZERO)
+            [by generalize generalize-r-at-zero]
+        }
+      @discharge-q-at-zero |
+        forall q, r: QPoly; forall i: Nat; NAT_ZERO != NAT_ZERO -> qtripleTriGrounded(p, q, r, i, NAT_ZERO)
+        [by generalize generalize-q-at-zero]
+    }
+  @base-case |
+    forall p, q, r: QPoly; forall i: Nat; NAT_ZERO != NAT_ZERO -> qtripleTriGrounded(p, q, r, i, NAT_ZERO)
+    [by generalize base-case-proof]
+  @induction-step-for-all-n |
+    forall n: Nat;
+      (forall p2, q2, r2: QPoly; forall i2: Nat; n != NAT_ZERO -> qtripleTriGrounded(p2, q2, r2, i2, n))
+      -> (forall p, q, r: QPoly; forall i: Nat; peano.succ(n) != NAT_ZERO -> qtripleTriGrounded(p, q, r, i, peano.succ(n)))
+    [by cite qtripleTriReachesABaseFromAPredecessor]
+  @grounded-for-every-size |
+    forall n: Nat; forall p, q, r: QPoly; forall i: Nat; n != NAT_ZERO -> qtripleTriGrounded(p, q, r, i, n)
+    [using instantiation peano.induction((fun n: Nat => (forall p, q, r: QPoly; forall i: Nat; n != NAT_ZERO -> qtripleTriGrounded(p, q, r, i, n)))) base-case induction-step-for-all-n]
+  @generalize-p |
+    fix p: QPoly {
+      @generalize-q |
+        fix q: QPoly {
+          @generalize-r |
+            fix r: QPoly {
+              @generalize-i |
+                fix i: Nat {
+                  @generalize-n |
+                    fix n: Nat {
+                      @grounded-here |
+                        n != NAT_ZERO -> qtripleTriGrounded(p, q, r, i, n)
+                        [using specialize grounded-for-every-size(n, p, q, r, i)]
+                    }
+                  @discharge-n |
+                    forall n: Nat; n != NAT_ZERO -> qtripleTriGrounded(p, q, r, i, n)
+                    [by generalize generalize-n]
+                }
+              @discharge-i |
+                forall i, n: Nat; n != NAT_ZERO -> qtripleTriGrounded(p, q, r, i, n)
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r: QPoly; forall i, n: Nat; n != NAT_ZERO -> qtripleTriGrounded(p, q, r, i, n)
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: QPoly; forall i, n: Nat; n != NAT_ZERO -> qtripleTriGrounded(p, q, r, i, n)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: QPoly; forall i, n: Nat; n != NAT_ZERO -> qtripleTriGrounded(p, q, r, i, n)
     [by generalize generalize-p]
 qed
