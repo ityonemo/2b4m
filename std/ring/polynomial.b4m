@@ -308,6 +308,8 @@ intheory monusAtZero
 intheory monusSteps
 intheory monusFloorsAtZero
 intheory monusReachesABaseFromAPredecessor
+intheory tripleRowReachesABaseFromAPredecessor
+intheory tripleRowIsGrounded
 intheory monusIsGrounded
 intheory theCofactorIndexAtZero
 intheory theCofactorIndexSteps
@@ -5815,10 +5817,15 @@ oper tripleTerm(p: Poly, q: Poly, r: Poly, i: Nat, j: Nat, k: Nat) => R:
   mulR(mulR(coeff(p, j), coeff(q, k)), coeff(r, theCofactorIndex(i, j, k))).
 
 // one ROW: the first `n` entries at fixed j. A PREFIX family in `n`.
+// The recursion descends by `prev` rather than matching `succ` on the left, which the l-value
+// rule requires of a recursive definition — the descent must be readable on the RIGHT. Both
+// former bare `n`s became `prev(n)`: the parameter now denotes what the old arm matched as
+// `succ(n)`, so the accumulated sum and the added term both step back.
 oper tripleRow(p: Poly, q: Poly, r: Poly, i: Nat, j: Nat, n: Nat) => R:
   tripleRow(p, q, r, i, j, ZERO) = zeroR;
-  tripleRow(p, q, r, i, j, succ(n)) =
-  addR(tripleRow(p, q, r, i, j, n), tripleTerm(p, q, r, i, j, n)).
+  tripleRow(p, q, r, i, j, n) =
+  addR(tripleRow(p, q, r, i, j, prev(n)), tripleTerm(p, q, r, i, j, prev(n))) when n != ZERO.
+  termination(peano): _, {tripleRowIsGrounded, tripleRowGrounded}
 
 // the first `c` entries of the m-th ANTI-DIAGONAL.
 oper tripleDiag(p: Poly, q: Poly, r: Poly, i: Nat, m: Nat, c: Nat) => R:
@@ -9589,6 +9596,210 @@ proof
     [by definition(2) monus]
 qed
 
+// -- the TERMINATION obligation for `tripleRow` -------------------------------------------
+//
+// `termination(peano):` names `tripleRowIsGrounded`, and the checker SYNTHESIZES the statement
+// it must have — the recursive arm's own guard implying the generated predicate:
+//
+//     forall p, q, r: Poly; forall i, j, n: Nat; n != ZERO -> tripleRowGrounded(p, q, r, i, j, n)
+//
+// `tripleRowGrounded` is GENERATED from the arm's one recursive call site, a disjunction of
+// that call grounded with its argument hitting the terminating arm's pattern:
+//
+//     tripleRowGrounded(p, q, r, i, j, n) iff
+//       (tripleRowGrounded(p, q, r, i, j, prev(n)) or prev(n) = ZERO)
+//
+// Five of the six binders ride along untouched; only `n` descends, so this is `evalUpTo`'s
+// shape with more scaffolding and no more mathematics.
+
+// Strategy: the step of an induction on the row length. At `succ(n)` the predecessor is `n`, so
+// either `n = ZERO` and the base disjunct fires outright, or the inductive hypothesis applies
+// at `n`. `tautology` picks whichever holds.
+theorem tripleRowReachesABaseFromAPredecessor: forall n: Nat;
+  (forall p2, q2, r2: Poly; forall i2, j2: Nat; n != ZERO -> tripleRowGrounded(p2, q2, r2, i2, j2, n))
+  -> (forall p, q, r: Poly; forall i, j: Nat; succ(n) != ZERO -> tripleRowGrounded(p, q, r, i, j, succ(n)))
+proof
+  @the-generated-clause |
+    forall p3, q3, r3: Poly; forall i3, j3, n3: Nat;
+      tripleRowGrounded(p3, q3, r3, i3, j3, n3) iff
+      (tripleRowGrounded(p3, q3, r3, i3, j3, prev(n3)) or prev(n3) = ZERO)
+    [by definition tripleRowGrounded]
+  @prev-undoes-succ |
+    forall n: Nat; prev(succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; succ(a) != ZERO
+    [using import(peano) succNotZero]
+  @generalize-n |
+    fix n: Nat {
+      @given-the-inductive-hypothesis |
+        assume forall p2, q2, r2: Poly; forall i2, j2: Nat; n != ZERO -> tripleRowGrounded(p2, q2, r2, i2, j2, n) {
+          @inductive-hypothesis |
+            forall p2, q2, r2: Poly; forall i2, j2: Nat; n != ZERO -> tripleRowGrounded(p2, q2, r2, i2, j2, n)
+            [by hypothesis given-the-inductive-hypothesis]
+          // `prev` is guarded, so these precede every term that writes `prev(succ(n))`.
+          @succ-n-is-nonzero |
+            succ(n) != ZERO
+            [using specialize a-successor-is-never-zero(n)]
+          @prev-of-succ-n-is-n |
+            prev(succ(n)) = n
+            [using specialize prev-undoes-succ(n)]
+          @generalize-p |
+            fix p: Poly {
+              @generalize-q |
+                fix q: Poly {
+                  @generalize-r |
+                    fix r: Poly {
+                      @generalize-i |
+                        fix i: Nat {
+                          @generalize-j |
+                            fix j: Nat {
+                              @given-succ-n-nonzero |
+                                assume succ(n) != ZERO {
+                                  @clause-at-the-successor |
+                                    tripleRowGrounded(p, q, r, i, j, succ(n)) iff
+                                      (tripleRowGrounded(p, q, r, i, j, prev(succ(n))) or prev(succ(n)) = ZERO)
+                                    [using specialize the-generated-clause(p, q, r, i, j, succ(n))]
+                                  @clause-with-the-predecessor-collapsed |
+                                    tripleRowGrounded(p, q, r, i, j, succ(n)) iff
+                                      (tripleRowGrounded(p, q, r, i, j, n) or n = ZERO)
+                                    [by rewrite prev-of-succ-n-is-n clause-at-the-successor]
+                                  @the-inductive-hypothesis-here |
+                                    n != ZERO -> tripleRowGrounded(p, q, r, i, j, n)
+                                    [using specialize inductive-hypothesis(p, q, r, i, j)]
+                                  @conclusion-grounded-at-succ-n |
+                                    tripleRowGrounded(p, q, r, i, j, succ(n))
+                                    [using tautology clause-with-the-predecessor-collapsed
+                                      the-inductive-hypothesis-here]
+                                }
+                              @nonzero-implies-grounded |
+                                succ(n) != ZERO -> tripleRowGrounded(p, q, r, i, j, succ(n))
+                                [by discharge given-succ-n-nonzero]
+                            }
+                          @discharge-j |
+                            forall j: Nat; succ(n) != ZERO -> tripleRowGrounded(p, q, r, i, j, succ(n))
+                            [by generalize generalize-j]
+                        }
+                      @discharge-i |
+                        forall i, j: Nat; succ(n) != ZERO -> tripleRowGrounded(p, q, r, i, j, succ(n))
+                        [by generalize generalize-i]
+                    }
+                  @discharge-r |
+                    forall r: Poly; forall i, j: Nat; succ(n) != ZERO -> tripleRowGrounded(p, q, r, i, j, succ(n))
+                    [by generalize generalize-r]
+                }
+              @discharge-q |
+                forall q, r: Poly; forall i, j: Nat; succ(n) != ZERO -> tripleRowGrounded(p, q, r, i, j, succ(n))
+                [by generalize generalize-q]
+            }
+          @conclusion-for-all-arguments |
+            forall p, q, r: Poly; forall i, j: Nat; succ(n) != ZERO -> tripleRowGrounded(p, q, r, i, j, succ(n))
+            [by generalize generalize-p]
+        }
+      @the-hypothesis-implies-the-step |
+        (forall p2, q2, r2: Poly; forall i2, j2: Nat; n != ZERO -> tripleRowGrounded(p2, q2, r2, i2, j2, n))
+          -> (forall p, q, r: Poly; forall i, j: Nat; succ(n) != ZERO -> tripleRowGrounded(p, q, r, i, j, succ(n)))
+        [by discharge given-the-inductive-hypothesis]
+    }
+  @conclusion |
+    forall n: Nat;
+      (forall p2, q2, r2: Poly; forall i2, j2: Nat; n != ZERO -> tripleRowGrounded(p2, q2, r2, i2, j2, n))
+      -> (forall p, q, r: Poly; forall i, j: Nat; succ(n) != ZERO -> tripleRowGrounded(p, q, r, i, j, succ(n)))
+    [by generalize generalize-n]
+qed
+
+// Strategy: `peano.induction` on the row length. The base is VACUOUS — at n = ZERO the
+// antecedent demands `ZERO != ZERO` — so every bit of content is in the step above.
+theorem tripleRowIsGrounded: forall p, q, r: Poly; forall i, j, n: Nat;
+  n != ZERO -> tripleRowGrounded(p, q, r, i, j, n)
+proof
+  @zero-is-itself |
+    ZERO = ZERO
+    [by reflexivity]
+  // `tautology` reads a `forall` as one opaque atom, so the binders are opened before the
+  // vacuous antecedent can be refuted inside them.
+  @base-case-proof |
+    fix p: Poly {
+      @generalize-q-at-zero |
+        fix q: Poly {
+          @generalize-r-at-zero |
+            fix r: Poly {
+              @generalize-i-at-zero |
+                fix i: Nat {
+                  @generalize-j-at-zero |
+                    fix j: Nat {
+                      @conclusion-vacuously-grounded |
+                        ZERO != ZERO -> tripleRowGrounded(p, q, r, i, j, ZERO)
+                        [using tautology zero-is-itself]
+                    }
+                  @discharge-j-at-zero |
+                    forall j: Nat; ZERO != ZERO -> tripleRowGrounded(p, q, r, i, j, ZERO)
+                    [by generalize generalize-j-at-zero]
+                }
+              @discharge-i-at-zero |
+                forall i, j: Nat; ZERO != ZERO -> tripleRowGrounded(p, q, r, i, j, ZERO)
+                [by generalize generalize-i-at-zero]
+            }
+          @discharge-r-at-zero |
+            forall r: Poly; forall i, j: Nat; ZERO != ZERO -> tripleRowGrounded(p, q, r, i, j, ZERO)
+            [by generalize generalize-r-at-zero]
+        }
+      @discharge-q-at-zero |
+        forall q, r: Poly; forall i, j: Nat; ZERO != ZERO -> tripleRowGrounded(p, q, r, i, j, ZERO)
+        [by generalize generalize-q-at-zero]
+    }
+  @base-case |
+    forall p, q, r: Poly; forall i, j: Nat; ZERO != ZERO -> tripleRowGrounded(p, q, r, i, j, ZERO)
+    [by generalize base-case-proof]
+  @induction-step-for-all-n |
+    forall n: Nat;
+      (forall p2, q2, r2: Poly; forall i2, j2: Nat; n != ZERO -> tripleRowGrounded(p2, q2, r2, i2, j2, n))
+      -> (forall p, q, r: Poly; forall i, j: Nat; succ(n) != ZERO -> tripleRowGrounded(p, q, r, i, j, succ(n)))
+    [by cite tripleRowReachesABaseFromAPredecessor]
+  @grounded-for-every-row-length |
+    forall n: Nat; forall p, q, r: Poly; forall i, j: Nat; n != ZERO -> tripleRowGrounded(p, q, r, i, j, n)
+    [using instantiation peano.induction((fun n: Nat => (forall p, q, r: Poly; forall i, j: Nat; n != ZERO -> tripleRowGrounded(p, q, r, i, j, n)))) base-case induction-step-for-all-n]
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-i |
+                fix i: Nat {
+                  @generalize-j |
+                    fix j: Nat {
+                      @generalize-n |
+                        fix n: Nat {
+                          @grounded-here |
+                            n != ZERO -> tripleRowGrounded(p, q, r, i, j, n)
+                            [using specialize grounded-for-every-row-length(n, p, q, r, i, j)]
+                        }
+                      @discharge-n |
+                        forall n: Nat; n != ZERO -> tripleRowGrounded(p, q, r, i, j, n)
+                        [by generalize generalize-n]
+                    }
+                  @discharge-j |
+                    forall j, n: Nat; n != ZERO -> tripleRowGrounded(p, q, r, i, j, n)
+                    [by generalize generalize-j]
+                }
+              @discharge-i |
+                forall i, j, n: Nat; n != ZERO -> tripleRowGrounded(p, q, r, i, j, n)
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r: Poly; forall i, j, n: Nat; n != ZERO -> tripleRowGrounded(p, q, r, i, j, n)
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; forall i, j, n: Nat; n != ZERO -> tripleRowGrounded(p, q, r, i, j, n)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q, r: Poly; forall i, j, n: Nat; n != ZERO -> tripleRowGrounded(p, q, r, i, j, n)
+    [by generalize generalize-p]
+qed
+
 // -- the TERMINATION obligation for `monus` ---------------------------------------------
 //
 // `termination(peano):` names `monusIsGrounded`, and the checker SYNTHESIZES the statement
@@ -9771,16 +9982,92 @@ proof
     [by definition(0) tripleRow]
 qed
 
+// The successor step, now DERIVED rather than transcribed: the definition descends by `prev`,
+// so this restates it at a successor, where `prevOfSucc` collapses both `prev`s in one rewrite
+// (they are the same term). The STATEMENT is unchanged, which keeps the migration confined —
+// every call site cites this theorem rather than the clause, so the clause's `n != ZERO` guard
+// never reaches them.
 theorem tripleRowSucc:
   forall p, q, r: Poly; forall i, j, n: Nat;
   tripleRow(p, q, r, i, j, succ(n)) =
   addR(tripleRow(p, q, r, i, j, n), tripleTerm(p, q, r, i, j, n))
 proof
+  @the-recursive-clause |
+    forall p2, q2, r2: Poly; forall i2, j2, n2: Nat;
+      n2 != ZERO ->
+      tripleRow(p2, q2, r2, i2, j2, n2) =
+      addR(tripleRow(p2, q2, r2, i2, j2, prev(n2)), tripleTerm(p2, q2, r2, i2, j2, prev(n2)))
+    [by definition(1) tripleRow]
+  @prev-undoes-succ |
+    forall n: Nat; prev(succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; succ(a) != ZERO
+    [using import(peano) succNotZero]
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-r |
+            fix r: Poly {
+              @generalize-i |
+                fix i: Nat {
+                  @generalize-j |
+                    fix j: Nat {
+                      @generalize-n |
+                        fix n: Nat {
+                          @succ-n-is-nonzero |
+                            succ(n) != ZERO
+                            [using specialize a-successor-is-never-zero(n)]
+                          @clause-at-the-successor |
+                            tripleRow(p, q, r, i, j, succ(n)) =
+                              addR(tripleRow(p, q, r, i, j, prev(succ(n))),
+                              tripleTerm(p, q, r, i, j, prev(succ(n))))
+                            [using specialize the-recursive-clause(p, q, r, i, j, succ(n))
+                              succ-n-is-nonzero]
+                          @prev-of-succ-n |
+                            prev(succ(n)) = n
+                            [using specialize prev-undoes-succ(n)]
+                          @conclusion-step-at-n |
+                            tripleRow(p, q, r, i, j, succ(n)) =
+                              addR(tripleRow(p, q, r, i, j, n), tripleTerm(p, q, r, i, j, n))
+                            [by rewrite prev-of-succ-n clause-at-the-successor]
+                        }
+                      @discharge-n |
+                        forall n: Nat;
+                          tripleRow(p, q, r, i, j, succ(n)) =
+                          addR(tripleRow(p, q, r, i, j, n), tripleTerm(p, q, r, i, j, n))
+                        [by generalize generalize-n]
+                    }
+                  @discharge-j |
+                    forall j, n: Nat;
+                      tripleRow(p, q, r, i, j, succ(n)) =
+                      addR(tripleRow(p, q, r, i, j, n), tripleTerm(p, q, r, i, j, n))
+                    [by generalize generalize-j]
+                }
+              @discharge-i |
+                forall i, j, n: Nat;
+                  tripleRow(p, q, r, i, j, succ(n)) =
+                  addR(tripleRow(p, q, r, i, j, n), tripleTerm(p, q, r, i, j, n))
+                [by generalize generalize-i]
+            }
+          @discharge-r |
+            forall r: Poly; forall i, j, n: Nat;
+              tripleRow(p, q, r, i, j, succ(n)) =
+              addR(tripleRow(p, q, r, i, j, n), tripleTerm(p, q, r, i, j, n))
+            [by generalize generalize-r]
+        }
+      @discharge-q |
+        forall q, r: Poly; forall i, j, n: Nat;
+          tripleRow(p, q, r, i, j, succ(n)) =
+          addR(tripleRow(p, q, r, i, j, n), tripleTerm(p, q, r, i, j, n))
+        [by generalize generalize-q]
+    }
   @conclusion |
     forall p, q, r: Poly; forall i, j, n: Nat;
       tripleRow(p, q, r, i, j, succ(n)) =
       addR(tripleRow(p, q, r, i, j, n), tripleTerm(p, q, r, i, j, n))
-    [by definition(1) tripleRow]
+    [by generalize generalize-p]
 qed
 
 theorem tripleDiagZero:
