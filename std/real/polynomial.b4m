@@ -127,13 +127,19 @@ oper rtailConvolution(p: RPoly, q: RPoly, j: Nat, m: Nat) => Real:
   rtailConvolution(p, q, j, m) = real.add(real.mul(rcoeff(p, j), rcoeff(q, m)), rtailConvolution(p, q, peano.prev(j), peano.succ(m))) when j != NAT_ZERO.
   termination(peano): _, {rTailConvolutionIsGrounded, rtailConvolutionGrounded}
 
+// `n` IS THE LENGTH and the only descent; `j` and `c` are exponents that RIDE in the
+// payload. See the ring layer for the full reasoning.
 oper rsegmentOf(p: RPoly, q: RPoly, j: Nat, c: Nat, n: Nat) => Real:
   rsegmentOf(p, q, j, c, NAT_ZERO) = real.mul(rcoeff(p, j), rcoeff(q, c));
-  rsegmentOf(p, q, peano.succ(j), c, peano.succ(n)) = real.add(real.mul(rcoeff(p, peano.succ(j)), rcoeff(q, c)), rsegmentOf(p, q, j, peano.succ(c), n)).
+  rsegmentOf(p, q, j, c, n) = real.add(real.mul(rcoeff(p, j), rcoeff(q, c)), rsegmentOf(p, q, peano.prev(j), peano.succ(c), peano.prev(n))) when n != NAT_ZERO.
+  termination(peano): _, {rsegmentOfIsGrounded, rsegmentOfGrounded}
 
+// the mirror: the FIRST exponent rides up and the SECOND rides down, while `n` is the
+// LENGTH and the only descent. See the ring layer for the full reasoning.
 oper rrsegmentOf(p: RPoly, q: RPoly, j: Nat, c: Nat, n: Nat) => Real:
   rrsegmentOf(p, q, j, c, NAT_ZERO) = real.mul(rcoeff(p, j), rcoeff(q, c));
-  rrsegmentOf(p, q, j, peano.succ(c), peano.succ(n)) = real.add(real.mul(rcoeff(p, j), rcoeff(q, peano.succ(c))), rrsegmentOf(p, q, peano.succ(j), c, n)).
+  rrsegmentOf(p, q, j, c, n) = real.add(real.mul(rcoeff(p, j), rcoeff(q, c)), rrsegmentOf(p, q, peano.succ(j), peano.prev(c), peano.prev(n))) when n != NAT_ZERO.
+  termination(peano): _, {rrsegmentOfIsGrounded, rrsegmentOfGrounded}
 
 oper rmonus(i: Nat, j: Nat) => Nat:
   rmonus(i, NAT_ZERO) = i;
@@ -253,8 +259,12 @@ intheory rTailConvolutionReachesZeroFromAPredecessor
 intheory rTailConvolutionIsGrounded
 intheory rSegmentZero
 intheory rSegmentSucc
+intheory rsegmentOfReachesABaseFromAPredecessor
+intheory rsegmentOfIsGrounded
 intheory rRsegmentZero
 intheory rRsegmentSucc
+intheory rrsegmentOfReachesABaseFromAPredecessor
+intheory rrsegmentOfIsGrounded
 intheory rmonusAtZero
 intheory rmonusSteps
 intheory rmonusReachesABaseFromAPredecessor
@@ -1176,18 +1186,272 @@ proof
     [by definition(0) rsegmentOf]
 qed
 
+// The step: groundedness below `peano.succ(n)` gives it at `peano.succ(n)`. Either the predecessor `n`
+// is itself the base (the right disjunct fires) or the inductive hypothesis supplies it. The
+// riding exponents `j` and `c` take no part — the generated predicate does not mention them.
+theorem rsegmentOfReachesABaseFromAPredecessor: forall n: Nat;
+  (forall q2, r2: RPoly; forall j2, c2: Nat; n != NAT_ZERO -> rsegmentOfGrounded(n))
+  -> (forall q, r: RPoly; forall j, c: Nat; peano.succ(n) != NAT_ZERO -> rsegmentOfGrounded(peano.succ(n)))
+proof
+  @the-generated-clause |
+    forall n3: Nat; rsegmentOfGrounded(n3) iff
+      (rsegmentOfGrounded(peano.prev(n3)) or peano.prev(n3) = NAT_ZERO)
+    [by definition rsegmentOfGrounded]
+  @prev-undoes-succ |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-n |
+    fix n: Nat {
+      @given-the-inductive-hypothesis |
+        assume forall q2, r2: RPoly; forall j2, c2: Nat; n != NAT_ZERO -> rsegmentOfGrounded(n) {
+          @inductive-hypothesis |
+            forall q2, r2: RPoly; forall j2, c2: Nat; n != NAT_ZERO -> rsegmentOfGrounded(n)
+            [by hypothesis given-the-inductive-hypothesis]
+          // `peano.prev` is guarded, so these precede every term that writes `peano.prev(peano.succ(n))`.
+          @succ-n-is-nonzero |
+            peano.succ(n) != NAT_ZERO
+            [using specialize a-successor-is-never-zero(n)]
+          @prev-of-succ-n-is-n |
+            peano.prev(peano.succ(n)) = n
+            [using specialize prev-undoes-succ(n)]
+          @generalize-q |
+            fix q: RPoly {
+              @generalize-r |
+                fix r: RPoly {
+                  @generalize-j |
+                    fix j: Nat {
+                      @generalize-c |
+                        fix c: Nat {
+                          @given-succ-n-nonzero |
+                            assume peano.succ(n) != NAT_ZERO {
+                              @clause-at-the-successor |
+                                rsegmentOfGrounded(peano.succ(n)) iff
+                                  (rsegmentOfGrounded(peano.prev(peano.succ(n))) or peano.prev(peano.succ(n)) = NAT_ZERO)
+                                [using specialize the-generated-clause(peano.succ(n))]
+                              @clause-with-the-predecessor-collapsed |
+                                rsegmentOfGrounded(peano.succ(n)) iff
+                                  (rsegmentOfGrounded(n) or n = NAT_ZERO)
+                                [by rewrite prev-of-succ-n-is-n clause-at-the-successor]
+                              @the-inductive-hypothesis-here |
+                                n != NAT_ZERO -> rsegmentOfGrounded(n)
+                                [using specialize inductive-hypothesis(q, r, j, c)]
+                              @conclusion-grounded-at-succ-n |
+                                rsegmentOfGrounded(peano.succ(n))
+                                [using tautology clause-with-the-predecessor-collapsed
+                                  the-inductive-hypothesis-here]
+                            }
+                          @conclusion-nonzero-gives-grounded |
+                            peano.succ(n) != NAT_ZERO -> rsegmentOfGrounded(peano.succ(n))
+                            [by discharge given-succ-n-nonzero]
+                        }
+                      @discharge-c |
+                        forall c: Nat; peano.succ(n) != NAT_ZERO -> rsegmentOfGrounded(peano.succ(n))
+                        [by generalize generalize-c]
+                    }
+                  @discharge-j |
+                    forall j, c: Nat; peano.succ(n) != NAT_ZERO -> rsegmentOfGrounded(peano.succ(n))
+                    [by generalize generalize-j]
+                }
+              @discharge-r |
+                forall r: RPoly; forall j, c: Nat; peano.succ(n) != NAT_ZERO -> rsegmentOfGrounded(peano.succ(n))
+                [by generalize generalize-r]
+            }
+          @conclusion-grounded-for-every-argument |
+            forall q, r: RPoly; forall j, c: Nat; peano.succ(n) != NAT_ZERO -> rsegmentOfGrounded(peano.succ(n))
+            [by generalize generalize-q]
+        }
+      @conclusion-the-step-at-n |
+        (forall q2, r2: RPoly; forall j2, c2: Nat; n != NAT_ZERO -> rsegmentOfGrounded(n))
+          -> (forall q, r: RPoly; forall j, c: Nat; peano.succ(n) != NAT_ZERO -> rsegmentOfGrounded(peano.succ(n)))
+        [by discharge given-the-inductive-hypothesis]
+    }
+  @conclusion |
+    forall n: Nat;
+      (forall q2, r2: RPoly; forall j2, c2: Nat; n != NAT_ZERO -> rsegmentOfGrounded(n))
+      -> (forall q, r: RPoly; forall j, c: Nat; peano.succ(n) != NAT_ZERO -> rsegmentOfGrounded(peano.succ(n)))
+    [by generalize generalize-n]
+qed
+
+// THE OBLIGATION. Induction on `n` — the length, and the only descent. The base is VACUOUS,
+// its antecedent `NAT_ZERO != NAT_ZERO` being false, and the step is the theorem above.
+theorem rsegmentOfIsGrounded: forall q, r: RPoly; forall j, c: Nat; forall n: Nat;
+  n != NAT_ZERO -> rsegmentOfGrounded(n)
+proof
+  @zero-is-itself |
+    NAT_ZERO = NAT_ZERO
+    [by reflexivity]
+  // `tautology` reads a `forall` as one opaque atom, so the binders are opened before the
+  // vacuous antecedent can be refuted inside them.
+  @base-case-proof |
+    fix q: RPoly {
+      @generalize-r-at-zero |
+        fix r: RPoly {
+          @generalize-j-at-zero |
+            fix j: Nat {
+              @generalize-c-at-zero |
+                fix c: Nat {
+                  @conclusion-vacuously-grounded |
+                    NAT_ZERO != NAT_ZERO -> rsegmentOfGrounded(NAT_ZERO)
+                    [using tautology zero-is-itself]
+                }
+              @discharge-c-at-zero |
+                forall c: Nat; NAT_ZERO != NAT_ZERO -> rsegmentOfGrounded(NAT_ZERO)
+                [by generalize generalize-c-at-zero]
+            }
+          @discharge-j-at-zero |
+            forall j, c: Nat; NAT_ZERO != NAT_ZERO -> rsegmentOfGrounded(NAT_ZERO)
+            [by generalize generalize-j-at-zero]
+        }
+      @discharge-r-at-zero |
+        forall r: RPoly; forall j, c: Nat; NAT_ZERO != NAT_ZERO -> rsegmentOfGrounded(NAT_ZERO)
+        [by generalize generalize-r-at-zero]
+    }
+  @base-case |
+    forall q, r: RPoly; forall j, c: Nat; NAT_ZERO != NAT_ZERO -> rsegmentOfGrounded(NAT_ZERO)
+    [by generalize base-case-proof]
+  @induction-step-for-all-n |
+    forall n: Nat;
+      (forall q2, r2: RPoly; forall j2, c2: Nat; n != NAT_ZERO -> rsegmentOfGrounded(n))
+      -> (forall q, r: RPoly; forall j, c: Nat; peano.succ(n) != NAT_ZERO -> rsegmentOfGrounded(peano.succ(n)))
+    [by cite rsegmentOfReachesABaseFromAPredecessor]
+  @grounded-for-every-run-length |
+    forall n: Nat; forall q, r: RPoly; forall j, c: Nat; n != NAT_ZERO -> rsegmentOfGrounded(n)
+    [using instantiation peano.induction((fun n: Nat => (forall q, r: RPoly; forall j, c: Nat; n != NAT_ZERO -> rsegmentOfGrounded(n)))) base-case induction-step-for-all-n]
+  @generalize-q |
+    fix q: RPoly {
+      @generalize-r |
+        fix r: RPoly {
+          @generalize-j |
+            fix j: Nat {
+              @generalize-c |
+                fix c: Nat {
+                  @generalize-n |
+                    fix n: Nat {
+                      @grounded-at-n |
+                        forall q4, r4: RPoly; forall j4, c4: Nat; n != NAT_ZERO -> rsegmentOfGrounded(n)
+                        [using specialize grounded-for-every-run-length(n)]
+                      @conclusion-grounded-here |
+                        n != NAT_ZERO -> rsegmentOfGrounded(n)
+                        [using specialize grounded-at-n(q, r, j, c)]
+                    }
+                  @discharge-n |
+                    forall n: Nat; n != NAT_ZERO -> rsegmentOfGrounded(n)
+                    [by generalize generalize-n]
+                }
+              @discharge-c |
+                forall c: Nat; forall n: Nat; n != NAT_ZERO -> rsegmentOfGrounded(n)
+                [by generalize generalize-c]
+            }
+          @discharge-j |
+            forall j, c: Nat; forall n: Nat; n != NAT_ZERO -> rsegmentOfGrounded(n)
+            [by generalize generalize-j]
+        }
+      @discharge-r |
+        forall r: RPoly; forall j, c: Nat; forall n: Nat; n != NAT_ZERO -> rsegmentOfGrounded(n)
+        [by generalize generalize-r]
+    }
+  @conclusion |
+    forall q, r: RPoly; forall j, c: Nat; forall n: Nat; n != NAT_ZERO -> rsegmentOfGrounded(n)
+    [by generalize generalize-q]
+qed
+
 theorem rSegmentSucc:
   forall p, q: RPoly; forall j, c, n: Nat;
   rsegmentOf(p, q, peano.succ(j), c, peano.succ(n)) =
   real.add(real.mul(rcoeff(p, peano.succ(j)), rcoeff(q, c)),
   rsegmentOf(p, q, j, peano.succ(c), n))
 proof
+  @the-recursive-clause |
+    forall p2, q2: RPoly; forall j2, c2, n2: Nat;
+      n2 != NAT_ZERO ->
+      rsegmentOf(p2, q2, j2, c2, n2) =
+      real.add(real.mul(rcoeff(p2, j2), rcoeff(q2, c2)),
+      rsegmentOf(p2, q2, peano.prev(j2), peano.succ(c2), peano.prev(n2)))
+    [by definition(1) rsegmentOf]
+  @prev-undoes-succ |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-p |
+    fix p: RPoly {
+      @generalize-q |
+        fix q: RPoly {
+          @generalize-j |
+            fix j: Nat {
+              @generalize-c |
+                fix c: Nat {
+                  @generalize-n |
+                    fix n: Nat {
+                      @succ-n-is-nonzero |
+                        peano.succ(n) != NAT_ZERO
+                        [using specialize a-successor-is-never-zero(n)]
+                      // the riding exponent's own `peano.prev(peano.succ(j))` owes this, and the arm's
+                      // guard supplies only the LENGTH's — so it is proved here, before any
+                      // step writes the term.
+                      @succ-j-is-nonzero |
+                        peano.succ(j) != NAT_ZERO
+                        [using specialize a-successor-is-never-zero(j)]
+                      @clause-at-the-successor |
+                        rsegmentOf(p, q, peano.succ(j), c, peano.succ(n)) =
+                          real.add(real.mul(rcoeff(p, peano.succ(j)), rcoeff(q, c)),
+                          rsegmentOf(p, q, peano.prev(peano.succ(j)), peano.succ(c), peano.prev(peano.succ(n))))
+                        [using specialize the-recursive-clause(p, q, peano.succ(j), c, peano.succ(n)) succ-n-is-nonzero]
+                      @prev-of-succ-j |
+                        peano.prev(peano.succ(j)) = j
+                        [using specialize prev-undoes-succ(j)]
+                      @prev-of-succ-n |
+                        peano.prev(peano.succ(n)) = n
+                        [using specialize prev-undoes-succ(n)]
+                      @riding-exponent-collapsed |
+                        rsegmentOf(p, q, peano.succ(j), c, peano.succ(n)) =
+                          real.add(real.mul(rcoeff(p, peano.succ(j)), rcoeff(q, c)),
+                          rsegmentOf(p, q, j, peano.succ(c), peano.prev(peano.succ(n))))
+                        [by rewrite prev-of-succ-j clause-at-the-successor]
+                      @conclusion-step-at-j-c-n |
+                        rsegmentOf(p, q, peano.succ(j), c, peano.succ(n)) =
+                          real.add(real.mul(rcoeff(p, peano.succ(j)), rcoeff(q, c)),
+                          rsegmentOf(p, q, j, peano.succ(c), n))
+                        [by rewrite prev-of-succ-n riding-exponent-collapsed]
+                    }
+                  @discharge-n |
+                    forall n: Nat;
+                      rsegmentOf(p, q, peano.succ(j), c, peano.succ(n)) =
+                      real.add(real.mul(rcoeff(p, peano.succ(j)), rcoeff(q, c)),
+                      rsegmentOf(p, q, j, peano.succ(c), n))
+                    [by generalize generalize-n]
+                }
+              @discharge-c |
+                forall c, n: Nat;
+                  rsegmentOf(p, q, peano.succ(j), c, peano.succ(n)) =
+                  real.add(real.mul(rcoeff(p, peano.succ(j)), rcoeff(q, c)),
+                  rsegmentOf(p, q, j, peano.succ(c), n))
+                [by generalize generalize-c]
+            }
+          @discharge-j |
+            forall j, c, n: Nat;
+              rsegmentOf(p, q, peano.succ(j), c, peano.succ(n)) =
+              real.add(real.mul(rcoeff(p, peano.succ(j)), rcoeff(q, c)),
+              rsegmentOf(p, q, j, peano.succ(c), n))
+            [by generalize generalize-j]
+        }
+      @discharge-q |
+        forall q: RPoly; forall j, c, n: Nat;
+          rsegmentOf(p, q, peano.succ(j), c, peano.succ(n)) =
+          real.add(real.mul(rcoeff(p, peano.succ(j)), rcoeff(q, c)),
+          rsegmentOf(p, q, j, peano.succ(c), n))
+        [by generalize generalize-q]
+    }
   @conclusion |
     forall p, q: RPoly; forall j, c, n: Nat;
       rsegmentOf(p, q, peano.succ(j), c, peano.succ(n)) =
       real.add(real.mul(rcoeff(p, peano.succ(j)), rcoeff(q, c)),
       rsegmentOf(p, q, j, peano.succ(c), n))
-    [by definition(1) rsegmentOf]
+    [by generalize generalize-p]
 qed
 
 theorem rRsegmentZero:
@@ -1200,18 +1464,271 @@ proof
     [by definition(0) rrsegmentOf]
 qed
 
+// The step: groundedness below `peano.succ(n)` gives it at `peano.succ(n)`. Either the predecessor `n`
+// is itself the base (the right disjunct fires) or the inductive hypothesis supplies it. The
+// riding exponents `j` and `c` take no part — the generated predicate does not mention them.
+theorem rrsegmentOfReachesABaseFromAPredecessor: forall n: Nat;
+  (forall q2, r2: RPoly; forall j2, c2: Nat; n != NAT_ZERO -> rrsegmentOfGrounded(n))
+  -> (forall q, r: RPoly; forall j, c: Nat; peano.succ(n) != NAT_ZERO -> rrsegmentOfGrounded(peano.succ(n)))
+proof
+  @the-generated-clause |
+    forall n3: Nat; rrsegmentOfGrounded(n3) iff
+      (rrsegmentOfGrounded(peano.prev(n3)) or peano.prev(n3) = NAT_ZERO)
+    [by definition rrsegmentOfGrounded]
+  @prev-undoes-succ |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-n |
+    fix n: Nat {
+      @given-the-inductive-hypothesis |
+        assume forall q2, r2: RPoly; forall j2, c2: Nat; n != NAT_ZERO -> rrsegmentOfGrounded(n) {
+          @inductive-hypothesis |
+            forall q2, r2: RPoly; forall j2, c2: Nat; n != NAT_ZERO -> rrsegmentOfGrounded(n)
+            [by hypothesis given-the-inductive-hypothesis]
+          // `peano.prev` is guarded, so these precede every term that writes `peano.prev(peano.succ(n))`.
+          @succ-n-is-nonzero |
+            peano.succ(n) != NAT_ZERO
+            [using specialize a-successor-is-never-zero(n)]
+          @prev-of-succ-n-is-n |
+            peano.prev(peano.succ(n)) = n
+            [using specialize prev-undoes-succ(n)]
+          @generalize-q |
+            fix q: RPoly {
+              @generalize-r |
+                fix r: RPoly {
+                  @generalize-j |
+                    fix j: Nat {
+                      @generalize-c |
+                        fix c: Nat {
+                          @given-succ-n-nonzero |
+                            assume peano.succ(n) != NAT_ZERO {
+                              @clause-at-the-successor |
+                                rrsegmentOfGrounded(peano.succ(n)) iff
+                                  (rrsegmentOfGrounded(peano.prev(peano.succ(n))) or peano.prev(peano.succ(n)) = NAT_ZERO)
+                                [using specialize the-generated-clause(peano.succ(n))]
+                              @clause-with-the-predecessor-collapsed |
+                                rrsegmentOfGrounded(peano.succ(n)) iff
+                                  (rrsegmentOfGrounded(n) or n = NAT_ZERO)
+                                [by rewrite prev-of-succ-n-is-n clause-at-the-successor]
+                              @the-inductive-hypothesis-here |
+                                n != NAT_ZERO -> rrsegmentOfGrounded(n)
+                                [using specialize inductive-hypothesis(q, r, j, c)]
+                              @conclusion-grounded-at-succ-n |
+                                rrsegmentOfGrounded(peano.succ(n))
+                                [using tautology clause-with-the-predecessor-collapsed
+                                  the-inductive-hypothesis-here]
+                            }
+                          @conclusion-nonzero-gives-grounded |
+                            peano.succ(n) != NAT_ZERO -> rrsegmentOfGrounded(peano.succ(n))
+                            [by discharge given-succ-n-nonzero]
+                        }
+                      @discharge-c |
+                        forall c: Nat; peano.succ(n) != NAT_ZERO -> rrsegmentOfGrounded(peano.succ(n))
+                        [by generalize generalize-c]
+                    }
+                  @discharge-j |
+                    forall j, c: Nat; peano.succ(n) != NAT_ZERO -> rrsegmentOfGrounded(peano.succ(n))
+                    [by generalize generalize-j]
+                }
+              @discharge-r |
+                forall r: RPoly; forall j, c: Nat; peano.succ(n) != NAT_ZERO -> rrsegmentOfGrounded(peano.succ(n))
+                [by generalize generalize-r]
+            }
+          @conclusion-grounded-for-every-argument |
+            forall q, r: RPoly; forall j, c: Nat; peano.succ(n) != NAT_ZERO -> rrsegmentOfGrounded(peano.succ(n))
+            [by generalize generalize-q]
+        }
+      @conclusion-the-step-at-n |
+        (forall q2, r2: RPoly; forall j2, c2: Nat; n != NAT_ZERO -> rrsegmentOfGrounded(n))
+          -> (forall q, r: RPoly; forall j, c: Nat; peano.succ(n) != NAT_ZERO -> rrsegmentOfGrounded(peano.succ(n)))
+        [by discharge given-the-inductive-hypothesis]
+    }
+  @conclusion |
+    forall n: Nat;
+      (forall q2, r2: RPoly; forall j2, c2: Nat; n != NAT_ZERO -> rrsegmentOfGrounded(n))
+      -> (forall q, r: RPoly; forall j, c: Nat; peano.succ(n) != NAT_ZERO -> rrsegmentOfGrounded(peano.succ(n)))
+    [by generalize generalize-n]
+qed
+
+// THE OBLIGATION. Induction on `n` — the length, and the only descent. The base is VACUOUS,
+// its antecedent `NAT_ZERO != NAT_ZERO` being false, and the step is the theorem above.
+theorem rrsegmentOfIsGrounded: forall q, r: RPoly; forall j, c: Nat; forall n: Nat;
+  n != NAT_ZERO -> rrsegmentOfGrounded(n)
+proof
+  @zero-is-itself |
+    NAT_ZERO = NAT_ZERO
+    [by reflexivity]
+  // `tautology` reads a `forall` as one opaque atom, so the binders are opened before the
+  // vacuous antecedent can be refuted inside them.
+  @base-case-proof |
+    fix q: RPoly {
+      @generalize-r-at-zero |
+        fix r: RPoly {
+          @generalize-j-at-zero |
+            fix j: Nat {
+              @generalize-c-at-zero |
+                fix c: Nat {
+                  @conclusion-vacuously-grounded |
+                    NAT_ZERO != NAT_ZERO -> rrsegmentOfGrounded(NAT_ZERO)
+                    [using tautology zero-is-itself]
+                }
+              @discharge-c-at-zero |
+                forall c: Nat; NAT_ZERO != NAT_ZERO -> rrsegmentOfGrounded(NAT_ZERO)
+                [by generalize generalize-c-at-zero]
+            }
+          @discharge-j-at-zero |
+            forall j, c: Nat; NAT_ZERO != NAT_ZERO -> rrsegmentOfGrounded(NAT_ZERO)
+            [by generalize generalize-j-at-zero]
+        }
+      @discharge-r-at-zero |
+        forall r: RPoly; forall j, c: Nat; NAT_ZERO != NAT_ZERO -> rrsegmentOfGrounded(NAT_ZERO)
+        [by generalize generalize-r-at-zero]
+    }
+  @base-case |
+    forall q, r: RPoly; forall j, c: Nat; NAT_ZERO != NAT_ZERO -> rrsegmentOfGrounded(NAT_ZERO)
+    [by generalize base-case-proof]
+  @induction-step-for-all-n |
+    forall n: Nat;
+      (forall q2, r2: RPoly; forall j2, c2: Nat; n != NAT_ZERO -> rrsegmentOfGrounded(n))
+      -> (forall q, r: RPoly; forall j, c: Nat; peano.succ(n) != NAT_ZERO -> rrsegmentOfGrounded(peano.succ(n)))
+    [by cite rrsegmentOfReachesABaseFromAPredecessor]
+  @grounded-for-every-run-length |
+    forall n: Nat; forall q, r: RPoly; forall j, c: Nat; n != NAT_ZERO -> rrsegmentOfGrounded(n)
+    [using instantiation peano.induction((fun n: Nat => (forall q, r: RPoly; forall j, c: Nat; n != NAT_ZERO -> rrsegmentOfGrounded(n)))) base-case induction-step-for-all-n]
+  @generalize-q |
+    fix q: RPoly {
+      @generalize-r |
+        fix r: RPoly {
+          @generalize-j |
+            fix j: Nat {
+              @generalize-c |
+                fix c: Nat {
+                  @generalize-n |
+                    fix n: Nat {
+                      @grounded-at-n |
+                        forall q4, r4: RPoly; forall j4, c4: Nat; n != NAT_ZERO -> rrsegmentOfGrounded(n)
+                        [using specialize grounded-for-every-run-length(n)]
+                      @conclusion-grounded-here |
+                        n != NAT_ZERO -> rrsegmentOfGrounded(n)
+                        [using specialize grounded-at-n(q, r, j, c)]
+                    }
+                  @discharge-n |
+                    forall n: Nat; n != NAT_ZERO -> rrsegmentOfGrounded(n)
+                    [by generalize generalize-n]
+                }
+              @discharge-c |
+                forall c: Nat; forall n: Nat; n != NAT_ZERO -> rrsegmentOfGrounded(n)
+                [by generalize generalize-c]
+            }
+          @discharge-j |
+            forall j, c: Nat; forall n: Nat; n != NAT_ZERO -> rrsegmentOfGrounded(n)
+            [by generalize generalize-j]
+        }
+      @discharge-r |
+        forall r: RPoly; forall j, c: Nat; forall n: Nat; n != NAT_ZERO -> rrsegmentOfGrounded(n)
+        [by generalize generalize-r]
+    }
+  @conclusion |
+    forall q, r: RPoly; forall j, c: Nat; forall n: Nat; n != NAT_ZERO -> rrsegmentOfGrounded(n)
+    [by generalize generalize-q]
+qed
+
 theorem rRsegmentSucc:
   forall p, q: RPoly; forall j, c, n: Nat;
   rrsegmentOf(p, q, j, peano.succ(c), peano.succ(n)) =
   real.add(real.mul(rcoeff(p, j), rcoeff(q, peano.succ(c))),
   rrsegmentOf(p, q, peano.succ(j), c, n))
 proof
+  @the-recursive-clause |
+    forall p2, q2: RPoly; forall j2, c2, n2: Nat;
+      n2 != NAT_ZERO ->
+      rrsegmentOf(p2, q2, j2, c2, n2) =
+      real.add(real.mul(rcoeff(p2, j2), rcoeff(q2, c2)),
+      rrsegmentOf(p2, q2, peano.succ(j2), peano.prev(c2), peano.prev(n2)))
+    [by definition(1) rrsegmentOf]
+  @prev-undoes-succ |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-p |
+    fix p: RPoly {
+      @generalize-q |
+        fix q: RPoly {
+          @generalize-j |
+            fix j: Nat {
+              @generalize-c |
+                fix c: Nat {
+                  @generalize-n |
+                    fix n: Nat {
+                      @succ-n-is-nonzero |
+                        peano.succ(n) != NAT_ZERO
+                        [using specialize a-successor-is-never-zero(n)]
+                      // the riding exponent's `peano.prev(peano.succ(c))` owes this; the arm's guard
+                      // supplies only the length's.
+                      @succ-c-is-nonzero |
+                        peano.succ(c) != NAT_ZERO
+                        [using specialize a-successor-is-never-zero(c)]
+                      @clause-at-the-successor |
+                        rrsegmentOf(p, q, j, peano.succ(c), peano.succ(n)) =
+                          real.add(real.mul(rcoeff(p, j), rcoeff(q, peano.succ(c))),
+                          rrsegmentOf(p, q, peano.succ(j), peano.prev(peano.succ(c)), peano.prev(peano.succ(n))))
+                        [using specialize the-recursive-clause(p, q, j, peano.succ(c), peano.succ(n)) succ-n-is-nonzero]
+                      @prev-of-succ-c |
+                        peano.prev(peano.succ(c)) = c
+                        [using specialize prev-undoes-succ(c)]
+                      @prev-of-succ-n |
+                        peano.prev(peano.succ(n)) = n
+                        [using specialize prev-undoes-succ(n)]
+                      @riding-exponent-collapsed |
+                        rrsegmentOf(p, q, j, peano.succ(c), peano.succ(n)) =
+                          real.add(real.mul(rcoeff(p, j), rcoeff(q, peano.succ(c))),
+                          rrsegmentOf(p, q, peano.succ(j), c, peano.prev(peano.succ(n))))
+                        [by rewrite prev-of-succ-c clause-at-the-successor]
+                      @conclusion-step-at-j-c-n |
+                        rrsegmentOf(p, q, j, peano.succ(c), peano.succ(n)) =
+                          real.add(real.mul(rcoeff(p, j), rcoeff(q, peano.succ(c))),
+                          rrsegmentOf(p, q, peano.succ(j), c, n))
+                        [by rewrite prev-of-succ-n riding-exponent-collapsed]
+                    }
+                  @discharge-n |
+                    forall n: Nat;
+                      rrsegmentOf(p, q, j, peano.succ(c), peano.succ(n)) =
+                      real.add(real.mul(rcoeff(p, j), rcoeff(q, peano.succ(c))),
+                      rrsegmentOf(p, q, peano.succ(j), c, n))
+                    [by generalize generalize-n]
+                }
+              @discharge-c |
+                forall c, n: Nat;
+                  rrsegmentOf(p, q, j, peano.succ(c), peano.succ(n)) =
+                  real.add(real.mul(rcoeff(p, j), rcoeff(q, peano.succ(c))),
+                  rrsegmentOf(p, q, peano.succ(j), c, n))
+                [by generalize generalize-c]
+            }
+          @discharge-j |
+            forall j, c, n: Nat;
+              rrsegmentOf(p, q, j, peano.succ(c), peano.succ(n)) =
+              real.add(real.mul(rcoeff(p, j), rcoeff(q, peano.succ(c))),
+              rrsegmentOf(p, q, peano.succ(j), c, n))
+            [by generalize generalize-j]
+        }
+      @discharge-q |
+        forall q: RPoly; forall j, c, n: Nat;
+          rrsegmentOf(p, q, j, peano.succ(c), peano.succ(n)) =
+          real.add(real.mul(rcoeff(p, j), rcoeff(q, peano.succ(c))),
+          rrsegmentOf(p, q, peano.succ(j), c, n))
+        [by generalize generalize-q]
+    }
   @conclusion |
     forall p, q: RPoly; forall j, c, n: Nat;
       rrsegmentOf(p, q, j, peano.succ(c), peano.succ(n)) =
       real.add(real.mul(rcoeff(p, j), rcoeff(q, peano.succ(c))),
       rrsegmentOf(p, q, peano.succ(j), c, n))
-    [by definition(1) rrsegmentOf]
+    [by generalize generalize-p]
 qed
 
 theorem rmonusAtZero:

@@ -246,8 +246,12 @@ intheory tailConvolutionReachesZeroFromAPredecessor
 intheory tailConvolutionIsGrounded
 intheory segmentZero
 intheory segmentSucc
+intheory segmentReachesABaseFromAPredecessor
+intheory segmentIsGrounded
 intheory rsegmentZero
 intheory rsegmentSucc
+intheory rsegmentReachesABaseFromAPredecessor
+intheory rsegmentIsGrounded
 intheory monusAtZero
 intheory monusSteps
 intheory monusReachesABaseFromAPredecessor
@@ -405,18 +409,23 @@ oper tailConvolution(p: Poly, q: Poly, j: Nat, m: Nat) => F:
   tailConvolution(p, q, prev(j), succ(m))) when j != ZERO.
   termination(peano): _, {tailConvolutionIsGrounded, tailConvolutionGrounded}
 
+// `n` IS THE LENGTH and the only descent; `j` and `c` are exponents that RIDE in the payload,
+// so the generated predicate mentions only `n`. See the ring layer for the full reasoning.
 oper segment(p: Poly, q: Poly, j: Nat, c: Nat, n: Nat) => F:
   segment(p, q, j, c, ZERO) = mulF(coeff(p, j), coeff(q, c));
-  segment(p, q, succ(j), c, succ(n)) =
-  addF(mulF(coeff(p, succ(j)), coeff(q, c)),
-  segment(p, q, j, succ(c), n)).
+  segment(p, q, j, c, n) =
+  addF(mulF(coeff(p, j), coeff(q, c)),
+  segment(p, q, prev(j), succ(c), prev(n))) when n != ZERO.
+  termination(peano): _, {segmentIsGrounded, segmentGrounded}
 
-// the bottom-up capped run, mirror of `segment`
+// the bottom-up capped run, mirror of `segment`: the first exponent rides UP and the second
+// rides DOWN, while `n` is again the length and the only descent.
 oper rsegment(p: Poly, q: Poly, j: Nat, c: Nat, n: Nat) => F:
   rsegment(p, q, j, c, ZERO) = mulF(coeff(p, j), coeff(q, c));
-  rsegment(p, q, j, succ(c), succ(n)) =
-  addF(mulF(coeff(p, j), coeff(q, succ(c))),
-  rsegment(p, q, succ(j), c, n)).
+  rsegment(p, q, j, c, n) =
+  addF(mulF(coeff(p, j), coeff(q, c)),
+  rsegment(p, q, succ(j), prev(c), prev(n))) when n != ZERO.
+  termination(peano): _, {rsegmentIsGrounded, rsegmentGrounded}
 
 // -- the associativity apparatus, restated so the ring proof transfers ---------------------
 // `std/ring/polynomial.b4m` proves `polyMulIsAssociative` over the triple-sum families below;
@@ -7155,6 +7164,350 @@ proof
     [by generalize generalize-p]
 qed
 
+// The step: groundedness below `succ(n)` gives it at `succ(n)`. Either the predecessor `n`
+// is itself the base (the right disjunct fires) or the inductive hypothesis supplies it. The
+// riding exponents `j` and `c` take no part — the generated predicate does not mention them.
+theorem segmentReachesABaseFromAPredecessor: forall n: Nat;
+  (forall q2, r2: Poly; forall j2, c2: Nat; n != ZERO -> segmentGrounded(n))
+  -> (forall q, r: Poly; forall j, c: Nat; succ(n) != ZERO -> segmentGrounded(succ(n)))
+proof
+  @the-generated-clause |
+    forall n3: Nat; segmentGrounded(n3) iff
+      (segmentGrounded(prev(n3)) or prev(n3) = ZERO)
+    [by definition segmentGrounded]
+  @prev-undoes-succ |
+    forall n: Nat; prev(succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; succ(a) != ZERO
+    [using import(peano) succNotZero]
+  @generalize-n |
+    fix n: Nat {
+      @given-the-inductive-hypothesis |
+        assume forall q2, r2: Poly; forall j2, c2: Nat; n != ZERO -> segmentGrounded(n) {
+          @inductive-hypothesis |
+            forall q2, r2: Poly; forall j2, c2: Nat; n != ZERO -> segmentGrounded(n)
+            [by hypothesis given-the-inductive-hypothesis]
+          // `prev` is guarded, so these precede every term that writes `prev(succ(n))`.
+          @succ-n-is-nonzero |
+            succ(n) != ZERO
+            [using specialize a-successor-is-never-zero(n)]
+          @prev-of-succ-n-is-n |
+            prev(succ(n)) = n
+            [using specialize prev-undoes-succ(n)]
+          @generalize-q |
+            fix q: Poly {
+              @generalize-r |
+                fix r: Poly {
+                  @generalize-j |
+                    fix j: Nat {
+                      @generalize-c |
+                        fix c: Nat {
+                          @given-succ-n-nonzero |
+                            assume succ(n) != ZERO {
+                              @clause-at-the-successor |
+                                segmentGrounded(succ(n)) iff
+                                  (segmentGrounded(prev(succ(n))) or prev(succ(n)) = ZERO)
+                                [using specialize the-generated-clause(succ(n))]
+                              @clause-with-the-predecessor-collapsed |
+                                segmentGrounded(succ(n)) iff
+                                  (segmentGrounded(n) or n = ZERO)
+                                [by rewrite prev-of-succ-n-is-n clause-at-the-successor]
+                              @the-inductive-hypothesis-here |
+                                n != ZERO -> segmentGrounded(n)
+                                [using specialize inductive-hypothesis(q, r, j, c)]
+                              @conclusion-grounded-at-succ-n |
+                                segmentGrounded(succ(n))
+                                [using tautology clause-with-the-predecessor-collapsed
+                                  the-inductive-hypothesis-here]
+                            }
+                          @conclusion-nonzero-gives-grounded |
+                            succ(n) != ZERO -> segmentGrounded(succ(n))
+                            [by discharge given-succ-n-nonzero]
+                        }
+                      @discharge-c |
+                        forall c: Nat; succ(n) != ZERO -> segmentGrounded(succ(n))
+                        [by generalize generalize-c]
+                    }
+                  @discharge-j |
+                    forall j, c: Nat; succ(n) != ZERO -> segmentGrounded(succ(n))
+                    [by generalize generalize-j]
+                }
+              @discharge-r |
+                forall r: Poly; forall j, c: Nat; succ(n) != ZERO -> segmentGrounded(succ(n))
+                [by generalize generalize-r]
+            }
+          @conclusion-grounded-for-every-argument |
+            forall q, r: Poly; forall j, c: Nat; succ(n) != ZERO -> segmentGrounded(succ(n))
+            [by generalize generalize-q]
+        }
+      @conclusion-the-step-at-n |
+        (forall q2, r2: Poly; forall j2, c2: Nat; n != ZERO -> segmentGrounded(n))
+          -> (forall q, r: Poly; forall j, c: Nat; succ(n) != ZERO -> segmentGrounded(succ(n)))
+        [by discharge given-the-inductive-hypothesis]
+    }
+  @conclusion |
+    forall n: Nat;
+      (forall q2, r2: Poly; forall j2, c2: Nat; n != ZERO -> segmentGrounded(n))
+      -> (forall q, r: Poly; forall j, c: Nat; succ(n) != ZERO -> segmentGrounded(succ(n)))
+    [by generalize generalize-n]
+qed
+
+// THE OBLIGATION. Induction on `n` — the length, and the only descent. The base is VACUOUS,
+// its antecedent `ZERO != ZERO` being false, and the step is the theorem above.
+theorem segmentIsGrounded: forall q, r: Poly; forall j, c: Nat; forall n: Nat;
+  n != ZERO -> segmentGrounded(n)
+proof
+  @zero-is-itself |
+    ZERO = ZERO
+    [by reflexivity]
+  // `tautology` reads a `forall` as one opaque atom, so the binders are opened before the
+  // vacuous antecedent can be refuted inside them.
+  @base-case-proof |
+    fix q: Poly {
+      @generalize-r-at-zero |
+        fix r: Poly {
+          @generalize-j-at-zero |
+            fix j: Nat {
+              @generalize-c-at-zero |
+                fix c: Nat {
+                  @conclusion-vacuously-grounded |
+                    ZERO != ZERO -> segmentGrounded(ZERO)
+                    [using tautology zero-is-itself]
+                }
+              @discharge-c-at-zero |
+                forall c: Nat; ZERO != ZERO -> segmentGrounded(ZERO)
+                [by generalize generalize-c-at-zero]
+            }
+          @discharge-j-at-zero |
+            forall j, c: Nat; ZERO != ZERO -> segmentGrounded(ZERO)
+            [by generalize generalize-j-at-zero]
+        }
+      @discharge-r-at-zero |
+        forall r: Poly; forall j, c: Nat; ZERO != ZERO -> segmentGrounded(ZERO)
+        [by generalize generalize-r-at-zero]
+    }
+  @base-case |
+    forall q, r: Poly; forall j, c: Nat; ZERO != ZERO -> segmentGrounded(ZERO)
+    [by generalize base-case-proof]
+  @induction-step-for-all-n |
+    forall n: Nat;
+      (forall q2, r2: Poly; forall j2, c2: Nat; n != ZERO -> segmentGrounded(n))
+      -> (forall q, r: Poly; forall j, c: Nat; succ(n) != ZERO -> segmentGrounded(succ(n)))
+    [by cite segmentReachesABaseFromAPredecessor]
+  @grounded-for-every-run-length |
+    forall n: Nat; forall q, r: Poly; forall j, c: Nat; n != ZERO -> segmentGrounded(n)
+    [using instantiation peano.induction((fun n: Nat => (forall q, r: Poly; forall j, c: Nat; n != ZERO -> segmentGrounded(n)))) base-case induction-step-for-all-n]
+  @generalize-q |
+    fix q: Poly {
+      @generalize-r |
+        fix r: Poly {
+          @generalize-j |
+            fix j: Nat {
+              @generalize-c |
+                fix c: Nat {
+                  @generalize-n |
+                    fix n: Nat {
+                      @grounded-at-n |
+                        forall q4, r4: Poly; forall j4, c4: Nat; n != ZERO -> segmentGrounded(n)
+                        [using specialize grounded-for-every-run-length(n)]
+                      @conclusion-grounded-here |
+                        n != ZERO -> segmentGrounded(n)
+                        [using specialize grounded-at-n(q, r, j, c)]
+                    }
+                  @discharge-n |
+                    forall n: Nat; n != ZERO -> segmentGrounded(n)
+                    [by generalize generalize-n]
+                }
+              @discharge-c |
+                forall c: Nat; forall n: Nat; n != ZERO -> segmentGrounded(n)
+                [by generalize generalize-c]
+            }
+          @discharge-j |
+            forall j, c: Nat; forall n: Nat; n != ZERO -> segmentGrounded(n)
+            [by generalize generalize-j]
+        }
+      @discharge-r |
+        forall r: Poly; forall j, c: Nat; forall n: Nat; n != ZERO -> segmentGrounded(n)
+        [by generalize generalize-r]
+    }
+  @conclusion |
+    forall q, r: Poly; forall j, c: Nat; forall n: Nat; n != ZERO -> segmentGrounded(n)
+    [by generalize generalize-q]
+qed
+
+// The step: groundedness below `succ(n)` gives it at `succ(n)`. Either the predecessor `n`
+// is itself the base (the right disjunct fires) or the inductive hypothesis supplies it. The
+// riding exponents `j` and `c` take no part — the generated predicate does not mention them.
+theorem rsegmentReachesABaseFromAPredecessor: forall n: Nat;
+  (forall q2, r2: Poly; forall j2, c2: Nat; n != ZERO -> rsegmentGrounded(n))
+  -> (forall q, r: Poly; forall j, c: Nat; succ(n) != ZERO -> rsegmentGrounded(succ(n)))
+proof
+  @the-generated-clause |
+    forall n3: Nat; rsegmentGrounded(n3) iff
+      (rsegmentGrounded(prev(n3)) or prev(n3) = ZERO)
+    [by definition rsegmentGrounded]
+  @prev-undoes-succ |
+    forall n: Nat; prev(succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; succ(a) != ZERO
+    [using import(peano) succNotZero]
+  @generalize-n |
+    fix n: Nat {
+      @given-the-inductive-hypothesis |
+        assume forall q2, r2: Poly; forall j2, c2: Nat; n != ZERO -> rsegmentGrounded(n) {
+          @inductive-hypothesis |
+            forall q2, r2: Poly; forall j2, c2: Nat; n != ZERO -> rsegmentGrounded(n)
+            [by hypothesis given-the-inductive-hypothesis]
+          // `prev` is guarded, so these precede every term that writes `prev(succ(n))`.
+          @succ-n-is-nonzero |
+            succ(n) != ZERO
+            [using specialize a-successor-is-never-zero(n)]
+          @prev-of-succ-n-is-n |
+            prev(succ(n)) = n
+            [using specialize prev-undoes-succ(n)]
+          @generalize-q |
+            fix q: Poly {
+              @generalize-r |
+                fix r: Poly {
+                  @generalize-j |
+                    fix j: Nat {
+                      @generalize-c |
+                        fix c: Nat {
+                          @given-succ-n-nonzero |
+                            assume succ(n) != ZERO {
+                              @clause-at-the-successor |
+                                rsegmentGrounded(succ(n)) iff
+                                  (rsegmentGrounded(prev(succ(n))) or prev(succ(n)) = ZERO)
+                                [using specialize the-generated-clause(succ(n))]
+                              @clause-with-the-predecessor-collapsed |
+                                rsegmentGrounded(succ(n)) iff
+                                  (rsegmentGrounded(n) or n = ZERO)
+                                [by rewrite prev-of-succ-n-is-n clause-at-the-successor]
+                              @the-inductive-hypothesis-here |
+                                n != ZERO -> rsegmentGrounded(n)
+                                [using specialize inductive-hypothesis(q, r, j, c)]
+                              @conclusion-grounded-at-succ-n |
+                                rsegmentGrounded(succ(n))
+                                [using tautology clause-with-the-predecessor-collapsed
+                                  the-inductive-hypothesis-here]
+                            }
+                          @conclusion-nonzero-gives-grounded |
+                            succ(n) != ZERO -> rsegmentGrounded(succ(n))
+                            [by discharge given-succ-n-nonzero]
+                        }
+                      @discharge-c |
+                        forall c: Nat; succ(n) != ZERO -> rsegmentGrounded(succ(n))
+                        [by generalize generalize-c]
+                    }
+                  @discharge-j |
+                    forall j, c: Nat; succ(n) != ZERO -> rsegmentGrounded(succ(n))
+                    [by generalize generalize-j]
+                }
+              @discharge-r |
+                forall r: Poly; forall j, c: Nat; succ(n) != ZERO -> rsegmentGrounded(succ(n))
+                [by generalize generalize-r]
+            }
+          @conclusion-grounded-for-every-argument |
+            forall q, r: Poly; forall j, c: Nat; succ(n) != ZERO -> rsegmentGrounded(succ(n))
+            [by generalize generalize-q]
+        }
+      @conclusion-the-step-at-n |
+        (forall q2, r2: Poly; forall j2, c2: Nat; n != ZERO -> rsegmentGrounded(n))
+          -> (forall q, r: Poly; forall j, c: Nat; succ(n) != ZERO -> rsegmentGrounded(succ(n)))
+        [by discharge given-the-inductive-hypothesis]
+    }
+  @conclusion |
+    forall n: Nat;
+      (forall q2, r2: Poly; forall j2, c2: Nat; n != ZERO -> rsegmentGrounded(n))
+      -> (forall q, r: Poly; forall j, c: Nat; succ(n) != ZERO -> rsegmentGrounded(succ(n)))
+    [by generalize generalize-n]
+qed
+
+// THE OBLIGATION. Induction on `n` — the length, and the only descent. The base is VACUOUS,
+// its antecedent `ZERO != ZERO` being false, and the step is the theorem above.
+theorem rsegmentIsGrounded: forall q, r: Poly; forall j, c: Nat; forall n: Nat;
+  n != ZERO -> rsegmentGrounded(n)
+proof
+  @zero-is-itself |
+    ZERO = ZERO
+    [by reflexivity]
+  // `tautology` reads a `forall` as one opaque atom, so the binders are opened before the
+  // vacuous antecedent can be refuted inside them.
+  @base-case-proof |
+    fix q: Poly {
+      @generalize-r-at-zero |
+        fix r: Poly {
+          @generalize-j-at-zero |
+            fix j: Nat {
+              @generalize-c-at-zero |
+                fix c: Nat {
+                  @conclusion-vacuously-grounded |
+                    ZERO != ZERO -> rsegmentGrounded(ZERO)
+                    [using tautology zero-is-itself]
+                }
+              @discharge-c-at-zero |
+                forall c: Nat; ZERO != ZERO -> rsegmentGrounded(ZERO)
+                [by generalize generalize-c-at-zero]
+            }
+          @discharge-j-at-zero |
+            forall j, c: Nat; ZERO != ZERO -> rsegmentGrounded(ZERO)
+            [by generalize generalize-j-at-zero]
+        }
+      @discharge-r-at-zero |
+        forall r: Poly; forall j, c: Nat; ZERO != ZERO -> rsegmentGrounded(ZERO)
+        [by generalize generalize-r-at-zero]
+    }
+  @base-case |
+    forall q, r: Poly; forall j, c: Nat; ZERO != ZERO -> rsegmentGrounded(ZERO)
+    [by generalize base-case-proof]
+  @induction-step-for-all-n |
+    forall n: Nat;
+      (forall q2, r2: Poly; forall j2, c2: Nat; n != ZERO -> rsegmentGrounded(n))
+      -> (forall q, r: Poly; forall j, c: Nat; succ(n) != ZERO -> rsegmentGrounded(succ(n)))
+    [by cite rsegmentReachesABaseFromAPredecessor]
+  @grounded-for-every-run-length |
+    forall n: Nat; forall q, r: Poly; forall j, c: Nat; n != ZERO -> rsegmentGrounded(n)
+    [using instantiation peano.induction((fun n: Nat => (forall q, r: Poly; forall j, c: Nat; n != ZERO -> rsegmentGrounded(n)))) base-case induction-step-for-all-n]
+  @generalize-q |
+    fix q: Poly {
+      @generalize-r |
+        fix r: Poly {
+          @generalize-j |
+            fix j: Nat {
+              @generalize-c |
+                fix c: Nat {
+                  @generalize-n |
+                    fix n: Nat {
+                      @grounded-at-n |
+                        forall q4, r4: Poly; forall j4, c4: Nat; n != ZERO -> rsegmentGrounded(n)
+                        [using specialize grounded-for-every-run-length(n)]
+                      @conclusion-grounded-here |
+                        n != ZERO -> rsegmentGrounded(n)
+                        [using specialize grounded-at-n(q, r, j, c)]
+                    }
+                  @discharge-n |
+                    forall n: Nat; n != ZERO -> rsegmentGrounded(n)
+                    [by generalize generalize-n]
+                }
+              @discharge-c |
+                forall c: Nat; forall n: Nat; n != ZERO -> rsegmentGrounded(n)
+                [by generalize generalize-c]
+            }
+          @discharge-j |
+            forall j, c: Nat; forall n: Nat; n != ZERO -> rsegmentGrounded(n)
+            [by generalize generalize-j]
+        }
+      @discharge-r |
+        forall r: Poly; forall j, c: Nat; forall n: Nat; n != ZERO -> rsegmentGrounded(n)
+        [by generalize generalize-r]
+    }
+  @conclusion |
+    forall q, r: Poly; forall j, c: Nat; forall n: Nat; n != ZERO -> rsegmentGrounded(n)
+    [by generalize generalize-q]
+qed
+
 theorem segmentZero:
   forall p, q: Poly; forall j, c: Nat;
   segment(p, q, j, c, ZERO) = mulF(coeff(p, j), coeff(q, c))
@@ -7171,12 +7524,94 @@ theorem segmentSucc:
   addF(mulF(coeff(p, succ(j)), coeff(q, c)),
   segment(p, q, j, succ(c), n))
 proof
+  @the-recursive-clause |
+    forall p2, q2: Poly; forall j2, c2, n2: Nat;
+      n2 != ZERO ->
+      segment(p2, q2, j2, c2, n2) =
+      addF(mulF(coeff(p2, j2), coeff(q2, c2)),
+      segment(p2, q2, prev(j2), succ(c2), prev(n2)))
+    [by definition(1) segment]
+  @prev-undoes-succ |
+    forall n: Nat; prev(succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; succ(a) != ZERO
+    [using import(peano) succNotZero]
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-j |
+            fix j: Nat {
+              @generalize-c |
+                fix c: Nat {
+                  @generalize-n |
+                    fix n: Nat {
+                      @succ-n-is-nonzero |
+                        succ(n) != ZERO
+                        [using specialize a-successor-is-never-zero(n)]
+                      // the riding exponent's own `prev(succ(j))` owes this, and the arm's
+                      // guard supplies only the LENGTH's — so it is proved here, before any
+                      // step writes the term.
+                      @succ-j-is-nonzero |
+                        succ(j) != ZERO
+                        [using specialize a-successor-is-never-zero(j)]
+                      @clause-at-the-successor |
+                        segment(p, q, succ(j), c, succ(n)) =
+                          addF(mulF(coeff(p, succ(j)), coeff(q, c)),
+                          segment(p, q, prev(succ(j)), succ(c), prev(succ(n))))
+                        [using specialize the-recursive-clause(p, q, succ(j), c, succ(n)) succ-n-is-nonzero]
+                      @prev-of-succ-j |
+                        prev(succ(j)) = j
+                        [using specialize prev-undoes-succ(j)]
+                      @prev-of-succ-n |
+                        prev(succ(n)) = n
+                        [using specialize prev-undoes-succ(n)]
+                      @riding-exponent-collapsed |
+                        segment(p, q, succ(j), c, succ(n)) =
+                          addF(mulF(coeff(p, succ(j)), coeff(q, c)),
+                          segment(p, q, j, succ(c), prev(succ(n))))
+                        [by rewrite prev-of-succ-j clause-at-the-successor]
+                      @conclusion-step-at-j-c-n |
+                        segment(p, q, succ(j), c, succ(n)) =
+                          addF(mulF(coeff(p, succ(j)), coeff(q, c)),
+                          segment(p, q, j, succ(c), n))
+                        [by rewrite prev-of-succ-n riding-exponent-collapsed]
+                    }
+                  @discharge-n |
+                    forall n: Nat;
+                      segment(p, q, succ(j), c, succ(n)) =
+                      addF(mulF(coeff(p, succ(j)), coeff(q, c)),
+                      segment(p, q, j, succ(c), n))
+                    [by generalize generalize-n]
+                }
+              @discharge-c |
+                forall c, n: Nat;
+                  segment(p, q, succ(j), c, succ(n)) =
+                  addF(mulF(coeff(p, succ(j)), coeff(q, c)),
+                  segment(p, q, j, succ(c), n))
+                [by generalize generalize-c]
+            }
+          @discharge-j |
+            forall j, c, n: Nat;
+              segment(p, q, succ(j), c, succ(n)) =
+              addF(mulF(coeff(p, succ(j)), coeff(q, c)),
+              segment(p, q, j, succ(c), n))
+            [by generalize generalize-j]
+        }
+      @discharge-q |
+        forall q: Poly; forall j, c, n: Nat;
+          segment(p, q, succ(j), c, succ(n)) =
+          addF(mulF(coeff(p, succ(j)), coeff(q, c)),
+          segment(p, q, j, succ(c), n))
+        [by generalize generalize-q]
+    }
   @conclusion |
     forall p, q: Poly; forall j, c, n: Nat;
       segment(p, q, succ(j), c, succ(n)) =
       addF(mulF(coeff(p, succ(j)), coeff(q, c)),
       segment(p, q, j, succ(c), n))
-    [by definition(1) segment]
+    [by generalize generalize-p]
 qed
 
 theorem rsegmentZero:
@@ -7195,12 +7630,93 @@ theorem rsegmentSucc:
   addF(mulF(coeff(p, j), coeff(q, succ(c))),
   rsegment(p, q, succ(j), c, n))
 proof
+  @the-recursive-clause |
+    forall p2, q2: Poly; forall j2, c2, n2: Nat;
+      n2 != ZERO ->
+      rsegment(p2, q2, j2, c2, n2) =
+      addF(mulF(coeff(p2, j2), coeff(q2, c2)),
+      rsegment(p2, q2, succ(j2), prev(c2), prev(n2)))
+    [by definition(1) rsegment]
+  @prev-undoes-succ |
+    forall n: Nat; prev(succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; succ(a) != ZERO
+    [using import(peano) succNotZero]
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-j |
+            fix j: Nat {
+              @generalize-c |
+                fix c: Nat {
+                  @generalize-n |
+                    fix n: Nat {
+                      @succ-n-is-nonzero |
+                        succ(n) != ZERO
+                        [using specialize a-successor-is-never-zero(n)]
+                      // the riding exponent's `prev(succ(c))` owes this; the arm's guard
+                      // supplies only the length's.
+                      @succ-c-is-nonzero |
+                        succ(c) != ZERO
+                        [using specialize a-successor-is-never-zero(c)]
+                      @clause-at-the-successor |
+                        rsegment(p, q, j, succ(c), succ(n)) =
+                          addF(mulF(coeff(p, j), coeff(q, succ(c))),
+                          rsegment(p, q, succ(j), prev(succ(c)), prev(succ(n))))
+                        [using specialize the-recursive-clause(p, q, j, succ(c), succ(n)) succ-n-is-nonzero]
+                      @prev-of-succ-c |
+                        prev(succ(c)) = c
+                        [using specialize prev-undoes-succ(c)]
+                      @prev-of-succ-n |
+                        prev(succ(n)) = n
+                        [using specialize prev-undoes-succ(n)]
+                      @riding-exponent-collapsed |
+                        rsegment(p, q, j, succ(c), succ(n)) =
+                          addF(mulF(coeff(p, j), coeff(q, succ(c))),
+                          rsegment(p, q, succ(j), c, prev(succ(n))))
+                        [by rewrite prev-of-succ-c clause-at-the-successor]
+                      @conclusion-step-at-j-c-n |
+                        rsegment(p, q, j, succ(c), succ(n)) =
+                          addF(mulF(coeff(p, j), coeff(q, succ(c))),
+                          rsegment(p, q, succ(j), c, n))
+                        [by rewrite prev-of-succ-n riding-exponent-collapsed]
+                    }
+                  @discharge-n |
+                    forall n: Nat;
+                      rsegment(p, q, j, succ(c), succ(n)) =
+                      addF(mulF(coeff(p, j), coeff(q, succ(c))),
+                      rsegment(p, q, succ(j), c, n))
+                    [by generalize generalize-n]
+                }
+              @discharge-c |
+                forall c, n: Nat;
+                  rsegment(p, q, j, succ(c), succ(n)) =
+                  addF(mulF(coeff(p, j), coeff(q, succ(c))),
+                  rsegment(p, q, succ(j), c, n))
+                [by generalize generalize-c]
+            }
+          @discharge-j |
+            forall j, c, n: Nat;
+              rsegment(p, q, j, succ(c), succ(n)) =
+              addF(mulF(coeff(p, j), coeff(q, succ(c))),
+              rsegment(p, q, succ(j), c, n))
+            [by generalize generalize-j]
+        }
+      @discharge-q |
+        forall q: Poly; forall j, c, n: Nat;
+          rsegment(p, q, j, succ(c), succ(n)) =
+          addF(mulF(coeff(p, j), coeff(q, succ(c))),
+          rsegment(p, q, succ(j), c, n))
+        [by generalize generalize-q]
+    }
   @conclusion |
     forall p, q: Poly; forall j, c, n: Nat;
       rsegment(p, q, j, succ(c), succ(n)) =
       addF(mulF(coeff(p, j), coeff(q, succ(c))),
       rsegment(p, q, succ(j), c, n))
-    [by definition(1) rsegment]
+    [by generalize generalize-p]
 qed
 
 theorem monusAtZero:
