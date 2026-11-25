@@ -716,6 +716,66 @@ l-values like `coeff(monomial(a, k), k) = a`, which the shipped RHS-only
 `convolution(p, q, j, succ(m))`, each needing the pattern moved to the RHS plus a proved
 obligation. `fibTerminates` is the template.
 
+### SOUNDNESS AUDIT, 2026-11-24 — what is closed, and the one hole still open
+
+Asked directly ("do we have confidence the definition schemata are sound now?"), so here is the
+state per obligation rather than a global verdict.
+
+**CLOSED.**
+
+- `consistency:` — obligations synthesized deterministically from source text, compared against
+  the named theorem, two triviality routes, and `definition_consistency` proves nothing itself
+  (so it cannot be unsound; a non-vacuous pair is rejected by the kernel's statement match).
+- `existence:`/`uniqueness:` — PAINPOINTS 16f was real (an implicit definition proving
+  `ZERO = ONE`); requiring both shut it, and all 29 `std` sites migrated.
+- **Binder agreement** — a recursive block whose clauses rename the declared parameters made the
+  generated predicate's base branch reflexive (`j = j`), so the obligation fell to
+  `[by reflexivity]` + `tautology` with no induction. Closed by a hard error; found four `std`
+  instances.
+
+**OPEN, and it is the one that matters: `termination:` IS NOT REQUIRED.** The requirement is
+staged off (`if (any_recursive and !saw_termination)` has no `fail`), so the degenerate case is
+LIVE and exploitable today. Verified, strict check, 8 declarations, no holes:
+
+```2b4m
+axiom sNoFixedPoint: forall a: N; s(a) != a
+oper g(n: N) => N:
+  g(n) = s(g(n)).
+
+theorem absurd: Z != Z
+proof
+  @the-clause        | forall n: N; g(n) = s(g(n))  [by definition(0) g]
+  @at-zero           | g(Z) = s(g(Z))               [by apply_at(Z) the-clause]
+  @no-fixed-point    | forall a: N; s(a) != a       [by cite sNoFixedPoint]
+  @s-of-g-zero-differs | s(g(Z)) != g(Z)            [by apply_at(g(Z)) no-fixed-point]
+  @g-zero-flipped    | s(g(Z)) = g(Z)               [by symmetry at-zero]
+  @conclusion        | Z != Z    [using tautology g-zero-flipped s-of-g-zero-differs]
+qed
+```
+
+(`tautology` reads an equation and its flip as unrelated atoms, hence the `symmetry` step — the
+first attempt without it was refused with a countermodel, which is worth knowing before
+concluding a route is blocked.)
+
+**THE FLIP'S BLOCKERS, measured authoritatively** by enabling the requirement and reading what
+the parser demanded (then restoring): **45 declarations, 37 symbols, 9 families** —
+`tripleRow`/`tripleRows`/`tripleDiag`/`tripleTri`/`tailConvolution`/`segment`/`cappedRun` at 5
+each, `evalUpTo` at 4, plus `segmentOf`/`rsegmentOf`/`clearedSum` stragglers.
+
+A regex count said 56 and was WRONG BY 11: `monomial`, `swap` and `theCofactorIndex` are not
+recursive (accessor-nested l-values, and `monus` composition). **Ask the parser, not grep** —
+the same lesson the `convolution` family size taught (seven members, two visible only through
+model transfer).
+
+**ALSO STILL OPEN, outside this system:** PAINPOINTS 16g — `pred q(n): q(n) iff (not q(n)).` is
+accepted and proves `q(c) and not q(c)`. Negative self-reference in hand-written preds; nothing
+here touches it.
+
+**And the honest caveat on the vacuity argument.** This plan says no vacuous discharge was found
+after probing two routes, and hedges that this is "evidence, not a proof". The hedge was
+warranted: the binder mismatch WAS a third route, and it surfaced by accident during a
+migration rather than by design. Expect more, and prefer adversarial probing to confidence.
+
 ### NEXT SYSTEM: `totality(<theory>):` — the arms must COVER the domain
 
 Raised and scoped by the user 2026-11-24, deliberately NOT part of the termination work.
