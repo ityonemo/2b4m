@@ -517,6 +517,40 @@ predicate appears exactly where the function did and can never land under a nega
 This is therefore a hazard for HAND-WRITTEN preds only, and the fix is small: reject a clause
 whose body mentions the defined predicate negatively.
 
+## 16h. A `when`-GUARDED definition block plus `consistency(<theory>):` breaks sort inference
+
+Live, verified 2026-11-25, and PRE-EXISTING — reproduces at `553d6eb~1`, before the
+termination work, and the syntax did not exist at `6af54ed`, so it arrived with the
+`consistency(<theory>):` selector itself. It stayed hidden because no `std` block combined a
+`when` guard with a `consistency:` declaration until the `prev`-descent migration forced that
+combination everywhere.
+
+Minimal repro — no recursion, no `termination:`:
+
+```2b4m
+oper g(a: Nat, n: Nat) => Nat:
+  g(a, ZERO) = a;
+  g(a, n) = succ(a) when n != ZERO.
+  consistency(peano): _
+```
+→ `error: cannot infer the sort of 'g': it fills no argument of a declared symbol in this clause`
+
+Delete the `consistency` line and it checks clean. Write both arms in PATTERN form
+(`g2(a, succ(n)) = succ(a)`, no guard) and `consistency:` works. So the trigger is precisely
+**guard form + a consistency declaration**, and the error names the DEFINED SYMBOL rather than
+a clause variable.
+
+Distinct from the `swap`-shaped limitation already noted in `Parser.obligationFor`, which is
+about a clause VARIABLE unpinned once the defining application is dropped. Here it is `g`
+itself, so the cause is likely that the synthesized obligation keeps only the two right-hand
+sides — and for a guarded block the surviving expression mentions the symbol in a position
+that pins nothing.
+
+**Cost**: five fixtures cannot be migrated to guard form until this is fixed
+(`consistency-selector/{aliased,local}`, `library-ok/nrep`, `library-consistency/bad`,
+`library-consistency-mismatch/wrong`), so `zig build test` has 5 failing fixture checks
+against 224 passing unit tests. The `std` and `aata` corpora are unaffected and green.
+
 ## 17. `2b4m check tests/cases` is a runaway
 
 The whole fixture directory as one sweep: pathological fixtures, 6.8 GB RSS, >8 min. Use
