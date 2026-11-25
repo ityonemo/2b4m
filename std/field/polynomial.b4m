@@ -7383,20 +7383,19 @@ qed
 // `cappedRunGrounded` transcribes the single call site, with the terminating arm's pattern as its base
 // alternative:
 //
-//     cappedRunGrounded(q, r, g, n) iff (cappedRunGrounded(q, r, g, prev(n)) or prev(n) = ZERO)
+//     cappedRunGrounded(n) iff (cappedRunGrounded(prev(n)) or prev(n) = ZERO)
 //
 // `q`, `r` and `g` ride through untouched; only `n` descends, so the induction is on `n` alone.
 
 // The step: groundedness below `succ(n)` gives it at `succ(n)`. Either the predecessor `n` is
 // itself the base (the right disjunct fires) or the inductive hypothesis supplies it.
 theorem cappedRunReachesABaseFromAPredecessor: forall n: Nat;
-  (forall q2, r2: Poly; forall g2: Nat; n != ZERO -> cappedRunGrounded(q2, r2, g2, n))
-  -> (forall q, r: Poly; forall g: Nat; succ(n) != ZERO -> cappedRunGrounded(q, r, g, succ(n)))
+  (forall q2, r2: Poly; forall g2: Nat; n != ZERO -> cappedRunGrounded(n))
+  -> (forall q, r: Poly; forall g: Nat; succ(n) != ZERO -> cappedRunGrounded(succ(n)))
 proof
   @the-generated-clause |
-    forall q3, r3: Poly; forall g3, n3: Nat;
-      cappedRunGrounded(q3, r3, g3, n3) iff
-      (cappedRunGrounded(q3, r3, g3, prev(n3)) or prev(n3) = ZERO)
+    forall n3: Nat; cappedRunGrounded(n3) iff
+      (cappedRunGrounded(prev(n3)) or prev(n3) = ZERO)
     [by definition cappedRunGrounded]
   @prev-undoes-succ |
     forall n: Nat; prev(succ(n)) = n
@@ -7407,9 +7406,9 @@ proof
   @generalize-n |
     fix n: Nat {
       @given-the-inductive-hypothesis |
-        assume forall q2, r2: Poly; forall g2: Nat; n != ZERO -> cappedRunGrounded(q2, r2, g2, n) {
+        assume forall q2, r2: Poly; forall g2: Nat; n != ZERO -> cappedRunGrounded(n) {
           @inductive-hypothesis |
-            forall q2, r2: Poly; forall g2: Nat; n != ZERO -> cappedRunGrounded(q2, r2, g2, n)
+            forall q2, r2: Poly; forall g2: Nat; n != ZERO -> cappedRunGrounded(n)
             [by hypothesis given-the-inductive-hypothesis]
           // `prev` is guarded, so these precede every term that writes `prev(succ(n))`.
           @succ-n-is-nonzero |
@@ -7427,53 +7426,53 @@ proof
                       @given-succ-n-nonzero |
                         assume succ(n) != ZERO {
                           @clause-at-the-successor |
-                            cappedRunGrounded(q, r, g, succ(n)) iff
-                              (cappedRunGrounded(q, r, g, prev(succ(n))) or prev(succ(n)) = ZERO)
-                            [using specialize the-generated-clause(q, r, g, succ(n))]
+                            cappedRunGrounded(succ(n)) iff
+                              (cappedRunGrounded(prev(succ(n))) or prev(succ(n)) = ZERO)
+                            [using specialize the-generated-clause(succ(n))]
                           @clause-with-the-predecessor-collapsed |
-                            cappedRunGrounded(q, r, g, succ(n)) iff
-                              (cappedRunGrounded(q, r, g, n) or n = ZERO)
+                            cappedRunGrounded(succ(n)) iff
+                              (cappedRunGrounded(n) or n = ZERO)
                             [by rewrite prev-of-succ-n-is-n clause-at-the-successor]
                           @the-inductive-hypothesis-here |
-                            n != ZERO -> cappedRunGrounded(q, r, g, n)
+                            n != ZERO -> cappedRunGrounded(n)
                             [using specialize inductive-hypothesis(q, r, g)]
                           @conclusion-grounded-at-succ-n |
-                            cappedRunGrounded(q, r, g, succ(n))
+                            cappedRunGrounded(succ(n))
                             [using tautology clause-with-the-predecessor-collapsed
                               the-inductive-hypothesis-here]
                         }
                       @conclusion-nonzero-gives-grounded |
-                        succ(n) != ZERO -> cappedRunGrounded(q, r, g, succ(n))
+                        succ(n) != ZERO -> cappedRunGrounded(succ(n))
                         [by discharge given-succ-n-nonzero]
                     }
                   @discharge-g |
-                    forall g: Nat; succ(n) != ZERO -> cappedRunGrounded(q, r, g, succ(n))
+                    forall g: Nat; succ(n) != ZERO -> cappedRunGrounded(succ(n))
                     [by generalize generalize-g]
                 }
               @discharge-r |
-                forall r: Poly; forall g: Nat; succ(n) != ZERO -> cappedRunGrounded(q, r, g, succ(n))
+                forall r: Poly; forall g: Nat; succ(n) != ZERO -> cappedRunGrounded(succ(n))
                 [by generalize generalize-r]
             }
           @conclusion-grounded-for-every-argument |
-            forall q, r: Poly; forall g: Nat; succ(n) != ZERO -> cappedRunGrounded(q, r, g, succ(n))
+            forall q, r: Poly; forall g: Nat; succ(n) != ZERO -> cappedRunGrounded(succ(n))
             [by generalize generalize-q]
         }
       @conclusion-the-step-at-n |
-        (forall q2, r2: Poly; forall g2: Nat; n != ZERO -> cappedRunGrounded(q2, r2, g2, n))
-          -> (forall q, r: Poly; forall g: Nat; succ(n) != ZERO -> cappedRunGrounded(q, r, g, succ(n)))
+        (forall q2, r2: Poly; forall g2: Nat; n != ZERO -> cappedRunGrounded(n))
+          -> (forall q, r: Poly; forall g: Nat; succ(n) != ZERO -> cappedRunGrounded(succ(n)))
         [by discharge given-the-inductive-hypothesis]
     }
   @conclusion |
     forall n: Nat;
-      (forall q2, r2: Poly; forall g2: Nat; n != ZERO -> cappedRunGrounded(q2, r2, g2, n))
-      -> (forall q, r: Poly; forall g: Nat; succ(n) != ZERO -> cappedRunGrounded(q, r, g, succ(n)))
+      (forall q2, r2: Poly; forall g2: Nat; n != ZERO -> cappedRunGrounded(n))
+      -> (forall q, r: Poly; forall g: Nat; succ(n) != ZERO -> cappedRunGrounded(succ(n)))
     [by generalize generalize-n]
 qed
 
 // THE OBLIGATION. Induction on `n`; the base is VACUOUS, its antecedent `ZERO != ZERO` being
 // false, and the step is the theorem above.
 theorem cappedRunIsGrounded: forall q, r: Poly; forall g, n: Nat;
-  n != ZERO -> cappedRunGrounded(q, r, g, n)
+  n != ZERO -> cappedRunGrounded(n)
 proof
   @zero-is-itself |
     ZERO = ZERO
@@ -7487,28 +7486,28 @@ proof
           @generalize-g-at-zero |
             fix g: Nat {
               @conclusion-vacuously-grounded |
-                ZERO != ZERO -> cappedRunGrounded(q, r, g, ZERO)
+                ZERO != ZERO -> cappedRunGrounded(ZERO)
                 [using tautology zero-is-itself]
             }
           @discharge-g-at-zero |
-            forall g: Nat; ZERO != ZERO -> cappedRunGrounded(q, r, g, ZERO)
+            forall g: Nat; ZERO != ZERO -> cappedRunGrounded(ZERO)
             [by generalize generalize-g-at-zero]
         }
       @discharge-r-at-zero |
-        forall r: Poly; forall g: Nat; ZERO != ZERO -> cappedRunGrounded(q, r, g, ZERO)
+        forall r: Poly; forall g: Nat; ZERO != ZERO -> cappedRunGrounded(ZERO)
         [by generalize generalize-r-at-zero]
     }
   @base-case |
-    forall q, r: Poly; forall g: Nat; ZERO != ZERO -> cappedRunGrounded(q, r, g, ZERO)
+    forall q, r: Poly; forall g: Nat; ZERO != ZERO -> cappedRunGrounded(ZERO)
     [by generalize base-case-proof]
   @induction-step-for-all-n |
     forall n: Nat;
-      (forall q2, r2: Poly; forall g2: Nat; n != ZERO -> cappedRunGrounded(q2, r2, g2, n))
-      -> (forall q, r: Poly; forall g: Nat; succ(n) != ZERO -> cappedRunGrounded(q, r, g, succ(n)))
+      (forall q2, r2: Poly; forall g2: Nat; n != ZERO -> cappedRunGrounded(n))
+      -> (forall q, r: Poly; forall g: Nat; succ(n) != ZERO -> cappedRunGrounded(succ(n)))
     [by cite cappedRunReachesABaseFromAPredecessor]
   @grounded-for-every-run-length |
-    forall n: Nat; forall q, r: Poly; forall g: Nat; n != ZERO -> cappedRunGrounded(q, r, g, n)
-    [using instantiation peano.induction((fun n: Nat => (forall q, r: Poly; forall g: Nat; n != ZERO -> cappedRunGrounded(q, r, g, n)))) base-case induction-step-for-all-n]
+    forall n: Nat; forall q, r: Poly; forall g: Nat; n != ZERO -> cappedRunGrounded(n)
+    [using instantiation peano.induction((fun n: Nat => (forall q, r: Poly; forall g: Nat; n != ZERO -> cappedRunGrounded(n)))) base-case induction-step-for-all-n]
   @generalize-q |
     fix q: Poly {
       @generalize-r |
@@ -7518,26 +7517,26 @@ proof
               @generalize-n |
                 fix n: Nat {
                   @grounded-at-n |
-                    forall q4, r4: Poly; forall g4: Nat; n != ZERO -> cappedRunGrounded(q4, r4, g4, n)
+                    forall q4, r4: Poly; forall g4: Nat; n != ZERO -> cappedRunGrounded(n)
                     [using specialize grounded-for-every-run-length(n)]
                   @conclusion-grounded-here |
-                    n != ZERO -> cappedRunGrounded(q, r, g, n)
+                    n != ZERO -> cappedRunGrounded(n)
                     [using specialize grounded-at-n(q, r, g)]
                 }
               @discharge-n |
-                forall n: Nat; n != ZERO -> cappedRunGrounded(q, r, g, n)
+                forall n: Nat; n != ZERO -> cappedRunGrounded(n)
                 [by generalize generalize-n]
             }
           @discharge-g |
-            forall g, n: Nat; n != ZERO -> cappedRunGrounded(q, r, g, n)
+            forall g, n: Nat; n != ZERO -> cappedRunGrounded(n)
             [by generalize generalize-g]
         }
       @discharge-r |
-        forall r: Poly; forall g, n: Nat; n != ZERO -> cappedRunGrounded(q, r, g, n)
+        forall r: Poly; forall g, n: Nat; n != ZERO -> cappedRunGrounded(n)
         [by generalize generalize-r]
     }
   @conclusion |
-    forall q, r: Poly; forall g, n: Nat; n != ZERO -> cappedRunGrounded(q, r, g, n)
+    forall q, r: Poly; forall g, n: Nat; n != ZERO -> cappedRunGrounded(n)
     [by generalize generalize-q]
 qed
 
@@ -8045,13 +8044,13 @@ qed
 // `termination(peano):` names `tripleRowIsGrounded`, and the checker SYNTHESIZES the statement
 // it must have — the recursive arm's own guard implying the generated predicate:
 //
-//     forall p, q, r: Poly; forall i, j, n: Nat; n != ZERO -> tripleRowGrounded(p, q, r, i, j, n)
+//     forall p, q, r: Poly; forall i, j, n: Nat; n != ZERO -> tripleRowGrounded(n)
 //
 // `tripleRowGrounded` is GENERATED from the arm's one recursive call site, a disjunction of
 // that call grounded with its argument hitting the terminating arm's pattern:
 //
-//     tripleRowGrounded(p, q, r, i, j, n) iff
-//       (tripleRowGrounded(p, q, r, i, j, prev(n)) or prev(n) = ZERO)
+//     tripleRowGrounded(n) iff
+//       (tripleRowGrounded(prev(n)) or prev(n) = ZERO)
 //
 // Five of the six binders ride along untouched; only `n` descends, so this is `evalUpTo`'s
 // shape with more scaffolding and no more mathematics.
@@ -8060,13 +8059,12 @@ qed
 // either `n = ZERO` and the base disjunct fires outright, or the inductive hypothesis applies
 // at `n`. `tautology` picks whichever holds.
 theorem tripleRowReachesABaseFromAPredecessor: forall n: Nat;
-  (forall p2, q2, r2: Poly; forall i2, j2: Nat; n != ZERO -> tripleRowGrounded(p2, q2, r2, i2, j2, n))
-  -> (forall p, q, r: Poly; forall i, j: Nat; succ(n) != ZERO -> tripleRowGrounded(p, q, r, i, j, succ(n)))
+  (forall p2, q2, r2: Poly; forall i2, j2: Nat; n != ZERO -> tripleRowGrounded(n))
+  -> (forall p, q, r: Poly; forall i, j: Nat; succ(n) != ZERO -> tripleRowGrounded(succ(n)))
 proof
   @the-generated-clause |
-    forall p3, q3, r3: Poly; forall i3, j3, n3: Nat;
-      tripleRowGrounded(p3, q3, r3, i3, j3, n3) iff
-      (tripleRowGrounded(p3, q3, r3, i3, j3, prev(n3)) or prev(n3) = ZERO)
+    forall n3: Nat; tripleRowGrounded(n3) iff
+      (tripleRowGrounded(prev(n3)) or prev(n3) = ZERO)
     [by definition tripleRowGrounded]
   @prev-undoes-succ |
     forall n: Nat; prev(succ(n)) = n
@@ -8077,9 +8075,9 @@ proof
   @generalize-n |
     fix n: Nat {
       @given-the-inductive-hypothesis |
-        assume forall p2, q2, r2: Poly; forall i2, j2: Nat; n != ZERO -> tripleRowGrounded(p2, q2, r2, i2, j2, n) {
+        assume forall p2, q2, r2: Poly; forall i2, j2: Nat; n != ZERO -> tripleRowGrounded(n) {
           @inductive-hypothesis |
-            forall p2, q2, r2: Poly; forall i2, j2: Nat; n != ZERO -> tripleRowGrounded(p2, q2, r2, i2, j2, n)
+            forall p2, q2, r2: Poly; forall i2, j2: Nat; n != ZERO -> tripleRowGrounded(n)
             [by hypothesis given-the-inductive-hypothesis]
           // `prev` is guarded, so these precede every term that writes `prev(succ(n))`.
           @succ-n-is-nonzero |
@@ -8101,61 +8099,61 @@ proof
                               @given-succ-n-nonzero |
                                 assume succ(n) != ZERO {
                                   @clause-at-the-successor |
-                                    tripleRowGrounded(p, q, r, i, j, succ(n)) iff
-                                      (tripleRowGrounded(p, q, r, i, j, prev(succ(n))) or prev(succ(n)) = ZERO)
-                                    [using specialize the-generated-clause(p, q, r, i, j, succ(n))]
+                                    tripleRowGrounded(succ(n)) iff
+                                      (tripleRowGrounded(prev(succ(n))) or prev(succ(n)) = ZERO)
+                                    [using specialize the-generated-clause(succ(n))]
                                   @clause-with-the-predecessor-collapsed |
-                                    tripleRowGrounded(p, q, r, i, j, succ(n)) iff
-                                      (tripleRowGrounded(p, q, r, i, j, n) or n = ZERO)
+                                    tripleRowGrounded(succ(n)) iff
+                                      (tripleRowGrounded(n) or n = ZERO)
                                     [by rewrite prev-of-succ-n-is-n clause-at-the-successor]
                                   @the-inductive-hypothesis-here |
-                                    n != ZERO -> tripleRowGrounded(p, q, r, i, j, n)
+                                    n != ZERO -> tripleRowGrounded(n)
                                     [using specialize inductive-hypothesis(p, q, r, i, j)]
                                   @conclusion-grounded-at-succ-n |
-                                    tripleRowGrounded(p, q, r, i, j, succ(n))
+                                    tripleRowGrounded(succ(n))
                                     [using tautology clause-with-the-predecessor-collapsed
                                       the-inductive-hypothesis-here]
                                 }
                               @nonzero-implies-grounded |
-                                succ(n) != ZERO -> tripleRowGrounded(p, q, r, i, j, succ(n))
+                                succ(n) != ZERO -> tripleRowGrounded(succ(n))
                                 [by discharge given-succ-n-nonzero]
                             }
                           @discharge-j |
-                            forall j: Nat; succ(n) != ZERO -> tripleRowGrounded(p, q, r, i, j, succ(n))
+                            forall j: Nat; succ(n) != ZERO -> tripleRowGrounded(succ(n))
                             [by generalize generalize-j]
                         }
                       @discharge-i |
-                        forall i, j: Nat; succ(n) != ZERO -> tripleRowGrounded(p, q, r, i, j, succ(n))
+                        forall i, j: Nat; succ(n) != ZERO -> tripleRowGrounded(succ(n))
                         [by generalize generalize-i]
                     }
                   @discharge-r |
-                    forall r: Poly; forall i, j: Nat; succ(n) != ZERO -> tripleRowGrounded(p, q, r, i, j, succ(n))
+                    forall r: Poly; forall i, j: Nat; succ(n) != ZERO -> tripleRowGrounded(succ(n))
                     [by generalize generalize-r]
                 }
               @discharge-q |
-                forall q, r: Poly; forall i, j: Nat; succ(n) != ZERO -> tripleRowGrounded(p, q, r, i, j, succ(n))
+                forall q, r: Poly; forall i, j: Nat; succ(n) != ZERO -> tripleRowGrounded(succ(n))
                 [by generalize generalize-q]
             }
           @conclusion-for-all-arguments |
-            forall p, q, r: Poly; forall i, j: Nat; succ(n) != ZERO -> tripleRowGrounded(p, q, r, i, j, succ(n))
+            forall p, q, r: Poly; forall i, j: Nat; succ(n) != ZERO -> tripleRowGrounded(succ(n))
             [by generalize generalize-p]
         }
       @the-hypothesis-implies-the-step |
-        (forall p2, q2, r2: Poly; forall i2, j2: Nat; n != ZERO -> tripleRowGrounded(p2, q2, r2, i2, j2, n))
-          -> (forall p, q, r: Poly; forall i, j: Nat; succ(n) != ZERO -> tripleRowGrounded(p, q, r, i, j, succ(n)))
+        (forall p2, q2, r2: Poly; forall i2, j2: Nat; n != ZERO -> tripleRowGrounded(n))
+          -> (forall p, q, r: Poly; forall i, j: Nat; succ(n) != ZERO -> tripleRowGrounded(succ(n)))
         [by discharge given-the-inductive-hypothesis]
     }
   @conclusion |
     forall n: Nat;
-      (forall p2, q2, r2: Poly; forall i2, j2: Nat; n != ZERO -> tripleRowGrounded(p2, q2, r2, i2, j2, n))
-      -> (forall p, q, r: Poly; forall i, j: Nat; succ(n) != ZERO -> tripleRowGrounded(p, q, r, i, j, succ(n)))
+      (forall p2, q2, r2: Poly; forall i2, j2: Nat; n != ZERO -> tripleRowGrounded(n))
+      -> (forall p, q, r: Poly; forall i, j: Nat; succ(n) != ZERO -> tripleRowGrounded(succ(n)))
     [by generalize generalize-n]
 qed
 
 // Strategy: `peano.induction` on the row length. The base is VACUOUS — at n = ZERO the
 // antecedent demands `ZERO != ZERO` — so every bit of content is in the step above.
 theorem tripleRowIsGrounded: forall p, q, r: Poly; forall i, j, n: Nat;
-  n != ZERO -> tripleRowGrounded(p, q, r, i, j, n)
+  n != ZERO -> tripleRowGrounded(n)
 proof
   @zero-is-itself |
     ZERO = ZERO
@@ -8173,36 +8171,36 @@ proof
                   @generalize-j-at-zero |
                     fix j: Nat {
                       @conclusion-vacuously-grounded |
-                        ZERO != ZERO -> tripleRowGrounded(p, q, r, i, j, ZERO)
+                        ZERO != ZERO -> tripleRowGrounded(ZERO)
                         [using tautology zero-is-itself]
                     }
                   @discharge-j-at-zero |
-                    forall j: Nat; ZERO != ZERO -> tripleRowGrounded(p, q, r, i, j, ZERO)
+                    forall j: Nat; ZERO != ZERO -> tripleRowGrounded(ZERO)
                     [by generalize generalize-j-at-zero]
                 }
               @discharge-i-at-zero |
-                forall i, j: Nat; ZERO != ZERO -> tripleRowGrounded(p, q, r, i, j, ZERO)
+                forall i, j: Nat; ZERO != ZERO -> tripleRowGrounded(ZERO)
                 [by generalize generalize-i-at-zero]
             }
           @discharge-r-at-zero |
-            forall r: Poly; forall i, j: Nat; ZERO != ZERO -> tripleRowGrounded(p, q, r, i, j, ZERO)
+            forall r: Poly; forall i, j: Nat; ZERO != ZERO -> tripleRowGrounded(ZERO)
             [by generalize generalize-r-at-zero]
         }
       @discharge-q-at-zero |
-        forall q, r: Poly; forall i, j: Nat; ZERO != ZERO -> tripleRowGrounded(p, q, r, i, j, ZERO)
+        forall q, r: Poly; forall i, j: Nat; ZERO != ZERO -> tripleRowGrounded(ZERO)
         [by generalize generalize-q-at-zero]
     }
   @base-case |
-    forall p, q, r: Poly; forall i, j: Nat; ZERO != ZERO -> tripleRowGrounded(p, q, r, i, j, ZERO)
+    forall p, q, r: Poly; forall i, j: Nat; ZERO != ZERO -> tripleRowGrounded(ZERO)
     [by generalize base-case-proof]
   @induction-step-for-all-n |
     forall n: Nat;
-      (forall p2, q2, r2: Poly; forall i2, j2: Nat; n != ZERO -> tripleRowGrounded(p2, q2, r2, i2, j2, n))
-      -> (forall p, q, r: Poly; forall i, j: Nat; succ(n) != ZERO -> tripleRowGrounded(p, q, r, i, j, succ(n)))
+      (forall p2, q2, r2: Poly; forall i2, j2: Nat; n != ZERO -> tripleRowGrounded(n))
+      -> (forall p, q, r: Poly; forall i, j: Nat; succ(n) != ZERO -> tripleRowGrounded(succ(n)))
     [by cite tripleRowReachesABaseFromAPredecessor]
   @grounded-for-every-row-length |
-    forall n: Nat; forall p, q, r: Poly; forall i, j: Nat; n != ZERO -> tripleRowGrounded(p, q, r, i, j, n)
-    [using instantiation peano.induction((fun n: Nat => (forall p, q, r: Poly; forall i, j: Nat; n != ZERO -> tripleRowGrounded(p, q, r, i, j, n)))) base-case induction-step-for-all-n]
+    forall n: Nat; forall p, q, r: Poly; forall i, j: Nat; n != ZERO -> tripleRowGrounded(n)
+    [using instantiation peano.induction((fun n: Nat => (forall p, q, r: Poly; forall i, j: Nat; n != ZERO -> tripleRowGrounded(n)))) base-case induction-step-for-all-n]
   @generalize-p |
     fix p: Poly {
       @generalize-q |
@@ -8216,31 +8214,31 @@ proof
                       @generalize-n |
                         fix n: Nat {
                           @grounded-here |
-                            n != ZERO -> tripleRowGrounded(p, q, r, i, j, n)
+                            n != ZERO -> tripleRowGrounded(n)
                             [using specialize grounded-for-every-row-length(n, p, q, r, i, j)]
                         }
                       @discharge-n |
-                        forall n: Nat; n != ZERO -> tripleRowGrounded(p, q, r, i, j, n)
+                        forall n: Nat; n != ZERO -> tripleRowGrounded(n)
                         [by generalize generalize-n]
                     }
                   @discharge-j |
-                    forall j, n: Nat; n != ZERO -> tripleRowGrounded(p, q, r, i, j, n)
+                    forall j, n: Nat; n != ZERO -> tripleRowGrounded(n)
                     [by generalize generalize-j]
                 }
               @discharge-i |
-                forall i, j, n: Nat; n != ZERO -> tripleRowGrounded(p, q, r, i, j, n)
+                forall i, j, n: Nat; n != ZERO -> tripleRowGrounded(n)
                 [by generalize generalize-i]
             }
           @discharge-r |
-            forall r: Poly; forall i, j, n: Nat; n != ZERO -> tripleRowGrounded(p, q, r, i, j, n)
+            forall r: Poly; forall i, j, n: Nat; n != ZERO -> tripleRowGrounded(n)
             [by generalize generalize-r]
         }
       @discharge-q |
-        forall q, r: Poly; forall i, j, n: Nat; n != ZERO -> tripleRowGrounded(p, q, r, i, j, n)
+        forall q, r: Poly; forall i, j, n: Nat; n != ZERO -> tripleRowGrounded(n)
         [by generalize generalize-q]
     }
   @conclusion |
-    forall p, q, r: Poly; forall i, j, n: Nat; n != ZERO -> tripleRowGrounded(p, q, r, i, j, n)
+    forall p, q, r: Poly; forall i, j, n: Nat; n != ZERO -> tripleRowGrounded(n)
     [by generalize generalize-p]
 qed
 
@@ -8249,12 +8247,12 @@ qed
 // `termination(peano):` names `powerIsGrounded`, and the checker SYNTHESIZES the statement it
 // must have — the recursive arm's own guard implying the generated predicate:
 //
-//     forall a: F; forall n: Nat; n != ZERO -> powerGrounded(a, n)
+//     forall a: F; forall n: Nat; n != ZERO -> powerGrounded(n)
 //
 // `powerGrounded` is GENERATED from the arm's one call site, a disjunction of that call
 // grounded with its argument hitting the terminating arm's pattern:
 //
-//     powerGrounded(a, n) iff (powerGrounded(a, prev(n)) or prev(n) = ZERO)
+//     powerGrounded(n) iff (powerGrounded(prev(n)) or prev(n) = ZERO)
 //
 // The base disjunct is what lets the recursion bottom out: at n = 1 the predecessor IS ZERO.
 
@@ -8262,12 +8260,11 @@ qed
 // either `k = ZERO` and the base disjunct fires outright, or the inductive hypothesis applies
 // at `k`. `tautology` picks whichever holds.
 theorem powerReachesABaseFromAPredecessor: forall k: Nat;
-  (forall a2: F; k != ZERO -> powerGrounded(a2, k))
-  -> (forall a: F; succ(k) != ZERO -> powerGrounded(a, succ(k)))
+  (forall a2: F; k != ZERO -> powerGrounded(k))
+  -> (forall a: F; succ(k) != ZERO -> powerGrounded(succ(k)))
 proof
   @the-generated-clause |
-    forall a3: F; forall n3: Nat;
-      powerGrounded(a3, n3) iff (powerGrounded(a3, prev(n3)) or prev(n3) = ZERO)
+    forall n3: Nat; powerGrounded(n3) iff (powerGrounded(prev(n3)) or prev(n3) = ZERO)
     [by definition powerGrounded]
   @prev-undoes-succ |
     forall n: Nat; prev(succ(n)) = n
@@ -8278,9 +8275,9 @@ proof
   @generalize-k |
     fix k: Nat {
       @given-the-inductive-hypothesis |
-        assume forall a2: F; k != ZERO -> powerGrounded(a2, k) {
+        assume forall a2: F; k != ZERO -> powerGrounded(k) {
           @inductive-hypothesis |
-            forall a2: F; k != ZERO -> powerGrounded(a2, k)
+            forall a2: F; k != ZERO -> powerGrounded(k)
             [by hypothesis given-the-inductive-hypothesis]
           // `prev` is guarded, so this must precede every term that writes `prev(succ(k))`.
           @succ-k-is-nonzero |
@@ -8294,44 +8291,44 @@ proof
               @given-succ-k-nonzero |
                 assume succ(k) != ZERO {
                   @clause-at-a-and-succ-k |
-                    powerGrounded(a, succ(k)) iff
-                      (powerGrounded(a, prev(succ(k))) or prev(succ(k)) = ZERO)
-                    [using specialize the-generated-clause(a, succ(k))]
+                    powerGrounded(succ(k)) iff
+                      (powerGrounded(prev(succ(k))) or prev(succ(k)) = ZERO)
+                    [using specialize the-generated-clause(succ(k))]
                   @clause-with-the-predecessor-collapsed |
-                    powerGrounded(a, succ(k)) iff (powerGrounded(a, k) or k = ZERO)
+                    powerGrounded(succ(k)) iff (powerGrounded(k) or k = ZERO)
                     [by rewrite prev-of-succ-k-is-k clause-at-a-and-succ-k]
                   @the-inductive-hypothesis-at-a |
-                    k != ZERO -> powerGrounded(a, k)
+                    k != ZERO -> powerGrounded(k)
                     [using specialize inductive-hypothesis(a)]
                   @conclusion-grounded-at-succ-k |
-                    powerGrounded(a, succ(k))
+                    powerGrounded(succ(k))
                     [using tautology clause-with-the-predecessor-collapsed
                       the-inductive-hypothesis-at-a]
                 }
               @nonzero-implies-grounded-at-succ-k |
-                succ(k) != ZERO -> powerGrounded(a, succ(k))
+                succ(k) != ZERO -> powerGrounded(succ(k))
                 [by discharge given-succ-k-nonzero]
             }
           @conclusion-for-all-a |
-            forall a: F; succ(k) != ZERO -> powerGrounded(a, succ(k))
+            forall a: F; succ(k) != ZERO -> powerGrounded(succ(k))
             [by generalize generalize-a]
         }
       @the-hypothesis-implies-the-step |
-        (forall a2: F; k != ZERO -> powerGrounded(a2, k))
-          -> (forall a: F; succ(k) != ZERO -> powerGrounded(a, succ(k)))
+        (forall a2: F; k != ZERO -> powerGrounded(k))
+          -> (forall a: F; succ(k) != ZERO -> powerGrounded(succ(k)))
         [by discharge given-the-inductive-hypothesis]
     }
   @conclusion |
     forall k: Nat;
-      (forall a2: F; k != ZERO -> powerGrounded(a2, k))
-      -> (forall a: F; succ(k) != ZERO -> powerGrounded(a, succ(k)))
+      (forall a2: F; k != ZERO -> powerGrounded(k))
+      -> (forall a: F; succ(k) != ZERO -> powerGrounded(succ(k)))
     [by generalize generalize-k]
 qed
 
 // Strategy: `peano.induction` on the exponent. The base is VACUOUS — at n = ZERO the
 // antecedent demands `ZERO != ZERO` — so every bit of content is in the step above.
 theorem powerIsGrounded: forall a: F; forall n: Nat;
-  n != ZERO -> powerGrounded(a, n)
+  n != ZERO -> powerGrounded(n)
 proof
   @zero-is-itself |
     ZERO = ZERO
@@ -8341,34 +8338,34 @@ proof
   @base-case-proof |
     fix a: F {
       @conclusion-vacuously-grounded-at-zero |
-        ZERO != ZERO -> powerGrounded(a, ZERO)
+        ZERO != ZERO -> powerGrounded(ZERO)
         [using tautology zero-is-itself]
     }
   @base-case |
-    forall a: F; ZERO != ZERO -> powerGrounded(a, ZERO)
+    forall a: F; ZERO != ZERO -> powerGrounded(ZERO)
     [by generalize base-case-proof]
   @induction-step-for-all-k |
     forall k: Nat;
-      (forall a2: F; k != ZERO -> powerGrounded(a2, k))
-      -> (forall a: F; succ(k) != ZERO -> powerGrounded(a, succ(k)))
+      (forall a2: F; k != ZERO -> powerGrounded(k))
+      -> (forall a: F; succ(k) != ZERO -> powerGrounded(succ(k)))
     [by cite powerReachesABaseFromAPredecessor]
   @grounded-for-every-exponent |
-    forall n: Nat; forall a: F; n != ZERO -> powerGrounded(a, n)
-    [using instantiation peano.induction((fun n: Nat => (forall a: F; n != ZERO -> powerGrounded(a, n)))) base-case induction-step-for-all-k]
+    forall n: Nat; forall a: F; n != ZERO -> powerGrounded(n)
+    [using instantiation peano.induction((fun n: Nat => (forall a: F; n != ZERO -> powerGrounded(n)))) base-case induction-step-for-all-k]
   @generalize-a |
     fix a: F {
       @generalize-n |
         fix n: Nat {
           @grounded-at-n-and-a |
-            n != ZERO -> powerGrounded(a, n)
+            n != ZERO -> powerGrounded(n)
             [using specialize grounded-for-every-exponent(n, a)]
         }
       @discharge-n |
-        forall n: Nat; n != ZERO -> powerGrounded(a, n)
+        forall n: Nat; n != ZERO -> powerGrounded(n)
         [by generalize generalize-n]
     }
   @conclusion |
-    forall a: F; forall n: Nat; n != ZERO -> powerGrounded(a, n)
+    forall a: F; forall n: Nat; n != ZERO -> powerGrounded(n)
     [by generalize generalize-a]
 qed
 
@@ -8443,12 +8440,12 @@ qed
 // `termination(peano):` names `evalUpToIsGrounded`, and the checker SYNTHESIZES the statement
 // it must have — the recursive arm's own guard implying the generated predicate:
 //
-//     forall p: Poly; forall a: F; forall k: Nat; k != ZERO -> evalUpToGrounded(p, a, k)
+//     forall p: Poly; forall a: F; forall k: Nat; k != ZERO -> evalUpToGrounded(k)
 //
 // `evalUpToGrounded` is GENERATED from the arm's one recursive call site, a disjunction of
 // that call grounded with its argument hitting the terminating arm's pattern:
 //
-//     evalUpToGrounded(p, a, k) iff (evalUpToGrounded(p, a, prev(k)) or prev(k) = ZERO)
+//     evalUpToGrounded(k) iff (evalUpToGrounded(prev(k)) or prev(k) = ZERO)
 //
 // The two non-descending binders (`p`, `a`) ride along untouched; only `k` descends, so this
 // is `power`'s shape with one extra parameter.
@@ -8457,13 +8454,12 @@ qed
 // either `k = ZERO` and the base disjunct fires outright, or the inductive hypothesis applies
 // at `k`. `tautology` picks whichever holds.
 theorem evalUpToReachesABaseFromAPredecessor: forall k: Nat;
-  (forall p2: Poly; forall a2: F; k != ZERO -> evalUpToGrounded(p2, a2, k))
-  -> (forall p: Poly; forall a: F; succ(k) != ZERO -> evalUpToGrounded(p, a, succ(k)))
+  (forall p2: Poly; forall a2: F; k != ZERO -> evalUpToGrounded(k))
+  -> (forall p: Poly; forall a: F; succ(k) != ZERO -> evalUpToGrounded(succ(k)))
 proof
   @the-generated-clause |
-    forall p3: Poly; forall a3: F; forall k3: Nat;
-      evalUpToGrounded(p3, a3, k3) iff
-      (evalUpToGrounded(p3, a3, prev(k3)) or prev(k3) = ZERO)
+    forall k3: Nat; evalUpToGrounded(k3) iff
+      (evalUpToGrounded(prev(k3)) or prev(k3) = ZERO)
     [by definition evalUpToGrounded]
   @prev-undoes-succ |
     forall n: Nat; prev(succ(n)) = n
@@ -8474,9 +8470,9 @@ proof
   @generalize-k |
     fix k: Nat {
       @given-the-inductive-hypothesis |
-        assume forall p2: Poly; forall a2: F; k != ZERO -> evalUpToGrounded(p2, a2, k) {
+        assume forall p2: Poly; forall a2: F; k != ZERO -> evalUpToGrounded(k) {
           @inductive-hypothesis |
-            forall p2: Poly; forall a2: F; k != ZERO -> evalUpToGrounded(p2, a2, k)
+            forall p2: Poly; forall a2: F; k != ZERO -> evalUpToGrounded(k)
             [by hypothesis given-the-inductive-hypothesis]
           // `prev` is guarded, so this must precede every term that writes `prev(succ(k))`.
           @succ-k-is-nonzero |
@@ -8492,49 +8488,49 @@ proof
                   @given-succ-k-nonzero |
                     assume succ(k) != ZERO {
                       @clause-at-p-a-and-succ-k |
-                        evalUpToGrounded(p, a, succ(k)) iff
-                          (evalUpToGrounded(p, a, prev(succ(k))) or prev(succ(k)) = ZERO)
-                        [using specialize the-generated-clause(p, a, succ(k))]
+                        evalUpToGrounded(succ(k)) iff
+                          (evalUpToGrounded(prev(succ(k))) or prev(succ(k)) = ZERO)
+                        [using specialize the-generated-clause(succ(k))]
                       @clause-with-the-predecessor-collapsed |
-                        evalUpToGrounded(p, a, succ(k)) iff
-                          (evalUpToGrounded(p, a, k) or k = ZERO)
+                        evalUpToGrounded(succ(k)) iff
+                          (evalUpToGrounded(k) or k = ZERO)
                         [by rewrite prev-of-succ-k-is-k clause-at-p-a-and-succ-k]
                       @the-inductive-hypothesis-at-p-and-a |
-                        k != ZERO -> evalUpToGrounded(p, a, k)
+                        k != ZERO -> evalUpToGrounded(k)
                         [using specialize inductive-hypothesis(p, a)]
                       @conclusion-grounded-at-succ-k |
-                        evalUpToGrounded(p, a, succ(k))
+                        evalUpToGrounded(succ(k))
                         [using tautology clause-with-the-predecessor-collapsed
                           the-inductive-hypothesis-at-p-and-a]
                     }
                   @nonzero-implies-grounded-at-succ-k |
-                    succ(k) != ZERO -> evalUpToGrounded(p, a, succ(k))
+                    succ(k) != ZERO -> evalUpToGrounded(succ(k))
                     [by discharge given-succ-k-nonzero]
                 }
               @discharge-a |
-                forall a: F; succ(k) != ZERO -> evalUpToGrounded(p, a, succ(k))
+                forall a: F; succ(k) != ZERO -> evalUpToGrounded(succ(k))
                 [by generalize generalize-a]
             }
           @conclusion-for-all-p-and-a |
-            forall p: Poly; forall a: F; succ(k) != ZERO -> evalUpToGrounded(p, a, succ(k))
+            forall p: Poly; forall a: F; succ(k) != ZERO -> evalUpToGrounded(succ(k))
             [by generalize generalize-p]
         }
       @the-hypothesis-implies-the-step |
-        (forall p2: Poly; forall a2: F; k != ZERO -> evalUpToGrounded(p2, a2, k))
-          -> (forall p: Poly; forall a: F; succ(k) != ZERO -> evalUpToGrounded(p, a, succ(k)))
+        (forall p2: Poly; forall a2: F; k != ZERO -> evalUpToGrounded(k))
+          -> (forall p: Poly; forall a: F; succ(k) != ZERO -> evalUpToGrounded(succ(k)))
         [by discharge given-the-inductive-hypothesis]
     }
   @conclusion |
     forall k: Nat;
-      (forall p2: Poly; forall a2: F; k != ZERO -> evalUpToGrounded(p2, a2, k))
-      -> (forall p: Poly; forall a: F; succ(k) != ZERO -> evalUpToGrounded(p, a, succ(k)))
+      (forall p2: Poly; forall a2: F; k != ZERO -> evalUpToGrounded(k))
+      -> (forall p: Poly; forall a: F; succ(k) != ZERO -> evalUpToGrounded(succ(k)))
     [by generalize generalize-k]
 qed
 
 // Strategy: `peano.induction` on the term count. The base is VACUOUS — at k = ZERO the
 // antecedent demands `ZERO != ZERO` — so every bit of content is in the step above.
 theorem evalUpToIsGrounded: forall p: Poly; forall a: F; forall k: Nat;
-  k != ZERO -> evalUpToGrounded(p, a, k)
+  k != ZERO -> evalUpToGrounded(k)
 proof
   @zero-is-itself |
     ZERO = ZERO
@@ -8546,24 +8542,24 @@ proof
       @generalize-a-at-zero |
         fix a: F {
           @conclusion-vacuously-grounded-at-zero |
-            ZERO != ZERO -> evalUpToGrounded(p, a, ZERO)
+            ZERO != ZERO -> evalUpToGrounded(ZERO)
             [using tautology zero-is-itself]
         }
       @discharge-a-at-zero |
-        forall a: F; ZERO != ZERO -> evalUpToGrounded(p, a, ZERO)
+        forall a: F; ZERO != ZERO -> evalUpToGrounded(ZERO)
         [by generalize generalize-a-at-zero]
     }
   @base-case |
-    forall p: Poly; forall a: F; ZERO != ZERO -> evalUpToGrounded(p, a, ZERO)
+    forall p: Poly; forall a: F; ZERO != ZERO -> evalUpToGrounded(ZERO)
     [by generalize base-case-proof]
   @induction-step-for-all-k |
     forall k: Nat;
-      (forall p2: Poly; forall a2: F; k != ZERO -> evalUpToGrounded(p2, a2, k))
-      -> (forall p: Poly; forall a: F; succ(k) != ZERO -> evalUpToGrounded(p, a, succ(k)))
+      (forall p2: Poly; forall a2: F; k != ZERO -> evalUpToGrounded(k))
+      -> (forall p: Poly; forall a: F; succ(k) != ZERO -> evalUpToGrounded(succ(k)))
     [by cite evalUpToReachesABaseFromAPredecessor]
   @grounded-for-every-term-count |
-    forall k: Nat; forall p: Poly; forall a: F; k != ZERO -> evalUpToGrounded(p, a, k)
-    [using instantiation peano.induction((fun k: Nat => (forall p: Poly; forall a: F; k != ZERO -> evalUpToGrounded(p, a, k)))) base-case induction-step-for-all-k]
+    forall k: Nat; forall p: Poly; forall a: F; k != ZERO -> evalUpToGrounded(k)
+    [using instantiation peano.induction((fun k: Nat => (forall p: Poly; forall a: F; k != ZERO -> evalUpToGrounded(k)))) base-case induction-step-for-all-k]
   @generalize-p |
     fix p: Poly {
       @generalize-a |
@@ -8571,19 +8567,19 @@ proof
           @generalize-k |
             fix k: Nat {
               @grounded-at-p-a-and-k |
-                k != ZERO -> evalUpToGrounded(p, a, k)
+                k != ZERO -> evalUpToGrounded(k)
                 [using specialize grounded-for-every-term-count(k, p, a)]
             }
           @discharge-k |
-            forall k: Nat; k != ZERO -> evalUpToGrounded(p, a, k)
+            forall k: Nat; k != ZERO -> evalUpToGrounded(k)
             [by generalize generalize-k]
         }
       @discharge-a |
-        forall a: F; forall k: Nat; k != ZERO -> evalUpToGrounded(p, a, k)
+        forall a: F; forall k: Nat; k != ZERO -> evalUpToGrounded(k)
         [by generalize generalize-a]
     }
   @conclusion |
-    forall p: Poly; forall a: F; forall k: Nat; k != ZERO -> evalUpToGrounded(p, a, k)
+    forall p: Poly; forall a: F; forall k: Nat; k != ZERO -> evalUpToGrounded(k)
     [by generalize generalize-p]
 qed
 
@@ -8727,8 +8723,8 @@ qed
 // GENERATES the predicate it is stated over as a transcription of the recursive arm's one
 // call site:
 //
-//     convolutionGrounded(p, q, j, m) iff
-//       (convolutionGrounded(p, q, succ(j), prev(m)) or prev(m) = ZERO)
+//     convolutionGrounded(m) iff
+//       (convolutionGrounded(prev(m)) or prev(m) = ZERO)
 //
 // The `prev(m) = ZERO` disjunct is the base — the ZERO arm is the only terminating one, and
 // it narrows the fourth slot — and it is what lets the recursion bottom out.
@@ -8742,14 +8738,13 @@ qed
 // specialized at `succ(j)`, which is where the hypothesis has to be read.
 theorem convolutionReachesZeroFromAPredecessor: forall k: Nat;
   (forall p2: Poly; forall q2: Poly; forall j2: Nat;
-  k != ZERO -> convolutionGrounded(p2, q2, j2, k))
+  k != ZERO -> convolutionGrounded(k))
   -> (forall p: Poly; forall q: Poly; forall j: Nat;
-  succ(k) != ZERO -> convolutionGrounded(p, q, j, succ(k)))
+  succ(k) != ZERO -> convolutionGrounded(succ(k)))
 proof
   @the-generated-clause |
-    forall p3: Poly; forall q3: Poly; forall j3: Nat; forall m3: Nat;
-      convolutionGrounded(p3, q3, j3, m3) iff
-      (convolutionGrounded(p3, q3, succ(j3), prev(m3)) or prev(m3) = ZERO)
+    forall m3: Nat; convolutionGrounded(m3) iff
+      (convolutionGrounded(prev(m3)) or prev(m3) = ZERO)
     [by definition convolutionGrounded]
   @prev-undoes-succ |
     forall n: Nat; prev(succ(n)) = n
@@ -8761,10 +8756,10 @@ proof
     fix k: Nat {
       @given-the-inductive-hypothesis |
         assume forall p2: Poly; forall q2: Poly; forall j2: Nat;
-          k != ZERO -> convolutionGrounded(p2, q2, j2, k) {
+          k != ZERO -> convolutionGrounded(k) {
           @inductive-hypothesis |
             forall p2: Poly; forall q2: Poly; forall j2: Nat;
-              k != ZERO -> convolutionGrounded(p2, q2, j2, k)
+              k != ZERO -> convolutionGrounded(k)
             [by hypothesis given-the-inductive-hypothesis]
           // `prev` is guarded, so BOTH of these precede every term writing `prev(succ(k))`:
           // the guard fact first, then the collapse.
@@ -8781,60 +8776,60 @@ proof
                   @generalize-j |
                     fix j: Nat {
                       @clause-at-succ-k |
-                        convolutionGrounded(p, q, j, succ(k)) iff
-                          (convolutionGrounded(p, q, succ(j), prev(succ(k)))
+                        convolutionGrounded(succ(k)) iff
+                          (convolutionGrounded(prev(succ(k)))
                           or prev(succ(k)) = ZERO)
-                        [using specialize the-generated-clause(p, q, j, succ(k))]
+                        [using specialize the-generated-clause(succ(k))]
                       @clause-with-the-predecessor-collapsed |
-                        convolutionGrounded(p, q, j, succ(k)) iff
-                          (convolutionGrounded(p, q, succ(j), k) or k = ZERO)
+                        convolutionGrounded(succ(k)) iff
+                          (convolutionGrounded(k) or k = ZERO)
                         [by rewrite prev-of-succ-k-is-k clause-at-succ-k]
                       @the-inductive-hypothesis-at-the-raised-index |
-                        k != ZERO -> convolutionGrounded(p, q, succ(j), k)
+                        k != ZERO -> convolutionGrounded(k)
                         [using specialize inductive-hypothesis(p, q, succ(j))]
                       @grounded-at-succ-k |
-                        convolutionGrounded(p, q, j, succ(k))
+                        convolutionGrounded(succ(k))
                         [using tautology clause-with-the-predecessor-collapsed
                           the-inductive-hypothesis-at-the-raised-index]
                       @conclusion-nonzero-implies-grounded |
-                        succ(k) != ZERO -> convolutionGrounded(p, q, j, succ(k))
+                        succ(k) != ZERO -> convolutionGrounded(succ(k))
                         [using tautology grounded-at-succ-k]
                     }
                   @discharge-j |
                     forall j: Nat;
-                      succ(k) != ZERO -> convolutionGrounded(p, q, j, succ(k))
+                      succ(k) != ZERO -> convolutionGrounded(succ(k))
                     [by generalize generalize-j]
                 }
               @discharge-q |
                 forall q: Poly; forall j: Nat;
-                  succ(k) != ZERO -> convolutionGrounded(p, q, j, succ(k))
+                  succ(k) != ZERO -> convolutionGrounded(succ(k))
                 [by generalize generalize-q]
             }
           @conclusion-for-all-polynomials |
             forall p: Poly; forall q: Poly; forall j: Nat;
-              succ(k) != ZERO -> convolutionGrounded(p, q, j, succ(k))
+              succ(k) != ZERO -> convolutionGrounded(succ(k))
             [by generalize generalize-p]
         }
       @the-hypothesis-implies-the-step |
         (forall p2: Poly; forall q2: Poly; forall j2: Nat;
-          k != ZERO -> convolutionGrounded(p2, q2, j2, k))
+          k != ZERO -> convolutionGrounded(k))
           -> (forall p: Poly; forall q: Poly; forall j: Nat;
-          succ(k) != ZERO -> convolutionGrounded(p, q, j, succ(k)))
+          succ(k) != ZERO -> convolutionGrounded(succ(k)))
         [by discharge given-the-inductive-hypothesis]
     }
   @conclusion |
     forall k: Nat;
       (forall p2: Poly; forall q2: Poly; forall j2: Nat;
-      k != ZERO -> convolutionGrounded(p2, q2, j2, k))
+      k != ZERO -> convolutionGrounded(k))
       -> (forall p: Poly; forall q: Poly; forall j: Nat;
-      succ(k) != ZERO -> convolutionGrounded(p, q, j, succ(k)))
+      succ(k) != ZERO -> convolutionGrounded(succ(k)))
     [by generalize generalize-k]
 qed
 
 // Strategy: `peano.induction` on the descending index. The base is VACUOUS — at m = ZERO the
 // antecedent demands `ZERO != ZERO` — so all the content is in the step above.
 theorem convolutionIsGrounded: forall p: Poly; forall q: Poly; forall j: Nat; forall m: Nat;
-  m != ZERO -> convolutionGrounded(p, q, j, m)
+  m != ZERO -> convolutionGrounded(m)
 proof
   @zero-is-itself |
     ZERO = ZERO
@@ -8848,33 +8843,33 @@ proof
           @generalize-j-at-zero |
             fix j: Nat {
               @conclusion-vacuously-grounded-at-zero |
-                ZERO != ZERO -> convolutionGrounded(p, q, j, ZERO)
+                ZERO != ZERO -> convolutionGrounded(ZERO)
                 [using tautology zero-is-itself]
             }
           @discharge-j-at-zero |
-            forall j: Nat; ZERO != ZERO -> convolutionGrounded(p, q, j, ZERO)
+            forall j: Nat; ZERO != ZERO -> convolutionGrounded(ZERO)
             [by generalize generalize-j-at-zero]
         }
       @discharge-q-at-zero |
         forall q: Poly; forall j: Nat;
-          ZERO != ZERO -> convolutionGrounded(p, q, j, ZERO)
+          ZERO != ZERO -> convolutionGrounded(ZERO)
         [by generalize generalize-q-at-zero]
     }
   @base-case |
     forall p: Poly; forall q: Poly; forall j: Nat;
-      ZERO != ZERO -> convolutionGrounded(p, q, j, ZERO)
+      ZERO != ZERO -> convolutionGrounded(ZERO)
     [by generalize base-case-proof]
   @induction-step-for-all-k |
     forall k: Nat;
       (forall p2: Poly; forall q2: Poly; forall j2: Nat;
-      k != ZERO -> convolutionGrounded(p2, q2, j2, k))
+      k != ZERO -> convolutionGrounded(k))
       -> (forall p: Poly; forall q: Poly; forall j: Nat;
-      succ(k) != ZERO -> convolutionGrounded(p, q, j, succ(k)))
+      succ(k) != ZERO -> convolutionGrounded(succ(k)))
     [by cite convolutionReachesZeroFromAPredecessor]
   @grounded-for-every-descending-index |
     forall m: Nat; forall p: Poly; forall q: Poly; forall j: Nat;
-      m != ZERO -> convolutionGrounded(p, q, j, m)
-    [using instantiation peano.induction((fun m: Nat => (forall p: Poly; forall q: Poly; forall j: Nat; m != ZERO -> convolutionGrounded(p, q, j, m)))) base-case induction-step-for-all-k]
+      m != ZERO -> convolutionGrounded(m)
+    [using instantiation peano.induction((fun m: Nat => (forall p: Poly; forall q: Poly; forall j: Nat; m != ZERO -> convolutionGrounded(m)))) base-case induction-step-for-all-k]
   @generalize-p |
     fix p: Poly {
       @generalize-q |
@@ -8884,25 +8879,25 @@ proof
               @generalize-m |
                 fix m: Nat {
                   @grounded-at-these-indices |
-                    m != ZERO -> convolutionGrounded(p, q, j, m)
+                    m != ZERO -> convolutionGrounded(m)
                     [using specialize grounded-for-every-descending-index(m, p, q, j)]
                 }
               @discharge-m |
-                forall m: Nat; m != ZERO -> convolutionGrounded(p, q, j, m)
+                forall m: Nat; m != ZERO -> convolutionGrounded(m)
                 [by generalize generalize-m]
             }
           @discharge-j |
-            forall j: Nat; forall m: Nat; m != ZERO -> convolutionGrounded(p, q, j, m)
+            forall j: Nat; forall m: Nat; m != ZERO -> convolutionGrounded(m)
             [by generalize generalize-j]
         }
       @discharge-q |
         forall q: Poly; forall j: Nat; forall m: Nat;
-          m != ZERO -> convolutionGrounded(p, q, j, m)
+          m != ZERO -> convolutionGrounded(m)
         [by generalize generalize-q]
     }
   @conclusion |
     forall p: Poly; forall q: Poly; forall j: Nat; forall m: Nat;
-      m != ZERO -> convolutionGrounded(p, q, j, m)
+      m != ZERO -> convolutionGrounded(m)
     [by generalize generalize-p]
 qed
 
@@ -8911,8 +8906,8 @@ qed
 // The generated predicate transcribes the recursive arm's one call site, with the ZERO arm's
 // pattern as its base alternative:
 //
-//   tailConvolutionGrounded(p, q, j, m) iff
-//     (tailConvolutionGrounded(p, q, prev(j), succ(m)) or prev(j) = ZERO)
+//   tailConvolutionGrounded(j) iff
+//     (tailConvolutionGrounded(prev(j)) or prev(j) = ZERO)
 //
 // The `prev(j) = ZERO` disjunct is the base — the ZERO arm is the only terminating one, and it
 // narrows the THIRD slot — and it is what lets the recursion bottom out.
@@ -8927,14 +8922,13 @@ qed
 // specialized at `succ(m)`, which is where the hypothesis has to be read.
 theorem tailConvolutionReachesZeroFromAPredecessor: forall k: Nat;
   (forall p2: Poly; forall q2: Poly; forall m2: Nat;
-  k != ZERO -> tailConvolutionGrounded(p2, q2, k, m2))
+  k != ZERO -> tailConvolutionGrounded(k))
   -> (forall p: Poly; forall q: Poly; forall m: Nat;
-  succ(k) != ZERO -> tailConvolutionGrounded(p, q, succ(k), m))
+  succ(k) != ZERO -> tailConvolutionGrounded(succ(k)))
 proof
   @the-generated-clause |
-    forall p3: Poly; forall q3: Poly; forall j3: Nat; forall m3: Nat;
-      tailConvolutionGrounded(p3, q3, j3, m3) iff
-      (tailConvolutionGrounded(p3, q3, prev(j3), succ(m3)) or prev(j3) = ZERO)
+    forall j3: Nat; tailConvolutionGrounded(j3) iff
+      (tailConvolutionGrounded(prev(j3)) or prev(j3) = ZERO)
     [by definition tailConvolutionGrounded]
   @prev-undoes-succ |
     forall n: Nat; prev(succ(n)) = n
@@ -8946,10 +8940,10 @@ proof
     fix k: Nat {
       @given-the-inductive-hypothesis |
         assume forall p2: Poly; forall q2: Poly; forall m2: Nat;
-          k != ZERO -> tailConvolutionGrounded(p2, q2, k, m2) {
+          k != ZERO -> tailConvolutionGrounded(k) {
           @inductive-hypothesis |
             forall p2: Poly; forall q2: Poly; forall m2: Nat;
-              k != ZERO -> tailConvolutionGrounded(p2, q2, k, m2)
+              k != ZERO -> tailConvolutionGrounded(k)
             [by hypothesis given-the-inductive-hypothesis]
           // `prev` is guarded, so BOTH of these precede every term writing `prev(succ(k))`:
           // the guard fact first, then the collapse.
@@ -8966,60 +8960,60 @@ proof
                   @generalize-m |
                     fix m: Nat {
                       @clause-at-succ-k |
-                        tailConvolutionGrounded(p, q, succ(k), m) iff
-                          (tailConvolutionGrounded(p, q, prev(succ(k)), succ(m))
+                        tailConvolutionGrounded(succ(k)) iff
+                          (tailConvolutionGrounded(prev(succ(k)))
                           or prev(succ(k)) = ZERO)
-                        [using specialize the-generated-clause(p, q, succ(k), m)]
+                        [using specialize the-generated-clause(succ(k))]
                       @clause-with-the-predecessor-collapsed |
-                        tailConvolutionGrounded(p, q, succ(k), m) iff
-                          (tailConvolutionGrounded(p, q, k, succ(m)) or k = ZERO)
+                        tailConvolutionGrounded(succ(k)) iff
+                          (tailConvolutionGrounded(k) or k = ZERO)
                         [by rewrite prev-of-succ-k-is-k clause-at-succ-k]
                       @the-inductive-hypothesis-at-the-raised-index |
-                        k != ZERO -> tailConvolutionGrounded(p, q, k, succ(m))
+                        k != ZERO -> tailConvolutionGrounded(k)
                         [using specialize inductive-hypothesis(p, q, succ(m))]
                       @grounded-at-succ-k |
-                        tailConvolutionGrounded(p, q, succ(k), m)
+                        tailConvolutionGrounded(succ(k))
                         [using tautology clause-with-the-predecessor-collapsed
                           the-inductive-hypothesis-at-the-raised-index]
                       @conclusion-nonzero-implies-grounded |
-                        succ(k) != ZERO -> tailConvolutionGrounded(p, q, succ(k), m)
+                        succ(k) != ZERO -> tailConvolutionGrounded(succ(k))
                         [using tautology grounded-at-succ-k]
                     }
                   @discharge-m |
                     forall m: Nat;
-                      succ(k) != ZERO -> tailConvolutionGrounded(p, q, succ(k), m)
+                      succ(k) != ZERO -> tailConvolutionGrounded(succ(k))
                     [by generalize generalize-m]
                 }
               @discharge-q |
                 forall q: Poly; forall m: Nat;
-                  succ(k) != ZERO -> tailConvolutionGrounded(p, q, succ(k), m)
+                  succ(k) != ZERO -> tailConvolutionGrounded(succ(k))
                 [by generalize generalize-q]
             }
           @conclusion-for-all-polynomials |
             forall p: Poly; forall q: Poly; forall m: Nat;
-              succ(k) != ZERO -> tailConvolutionGrounded(p, q, succ(k), m)
+              succ(k) != ZERO -> tailConvolutionGrounded(succ(k))
             [by generalize generalize-p]
         }
       @the-hypothesis-implies-the-step |
         (forall p2: Poly; forall q2: Poly; forall m2: Nat;
-          k != ZERO -> tailConvolutionGrounded(p2, q2, k, m2))
+          k != ZERO -> tailConvolutionGrounded(k))
           -> (forall p: Poly; forall q: Poly; forall m: Nat;
-          succ(k) != ZERO -> tailConvolutionGrounded(p, q, succ(k), m))
+          succ(k) != ZERO -> tailConvolutionGrounded(succ(k)))
         [by discharge given-the-inductive-hypothesis]
     }
   @conclusion |
     forall k: Nat;
       (forall p2: Poly; forall q2: Poly; forall m2: Nat;
-      k != ZERO -> tailConvolutionGrounded(p2, q2, k, m2))
+      k != ZERO -> tailConvolutionGrounded(k))
       -> (forall p: Poly; forall q: Poly; forall m: Nat;
-      succ(k) != ZERO -> tailConvolutionGrounded(p, q, succ(k), m))
+      succ(k) != ZERO -> tailConvolutionGrounded(succ(k)))
     [by generalize generalize-k]
 qed
 
 // Strategy: `peano.induction` on the descending index. The base is VACUOUS — at j = ZERO the
 // antecedent demands `ZERO != ZERO` — so all the content is in the step above.
 theorem tailConvolutionIsGrounded: forall p: Poly; forall q: Poly; forall j: Nat; forall m: Nat;
-  j != ZERO -> tailConvolutionGrounded(p, q, j, m)
+  j != ZERO -> tailConvolutionGrounded(j)
 proof
   @zero-is-itself |
     ZERO = ZERO
@@ -9033,33 +9027,33 @@ proof
           @generalize-m-at-zero |
             fix m: Nat {
               @conclusion-vacuously-grounded-at-zero |
-                ZERO != ZERO -> tailConvolutionGrounded(p, q, ZERO, m)
+                ZERO != ZERO -> tailConvolutionGrounded(ZERO)
                 [using tautology zero-is-itself]
             }
           @discharge-m-at-zero |
-            forall m: Nat; ZERO != ZERO -> tailConvolutionGrounded(p, q, ZERO, m)
+            forall m: Nat; ZERO != ZERO -> tailConvolutionGrounded(ZERO)
             [by generalize generalize-m-at-zero]
         }
       @discharge-q-at-zero |
         forall q: Poly; forall m: Nat;
-          ZERO != ZERO -> tailConvolutionGrounded(p, q, ZERO, m)
+          ZERO != ZERO -> tailConvolutionGrounded(ZERO)
         [by generalize generalize-q-at-zero]
     }
   @base-case |
     forall p: Poly; forall q: Poly; forall m: Nat;
-      ZERO != ZERO -> tailConvolutionGrounded(p, q, ZERO, m)
+      ZERO != ZERO -> tailConvolutionGrounded(ZERO)
     [by generalize base-case-proof]
   @induction-step-for-all-k |
     forall k: Nat;
       (forall p2: Poly; forall q2: Poly; forall m2: Nat;
-      k != ZERO -> tailConvolutionGrounded(p2, q2, k, m2))
+      k != ZERO -> tailConvolutionGrounded(k))
       -> (forall p: Poly; forall q: Poly; forall m: Nat;
-      succ(k) != ZERO -> tailConvolutionGrounded(p, q, succ(k), m))
+      succ(k) != ZERO -> tailConvolutionGrounded(succ(k)))
     [by cite tailConvolutionReachesZeroFromAPredecessor]
   @grounded-for-every-descending-index |
     forall j: Nat; forall p: Poly; forall q: Poly; forall m: Nat;
-      j != ZERO -> tailConvolutionGrounded(p, q, j, m)
-    [using instantiation peano.induction((fun j: Nat => (forall p: Poly; forall q: Poly; forall m: Nat; j != ZERO -> tailConvolutionGrounded(p, q, j, m)))) base-case induction-step-for-all-k]
+      j != ZERO -> tailConvolutionGrounded(j)
+    [using instantiation peano.induction((fun j: Nat => (forall p: Poly; forall q: Poly; forall m: Nat; j != ZERO -> tailConvolutionGrounded(j)))) base-case induction-step-for-all-k]
   @generalize-p |
     fix p: Poly {
       @generalize-q |
@@ -9069,25 +9063,25 @@ proof
               @generalize-m |
                 fix m: Nat {
                   @grounded-at-these-indices |
-                    j != ZERO -> tailConvolutionGrounded(p, q, j, m)
+                    j != ZERO -> tailConvolutionGrounded(j)
                     [using specialize grounded-for-every-descending-index(j, p, q, m)]
                 }
               @discharge-m |
-                forall m: Nat; j != ZERO -> tailConvolutionGrounded(p, q, j, m)
+                forall m: Nat; j != ZERO -> tailConvolutionGrounded(j)
                 [by generalize generalize-m]
             }
           @discharge-j |
-            forall j: Nat; forall m: Nat; j != ZERO -> tailConvolutionGrounded(p, q, j, m)
+            forall j: Nat; forall m: Nat; j != ZERO -> tailConvolutionGrounded(j)
             [by generalize generalize-j]
         }
       @discharge-q |
         forall q: Poly; forall j: Nat; forall m: Nat;
-          j != ZERO -> tailConvolutionGrounded(p, q, j, m)
+          j != ZERO -> tailConvolutionGrounded(j)
         [by generalize generalize-q]
     }
   @conclusion |
     forall p: Poly; forall q: Poly; forall j: Nat; forall m: Nat;
-      j != ZERO -> tailConvolutionGrounded(p, q, j, m)
+      j != ZERO -> tailConvolutionGrounded(j)
     [by generalize generalize-p]
 qed
 
@@ -9096,13 +9090,13 @@ qed
 // `termination(peano):` names `tripleDiagIsGrounded`, and the checker SYNTHESIZES the statement
 // it must have — the recursive arm's own guard implying the generated predicate:
 //
-//     forall p, q, r: Poly; forall i, m, c: Nat; c != ZERO -> tripleDiagGrounded(p, q, r, i, m, c)
+//     forall p, q, r: Poly; forall i, m, c: Nat; c != ZERO -> tripleDiagGrounded(c)
 //
 // `tripleDiagGrounded` is GENERATED from the arm's one recursive call site, a disjunction of
 // that call grounded with its argument hitting the terminating arm's pattern:
 //
-//     tripleDiagGrounded(p, q, r, i, m, c) iff
-//       (tripleDiagGrounded(p, q, r, i, m, prev(c)) or prev(c) = ZERO)
+//     tripleDiagGrounded(c) iff
+//       (tripleDiagGrounded(prev(c)) or prev(c) = ZERO)
 //
 // Five of the six binders ride along untouched; only `c` descends, so this is `evalUpTo`'s
 // shape with more scaffolding and no more mathematics.
@@ -9111,13 +9105,12 @@ qed
 // either `c = ZERO` and the base disjunct fires outright, or the inductive hypothesis applies
 // at `c`. `tautology` picks whichever holds.
 theorem tripleDiagReachesABaseFromAPredecessor: forall c: Nat;
-  (forall p2, q2, r2: Poly; forall i2, m2: Nat; c != ZERO -> tripleDiagGrounded(p2, q2, r2, i2, m2, c))
-  -> (forall p, q, r: Poly; forall i, m: Nat; succ(c) != ZERO -> tripleDiagGrounded(p, q, r, i, m, succ(c)))
+  (forall p2, q2, r2: Poly; forall i2, m2: Nat; c != ZERO -> tripleDiagGrounded(c))
+  -> (forall p, q, r: Poly; forall i, m: Nat; succ(c) != ZERO -> tripleDiagGrounded(succ(c)))
 proof
   @the-generated-clause |
-    forall p3, q3, r3: Poly; forall i3, m3, c3: Nat;
-      tripleDiagGrounded(p3, q3, r3, i3, m3, c3) iff
-      (tripleDiagGrounded(p3, q3, r3, i3, m3, prev(c3)) or prev(c3) = ZERO)
+    forall c3: Nat; tripleDiagGrounded(c3) iff
+      (tripleDiagGrounded(prev(c3)) or prev(c3) = ZERO)
     [by definition tripleDiagGrounded]
   @prev-undoes-succ |
     forall c: Nat; prev(succ(c)) = c
@@ -9128,9 +9121,9 @@ proof
   @generalize-c |
     fix c: Nat {
       @given-the-inductive-hypothesis |
-        assume forall p2, q2, r2: Poly; forall i2, m2: Nat; c != ZERO -> tripleDiagGrounded(p2, q2, r2, i2, m2, c) {
+        assume forall p2, q2, r2: Poly; forall i2, m2: Nat; c != ZERO -> tripleDiagGrounded(c) {
           @inductive-hypothesis |
-            forall p2, q2, r2: Poly; forall i2, m2: Nat; c != ZERO -> tripleDiagGrounded(p2, q2, r2, i2, m2, c)
+            forall p2, q2, r2: Poly; forall i2, m2: Nat; c != ZERO -> tripleDiagGrounded(c)
             [by hypothesis given-the-inductive-hypothesis]
           // `prev` is guarded, so these precede every term that writes `prev(succ(c))`.
           @succ-c-is-nonzero |
@@ -9152,61 +9145,61 @@ proof
                               @given-succ-c-nonzero |
                                 assume succ(c) != ZERO {
                                   @clause-at-the-successor |
-                                    tripleDiagGrounded(p, q, r, i, m, succ(c)) iff
-                                      (tripleDiagGrounded(p, q, r, i, m, prev(succ(c))) or prev(succ(c)) = ZERO)
-                                    [using specialize the-generated-clause(p, q, r, i, m, succ(c))]
+                                    tripleDiagGrounded(succ(c)) iff
+                                      (tripleDiagGrounded(prev(succ(c))) or prev(succ(c)) = ZERO)
+                                    [using specialize the-generated-clause(succ(c))]
                                   @clause-with-the-predecessor-collapsed |
-                                    tripleDiagGrounded(p, q, r, i, m, succ(c)) iff
-                                      (tripleDiagGrounded(p, q, r, i, m, c) or c = ZERO)
+                                    tripleDiagGrounded(succ(c)) iff
+                                      (tripleDiagGrounded(c) or c = ZERO)
                                     [by rewrite prev-of-succ-c-is-c clause-at-the-successor]
                                   @the-inductive-hypothesis-here |
-                                    c != ZERO -> tripleDiagGrounded(p, q, r, i, m, c)
+                                    c != ZERO -> tripleDiagGrounded(c)
                                     [using specialize inductive-hypothesis(p, q, r, i, m)]
                                   @conclusion-grounded-at-succ-c |
-                                    tripleDiagGrounded(p, q, r, i, m, succ(c))
+                                    tripleDiagGrounded(succ(c))
                                     [using tautology clause-with-the-predecessor-collapsed
                                       the-inductive-hypothesis-here]
                                 }
                               @nonzero-implies-grounded |
-                                succ(c) != ZERO -> tripleDiagGrounded(p, q, r, i, m, succ(c))
+                                succ(c) != ZERO -> tripleDiagGrounded(succ(c))
                                 [by discharge given-succ-c-nonzero]
                             }
                           @discharge-m |
-                            forall m: Nat; succ(c) != ZERO -> tripleDiagGrounded(p, q, r, i, m, succ(c))
+                            forall m: Nat; succ(c) != ZERO -> tripleDiagGrounded(succ(c))
                             [by generalize generalize-m]
                         }
                       @discharge-i |
-                        forall i, m: Nat; succ(c) != ZERO -> tripleDiagGrounded(p, q, r, i, m, succ(c))
+                        forall i, m: Nat; succ(c) != ZERO -> tripleDiagGrounded(succ(c))
                         [by generalize generalize-i]
                     }
                   @discharge-r |
-                    forall r: Poly; forall i, m: Nat; succ(c) != ZERO -> tripleDiagGrounded(p, q, r, i, m, succ(c))
+                    forall r: Poly; forall i, m: Nat; succ(c) != ZERO -> tripleDiagGrounded(succ(c))
                     [by generalize generalize-r]
                 }
               @discharge-q |
-                forall q, r: Poly; forall i, m: Nat; succ(c) != ZERO -> tripleDiagGrounded(p, q, r, i, m, succ(c))
+                forall q, r: Poly; forall i, m: Nat; succ(c) != ZERO -> tripleDiagGrounded(succ(c))
                 [by generalize generalize-q]
             }
           @conclusion-for-all-arguments |
-            forall p, q, r: Poly; forall i, m: Nat; succ(c) != ZERO -> tripleDiagGrounded(p, q, r, i, m, succ(c))
+            forall p, q, r: Poly; forall i, m: Nat; succ(c) != ZERO -> tripleDiagGrounded(succ(c))
             [by generalize generalize-p]
         }
       @the-hypothesis-implies-the-step |
-        (forall p2, q2, r2: Poly; forall i2, m2: Nat; c != ZERO -> tripleDiagGrounded(p2, q2, r2, i2, m2, c))
-          -> (forall p, q, r: Poly; forall i, m: Nat; succ(c) != ZERO -> tripleDiagGrounded(p, q, r, i, m, succ(c)))
+        (forall p2, q2, r2: Poly; forall i2, m2: Nat; c != ZERO -> tripleDiagGrounded(c))
+          -> (forall p, q, r: Poly; forall i, m: Nat; succ(c) != ZERO -> tripleDiagGrounded(succ(c)))
         [by discharge given-the-inductive-hypothesis]
     }
   @conclusion |
     forall c: Nat;
-      (forall p2, q2, r2: Poly; forall i2, m2: Nat; c != ZERO -> tripleDiagGrounded(p2, q2, r2, i2, m2, c))
-      -> (forall p, q, r: Poly; forall i, m: Nat; succ(c) != ZERO -> tripleDiagGrounded(p, q, r, i, m, succ(c)))
+      (forall p2, q2, r2: Poly; forall i2, m2: Nat; c != ZERO -> tripleDiagGrounded(c))
+      -> (forall p, q, r: Poly; forall i, m: Nat; succ(c) != ZERO -> tripleDiagGrounded(succ(c)))
     [by generalize generalize-c]
 qed
 
 // Strategy: `peano.induction` on the anti-diagonal length. The base is VACUOUS — at c = ZERO the
 // antecedent demands `ZERO != ZERO` — so every bit of content is in the step above.
 theorem tripleDiagIsGrounded: forall p, q, r: Poly; forall i, m, c: Nat;
-  c != ZERO -> tripleDiagGrounded(p, q, r, i, m, c)
+  c != ZERO -> tripleDiagGrounded(c)
 proof
   @zero-is-itself |
     ZERO = ZERO
@@ -9224,36 +9217,36 @@ proof
                   @generalize-m-at-zero |
                     fix m: Nat {
                       @conclusion-vacuously-grounded |
-                        ZERO != ZERO -> tripleDiagGrounded(p, q, r, i, m, ZERO)
+                        ZERO != ZERO -> tripleDiagGrounded(ZERO)
                         [using tautology zero-is-itself]
                     }
                   @discharge-m-at-zero |
-                    forall m: Nat; ZERO != ZERO -> tripleDiagGrounded(p, q, r, i, m, ZERO)
+                    forall m: Nat; ZERO != ZERO -> tripleDiagGrounded(ZERO)
                     [by generalize generalize-m-at-zero]
                 }
               @discharge-i-at-zero |
-                forall i, m: Nat; ZERO != ZERO -> tripleDiagGrounded(p, q, r, i, m, ZERO)
+                forall i, m: Nat; ZERO != ZERO -> tripleDiagGrounded(ZERO)
                 [by generalize generalize-i-at-zero]
             }
           @discharge-r-at-zero |
-            forall r: Poly; forall i, m: Nat; ZERO != ZERO -> tripleDiagGrounded(p, q, r, i, m, ZERO)
+            forall r: Poly; forall i, m: Nat; ZERO != ZERO -> tripleDiagGrounded(ZERO)
             [by generalize generalize-r-at-zero]
         }
       @discharge-q-at-zero |
-        forall q, r: Poly; forall i, m: Nat; ZERO != ZERO -> tripleDiagGrounded(p, q, r, i, m, ZERO)
+        forall q, r: Poly; forall i, m: Nat; ZERO != ZERO -> tripleDiagGrounded(ZERO)
         [by generalize generalize-q-at-zero]
     }
   @base-case |
-    forall p, q, r: Poly; forall i, m: Nat; ZERO != ZERO -> tripleDiagGrounded(p, q, r, i, m, ZERO)
+    forall p, q, r: Poly; forall i, m: Nat; ZERO != ZERO -> tripleDiagGrounded(ZERO)
     [by generalize base-case-proof]
   @induction-step-for-all-c |
     forall c: Nat;
-      (forall p2, q2, r2: Poly; forall i2, m2: Nat; c != ZERO -> tripleDiagGrounded(p2, q2, r2, i2, m2, c))
-      -> (forall p, q, r: Poly; forall i, m: Nat; succ(c) != ZERO -> tripleDiagGrounded(p, q, r, i, m, succ(c)))
+      (forall p2, q2, r2: Poly; forall i2, m2: Nat; c != ZERO -> tripleDiagGrounded(c))
+      -> (forall p, q, r: Poly; forall i, m: Nat; succ(c) != ZERO -> tripleDiagGrounded(succ(c)))
     [by cite tripleDiagReachesABaseFromAPredecessor]
   @grounded-for-every-length |
-    forall c: Nat; forall p, q, r: Poly; forall i, m: Nat; c != ZERO -> tripleDiagGrounded(p, q, r, i, m, c)
-    [using instantiation peano.induction((fun c: Nat => (forall p, q, r: Poly; forall i, m: Nat; c != ZERO -> tripleDiagGrounded(p, q, r, i, m, c)))) base-case induction-step-for-all-c]
+    forall c: Nat; forall p, q, r: Poly; forall i, m: Nat; c != ZERO -> tripleDiagGrounded(c)
+    [using instantiation peano.induction((fun c: Nat => (forall p, q, r: Poly; forall i, m: Nat; c != ZERO -> tripleDiagGrounded(c)))) base-case induction-step-for-all-c]
   @generalize-p |
     fix p: Poly {
       @generalize-q |
@@ -9267,31 +9260,31 @@ proof
                       @generalize-c |
                         fix c: Nat {
                           @grounded-here |
-                            c != ZERO -> tripleDiagGrounded(p, q, r, i, m, c)
+                            c != ZERO -> tripleDiagGrounded(c)
                             [using specialize grounded-for-every-length(c, p, q, r, i, m)]
                         }
                       @discharge-c |
-                        forall c: Nat; c != ZERO -> tripleDiagGrounded(p, q, r, i, m, c)
+                        forall c: Nat; c != ZERO -> tripleDiagGrounded(c)
                         [by generalize generalize-c]
                     }
                   @discharge-m |
-                    forall m, c: Nat; c != ZERO -> tripleDiagGrounded(p, q, r, i, m, c)
+                    forall m, c: Nat; c != ZERO -> tripleDiagGrounded(c)
                     [by generalize generalize-m]
                 }
               @discharge-i |
-                forall i, m, c: Nat; c != ZERO -> tripleDiagGrounded(p, q, r, i, m, c)
+                forall i, m, c: Nat; c != ZERO -> tripleDiagGrounded(c)
                 [by generalize generalize-i]
             }
           @discharge-r |
-            forall r: Poly; forall i, m, c: Nat; c != ZERO -> tripleDiagGrounded(p, q, r, i, m, c)
+            forall r: Poly; forall i, m, c: Nat; c != ZERO -> tripleDiagGrounded(c)
             [by generalize generalize-r]
         }
       @discharge-q |
-        forall q, r: Poly; forall i, m, c: Nat; c != ZERO -> tripleDiagGrounded(p, q, r, i, m, c)
+        forall q, r: Poly; forall i, m, c: Nat; c != ZERO -> tripleDiagGrounded(c)
         [by generalize generalize-q]
     }
   @conclusion |
-    forall p, q, r: Poly; forall i, m, c: Nat; c != ZERO -> tripleDiagGrounded(p, q, r, i, m, c)
+    forall p, q, r: Poly; forall i, m, c: Nat; c != ZERO -> tripleDiagGrounded(c)
     [by generalize generalize-p]
 qed
 
@@ -9300,13 +9293,13 @@ qed
 // `termination(peano):` names `tripleTriIsGrounded`, and the checker SYNTHESIZES the statement
 // it must have — the recursive arm's own guard implying the generated predicate:
 //
-//     forall p, q, r: Poly; forall i, n: Nat; n != ZERO -> tripleTriGrounded(p, q, r, i, n)
+//     forall p, q, r: Poly; forall i, n: Nat; n != ZERO -> tripleTriGrounded(n)
 //
 // `tripleTriGrounded` is GENERATED from the arm's one recursive call site, a disjunction of
 // that call grounded with its argument hitting the terminating arm's pattern:
 //
-//     tripleTriGrounded(p, q, r, i, n) iff
-//       (tripleTriGrounded(p, q, r, i, prev(n)) or prev(n) = ZERO)
+//     tripleTriGrounded(n) iff
+//       (tripleTriGrounded(prev(n)) or prev(n) = ZERO)
 //
 // Four of the five binders ride along untouched; only `n` descends.
 
@@ -9314,13 +9307,12 @@ qed
 // so either `n = ZERO` and the base disjunct fires outright, or the inductive hypothesis
 // applies at `n`. `tautology` picks whichever holds.
 theorem tripleTriReachesABaseFromAPredecessor: forall n: Nat;
-  (forall p2, q2, r2: Poly; forall i2: Nat; n != ZERO -> tripleTriGrounded(p2, q2, r2, i2, n))
-  -> (forall p, q, r: Poly; forall i: Nat; succ(n) != ZERO -> tripleTriGrounded(p, q, r, i, succ(n)))
+  (forall p2, q2, r2: Poly; forall i2: Nat; n != ZERO -> tripleTriGrounded(n))
+  -> (forall p, q, r: Poly; forall i: Nat; succ(n) != ZERO -> tripleTriGrounded(succ(n)))
 proof
   @the-generated-clause |
-    forall p3, q3, r3: Poly; forall i3, n3: Nat;
-      tripleTriGrounded(p3, q3, r3, i3, n3) iff
-      (tripleTriGrounded(p3, q3, r3, i3, prev(n3)) or prev(n3) = ZERO)
+    forall n3: Nat; tripleTriGrounded(n3) iff
+      (tripleTriGrounded(prev(n3)) or prev(n3) = ZERO)
     [by definition tripleTriGrounded]
   @prev-undoes-succ |
     forall n: Nat; prev(succ(n)) = n
@@ -9331,9 +9323,9 @@ proof
   @generalize-n |
     fix n: Nat {
       @given-the-inductive-hypothesis |
-        assume forall p2, q2, r2: Poly; forall i2: Nat; n != ZERO -> tripleTriGrounded(p2, q2, r2, i2, n) {
+        assume forall p2, q2, r2: Poly; forall i2: Nat; n != ZERO -> tripleTriGrounded(n) {
           @inductive-hypothesis |
-            forall p2, q2, r2: Poly; forall i2: Nat; n != ZERO -> tripleTriGrounded(p2, q2, r2, i2, n)
+            forall p2, q2, r2: Poly; forall i2: Nat; n != ZERO -> tripleTriGrounded(n)
             [by hypothesis given-the-inductive-hypothesis]
           // `prev` is guarded, so these precede every term that writes `prev(succ(n))`.
           @succ-n-is-nonzero |
@@ -9353,57 +9345,57 @@ proof
                           @given-succ-n-nonzero |
                             assume succ(n) != ZERO {
                               @clause-at-the-successor |
-                                tripleTriGrounded(p, q, r, i, succ(n)) iff
-                                  (tripleTriGrounded(p, q, r, i, prev(succ(n))) or prev(succ(n)) = ZERO)
-                                [using specialize the-generated-clause(p, q, r, i, succ(n))]
+                                tripleTriGrounded(succ(n)) iff
+                                  (tripleTriGrounded(prev(succ(n))) or prev(succ(n)) = ZERO)
+                                [using specialize the-generated-clause(succ(n))]
                               @clause-with-the-predecessor-collapsed |
-                                tripleTriGrounded(p, q, r, i, succ(n)) iff
-                                  (tripleTriGrounded(p, q, r, i, n) or n = ZERO)
+                                tripleTriGrounded(succ(n)) iff
+                                  (tripleTriGrounded(n) or n = ZERO)
                                 [by rewrite prev-of-succ-n-is-n clause-at-the-successor]
                               @the-inductive-hypothesis-here |
-                                n != ZERO -> tripleTriGrounded(p, q, r, i, n)
+                                n != ZERO -> tripleTriGrounded(n)
                                 [using specialize inductive-hypothesis(p, q, r, i)]
                               @conclusion-grounded-at-succ-n |
-                                tripleTriGrounded(p, q, r, i, succ(n))
+                                tripleTriGrounded(succ(n))
                                 [using tautology clause-with-the-predecessor-collapsed
                                   the-inductive-hypothesis-here]
                             }
                           @nonzero-implies-grounded |
-                            succ(n) != ZERO -> tripleTriGrounded(p, q, r, i, succ(n))
+                            succ(n) != ZERO -> tripleTriGrounded(succ(n))
                             [by discharge given-succ-n-nonzero]
                         }
                       @discharge-i |
-                        forall i: Nat; succ(n) != ZERO -> tripleTriGrounded(p, q, r, i, succ(n))
+                        forall i: Nat; succ(n) != ZERO -> tripleTriGrounded(succ(n))
                         [by generalize generalize-i]
                     }
                   @discharge-r |
-                    forall r: Poly; forall i: Nat; succ(n) != ZERO -> tripleTriGrounded(p, q, r, i, succ(n))
+                    forall r: Poly; forall i: Nat; succ(n) != ZERO -> tripleTriGrounded(succ(n))
                     [by generalize generalize-r]
                 }
               @discharge-q |
-                forall q, r: Poly; forall i: Nat; succ(n) != ZERO -> tripleTriGrounded(p, q, r, i, succ(n))
+                forall q, r: Poly; forall i: Nat; succ(n) != ZERO -> tripleTriGrounded(succ(n))
                 [by generalize generalize-q]
             }
           @conclusion-for-all-arguments |
-            forall p, q, r: Poly; forall i: Nat; succ(n) != ZERO -> tripleTriGrounded(p, q, r, i, succ(n))
+            forall p, q, r: Poly; forall i: Nat; succ(n) != ZERO -> tripleTriGrounded(succ(n))
             [by generalize generalize-p]
         }
       @the-hypothesis-implies-the-step |
-        (forall p2, q2, r2: Poly; forall i2: Nat; n != ZERO -> tripleTriGrounded(p2, q2, r2, i2, n))
-          -> (forall p, q, r: Poly; forall i: Nat; succ(n) != ZERO -> tripleTriGrounded(p, q, r, i, succ(n)))
+        (forall p2, q2, r2: Poly; forall i2: Nat; n != ZERO -> tripleTriGrounded(n))
+          -> (forall p, q, r: Poly; forall i: Nat; succ(n) != ZERO -> tripleTriGrounded(succ(n)))
         [by discharge given-the-inductive-hypothesis]
     }
   @conclusion |
     forall n: Nat;
-      (forall p2, q2, r2: Poly; forall i2: Nat; n != ZERO -> tripleTriGrounded(p2, q2, r2, i2, n))
-      -> (forall p, q, r: Poly; forall i: Nat; succ(n) != ZERO -> tripleTriGrounded(p, q, r, i, succ(n)))
+      (forall p2, q2, r2: Poly; forall i2: Nat; n != ZERO -> tripleTriGrounded(n))
+      -> (forall p, q, r: Poly; forall i: Nat; succ(n) != ZERO -> tripleTriGrounded(succ(n)))
     [by generalize generalize-n]
 qed
 
 // Strategy: `peano.induction` on the triangle size. The base is VACUOUS — at n = ZERO the
 // antecedent demands `ZERO != ZERO` — so every bit of content is in the step above.
 theorem tripleTriIsGrounded: forall p, q, r: Poly; forall i, n: Nat;
-  n != ZERO -> tripleTriGrounded(p, q, r, i, n)
+  n != ZERO -> tripleTriGrounded(n)
 proof
   @zero-is-itself |
     ZERO = ZERO
@@ -9419,32 +9411,32 @@ proof
               @generalize-i-at-zero |
                 fix i: Nat {
                   @conclusion-vacuously-grounded |
-                    ZERO != ZERO -> tripleTriGrounded(p, q, r, i, ZERO)
+                    ZERO != ZERO -> tripleTriGrounded(ZERO)
                     [using tautology zero-is-itself]
                 }
               @discharge-i-at-zero |
-                forall i: Nat; ZERO != ZERO -> tripleTriGrounded(p, q, r, i, ZERO)
+                forall i: Nat; ZERO != ZERO -> tripleTriGrounded(ZERO)
                 [by generalize generalize-i-at-zero]
             }
           @discharge-r-at-zero |
-            forall r: Poly; forall i: Nat; ZERO != ZERO -> tripleTriGrounded(p, q, r, i, ZERO)
+            forall r: Poly; forall i: Nat; ZERO != ZERO -> tripleTriGrounded(ZERO)
             [by generalize generalize-r-at-zero]
         }
       @discharge-q-at-zero |
-        forall q, r: Poly; forall i: Nat; ZERO != ZERO -> tripleTriGrounded(p, q, r, i, ZERO)
+        forall q, r: Poly; forall i: Nat; ZERO != ZERO -> tripleTriGrounded(ZERO)
         [by generalize generalize-q-at-zero]
     }
   @base-case |
-    forall p, q, r: Poly; forall i: Nat; ZERO != ZERO -> tripleTriGrounded(p, q, r, i, ZERO)
+    forall p, q, r: Poly; forall i: Nat; ZERO != ZERO -> tripleTriGrounded(ZERO)
     [by generalize base-case-proof]
   @induction-step-for-all-n |
     forall n: Nat;
-      (forall p2, q2, r2: Poly; forall i2: Nat; n != ZERO -> tripleTriGrounded(p2, q2, r2, i2, n))
-      -> (forall p, q, r: Poly; forall i: Nat; succ(n) != ZERO -> tripleTriGrounded(p, q, r, i, succ(n)))
+      (forall p2, q2, r2: Poly; forall i2: Nat; n != ZERO -> tripleTriGrounded(n))
+      -> (forall p, q, r: Poly; forall i: Nat; succ(n) != ZERO -> tripleTriGrounded(succ(n)))
     [by cite tripleTriReachesABaseFromAPredecessor]
   @grounded-for-every-size |
-    forall n: Nat; forall p, q, r: Poly; forall i: Nat; n != ZERO -> tripleTriGrounded(p, q, r, i, n)
-    [using instantiation peano.induction((fun n: Nat => (forall p, q, r: Poly; forall i: Nat; n != ZERO -> tripleTriGrounded(p, q, r, i, n)))) base-case induction-step-for-all-n]
+    forall n: Nat; forall p, q, r: Poly; forall i: Nat; n != ZERO -> tripleTriGrounded(n)
+    [using instantiation peano.induction((fun n: Nat => (forall p, q, r: Poly; forall i: Nat; n != ZERO -> tripleTriGrounded(n)))) base-case induction-step-for-all-n]
   @generalize-p |
     fix p: Poly {
       @generalize-q |
@@ -9456,27 +9448,27 @@ proof
                   @generalize-n |
                     fix n: Nat {
                       @grounded-here |
-                        n != ZERO -> tripleTriGrounded(p, q, r, i, n)
+                        n != ZERO -> tripleTriGrounded(n)
                         [using specialize grounded-for-every-size(n, p, q, r, i)]
                     }
                   @discharge-n |
-                    forall n: Nat; n != ZERO -> tripleTriGrounded(p, q, r, i, n)
+                    forall n: Nat; n != ZERO -> tripleTriGrounded(n)
                     [by generalize generalize-n]
                 }
               @discharge-i |
-                forall i, n: Nat; n != ZERO -> tripleTriGrounded(p, q, r, i, n)
+                forall i, n: Nat; n != ZERO -> tripleTriGrounded(n)
                 [by generalize generalize-i]
             }
           @discharge-r |
-            forall r: Poly; forall i, n: Nat; n != ZERO -> tripleTriGrounded(p, q, r, i, n)
+            forall r: Poly; forall i, n: Nat; n != ZERO -> tripleTriGrounded(n)
             [by generalize generalize-r]
         }
       @discharge-q |
-        forall q, r: Poly; forall i, n: Nat; n != ZERO -> tripleTriGrounded(p, q, r, i, n)
+        forall q, r: Poly; forall i, n: Nat; n != ZERO -> tripleTriGrounded(n)
         [by generalize generalize-q]
     }
   @conclusion |
-    forall p, q, r: Poly; forall i, n: Nat; n != ZERO -> tripleTriGrounded(p, q, r, i, n)
+    forall p, q, r: Poly; forall i, n: Nat; n != ZERO -> tripleTriGrounded(n)
     [by generalize generalize-p]
 qed
 
@@ -9485,13 +9477,13 @@ qed
 // `termination(peano):` names `tripleRowsIsGrounded`, and the checker SYNTHESIZES the statement
 // it must have — the recursive arm's own guard implying the generated predicate:
 //
-//     forall p, q, r: Poly; forall i, m, n: Nat; m != ZERO -> tripleRowsGrounded(p, q, r, i, m, n)
+//     forall p, q, r: Poly; forall i, m, n: Nat; m != ZERO -> tripleRowsGrounded(m)
 //
 // `tripleRowsGrounded` is GENERATED from the arm's one recursive call site, a disjunction of
 // that call grounded with its argument hitting the terminating arm's pattern:
 //
-//     tripleRowsGrounded(p, q, r, i, m, n) iff
-//       (tripleRowsGrounded(p, q, r, i, prev(m), n) or prev(m) = ZERO)
+//     tripleRowsGrounded(m) iff
+//       (tripleRowsGrounded(prev(m)) or prev(m) = ZERO)
 //
 // The descent is on `m`, the FIFTH of six arguments — `n` rides through AFTER it, which is the
 // only way this differs from the three families above.
@@ -9500,13 +9492,12 @@ qed
 // either `m = ZERO` and the base disjunct fires outright, or the inductive hypothesis applies
 // at `m`. `tautology` picks whichever holds.
 theorem tripleRowsReachesABaseFromAPredecessor: forall m: Nat;
-  (forall p2, q2, r2: Poly; forall i2, n2: Nat; m != ZERO -> tripleRowsGrounded(p2, q2, r2, i2, m, n2))
-  -> (forall p, q, r: Poly; forall i, n: Nat; succ(m) != ZERO -> tripleRowsGrounded(p, q, r, i, succ(m), n))
+  (forall p2, q2, r2: Poly; forall i2, n2: Nat; m != ZERO -> tripleRowsGrounded(m))
+  -> (forall p, q, r: Poly; forall i, n: Nat; succ(m) != ZERO -> tripleRowsGrounded(succ(m)))
 proof
   @the-generated-clause |
-    forall p3, q3, r3: Poly; forall i3, m3, n3: Nat;
-      tripleRowsGrounded(p3, q3, r3, i3, m3, n3) iff
-      (tripleRowsGrounded(p3, q3, r3, i3, prev(m3), n3) or prev(m3) = ZERO)
+    forall m3: Nat; tripleRowsGrounded(m3) iff
+      (tripleRowsGrounded(prev(m3)) or prev(m3) = ZERO)
     [by definition tripleRowsGrounded]
   @prev-undoes-succ |
     forall k: Nat; prev(succ(k)) = k
@@ -9517,9 +9508,9 @@ proof
   @generalize-m |
     fix m: Nat {
       @given-the-inductive-hypothesis |
-        assume forall p2, q2, r2: Poly; forall i2, n2: Nat; m != ZERO -> tripleRowsGrounded(p2, q2, r2, i2, m, n2) {
+        assume forall p2, q2, r2: Poly; forall i2, n2: Nat; m != ZERO -> tripleRowsGrounded(m) {
           @inductive-hypothesis |
-            forall p2, q2, r2: Poly; forall i2, n2: Nat; m != ZERO -> tripleRowsGrounded(p2, q2, r2, i2, m, n2)
+            forall p2, q2, r2: Poly; forall i2, n2: Nat; m != ZERO -> tripleRowsGrounded(m)
             [by hypothesis given-the-inductive-hypothesis]
           // `prev` is guarded, so these precede every term that writes `prev(succ(m))`.
           @succ-m-is-nonzero |
@@ -9541,61 +9532,61 @@ proof
                               @given-succ-m-nonzero |
                                 assume succ(m) != ZERO {
                                   @clause-at-the-successor |
-                                    tripleRowsGrounded(p, q, r, i, succ(m), n) iff
-                                      (tripleRowsGrounded(p, q, r, i, prev(succ(m)), n) or prev(succ(m)) = ZERO)
-                                    [using specialize the-generated-clause(p, q, r, i, succ(m), n)]
+                                    tripleRowsGrounded(succ(m)) iff
+                                      (tripleRowsGrounded(prev(succ(m))) or prev(succ(m)) = ZERO)
+                                    [using specialize the-generated-clause(succ(m))]
                                   @clause-with-the-predecessor-collapsed |
-                                    tripleRowsGrounded(p, q, r, i, succ(m), n) iff
-                                      (tripleRowsGrounded(p, q, r, i, m, n) or m = ZERO)
+                                    tripleRowsGrounded(succ(m)) iff
+                                      (tripleRowsGrounded(m) or m = ZERO)
                                     [by rewrite prev-of-succ-m-is-m clause-at-the-successor]
                                   @the-inductive-hypothesis-here |
-                                    m != ZERO -> tripleRowsGrounded(p, q, r, i, m, n)
+                                    m != ZERO -> tripleRowsGrounded(m)
                                     [using specialize inductive-hypothesis(p, q, r, i, n)]
                                   @conclusion-grounded-at-succ-m |
-                                    tripleRowsGrounded(p, q, r, i, succ(m), n)
+                                    tripleRowsGrounded(succ(m))
                                     [using tautology clause-with-the-predecessor-collapsed
                                       the-inductive-hypothesis-here]
                                 }
                               @nonzero-implies-grounded |
-                                succ(m) != ZERO -> tripleRowsGrounded(p, q, r, i, succ(m), n)
+                                succ(m) != ZERO -> tripleRowsGrounded(succ(m))
                                 [by discharge given-succ-m-nonzero]
                             }
                           @discharge-n |
-                            forall n: Nat; succ(m) != ZERO -> tripleRowsGrounded(p, q, r, i, succ(m), n)
+                            forall n: Nat; succ(m) != ZERO -> tripleRowsGrounded(succ(m))
                             [by generalize generalize-n]
                         }
                       @discharge-i |
-                        forall i, n: Nat; succ(m) != ZERO -> tripleRowsGrounded(p, q, r, i, succ(m), n)
+                        forall i, n: Nat; succ(m) != ZERO -> tripleRowsGrounded(succ(m))
                         [by generalize generalize-i]
                     }
                   @discharge-r |
-                    forall r: Poly; forall i, n: Nat; succ(m) != ZERO -> tripleRowsGrounded(p, q, r, i, succ(m), n)
+                    forall r: Poly; forall i, n: Nat; succ(m) != ZERO -> tripleRowsGrounded(succ(m))
                     [by generalize generalize-r]
                 }
               @discharge-q |
-                forall q, r: Poly; forall i, n: Nat; succ(m) != ZERO -> tripleRowsGrounded(p, q, r, i, succ(m), n)
+                forall q, r: Poly; forall i, n: Nat; succ(m) != ZERO -> tripleRowsGrounded(succ(m))
                 [by generalize generalize-q]
             }
           @conclusion-for-all-arguments |
-            forall p, q, r: Poly; forall i, n: Nat; succ(m) != ZERO -> tripleRowsGrounded(p, q, r, i, succ(m), n)
+            forall p, q, r: Poly; forall i, n: Nat; succ(m) != ZERO -> tripleRowsGrounded(succ(m))
             [by generalize generalize-p]
         }
       @the-hypothesis-implies-the-step |
-        (forall p2, q2, r2: Poly; forall i2, n2: Nat; m != ZERO -> tripleRowsGrounded(p2, q2, r2, i2, m, n2))
-          -> (forall p, q, r: Poly; forall i, n: Nat; succ(m) != ZERO -> tripleRowsGrounded(p, q, r, i, succ(m), n))
+        (forall p2, q2, r2: Poly; forall i2, n2: Nat; m != ZERO -> tripleRowsGrounded(m))
+          -> (forall p, q, r: Poly; forall i, n: Nat; succ(m) != ZERO -> tripleRowsGrounded(succ(m)))
         [by discharge given-the-inductive-hypothesis]
     }
   @conclusion |
     forall m: Nat;
-      (forall p2, q2, r2: Poly; forall i2, n2: Nat; m != ZERO -> tripleRowsGrounded(p2, q2, r2, i2, m, n2))
-      -> (forall p, q, r: Poly; forall i, n: Nat; succ(m) != ZERO -> tripleRowsGrounded(p, q, r, i, succ(m), n))
+      (forall p2, q2, r2: Poly; forall i2, n2: Nat; m != ZERO -> tripleRowsGrounded(m))
+      -> (forall p, q, r: Poly; forall i, n: Nat; succ(m) != ZERO -> tripleRowsGrounded(succ(m)))
     [by generalize generalize-m]
 qed
 
 // Strategy: `peano.induction` on the row count. The base is VACUOUS — at m = ZERO the
 // antecedent demands `ZERO != ZERO` — so every bit of content is in the step above.
 theorem tripleRowsIsGrounded: forall p, q, r: Poly; forall i, m, n: Nat;
-  m != ZERO -> tripleRowsGrounded(p, q, r, i, m, n)
+  m != ZERO -> tripleRowsGrounded(m)
 proof
   @zero-is-itself |
     ZERO = ZERO
@@ -9613,36 +9604,36 @@ proof
                   @generalize-n-at-zero |
                     fix n: Nat {
                       @conclusion-vacuously-grounded |
-                        ZERO != ZERO -> tripleRowsGrounded(p, q, r, i, ZERO, n)
+                        ZERO != ZERO -> tripleRowsGrounded(ZERO)
                         [using tautology zero-is-itself]
                     }
                   @discharge-n-at-zero |
-                    forall n: Nat; ZERO != ZERO -> tripleRowsGrounded(p, q, r, i, ZERO, n)
+                    forall n: Nat; ZERO != ZERO -> tripleRowsGrounded(ZERO)
                     [by generalize generalize-n-at-zero]
                 }
               @discharge-i-at-zero |
-                forall i, n: Nat; ZERO != ZERO -> tripleRowsGrounded(p, q, r, i, ZERO, n)
+                forall i, n: Nat; ZERO != ZERO -> tripleRowsGrounded(ZERO)
                 [by generalize generalize-i-at-zero]
             }
           @discharge-r-at-zero |
-            forall r: Poly; forall i, n: Nat; ZERO != ZERO -> tripleRowsGrounded(p, q, r, i, ZERO, n)
+            forall r: Poly; forall i, n: Nat; ZERO != ZERO -> tripleRowsGrounded(ZERO)
             [by generalize generalize-r-at-zero]
         }
       @discharge-q-at-zero |
-        forall q, r: Poly; forall i, n: Nat; ZERO != ZERO -> tripleRowsGrounded(p, q, r, i, ZERO, n)
+        forall q, r: Poly; forall i, n: Nat; ZERO != ZERO -> tripleRowsGrounded(ZERO)
         [by generalize generalize-q-at-zero]
     }
   @base-case |
-    forall p, q, r: Poly; forall i, n: Nat; ZERO != ZERO -> tripleRowsGrounded(p, q, r, i, ZERO, n)
+    forall p, q, r: Poly; forall i, n: Nat; ZERO != ZERO -> tripleRowsGrounded(ZERO)
     [by generalize base-case-proof]
   @induction-step-for-all-m |
     forall m: Nat;
-      (forall p2, q2, r2: Poly; forall i2, n2: Nat; m != ZERO -> tripleRowsGrounded(p2, q2, r2, i2, m, n2))
-      -> (forall p, q, r: Poly; forall i, n: Nat; succ(m) != ZERO -> tripleRowsGrounded(p, q, r, i, succ(m), n))
+      (forall p2, q2, r2: Poly; forall i2, n2: Nat; m != ZERO -> tripleRowsGrounded(m))
+      -> (forall p, q, r: Poly; forall i, n: Nat; succ(m) != ZERO -> tripleRowsGrounded(succ(m)))
     [by cite tripleRowsReachesABaseFromAPredecessor]
   @grounded-for-every-row-count |
-    forall m: Nat; forall p, q, r: Poly; forall i, n: Nat; m != ZERO -> tripleRowsGrounded(p, q, r, i, m, n)
-    [using instantiation peano.induction((fun m: Nat => (forall p, q, r: Poly; forall i, n: Nat; m != ZERO -> tripleRowsGrounded(p, q, r, i, m, n)))) base-case induction-step-for-all-m]
+    forall m: Nat; forall p, q, r: Poly; forall i, n: Nat; m != ZERO -> tripleRowsGrounded(m)
+    [using instantiation peano.induction((fun m: Nat => (forall p, q, r: Poly; forall i, n: Nat; m != ZERO -> tripleRowsGrounded(m)))) base-case induction-step-for-all-m]
   @generalize-p |
     fix p: Poly {
       @generalize-q |
@@ -9656,30 +9647,30 @@ proof
                       @generalize-n |
                         fix n: Nat {
                           @grounded-here |
-                            m != ZERO -> tripleRowsGrounded(p, q, r, i, m, n)
+                            m != ZERO -> tripleRowsGrounded(m)
                             [using specialize grounded-for-every-row-count(m, p, q, r, i, n)]
                         }
                       @discharge-n |
-                        forall n: Nat; m != ZERO -> tripleRowsGrounded(p, q, r, i, m, n)
+                        forall n: Nat; m != ZERO -> tripleRowsGrounded(m)
                         [by generalize generalize-n]
                     }
                   @discharge-m |
-                    forall m, n: Nat; m != ZERO -> tripleRowsGrounded(p, q, r, i, m, n)
+                    forall m, n: Nat; m != ZERO -> tripleRowsGrounded(m)
                     [by generalize generalize-m]
                 }
               @discharge-i |
-                forall i, m, n: Nat; m != ZERO -> tripleRowsGrounded(p, q, r, i, m, n)
+                forall i, m, n: Nat; m != ZERO -> tripleRowsGrounded(m)
                 [by generalize generalize-i]
             }
           @discharge-r |
-            forall r: Poly; forall i, m, n: Nat; m != ZERO -> tripleRowsGrounded(p, q, r, i, m, n)
+            forall r: Poly; forall i, m, n: Nat; m != ZERO -> tripleRowsGrounded(m)
             [by generalize generalize-r]
         }
       @discharge-q |
-        forall q, r: Poly; forall i, m, n: Nat; m != ZERO -> tripleRowsGrounded(p, q, r, i, m, n)
+        forall q, r: Poly; forall i, m, n: Nat; m != ZERO -> tripleRowsGrounded(m)
         [by generalize generalize-q]
     }
   @conclusion |
-    forall p, q, r: Poly; forall i, m, n: Nat; m != ZERO -> tripleRowsGrounded(p, q, r, i, m, n)
+    forall p, q, r: Poly; forall i, m, n: Nat; m != ZERO -> tripleRowsGrounded(m)
     [by generalize generalize-p]
 qed

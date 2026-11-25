@@ -1252,8 +1252,8 @@ qed
 //
 // The checker GENERATES the predicate from the recursive arm's one call site:
 //
-//     iconvolutionGrounded(p, q, j, m) iff
-//       (iconvolutionGrounded(p, q, peano.succ(j), peano.prev(m))
+//     iconvolutionGrounded(m) iff
+//       (iconvolutionGrounded(peano.prev(m))
 //        or peano.prev(m) = ZERO)
 //
 // The `prev(m) = ZERO` disjunct is the base — the ZERO arm is the only terminating one — and
@@ -1265,14 +1265,13 @@ qed
 // `tautology` picks whichever holds.
 theorem iConvolutionReachesZeroFromAPredecessor: forall k: Nat;
   (forall p2: IntPoly; forall q2: IntPoly; forall j2: Nat;
-  k != ZERO -> iconvolutionGrounded(p2, q2, j2, k))
+  k != ZERO -> iconvolutionGrounded(k))
   -> (forall p: IntPoly; forall q: IntPoly; forall j: Nat;
-  peano.succ(k) != ZERO -> iconvolutionGrounded(p, q, j, peano.succ(k)))
+  peano.succ(k) != ZERO -> iconvolutionGrounded(peano.succ(k)))
 proof
   @the-generated-clause |
-    forall p3: IntPoly; forall q3: IntPoly; forall j3: Nat; forall m3: Nat;
-      iconvolutionGrounded(p3, q3, j3, m3) iff
-      (iconvolutionGrounded(p3, q3, peano.succ(j3), peano.prev(m3))
+    forall m3: Nat; iconvolutionGrounded(m3) iff
+      (iconvolutionGrounded(peano.prev(m3))
       or peano.prev(m3) = ZERO)
     [by definition iconvolutionGrounded]
   @prev-undoes-succ |
@@ -1285,10 +1284,10 @@ proof
     fix k: Nat {
       @given-the-inductive-hypothesis |
         assume forall p2: IntPoly; forall q2: IntPoly; forall j2: Nat;
-          k != ZERO -> iconvolutionGrounded(p2, q2, j2, k) {
+          k != ZERO -> iconvolutionGrounded(k) {
           @inductive-hypothesis |
             forall p2: IntPoly; forall q2: IntPoly; forall j2: Nat;
-              k != ZERO -> iconvolutionGrounded(p2, q2, j2, k)
+              k != ZERO -> iconvolutionGrounded(k)
             [by hypothesis given-the-inductive-hypothesis]
           // `prev` is guarded, so the guard fact precedes every term writing `prev(succ(k))`.
           @succ-k-is-nonzero |
@@ -1304,57 +1303,56 @@ proof
                   @generalize-j |
                     fix j: Nat {
                       @clause-at-succ-k |
-                        iconvolutionGrounded(p, q, j, peano.succ(k)) iff
-                          (iconvolutionGrounded(p, q, peano.succ(j),
-                          peano.prev(peano.succ(k)))
+                        iconvolutionGrounded(peano.succ(k)) iff
+                          (iconvolutionGrounded(peano.prev(peano.succ(k)))
                           or peano.prev(peano.succ(k)) = ZERO)
-                        [using specialize the-generated-clause(p, q, j, peano.succ(k))]
+                        [using specialize the-generated-clause(peano.succ(k))]
                       @clause-with-the-predecessor-collapsed |
-                        iconvolutionGrounded(p, q, j, peano.succ(k)) iff
-                          (iconvolutionGrounded(p, q, peano.succ(j), k) or k = ZERO)
+                        iconvolutionGrounded(peano.succ(k)) iff
+                          (iconvolutionGrounded(k) or k = ZERO)
                         [by rewrite prev-of-succ-k-is-k clause-at-succ-k]
                       @the-inductive-hypothesis-at-the-raised-index |
-                        k != ZERO -> iconvolutionGrounded(p, q, peano.succ(j), k)
+                        k != ZERO -> iconvolutionGrounded(k)
                         [using specialize inductive-hypothesis(p, q, peano.succ(j))]
                       @grounded-at-succ-k |
-                        iconvolutionGrounded(p, q, j, peano.succ(k))
+                        iconvolutionGrounded(peano.succ(k))
                         [using tautology clause-with-the-predecessor-collapsed
                           the-inductive-hypothesis-at-the-raised-index]
                       @conclusion-nonzero-implies-grounded |
                         peano.succ(k) != ZERO
-                          -> iconvolutionGrounded(p, q, j, peano.succ(k))
+                          -> iconvolutionGrounded(peano.succ(k))
                         [using tautology grounded-at-succ-k]
                     }
                   @discharge-j |
                     forall j: Nat;
                       peano.succ(k) != ZERO
-                      -> iconvolutionGrounded(p, q, j, peano.succ(k))
+                      -> iconvolutionGrounded(peano.succ(k))
                     [by generalize generalize-j]
                 }
               @discharge-q |
                 forall q: IntPoly; forall j: Nat;
                   peano.succ(k) != ZERO
-                  -> iconvolutionGrounded(p, q, j, peano.succ(k))
+                  -> iconvolutionGrounded(peano.succ(k))
                 [by generalize generalize-q]
             }
           @conclusion-for-all-polynomials |
             forall p: IntPoly; forall q: IntPoly; forall j: Nat;
-              peano.succ(k) != ZERO -> iconvolutionGrounded(p, q, j, peano.succ(k))
+              peano.succ(k) != ZERO -> iconvolutionGrounded(peano.succ(k))
             [by generalize generalize-p]
         }
       @the-hypothesis-implies-the-step |
         (forall p2: IntPoly; forall q2: IntPoly; forall j2: Nat;
-          k != ZERO -> iconvolutionGrounded(p2, q2, j2, k))
+          k != ZERO -> iconvolutionGrounded(k))
           -> (forall p: IntPoly; forall q: IntPoly; forall j: Nat;
-          peano.succ(k) != ZERO -> iconvolutionGrounded(p, q, j, peano.succ(k)))
+          peano.succ(k) != ZERO -> iconvolutionGrounded(peano.succ(k)))
         [by discharge given-the-inductive-hypothesis]
     }
   @conclusion |
     forall k: Nat;
       (forall p2: IntPoly; forall q2: IntPoly; forall j2: Nat;
-      k != ZERO -> iconvolutionGrounded(p2, q2, j2, k))
+      k != ZERO -> iconvolutionGrounded(k))
       -> (forall p: IntPoly; forall q: IntPoly; forall j: Nat;
-      peano.succ(k) != ZERO -> iconvolutionGrounded(p, q, j, peano.succ(k)))
+      peano.succ(k) != ZERO -> iconvolutionGrounded(peano.succ(k)))
     [by generalize generalize-k]
 qed
 
@@ -1362,7 +1360,7 @@ qed
 // antecedent demands `ZERO != ZERO` — so all the content is in the step above.
 theorem iConvolutionIsGrounded:
   forall p: IntPoly; forall q: IntPoly; forall j: Nat; forall m: Nat;
-  m != ZERO -> iconvolutionGrounded(p, q, j, m)
+  m != ZERO -> iconvolutionGrounded(m)
 proof
   @zero-is-itself |
     ZERO = ZERO
@@ -1376,33 +1374,33 @@ proof
           @generalize-j-at-zero |
             fix j: Nat {
               @conclusion-vacuously-grounded-at-zero |
-                ZERO != ZERO -> iconvolutionGrounded(p, q, j, ZERO)
+                ZERO != ZERO -> iconvolutionGrounded(ZERO)
                 [using tautology zero-is-itself]
             }
           @discharge-j-at-zero |
-            forall j: Nat; ZERO != ZERO -> iconvolutionGrounded(p, q, j, ZERO)
+            forall j: Nat; ZERO != ZERO -> iconvolutionGrounded(ZERO)
             [by generalize generalize-j-at-zero]
         }
       @discharge-q-at-zero |
         forall q: IntPoly; forall j: Nat;
-          ZERO != ZERO -> iconvolutionGrounded(p, q, j, ZERO)
+          ZERO != ZERO -> iconvolutionGrounded(ZERO)
         [by generalize generalize-q-at-zero]
     }
   @base-case |
     forall p: IntPoly; forall q: IntPoly; forall j: Nat;
-      ZERO != ZERO -> iconvolutionGrounded(p, q, j, ZERO)
+      ZERO != ZERO -> iconvolutionGrounded(ZERO)
     [by generalize base-case-proof]
   @induction-step-for-all-k |
     forall k: Nat;
       (forall p2: IntPoly; forall q2: IntPoly; forall j2: Nat;
-      k != ZERO -> iconvolutionGrounded(p2, q2, j2, k))
+      k != ZERO -> iconvolutionGrounded(k))
       -> (forall p: IntPoly; forall q: IntPoly; forall j: Nat;
-      peano.succ(k) != ZERO -> iconvolutionGrounded(p, q, j, peano.succ(k)))
+      peano.succ(k) != ZERO -> iconvolutionGrounded(peano.succ(k)))
     [by cite iConvolutionReachesZeroFromAPredecessor]
   @grounded-for-every-descending-index |
     forall m: Nat; forall p: IntPoly; forall q: IntPoly; forall j: Nat;
-      m != ZERO -> iconvolutionGrounded(p, q, j, m)
-    [using instantiation peano.induction((fun m: Nat => (forall p: IntPoly; forall q: IntPoly; forall j: Nat; m != ZERO -> iconvolutionGrounded(p, q, j, m)))) base-case induction-step-for-all-k]
+      m != ZERO -> iconvolutionGrounded(m)
+    [using instantiation peano.induction((fun m: Nat => (forall p: IntPoly; forall q: IntPoly; forall j: Nat; m != ZERO -> iconvolutionGrounded(m)))) base-case induction-step-for-all-k]
   @generalize-p |
     fix p: IntPoly {
       @generalize-q |
@@ -1412,24 +1410,24 @@ proof
               @generalize-m |
                 fix m: Nat {
                   @grounded-at-these-indices |
-                    m != ZERO -> iconvolutionGrounded(p, q, j, m)
+                    m != ZERO -> iconvolutionGrounded(m)
                     [using specialize grounded-for-every-descending-index(m, p, q, j)]
                 }
               @discharge-m |
-                forall m: Nat; m != ZERO -> iconvolutionGrounded(p, q, j, m)
+                forall m: Nat; m != ZERO -> iconvolutionGrounded(m)
                 [by generalize generalize-m]
             }
           @discharge-j |
-            forall j: Nat; forall m: Nat; m != ZERO -> iconvolutionGrounded(p, q, j, m)
+            forall j: Nat; forall m: Nat; m != ZERO -> iconvolutionGrounded(m)
             [by generalize generalize-j]
         }
       @discharge-q |
         forall q: IntPoly; forall j: Nat; forall m: Nat;
-          m != ZERO -> iconvolutionGrounded(p, q, j, m)
+          m != ZERO -> iconvolutionGrounded(m)
         [by generalize generalize-q]
     }
   @conclusion |
     forall p: IntPoly; forall q: IntPoly; forall j: Nat; forall m: Nat;
-      m != ZERO -> iconvolutionGrounded(p, q, j, m)
+      m != ZERO -> iconvolutionGrounded(m)
     [by generalize generalize-p]
 qed

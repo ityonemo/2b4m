@@ -201,6 +201,23 @@ fn collectRecursiveCalls(
     }
 }
 
+/// Does `e` mention the bare name `nm` anywhere? Reads a definition clause's GUARD to find
+/// which parameters it constrains — the slots the author declares as controlling the recursion.
+fn mentionsName(e: *const ast.Expr, nm: InternPool.StrId) bool {
+    return switch (e.*) {
+        .name => |n| n.name == nm,
+        .call => |c| {
+            if (c.callee.name == nm) return true;
+            for (c.args) |a| if (mentionsName(a, nm)) return true;
+            return false;
+        },
+        .binary => |b| mentionsName(b.lhs, nm) or mentionsName(b.rhs, nm),
+        .not => |n| mentionsName(n.operand, nm),
+        .quant => |q| mentionsName(q.body, nm),
+        .lambda => |l| mentionsName(l.body, nm),
+    };
+}
+
 /// Does this arm's argument NARROW its slot? A pattern narrows — whether it is an application
 /// (`succ(ZERO)`) or a bare CONSTANT (`ZERO`). A bare VARIABLE does not: that slot is
 /// unconstrained, so there is nothing to negate.
@@ -561,14 +578,46 @@ pub const Parser = struct {
         try collectRecursiveCalls(self.arena, rhs, name, &calls);
         if (calls.items.len == 0) return;
 
-        // the predicate's own parameters mirror the oper's, so the transcribed call sites
-        // apply at the same arity. A pred has no result sort, so nothing else carries over.
-        const pred_params = try self.arena.dupe(ast.Binder, params);
-
         // the clause's LHS application supplies the HEAD's arguments — whatever patterns the
         // recursive arm matches on (`fib(k)` -> `fibGrounded(k)`).
         const head_app = findApplication(clause.body, name) orelse return;
-        const head = try self.groundedCall(pred_name, head_app.args);
+
+        // ONLY THE CONTROLLING SLOTS (user, 2026-11-25). A slot is controlling when the
+        // recursive arm's own GUARD mentions its parameter — `cappedRun(…) when n != ZERO`
+        // declares `n` to be what controls the recursion, and `monus(…) when i != ZERO and
+        // j != ZERO` declares both of its. Every other slot RIDES: it may change (an exponent
+        // walking up or down beside the length) but termination does not depend on it.
+        //
+        // READING IT OFF THE GUARD, not off "the argument differs from the head's". That was
+        // the first criterion and it is wrong: `segment`'s riding exponent is written
+        // `succ(c)`, which differs from `c` while getting LARGER, so "differs" classifies a
+        // riding slot as controlling. The guard is the author's own statement of what shrinks,
+        // which is exactly the question.
+        //
+        // Why this matters rather than being tidiness. Transcribing a riding slot puts its
+        // arithmetic into the predicate, and if that arithmetic is GUARDED the predicate
+        // becomes uninstantiable where the guard fails — while the arm's guard only ever
+        // covers the slots it controls. `segment` made
+        //
+        //     segmentGrounded(j, c, n) iff (segmentGrounded(prev(j), succ(c), prev(n)) or …)
+        //
+        // unusable at `j = ZERO`: writing `prev(ZERO)` owes `ZERO != ZERO`, which is FALSE, not
+        // merely unproved. Measured both ways — the identical shape with total `monus(j, ONE)`
+        // in place of `prev(j)` instantiates fine, isolating the cause to a guarded operation
+        // on a slot the guard does not cover.
+        //
+        // Dropping riding slots makes the predicate MORE faithful to what it asserts: whether
+        // a recursion reaches a base depends on what shrinks, never on what an exponent does
+        // alongside it.
+        const slots = try self.controllingSlots(clause, params, head_app.args.len);
+
+        // the predicate's parameters are the oper's AT THOSE SLOTS. A pred has no result sort,
+        // so nothing else carries over.
+        var kept_params: std.ArrayList(ast.Binder) = .empty;
+        for (slots) |pos| if (pos < params.len) try kept_params.append(self.arena, params[pos]);
+        const pred_params = kept_params.items;
+
+        const head = try self.groundedCall(pred_name, try self.pickSlots(head_app.args, slots));
 
         // The body: ONE CONJUNCT PER CALL SITE, each a DISJUNCTION of that call grounded with
         // its argument hitting one of the terminating arms' patterns. This is what supplies the
@@ -582,8 +631,15 @@ pub const Parser = struct {
         // descent against one is always well-formed.
         var body: ?*const ast.Expr = null;
         for (calls.items) |c| {
-            var conjunct = try self.groundedCall(pred_name, c.args);
+            var conjunct = try self.groundedCall(pred_name, try self.pickSlots(c.args, slots));
             for (c.args, 0..) |arg, pos| {
+                // a base branch belongs only to a slot the predicate still mentions
+                var kept = false;
+                for (slots) |k| if (k == pos) {
+                    kept = true;
+                    break;
+                };
+                if (!kept) continue;
                 for (clauses, 0..) |other, other_i| {
                     if (!other.explicit) continue;
                     // only a TERMINATING arm contributes a base branch. The recursive arm's own
@@ -663,14 +719,19 @@ pub const Parser = struct {
         rec: usize,
         pred_name: Token,
     ) ParseError!?*const ast.Expr {
-        // the conclusion, at the parameters: `<f>Grounded(p1, …, pn)`.
-        const args = try self.arena.alloc(*const ast.Expr, params.len);
-        for (params, 0..) |p, i| {
+        // The conclusion, at the parameters — but only at the CONTROLLING ones, since that is
+        // the arity `stageGroundedPredicate` declares the predicate with. The two must agree.
+        const rec_app_for_arity = findApplication(clauses[rec].body, name);
+        const arity = if (rec_app_for_arity) |a| a.args.len else params.len;
+        const slots = try self.controllingSlots(clauses[rec], params, arity);
+        var args: std.ArrayList(*const ast.Expr) = .empty;
+        for (slots) |pos| {
+            if (pos >= params.len) continue;
             const node = try self.arena.create(ast.Expr);
-            node.* = .{ .name = p.name };
-            args[i] = node;
+            node.* = .{ .name = params[pos].name };
+            try args.append(self.arena, node);
         }
-        var body = try self.groundedCall(pred_name, args);
+        var body = try self.groundedCall(pred_name, args.items);
 
         // THE RECURSIVE ARM'S OWN GUARD, when it has one, is the whole antecedent (user,
         // 2026-11-24). `fib(k) = … when less_than(ONE, k)` yields
@@ -742,6 +803,59 @@ pub const Parser = struct {
             body = node;
         }
         return body;
+    }
+
+    /// Which argument slots CONTROL the recursion: those whose parameter the recursive arm's
+    /// own `when` guard mentions. `cappedRun(…) when n != ZERO` declares `n` to be what
+    /// controls it; `monus(…) when i != ZERO and j != ZERO` declares both of its.
+    ///
+    /// Every other slot RIDES — it may change (an exponent walking up or down beside the
+    /// controlling length) but termination does not depend on it, so the generated predicate
+    /// drops it. Read off the GUARD rather than from "the argument differs from the head's":
+    /// that was the first criterion and it is wrong, since a riding exponent written `succ(c)`
+    /// differs from `c` while getting LARGER. The guard is the author's own statement of what
+    /// shrinks, which is exactly the question being asked.
+    ///
+    /// Why it matters rather than being tidiness: transcribing a riding slot puts its
+    /// arithmetic into the predicate, and if that arithmetic is GUARDED the predicate becomes
+    /// uninstantiable where the guard fails — while the arm's guard only ever covers the slots
+    /// it controls. `segment`'s riding exponent made
+    ///
+    ///     segmentGrounded(j, c, n) iff (segmentGrounded(prev(j), succ(c), prev(n)) or …)
+    ///
+    /// unusable at `j = ZERO`: writing `prev(ZERO)` owes `ZERO != ZERO`, which is FALSE, not
+    /// merely unproved. Measured both ways — the identical shape with a TOTAL operation in
+    /// place of `prev(j)` instantiates fine, isolating the cause to a guarded operation on a
+    /// slot the guard does not cover.
+    ///
+    /// WITH NO GUARD (or a guard naming no parameter) the full arity is kept: a pattern-form
+    /// block has no guard to read, and the degenerate `g(n) = s(g(n))` must keep generating
+    /// `gGrounded(n) iff gGrounded(n)` — baseless, hence an obligation nothing can discharge,
+    /// which is the behaviour to preserve.
+    ///
+    /// Shared by the generator and the obligation synthesizer, which must agree on the arity:
+    /// they diverged in a first draft and the generated clause then failed its own arity check.
+    fn controllingSlots(self: *Parser, clause: Clause, params: []const ast.Binder, arity: usize) ParseError![]const usize {
+        var controlling: std.ArrayList(usize) = .empty;
+        if (clause.guard) |g| {
+            for (params, 0..) |p, pos| {
+                if (pos >= arity) continue;
+                if (!mentionsName(g, p.name.name)) continue;
+                try controlling.append(self.arena, pos);
+            }
+        }
+        if (controlling.items.len != 0) return controlling.items;
+        var all: std.ArrayList(usize) = .empty;
+        var pos: usize = 0;
+        while (pos < arity) : (pos += 1) try all.append(self.arena, pos);
+        return all.items;
+    }
+
+    /// The arguments at `slots`, in order — the projection a generated predicate applies at.
+    fn pickSlots(self: *Parser, args: []const *const ast.Expr, slots: []const usize) ParseError![]const *const ast.Expr {
+        var out: std.ArrayList(*const ast.Expr) = .empty;
+        for (slots) |pos| if (pos < args.len) try out.append(self.arena, args[pos]);
+        return out.items;
     }
 
     /// `<f>Grounded(args…)` — one application of the generated predicate.

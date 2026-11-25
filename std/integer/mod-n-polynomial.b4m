@@ -425,8 +425,8 @@ qed
 //
 // The checker GENERATES the predicate from the recursive arm's one call site:
 //
-//     zconvolutionGrounded(p, q, j, m) iff
-//       (zconvolutionGrounded(p, q, peano.succ(j), peano.prev(m))
+//     zconvolutionGrounded(m) iff
+//       (zconvolutionGrounded(peano.prev(m))
 //        or peano.prev(m) = ZERO)
 //
 // The `prev(m) = ZERO` disjunct is the base — the ZERO arm is the only terminating one — and
@@ -438,14 +438,13 @@ qed
 // `tautology` picks whichever holds.
 theorem zConvolutionReachesZeroFromAPredecessor: forall k: Nat;
   (forall p2: ZnPoly; forall q2: ZnPoly; forall j2: Nat;
-  k != ZERO -> zconvolutionGrounded(p2, q2, j2, k))
+  k != ZERO -> zconvolutionGrounded(k))
   -> (forall p: ZnPoly; forall q: ZnPoly; forall j: Nat;
-  peano.succ(k) != ZERO -> zconvolutionGrounded(p, q, j, peano.succ(k)))
+  peano.succ(k) != ZERO -> zconvolutionGrounded(peano.succ(k)))
 proof
   @the-generated-clause |
-    forall p3: ZnPoly; forall q3: ZnPoly; forall j3: Nat; forall m3: Nat;
-      zconvolutionGrounded(p3, q3, j3, m3) iff
-      (zconvolutionGrounded(p3, q3, peano.succ(j3), peano.prev(m3))
+    forall m3: Nat; zconvolutionGrounded(m3) iff
+      (zconvolutionGrounded(peano.prev(m3))
       or peano.prev(m3) = ZERO)
     [by definition zconvolutionGrounded]
   @prev-undoes-succ |
@@ -458,10 +457,10 @@ proof
     fix k: Nat {
       @given-the-inductive-hypothesis |
         assume forall p2: ZnPoly; forall q2: ZnPoly; forall j2: Nat;
-          k != ZERO -> zconvolutionGrounded(p2, q2, j2, k) {
+          k != ZERO -> zconvolutionGrounded(k) {
           @inductive-hypothesis |
             forall p2: ZnPoly; forall q2: ZnPoly; forall j2: Nat;
-              k != ZERO -> zconvolutionGrounded(p2, q2, j2, k)
+              k != ZERO -> zconvolutionGrounded(k)
             [by hypothesis given-the-inductive-hypothesis]
           // `prev` is guarded, so the guard fact precedes every term writing `prev(succ(k))`.
           @succ-k-is-nonzero |
@@ -477,57 +476,56 @@ proof
                   @generalize-j |
                     fix j: Nat {
                       @clause-at-succ-k |
-                        zconvolutionGrounded(p, q, j, peano.succ(k)) iff
-                          (zconvolutionGrounded(p, q, peano.succ(j),
-                          peano.prev(peano.succ(k)))
+                        zconvolutionGrounded(peano.succ(k)) iff
+                          (zconvolutionGrounded(peano.prev(peano.succ(k)))
                           or peano.prev(peano.succ(k)) = ZERO)
-                        [using specialize the-generated-clause(p, q, j, peano.succ(k))]
+                        [using specialize the-generated-clause(peano.succ(k))]
                       @clause-with-the-predecessor-collapsed |
-                        zconvolutionGrounded(p, q, j, peano.succ(k)) iff
-                          (zconvolutionGrounded(p, q, peano.succ(j), k) or k = ZERO)
+                        zconvolutionGrounded(peano.succ(k)) iff
+                          (zconvolutionGrounded(k) or k = ZERO)
                         [by rewrite prev-of-succ-k-is-k clause-at-succ-k]
                       @the-inductive-hypothesis-at-the-raised-index |
-                        k != ZERO -> zconvolutionGrounded(p, q, peano.succ(j), k)
+                        k != ZERO -> zconvolutionGrounded(k)
                         [using specialize inductive-hypothesis(p, q, peano.succ(j))]
                       @grounded-at-succ-k |
-                        zconvolutionGrounded(p, q, j, peano.succ(k))
+                        zconvolutionGrounded(peano.succ(k))
                         [using tautology clause-with-the-predecessor-collapsed
                           the-inductive-hypothesis-at-the-raised-index]
                       @conclusion-nonzero-implies-grounded |
                         peano.succ(k) != ZERO
-                          -> zconvolutionGrounded(p, q, j, peano.succ(k))
+                          -> zconvolutionGrounded(peano.succ(k))
                         [using tautology grounded-at-succ-k]
                     }
                   @discharge-j |
                     forall j: Nat;
                       peano.succ(k) != ZERO
-                      -> zconvolutionGrounded(p, q, j, peano.succ(k))
+                      -> zconvolutionGrounded(peano.succ(k))
                     [by generalize generalize-j]
                 }
               @discharge-q |
                 forall q: ZnPoly; forall j: Nat;
                   peano.succ(k) != ZERO
-                  -> zconvolutionGrounded(p, q, j, peano.succ(k))
+                  -> zconvolutionGrounded(peano.succ(k))
                 [by generalize generalize-q]
             }
           @conclusion-for-all-polynomials |
             forall p: ZnPoly; forall q: ZnPoly; forall j: Nat;
-              peano.succ(k) != ZERO -> zconvolutionGrounded(p, q, j, peano.succ(k))
+              peano.succ(k) != ZERO -> zconvolutionGrounded(peano.succ(k))
             [by generalize generalize-p]
         }
       @the-hypothesis-implies-the-step |
         (forall p2: ZnPoly; forall q2: ZnPoly; forall j2: Nat;
-          k != ZERO -> zconvolutionGrounded(p2, q2, j2, k))
+          k != ZERO -> zconvolutionGrounded(k))
           -> (forall p: ZnPoly; forall q: ZnPoly; forall j: Nat;
-          peano.succ(k) != ZERO -> zconvolutionGrounded(p, q, j, peano.succ(k)))
+          peano.succ(k) != ZERO -> zconvolutionGrounded(peano.succ(k)))
         [by discharge given-the-inductive-hypothesis]
     }
   @conclusion |
     forall k: Nat;
       (forall p2: ZnPoly; forall q2: ZnPoly; forall j2: Nat;
-      k != ZERO -> zconvolutionGrounded(p2, q2, j2, k))
+      k != ZERO -> zconvolutionGrounded(k))
       -> (forall p: ZnPoly; forall q: ZnPoly; forall j: Nat;
-      peano.succ(k) != ZERO -> zconvolutionGrounded(p, q, j, peano.succ(k)))
+      peano.succ(k) != ZERO -> zconvolutionGrounded(peano.succ(k)))
     [by generalize generalize-k]
 qed
 
@@ -535,7 +533,7 @@ qed
 // antecedent demands `ZERO != ZERO` — so all the content is in the step above.
 theorem zConvolutionIsGrounded:
   forall p: ZnPoly; forall q: ZnPoly; forall j: Nat; forall m: Nat;
-  m != ZERO -> zconvolutionGrounded(p, q, j, m)
+  m != ZERO -> zconvolutionGrounded(m)
 proof
   @zero-is-itself |
     ZERO = ZERO
@@ -549,33 +547,33 @@ proof
           @generalize-j-at-zero |
             fix j: Nat {
               @conclusion-vacuously-grounded-at-zero |
-                ZERO != ZERO -> zconvolutionGrounded(p, q, j, ZERO)
+                ZERO != ZERO -> zconvolutionGrounded(ZERO)
                 [using tautology zero-is-itself]
             }
           @discharge-j-at-zero |
-            forall j: Nat; ZERO != ZERO -> zconvolutionGrounded(p, q, j, ZERO)
+            forall j: Nat; ZERO != ZERO -> zconvolutionGrounded(ZERO)
             [by generalize generalize-j-at-zero]
         }
       @discharge-q-at-zero |
         forall q: ZnPoly; forall j: Nat;
-          ZERO != ZERO -> zconvolutionGrounded(p, q, j, ZERO)
+          ZERO != ZERO -> zconvolutionGrounded(ZERO)
         [by generalize generalize-q-at-zero]
     }
   @base-case |
     forall p: ZnPoly; forall q: ZnPoly; forall j: Nat;
-      ZERO != ZERO -> zconvolutionGrounded(p, q, j, ZERO)
+      ZERO != ZERO -> zconvolutionGrounded(ZERO)
     [by generalize base-case-proof]
   @induction-step-for-all-k |
     forall k: Nat;
       (forall p2: ZnPoly; forall q2: ZnPoly; forall j2: Nat;
-      k != ZERO -> zconvolutionGrounded(p2, q2, j2, k))
+      k != ZERO -> zconvolutionGrounded(k))
       -> (forall p: ZnPoly; forall q: ZnPoly; forall j: Nat;
-      peano.succ(k) != ZERO -> zconvolutionGrounded(p, q, j, peano.succ(k)))
+      peano.succ(k) != ZERO -> zconvolutionGrounded(peano.succ(k)))
     [by cite zConvolutionReachesZeroFromAPredecessor]
   @grounded-for-every-descending-index |
     forall m: Nat; forall p: ZnPoly; forall q: ZnPoly; forall j: Nat;
-      m != ZERO -> zconvolutionGrounded(p, q, j, m)
-    [using instantiation peano.induction((fun m: Nat => (forall p: ZnPoly; forall q: ZnPoly; forall j: Nat; m != ZERO -> zconvolutionGrounded(p, q, j, m)))) base-case induction-step-for-all-k]
+      m != ZERO -> zconvolutionGrounded(m)
+    [using instantiation peano.induction((fun m: Nat => (forall p: ZnPoly; forall q: ZnPoly; forall j: Nat; m != ZERO -> zconvolutionGrounded(m)))) base-case induction-step-for-all-k]
   @generalize-p |
     fix p: ZnPoly {
       @generalize-q |
@@ -585,24 +583,24 @@ proof
               @generalize-m |
                 fix m: Nat {
                   @grounded-at-these-indices |
-                    m != ZERO -> zconvolutionGrounded(p, q, j, m)
+                    m != ZERO -> zconvolutionGrounded(m)
                     [using specialize grounded-for-every-descending-index(m, p, q, j)]
                 }
               @discharge-m |
-                forall m: Nat; m != ZERO -> zconvolutionGrounded(p, q, j, m)
+                forall m: Nat; m != ZERO -> zconvolutionGrounded(m)
                 [by generalize generalize-m]
             }
           @discharge-j |
-            forall j: Nat; forall m: Nat; m != ZERO -> zconvolutionGrounded(p, q, j, m)
+            forall j: Nat; forall m: Nat; m != ZERO -> zconvolutionGrounded(m)
             [by generalize generalize-j]
         }
       @discharge-q |
         forall q: ZnPoly; forall j: Nat; forall m: Nat;
-          m != ZERO -> zconvolutionGrounded(p, q, j, m)
+          m != ZERO -> zconvolutionGrounded(m)
         [by generalize generalize-q]
     }
   @conclusion |
     forall p: ZnPoly; forall q: ZnPoly; forall j: Nat; forall m: Nat;
-      m != ZERO -> zconvolutionGrounded(p, q, j, m)
+      m != ZERO -> zconvolutionGrounded(m)
     [by generalize generalize-p]
 qed

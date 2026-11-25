@@ -730,12 +730,12 @@ qed
 // `termination(peano):` names `cpowerIsGrounded`, and the checker SYNTHESIZES the statement it must
 // have — the recursive arm's own guard implying the generated predicate:
 //
-//     forall a: Complex; forall n: Nat; n != NAT_ZERO -> cpowerGrounded(a, n)
+//     forall a: Complex; forall n: Nat; n != NAT_ZERO -> cpowerGrounded(n)
 //
 // `cpowerGrounded` is GENERATED from the arm's one call site, a disjunction of that call grounded
 // with its argument hitting the terminating arm's pattern:
 //
-//     cpowerGrounded(a, n) iff (cpowerGrounded(a, peano.prev(n)) or peano.prev(n) = NAT_ZERO)
+//     cpowerGrounded(n) iff (cpowerGrounded(peano.prev(n)) or peano.prev(n) = NAT_ZERO)
 //
 // The base disjunct is what lets the recursion bottom out: at n = 1 the predecessor IS zero.
 
@@ -743,12 +743,11 @@ qed
 // so either `k` is zero and the base disjunct fires outright, or the inductive hypothesis
 // applies at `k`. `tautology` picks whichever holds.
 theorem cpowerReachesABaseFromAPredecessor: forall k: Nat;
-  (forall a2: Complex; k != NAT_ZERO -> cpowerGrounded(a2, k))
-  -> (forall a: Complex; peano.succ(k) != NAT_ZERO -> cpowerGrounded(a, peano.succ(k)))
+  (forall a2: Complex; k != NAT_ZERO -> cpowerGrounded(k))
+  -> (forall a: Complex; peano.succ(k) != NAT_ZERO -> cpowerGrounded(peano.succ(k)))
 proof
   @the-generated-clause |
-    forall a3: Complex; forall n3: Nat;
-      cpowerGrounded(a3, n3) iff (cpowerGrounded(a3, peano.prev(n3)) or peano.prev(n3) = NAT_ZERO)
+    forall n3: Nat; cpowerGrounded(n3) iff (cpowerGrounded(peano.prev(n3)) or peano.prev(n3) = NAT_ZERO)
     [by definition cpowerGrounded]
   @prev-undoes-succ |
     forall n: Nat; peano.prev(peano.succ(n)) = n
@@ -759,9 +758,9 @@ proof
   @generalize-k |
     fix k: Nat {
       @given-the-inductive-hypothesis |
-        assume forall a2: Complex; k != NAT_ZERO -> cpowerGrounded(a2, k) {
+        assume forall a2: Complex; k != NAT_ZERO -> cpowerGrounded(k) {
           @inductive-hypothesis |
-            forall a2: Complex; k != NAT_ZERO -> cpowerGrounded(a2, k)
+            forall a2: Complex; k != NAT_ZERO -> cpowerGrounded(k)
             [by hypothesis given-the-inductive-hypothesis]
           // `prev` is guarded, so this must precede every term writing `peano.prev(peano.succ(k))`.
           @succ-k-is-nonzero |
@@ -775,44 +774,44 @@ proof
               @given-succ-k-nonzero |
                 assume peano.succ(k) != NAT_ZERO {
                   @clause-at-a-and-succ-k |
-                    cpowerGrounded(a, peano.succ(k)) iff
-                      (cpowerGrounded(a, peano.prev(peano.succ(k))) or peano.prev(peano.succ(k)) = NAT_ZERO)
-                    [using specialize the-generated-clause(a, peano.succ(k))]
+                    cpowerGrounded(peano.succ(k)) iff
+                      (cpowerGrounded(peano.prev(peano.succ(k))) or peano.prev(peano.succ(k)) = NAT_ZERO)
+                    [using specialize the-generated-clause(peano.succ(k))]
                   @clause-with-the-predecessor-collapsed |
-                    cpowerGrounded(a, peano.succ(k)) iff (cpowerGrounded(a, k) or k = NAT_ZERO)
+                    cpowerGrounded(peano.succ(k)) iff (cpowerGrounded(k) or k = NAT_ZERO)
                     [by rewrite prev-of-succ-k-is-k clause-at-a-and-succ-k]
                   @the-inductive-hypothesis-at-a |
-                    k != NAT_ZERO -> cpowerGrounded(a, k)
+                    k != NAT_ZERO -> cpowerGrounded(k)
                     [using specialize inductive-hypothesis(a)]
                   @conclusion-grounded-at-succ-k |
-                    cpowerGrounded(a, peano.succ(k))
+                    cpowerGrounded(peano.succ(k))
                     [using tautology clause-with-the-predecessor-collapsed
                       the-inductive-hypothesis-at-a]
                 }
               @nonzero-implies-grounded-at-succ-k |
-                peano.succ(k) != NAT_ZERO -> cpowerGrounded(a, peano.succ(k))
+                peano.succ(k) != NAT_ZERO -> cpowerGrounded(peano.succ(k))
                 [by discharge given-succ-k-nonzero]
             }
           @conclusion-for-all-a |
-            forall a: Complex; peano.succ(k) != NAT_ZERO -> cpowerGrounded(a, peano.succ(k))
+            forall a: Complex; peano.succ(k) != NAT_ZERO -> cpowerGrounded(peano.succ(k))
             [by generalize generalize-a]
         }
       @the-hypothesis-implies-the-step |
-        (forall a2: Complex; k != NAT_ZERO -> cpowerGrounded(a2, k))
-          -> (forall a: Complex; peano.succ(k) != NAT_ZERO -> cpowerGrounded(a, peano.succ(k)))
+        (forall a2: Complex; k != NAT_ZERO -> cpowerGrounded(k))
+          -> (forall a: Complex; peano.succ(k) != NAT_ZERO -> cpowerGrounded(peano.succ(k)))
         [by discharge given-the-inductive-hypothesis]
     }
   @conclusion |
     forall k: Nat;
-      (forall a2: Complex; k != NAT_ZERO -> cpowerGrounded(a2, k))
-      -> (forall a: Complex; peano.succ(k) != NAT_ZERO -> cpowerGrounded(a, peano.succ(k)))
+      (forall a2: Complex; k != NAT_ZERO -> cpowerGrounded(k))
+      -> (forall a: Complex; peano.succ(k) != NAT_ZERO -> cpowerGrounded(peano.succ(k)))
     [by generalize generalize-k]
 qed
 
 // Strategy: `peano.induction` on the exponent. The base is VACUOUS — at n = zero the
 // antecedent demands `NAT_ZERO != NAT_ZERO` — so every bit of content is in the step above.
 theorem cpowerIsGrounded: forall a: Complex; forall n: Nat;
-  n != NAT_ZERO -> cpowerGrounded(a, n)
+  n != NAT_ZERO -> cpowerGrounded(n)
 proof
   @zero-is-itself |
     NAT_ZERO = NAT_ZERO
@@ -822,34 +821,34 @@ proof
   @base-case-proof |
     fix a: Complex {
       @conclusion-vacuously-grounded-at-zero |
-        NAT_ZERO != NAT_ZERO -> cpowerGrounded(a, NAT_ZERO)
+        NAT_ZERO != NAT_ZERO -> cpowerGrounded(NAT_ZERO)
         [using tautology zero-is-itself]
     }
   @base-case |
-    forall a: Complex; NAT_ZERO != NAT_ZERO -> cpowerGrounded(a, NAT_ZERO)
+    forall a: Complex; NAT_ZERO != NAT_ZERO -> cpowerGrounded(NAT_ZERO)
     [by generalize base-case-proof]
   @induction-step-for-all-k |
     forall k: Nat;
-      (forall a2: Complex; k != NAT_ZERO -> cpowerGrounded(a2, k))
-      -> (forall a: Complex; peano.succ(k) != NAT_ZERO -> cpowerGrounded(a, peano.succ(k)))
+      (forall a2: Complex; k != NAT_ZERO -> cpowerGrounded(k))
+      -> (forall a: Complex; peano.succ(k) != NAT_ZERO -> cpowerGrounded(peano.succ(k)))
     [by cite cpowerReachesABaseFromAPredecessor]
   @grounded-for-every-exponent |
-    forall n: Nat; forall a: Complex; n != NAT_ZERO -> cpowerGrounded(a, n)
-    [using instantiation peano.induction((fun n: Nat => (forall a: Complex; n != NAT_ZERO -> cpowerGrounded(a, n)))) base-case induction-step-for-all-k]
+    forall n: Nat; forall a: Complex; n != NAT_ZERO -> cpowerGrounded(n)
+    [using instantiation peano.induction((fun n: Nat => (forall a: Complex; n != NAT_ZERO -> cpowerGrounded(n)))) base-case induction-step-for-all-k]
   @generalize-a |
     fix a: Complex {
       @generalize-n |
         fix n: Nat {
           @grounded-at-n-and-a |
-            n != NAT_ZERO -> cpowerGrounded(a, n)
+            n != NAT_ZERO -> cpowerGrounded(n)
             [using specialize grounded-for-every-exponent(n, a)]
         }
       @discharge-n |
-        forall n: Nat; n != NAT_ZERO -> cpowerGrounded(a, n)
+        forall n: Nat; n != NAT_ZERO -> cpowerGrounded(n)
         [by generalize generalize-n]
     }
   @conclusion |
-    forall a: Complex; forall n: Nat; n != NAT_ZERO -> cpowerGrounded(a, n)
+    forall a: Complex; forall n: Nat; n != NAT_ZERO -> cpowerGrounded(n)
     [by generalize generalize-a]
 qed
 
@@ -933,13 +932,13 @@ qed
 // must have — the recursive arm's own guard implying the generated predicate:
 //
 //     forall p: CPoly; forall a: Complex; forall k: Nat;
-//       k != NAT_ZERO -> cevalUpToGrounded(p, a, k)
+//       k != NAT_ZERO -> cevalUpToGrounded(k)
 //
 // `cevalUpToGrounded` is GENERATED from the arm's one recursive call site, a disjunction of that
 // call grounded with its argument hitting the terminating arm's pattern:
 //
-//     cevalUpToGrounded(p, a, k) iff
-//       (cevalUpToGrounded(p, a, peano.prev(k)) or peano.prev(k) = NAT_ZERO)
+//     cevalUpToGrounded(k) iff
+//       (cevalUpToGrounded(peano.prev(k)) or peano.prev(k) = NAT_ZERO)
 //
 // The two non-descending binders (`p`, `a`) ride along untouched; only `k` descends.
 
@@ -947,14 +946,13 @@ qed
 // so either `k = NAT_ZERO` and the base disjunct fires outright, or the inductive hypothesis
 // applies at `k`. `tautology` picks whichever holds.
 theorem cevalUpToReachesABaseFromAPredecessor: forall k: Nat;
-  (forall p2: CPoly; forall a2: Complex; k != NAT_ZERO -> cevalUpToGrounded(p2, a2, k))
+  (forall p2: CPoly; forall a2: Complex; k != NAT_ZERO -> cevalUpToGrounded(k))
   -> (forall p: CPoly; forall a: Complex;
-  peano.succ(k) != NAT_ZERO -> cevalUpToGrounded(p, a, peano.succ(k)))
+  peano.succ(k) != NAT_ZERO -> cevalUpToGrounded(peano.succ(k)))
 proof
   @the-generated-clause |
-    forall p3: CPoly; forall a3: Complex; forall k3: Nat;
-      cevalUpToGrounded(p3, a3, k3) iff
-      (cevalUpToGrounded(p3, a3, peano.prev(k3)) or peano.prev(k3) = NAT_ZERO)
+    forall k3: Nat; cevalUpToGrounded(k3) iff
+      (cevalUpToGrounded(peano.prev(k3)) or peano.prev(k3) = NAT_ZERO)
     [by definition cevalUpToGrounded]
   @prev-undoes-successor |
     forall n: Nat; peano.prev(peano.succ(n)) = n
@@ -966,9 +964,9 @@ proof
     fix k: Nat {
       @given-the-inductive-hypothesis |
         assume forall p2: CPoly; forall a2: Complex;
-          k != NAT_ZERO -> cevalUpToGrounded(p2, a2, k) {
+          k != NAT_ZERO -> cevalUpToGrounded(k) {
           @inductive-hypothesis |
-            forall p2: CPoly; forall a2: Complex; k != NAT_ZERO -> cevalUpToGrounded(p2, a2, k)
+            forall p2: CPoly; forall a2: Complex; k != NAT_ZERO -> cevalUpToGrounded(k)
             [by hypothesis given-the-inductive-hypothesis]
           // `peano.prev` is guarded, so this must precede every term writing
           // `peano.prev(peano.succ(k))`.
@@ -985,53 +983,53 @@ proof
                   @given-succ-k-nonzero |
                     assume peano.succ(k) != NAT_ZERO {
                       @clause-at-p-a-and-succ-k |
-                        cevalUpToGrounded(p, a, peano.succ(k)) iff
-                          (cevalUpToGrounded(p, a, peano.prev(peano.succ(k)))
+                        cevalUpToGrounded(peano.succ(k)) iff
+                          (cevalUpToGrounded(peano.prev(peano.succ(k)))
                           or peano.prev(peano.succ(k)) = NAT_ZERO)
-                        [using specialize the-generated-clause(p, a, peano.succ(k))]
+                        [using specialize the-generated-clause(peano.succ(k))]
                       @clause-with-the-predecessor-collapsed |
-                        cevalUpToGrounded(p, a, peano.succ(k)) iff
-                          (cevalUpToGrounded(p, a, k) or k = NAT_ZERO)
+                        cevalUpToGrounded(peano.succ(k)) iff
+                          (cevalUpToGrounded(k) or k = NAT_ZERO)
                         [by rewrite prev-of-succ-k-is-k clause-at-p-a-and-succ-k]
                       @the-inductive-hypothesis-at-p-and-a |
-                        k != NAT_ZERO -> cevalUpToGrounded(p, a, k)
+                        k != NAT_ZERO -> cevalUpToGrounded(k)
                         [using specialize inductive-hypothesis(p, a)]
                       @conclusion-grounded-at-succ-k |
-                        cevalUpToGrounded(p, a, peano.succ(k))
+                        cevalUpToGrounded(peano.succ(k))
                         [using tautology clause-with-the-predecessor-collapsed
                           the-inductive-hypothesis-at-p-and-a]
                     }
                   @nonzero-implies-grounded-at-succ-k |
-                    peano.succ(k) != NAT_ZERO -> cevalUpToGrounded(p, a, peano.succ(k))
+                    peano.succ(k) != NAT_ZERO -> cevalUpToGrounded(peano.succ(k))
                     [by discharge given-succ-k-nonzero]
                 }
               @discharge-a |
-                forall a: Complex; peano.succ(k) != NAT_ZERO -> cevalUpToGrounded(p, a, peano.succ(k))
+                forall a: Complex; peano.succ(k) != NAT_ZERO -> cevalUpToGrounded(peano.succ(k))
                 [by generalize generalize-a]
             }
           @conclusion-for-all-p-and-a |
             forall p: CPoly; forall a: Complex;
-              peano.succ(k) != NAT_ZERO -> cevalUpToGrounded(p, a, peano.succ(k))
+              peano.succ(k) != NAT_ZERO -> cevalUpToGrounded(peano.succ(k))
             [by generalize generalize-p]
         }
       @the-hypothesis-implies-the-step |
-        (forall p2: CPoly; forall a2: Complex; k != NAT_ZERO -> cevalUpToGrounded(p2, a2, k))
+        (forall p2: CPoly; forall a2: Complex; k != NAT_ZERO -> cevalUpToGrounded(k))
           -> (forall p: CPoly; forall a: Complex;
-          peano.succ(k) != NAT_ZERO -> cevalUpToGrounded(p, a, peano.succ(k)))
+          peano.succ(k) != NAT_ZERO -> cevalUpToGrounded(peano.succ(k)))
         [by discharge given-the-inductive-hypothesis]
     }
   @conclusion |
     forall k: Nat;
-      (forall p2: CPoly; forall a2: Complex; k != NAT_ZERO -> cevalUpToGrounded(p2, a2, k))
+      (forall p2: CPoly; forall a2: Complex; k != NAT_ZERO -> cevalUpToGrounded(k))
       -> (forall p: CPoly; forall a: Complex;
-      peano.succ(k) != NAT_ZERO -> cevalUpToGrounded(p, a, peano.succ(k)))
+      peano.succ(k) != NAT_ZERO -> cevalUpToGrounded(peano.succ(k)))
     [by generalize generalize-k]
 qed
 
 // Strategy: `peano.induction` on the term count. The base is VACUOUS — at k = NAT_ZERO the
 // antecedent demands `NAT_ZERO != NAT_ZERO` — so every bit of content is in the step above.
 theorem cevalUpToIsGrounded: forall p: CPoly; forall a: Complex; forall k: Nat;
-  k != NAT_ZERO -> cevalUpToGrounded(p, a, k)
+  k != NAT_ZERO -> cevalUpToGrounded(k)
 proof
   @zero-is-itself |
     NAT_ZERO = NAT_ZERO
@@ -1043,26 +1041,26 @@ proof
       @generalize-a-at-zero |
         fix a: Complex {
           @conclusion-vacuously-grounded-at-zero |
-            NAT_ZERO != NAT_ZERO -> cevalUpToGrounded(p, a, NAT_ZERO)
+            NAT_ZERO != NAT_ZERO -> cevalUpToGrounded(NAT_ZERO)
             [using tautology zero-is-itself]
         }
       @discharge-a-at-zero |
-        forall a: Complex; NAT_ZERO != NAT_ZERO -> cevalUpToGrounded(p, a, NAT_ZERO)
+        forall a: Complex; NAT_ZERO != NAT_ZERO -> cevalUpToGrounded(NAT_ZERO)
         [by generalize generalize-a-at-zero]
     }
   @base-case |
-    forall p: CPoly; forall a: Complex; NAT_ZERO != NAT_ZERO -> cevalUpToGrounded(p, a, NAT_ZERO)
+    forall p: CPoly; forall a: Complex; NAT_ZERO != NAT_ZERO -> cevalUpToGrounded(NAT_ZERO)
     [by generalize base-case-proof]
   @induction-step-for-all-k |
     forall k: Nat;
-      (forall p2: CPoly; forall a2: Complex; k != NAT_ZERO -> cevalUpToGrounded(p2, a2, k))
+      (forall p2: CPoly; forall a2: Complex; k != NAT_ZERO -> cevalUpToGrounded(k))
       -> (forall p: CPoly; forall a: Complex;
-      peano.succ(k) != NAT_ZERO -> cevalUpToGrounded(p, a, peano.succ(k)))
+      peano.succ(k) != NAT_ZERO -> cevalUpToGrounded(peano.succ(k)))
     [by cite cevalUpToReachesABaseFromAPredecessor]
   @grounded-for-every-term-count |
     forall k: Nat; forall p: CPoly; forall a: Complex;
-      k != NAT_ZERO -> cevalUpToGrounded(p, a, k)
-    [using instantiation peano.induction((fun k: Nat => (forall p: CPoly; forall a: Complex; k != NAT_ZERO -> cevalUpToGrounded(p, a, k)))) base-case induction-step-for-all-k]
+      k != NAT_ZERO -> cevalUpToGrounded(k)
+    [using instantiation peano.induction((fun k: Nat => (forall p: CPoly; forall a: Complex; k != NAT_ZERO -> cevalUpToGrounded(k)))) base-case induction-step-for-all-k]
   @generalize-p |
     fix p: CPoly {
       @generalize-a |
@@ -1070,20 +1068,20 @@ proof
           @generalize-k |
             fix k: Nat {
               @grounded-at-p-a-and-k |
-                k != NAT_ZERO -> cevalUpToGrounded(p, a, k)
+                k != NAT_ZERO -> cevalUpToGrounded(k)
                 [using specialize grounded-for-every-term-count(k, p, a)]
             }
           @discharge-k |
-            forall k: Nat; k != NAT_ZERO -> cevalUpToGrounded(p, a, k)
+            forall k: Nat; k != NAT_ZERO -> cevalUpToGrounded(k)
             [by generalize generalize-k]
         }
       @discharge-a |
-        forall a: Complex; forall k: Nat; k != NAT_ZERO -> cevalUpToGrounded(p, a, k)
+        forall a: Complex; forall k: Nat; k != NAT_ZERO -> cevalUpToGrounded(k)
         [by generalize generalize-a]
     }
   @conclusion |
     forall p: CPoly; forall a: Complex; forall k: Nat;
-      k != NAT_ZERO -> cevalUpToGrounded(p, a, k)
+      k != NAT_ZERO -> cevalUpToGrounded(k)
     [by generalize generalize-p]
 qed
 
@@ -1408,20 +1406,19 @@ qed
 // `ccappedRunGrounded` transcribes the single call site, with the terminating arm's pattern as its base
 // alternative:
 //
-//     ccappedRunGrounded(q, r, g, n) iff (ccappedRunGrounded(q, r, g, peano.prev(n)) or peano.prev(n) = NAT_ZERO)
+//     ccappedRunGrounded(n) iff (ccappedRunGrounded(peano.prev(n)) or peano.prev(n) = NAT_ZERO)
 //
 // `q`, `r` and `g` ride through untouched; only `n` descends, so the induction is on `n` alone.
 
 // The step: groundedness below `peano.succ(n)` gives it at `peano.succ(n)`. Either the predecessor `n` is
 // itself the base (the right disjunct fires) or the inductive hypothesis supplies it.
 theorem ccappedRunReachesABaseFromAPredecessor: forall n: Nat;
-  (forall q2, r2: CPoly; forall g2: Nat; n != NAT_ZERO -> ccappedRunGrounded(q2, r2, g2, n))
-  -> (forall q, r: CPoly; forall g: Nat; peano.succ(n) != NAT_ZERO -> ccappedRunGrounded(q, r, g, peano.succ(n)))
+  (forall q2, r2: CPoly; forall g2: Nat; n != NAT_ZERO -> ccappedRunGrounded(n))
+  -> (forall q, r: CPoly; forall g: Nat; peano.succ(n) != NAT_ZERO -> ccappedRunGrounded(peano.succ(n)))
 proof
   @the-generated-clause |
-    forall q3, r3: CPoly; forall g3, n3: Nat;
-      ccappedRunGrounded(q3, r3, g3, n3) iff
-      (ccappedRunGrounded(q3, r3, g3, peano.prev(n3)) or peano.prev(n3) = NAT_ZERO)
+    forall n3: Nat; ccappedRunGrounded(n3) iff
+      (ccappedRunGrounded(peano.prev(n3)) or peano.prev(n3) = NAT_ZERO)
     [by definition ccappedRunGrounded]
   @prev-undoes-succ |
     forall n: Nat; peano.prev(peano.succ(n)) = n
@@ -1432,9 +1429,9 @@ proof
   @generalize-n |
     fix n: Nat {
       @given-the-inductive-hypothesis |
-        assume forall q2, r2: CPoly; forall g2: Nat; n != NAT_ZERO -> ccappedRunGrounded(q2, r2, g2, n) {
+        assume forall q2, r2: CPoly; forall g2: Nat; n != NAT_ZERO -> ccappedRunGrounded(n) {
           @inductive-hypothesis |
-            forall q2, r2: CPoly; forall g2: Nat; n != NAT_ZERO -> ccappedRunGrounded(q2, r2, g2, n)
+            forall q2, r2: CPoly; forall g2: Nat; n != NAT_ZERO -> ccappedRunGrounded(n)
             [by hypothesis given-the-inductive-hypothesis]
           // `peano.prev` is guarded, so these precede every term that writes `peano.prev(peano.succ(n))`.
           @succ-n-is-nonzero |
@@ -1452,53 +1449,53 @@ proof
                       @given-succ-n-nonzero |
                         assume peano.succ(n) != NAT_ZERO {
                           @clause-at-the-successor |
-                            ccappedRunGrounded(q, r, g, peano.succ(n)) iff
-                              (ccappedRunGrounded(q, r, g, peano.prev(peano.succ(n))) or peano.prev(peano.succ(n)) = NAT_ZERO)
-                            [using specialize the-generated-clause(q, r, g, peano.succ(n))]
+                            ccappedRunGrounded(peano.succ(n)) iff
+                              (ccappedRunGrounded(peano.prev(peano.succ(n))) or peano.prev(peano.succ(n)) = NAT_ZERO)
+                            [using specialize the-generated-clause(peano.succ(n))]
                           @clause-with-the-predecessor-collapsed |
-                            ccappedRunGrounded(q, r, g, peano.succ(n)) iff
-                              (ccappedRunGrounded(q, r, g, n) or n = NAT_ZERO)
+                            ccappedRunGrounded(peano.succ(n)) iff
+                              (ccappedRunGrounded(n) or n = NAT_ZERO)
                             [by rewrite prev-of-succ-n-is-n clause-at-the-successor]
                           @the-inductive-hypothesis-here |
-                            n != NAT_ZERO -> ccappedRunGrounded(q, r, g, n)
+                            n != NAT_ZERO -> ccappedRunGrounded(n)
                             [using specialize inductive-hypothesis(q, r, g)]
                           @conclusion-grounded-at-succ-n |
-                            ccappedRunGrounded(q, r, g, peano.succ(n))
+                            ccappedRunGrounded(peano.succ(n))
                             [using tautology clause-with-the-predecessor-collapsed
                               the-inductive-hypothesis-here]
                         }
                       @conclusion-nonzero-gives-grounded |
-                        peano.succ(n) != NAT_ZERO -> ccappedRunGrounded(q, r, g, peano.succ(n))
+                        peano.succ(n) != NAT_ZERO -> ccappedRunGrounded(peano.succ(n))
                         [by discharge given-succ-n-nonzero]
                     }
                   @discharge-g |
-                    forall g: Nat; peano.succ(n) != NAT_ZERO -> ccappedRunGrounded(q, r, g, peano.succ(n))
+                    forall g: Nat; peano.succ(n) != NAT_ZERO -> ccappedRunGrounded(peano.succ(n))
                     [by generalize generalize-g]
                 }
               @discharge-r |
-                forall r: CPoly; forall g: Nat; peano.succ(n) != NAT_ZERO -> ccappedRunGrounded(q, r, g, peano.succ(n))
+                forall r: CPoly; forall g: Nat; peano.succ(n) != NAT_ZERO -> ccappedRunGrounded(peano.succ(n))
                 [by generalize generalize-r]
             }
           @conclusion-grounded-for-every-argument |
-            forall q, r: CPoly; forall g: Nat; peano.succ(n) != NAT_ZERO -> ccappedRunGrounded(q, r, g, peano.succ(n))
+            forall q, r: CPoly; forall g: Nat; peano.succ(n) != NAT_ZERO -> ccappedRunGrounded(peano.succ(n))
             [by generalize generalize-q]
         }
       @conclusion-the-step-at-n |
-        (forall q2, r2: CPoly; forall g2: Nat; n != NAT_ZERO -> ccappedRunGrounded(q2, r2, g2, n))
-          -> (forall q, r: CPoly; forall g: Nat; peano.succ(n) != NAT_ZERO -> ccappedRunGrounded(q, r, g, peano.succ(n)))
+        (forall q2, r2: CPoly; forall g2: Nat; n != NAT_ZERO -> ccappedRunGrounded(n))
+          -> (forall q, r: CPoly; forall g: Nat; peano.succ(n) != NAT_ZERO -> ccappedRunGrounded(peano.succ(n)))
         [by discharge given-the-inductive-hypothesis]
     }
   @conclusion |
     forall n: Nat;
-      (forall q2, r2: CPoly; forall g2: Nat; n != NAT_ZERO -> ccappedRunGrounded(q2, r2, g2, n))
-      -> (forall q, r: CPoly; forall g: Nat; peano.succ(n) != NAT_ZERO -> ccappedRunGrounded(q, r, g, peano.succ(n)))
+      (forall q2, r2: CPoly; forall g2: Nat; n != NAT_ZERO -> ccappedRunGrounded(n))
+      -> (forall q, r: CPoly; forall g: Nat; peano.succ(n) != NAT_ZERO -> ccappedRunGrounded(peano.succ(n)))
     [by generalize generalize-n]
 qed
 
 // THE OBLIGATION. Induction on `n`; the base is VACUOUS, its antecedent `NAT_ZERO != NAT_ZERO` being
 // false, and the step is the theorem above.
 theorem ccappedRunIsGrounded: forall q, r: CPoly; forall g, n: Nat;
-  n != NAT_ZERO -> ccappedRunGrounded(q, r, g, n)
+  n != NAT_ZERO -> ccappedRunGrounded(n)
 proof
   @zero-is-itself |
     NAT_ZERO = NAT_ZERO
@@ -1512,28 +1509,28 @@ proof
           @generalize-g-at-zero |
             fix g: Nat {
               @conclusion-vacuously-grounded |
-                NAT_ZERO != NAT_ZERO -> ccappedRunGrounded(q, r, g, NAT_ZERO)
+                NAT_ZERO != NAT_ZERO -> ccappedRunGrounded(NAT_ZERO)
                 [using tautology zero-is-itself]
             }
           @discharge-g-at-zero |
-            forall g: Nat; NAT_ZERO != NAT_ZERO -> ccappedRunGrounded(q, r, g, NAT_ZERO)
+            forall g: Nat; NAT_ZERO != NAT_ZERO -> ccappedRunGrounded(NAT_ZERO)
             [by generalize generalize-g-at-zero]
         }
       @discharge-r-at-zero |
-        forall r: CPoly; forall g: Nat; NAT_ZERO != NAT_ZERO -> ccappedRunGrounded(q, r, g, NAT_ZERO)
+        forall r: CPoly; forall g: Nat; NAT_ZERO != NAT_ZERO -> ccappedRunGrounded(NAT_ZERO)
         [by generalize generalize-r-at-zero]
     }
   @base-case |
-    forall q, r: CPoly; forall g: Nat; NAT_ZERO != NAT_ZERO -> ccappedRunGrounded(q, r, g, NAT_ZERO)
+    forall q, r: CPoly; forall g: Nat; NAT_ZERO != NAT_ZERO -> ccappedRunGrounded(NAT_ZERO)
     [by generalize base-case-proof]
   @induction-step-for-all-n |
     forall n: Nat;
-      (forall q2, r2: CPoly; forall g2: Nat; n != NAT_ZERO -> ccappedRunGrounded(q2, r2, g2, n))
-      -> (forall q, r: CPoly; forall g: Nat; peano.succ(n) != NAT_ZERO -> ccappedRunGrounded(q, r, g, peano.succ(n)))
+      (forall q2, r2: CPoly; forall g2: Nat; n != NAT_ZERO -> ccappedRunGrounded(n))
+      -> (forall q, r: CPoly; forall g: Nat; peano.succ(n) != NAT_ZERO -> ccappedRunGrounded(peano.succ(n)))
     [by cite ccappedRunReachesABaseFromAPredecessor]
   @grounded-for-every-run-length |
-    forall n: Nat; forall q, r: CPoly; forall g: Nat; n != NAT_ZERO -> ccappedRunGrounded(q, r, g, n)
-    [using instantiation peano.induction((fun n: Nat => (forall q, r: CPoly; forall g: Nat; n != NAT_ZERO -> ccappedRunGrounded(q, r, g, n)))) base-case induction-step-for-all-n]
+    forall n: Nat; forall q, r: CPoly; forall g: Nat; n != NAT_ZERO -> ccappedRunGrounded(n)
+    [using instantiation peano.induction((fun n: Nat => (forall q, r: CPoly; forall g: Nat; n != NAT_ZERO -> ccappedRunGrounded(n)))) base-case induction-step-for-all-n]
   @generalize-q |
     fix q: CPoly {
       @generalize-r |
@@ -1543,26 +1540,26 @@ proof
               @generalize-n |
                 fix n: Nat {
                   @grounded-at-n |
-                    forall q4, r4: CPoly; forall g4: Nat; n != NAT_ZERO -> ccappedRunGrounded(q4, r4, g4, n)
+                    forall q4, r4: CPoly; forall g4: Nat; n != NAT_ZERO -> ccappedRunGrounded(n)
                     [using specialize grounded-for-every-run-length(n)]
                   @conclusion-grounded-here |
-                    n != NAT_ZERO -> ccappedRunGrounded(q, r, g, n)
+                    n != NAT_ZERO -> ccappedRunGrounded(n)
                     [using specialize grounded-at-n(q, r, g)]
                 }
               @discharge-n |
-                forall n: Nat; n != NAT_ZERO -> ccappedRunGrounded(q, r, g, n)
+                forall n: Nat; n != NAT_ZERO -> ccappedRunGrounded(n)
                 [by generalize generalize-n]
             }
           @discharge-g |
-            forall g, n: Nat; n != NAT_ZERO -> ccappedRunGrounded(q, r, g, n)
+            forall g, n: Nat; n != NAT_ZERO -> ccappedRunGrounded(n)
             [by generalize generalize-g]
         }
       @discharge-r |
-        forall r: CPoly; forall g, n: Nat; n != NAT_ZERO -> ccappedRunGrounded(q, r, g, n)
+        forall r: CPoly; forall g, n: Nat; n != NAT_ZERO -> ccappedRunGrounded(n)
         [by generalize generalize-r]
     }
   @conclusion |
-    forall q, r: CPoly; forall g, n: Nat; n != NAT_ZERO -> ccappedRunGrounded(q, r, g, n)
+    forall q, r: CPoly; forall g, n: Nat; n != NAT_ZERO -> ccappedRunGrounded(n)
     [by generalize generalize-q]
 qed
 
@@ -2116,8 +2113,8 @@ qed
 //
 // The checker GENERATES the predicate from the recursive arm's one call site:
 //
-//     cconvolutionGrounded(p, q, j, m) iff
-//       (cconvolutionGrounded(p, q, peano.succ(j), peano.prev(m))
+//     cconvolutionGrounded(m) iff
+//       (cconvolutionGrounded(peano.prev(m))
 //        or peano.prev(m) = NAT_ZERO)
 //
 // The `peano.prev(m) = NAT_ZERO` disjunct is the base — the NAT_ZERO arm is the only terminating
@@ -2129,14 +2126,13 @@ qed
 // `tautology` picks whichever holds. The ascending index is read at `succ(j)`.
 theorem cConvolutionReachesZeroFromAPredecessor: forall k: Nat;
   (forall p2: CPoly; forall q2: CPoly; forall j2: Nat;
-  k != NAT_ZERO -> cconvolutionGrounded(p2, q2, j2, k))
+  k != NAT_ZERO -> cconvolutionGrounded(k))
   -> (forall p: CPoly; forall q: CPoly; forall j: Nat;
-  peano.succ(k) != NAT_ZERO -> cconvolutionGrounded(p, q, j, peano.succ(k)))
+  peano.succ(k) != NAT_ZERO -> cconvolutionGrounded(peano.succ(k)))
 proof
   @the-generated-clause |
-    forall p3: CPoly; forall q3: CPoly; forall j3: Nat; forall m3: Nat;
-      cconvolutionGrounded(p3, q3, j3, m3) iff
-      (cconvolutionGrounded(p3, q3, peano.succ(j3), peano.prev(m3))
+    forall m3: Nat; cconvolutionGrounded(m3) iff
+      (cconvolutionGrounded(peano.prev(m3))
       or peano.prev(m3) = NAT_ZERO)
     [by definition cconvolutionGrounded]
   @prev-undoes-succ |
@@ -2149,10 +2145,10 @@ proof
     fix k: Nat {
       @given-the-inductive-hypothesis |
         assume forall p2: CPoly; forall q2: CPoly; forall j2: Nat;
-          k != NAT_ZERO -> cconvolutionGrounded(p2, q2, j2, k) {
+          k != NAT_ZERO -> cconvolutionGrounded(k) {
           @inductive-hypothesis |
             forall p2: CPoly; forall q2: CPoly; forall j2: Nat;
-              k != NAT_ZERO -> cconvolutionGrounded(p2, q2, j2, k)
+              k != NAT_ZERO -> cconvolutionGrounded(k)
             [by hypothesis given-the-inductive-hypothesis]
           // `prev` is guarded, so the guard fact precedes every term writing `peano.prev(succ(k))`.
           @succ-k-is-nonzero |
@@ -2168,57 +2164,56 @@ proof
                   @generalize-j |
                     fix j: Nat {
                       @clause-at-succ-k |
-                        cconvolutionGrounded(p, q, j, peano.succ(k)) iff
-                          (cconvolutionGrounded(p, q, peano.succ(j),
-                          peano.prev(peano.succ(k)))
+                        cconvolutionGrounded(peano.succ(k)) iff
+                          (cconvolutionGrounded(peano.prev(peano.succ(k)))
                           or peano.prev(peano.succ(k)) = NAT_ZERO)
-                        [using specialize the-generated-clause(p, q, j, peano.succ(k))]
+                        [using specialize the-generated-clause(peano.succ(k))]
                       @clause-with-the-predecessor-collapsed |
-                        cconvolutionGrounded(p, q, j, peano.succ(k)) iff
-                          (cconvolutionGrounded(p, q, peano.succ(j), k) or k = NAT_ZERO)
+                        cconvolutionGrounded(peano.succ(k)) iff
+                          (cconvolutionGrounded(k) or k = NAT_ZERO)
                         [by rewrite prev-of-succ-k-is-k clause-at-succ-k]
                       @the-inductive-hypothesis-at-the-raised-index |
-                        k != NAT_ZERO -> cconvolutionGrounded(p, q, peano.succ(j), k)
+                        k != NAT_ZERO -> cconvolutionGrounded(k)
                         [using specialize inductive-hypothesis(p, q, peano.succ(j))]
                       @grounded-at-succ-k |
-                        cconvolutionGrounded(p, q, j, peano.succ(k))
+                        cconvolutionGrounded(peano.succ(k))
                         [using tautology clause-with-the-predecessor-collapsed
                           the-inductive-hypothesis-at-the-raised-index]
                       @conclusion-nonzero-implies-grounded |
                         peano.succ(k) != NAT_ZERO
-                          -> cconvolutionGrounded(p, q, j, peano.succ(k))
+                          -> cconvolutionGrounded(peano.succ(k))
                         [using tautology grounded-at-succ-k]
                     }
                   @discharge-j |
                     forall j: Nat;
                       peano.succ(k) != NAT_ZERO
-                      -> cconvolutionGrounded(p, q, j, peano.succ(k))
+                      -> cconvolutionGrounded(peano.succ(k))
                     [by generalize generalize-j]
                 }
               @discharge-q |
                 forall q: CPoly; forall j: Nat;
                   peano.succ(k) != NAT_ZERO
-                  -> cconvolutionGrounded(p, q, j, peano.succ(k))
+                  -> cconvolutionGrounded(peano.succ(k))
                 [by generalize generalize-q]
             }
           @conclusion-for-all-polynomials |
             forall p: CPoly; forall q: CPoly; forall j: Nat;
-              peano.succ(k) != NAT_ZERO -> cconvolutionGrounded(p, q, j, peano.succ(k))
+              peano.succ(k) != NAT_ZERO -> cconvolutionGrounded(peano.succ(k))
             [by generalize generalize-p]
         }
       @the-hypothesis-implies-the-step |
         (forall p2: CPoly; forall q2: CPoly; forall j2: Nat;
-          k != NAT_ZERO -> cconvolutionGrounded(p2, q2, j2, k))
+          k != NAT_ZERO -> cconvolutionGrounded(k))
           -> (forall p: CPoly; forall q: CPoly; forall j: Nat;
-          peano.succ(k) != NAT_ZERO -> cconvolutionGrounded(p, q, j, peano.succ(k)))
+          peano.succ(k) != NAT_ZERO -> cconvolutionGrounded(peano.succ(k)))
         [by discharge given-the-inductive-hypothesis]
     }
   @conclusion |
     forall k: Nat;
       (forall p2: CPoly; forall q2: CPoly; forall j2: Nat;
-      k != NAT_ZERO -> cconvolutionGrounded(p2, q2, j2, k))
+      k != NAT_ZERO -> cconvolutionGrounded(k))
       -> (forall p: CPoly; forall q: CPoly; forall j: Nat;
-      peano.succ(k) != NAT_ZERO -> cconvolutionGrounded(p, q, j, peano.succ(k)))
+      peano.succ(k) != NAT_ZERO -> cconvolutionGrounded(peano.succ(k)))
     [by generalize generalize-k]
 qed
 
@@ -2226,7 +2221,7 @@ qed
 // antecedent demands `NAT_ZERO != NAT_ZERO` — so all the content is in the step above.
 theorem cConvolutionIsGrounded:
   forall p: CPoly; forall q: CPoly; forall j: Nat; forall m: Nat;
-  m != NAT_ZERO -> cconvolutionGrounded(p, q, j, m)
+  m != NAT_ZERO -> cconvolutionGrounded(m)
 proof
   @zero-is-itself |
     NAT_ZERO = NAT_ZERO
@@ -2240,34 +2235,34 @@ proof
           @generalize-j-at-zero |
             fix j: Nat {
               @conclusion-vacuously-grounded-at-zero |
-                NAT_ZERO != NAT_ZERO -> cconvolutionGrounded(p, q, j, NAT_ZERO)
+                NAT_ZERO != NAT_ZERO -> cconvolutionGrounded(NAT_ZERO)
                 [using tautology zero-is-itself]
             }
           @discharge-j-at-zero |
             forall j: Nat;
-              NAT_ZERO != NAT_ZERO -> cconvolutionGrounded(p, q, j, NAT_ZERO)
+              NAT_ZERO != NAT_ZERO -> cconvolutionGrounded(NAT_ZERO)
             [by generalize generalize-j-at-zero]
         }
       @discharge-q-at-zero |
         forall q: CPoly; forall j: Nat;
-          NAT_ZERO != NAT_ZERO -> cconvolutionGrounded(p, q, j, NAT_ZERO)
+          NAT_ZERO != NAT_ZERO -> cconvolutionGrounded(NAT_ZERO)
         [by generalize generalize-q-at-zero]
     }
   @base-case |
     forall p: CPoly; forall q: CPoly; forall j: Nat;
-      NAT_ZERO != NAT_ZERO -> cconvolutionGrounded(p, q, j, NAT_ZERO)
+      NAT_ZERO != NAT_ZERO -> cconvolutionGrounded(NAT_ZERO)
     [by generalize base-case-proof]
   @induction-step-for-all-k |
     forall k: Nat;
       (forall p2: CPoly; forall q2: CPoly; forall j2: Nat;
-      k != NAT_ZERO -> cconvolutionGrounded(p2, q2, j2, k))
+      k != NAT_ZERO -> cconvolutionGrounded(k))
       -> (forall p: CPoly; forall q: CPoly; forall j: Nat;
-      peano.succ(k) != NAT_ZERO -> cconvolutionGrounded(p, q, j, peano.succ(k)))
+      peano.succ(k) != NAT_ZERO -> cconvolutionGrounded(peano.succ(k)))
     [by cite cConvolutionReachesZeroFromAPredecessor]
   @grounded-for-every-descending-index |
     forall m: Nat; forall p: CPoly; forall q: CPoly; forall j: Nat;
-      m != NAT_ZERO -> cconvolutionGrounded(p, q, j, m)
-    [using instantiation peano.induction((fun m: Nat => (forall p: CPoly; forall q: CPoly; forall j: Nat; m != NAT_ZERO -> cconvolutionGrounded(p, q, j, m)))) base-case induction-step-for-all-k]
+      m != NAT_ZERO -> cconvolutionGrounded(m)
+    [using instantiation peano.induction((fun m: Nat => (forall p: CPoly; forall q: CPoly; forall j: Nat; m != NAT_ZERO -> cconvolutionGrounded(m)))) base-case induction-step-for-all-k]
   @generalize-p |
     fix p: CPoly {
       @generalize-q |
@@ -2277,26 +2272,26 @@ proof
               @generalize-m |
                 fix m: Nat {
                   @grounded-at-these-indices |
-                    m != NAT_ZERO -> cconvolutionGrounded(p, q, j, m)
+                    m != NAT_ZERO -> cconvolutionGrounded(m)
                     [using specialize grounded-for-every-descending-index(m, p, q, j)]
                 }
               @discharge-m |
-                forall m: Nat; m != NAT_ZERO -> cconvolutionGrounded(p, q, j, m)
+                forall m: Nat; m != NAT_ZERO -> cconvolutionGrounded(m)
                 [by generalize generalize-m]
             }
           @discharge-j |
             forall j: Nat; forall m: Nat;
-              m != NAT_ZERO -> cconvolutionGrounded(p, q, j, m)
+              m != NAT_ZERO -> cconvolutionGrounded(m)
             [by generalize generalize-j]
         }
       @discharge-q |
         forall q: CPoly; forall j: Nat; forall m: Nat;
-          m != NAT_ZERO -> cconvolutionGrounded(p, q, j, m)
+          m != NAT_ZERO -> cconvolutionGrounded(m)
         [by generalize generalize-q]
     }
   @conclusion |
     forall p: CPoly; forall q: CPoly; forall j: Nat; forall m: Nat;
-      m != NAT_ZERO -> cconvolutionGrounded(p, q, j, m)
+      m != NAT_ZERO -> cconvolutionGrounded(m)
     [by generalize generalize-p]
 qed
 
@@ -2305,8 +2300,8 @@ qed
 // The generated predicate transcribes the recursive arm's one call site, with the NAT_ZERO arm's
 // pattern as its base alternative:
 //
-//   ctailConvolutionGrounded(p, q, j, m) iff
-//     (ctailConvolutionGrounded(p, q, peano.prev(j), peano.succ(m)) or peano.prev(j) = NAT_ZERO)
+//   ctailConvolutionGrounded(j) iff
+//     (ctailConvolutionGrounded(peano.prev(j)) or peano.prev(j) = NAT_ZERO)
 //
 // The `peano.prev(j) = NAT_ZERO` disjunct is the base — the NAT_ZERO arm is the only terminating one, and it
 // narrows the THIRD slot — and it is what lets the recursion bottom out.
@@ -2321,14 +2316,13 @@ qed
 // specialized at `peano.succ(m)`, which is where the hypothesis has to be read.
 theorem cTailConvolutionReachesZeroFromAPredecessor: forall k: Nat;
   (forall p2: CPoly; forall q2: CPoly; forall m2: Nat;
-  k != NAT_ZERO -> ctailConvolutionGrounded(p2, q2, k, m2))
+  k != NAT_ZERO -> ctailConvolutionGrounded(k))
   -> (forall p: CPoly; forall q: CPoly; forall m: Nat;
-  peano.succ(k) != NAT_ZERO -> ctailConvolutionGrounded(p, q, peano.succ(k), m))
+  peano.succ(k) != NAT_ZERO -> ctailConvolutionGrounded(peano.succ(k)))
 proof
   @the-generated-clause |
-    forall p3: CPoly; forall q3: CPoly; forall j3: Nat; forall m3: Nat;
-      ctailConvolutionGrounded(p3, q3, j3, m3) iff
-      (ctailConvolutionGrounded(p3, q3, peano.prev(j3), peano.succ(m3)) or peano.prev(j3) = NAT_ZERO)
+    forall j3: Nat; ctailConvolutionGrounded(j3) iff
+      (ctailConvolutionGrounded(peano.prev(j3)) or peano.prev(j3) = NAT_ZERO)
     [by definition ctailConvolutionGrounded]
   @prev-undoes-succ |
     forall n: Nat; peano.prev(peano.succ(n)) = n
@@ -2340,10 +2334,10 @@ proof
     fix k: Nat {
       @given-the-inductive-hypothesis |
         assume forall p2: CPoly; forall q2: CPoly; forall m2: Nat;
-          k != NAT_ZERO -> ctailConvolutionGrounded(p2, q2, k, m2) {
+          k != NAT_ZERO -> ctailConvolutionGrounded(k) {
           @inductive-hypothesis |
             forall p2: CPoly; forall q2: CPoly; forall m2: Nat;
-              k != NAT_ZERO -> ctailConvolutionGrounded(p2, q2, k, m2)
+              k != NAT_ZERO -> ctailConvolutionGrounded(k)
             [by hypothesis given-the-inductive-hypothesis]
           // `prev` is guarded, so BOTH of these precede every term writing `peano.prev(peano.succ(k))`:
           // the guard fact first, then the collapse.
@@ -2360,60 +2354,60 @@ proof
                   @generalize-m |
                     fix m: Nat {
                       @clause-at-succ-k |
-                        ctailConvolutionGrounded(p, q, peano.succ(k), m) iff
-                          (ctailConvolutionGrounded(p, q, peano.prev(peano.succ(k)), peano.succ(m))
+                        ctailConvolutionGrounded(peano.succ(k)) iff
+                          (ctailConvolutionGrounded(peano.prev(peano.succ(k)))
                           or peano.prev(peano.succ(k)) = NAT_ZERO)
-                        [using specialize the-generated-clause(p, q, peano.succ(k), m)]
+                        [using specialize the-generated-clause(peano.succ(k))]
                       @clause-with-the-predecessor-collapsed |
-                        ctailConvolutionGrounded(p, q, peano.succ(k), m) iff
-                          (ctailConvolutionGrounded(p, q, k, peano.succ(m)) or k = NAT_ZERO)
+                        ctailConvolutionGrounded(peano.succ(k)) iff
+                          (ctailConvolutionGrounded(k) or k = NAT_ZERO)
                         [by rewrite prev-of-succ-k-is-k clause-at-succ-k]
                       @the-inductive-hypothesis-at-the-raised-index |
-                        k != NAT_ZERO -> ctailConvolutionGrounded(p, q, k, peano.succ(m))
+                        k != NAT_ZERO -> ctailConvolutionGrounded(k)
                         [using specialize inductive-hypothesis(p, q, peano.succ(m))]
                       @grounded-at-succ-k |
-                        ctailConvolutionGrounded(p, q, peano.succ(k), m)
+                        ctailConvolutionGrounded(peano.succ(k))
                         [using tautology clause-with-the-predecessor-collapsed
                           the-inductive-hypothesis-at-the-raised-index]
                       @conclusion-nonzero-implies-grounded |
-                        peano.succ(k) != NAT_ZERO -> ctailConvolutionGrounded(p, q, peano.succ(k), m)
+                        peano.succ(k) != NAT_ZERO -> ctailConvolutionGrounded(peano.succ(k))
                         [using tautology grounded-at-succ-k]
                     }
                   @discharge-m |
                     forall m: Nat;
-                      peano.succ(k) != NAT_ZERO -> ctailConvolutionGrounded(p, q, peano.succ(k), m)
+                      peano.succ(k) != NAT_ZERO -> ctailConvolutionGrounded(peano.succ(k))
                     [by generalize generalize-m]
                 }
               @discharge-q |
                 forall q: CPoly; forall m: Nat;
-                  peano.succ(k) != NAT_ZERO -> ctailConvolutionGrounded(p, q, peano.succ(k), m)
+                  peano.succ(k) != NAT_ZERO -> ctailConvolutionGrounded(peano.succ(k))
                 [by generalize generalize-q]
             }
           @conclusion-for-all-polynomials |
             forall p: CPoly; forall q: CPoly; forall m: Nat;
-              peano.succ(k) != NAT_ZERO -> ctailConvolutionGrounded(p, q, peano.succ(k), m)
+              peano.succ(k) != NAT_ZERO -> ctailConvolutionGrounded(peano.succ(k))
             [by generalize generalize-p]
         }
       @the-hypothesis-implies-the-step |
         (forall p2: CPoly; forall q2: CPoly; forall m2: Nat;
-          k != NAT_ZERO -> ctailConvolutionGrounded(p2, q2, k, m2))
+          k != NAT_ZERO -> ctailConvolutionGrounded(k))
           -> (forall p: CPoly; forall q: CPoly; forall m: Nat;
-          peano.succ(k) != NAT_ZERO -> ctailConvolutionGrounded(p, q, peano.succ(k), m))
+          peano.succ(k) != NAT_ZERO -> ctailConvolutionGrounded(peano.succ(k)))
         [by discharge given-the-inductive-hypothesis]
     }
   @conclusion |
     forall k: Nat;
       (forall p2: CPoly; forall q2: CPoly; forall m2: Nat;
-      k != NAT_ZERO -> ctailConvolutionGrounded(p2, q2, k, m2))
+      k != NAT_ZERO -> ctailConvolutionGrounded(k))
       -> (forall p: CPoly; forall q: CPoly; forall m: Nat;
-      peano.succ(k) != NAT_ZERO -> ctailConvolutionGrounded(p, q, peano.succ(k), m))
+      peano.succ(k) != NAT_ZERO -> ctailConvolutionGrounded(peano.succ(k)))
     [by generalize generalize-k]
 qed
 
 // Strategy: `peano.induction` on the descending index. The base is VACUOUS — at j = NAT_ZERO the
 // antecedent demands `NAT_ZERO != NAT_ZERO` — so all the content is in the step above.
 theorem cTailConvolutionIsGrounded: forall p: CPoly; forall q: CPoly; forall j: Nat; forall m: Nat;
-  j != NAT_ZERO -> ctailConvolutionGrounded(p, q, j, m)
+  j != NAT_ZERO -> ctailConvolutionGrounded(j)
 proof
   @zero-is-itself |
     NAT_ZERO = NAT_ZERO
@@ -2427,33 +2421,33 @@ proof
           @generalize-m-at-zero |
             fix m: Nat {
               @conclusion-vacuously-grounded-at-zero |
-                NAT_ZERO != NAT_ZERO -> ctailConvolutionGrounded(p, q, NAT_ZERO, m)
+                NAT_ZERO != NAT_ZERO -> ctailConvolutionGrounded(NAT_ZERO)
                 [using tautology zero-is-itself]
             }
           @discharge-m-at-zero |
-            forall m: Nat; NAT_ZERO != NAT_ZERO -> ctailConvolutionGrounded(p, q, NAT_ZERO, m)
+            forall m: Nat; NAT_ZERO != NAT_ZERO -> ctailConvolutionGrounded(NAT_ZERO)
             [by generalize generalize-m-at-zero]
         }
       @discharge-q-at-zero |
         forall q: CPoly; forall m: Nat;
-          NAT_ZERO != NAT_ZERO -> ctailConvolutionGrounded(p, q, NAT_ZERO, m)
+          NAT_ZERO != NAT_ZERO -> ctailConvolutionGrounded(NAT_ZERO)
         [by generalize generalize-q-at-zero]
     }
   @base-case |
     forall p: CPoly; forall q: CPoly; forall m: Nat;
-      NAT_ZERO != NAT_ZERO -> ctailConvolutionGrounded(p, q, NAT_ZERO, m)
+      NAT_ZERO != NAT_ZERO -> ctailConvolutionGrounded(NAT_ZERO)
     [by generalize base-case-proof]
   @induction-step-for-all-k |
     forall k: Nat;
       (forall p2: CPoly; forall q2: CPoly; forall m2: Nat;
-      k != NAT_ZERO -> ctailConvolutionGrounded(p2, q2, k, m2))
+      k != NAT_ZERO -> ctailConvolutionGrounded(k))
       -> (forall p: CPoly; forall q: CPoly; forall m: Nat;
-      peano.succ(k) != NAT_ZERO -> ctailConvolutionGrounded(p, q, peano.succ(k), m))
+      peano.succ(k) != NAT_ZERO -> ctailConvolutionGrounded(peano.succ(k)))
     [by cite cTailConvolutionReachesZeroFromAPredecessor]
   @grounded-for-every-descending-index |
     forall j: Nat; forall p: CPoly; forall q: CPoly; forall m: Nat;
-      j != NAT_ZERO -> ctailConvolutionGrounded(p, q, j, m)
-    [using instantiation peano.induction((fun j: Nat => (forall p: CPoly; forall q: CPoly; forall m: Nat; j != NAT_ZERO -> ctailConvolutionGrounded(p, q, j, m)))) base-case induction-step-for-all-k]
+      j != NAT_ZERO -> ctailConvolutionGrounded(j)
+    [using instantiation peano.induction((fun j: Nat => (forall p: CPoly; forall q: CPoly; forall m: Nat; j != NAT_ZERO -> ctailConvolutionGrounded(j)))) base-case induction-step-for-all-k]
   @generalize-p |
     fix p: CPoly {
       @generalize-q |
@@ -2463,25 +2457,25 @@ proof
               @generalize-m |
                 fix m: Nat {
                   @grounded-at-these-indices |
-                    j != NAT_ZERO -> ctailConvolutionGrounded(p, q, j, m)
+                    j != NAT_ZERO -> ctailConvolutionGrounded(j)
                     [using specialize grounded-for-every-descending-index(j, p, q, m)]
                 }
               @discharge-m |
-                forall m: Nat; j != NAT_ZERO -> ctailConvolutionGrounded(p, q, j, m)
+                forall m: Nat; j != NAT_ZERO -> ctailConvolutionGrounded(j)
                 [by generalize generalize-m]
             }
           @discharge-j |
-            forall j: Nat; forall m: Nat; j != NAT_ZERO -> ctailConvolutionGrounded(p, q, j, m)
+            forall j: Nat; forall m: Nat; j != NAT_ZERO -> ctailConvolutionGrounded(j)
             [by generalize generalize-j]
         }
       @discharge-q |
         forall q: CPoly; forall j: Nat; forall m: Nat;
-          j != NAT_ZERO -> ctailConvolutionGrounded(p, q, j, m)
+          j != NAT_ZERO -> ctailConvolutionGrounded(j)
         [by generalize generalize-q]
     }
   @conclusion |
     forall p: CPoly; forall q: CPoly; forall j: Nat; forall m: Nat;
-      j != NAT_ZERO -> ctailConvolutionGrounded(p, q, j, m)
+      j != NAT_ZERO -> ctailConvolutionGrounded(j)
     [by generalize generalize-p]
 qed
 
@@ -2490,13 +2484,13 @@ qed
 // `termination(peano):` names `ctripleRowIsGrounded`, and the checker SYNTHESIZES the statement
 // it must have — the recursive arm's own guard implying the generated predicate:
 //
-//     forall p, q, r: CPoly; forall i, j, n: Nat; n != NAT_ZERO -> ctripleRowGrounded(p, q, r, i, j, n)
+//     forall p, q, r: CPoly; forall i, j, n: Nat; n != NAT_ZERO -> ctripleRowGrounded(n)
 //
 // `ctripleRowGrounded` is GENERATED from the arm's one recursive call site, a disjunction of
 // that call grounded with its argument hitting the terminating arm's pattern:
 //
-//     ctripleRowGrounded(p, q, r, i, j, n) iff
-//       (ctripleRowGrounded(p, q, r, i, j, peano.prev(n)) or peano.prev(n) = NAT_ZERO)
+//     ctripleRowGrounded(n) iff
+//       (ctripleRowGrounded(peano.prev(n)) or peano.prev(n) = NAT_ZERO)
 //
 // Five of the six binders ride along untouched; only `n` descends, so this is `evalUpTo`'s
 // shape with more scaffolding and no more mathematics.
@@ -2505,13 +2499,12 @@ qed
 // either `n = NAT_ZERO` and the base disjunct fires outright, or the inductive hypothesis applies
 // at `n`. `tautology` picks whichever holds.
 theorem ctripleRowReachesABaseFromAPredecessor: forall n: Nat;
-  (forall p2, q2, r2: CPoly; forall i2, j2: Nat; n != NAT_ZERO -> ctripleRowGrounded(p2, q2, r2, i2, j2, n))
-  -> (forall p, q, r: CPoly; forall i, j: Nat; peano.succ(n) != NAT_ZERO -> ctripleRowGrounded(p, q, r, i, j, peano.succ(n)))
+  (forall p2, q2, r2: CPoly; forall i2, j2: Nat; n != NAT_ZERO -> ctripleRowGrounded(n))
+  -> (forall p, q, r: CPoly; forall i, j: Nat; peano.succ(n) != NAT_ZERO -> ctripleRowGrounded(peano.succ(n)))
 proof
   @the-generated-clause |
-    forall p3, q3, r3: CPoly; forall i3, j3, n3: Nat;
-      ctripleRowGrounded(p3, q3, r3, i3, j3, n3) iff
-      (ctripleRowGrounded(p3, q3, r3, i3, j3, peano.prev(n3)) or peano.prev(n3) = NAT_ZERO)
+    forall n3: Nat; ctripleRowGrounded(n3) iff
+      (ctripleRowGrounded(peano.prev(n3)) or peano.prev(n3) = NAT_ZERO)
     [by definition ctripleRowGrounded]
   @prev-undoes-succ |
     forall n: Nat; peano.prev(peano.succ(n)) = n
@@ -2522,9 +2515,9 @@ proof
   @generalize-n |
     fix n: Nat {
       @given-the-inductive-hypothesis |
-        assume forall p2, q2, r2: CPoly; forall i2, j2: Nat; n != NAT_ZERO -> ctripleRowGrounded(p2, q2, r2, i2, j2, n) {
+        assume forall p2, q2, r2: CPoly; forall i2, j2: Nat; n != NAT_ZERO -> ctripleRowGrounded(n) {
           @inductive-hypothesis |
-            forall p2, q2, r2: CPoly; forall i2, j2: Nat; n != NAT_ZERO -> ctripleRowGrounded(p2, q2, r2, i2, j2, n)
+            forall p2, q2, r2: CPoly; forall i2, j2: Nat; n != NAT_ZERO -> ctripleRowGrounded(n)
             [by hypothesis given-the-inductive-hypothesis]
           // `prev` is guarded, so these precede every term that writes `peano.prev(peano.succ(n))`.
           @succ-n-is-nonzero |
@@ -2546,61 +2539,61 @@ proof
                               @given-succ-n-nonzero |
                                 assume peano.succ(n) != NAT_ZERO {
                                   @clause-at-the-successor |
-                                    ctripleRowGrounded(p, q, r, i, j, peano.succ(n)) iff
-                                      (ctripleRowGrounded(p, q, r, i, j, peano.prev(peano.succ(n))) or peano.prev(peano.succ(n)) = NAT_ZERO)
-                                    [using specialize the-generated-clause(p, q, r, i, j, peano.succ(n))]
+                                    ctripleRowGrounded(peano.succ(n)) iff
+                                      (ctripleRowGrounded(peano.prev(peano.succ(n))) or peano.prev(peano.succ(n)) = NAT_ZERO)
+                                    [using specialize the-generated-clause(peano.succ(n))]
                                   @clause-with-the-predecessor-collapsed |
-                                    ctripleRowGrounded(p, q, r, i, j, peano.succ(n)) iff
-                                      (ctripleRowGrounded(p, q, r, i, j, n) or n = NAT_ZERO)
+                                    ctripleRowGrounded(peano.succ(n)) iff
+                                      (ctripleRowGrounded(n) or n = NAT_ZERO)
                                     [by rewrite prev-of-succ-n-is-n clause-at-the-successor]
                                   @the-inductive-hypothesis-here |
-                                    n != NAT_ZERO -> ctripleRowGrounded(p, q, r, i, j, n)
+                                    n != NAT_ZERO -> ctripleRowGrounded(n)
                                     [using specialize inductive-hypothesis(p, q, r, i, j)]
                                   @conclusion-grounded-at-succ-n |
-                                    ctripleRowGrounded(p, q, r, i, j, peano.succ(n))
+                                    ctripleRowGrounded(peano.succ(n))
                                     [using tautology clause-with-the-predecessor-collapsed
                                       the-inductive-hypothesis-here]
                                 }
                               @nonzero-implies-grounded |
-                                peano.succ(n) != NAT_ZERO -> ctripleRowGrounded(p, q, r, i, j, peano.succ(n))
+                                peano.succ(n) != NAT_ZERO -> ctripleRowGrounded(peano.succ(n))
                                 [by discharge given-succ-n-nonzero]
                             }
                           @discharge-j |
-                            forall j: Nat; peano.succ(n) != NAT_ZERO -> ctripleRowGrounded(p, q, r, i, j, peano.succ(n))
+                            forall j: Nat; peano.succ(n) != NAT_ZERO -> ctripleRowGrounded(peano.succ(n))
                             [by generalize generalize-j]
                         }
                       @discharge-i |
-                        forall i, j: Nat; peano.succ(n) != NAT_ZERO -> ctripleRowGrounded(p, q, r, i, j, peano.succ(n))
+                        forall i, j: Nat; peano.succ(n) != NAT_ZERO -> ctripleRowGrounded(peano.succ(n))
                         [by generalize generalize-i]
                     }
                   @discharge-r |
-                    forall r: CPoly; forall i, j: Nat; peano.succ(n) != NAT_ZERO -> ctripleRowGrounded(p, q, r, i, j, peano.succ(n))
+                    forall r: CPoly; forall i, j: Nat; peano.succ(n) != NAT_ZERO -> ctripleRowGrounded(peano.succ(n))
                     [by generalize generalize-r]
                 }
               @discharge-q |
-                forall q, r: CPoly; forall i, j: Nat; peano.succ(n) != NAT_ZERO -> ctripleRowGrounded(p, q, r, i, j, peano.succ(n))
+                forall q, r: CPoly; forall i, j: Nat; peano.succ(n) != NAT_ZERO -> ctripleRowGrounded(peano.succ(n))
                 [by generalize generalize-q]
             }
           @conclusion-for-all-arguments |
-            forall p, q, r: CPoly; forall i, j: Nat; peano.succ(n) != NAT_ZERO -> ctripleRowGrounded(p, q, r, i, j, peano.succ(n))
+            forall p, q, r: CPoly; forall i, j: Nat; peano.succ(n) != NAT_ZERO -> ctripleRowGrounded(peano.succ(n))
             [by generalize generalize-p]
         }
       @the-hypothesis-implies-the-step |
-        (forall p2, q2, r2: CPoly; forall i2, j2: Nat; n != NAT_ZERO -> ctripleRowGrounded(p2, q2, r2, i2, j2, n))
-          -> (forall p, q, r: CPoly; forall i, j: Nat; peano.succ(n) != NAT_ZERO -> ctripleRowGrounded(p, q, r, i, j, peano.succ(n)))
+        (forall p2, q2, r2: CPoly; forall i2, j2: Nat; n != NAT_ZERO -> ctripleRowGrounded(n))
+          -> (forall p, q, r: CPoly; forall i, j: Nat; peano.succ(n) != NAT_ZERO -> ctripleRowGrounded(peano.succ(n)))
         [by discharge given-the-inductive-hypothesis]
     }
   @conclusion |
     forall n: Nat;
-      (forall p2, q2, r2: CPoly; forall i2, j2: Nat; n != NAT_ZERO -> ctripleRowGrounded(p2, q2, r2, i2, j2, n))
-      -> (forall p, q, r: CPoly; forall i, j: Nat; peano.succ(n) != NAT_ZERO -> ctripleRowGrounded(p, q, r, i, j, peano.succ(n)))
+      (forall p2, q2, r2: CPoly; forall i2, j2: Nat; n != NAT_ZERO -> ctripleRowGrounded(n))
+      -> (forall p, q, r: CPoly; forall i, j: Nat; peano.succ(n) != NAT_ZERO -> ctripleRowGrounded(peano.succ(n)))
     [by generalize generalize-n]
 qed
 
 // Strategy: `peano.induction` on the row length. The base is VACUOUS — at n = NAT_ZERO the
 // antecedent demands `NAT_ZERO != NAT_ZERO` — so every bit of content is in the step above.
 theorem ctripleRowIsGrounded: forall p, q, r: CPoly; forall i, j, n: Nat;
-  n != NAT_ZERO -> ctripleRowGrounded(p, q, r, i, j, n)
+  n != NAT_ZERO -> ctripleRowGrounded(n)
 proof
   @zero-is-itself |
     NAT_ZERO = NAT_ZERO
@@ -2618,36 +2611,36 @@ proof
                   @generalize-j-at-zero |
                     fix j: Nat {
                       @conclusion-vacuously-grounded |
-                        NAT_ZERO != NAT_ZERO -> ctripleRowGrounded(p, q, r, i, j, NAT_ZERO)
+                        NAT_ZERO != NAT_ZERO -> ctripleRowGrounded(NAT_ZERO)
                         [using tautology zero-is-itself]
                     }
                   @discharge-j-at-zero |
-                    forall j: Nat; NAT_ZERO != NAT_ZERO -> ctripleRowGrounded(p, q, r, i, j, NAT_ZERO)
+                    forall j: Nat; NAT_ZERO != NAT_ZERO -> ctripleRowGrounded(NAT_ZERO)
                     [by generalize generalize-j-at-zero]
                 }
               @discharge-i-at-zero |
-                forall i, j: Nat; NAT_ZERO != NAT_ZERO -> ctripleRowGrounded(p, q, r, i, j, NAT_ZERO)
+                forall i, j: Nat; NAT_ZERO != NAT_ZERO -> ctripleRowGrounded(NAT_ZERO)
                 [by generalize generalize-i-at-zero]
             }
           @discharge-r-at-zero |
-            forall r: CPoly; forall i, j: Nat; NAT_ZERO != NAT_ZERO -> ctripleRowGrounded(p, q, r, i, j, NAT_ZERO)
+            forall r: CPoly; forall i, j: Nat; NAT_ZERO != NAT_ZERO -> ctripleRowGrounded(NAT_ZERO)
             [by generalize generalize-r-at-zero]
         }
       @discharge-q-at-zero |
-        forall q, r: CPoly; forall i, j: Nat; NAT_ZERO != NAT_ZERO -> ctripleRowGrounded(p, q, r, i, j, NAT_ZERO)
+        forall q, r: CPoly; forall i, j: Nat; NAT_ZERO != NAT_ZERO -> ctripleRowGrounded(NAT_ZERO)
         [by generalize generalize-q-at-zero]
     }
   @base-case |
-    forall p, q, r: CPoly; forall i, j: Nat; NAT_ZERO != NAT_ZERO -> ctripleRowGrounded(p, q, r, i, j, NAT_ZERO)
+    forall p, q, r: CPoly; forall i, j: Nat; NAT_ZERO != NAT_ZERO -> ctripleRowGrounded(NAT_ZERO)
     [by generalize base-case-proof]
   @induction-step-for-all-n |
     forall n: Nat;
-      (forall p2, q2, r2: CPoly; forall i2, j2: Nat; n != NAT_ZERO -> ctripleRowGrounded(p2, q2, r2, i2, j2, n))
-      -> (forall p, q, r: CPoly; forall i, j: Nat; peano.succ(n) != NAT_ZERO -> ctripleRowGrounded(p, q, r, i, j, peano.succ(n)))
+      (forall p2, q2, r2: CPoly; forall i2, j2: Nat; n != NAT_ZERO -> ctripleRowGrounded(n))
+      -> (forall p, q, r: CPoly; forall i, j: Nat; peano.succ(n) != NAT_ZERO -> ctripleRowGrounded(peano.succ(n)))
     [by cite ctripleRowReachesABaseFromAPredecessor]
   @grounded-for-every-row-length |
-    forall n: Nat; forall p, q, r: CPoly; forall i, j: Nat; n != NAT_ZERO -> ctripleRowGrounded(p, q, r, i, j, n)
-    [using instantiation peano.induction((fun n: Nat => (forall p, q, r: CPoly; forall i, j: Nat; n != NAT_ZERO -> ctripleRowGrounded(p, q, r, i, j, n)))) base-case induction-step-for-all-n]
+    forall n: Nat; forall p, q, r: CPoly; forall i, j: Nat; n != NAT_ZERO -> ctripleRowGrounded(n)
+    [using instantiation peano.induction((fun n: Nat => (forall p, q, r: CPoly; forall i, j: Nat; n != NAT_ZERO -> ctripleRowGrounded(n)))) base-case induction-step-for-all-n]
   @generalize-p |
     fix p: CPoly {
       @generalize-q |
@@ -2661,31 +2654,31 @@ proof
                       @generalize-n |
                         fix n: Nat {
                           @grounded-here |
-                            n != NAT_ZERO -> ctripleRowGrounded(p, q, r, i, j, n)
+                            n != NAT_ZERO -> ctripleRowGrounded(n)
                             [using specialize grounded-for-every-row-length(n, p, q, r, i, j)]
                         }
                       @discharge-n |
-                        forall n: Nat; n != NAT_ZERO -> ctripleRowGrounded(p, q, r, i, j, n)
+                        forall n: Nat; n != NAT_ZERO -> ctripleRowGrounded(n)
                         [by generalize generalize-n]
                     }
                   @discharge-j |
-                    forall j, n: Nat; n != NAT_ZERO -> ctripleRowGrounded(p, q, r, i, j, n)
+                    forall j, n: Nat; n != NAT_ZERO -> ctripleRowGrounded(n)
                     [by generalize generalize-j]
                 }
               @discharge-i |
-                forall i, j, n: Nat; n != NAT_ZERO -> ctripleRowGrounded(p, q, r, i, j, n)
+                forall i, j, n: Nat; n != NAT_ZERO -> ctripleRowGrounded(n)
                 [by generalize generalize-i]
             }
           @discharge-r |
-            forall r: CPoly; forall i, j, n: Nat; n != NAT_ZERO -> ctripleRowGrounded(p, q, r, i, j, n)
+            forall r: CPoly; forall i, j, n: Nat; n != NAT_ZERO -> ctripleRowGrounded(n)
             [by generalize generalize-r]
         }
       @discharge-q |
-        forall q, r: CPoly; forall i, j, n: Nat; n != NAT_ZERO -> ctripleRowGrounded(p, q, r, i, j, n)
+        forall q, r: CPoly; forall i, j, n: Nat; n != NAT_ZERO -> ctripleRowGrounded(n)
         [by generalize generalize-q]
     }
   @conclusion |
-    forall p, q, r: CPoly; forall i, j, n: Nat; n != NAT_ZERO -> ctripleRowGrounded(p, q, r, i, j, n)
+    forall p, q, r: CPoly; forall i, j, n: Nat; n != NAT_ZERO -> ctripleRowGrounded(n)
     [by generalize generalize-p]
 qed
 
@@ -2694,13 +2687,13 @@ qed
 // `termination(peano):` names `ctripleDiagIsGrounded`, and the checker SYNTHESIZES the statement
 // it must have — the recursive arm's own guard implying the generated predicate:
 //
-//     forall p, q, r: CPoly; forall i, m, c: Nat; c != NAT_ZERO -> ctripleDiagGrounded(p, q, r, i, m, c)
+//     forall p, q, r: CPoly; forall i, m, c: Nat; c != NAT_ZERO -> ctripleDiagGrounded(c)
 //
 // `ctripleDiagGrounded` is GENERATED from the arm's one recursive call site, a disjunction of
 // that call grounded with its argument hitting the terminating arm's pattern:
 //
-//     ctripleDiagGrounded(p, q, r, i, m, c) iff
-//       (ctripleDiagGrounded(p, q, r, i, m, peano.prev(c)) or peano.prev(c) = NAT_ZERO)
+//     ctripleDiagGrounded(c) iff
+//       (ctripleDiagGrounded(peano.prev(c)) or peano.prev(c) = NAT_ZERO)
 //
 // Five of the six binders ride along untouched; only `c` descends, so this is `evalUpTo`'s
 // shape with more scaffolding and no more mathematics.
@@ -2709,13 +2702,12 @@ qed
 // either `c = NAT_ZERO` and the base disjunct fires outright, or the inductive hypothesis applies
 // at `c`. `tautology` picks whichever holds.
 theorem ctripleDiagReachesABaseFromAPredecessor: forall c: Nat;
-  (forall p2, q2, r2: CPoly; forall i2, m2: Nat; c != NAT_ZERO -> ctripleDiagGrounded(p2, q2, r2, i2, m2, c))
-  -> (forall p, q, r: CPoly; forall i, m: Nat; peano.succ(c) != NAT_ZERO -> ctripleDiagGrounded(p, q, r, i, m, peano.succ(c)))
+  (forall p2, q2, r2: CPoly; forall i2, m2: Nat; c != NAT_ZERO -> ctripleDiagGrounded(c))
+  -> (forall p, q, r: CPoly; forall i, m: Nat; peano.succ(c) != NAT_ZERO -> ctripleDiagGrounded(peano.succ(c)))
 proof
   @the-generated-clause |
-    forall p3, q3, r3: CPoly; forall i3, m3, c3: Nat;
-      ctripleDiagGrounded(p3, q3, r3, i3, m3, c3) iff
-      (ctripleDiagGrounded(p3, q3, r3, i3, m3, peano.prev(c3)) or peano.prev(c3) = NAT_ZERO)
+    forall c3: Nat; ctripleDiagGrounded(c3) iff
+      (ctripleDiagGrounded(peano.prev(c3)) or peano.prev(c3) = NAT_ZERO)
     [by definition ctripleDiagGrounded]
   @prev-undoes-succ |
     forall c: Nat; peano.prev(peano.succ(c)) = c
@@ -2726,9 +2718,9 @@ proof
   @generalize-c |
     fix c: Nat {
       @given-the-inductive-hypothesis |
-        assume forall p2, q2, r2: CPoly; forall i2, m2: Nat; c != NAT_ZERO -> ctripleDiagGrounded(p2, q2, r2, i2, m2, c) {
+        assume forall p2, q2, r2: CPoly; forall i2, m2: Nat; c != NAT_ZERO -> ctripleDiagGrounded(c) {
           @inductive-hypothesis |
-            forall p2, q2, r2: CPoly; forall i2, m2: Nat; c != NAT_ZERO -> ctripleDiagGrounded(p2, q2, r2, i2, m2, c)
+            forall p2, q2, r2: CPoly; forall i2, m2: Nat; c != NAT_ZERO -> ctripleDiagGrounded(c)
             [by hypothesis given-the-inductive-hypothesis]
           // `prev` is guarded, so these precede every term that writes `peano.prev(peano.succ(c))`.
           @succ-c-is-nonzero |
@@ -2750,61 +2742,61 @@ proof
                               @given-succ-c-nonzero |
                                 assume peano.succ(c) != NAT_ZERO {
                                   @clause-at-the-successor |
-                                    ctripleDiagGrounded(p, q, r, i, m, peano.succ(c)) iff
-                                      (ctripleDiagGrounded(p, q, r, i, m, peano.prev(peano.succ(c))) or peano.prev(peano.succ(c)) = NAT_ZERO)
-                                    [using specialize the-generated-clause(p, q, r, i, m, peano.succ(c))]
+                                    ctripleDiagGrounded(peano.succ(c)) iff
+                                      (ctripleDiagGrounded(peano.prev(peano.succ(c))) or peano.prev(peano.succ(c)) = NAT_ZERO)
+                                    [using specialize the-generated-clause(peano.succ(c))]
                                   @clause-with-the-predecessor-collapsed |
-                                    ctripleDiagGrounded(p, q, r, i, m, peano.succ(c)) iff
-                                      (ctripleDiagGrounded(p, q, r, i, m, c) or c = NAT_ZERO)
+                                    ctripleDiagGrounded(peano.succ(c)) iff
+                                      (ctripleDiagGrounded(c) or c = NAT_ZERO)
                                     [by rewrite prev-of-succ-c-is-c clause-at-the-successor]
                                   @the-inductive-hypothesis-here |
-                                    c != NAT_ZERO -> ctripleDiagGrounded(p, q, r, i, m, c)
+                                    c != NAT_ZERO -> ctripleDiagGrounded(c)
                                     [using specialize inductive-hypothesis(p, q, r, i, m)]
                                   @conclusion-grounded-at-succ-c |
-                                    ctripleDiagGrounded(p, q, r, i, m, peano.succ(c))
+                                    ctripleDiagGrounded(peano.succ(c))
                                     [using tautology clause-with-the-predecessor-collapsed
                                       the-inductive-hypothesis-here]
                                 }
                               @nonzero-implies-grounded |
-                                peano.succ(c) != NAT_ZERO -> ctripleDiagGrounded(p, q, r, i, m, peano.succ(c))
+                                peano.succ(c) != NAT_ZERO -> ctripleDiagGrounded(peano.succ(c))
                                 [by discharge given-succ-c-nonzero]
                             }
                           @discharge-m |
-                            forall m: Nat; peano.succ(c) != NAT_ZERO -> ctripleDiagGrounded(p, q, r, i, m, peano.succ(c))
+                            forall m: Nat; peano.succ(c) != NAT_ZERO -> ctripleDiagGrounded(peano.succ(c))
                             [by generalize generalize-m]
                         }
                       @discharge-i |
-                        forall i, m: Nat; peano.succ(c) != NAT_ZERO -> ctripleDiagGrounded(p, q, r, i, m, peano.succ(c))
+                        forall i, m: Nat; peano.succ(c) != NAT_ZERO -> ctripleDiagGrounded(peano.succ(c))
                         [by generalize generalize-i]
                     }
                   @discharge-r |
-                    forall r: CPoly; forall i, m: Nat; peano.succ(c) != NAT_ZERO -> ctripleDiagGrounded(p, q, r, i, m, peano.succ(c))
+                    forall r: CPoly; forall i, m: Nat; peano.succ(c) != NAT_ZERO -> ctripleDiagGrounded(peano.succ(c))
                     [by generalize generalize-r]
                 }
               @discharge-q |
-                forall q, r: CPoly; forall i, m: Nat; peano.succ(c) != NAT_ZERO -> ctripleDiagGrounded(p, q, r, i, m, peano.succ(c))
+                forall q, r: CPoly; forall i, m: Nat; peano.succ(c) != NAT_ZERO -> ctripleDiagGrounded(peano.succ(c))
                 [by generalize generalize-q]
             }
           @conclusion-for-all-arguments |
-            forall p, q, r: CPoly; forall i, m: Nat; peano.succ(c) != NAT_ZERO -> ctripleDiagGrounded(p, q, r, i, m, peano.succ(c))
+            forall p, q, r: CPoly; forall i, m: Nat; peano.succ(c) != NAT_ZERO -> ctripleDiagGrounded(peano.succ(c))
             [by generalize generalize-p]
         }
       @the-hypothesis-implies-the-step |
-        (forall p2, q2, r2: CPoly; forall i2, m2: Nat; c != NAT_ZERO -> ctripleDiagGrounded(p2, q2, r2, i2, m2, c))
-          -> (forall p, q, r: CPoly; forall i, m: Nat; peano.succ(c) != NAT_ZERO -> ctripleDiagGrounded(p, q, r, i, m, peano.succ(c)))
+        (forall p2, q2, r2: CPoly; forall i2, m2: Nat; c != NAT_ZERO -> ctripleDiagGrounded(c))
+          -> (forall p, q, r: CPoly; forall i, m: Nat; peano.succ(c) != NAT_ZERO -> ctripleDiagGrounded(peano.succ(c)))
         [by discharge given-the-inductive-hypothesis]
     }
   @conclusion |
     forall c: Nat;
-      (forall p2, q2, r2: CPoly; forall i2, m2: Nat; c != NAT_ZERO -> ctripleDiagGrounded(p2, q2, r2, i2, m2, c))
-      -> (forall p, q, r: CPoly; forall i, m: Nat; peano.succ(c) != NAT_ZERO -> ctripleDiagGrounded(p, q, r, i, m, peano.succ(c)))
+      (forall p2, q2, r2: CPoly; forall i2, m2: Nat; c != NAT_ZERO -> ctripleDiagGrounded(c))
+      -> (forall p, q, r: CPoly; forall i, m: Nat; peano.succ(c) != NAT_ZERO -> ctripleDiagGrounded(peano.succ(c)))
     [by generalize generalize-c]
 qed
 
 // Strategy: `peano.induction` on the anti-diagonal length. The base is VACUOUS — at c = NAT_ZERO the
 // antecedent demands `NAT_ZERO != NAT_ZERO` — so every bit of content is in the step above.
 theorem ctripleDiagIsGrounded: forall p, q, r: CPoly; forall i, m, c: Nat;
-  c != NAT_ZERO -> ctripleDiagGrounded(p, q, r, i, m, c)
+  c != NAT_ZERO -> ctripleDiagGrounded(c)
 proof
   @zero-is-itself |
     NAT_ZERO = NAT_ZERO
@@ -2822,36 +2814,36 @@ proof
                   @generalize-m-at-zero |
                     fix m: Nat {
                       @conclusion-vacuously-grounded |
-                        NAT_ZERO != NAT_ZERO -> ctripleDiagGrounded(p, q, r, i, m, NAT_ZERO)
+                        NAT_ZERO != NAT_ZERO -> ctripleDiagGrounded(NAT_ZERO)
                         [using tautology zero-is-itself]
                     }
                   @discharge-m-at-zero |
-                    forall m: Nat; NAT_ZERO != NAT_ZERO -> ctripleDiagGrounded(p, q, r, i, m, NAT_ZERO)
+                    forall m: Nat; NAT_ZERO != NAT_ZERO -> ctripleDiagGrounded(NAT_ZERO)
                     [by generalize generalize-m-at-zero]
                 }
               @discharge-i-at-zero |
-                forall i, m: Nat; NAT_ZERO != NAT_ZERO -> ctripleDiagGrounded(p, q, r, i, m, NAT_ZERO)
+                forall i, m: Nat; NAT_ZERO != NAT_ZERO -> ctripleDiagGrounded(NAT_ZERO)
                 [by generalize generalize-i-at-zero]
             }
           @discharge-r-at-zero |
-            forall r: CPoly; forall i, m: Nat; NAT_ZERO != NAT_ZERO -> ctripleDiagGrounded(p, q, r, i, m, NAT_ZERO)
+            forall r: CPoly; forall i, m: Nat; NAT_ZERO != NAT_ZERO -> ctripleDiagGrounded(NAT_ZERO)
             [by generalize generalize-r-at-zero]
         }
       @discharge-q-at-zero |
-        forall q, r: CPoly; forall i, m: Nat; NAT_ZERO != NAT_ZERO -> ctripleDiagGrounded(p, q, r, i, m, NAT_ZERO)
+        forall q, r: CPoly; forall i, m: Nat; NAT_ZERO != NAT_ZERO -> ctripleDiagGrounded(NAT_ZERO)
         [by generalize generalize-q-at-zero]
     }
   @base-case |
-    forall p, q, r: CPoly; forall i, m: Nat; NAT_ZERO != NAT_ZERO -> ctripleDiagGrounded(p, q, r, i, m, NAT_ZERO)
+    forall p, q, r: CPoly; forall i, m: Nat; NAT_ZERO != NAT_ZERO -> ctripleDiagGrounded(NAT_ZERO)
     [by generalize base-case-proof]
   @induction-step-for-all-c |
     forall c: Nat;
-      (forall p2, q2, r2: CPoly; forall i2, m2: Nat; c != NAT_ZERO -> ctripleDiagGrounded(p2, q2, r2, i2, m2, c))
-      -> (forall p, q, r: CPoly; forall i, m: Nat; peano.succ(c) != NAT_ZERO -> ctripleDiagGrounded(p, q, r, i, m, peano.succ(c)))
+      (forall p2, q2, r2: CPoly; forall i2, m2: Nat; c != NAT_ZERO -> ctripleDiagGrounded(c))
+      -> (forall p, q, r: CPoly; forall i, m: Nat; peano.succ(c) != NAT_ZERO -> ctripleDiagGrounded(peano.succ(c)))
     [by cite ctripleDiagReachesABaseFromAPredecessor]
   @grounded-for-every-length |
-    forall c: Nat; forall p, q, r: CPoly; forall i, m: Nat; c != NAT_ZERO -> ctripleDiagGrounded(p, q, r, i, m, c)
-    [using instantiation peano.induction((fun c: Nat => (forall p, q, r: CPoly; forall i, m: Nat; c != NAT_ZERO -> ctripleDiagGrounded(p, q, r, i, m, c)))) base-case induction-step-for-all-c]
+    forall c: Nat; forall p, q, r: CPoly; forall i, m: Nat; c != NAT_ZERO -> ctripleDiagGrounded(c)
+    [using instantiation peano.induction((fun c: Nat => (forall p, q, r: CPoly; forall i, m: Nat; c != NAT_ZERO -> ctripleDiagGrounded(c)))) base-case induction-step-for-all-c]
   @generalize-p |
     fix p: CPoly {
       @generalize-q |
@@ -2865,31 +2857,31 @@ proof
                       @generalize-c |
                         fix c: Nat {
                           @grounded-here |
-                            c != NAT_ZERO -> ctripleDiagGrounded(p, q, r, i, m, c)
+                            c != NAT_ZERO -> ctripleDiagGrounded(c)
                             [using specialize grounded-for-every-length(c, p, q, r, i, m)]
                         }
                       @discharge-c |
-                        forall c: Nat; c != NAT_ZERO -> ctripleDiagGrounded(p, q, r, i, m, c)
+                        forall c: Nat; c != NAT_ZERO -> ctripleDiagGrounded(c)
                         [by generalize generalize-c]
                     }
                   @discharge-m |
-                    forall m, c: Nat; c != NAT_ZERO -> ctripleDiagGrounded(p, q, r, i, m, c)
+                    forall m, c: Nat; c != NAT_ZERO -> ctripleDiagGrounded(c)
                     [by generalize generalize-m]
                 }
               @discharge-i |
-                forall i, m, c: Nat; c != NAT_ZERO -> ctripleDiagGrounded(p, q, r, i, m, c)
+                forall i, m, c: Nat; c != NAT_ZERO -> ctripleDiagGrounded(c)
                 [by generalize generalize-i]
             }
           @discharge-r |
-            forall r: CPoly; forall i, m, c: Nat; c != NAT_ZERO -> ctripleDiagGrounded(p, q, r, i, m, c)
+            forall r: CPoly; forall i, m, c: Nat; c != NAT_ZERO -> ctripleDiagGrounded(c)
             [by generalize generalize-r]
         }
       @discharge-q |
-        forall q, r: CPoly; forall i, m, c: Nat; c != NAT_ZERO -> ctripleDiagGrounded(p, q, r, i, m, c)
+        forall q, r: CPoly; forall i, m, c: Nat; c != NAT_ZERO -> ctripleDiagGrounded(c)
         [by generalize generalize-q]
     }
   @conclusion |
-    forall p, q, r: CPoly; forall i, m, c: Nat; c != NAT_ZERO -> ctripleDiagGrounded(p, q, r, i, m, c)
+    forall p, q, r: CPoly; forall i, m, c: Nat; c != NAT_ZERO -> ctripleDiagGrounded(c)
     [by generalize generalize-p]
 qed
 
@@ -2898,13 +2890,13 @@ qed
 // `termination(peano):` names `ctripleTriIsGrounded`, and the checker SYNTHESIZES the statement
 // it must have — the recursive arm's own guard implying the generated predicate:
 //
-//     forall p, q, r: CPoly; forall i, n: Nat; n != NAT_ZERO -> ctripleTriGrounded(p, q, r, i, n)
+//     forall p, q, r: CPoly; forall i, n: Nat; n != NAT_ZERO -> ctripleTriGrounded(n)
 //
 // `ctripleTriGrounded` is GENERATED from the arm's one recursive call site, a disjunction of
 // that call grounded with its argument hitting the terminating arm's pattern:
 //
-//     ctripleTriGrounded(p, q, r, i, n) iff
-//       (ctripleTriGrounded(p, q, r, i, peano.prev(n)) or peano.prev(n) = NAT_ZERO)
+//     ctripleTriGrounded(n) iff
+//       (ctripleTriGrounded(peano.prev(n)) or peano.prev(n) = NAT_ZERO)
 //
 // Four of the five binders ride along untouched; only `n` descends.
 
@@ -2912,13 +2904,12 @@ qed
 // so either `n = NAT_ZERO` and the base disjunct fires outright, or the inductive hypothesis
 // applies at `n`. `tautology` picks whichever holds.
 theorem ctripleTriReachesABaseFromAPredecessor: forall n: Nat;
-  (forall p2, q2, r2: CPoly; forall i2: Nat; n != NAT_ZERO -> ctripleTriGrounded(p2, q2, r2, i2, n))
-  -> (forall p, q, r: CPoly; forall i: Nat; peano.succ(n) != NAT_ZERO -> ctripleTriGrounded(p, q, r, i, peano.succ(n)))
+  (forall p2, q2, r2: CPoly; forall i2: Nat; n != NAT_ZERO -> ctripleTriGrounded(n))
+  -> (forall p, q, r: CPoly; forall i: Nat; peano.succ(n) != NAT_ZERO -> ctripleTriGrounded(peano.succ(n)))
 proof
   @the-generated-clause |
-    forall p3, q3, r3: CPoly; forall i3, n3: Nat;
-      ctripleTriGrounded(p3, q3, r3, i3, n3) iff
-      (ctripleTriGrounded(p3, q3, r3, i3, peano.prev(n3)) or peano.prev(n3) = NAT_ZERO)
+    forall n3: Nat; ctripleTriGrounded(n3) iff
+      (ctripleTriGrounded(peano.prev(n3)) or peano.prev(n3) = NAT_ZERO)
     [by definition ctripleTriGrounded]
   @prev-undoes-succ |
     forall n: Nat; peano.prev(peano.succ(n)) = n
@@ -2929,9 +2920,9 @@ proof
   @generalize-n |
     fix n: Nat {
       @given-the-inductive-hypothesis |
-        assume forall p2, q2, r2: CPoly; forall i2: Nat; n != NAT_ZERO -> ctripleTriGrounded(p2, q2, r2, i2, n) {
+        assume forall p2, q2, r2: CPoly; forall i2: Nat; n != NAT_ZERO -> ctripleTriGrounded(n) {
           @inductive-hypothesis |
-            forall p2, q2, r2: CPoly; forall i2: Nat; n != NAT_ZERO -> ctripleTriGrounded(p2, q2, r2, i2, n)
+            forall p2, q2, r2: CPoly; forall i2: Nat; n != NAT_ZERO -> ctripleTriGrounded(n)
             [by hypothesis given-the-inductive-hypothesis]
           // `prev` is guarded, so these precede every term that writes `peano.prev(peano.succ(n))`.
           @succ-n-is-nonzero |
@@ -2951,57 +2942,57 @@ proof
                           @given-succ-n-nonzero |
                             assume peano.succ(n) != NAT_ZERO {
                               @clause-at-the-successor |
-                                ctripleTriGrounded(p, q, r, i, peano.succ(n)) iff
-                                  (ctripleTriGrounded(p, q, r, i, peano.prev(peano.succ(n))) or peano.prev(peano.succ(n)) = NAT_ZERO)
-                                [using specialize the-generated-clause(p, q, r, i, peano.succ(n))]
+                                ctripleTriGrounded(peano.succ(n)) iff
+                                  (ctripleTriGrounded(peano.prev(peano.succ(n))) or peano.prev(peano.succ(n)) = NAT_ZERO)
+                                [using specialize the-generated-clause(peano.succ(n))]
                               @clause-with-the-predecessor-collapsed |
-                                ctripleTriGrounded(p, q, r, i, peano.succ(n)) iff
-                                  (ctripleTriGrounded(p, q, r, i, n) or n = NAT_ZERO)
+                                ctripleTriGrounded(peano.succ(n)) iff
+                                  (ctripleTriGrounded(n) or n = NAT_ZERO)
                                 [by rewrite prev-of-succ-n-is-n clause-at-the-successor]
                               @the-inductive-hypothesis-here |
-                                n != NAT_ZERO -> ctripleTriGrounded(p, q, r, i, n)
+                                n != NAT_ZERO -> ctripleTriGrounded(n)
                                 [using specialize inductive-hypothesis(p, q, r, i)]
                               @conclusion-grounded-at-succ-n |
-                                ctripleTriGrounded(p, q, r, i, peano.succ(n))
+                                ctripleTriGrounded(peano.succ(n))
                                 [using tautology clause-with-the-predecessor-collapsed
                                   the-inductive-hypothesis-here]
                             }
                           @nonzero-implies-grounded |
-                            peano.succ(n) != NAT_ZERO -> ctripleTriGrounded(p, q, r, i, peano.succ(n))
+                            peano.succ(n) != NAT_ZERO -> ctripleTriGrounded(peano.succ(n))
                             [by discharge given-succ-n-nonzero]
                         }
                       @discharge-i |
-                        forall i: Nat; peano.succ(n) != NAT_ZERO -> ctripleTriGrounded(p, q, r, i, peano.succ(n))
+                        forall i: Nat; peano.succ(n) != NAT_ZERO -> ctripleTriGrounded(peano.succ(n))
                         [by generalize generalize-i]
                     }
                   @discharge-r |
-                    forall r: CPoly; forall i: Nat; peano.succ(n) != NAT_ZERO -> ctripleTriGrounded(p, q, r, i, peano.succ(n))
+                    forall r: CPoly; forall i: Nat; peano.succ(n) != NAT_ZERO -> ctripleTriGrounded(peano.succ(n))
                     [by generalize generalize-r]
                 }
               @discharge-q |
-                forall q, r: CPoly; forall i: Nat; peano.succ(n) != NAT_ZERO -> ctripleTriGrounded(p, q, r, i, peano.succ(n))
+                forall q, r: CPoly; forall i: Nat; peano.succ(n) != NAT_ZERO -> ctripleTriGrounded(peano.succ(n))
                 [by generalize generalize-q]
             }
           @conclusion-for-all-arguments |
-            forall p, q, r: CPoly; forall i: Nat; peano.succ(n) != NAT_ZERO -> ctripleTriGrounded(p, q, r, i, peano.succ(n))
+            forall p, q, r: CPoly; forall i: Nat; peano.succ(n) != NAT_ZERO -> ctripleTriGrounded(peano.succ(n))
             [by generalize generalize-p]
         }
       @the-hypothesis-implies-the-step |
-        (forall p2, q2, r2: CPoly; forall i2: Nat; n != NAT_ZERO -> ctripleTriGrounded(p2, q2, r2, i2, n))
-          -> (forall p, q, r: CPoly; forall i: Nat; peano.succ(n) != NAT_ZERO -> ctripleTriGrounded(p, q, r, i, peano.succ(n)))
+        (forall p2, q2, r2: CPoly; forall i2: Nat; n != NAT_ZERO -> ctripleTriGrounded(n))
+          -> (forall p, q, r: CPoly; forall i: Nat; peano.succ(n) != NAT_ZERO -> ctripleTriGrounded(peano.succ(n)))
         [by discharge given-the-inductive-hypothesis]
     }
   @conclusion |
     forall n: Nat;
-      (forall p2, q2, r2: CPoly; forall i2: Nat; n != NAT_ZERO -> ctripleTriGrounded(p2, q2, r2, i2, n))
-      -> (forall p, q, r: CPoly; forall i: Nat; peano.succ(n) != NAT_ZERO -> ctripleTriGrounded(p, q, r, i, peano.succ(n)))
+      (forall p2, q2, r2: CPoly; forall i2: Nat; n != NAT_ZERO -> ctripleTriGrounded(n))
+      -> (forall p, q, r: CPoly; forall i: Nat; peano.succ(n) != NAT_ZERO -> ctripleTriGrounded(peano.succ(n)))
     [by generalize generalize-n]
 qed
 
 // Strategy: `peano.induction` on the triangle size. The base is VACUOUS — at n = NAT_ZERO the
 // antecedent demands `NAT_ZERO != NAT_ZERO` — so every bit of content is in the step above.
 theorem ctripleTriIsGrounded: forall p, q, r: CPoly; forall i, n: Nat;
-  n != NAT_ZERO -> ctripleTriGrounded(p, q, r, i, n)
+  n != NAT_ZERO -> ctripleTriGrounded(n)
 proof
   @zero-is-itself |
     NAT_ZERO = NAT_ZERO
@@ -3017,32 +3008,32 @@ proof
               @generalize-i-at-zero |
                 fix i: Nat {
                   @conclusion-vacuously-grounded |
-                    NAT_ZERO != NAT_ZERO -> ctripleTriGrounded(p, q, r, i, NAT_ZERO)
+                    NAT_ZERO != NAT_ZERO -> ctripleTriGrounded(NAT_ZERO)
                     [using tautology zero-is-itself]
                 }
               @discharge-i-at-zero |
-                forall i: Nat; NAT_ZERO != NAT_ZERO -> ctripleTriGrounded(p, q, r, i, NAT_ZERO)
+                forall i: Nat; NAT_ZERO != NAT_ZERO -> ctripleTriGrounded(NAT_ZERO)
                 [by generalize generalize-i-at-zero]
             }
           @discharge-r-at-zero |
-            forall r: CPoly; forall i: Nat; NAT_ZERO != NAT_ZERO -> ctripleTriGrounded(p, q, r, i, NAT_ZERO)
+            forall r: CPoly; forall i: Nat; NAT_ZERO != NAT_ZERO -> ctripleTriGrounded(NAT_ZERO)
             [by generalize generalize-r-at-zero]
         }
       @discharge-q-at-zero |
-        forall q, r: CPoly; forall i: Nat; NAT_ZERO != NAT_ZERO -> ctripleTriGrounded(p, q, r, i, NAT_ZERO)
+        forall q, r: CPoly; forall i: Nat; NAT_ZERO != NAT_ZERO -> ctripleTriGrounded(NAT_ZERO)
         [by generalize generalize-q-at-zero]
     }
   @base-case |
-    forall p, q, r: CPoly; forall i: Nat; NAT_ZERO != NAT_ZERO -> ctripleTriGrounded(p, q, r, i, NAT_ZERO)
+    forall p, q, r: CPoly; forall i: Nat; NAT_ZERO != NAT_ZERO -> ctripleTriGrounded(NAT_ZERO)
     [by generalize base-case-proof]
   @induction-step-for-all-n |
     forall n: Nat;
-      (forall p2, q2, r2: CPoly; forall i2: Nat; n != NAT_ZERO -> ctripleTriGrounded(p2, q2, r2, i2, n))
-      -> (forall p, q, r: CPoly; forall i: Nat; peano.succ(n) != NAT_ZERO -> ctripleTriGrounded(p, q, r, i, peano.succ(n)))
+      (forall p2, q2, r2: CPoly; forall i2: Nat; n != NAT_ZERO -> ctripleTriGrounded(n))
+      -> (forall p, q, r: CPoly; forall i: Nat; peano.succ(n) != NAT_ZERO -> ctripleTriGrounded(peano.succ(n)))
     [by cite ctripleTriReachesABaseFromAPredecessor]
   @grounded-for-every-size |
-    forall n: Nat; forall p, q, r: CPoly; forall i: Nat; n != NAT_ZERO -> ctripleTriGrounded(p, q, r, i, n)
-    [using instantiation peano.induction((fun n: Nat => (forall p, q, r: CPoly; forall i: Nat; n != NAT_ZERO -> ctripleTriGrounded(p, q, r, i, n)))) base-case induction-step-for-all-n]
+    forall n: Nat; forall p, q, r: CPoly; forall i: Nat; n != NAT_ZERO -> ctripleTriGrounded(n)
+    [using instantiation peano.induction((fun n: Nat => (forall p, q, r: CPoly; forall i: Nat; n != NAT_ZERO -> ctripleTriGrounded(n)))) base-case induction-step-for-all-n]
   @generalize-p |
     fix p: CPoly {
       @generalize-q |
@@ -3054,27 +3045,27 @@ proof
                   @generalize-n |
                     fix n: Nat {
                       @grounded-here |
-                        n != NAT_ZERO -> ctripleTriGrounded(p, q, r, i, n)
+                        n != NAT_ZERO -> ctripleTriGrounded(n)
                         [using specialize grounded-for-every-size(n, p, q, r, i)]
                     }
                   @discharge-n |
-                    forall n: Nat; n != NAT_ZERO -> ctripleTriGrounded(p, q, r, i, n)
+                    forall n: Nat; n != NAT_ZERO -> ctripleTriGrounded(n)
                     [by generalize generalize-n]
                 }
               @discharge-i |
-                forall i, n: Nat; n != NAT_ZERO -> ctripleTriGrounded(p, q, r, i, n)
+                forall i, n: Nat; n != NAT_ZERO -> ctripleTriGrounded(n)
                 [by generalize generalize-i]
             }
           @discharge-r |
-            forall r: CPoly; forall i, n: Nat; n != NAT_ZERO -> ctripleTriGrounded(p, q, r, i, n)
+            forall r: CPoly; forall i, n: Nat; n != NAT_ZERO -> ctripleTriGrounded(n)
             [by generalize generalize-r]
         }
       @discharge-q |
-        forall q, r: CPoly; forall i, n: Nat; n != NAT_ZERO -> ctripleTriGrounded(p, q, r, i, n)
+        forall q, r: CPoly; forall i, n: Nat; n != NAT_ZERO -> ctripleTriGrounded(n)
         [by generalize generalize-q]
     }
   @conclusion |
-    forall p, q, r: CPoly; forall i, n: Nat; n != NAT_ZERO -> ctripleTriGrounded(p, q, r, i, n)
+    forall p, q, r: CPoly; forall i, n: Nat; n != NAT_ZERO -> ctripleTriGrounded(n)
     [by generalize generalize-p]
 qed
 
@@ -3083,13 +3074,13 @@ qed
 // `termination(peano):` names `ctripleRowsIsGrounded`, and the checker SYNTHESIZES the statement
 // it must have — the recursive arm's own guard implying the generated predicate:
 //
-//     forall p, q, r: CPoly; forall i, m, n: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, m, n)
+//     forall p, q, r: CPoly; forall i, m, n: Nat; m != NAT_ZERO -> ctripleRowsGrounded(m)
 //
 // `ctripleRowsGrounded` is GENERATED from the arm's one recursive call site, a disjunction of
 // that call grounded with its argument hitting the terminating arm's pattern:
 //
-//     ctripleRowsGrounded(p, q, r, i, m, n) iff
-//       (ctripleRowsGrounded(p, q, r, i, peano.prev(m), n) or peano.prev(m) = NAT_ZERO)
+//     ctripleRowsGrounded(m) iff
+//       (ctripleRowsGrounded(peano.prev(m)) or peano.prev(m) = NAT_ZERO)
 //
 // The descent is on `m`, the FIFTH of six arguments — `n` rides through AFTER it, which is the
 // only way this differs from the three families above.
@@ -3098,13 +3089,12 @@ qed
 // either `m = NAT_ZERO` and the base disjunct fires outright, or the inductive hypothesis applies
 // at `m`. `tautology` picks whichever holds.
 theorem ctripleRowsReachesABaseFromAPredecessor: forall m: Nat;
-  (forall p2, q2, r2: CPoly; forall i2, n2: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p2, q2, r2, i2, m, n2))
-  -> (forall p, q, r: CPoly; forall i, n: Nat; peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, peano.succ(m), n))
+  (forall p2, q2, r2: CPoly; forall i2, n2: Nat; m != NAT_ZERO -> ctripleRowsGrounded(m))
+  -> (forall p, q, r: CPoly; forall i, n: Nat; peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(peano.succ(m)))
 proof
   @the-generated-clause |
-    forall p3, q3, r3: CPoly; forall i3, m3, n3: Nat;
-      ctripleRowsGrounded(p3, q3, r3, i3, m3, n3) iff
-      (ctripleRowsGrounded(p3, q3, r3, i3, peano.prev(m3), n3) or peano.prev(m3) = NAT_ZERO)
+    forall m3: Nat; ctripleRowsGrounded(m3) iff
+      (ctripleRowsGrounded(peano.prev(m3)) or peano.prev(m3) = NAT_ZERO)
     [by definition ctripleRowsGrounded]
   @prev-undoes-succ |
     forall k: Nat; peano.prev(peano.succ(k)) = k
@@ -3115,9 +3105,9 @@ proof
   @generalize-m |
     fix m: Nat {
       @given-the-inductive-hypothesis |
-        assume forall p2, q2, r2: CPoly; forall i2, n2: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p2, q2, r2, i2, m, n2) {
+        assume forall p2, q2, r2: CPoly; forall i2, n2: Nat; m != NAT_ZERO -> ctripleRowsGrounded(m) {
           @inductive-hypothesis |
-            forall p2, q2, r2: CPoly; forall i2, n2: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p2, q2, r2, i2, m, n2)
+            forall p2, q2, r2: CPoly; forall i2, n2: Nat; m != NAT_ZERO -> ctripleRowsGrounded(m)
             [by hypothesis given-the-inductive-hypothesis]
           // `prev` is guarded, so these precede every term that writes `peano.prev(peano.succ(m))`.
           @succ-m-is-nonzero |
@@ -3139,61 +3129,61 @@ proof
                               @given-succ-m-nonzero |
                                 assume peano.succ(m) != NAT_ZERO {
                                   @clause-at-the-successor |
-                                    ctripleRowsGrounded(p, q, r, i, peano.succ(m), n) iff
-                                      (ctripleRowsGrounded(p, q, r, i, peano.prev(peano.succ(m)), n) or peano.prev(peano.succ(m)) = NAT_ZERO)
-                                    [using specialize the-generated-clause(p, q, r, i, peano.succ(m), n)]
+                                    ctripleRowsGrounded(peano.succ(m)) iff
+                                      (ctripleRowsGrounded(peano.prev(peano.succ(m))) or peano.prev(peano.succ(m)) = NAT_ZERO)
+                                    [using specialize the-generated-clause(peano.succ(m))]
                                   @clause-with-the-predecessor-collapsed |
-                                    ctripleRowsGrounded(p, q, r, i, peano.succ(m), n) iff
-                                      (ctripleRowsGrounded(p, q, r, i, m, n) or m = NAT_ZERO)
+                                    ctripleRowsGrounded(peano.succ(m)) iff
+                                      (ctripleRowsGrounded(m) or m = NAT_ZERO)
                                     [by rewrite prev-of-succ-m-is-m clause-at-the-successor]
                                   @the-inductive-hypothesis-here |
-                                    m != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, m, n)
+                                    m != NAT_ZERO -> ctripleRowsGrounded(m)
                                     [using specialize inductive-hypothesis(p, q, r, i, n)]
                                   @conclusion-grounded-at-succ-m |
-                                    ctripleRowsGrounded(p, q, r, i, peano.succ(m), n)
+                                    ctripleRowsGrounded(peano.succ(m))
                                     [using tautology clause-with-the-predecessor-collapsed
                                       the-inductive-hypothesis-here]
                                 }
                               @nonzero-implies-grounded |
-                                peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, peano.succ(m), n)
+                                peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(peano.succ(m))
                                 [by discharge given-succ-m-nonzero]
                             }
                           @discharge-n |
-                            forall n: Nat; peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, peano.succ(m), n)
+                            forall n: Nat; peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(peano.succ(m))
                             [by generalize generalize-n]
                         }
                       @discharge-i |
-                        forall i, n: Nat; peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, peano.succ(m), n)
+                        forall i, n: Nat; peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(peano.succ(m))
                         [by generalize generalize-i]
                     }
                   @discharge-r |
-                    forall r: CPoly; forall i, n: Nat; peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, peano.succ(m), n)
+                    forall r: CPoly; forall i, n: Nat; peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(peano.succ(m))
                     [by generalize generalize-r]
                 }
               @discharge-q |
-                forall q, r: CPoly; forall i, n: Nat; peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, peano.succ(m), n)
+                forall q, r: CPoly; forall i, n: Nat; peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(peano.succ(m))
                 [by generalize generalize-q]
             }
           @conclusion-for-all-arguments |
-            forall p, q, r: CPoly; forall i, n: Nat; peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, peano.succ(m), n)
+            forall p, q, r: CPoly; forall i, n: Nat; peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(peano.succ(m))
             [by generalize generalize-p]
         }
       @the-hypothesis-implies-the-step |
-        (forall p2, q2, r2: CPoly; forall i2, n2: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p2, q2, r2, i2, m, n2))
-          -> (forall p, q, r: CPoly; forall i, n: Nat; peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, peano.succ(m), n))
+        (forall p2, q2, r2: CPoly; forall i2, n2: Nat; m != NAT_ZERO -> ctripleRowsGrounded(m))
+          -> (forall p, q, r: CPoly; forall i, n: Nat; peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(peano.succ(m)))
         [by discharge given-the-inductive-hypothesis]
     }
   @conclusion |
     forall m: Nat;
-      (forall p2, q2, r2: CPoly; forall i2, n2: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p2, q2, r2, i2, m, n2))
-      -> (forall p, q, r: CPoly; forall i, n: Nat; peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, peano.succ(m), n))
+      (forall p2, q2, r2: CPoly; forall i2, n2: Nat; m != NAT_ZERO -> ctripleRowsGrounded(m))
+      -> (forall p, q, r: CPoly; forall i, n: Nat; peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(peano.succ(m)))
     [by generalize generalize-m]
 qed
 
 // Strategy: `peano.induction` on the row count. The base is VACUOUS — at m = NAT_ZERO the
 // antecedent demands `NAT_ZERO != NAT_ZERO` — so every bit of content is in the step above.
 theorem ctripleRowsIsGrounded: forall p, q, r: CPoly; forall i, m, n: Nat;
-  m != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, m, n)
+  m != NAT_ZERO -> ctripleRowsGrounded(m)
 proof
   @zero-is-itself |
     NAT_ZERO = NAT_ZERO
@@ -3211,36 +3201,36 @@ proof
                   @generalize-n-at-zero |
                     fix n: Nat {
                       @conclusion-vacuously-grounded |
-                        NAT_ZERO != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, NAT_ZERO, n)
+                        NAT_ZERO != NAT_ZERO -> ctripleRowsGrounded(NAT_ZERO)
                         [using tautology zero-is-itself]
                     }
                   @discharge-n-at-zero |
-                    forall n: Nat; NAT_ZERO != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, NAT_ZERO, n)
+                    forall n: Nat; NAT_ZERO != NAT_ZERO -> ctripleRowsGrounded(NAT_ZERO)
                     [by generalize generalize-n-at-zero]
                 }
               @discharge-i-at-zero |
-                forall i, n: Nat; NAT_ZERO != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, NAT_ZERO, n)
+                forall i, n: Nat; NAT_ZERO != NAT_ZERO -> ctripleRowsGrounded(NAT_ZERO)
                 [by generalize generalize-i-at-zero]
             }
           @discharge-r-at-zero |
-            forall r: CPoly; forall i, n: Nat; NAT_ZERO != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, NAT_ZERO, n)
+            forall r: CPoly; forall i, n: Nat; NAT_ZERO != NAT_ZERO -> ctripleRowsGrounded(NAT_ZERO)
             [by generalize generalize-r-at-zero]
         }
       @discharge-q-at-zero |
-        forall q, r: CPoly; forall i, n: Nat; NAT_ZERO != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, NAT_ZERO, n)
+        forall q, r: CPoly; forall i, n: Nat; NAT_ZERO != NAT_ZERO -> ctripleRowsGrounded(NAT_ZERO)
         [by generalize generalize-q-at-zero]
     }
   @base-case |
-    forall p, q, r: CPoly; forall i, n: Nat; NAT_ZERO != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, NAT_ZERO, n)
+    forall p, q, r: CPoly; forall i, n: Nat; NAT_ZERO != NAT_ZERO -> ctripleRowsGrounded(NAT_ZERO)
     [by generalize base-case-proof]
   @induction-step-for-all-m |
     forall m: Nat;
-      (forall p2, q2, r2: CPoly; forall i2, n2: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p2, q2, r2, i2, m, n2))
-      -> (forall p, q, r: CPoly; forall i, n: Nat; peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, peano.succ(m), n))
+      (forall p2, q2, r2: CPoly; forall i2, n2: Nat; m != NAT_ZERO -> ctripleRowsGrounded(m))
+      -> (forall p, q, r: CPoly; forall i, n: Nat; peano.succ(m) != NAT_ZERO -> ctripleRowsGrounded(peano.succ(m)))
     [by cite ctripleRowsReachesABaseFromAPredecessor]
   @grounded-for-every-row-count |
-    forall m: Nat; forall p, q, r: CPoly; forall i, n: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, m, n)
-    [using instantiation peano.induction((fun m: Nat => (forall p, q, r: CPoly; forall i, n: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, m, n)))) base-case induction-step-for-all-m]
+    forall m: Nat; forall p, q, r: CPoly; forall i, n: Nat; m != NAT_ZERO -> ctripleRowsGrounded(m)
+    [using instantiation peano.induction((fun m: Nat => (forall p, q, r: CPoly; forall i, n: Nat; m != NAT_ZERO -> ctripleRowsGrounded(m)))) base-case induction-step-for-all-m]
   @generalize-p |
     fix p: CPoly {
       @generalize-q |
@@ -3254,30 +3244,30 @@ proof
                       @generalize-n |
                         fix n: Nat {
                           @grounded-here |
-                            m != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, m, n)
+                            m != NAT_ZERO -> ctripleRowsGrounded(m)
                             [using specialize grounded-for-every-row-count(m, p, q, r, i, n)]
                         }
                       @discharge-n |
-                        forall n: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, m, n)
+                        forall n: Nat; m != NAT_ZERO -> ctripleRowsGrounded(m)
                         [by generalize generalize-n]
                     }
                   @discharge-m |
-                    forall m, n: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, m, n)
+                    forall m, n: Nat; m != NAT_ZERO -> ctripleRowsGrounded(m)
                     [by generalize generalize-m]
                 }
               @discharge-i |
-                forall i, m, n: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, m, n)
+                forall i, m, n: Nat; m != NAT_ZERO -> ctripleRowsGrounded(m)
                 [by generalize generalize-i]
             }
           @discharge-r |
-            forall r: CPoly; forall i, m, n: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, m, n)
+            forall r: CPoly; forall i, m, n: Nat; m != NAT_ZERO -> ctripleRowsGrounded(m)
             [by generalize generalize-r]
         }
       @discharge-q |
-        forall q, r: CPoly; forall i, m, n: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, m, n)
+        forall q, r: CPoly; forall i, m, n: Nat; m != NAT_ZERO -> ctripleRowsGrounded(m)
         [by generalize generalize-q]
     }
   @conclusion |
-    forall p, q, r: CPoly; forall i, m, n: Nat; m != NAT_ZERO -> ctripleRowsGrounded(p, q, r, i, m, n)
+    forall p, q, r: CPoly; forall i, m, n: Nat; m != NAT_ZERO -> ctripleRowsGrounded(m)
     [by generalize generalize-p]
 qed
