@@ -1760,17 +1760,23 @@ pub const Parser = struct {
         } else if (ex_tok != null or un_tok != null) {
             return self.fail("definition '{s}' is EXPLICIT (its clause rewrites '{s}' away), so `existence:`/`uniqueness:` do not apply — an explicit definition is eliminable and owes only `consistency:` across its clause pairs", .{ self.text(name), self.text(name) });
         }
-        // Does this block RECURSE? A recursive one ought to be REQUIRED to declare
-        // `termination:` — without it nothing checks the recursion reaches a base case, and
-        // the author can derive a contradiction (`g(n) = s(g(n))` plus a no-fixed-point axiom
-        // proves `Z = s(Z)`).
+        // Does this block RECURSE? A recursive one MUST declare `termination:`. Without it
+        // nothing checks the recursion reaches a base case, and the author derives a
+        // contradiction in six steps — measured, strict-green before this was enforced:
         //
-        // That demand is DELIBERATELY NOT MADE YET, the same staging `consistency:` went
-        // through: requiring it would fail all 61 recursive `std` blocks, every one of which
-        // also violates the l-value rule below. Flipping it on is one `self.fail` here, after
-        // that migration. What IS enforced either way, gating new violations for free: the two
-        // rules below, that a written declaration matches its arms, and that its named theorem
-        // states the obligation (`--library`; `collectTerminationGaps` in root.zig).
+        //     axiom sNoFixedPoint: forall a: N; s(a) != a
+        //     oper g(n: N) => N:
+        //       g(n) = s(g(n)).
+        //     theorem absurd: Z != Z        // the clause at Z, plus sNoFixedPoint at g(Z)
+        //
+        // `g` asserts a value equal to its own successor, which no `N` has, so the clause is
+        // inconsistent and everything follows. Requiring the declaration rejects `g` where it
+        // is written, and the obligation the declaration names is what rules the recursion
+        // sound.
+        //
+        // ENFORCED as of the `segment` migration (2026-11-25), which converted the last of the
+        // 72 recursive `std` blocks. This and the l-value rule below were staged off together
+        // while that ran; both are live now.
         var any_recursive = false;
         var rec_arm: usize = 0;
         for (clauses, 0..) |c, ci| {
@@ -1781,6 +1787,9 @@ pub const Parser = struct {
                 if (!any_recursive) rec_arm = ci;
                 any_recursive = true;
             }
+        }
+        if (any_recursive and !saw_termination) {
+            return self.fail("definition '{s}' is RECURSIVE (a clause calls '{s}' on its right-hand side) and must declare `termination(<theory>): …` after the clause list's `.` — one entry per clause, `_` for a terminating arm and `{{theorem, predicate}}` for a recursive one. Without it nothing checks the recursion reaches a base case, and a definition like `g(n) = s(g(n))` is inconsistent", .{ self.text(name), self.text(name) });
         }
         if (saw_termination and !any_recursive) {
             return self.fail("definition '{s}' is not recursive, so `termination:` does not apply", .{self.text(name)});
@@ -1813,11 +1822,21 @@ pub const Parser = struct {
             // where the generator cannot read it. The RHS is unrestricted: whatever descent the
             // author wants lives there, and that is where the call sites are collected from.
             //
-            // STAGED OFF, like the `termination:` requirement above and for the same reason:
-            // all 61 recursive `std` blocks violate it (every one is written
-            // `convolution(p, q, j, succ(m))`), so enforcing it now breaks the library with no
-            // incremental path. The two flips go together, after that migration — see
-            // DEFINITION-SOUNDNESS-PLAN.md's THE L-VALUE RULE.
+            // STILL STAGED OFF, and for a NEW reason — not the migration, which is complete.
+            // `argumentIsLegalLValue` asks `collectClauseVars` whether an argument has free
+            // variables, and that reads the LOWER-CASE convention, so a lower-case CONSTANT in
+            // a base arm reads as a variable and the arm is rejected. Measured: `aata`'s
+            // `multiple(intZero, r) = zero` (with `const intZero = integer.ZERO`) fails, and so
+            // does a minimal `f(zed) = zed` against `const zed: N`. `std` escaped it only
+            // because its zeros are spelled `ZERO`/`NAT_ZERO`.
+            //
+            // The style guide PRESCRIBES lower-case for `pi`/`e`/`i`, so this is not a corpus
+            // wart to clean up — the rule needs a way to tell a constant from a variable, which
+            // the single-pass parser has no declared-name table for. Two proxies already
+            // misfired on the sibling binder-agreement check (spelling flags `intZero`;
+            // "appears on the RHS" flags `NAT_ZERO`), so this wants a real fix, not a third
+            // guess. The `termination:` requirement above is live regardless, and it is the one
+            // that closes the soundness hole.
             // A clause's l-value argument that RENAMES a declared parameter silently corrupts
             // the generated predicate and opens a VACUOUS DISCHARGE of the termination
             // obligation. Measured, not theorised:
