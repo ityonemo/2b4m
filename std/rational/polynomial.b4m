@@ -183,6 +183,8 @@ intheory qRsegmentZero
 intheory qRsegmentSucc
 intheory qpowerReachesABaseFromAPredecessor
 intheory qpowerIsGrounded
+intheory qevalUpToIsGrounded
+intheory qevalUpToReachesABaseFromAPredecessor
 intheory qPowerZero
 intheory qPowerSucc
 intheory qEvalZero
@@ -1281,9 +1283,17 @@ oper qpower(a: Q, n: peano.Nat) => Q:
   qpower(a, n) = rational.mul(a, qpower(a, peano.prev(n))) when n != peano.ZERO.
   termination(peano): _, {qpowerIsGrounded, qpowerGrounded}
 
+// Horner-free evaluation: the first `k` terms, each `qcoeff(p, i) * a^i`. The recursion
+// descends by `peano.prev` rather than matching `peano.succ` on the left, which the l-value rule
+// requires of a recursive definition — the descent must be readable on the RIGHT. Every former
+// bare `k` in the payload became `peano.prev(k)`, because the parameter now denotes what the
+// old arm matched as `peano.succ(k)`.
 oper qevalUpTo(p: QPoly, a: Q, k: peano.Nat) => Q:
   qevalUpTo(p, a, peano.ZERO) = ZERO;
-  qevalUpTo(p, a, peano.succ(k)) = rational.add(qevalUpTo(p, a, k), rational.mul(qcoeff(p, k), qpower(a, k))).
+  qevalUpTo(p, a, k) =
+  rational.add(qevalUpTo(p, a, peano.prev(k)),
+  rational.mul(qcoeff(p, peano.prev(k)), qpower(a, peano.prev(k)))) when k != peano.ZERO.
+  termination(peano): _, {qevalUpToIsGrounded, qevalUpToGrounded}
 
 // Judson's `p(a)`: the sum over every index up to AND INCLUDING the degree, which is what
 // the `succ` bound buys.
@@ -3484,18 +3494,228 @@ proof
     [by definition(0) qevalUpTo]
 qed
 
+// The successor step, now DERIVED rather than transcribed: the definition descends by
+// `peano.prev`, so this restates it at a successor, where `prevOfSucc` collapses all three
+// `peano.prev`s at once — one rewrite, since they are the same term. The STATEMENT is
+// unchanged, which keeps the migration confined: every call site cites this theorem rather
+// than the clause, so the clause's `k != peano.ZERO` guard never reaches them.
 theorem qEvalSucc:
   forall p: QPoly; forall a: Q; forall k: peano.Nat;
   qevalUpTo(p, a, peano.succ(k)) =
-  rational.add(qevalUpTo(p, a, k),
-  rational.mul(qcoeff(p, k), qpower(a, k)))
+  rational.add(qevalUpTo(p, a, k), rational.mul(qcoeff(p, k), qpower(a, k)))
 proof
+  @the-recursive-clause |
+    forall p2: QPoly; forall a2: Q; forall k2: peano.Nat;
+      k2 != peano.ZERO ->
+      qevalUpTo(p2, a2, k2) =
+      rational.add(qevalUpTo(p2, a2, peano.prev(k2)),
+      rational.mul(qcoeff(p2, peano.prev(k2)), qpower(a2, peano.prev(k2))))
+    [by definition(1) qevalUpTo]
+  @prev-undoes-successor |
+    forall n: peano.Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: peano.Nat; peano.succ(a) != peano.ZERO
+    [using import(peano) succNotZero]
+  @generalize-p |
+    fix p: QPoly {
+      @generalize-a |
+        fix a: Q {
+          @generalize-k |
+            fix k: peano.Nat {
+              @succ-k-is-nonzero |
+                peano.succ(k) != peano.ZERO
+                [using specialize a-successor-is-never-zero(k)]
+              @clause-at-the-successor |
+                qevalUpTo(p, a, peano.succ(k)) =
+                  rational.add(qevalUpTo(p, a, peano.prev(peano.succ(k))),
+                  rational.mul(qcoeff(p, peano.prev(peano.succ(k))), qpower(a, peano.prev(peano.succ(k)))))
+                [using specialize the-recursive-clause(p, a, peano.succ(k)) succ-k-is-nonzero]
+              @prev-of-succ-k |
+                peano.prev(peano.succ(k)) = k
+                [using specialize prev-undoes-successor(k)]
+              @conclusion-step-at-p-a-k |
+                qevalUpTo(p, a, peano.succ(k)) =
+                  rational.add(qevalUpTo(p, a, k), rational.mul(qcoeff(p, k), qpower(a, k)))
+                [by rewrite prev-of-succ-k clause-at-the-successor]
+            }
+          @discharge-k |
+            forall k: peano.Nat;
+              qevalUpTo(p, a, peano.succ(k)) =
+              rational.add(qevalUpTo(p, a, k), rational.mul(qcoeff(p, k), qpower(a, k)))
+            [by generalize generalize-k]
+        }
+      @discharge-a |
+        forall a: Q; forall k: peano.Nat;
+          qevalUpTo(p, a, peano.succ(k)) =
+          rational.add(qevalUpTo(p, a, k), rational.mul(qcoeff(p, k), qpower(a, k)))
+        [by generalize generalize-a]
+    }
   @conclusion |
     forall p: QPoly; forall a: Q; forall k: peano.Nat;
       qevalUpTo(p, a, peano.succ(k)) =
-      rational.add(qevalUpTo(p, a, k),
-      rational.mul(qcoeff(p, k), qpower(a, k)))
-    [by definition(1) qevalUpTo]
+      rational.add(qevalUpTo(p, a, k), rational.mul(qcoeff(p, k), qpower(a, k)))
+    [by generalize generalize-p]
+qed
+
+// -- the TERMINATION obligation for `qevalUpTo` ------------------------------------------------
+//
+// `termination(peano):` names `qevalUpToIsGrounded`, and the checker SYNTHESIZES the statement it
+// must have — the recursive arm's own guard implying the generated predicate:
+//
+//     forall p: QPoly; forall a: Q; forall k: peano.Nat;
+//       k != peano.ZERO -> qevalUpToGrounded(p, a, k)
+//
+// `qevalUpToGrounded` is GENERATED from the arm's one recursive call site, a disjunction of that
+// call grounded with its argument hitting the terminating arm's pattern:
+//
+//     qevalUpToGrounded(p, a, k) iff
+//       (qevalUpToGrounded(p, a, peano.prev(k)) or peano.prev(k) = peano.ZERO)
+//
+// The two non-descending binders (`p`, `a`) ride along untouched; only `k` descends.
+
+// Strategy: the step of an induction on the term count. At `peano.succ(k)` the predecessor is `k`,
+// so either `k = peano.ZERO` and the base disjunct fires outright, or the inductive hypothesis
+// applies at `k`. `tautology` picks whichever holds.
+theorem qevalUpToReachesABaseFromAPredecessor: forall k: peano.Nat;
+  (forall p2: QPoly; forall a2: Q; k != peano.ZERO -> qevalUpToGrounded(p2, a2, k))
+  -> (forall p: QPoly; forall a: Q;
+  peano.succ(k) != peano.ZERO -> qevalUpToGrounded(p, a, peano.succ(k)))
+proof
+  @the-generated-clause |
+    forall p3: QPoly; forall a3: Q; forall k3: peano.Nat;
+      qevalUpToGrounded(p3, a3, k3) iff
+      (qevalUpToGrounded(p3, a3, peano.prev(k3)) or peano.prev(k3) = peano.ZERO)
+    [by definition qevalUpToGrounded]
+  @prev-undoes-successor |
+    forall n: peano.Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: peano.Nat; peano.succ(a) != peano.ZERO
+    [using import(peano) succNotZero]
+  @generalize-k |
+    fix k: peano.Nat {
+      @given-the-inductive-hypothesis |
+        assume forall p2: QPoly; forall a2: Q;
+          k != peano.ZERO -> qevalUpToGrounded(p2, a2, k) {
+          @inductive-hypothesis |
+            forall p2: QPoly; forall a2: Q; k != peano.ZERO -> qevalUpToGrounded(p2, a2, k)
+            [by hypothesis given-the-inductive-hypothesis]
+          // `peano.prev` is guarded, so this must precede every term writing
+          // `peano.prev(peano.succ(k))`.
+          @succ-k-is-nonzero |
+            peano.succ(k) != peano.ZERO
+            [using specialize a-successor-is-never-zero(k)]
+          @prev-of-succ-k-is-k |
+            peano.prev(peano.succ(k)) = k
+            [using specialize prev-undoes-successor(k)]
+          @generalize-p |
+            fix p: QPoly {
+              @generalize-a |
+                fix a: Q {
+                  @given-succ-k-nonzero |
+                    assume peano.succ(k) != peano.ZERO {
+                      @clause-at-p-a-and-succ-k |
+                        qevalUpToGrounded(p, a, peano.succ(k)) iff
+                          (qevalUpToGrounded(p, a, peano.prev(peano.succ(k)))
+                          or peano.prev(peano.succ(k)) = peano.ZERO)
+                        [using specialize the-generated-clause(p, a, peano.succ(k))]
+                      @clause-with-the-predecessor-collapsed |
+                        qevalUpToGrounded(p, a, peano.succ(k)) iff
+                          (qevalUpToGrounded(p, a, k) or k = peano.ZERO)
+                        [by rewrite prev-of-succ-k-is-k clause-at-p-a-and-succ-k]
+                      @the-inductive-hypothesis-at-p-and-a |
+                        k != peano.ZERO -> qevalUpToGrounded(p, a, k)
+                        [using specialize inductive-hypothesis(p, a)]
+                      @conclusion-grounded-at-succ-k |
+                        qevalUpToGrounded(p, a, peano.succ(k))
+                        [using tautology clause-with-the-predecessor-collapsed
+                          the-inductive-hypothesis-at-p-and-a]
+                    }
+                  @nonzero-implies-grounded-at-succ-k |
+                    peano.succ(k) != peano.ZERO -> qevalUpToGrounded(p, a, peano.succ(k))
+                    [by discharge given-succ-k-nonzero]
+                }
+              @discharge-a |
+                forall a: Q; peano.succ(k) != peano.ZERO -> qevalUpToGrounded(p, a, peano.succ(k))
+                [by generalize generalize-a]
+            }
+          @conclusion-for-all-p-and-a |
+            forall p: QPoly; forall a: Q;
+              peano.succ(k) != peano.ZERO -> qevalUpToGrounded(p, a, peano.succ(k))
+            [by generalize generalize-p]
+        }
+      @the-hypothesis-implies-the-step |
+        (forall p2: QPoly; forall a2: Q; k != peano.ZERO -> qevalUpToGrounded(p2, a2, k))
+          -> (forall p: QPoly; forall a: Q;
+          peano.succ(k) != peano.ZERO -> qevalUpToGrounded(p, a, peano.succ(k)))
+        [by discharge given-the-inductive-hypothesis]
+    }
+  @conclusion |
+    forall k: peano.Nat;
+      (forall p2: QPoly; forall a2: Q; k != peano.ZERO -> qevalUpToGrounded(p2, a2, k))
+      -> (forall p: QPoly; forall a: Q;
+      peano.succ(k) != peano.ZERO -> qevalUpToGrounded(p, a, peano.succ(k)))
+    [by generalize generalize-k]
+qed
+
+// Strategy: `peano.induction` on the term count. The base is VACUOUS — at k = peano.ZERO the
+// antecedent demands `peano.ZERO != peano.ZERO` — so every bit of content is in the step above.
+theorem qevalUpToIsGrounded: forall p: QPoly; forall a: Q; forall k: peano.Nat;
+  k != peano.ZERO -> qevalUpToGrounded(p, a, k)
+proof
+  @zero-is-itself |
+    peano.ZERO = peano.ZERO
+    [by reflexivity]
+  // `tautology` reads a `forall` as one opaque atom, so the binders are opened before the
+  // vacuous antecedent can be refuted inside them.
+  @base-case-proof |
+    fix p: QPoly {
+      @generalize-a-at-zero |
+        fix a: Q {
+          @conclusion-vacuously-grounded-at-zero |
+            peano.ZERO != peano.ZERO -> qevalUpToGrounded(p, a, peano.ZERO)
+            [using tautology zero-is-itself]
+        }
+      @discharge-a-at-zero |
+        forall a: Q; peano.ZERO != peano.ZERO -> qevalUpToGrounded(p, a, peano.ZERO)
+        [by generalize generalize-a-at-zero]
+    }
+  @base-case |
+    forall p: QPoly; forall a: Q; peano.ZERO != peano.ZERO -> qevalUpToGrounded(p, a, peano.ZERO)
+    [by generalize base-case-proof]
+  @induction-step-for-all-k |
+    forall k: peano.Nat;
+      (forall p2: QPoly; forall a2: Q; k != peano.ZERO -> qevalUpToGrounded(p2, a2, k))
+      -> (forall p: QPoly; forall a: Q;
+      peano.succ(k) != peano.ZERO -> qevalUpToGrounded(p, a, peano.succ(k)))
+    [by cite qevalUpToReachesABaseFromAPredecessor]
+  @grounded-for-every-term-count |
+    forall k: peano.Nat; forall p: QPoly; forall a: Q;
+      k != peano.ZERO -> qevalUpToGrounded(p, a, k)
+    [using instantiation peano.induction((fun k: peano.Nat => (forall p: QPoly; forall a: Q; k != peano.ZERO -> qevalUpToGrounded(p, a, k)))) base-case induction-step-for-all-k]
+  @generalize-p |
+    fix p: QPoly {
+      @generalize-a |
+        fix a: Q {
+          @generalize-k |
+            fix k: peano.Nat {
+              @grounded-at-p-a-and-k |
+                k != peano.ZERO -> qevalUpToGrounded(p, a, k)
+                [using specialize grounded-for-every-term-count(k, p, a)]
+            }
+          @discharge-k |
+            forall k: peano.Nat; k != peano.ZERO -> qevalUpToGrounded(p, a, k)
+            [by generalize generalize-k]
+        }
+      @discharge-a |
+        forall a: Q; forall k: peano.Nat; k != peano.ZERO -> qevalUpToGrounded(p, a, k)
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall p: QPoly; forall a: Q; forall k: peano.Nat;
+      k != peano.ZERO -> qevalUpToGrounded(p, a, k)
+    [by generalize generalize-p]
 qed
 
 theorem qClearedSumZero:

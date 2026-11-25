@@ -265,6 +265,8 @@ intheory monomialCoeffAtItsIndex
 intheory monomialCoeffElsewhere
 intheory powerReachesABaseFromAPredecessor
 intheory powerIsGrounded
+intheory evalUpToIsGrounded
+intheory evalUpToReachesABaseFromAPredecessor
 intheory powerZero
 intheory powerSucc
 intheory evalZero
@@ -2779,9 +2781,16 @@ oper power(a: F, n: Nat) => F:
   power(a, n) = mulF(a, power(a, prev(n))) when n != ZERO.
   termination(peano): _, {powerIsGrounded, powerGrounded}
 
+// Horner-free evaluation: the first `k` terms, each `coeff(p, i) * a^i`. The recursion
+// descends by `prev` rather than matching `succ` on the left, which the l-value rule requires
+// of a recursive definition — the descent must be readable on the RIGHT. Every former bare `k`
+// in the payload became `prev(k)`, because the parameter now denotes what the old arm matched
+// as `succ(k)`.
 oper evalUpTo(p: Poly, a: F, k: Nat) => F:
   evalUpTo(p, a, ZERO) = zeroF;
-  evalUpTo(p, a, succ(k)) = addF(evalUpTo(p, a, k), mulF(coeff(p, k), power(a, k))).
+  evalUpTo(p, a, k) =
+  addF(evalUpTo(p, a, prev(k)), mulF(coeff(p, prev(k)), power(a, prev(k)))) when k != ZERO.
+  termination(peano): _, {evalUpToIsGrounded, evalUpToGrounded}
 
 // `evaluate(p, a)` is Judson's `p(a)`: the sum over every index up to and including the
 // degree. A bound of `succ(degree(p))` is what makes "up to" inclusive.
@@ -7592,14 +7601,211 @@ proof
     [by definition(0) evalUpTo]
 qed
 
+// The successor step, now DERIVED rather than transcribed: the definition descends by `prev`,
+// so this restates it at a successor, where `prevOfSucc` collapses all three `prev`s at once —
+// one rewrite, since they are the same term. The STATEMENT is unchanged, which is what keeps
+// the migration confined: every call site cites this theorem rather than the clause, so the
+// clause's `k != ZERO` guard never reaches them.
 theorem evalSucc:
   forall p: Poly; forall a: F; forall k: Nat;
   evalUpTo(p, a, succ(k)) = addF(evalUpTo(p, a, k), mulF(coeff(p, k), power(a, k)))
 proof
+  @the-recursive-clause |
+    forall p2: Poly; forall a2: F; forall k2: Nat;
+      k2 != ZERO ->
+      evalUpTo(p2, a2, k2) =
+      addF(evalUpTo(p2, a2, prev(k2)), mulF(coeff(p2, prev(k2)), power(a2, prev(k2))))
+    [by definition(1) evalUpTo]
+  @prev-undoes-succ |
+    forall n: Nat; prev(succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; succ(a) != ZERO
+    [using import(peano) succNotZero]
+  @generalize-p |
+    fix p: Poly {
+      @generalize-a |
+        fix a: F {
+          @generalize-k |
+            fix k: Nat {
+              @succ-k-is-nonzero |
+                succ(k) != ZERO
+                [using specialize a-successor-is-never-zero(k)]
+              @clause-at-the-successor |
+                evalUpTo(p, a, succ(k)) =
+                  addF(evalUpTo(p, a, prev(succ(k))),
+                  mulF(coeff(p, prev(succ(k))), power(a, prev(succ(k)))))
+                [using specialize the-recursive-clause(p, a, succ(k)) succ-k-is-nonzero]
+              @prev-of-succ-k |
+                prev(succ(k)) = k
+                [using specialize prev-undoes-succ(k)]
+              @conclusion-step-at-p-a-k |
+                evalUpTo(p, a, succ(k)) = addF(evalUpTo(p, a, k), mulF(coeff(p, k), power(a, k)))
+                [by rewrite prev-of-succ-k clause-at-the-successor]
+            }
+          @discharge-k |
+            forall k: Nat;
+              evalUpTo(p, a, succ(k)) = addF(evalUpTo(p, a, k), mulF(coeff(p, k), power(a, k)))
+            [by generalize generalize-k]
+        }
+      @discharge-a |
+        forall a: F; forall k: Nat;
+          evalUpTo(p, a, succ(k)) = addF(evalUpTo(p, a, k), mulF(coeff(p, k), power(a, k)))
+        [by generalize generalize-a]
+    }
   @conclusion |
     forall p: Poly; forall a: F; forall k: Nat;
       evalUpTo(p, a, succ(k)) = addF(evalUpTo(p, a, k), mulF(coeff(p, k), power(a, k)))
-    [by definition(1) evalUpTo]
+    [by generalize generalize-p]
+qed
+
+// -- the TERMINATION obligation for `evalUpTo` --------------------------------------------
+//
+// `termination(peano):` names `evalUpToIsGrounded`, and the checker SYNTHESIZES the statement
+// it must have — the recursive arm's own guard implying the generated predicate:
+//
+//     forall p: Poly; forall a: F; forall k: Nat; k != ZERO -> evalUpToGrounded(p, a, k)
+//
+// `evalUpToGrounded` is GENERATED from the arm's one recursive call site, a disjunction of
+// that call grounded with its argument hitting the terminating arm's pattern:
+//
+//     evalUpToGrounded(p, a, k) iff (evalUpToGrounded(p, a, prev(k)) or prev(k) = ZERO)
+//
+// The two non-descending binders (`p`, `a`) ride along untouched; only `k` descends, so this
+// is `power`'s shape with one extra parameter.
+
+// Strategy: the step of an induction on the term count. At `succ(k)` the predecessor is `k`, so
+// either `k = ZERO` and the base disjunct fires outright, or the inductive hypothesis applies
+// at `k`. `tautology` picks whichever holds.
+theorem evalUpToReachesABaseFromAPredecessor: forall k: Nat;
+  (forall p2: Poly; forall a2: F; k != ZERO -> evalUpToGrounded(p2, a2, k))
+  -> (forall p: Poly; forall a: F; succ(k) != ZERO -> evalUpToGrounded(p, a, succ(k)))
+proof
+  @the-generated-clause |
+    forall p3: Poly; forall a3: F; forall k3: Nat;
+      evalUpToGrounded(p3, a3, k3) iff
+      (evalUpToGrounded(p3, a3, prev(k3)) or prev(k3) = ZERO)
+    [by definition evalUpToGrounded]
+  @prev-undoes-succ |
+    forall n: Nat; prev(succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; succ(a) != ZERO
+    [using import(peano) succNotZero]
+  @generalize-k |
+    fix k: Nat {
+      @given-the-inductive-hypothesis |
+        assume forall p2: Poly; forall a2: F; k != ZERO -> evalUpToGrounded(p2, a2, k) {
+          @inductive-hypothesis |
+            forall p2: Poly; forall a2: F; k != ZERO -> evalUpToGrounded(p2, a2, k)
+            [by hypothesis given-the-inductive-hypothesis]
+          // `prev` is guarded, so this must precede every term that writes `prev(succ(k))`.
+          @succ-k-is-nonzero |
+            succ(k) != ZERO
+            [using specialize a-successor-is-never-zero(k)]
+          @prev-of-succ-k-is-k |
+            prev(succ(k)) = k
+            [using specialize prev-undoes-succ(k)]
+          @generalize-p |
+            fix p: Poly {
+              @generalize-a |
+                fix a: F {
+                  @given-succ-k-nonzero |
+                    assume succ(k) != ZERO {
+                      @clause-at-p-a-and-succ-k |
+                        evalUpToGrounded(p, a, succ(k)) iff
+                          (evalUpToGrounded(p, a, prev(succ(k))) or prev(succ(k)) = ZERO)
+                        [using specialize the-generated-clause(p, a, succ(k))]
+                      @clause-with-the-predecessor-collapsed |
+                        evalUpToGrounded(p, a, succ(k)) iff
+                          (evalUpToGrounded(p, a, k) or k = ZERO)
+                        [by rewrite prev-of-succ-k-is-k clause-at-p-a-and-succ-k]
+                      @the-inductive-hypothesis-at-p-and-a |
+                        k != ZERO -> evalUpToGrounded(p, a, k)
+                        [using specialize inductive-hypothesis(p, a)]
+                      @conclusion-grounded-at-succ-k |
+                        evalUpToGrounded(p, a, succ(k))
+                        [using tautology clause-with-the-predecessor-collapsed
+                          the-inductive-hypothesis-at-p-and-a]
+                    }
+                  @nonzero-implies-grounded-at-succ-k |
+                    succ(k) != ZERO -> evalUpToGrounded(p, a, succ(k))
+                    [by discharge given-succ-k-nonzero]
+                }
+              @discharge-a |
+                forall a: F; succ(k) != ZERO -> evalUpToGrounded(p, a, succ(k))
+                [by generalize generalize-a]
+            }
+          @conclusion-for-all-p-and-a |
+            forall p: Poly; forall a: F; succ(k) != ZERO -> evalUpToGrounded(p, a, succ(k))
+            [by generalize generalize-p]
+        }
+      @the-hypothesis-implies-the-step |
+        (forall p2: Poly; forall a2: F; k != ZERO -> evalUpToGrounded(p2, a2, k))
+          -> (forall p: Poly; forall a: F; succ(k) != ZERO -> evalUpToGrounded(p, a, succ(k)))
+        [by discharge given-the-inductive-hypothesis]
+    }
+  @conclusion |
+    forall k: Nat;
+      (forall p2: Poly; forall a2: F; k != ZERO -> evalUpToGrounded(p2, a2, k))
+      -> (forall p: Poly; forall a: F; succ(k) != ZERO -> evalUpToGrounded(p, a, succ(k)))
+    [by generalize generalize-k]
+qed
+
+// Strategy: `peano.induction` on the term count. The base is VACUOUS — at k = ZERO the
+// antecedent demands `ZERO != ZERO` — so every bit of content is in the step above.
+theorem evalUpToIsGrounded: forall p: Poly; forall a: F; forall k: Nat;
+  k != ZERO -> evalUpToGrounded(p, a, k)
+proof
+  @zero-is-itself |
+    ZERO = ZERO
+    [by reflexivity]
+  // `tautology` reads a `forall` as one opaque atom, so the binders are opened before the
+  // vacuous antecedent can be refuted inside them.
+  @base-case-proof |
+    fix p: Poly {
+      @generalize-a-at-zero |
+        fix a: F {
+          @conclusion-vacuously-grounded-at-zero |
+            ZERO != ZERO -> evalUpToGrounded(p, a, ZERO)
+            [using tautology zero-is-itself]
+        }
+      @discharge-a-at-zero |
+        forall a: F; ZERO != ZERO -> evalUpToGrounded(p, a, ZERO)
+        [by generalize generalize-a-at-zero]
+    }
+  @base-case |
+    forall p: Poly; forall a: F; ZERO != ZERO -> evalUpToGrounded(p, a, ZERO)
+    [by generalize base-case-proof]
+  @induction-step-for-all-k |
+    forall k: Nat;
+      (forall p2: Poly; forall a2: F; k != ZERO -> evalUpToGrounded(p2, a2, k))
+      -> (forall p: Poly; forall a: F; succ(k) != ZERO -> evalUpToGrounded(p, a, succ(k)))
+    [by cite evalUpToReachesABaseFromAPredecessor]
+  @grounded-for-every-term-count |
+    forall k: Nat; forall p: Poly; forall a: F; k != ZERO -> evalUpToGrounded(p, a, k)
+    [using instantiation peano.induction((fun k: Nat => (forall p: Poly; forall a: F; k != ZERO -> evalUpToGrounded(p, a, k)))) base-case induction-step-for-all-k]
+  @generalize-p |
+    fix p: Poly {
+      @generalize-a |
+        fix a: F {
+          @generalize-k |
+            fix k: Nat {
+              @grounded-at-p-a-and-k |
+                k != ZERO -> evalUpToGrounded(p, a, k)
+                [using specialize grounded-for-every-term-count(k, p, a)]
+            }
+          @discharge-k |
+            forall k: Nat; k != ZERO -> evalUpToGrounded(p, a, k)
+            [by generalize generalize-k]
+        }
+      @discharge-a |
+        forall a: F; forall k: Nat; k != ZERO -> evalUpToGrounded(p, a, k)
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall p: Poly; forall a: F; forall k: Nat; k != ZERO -> evalUpToGrounded(p, a, k)
+    [by generalize generalize-p]
 qed
 
 // -- the TERMINATION obligation for `monus` ------------------------------------------------

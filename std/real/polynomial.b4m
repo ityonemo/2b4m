@@ -90,9 +90,17 @@ oper rpower(a: Real, n: Nat) => Real:
   rpower(a, n) = real.mul(a, rpower(a, peano.prev(n))) when n != NAT_ZERO.
   termination(peano): _, {rpowerIsGrounded, rpowerGrounded}
 
+// Horner-free evaluation: the first `k` terms, each `rcoeff(p, i) * a^i`. The recursion
+// descends by `peano.prev` rather than matching `peano.succ` on the left, which the l-value rule
+// requires of a recursive definition — the descent must be readable on the RIGHT. Every former
+// bare `k` in the payload became `peano.prev(k)`, because the parameter now denotes what the
+// old arm matched as `peano.succ(k)`.
 oper revalUpTo(p: RPoly, a: Real, k: Nat) => Real:
   revalUpTo(p, a, NAT_ZERO) = ZERO;
-  revalUpTo(p, a, peano.succ(k)) = real.add(revalUpTo(p, a, k), real.mul(rcoeff(p, k), rpower(a, k))).
+  revalUpTo(p, a, k) =
+  real.add(revalUpTo(p, a, peano.prev(k)),
+  real.mul(rcoeff(p, peano.prev(k)), rpower(a, peano.prev(k)))) when k != NAT_ZERO.
+  termination(peano): _, {revalUpToIsGrounded, revalUpToGrounded}
 
 // `p(a)`: the sum over every index up to AND INCLUDING the degree.
 define revaluate(p, a) = revalUpTo(p, a, peano.succ(rdegree(p)))
@@ -187,6 +195,8 @@ intheory rConvolutionReachesZeroFromAPredecessor
 intheory rConvolutionIsGrounded
 intheory rpowerReachesABaseFromAPredecessor
 intheory rpowerIsGrounded
+intheory revalUpToIsGrounded
+intheory revalUpToReachesABaseFromAPredecessor
 intheory rPowerZero
 intheory rPowerSucc
 intheory rEvalZero
@@ -797,16 +807,228 @@ proof
     [by definition(0) revalUpTo]
 qed
 
+// The successor step, now DERIVED rather than transcribed: the definition descends by
+// `peano.prev`, so this restates it at a successor, where `prevOfSucc` collapses all three
+// `peano.prev`s at once — one rewrite, since they are the same term. The STATEMENT is
+// unchanged, which keeps the migration confined: every call site cites this theorem rather
+// than the clause, so the clause's `k != NAT_ZERO` guard never reaches them.
 theorem rEvalSucc:
   forall p: RPoly; forall a: Real; forall k: Nat;
   revalUpTo(p, a, peano.succ(k)) =
   real.add(revalUpTo(p, a, k), real.mul(rcoeff(p, k), rpower(a, k)))
 proof
+  @the-recursive-clause |
+    forall p2: RPoly; forall a2: Real; forall k2: Nat;
+      k2 != NAT_ZERO ->
+      revalUpTo(p2, a2, k2) =
+      real.add(revalUpTo(p2, a2, peano.prev(k2)),
+      real.mul(rcoeff(p2, peano.prev(k2)), rpower(a2, peano.prev(k2))))
+    [by definition(1) revalUpTo]
+  @prev-undoes-successor |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-p |
+    fix p: RPoly {
+      @generalize-a |
+        fix a: Real {
+          @generalize-k |
+            fix k: Nat {
+              @succ-k-is-nonzero |
+                peano.succ(k) != NAT_ZERO
+                [using specialize a-successor-is-never-zero(k)]
+              @clause-at-the-successor |
+                revalUpTo(p, a, peano.succ(k)) =
+                  real.add(revalUpTo(p, a, peano.prev(peano.succ(k))),
+                  real.mul(rcoeff(p, peano.prev(peano.succ(k))), rpower(a, peano.prev(peano.succ(k)))))
+                [using specialize the-recursive-clause(p, a, peano.succ(k)) succ-k-is-nonzero]
+              @prev-of-succ-k |
+                peano.prev(peano.succ(k)) = k
+                [using specialize prev-undoes-successor(k)]
+              @conclusion-step-at-p-a-k |
+                revalUpTo(p, a, peano.succ(k)) =
+                  real.add(revalUpTo(p, a, k), real.mul(rcoeff(p, k), rpower(a, k)))
+                [by rewrite prev-of-succ-k clause-at-the-successor]
+            }
+          @discharge-k |
+            forall k: Nat;
+              revalUpTo(p, a, peano.succ(k)) =
+              real.add(revalUpTo(p, a, k), real.mul(rcoeff(p, k), rpower(a, k)))
+            [by generalize generalize-k]
+        }
+      @discharge-a |
+        forall a: Real; forall k: Nat;
+          revalUpTo(p, a, peano.succ(k)) =
+          real.add(revalUpTo(p, a, k), real.mul(rcoeff(p, k), rpower(a, k)))
+        [by generalize generalize-a]
+    }
   @conclusion |
     forall p: RPoly; forall a: Real; forall k: Nat;
       revalUpTo(p, a, peano.succ(k)) =
       real.add(revalUpTo(p, a, k), real.mul(rcoeff(p, k), rpower(a, k)))
-    [by definition(1) revalUpTo]
+    [by generalize generalize-p]
+qed
+
+// -- the TERMINATION obligation for `revalUpTo` ------------------------------------------------
+//
+// `termination(peano):` names `revalUpToIsGrounded`, and the checker SYNTHESIZES the statement it
+// must have — the recursive arm's own guard implying the generated predicate:
+//
+//     forall p: RPoly; forall a: Real; forall k: Nat;
+//       k != NAT_ZERO -> revalUpToGrounded(p, a, k)
+//
+// `revalUpToGrounded` is GENERATED from the arm's one recursive call site, a disjunction of that
+// call grounded with its argument hitting the terminating arm's pattern:
+//
+//     revalUpToGrounded(p, a, k) iff
+//       (revalUpToGrounded(p, a, peano.prev(k)) or peano.prev(k) = NAT_ZERO)
+//
+// The two non-descending binders (`p`, `a`) ride along untouched; only `k` descends.
+
+// Strategy: the step of an induction on the term count. At `peano.succ(k)` the predecessor is `k`,
+// so either `k = NAT_ZERO` and the base disjunct fires outright, or the inductive hypothesis
+// applies at `k`. `tautology` picks whichever holds.
+theorem revalUpToReachesABaseFromAPredecessor: forall k: Nat;
+  (forall p2: RPoly; forall a2: Real; k != NAT_ZERO -> revalUpToGrounded(p2, a2, k))
+  -> (forall p: RPoly; forall a: Real;
+  peano.succ(k) != NAT_ZERO -> revalUpToGrounded(p, a, peano.succ(k)))
+proof
+  @the-generated-clause |
+    forall p3: RPoly; forall a3: Real; forall k3: Nat;
+      revalUpToGrounded(p3, a3, k3) iff
+      (revalUpToGrounded(p3, a3, peano.prev(k3)) or peano.prev(k3) = NAT_ZERO)
+    [by definition revalUpToGrounded]
+  @prev-undoes-successor |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-k |
+    fix k: Nat {
+      @given-the-inductive-hypothesis |
+        assume forall p2: RPoly; forall a2: Real;
+          k != NAT_ZERO -> revalUpToGrounded(p2, a2, k) {
+          @inductive-hypothesis |
+            forall p2: RPoly; forall a2: Real; k != NAT_ZERO -> revalUpToGrounded(p2, a2, k)
+            [by hypothesis given-the-inductive-hypothesis]
+          // `peano.prev` is guarded, so this must precede every term writing
+          // `peano.prev(peano.succ(k))`.
+          @succ-k-is-nonzero |
+            peano.succ(k) != NAT_ZERO
+            [using specialize a-successor-is-never-zero(k)]
+          @prev-of-succ-k-is-k |
+            peano.prev(peano.succ(k)) = k
+            [using specialize prev-undoes-successor(k)]
+          @generalize-p |
+            fix p: RPoly {
+              @generalize-a |
+                fix a: Real {
+                  @given-succ-k-nonzero |
+                    assume peano.succ(k) != NAT_ZERO {
+                      @clause-at-p-a-and-succ-k |
+                        revalUpToGrounded(p, a, peano.succ(k)) iff
+                          (revalUpToGrounded(p, a, peano.prev(peano.succ(k)))
+                          or peano.prev(peano.succ(k)) = NAT_ZERO)
+                        [using specialize the-generated-clause(p, a, peano.succ(k))]
+                      @clause-with-the-predecessor-collapsed |
+                        revalUpToGrounded(p, a, peano.succ(k)) iff
+                          (revalUpToGrounded(p, a, k) or k = NAT_ZERO)
+                        [by rewrite prev-of-succ-k-is-k clause-at-p-a-and-succ-k]
+                      @the-inductive-hypothesis-at-p-and-a |
+                        k != NAT_ZERO -> revalUpToGrounded(p, a, k)
+                        [using specialize inductive-hypothesis(p, a)]
+                      @conclusion-grounded-at-succ-k |
+                        revalUpToGrounded(p, a, peano.succ(k))
+                        [using tautology clause-with-the-predecessor-collapsed
+                          the-inductive-hypothesis-at-p-and-a]
+                    }
+                  @nonzero-implies-grounded-at-succ-k |
+                    peano.succ(k) != NAT_ZERO -> revalUpToGrounded(p, a, peano.succ(k))
+                    [by discharge given-succ-k-nonzero]
+                }
+              @discharge-a |
+                forall a: Real; peano.succ(k) != NAT_ZERO -> revalUpToGrounded(p, a, peano.succ(k))
+                [by generalize generalize-a]
+            }
+          @conclusion-for-all-p-and-a |
+            forall p: RPoly; forall a: Real;
+              peano.succ(k) != NAT_ZERO -> revalUpToGrounded(p, a, peano.succ(k))
+            [by generalize generalize-p]
+        }
+      @the-hypothesis-implies-the-step |
+        (forall p2: RPoly; forall a2: Real; k != NAT_ZERO -> revalUpToGrounded(p2, a2, k))
+          -> (forall p: RPoly; forall a: Real;
+          peano.succ(k) != NAT_ZERO -> revalUpToGrounded(p, a, peano.succ(k)))
+        [by discharge given-the-inductive-hypothesis]
+    }
+  @conclusion |
+    forall k: Nat;
+      (forall p2: RPoly; forall a2: Real; k != NAT_ZERO -> revalUpToGrounded(p2, a2, k))
+      -> (forall p: RPoly; forall a: Real;
+      peano.succ(k) != NAT_ZERO -> revalUpToGrounded(p, a, peano.succ(k)))
+    [by generalize generalize-k]
+qed
+
+// Strategy: `peano.induction` on the term count. The base is VACUOUS — at k = NAT_ZERO the
+// antecedent demands `NAT_ZERO != NAT_ZERO` — so every bit of content is in the step above.
+theorem revalUpToIsGrounded: forall p: RPoly; forall a: Real; forall k: Nat;
+  k != NAT_ZERO -> revalUpToGrounded(p, a, k)
+proof
+  @zero-is-itself |
+    NAT_ZERO = NAT_ZERO
+    [by reflexivity]
+  // `tautology` reads a `forall` as one opaque atom, so the binders are opened before the
+  // vacuous antecedent can be refuted inside them.
+  @base-case-proof |
+    fix p: RPoly {
+      @generalize-a-at-zero |
+        fix a: Real {
+          @conclusion-vacuously-grounded-at-zero |
+            NAT_ZERO != NAT_ZERO -> revalUpToGrounded(p, a, NAT_ZERO)
+            [using tautology zero-is-itself]
+        }
+      @discharge-a-at-zero |
+        forall a: Real; NAT_ZERO != NAT_ZERO -> revalUpToGrounded(p, a, NAT_ZERO)
+        [by generalize generalize-a-at-zero]
+    }
+  @base-case |
+    forall p: RPoly; forall a: Real; NAT_ZERO != NAT_ZERO -> revalUpToGrounded(p, a, NAT_ZERO)
+    [by generalize base-case-proof]
+  @induction-step-for-all-k |
+    forall k: Nat;
+      (forall p2: RPoly; forall a2: Real; k != NAT_ZERO -> revalUpToGrounded(p2, a2, k))
+      -> (forall p: RPoly; forall a: Real;
+      peano.succ(k) != NAT_ZERO -> revalUpToGrounded(p, a, peano.succ(k)))
+    [by cite revalUpToReachesABaseFromAPredecessor]
+  @grounded-for-every-term-count |
+    forall k: Nat; forall p: RPoly; forall a: Real;
+      k != NAT_ZERO -> revalUpToGrounded(p, a, k)
+    [using instantiation peano.induction((fun k: Nat => (forall p: RPoly; forall a: Real; k != NAT_ZERO -> revalUpToGrounded(p, a, k)))) base-case induction-step-for-all-k]
+  @generalize-p |
+    fix p: RPoly {
+      @generalize-a |
+        fix a: Real {
+          @generalize-k |
+            fix k: Nat {
+              @grounded-at-p-a-and-k |
+                k != NAT_ZERO -> revalUpToGrounded(p, a, k)
+                [using specialize grounded-for-every-term-count(k, p, a)]
+            }
+          @discharge-k |
+            forall k: Nat; k != NAT_ZERO -> revalUpToGrounded(p, a, k)
+            [by generalize generalize-k]
+        }
+      @discharge-a |
+        forall a: Real; forall k: Nat; k != NAT_ZERO -> revalUpToGrounded(p, a, k)
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall p: RPoly; forall a: Real; forall k: Nat;
+      k != NAT_ZERO -> revalUpToGrounded(p, a, k)
+    [by generalize generalize-p]
 qed
 
 theorem rTailConvolutionZero:

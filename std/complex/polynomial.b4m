@@ -98,9 +98,17 @@ oper cpower(a: Complex, n: Nat) => Complex:
   cpower(a, n) = complex.mul(a, cpower(a, peano.prev(n))) when n != NAT_ZERO.
   termination(peano): _, {cpowerIsGrounded, cpowerGrounded}
 
+// Horner-free evaluation: the first `k` terms, each `ccoeff(p, i) * a^i`. The recursion
+// descends by `peano.prev` rather than matching `peano.succ` on the left, which the l-value rule
+// requires of a recursive definition — the descent must be readable on the RIGHT. Every former
+// bare `k` in the payload became `peano.prev(k)`, because the parameter now denotes what the
+// old arm matched as `peano.succ(k)`.
 oper cevalUpTo(p: CPoly, a: Complex, k: Nat) => Complex:
   cevalUpTo(p, a, NAT_ZERO) = ZERO;
-  cevalUpTo(p, a, peano.succ(k)) = complex.add(cevalUpTo(p, a, k), complex.mul(ccoeff(p, k), cpower(a, k))).
+  cevalUpTo(p, a, k) =
+  complex.add(cevalUpTo(p, a, peano.prev(k)),
+  complex.mul(ccoeff(p, peano.prev(k)), cpower(a, peano.prev(k)))) when k != NAT_ZERO.
+  termination(peano): _, {cevalUpToIsGrounded, cevalUpToGrounded}
 
 // `p(a)`: the sum over every index up to AND INCLUDING the degree.
 define revaluate(p, a) = cevalUpTo(p, a, peano.succ(cdegree(p)))
@@ -195,6 +203,8 @@ intheory cConvolutionReachesZeroFromAPredecessor
 intheory cConvolutionIsGrounded
 intheory cpowerReachesABaseFromAPredecessor
 intheory cpowerIsGrounded
+intheory cevalUpToIsGrounded
+intheory cevalUpToReachesABaseFromAPredecessor
 intheory cPowerZero
 intheory cPowerSucc
 intheory cEvalZero
@@ -805,16 +815,228 @@ proof
     [by definition(0) cevalUpTo]
 qed
 
+// The successor step, now DERIVED rather than transcribed: the definition descends by
+// `peano.prev`, so this restates it at a successor, where `prevOfSucc` collapses all three
+// `peano.prev`s at once — one rewrite, since they are the same term. The STATEMENT is
+// unchanged, which keeps the migration confined: every call site cites this theorem rather
+// than the clause, so the clause's `k != NAT_ZERO` guard never reaches them.
 theorem cEvalSucc:
   forall p: CPoly; forall a: Complex; forall k: Nat;
   cevalUpTo(p, a, peano.succ(k)) =
   complex.add(cevalUpTo(p, a, k), complex.mul(ccoeff(p, k), cpower(a, k)))
 proof
+  @the-recursive-clause |
+    forall p2: CPoly; forall a2: Complex; forall k2: Nat;
+      k2 != NAT_ZERO ->
+      cevalUpTo(p2, a2, k2) =
+      complex.add(cevalUpTo(p2, a2, peano.prev(k2)),
+      complex.mul(ccoeff(p2, peano.prev(k2)), cpower(a2, peano.prev(k2))))
+    [by definition(1) cevalUpTo]
+  @prev-undoes-successor |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-p |
+    fix p: CPoly {
+      @generalize-a |
+        fix a: Complex {
+          @generalize-k |
+            fix k: Nat {
+              @succ-k-is-nonzero |
+                peano.succ(k) != NAT_ZERO
+                [using specialize a-successor-is-never-zero(k)]
+              @clause-at-the-successor |
+                cevalUpTo(p, a, peano.succ(k)) =
+                  complex.add(cevalUpTo(p, a, peano.prev(peano.succ(k))),
+                  complex.mul(ccoeff(p, peano.prev(peano.succ(k))), cpower(a, peano.prev(peano.succ(k)))))
+                [using specialize the-recursive-clause(p, a, peano.succ(k)) succ-k-is-nonzero]
+              @prev-of-succ-k |
+                peano.prev(peano.succ(k)) = k
+                [using specialize prev-undoes-successor(k)]
+              @conclusion-step-at-p-a-k |
+                cevalUpTo(p, a, peano.succ(k)) =
+                  complex.add(cevalUpTo(p, a, k), complex.mul(ccoeff(p, k), cpower(a, k)))
+                [by rewrite prev-of-succ-k clause-at-the-successor]
+            }
+          @discharge-k |
+            forall k: Nat;
+              cevalUpTo(p, a, peano.succ(k)) =
+              complex.add(cevalUpTo(p, a, k), complex.mul(ccoeff(p, k), cpower(a, k)))
+            [by generalize generalize-k]
+        }
+      @discharge-a |
+        forall a: Complex; forall k: Nat;
+          cevalUpTo(p, a, peano.succ(k)) =
+          complex.add(cevalUpTo(p, a, k), complex.mul(ccoeff(p, k), cpower(a, k)))
+        [by generalize generalize-a]
+    }
   @conclusion |
     forall p: CPoly; forall a: Complex; forall k: Nat;
       cevalUpTo(p, a, peano.succ(k)) =
       complex.add(cevalUpTo(p, a, k), complex.mul(ccoeff(p, k), cpower(a, k)))
-    [by definition(1) cevalUpTo]
+    [by generalize generalize-p]
+qed
+
+// -- the TERMINATION obligation for `cevalUpTo` ------------------------------------------------
+//
+// `termination(peano):` names `cevalUpToIsGrounded`, and the checker SYNTHESIZES the statement it
+// must have — the recursive arm's own guard implying the generated predicate:
+//
+//     forall p: CPoly; forall a: Complex; forall k: Nat;
+//       k != NAT_ZERO -> cevalUpToGrounded(p, a, k)
+//
+// `cevalUpToGrounded` is GENERATED from the arm's one recursive call site, a disjunction of that
+// call grounded with its argument hitting the terminating arm's pattern:
+//
+//     cevalUpToGrounded(p, a, k) iff
+//       (cevalUpToGrounded(p, a, peano.prev(k)) or peano.prev(k) = NAT_ZERO)
+//
+// The two non-descending binders (`p`, `a`) ride along untouched; only `k` descends.
+
+// Strategy: the step of an induction on the term count. At `peano.succ(k)` the predecessor is `k`,
+// so either `k = NAT_ZERO` and the base disjunct fires outright, or the inductive hypothesis
+// applies at `k`. `tautology` picks whichever holds.
+theorem cevalUpToReachesABaseFromAPredecessor: forall k: Nat;
+  (forall p2: CPoly; forall a2: Complex; k != NAT_ZERO -> cevalUpToGrounded(p2, a2, k))
+  -> (forall p: CPoly; forall a: Complex;
+  peano.succ(k) != NAT_ZERO -> cevalUpToGrounded(p, a, peano.succ(k)))
+proof
+  @the-generated-clause |
+    forall p3: CPoly; forall a3: Complex; forall k3: Nat;
+      cevalUpToGrounded(p3, a3, k3) iff
+      (cevalUpToGrounded(p3, a3, peano.prev(k3)) or peano.prev(k3) = NAT_ZERO)
+    [by definition cevalUpToGrounded]
+  @prev-undoes-successor |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-k |
+    fix k: Nat {
+      @given-the-inductive-hypothesis |
+        assume forall p2: CPoly; forall a2: Complex;
+          k != NAT_ZERO -> cevalUpToGrounded(p2, a2, k) {
+          @inductive-hypothesis |
+            forall p2: CPoly; forall a2: Complex; k != NAT_ZERO -> cevalUpToGrounded(p2, a2, k)
+            [by hypothesis given-the-inductive-hypothesis]
+          // `peano.prev` is guarded, so this must precede every term writing
+          // `peano.prev(peano.succ(k))`.
+          @succ-k-is-nonzero |
+            peano.succ(k) != NAT_ZERO
+            [using specialize a-successor-is-never-zero(k)]
+          @prev-of-succ-k-is-k |
+            peano.prev(peano.succ(k)) = k
+            [using specialize prev-undoes-successor(k)]
+          @generalize-p |
+            fix p: CPoly {
+              @generalize-a |
+                fix a: Complex {
+                  @given-succ-k-nonzero |
+                    assume peano.succ(k) != NAT_ZERO {
+                      @clause-at-p-a-and-succ-k |
+                        cevalUpToGrounded(p, a, peano.succ(k)) iff
+                          (cevalUpToGrounded(p, a, peano.prev(peano.succ(k)))
+                          or peano.prev(peano.succ(k)) = NAT_ZERO)
+                        [using specialize the-generated-clause(p, a, peano.succ(k))]
+                      @clause-with-the-predecessor-collapsed |
+                        cevalUpToGrounded(p, a, peano.succ(k)) iff
+                          (cevalUpToGrounded(p, a, k) or k = NAT_ZERO)
+                        [by rewrite prev-of-succ-k-is-k clause-at-p-a-and-succ-k]
+                      @the-inductive-hypothesis-at-p-and-a |
+                        k != NAT_ZERO -> cevalUpToGrounded(p, a, k)
+                        [using specialize inductive-hypothesis(p, a)]
+                      @conclusion-grounded-at-succ-k |
+                        cevalUpToGrounded(p, a, peano.succ(k))
+                        [using tautology clause-with-the-predecessor-collapsed
+                          the-inductive-hypothesis-at-p-and-a]
+                    }
+                  @nonzero-implies-grounded-at-succ-k |
+                    peano.succ(k) != NAT_ZERO -> cevalUpToGrounded(p, a, peano.succ(k))
+                    [by discharge given-succ-k-nonzero]
+                }
+              @discharge-a |
+                forall a: Complex; peano.succ(k) != NAT_ZERO -> cevalUpToGrounded(p, a, peano.succ(k))
+                [by generalize generalize-a]
+            }
+          @conclusion-for-all-p-and-a |
+            forall p: CPoly; forall a: Complex;
+              peano.succ(k) != NAT_ZERO -> cevalUpToGrounded(p, a, peano.succ(k))
+            [by generalize generalize-p]
+        }
+      @the-hypothesis-implies-the-step |
+        (forall p2: CPoly; forall a2: Complex; k != NAT_ZERO -> cevalUpToGrounded(p2, a2, k))
+          -> (forall p: CPoly; forall a: Complex;
+          peano.succ(k) != NAT_ZERO -> cevalUpToGrounded(p, a, peano.succ(k)))
+        [by discharge given-the-inductive-hypothesis]
+    }
+  @conclusion |
+    forall k: Nat;
+      (forall p2: CPoly; forall a2: Complex; k != NAT_ZERO -> cevalUpToGrounded(p2, a2, k))
+      -> (forall p: CPoly; forall a: Complex;
+      peano.succ(k) != NAT_ZERO -> cevalUpToGrounded(p, a, peano.succ(k)))
+    [by generalize generalize-k]
+qed
+
+// Strategy: `peano.induction` on the term count. The base is VACUOUS — at k = NAT_ZERO the
+// antecedent demands `NAT_ZERO != NAT_ZERO` — so every bit of content is in the step above.
+theorem cevalUpToIsGrounded: forall p: CPoly; forall a: Complex; forall k: Nat;
+  k != NAT_ZERO -> cevalUpToGrounded(p, a, k)
+proof
+  @zero-is-itself |
+    NAT_ZERO = NAT_ZERO
+    [by reflexivity]
+  // `tautology` reads a `forall` as one opaque atom, so the binders are opened before the
+  // vacuous antecedent can be refuted inside them.
+  @base-case-proof |
+    fix p: CPoly {
+      @generalize-a-at-zero |
+        fix a: Complex {
+          @conclusion-vacuously-grounded-at-zero |
+            NAT_ZERO != NAT_ZERO -> cevalUpToGrounded(p, a, NAT_ZERO)
+            [using tautology zero-is-itself]
+        }
+      @discharge-a-at-zero |
+        forall a: Complex; NAT_ZERO != NAT_ZERO -> cevalUpToGrounded(p, a, NAT_ZERO)
+        [by generalize generalize-a-at-zero]
+    }
+  @base-case |
+    forall p: CPoly; forall a: Complex; NAT_ZERO != NAT_ZERO -> cevalUpToGrounded(p, a, NAT_ZERO)
+    [by generalize base-case-proof]
+  @induction-step-for-all-k |
+    forall k: Nat;
+      (forall p2: CPoly; forall a2: Complex; k != NAT_ZERO -> cevalUpToGrounded(p2, a2, k))
+      -> (forall p: CPoly; forall a: Complex;
+      peano.succ(k) != NAT_ZERO -> cevalUpToGrounded(p, a, peano.succ(k)))
+    [by cite cevalUpToReachesABaseFromAPredecessor]
+  @grounded-for-every-term-count |
+    forall k: Nat; forall p: CPoly; forall a: Complex;
+      k != NAT_ZERO -> cevalUpToGrounded(p, a, k)
+    [using instantiation peano.induction((fun k: Nat => (forall p: CPoly; forall a: Complex; k != NAT_ZERO -> cevalUpToGrounded(p, a, k)))) base-case induction-step-for-all-k]
+  @generalize-p |
+    fix p: CPoly {
+      @generalize-a |
+        fix a: Complex {
+          @generalize-k |
+            fix k: Nat {
+              @grounded-at-p-a-and-k |
+                k != NAT_ZERO -> cevalUpToGrounded(p, a, k)
+                [using specialize grounded-for-every-term-count(k, p, a)]
+            }
+          @discharge-k |
+            forall k: Nat; k != NAT_ZERO -> cevalUpToGrounded(p, a, k)
+            [by generalize generalize-k]
+        }
+      @discharge-a |
+        forall a: Complex; forall k: Nat; k != NAT_ZERO -> cevalUpToGrounded(p, a, k)
+        [by generalize generalize-a]
+    }
+  @conclusion |
+    forall p: CPoly; forall a: Complex; forall k: Nat;
+      k != NAT_ZERO -> cevalUpToGrounded(p, a, k)
+    [by generalize generalize-p]
 qed
 
 theorem cTailConvolutionZero:
