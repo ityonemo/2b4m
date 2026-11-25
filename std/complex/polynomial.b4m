@@ -153,9 +153,17 @@ oper ctheCofactorIndex(i: Nat, j: Nat, k: Nat) => Nat:
   ctheCofactorIndex(i, j, NAT_ZERO) = cmonus(i, j);
   ctheCofactorIndex(i, j, peano.succ(k)) = cmonus(cmonus(i, j), peano.succ(k)).
 
+// The recursion descends by `peano.prev` rather than matching `peano.succ` on the left, which the
+// l-value rule requires of a recursive definition — the descent must be readable on the RIGHT.
+// Every index that used to be written bare (the clause variable denoted the PREDECESSOR when
+// the arm matched `peano.succ(n)`) is now `peano.prev(n)`, since the PARAMETER is what `peano.succ(n)`
+// used to be: the recursive call, `ccoeff(q, ·)` and `cmonus(g, ·)` all take it.
+// `cmonus` is total, so it owes nothing beyond `peano.prev`'s own guard, which the arm's
+// condition discharges.
 oper ccappedRun(q: CPoly, r: CPoly, g: Nat, n: Nat) => Complex:
   ccappedRun(q, r, g, NAT_ZERO) = ZERO;
-  ccappedRun(q, r, g, peano.succ(n)) = complex.add(ccappedRun(q, r, g, n), complex.mul(ccoeff(q, n), ccoeff(r, cmonus(g, n)))).
+  ccappedRun(q, r, g, n) = complex.add(ccappedRun(q, r, g, peano.prev(n)), complex.mul(ccoeff(q, peano.prev(n)), ccoeff(r, cmonus(g, peano.prev(n))))) when n != NAT_ZERO.
+  termination(peano): _, {ccappedRunIsGrounded, ccappedRunGrounded}
 
 oper ctripleTerm(p: CPoly, q: CPoly, r: CPoly, i: Nat, j: Nat, k: Nat) => Complex:
   ctripleTerm(p, q, r, i, j, k) = complex.mul(complex.mul(ccoeff(p, j), ccoeff(q, k)), ccoeff(r, ctheCofactorIndex(i, j, k))).
@@ -263,6 +271,8 @@ intheory cTheCofactorIndexAtZero
 intheory cTheCofactorIndexSteps
 intheory cCappedRunZero
 intheory cCappedRunSucc
+intheory ccappedRunReachesABaseFromAPredecessor
+intheory ccappedRunIsGrounded
 intheory cTripleTermMeaning
 intheory cTripleRowZero
 intheory cTripleRowSucc
@@ -1313,18 +1323,247 @@ proof
     [by definition(0) ccappedRun]
 qed
 
+// The `peano.succ` step, now DERIVED rather than transcribed: the definition descends by `peano.prev`, so
+// this restates it at a successor, where `prevOfSucc` collapses all three `peano.prev(peano.succ(n))` sites
+// in one rewrite. The STATEMENT is unchanged, which is what keeps the migration confined —
+// every call site below cites this theorem, not the clause, so the clause's guard never
+// reaches them.
 theorem cCappedRunSucc:
   forall q, r: CPoly; forall g, n: Nat;
   ccappedRun(q, r, g, peano.succ(n)) =
   complex.add(ccappedRun(q, r, g, n),
   complex.mul(ccoeff(q, n), ccoeff(r, cmonus(g, n))))
 proof
+  @the-recursive-clause |
+    forall q2, r2: CPoly; forall g2, n2: Nat;
+      n2 != NAT_ZERO ->
+      ccappedRun(q2, r2, g2, n2) =
+      complex.add(ccappedRun(q2, r2, g2, peano.prev(n2)),
+      complex.mul(ccoeff(q2, peano.prev(n2)), ccoeff(r2, cmonus(g2, peano.prev(n2)))))
+    [by definition(1) ccappedRun]
+  @prev-undoes-succ |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-q |
+    fix q: CPoly {
+      @generalize-r |
+        fix r: CPoly {
+          @generalize-g |
+            fix g: Nat {
+              @generalize-n |
+                fix n: Nat {
+                  @succ-n-is-nonzero |
+                    peano.succ(n) != NAT_ZERO
+                    [using specialize a-successor-is-never-zero(n)]
+                  @clause-at-the-successor |
+                    ccappedRun(q, r, g, peano.succ(n)) =
+                      complex.add(ccappedRun(q, r, g, peano.prev(peano.succ(n))),
+                      complex.mul(ccoeff(q, peano.prev(peano.succ(n))), ccoeff(r, cmonus(g, peano.prev(peano.succ(n))))))
+                    [using specialize the-recursive-clause(q, r, g, peano.succ(n)) succ-n-is-nonzero]
+                  @prev-of-succ-n |
+                    peano.prev(peano.succ(n)) = n
+                    [using specialize prev-undoes-succ(n)]
+                  @conclusion-step-at-n |
+                    ccappedRun(q, r, g, peano.succ(n)) =
+                      complex.add(ccappedRun(q, r, g, n),
+                      complex.mul(ccoeff(q, n), ccoeff(r, cmonus(g, n))))
+                    [by rewrite prev-of-succ-n clause-at-the-successor]
+                }
+              @discharge-n |
+                forall n: Nat;
+                  ccappedRun(q, r, g, peano.succ(n)) =
+                  complex.add(ccappedRun(q, r, g, n),
+                  complex.mul(ccoeff(q, n), ccoeff(r, cmonus(g, n))))
+                [by generalize generalize-n]
+            }
+          @discharge-g |
+            forall g, n: Nat;
+              ccappedRun(q, r, g, peano.succ(n)) =
+              complex.add(ccappedRun(q, r, g, n),
+              complex.mul(ccoeff(q, n), ccoeff(r, cmonus(g, n))))
+            [by generalize generalize-g]
+        }
+      @discharge-r |
+        forall r: CPoly; forall g, n: Nat;
+          ccappedRun(q, r, g, peano.succ(n)) =
+          complex.add(ccappedRun(q, r, g, n),
+          complex.mul(ccoeff(q, n), ccoeff(r, cmonus(g, n))))
+        [by generalize generalize-r]
+    }
   @conclusion |
     forall q, r: CPoly; forall g, n: Nat;
       ccappedRun(q, r, g, peano.succ(n)) =
       complex.add(ccappedRun(q, r, g, n),
       complex.mul(ccoeff(q, n), ccoeff(r, cmonus(g, n))))
-    [by definition(1) ccappedRun]
+    [by generalize generalize-q]
+qed
+
+// -- the capped run's TERMINATION obligation ----------------------------------------------
+//
+// `termination(peano):` names `ccappedRunIsGrounded`, and the checker SYNTHESIZES the statement it
+// must have: the recursive arm's own guard at the declaration's parameters. The generated
+// `ccappedRunGrounded` transcribes the single call site, with the terminating arm's pattern as its base
+// alternative:
+//
+//     ccappedRunGrounded(q, r, g, n) iff (ccappedRunGrounded(q, r, g, peano.prev(n)) or peano.prev(n) = NAT_ZERO)
+//
+// `q`, `r` and `g` ride through untouched; only `n` descends, so the induction is on `n` alone.
+
+// The step: groundedness below `peano.succ(n)` gives it at `peano.succ(n)`. Either the predecessor `n` is
+// itself the base (the right disjunct fires) or the inductive hypothesis supplies it.
+theorem ccappedRunReachesABaseFromAPredecessor: forall n: Nat;
+  (forall q2, r2: CPoly; forall g2: Nat; n != NAT_ZERO -> ccappedRunGrounded(q2, r2, g2, n))
+  -> (forall q, r: CPoly; forall g: Nat; peano.succ(n) != NAT_ZERO -> ccappedRunGrounded(q, r, g, peano.succ(n)))
+proof
+  @the-generated-clause |
+    forall q3, r3: CPoly; forall g3, n3: Nat;
+      ccappedRunGrounded(q3, r3, g3, n3) iff
+      (ccappedRunGrounded(q3, r3, g3, peano.prev(n3)) or peano.prev(n3) = NAT_ZERO)
+    [by definition ccappedRunGrounded]
+  @prev-undoes-succ |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-n |
+    fix n: Nat {
+      @given-the-inductive-hypothesis |
+        assume forall q2, r2: CPoly; forall g2: Nat; n != NAT_ZERO -> ccappedRunGrounded(q2, r2, g2, n) {
+          @inductive-hypothesis |
+            forall q2, r2: CPoly; forall g2: Nat; n != NAT_ZERO -> ccappedRunGrounded(q2, r2, g2, n)
+            [by hypothesis given-the-inductive-hypothesis]
+          // `peano.prev` is guarded, so these precede every term that writes `peano.prev(peano.succ(n))`.
+          @succ-n-is-nonzero |
+            peano.succ(n) != NAT_ZERO
+            [using specialize a-successor-is-never-zero(n)]
+          @prev-of-succ-n-is-n |
+            peano.prev(peano.succ(n)) = n
+            [using specialize prev-undoes-succ(n)]
+          @generalize-q |
+            fix q: CPoly {
+              @generalize-r |
+                fix r: CPoly {
+                  @generalize-g |
+                    fix g: Nat {
+                      @given-succ-n-nonzero |
+                        assume peano.succ(n) != NAT_ZERO {
+                          @clause-at-the-successor |
+                            ccappedRunGrounded(q, r, g, peano.succ(n)) iff
+                              (ccappedRunGrounded(q, r, g, peano.prev(peano.succ(n))) or peano.prev(peano.succ(n)) = NAT_ZERO)
+                            [using specialize the-generated-clause(q, r, g, peano.succ(n))]
+                          @clause-with-the-predecessor-collapsed |
+                            ccappedRunGrounded(q, r, g, peano.succ(n)) iff
+                              (ccappedRunGrounded(q, r, g, n) or n = NAT_ZERO)
+                            [by rewrite prev-of-succ-n-is-n clause-at-the-successor]
+                          @the-inductive-hypothesis-here |
+                            n != NAT_ZERO -> ccappedRunGrounded(q, r, g, n)
+                            [using specialize inductive-hypothesis(q, r, g)]
+                          @conclusion-grounded-at-succ-n |
+                            ccappedRunGrounded(q, r, g, peano.succ(n))
+                            [using tautology clause-with-the-predecessor-collapsed
+                              the-inductive-hypothesis-here]
+                        }
+                      @conclusion-nonzero-gives-grounded |
+                        peano.succ(n) != NAT_ZERO -> ccappedRunGrounded(q, r, g, peano.succ(n))
+                        [by discharge given-succ-n-nonzero]
+                    }
+                  @discharge-g |
+                    forall g: Nat; peano.succ(n) != NAT_ZERO -> ccappedRunGrounded(q, r, g, peano.succ(n))
+                    [by generalize generalize-g]
+                }
+              @discharge-r |
+                forall r: CPoly; forall g: Nat; peano.succ(n) != NAT_ZERO -> ccappedRunGrounded(q, r, g, peano.succ(n))
+                [by generalize generalize-r]
+            }
+          @conclusion-grounded-for-every-argument |
+            forall q, r: CPoly; forall g: Nat; peano.succ(n) != NAT_ZERO -> ccappedRunGrounded(q, r, g, peano.succ(n))
+            [by generalize generalize-q]
+        }
+      @conclusion-the-step-at-n |
+        (forall q2, r2: CPoly; forall g2: Nat; n != NAT_ZERO -> ccappedRunGrounded(q2, r2, g2, n))
+          -> (forall q, r: CPoly; forall g: Nat; peano.succ(n) != NAT_ZERO -> ccappedRunGrounded(q, r, g, peano.succ(n)))
+        [by discharge given-the-inductive-hypothesis]
+    }
+  @conclusion |
+    forall n: Nat;
+      (forall q2, r2: CPoly; forall g2: Nat; n != NAT_ZERO -> ccappedRunGrounded(q2, r2, g2, n))
+      -> (forall q, r: CPoly; forall g: Nat; peano.succ(n) != NAT_ZERO -> ccappedRunGrounded(q, r, g, peano.succ(n)))
+    [by generalize generalize-n]
+qed
+
+// THE OBLIGATION. Induction on `n`; the base is VACUOUS, its antecedent `NAT_ZERO != NAT_ZERO` being
+// false, and the step is the theorem above.
+theorem ccappedRunIsGrounded: forall q, r: CPoly; forall g, n: Nat;
+  n != NAT_ZERO -> ccappedRunGrounded(q, r, g, n)
+proof
+  @zero-is-itself |
+    NAT_ZERO = NAT_ZERO
+    [by reflexivity]
+  // `tautology` reads a `forall` as one opaque atom, so the binders are opened before the
+  // vacuous antecedent can be refuted inside them.
+  @base-case-proof |
+    fix q: CPoly {
+      @generalize-r-at-zero |
+        fix r: CPoly {
+          @generalize-g-at-zero |
+            fix g: Nat {
+              @conclusion-vacuously-grounded |
+                NAT_ZERO != NAT_ZERO -> ccappedRunGrounded(q, r, g, NAT_ZERO)
+                [using tautology zero-is-itself]
+            }
+          @discharge-g-at-zero |
+            forall g: Nat; NAT_ZERO != NAT_ZERO -> ccappedRunGrounded(q, r, g, NAT_ZERO)
+            [by generalize generalize-g-at-zero]
+        }
+      @discharge-r-at-zero |
+        forall r: CPoly; forall g: Nat; NAT_ZERO != NAT_ZERO -> ccappedRunGrounded(q, r, g, NAT_ZERO)
+        [by generalize generalize-r-at-zero]
+    }
+  @base-case |
+    forall q, r: CPoly; forall g: Nat; NAT_ZERO != NAT_ZERO -> ccappedRunGrounded(q, r, g, NAT_ZERO)
+    [by generalize base-case-proof]
+  @induction-step-for-all-n |
+    forall n: Nat;
+      (forall q2, r2: CPoly; forall g2: Nat; n != NAT_ZERO -> ccappedRunGrounded(q2, r2, g2, n))
+      -> (forall q, r: CPoly; forall g: Nat; peano.succ(n) != NAT_ZERO -> ccappedRunGrounded(q, r, g, peano.succ(n)))
+    [by cite ccappedRunReachesABaseFromAPredecessor]
+  @grounded-for-every-run-length |
+    forall n: Nat; forall q, r: CPoly; forall g: Nat; n != NAT_ZERO -> ccappedRunGrounded(q, r, g, n)
+    [using instantiation peano.induction((fun n: Nat => (forall q, r: CPoly; forall g: Nat; n != NAT_ZERO -> ccappedRunGrounded(q, r, g, n)))) base-case induction-step-for-all-n]
+  @generalize-q |
+    fix q: CPoly {
+      @generalize-r |
+        fix r: CPoly {
+          @generalize-g |
+            fix g: Nat {
+              @generalize-n |
+                fix n: Nat {
+                  @grounded-at-n |
+                    forall q4, r4: CPoly; forall g4: Nat; n != NAT_ZERO -> ccappedRunGrounded(q4, r4, g4, n)
+                    [using specialize grounded-for-every-run-length(n)]
+                  @conclusion-grounded-here |
+                    n != NAT_ZERO -> ccappedRunGrounded(q, r, g, n)
+                    [using specialize grounded-at-n(q, r, g)]
+                }
+              @discharge-n |
+                forall n: Nat; n != NAT_ZERO -> ccappedRunGrounded(q, r, g, n)
+                [by generalize generalize-n]
+            }
+          @discharge-g |
+            forall g, n: Nat; n != NAT_ZERO -> ccappedRunGrounded(q, r, g, n)
+            [by generalize generalize-g]
+        }
+      @discharge-r |
+        forall r: CPoly; forall g, n: Nat; n != NAT_ZERO -> ccappedRunGrounded(q, r, g, n)
+        [by generalize generalize-r]
+    }
+  @conclusion |
+    forall q, r: CPoly; forall g, n: Nat; n != NAT_ZERO -> ccappedRunGrounded(q, r, g, n)
+    [by generalize generalize-q]
 qed
 
 theorem cTripleTermMeaning:

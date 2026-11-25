@@ -207,6 +207,8 @@ intheory qTheCofactorIndexAtZero
 intheory qTheCofactorIndexSteps
 intheory qCappedRunZero
 intheory qCappedRunSucc
+intheory qcappedRunReachesABaseFromAPredecessor
+intheory qcappedRunIsGrounded
 intheory qTripleTermMeaning
 intheory qTripleRowZero
 intheory qTripleRowSucc
@@ -2677,9 +2679,17 @@ oper qtheCofactorIndex(i: Nat, j: Nat, k: Nat) => Nat:
   qtheCofactorIndex(i, j, NAT_ZERO) = qmonus(i, j);
   qtheCofactorIndex(i, j, peano.succ(k)) = qmonus(qmonus(i, j), peano.succ(k)).
 
+// The recursion descends by `peano.prev` rather than matching `peano.succ` on the left, which the
+// l-value rule requires of a recursive definition — the descent must be readable on the RIGHT.
+// Every index that used to be written bare (the clause variable denoted the PREDECESSOR when
+// the arm matched `peano.succ(n)`) is now `peano.prev(n)`, since the PARAMETER is what `peano.succ(n)`
+// used to be: the recursive call, `qcoeff(q, ·)` and `qmonus(g, ·)` all take it.
+// `qmonus` is total, so it owes nothing beyond `peano.prev`'s own guard, which the arm's
+// condition discharges.
 oper qcappedRun(q: QPoly, r: QPoly, g: Nat, n: Nat) => Q:
   qcappedRun(q, r, g, NAT_ZERO) = ZERO;
-  qcappedRun(q, r, g, peano.succ(n)) = rational.add(qcappedRun(q, r, g, n), rational.mul(qcoeff(q, n), qcoeff(r, qmonus(g, n)))).
+  qcappedRun(q, r, g, n) = rational.add(qcappedRun(q, r, g, peano.prev(n)), rational.mul(qcoeff(q, peano.prev(n)), qcoeff(r, qmonus(g, peano.prev(n))))) when n != NAT_ZERO.
+  termination(peano): _, {qcappedRunIsGrounded, qcappedRunGrounded}
 
 oper qtripleTerm(p: QPoly, q: QPoly, r: QPoly, i: Nat, j: Nat, k: Nat) => Q:
   qtripleTerm(p, q, r, i, j, k) = rational.mul(rational.mul(qcoeff(p, j), qcoeff(q, k)), qcoeff(r, qtheCofactorIndex(i, j, k))).
@@ -3879,18 +3889,247 @@ proof
     [by definition(0) qcappedRun]
 qed
 
+// The `peano.succ` step, now DERIVED rather than transcribed: the definition descends by `peano.prev`, so
+// this restates it at a successor, where `prevOfSucc` collapses all three `peano.prev(peano.succ(n))` sites
+// in one rewrite. The STATEMENT is unchanged, which is what keeps the migration confined —
+// every call site below cites this theorem, not the clause, so the clause's guard never
+// reaches them.
 theorem qCappedRunSucc:
   forall q, r: QPoly; forall g, n: Nat;
   qcappedRun(q, r, g, peano.succ(n)) =
   rational.add(qcappedRun(q, r, g, n),
   rational.mul(qcoeff(q, n), qcoeff(r, qmonus(g, n))))
 proof
+  @the-recursive-clause |
+    forall q2, r2: QPoly; forall g2, n2: Nat;
+      n2 != NAT_ZERO ->
+      qcappedRun(q2, r2, g2, n2) =
+      rational.add(qcappedRun(q2, r2, g2, peano.prev(n2)),
+      rational.mul(qcoeff(q2, peano.prev(n2)), qcoeff(r2, qmonus(g2, peano.prev(n2)))))
+    [by definition(1) qcappedRun]
+  @prev-undoes-succ |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-q |
+    fix q: QPoly {
+      @generalize-r |
+        fix r: QPoly {
+          @generalize-g |
+            fix g: Nat {
+              @generalize-n |
+                fix n: Nat {
+                  @succ-n-is-nonzero |
+                    peano.succ(n) != NAT_ZERO
+                    [using specialize a-successor-is-never-zero(n)]
+                  @clause-at-the-successor |
+                    qcappedRun(q, r, g, peano.succ(n)) =
+                      rational.add(qcappedRun(q, r, g, peano.prev(peano.succ(n))),
+                      rational.mul(qcoeff(q, peano.prev(peano.succ(n))), qcoeff(r, qmonus(g, peano.prev(peano.succ(n))))))
+                    [using specialize the-recursive-clause(q, r, g, peano.succ(n)) succ-n-is-nonzero]
+                  @prev-of-succ-n |
+                    peano.prev(peano.succ(n)) = n
+                    [using specialize prev-undoes-succ(n)]
+                  @conclusion-step-at-n |
+                    qcappedRun(q, r, g, peano.succ(n)) =
+                      rational.add(qcappedRun(q, r, g, n),
+                      rational.mul(qcoeff(q, n), qcoeff(r, qmonus(g, n))))
+                    [by rewrite prev-of-succ-n clause-at-the-successor]
+                }
+              @discharge-n |
+                forall n: Nat;
+                  qcappedRun(q, r, g, peano.succ(n)) =
+                  rational.add(qcappedRun(q, r, g, n),
+                  rational.mul(qcoeff(q, n), qcoeff(r, qmonus(g, n))))
+                [by generalize generalize-n]
+            }
+          @discharge-g |
+            forall g, n: Nat;
+              qcappedRun(q, r, g, peano.succ(n)) =
+              rational.add(qcappedRun(q, r, g, n),
+              rational.mul(qcoeff(q, n), qcoeff(r, qmonus(g, n))))
+            [by generalize generalize-g]
+        }
+      @discharge-r |
+        forall r: QPoly; forall g, n: Nat;
+          qcappedRun(q, r, g, peano.succ(n)) =
+          rational.add(qcappedRun(q, r, g, n),
+          rational.mul(qcoeff(q, n), qcoeff(r, qmonus(g, n))))
+        [by generalize generalize-r]
+    }
   @conclusion |
     forall q, r: QPoly; forall g, n: Nat;
       qcappedRun(q, r, g, peano.succ(n)) =
       rational.add(qcappedRun(q, r, g, n),
       rational.mul(qcoeff(q, n), qcoeff(r, qmonus(g, n))))
-    [by definition(1) qcappedRun]
+    [by generalize generalize-q]
+qed
+
+// -- the capped run's TERMINATION obligation ----------------------------------------------
+//
+// `termination(peano):` names `qcappedRunIsGrounded`, and the checker SYNTHESIZES the statement it
+// must have: the recursive arm's own guard at the declaration's parameters. The generated
+// `qcappedRunGrounded` transcribes the single call site, with the terminating arm's pattern as its base
+// alternative:
+//
+//     qcappedRunGrounded(q, r, g, n) iff (qcappedRunGrounded(q, r, g, peano.prev(n)) or peano.prev(n) = NAT_ZERO)
+//
+// `q`, `r` and `g` ride through untouched; only `n` descends, so the induction is on `n` alone.
+
+// The step: groundedness below `peano.succ(n)` gives it at `peano.succ(n)`. Either the predecessor `n` is
+// itself the base (the right disjunct fires) or the inductive hypothesis supplies it.
+theorem qcappedRunReachesABaseFromAPredecessor: forall n: Nat;
+  (forall q2, r2: QPoly; forall g2: Nat; n != NAT_ZERO -> qcappedRunGrounded(q2, r2, g2, n))
+  -> (forall q, r: QPoly; forall g: Nat; peano.succ(n) != NAT_ZERO -> qcappedRunGrounded(q, r, g, peano.succ(n)))
+proof
+  @the-generated-clause |
+    forall q3, r3: QPoly; forall g3, n3: Nat;
+      qcappedRunGrounded(q3, r3, g3, n3) iff
+      (qcappedRunGrounded(q3, r3, g3, peano.prev(n3)) or peano.prev(n3) = NAT_ZERO)
+    [by definition qcappedRunGrounded]
+  @prev-undoes-succ |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-n |
+    fix n: Nat {
+      @given-the-inductive-hypothesis |
+        assume forall q2, r2: QPoly; forall g2: Nat; n != NAT_ZERO -> qcappedRunGrounded(q2, r2, g2, n) {
+          @inductive-hypothesis |
+            forall q2, r2: QPoly; forall g2: Nat; n != NAT_ZERO -> qcappedRunGrounded(q2, r2, g2, n)
+            [by hypothesis given-the-inductive-hypothesis]
+          // `peano.prev` is guarded, so these precede every term that writes `peano.prev(peano.succ(n))`.
+          @succ-n-is-nonzero |
+            peano.succ(n) != NAT_ZERO
+            [using specialize a-successor-is-never-zero(n)]
+          @prev-of-succ-n-is-n |
+            peano.prev(peano.succ(n)) = n
+            [using specialize prev-undoes-succ(n)]
+          @generalize-q |
+            fix q: QPoly {
+              @generalize-r |
+                fix r: QPoly {
+                  @generalize-g |
+                    fix g: Nat {
+                      @given-succ-n-nonzero |
+                        assume peano.succ(n) != NAT_ZERO {
+                          @clause-at-the-successor |
+                            qcappedRunGrounded(q, r, g, peano.succ(n)) iff
+                              (qcappedRunGrounded(q, r, g, peano.prev(peano.succ(n))) or peano.prev(peano.succ(n)) = NAT_ZERO)
+                            [using specialize the-generated-clause(q, r, g, peano.succ(n))]
+                          @clause-with-the-predecessor-collapsed |
+                            qcappedRunGrounded(q, r, g, peano.succ(n)) iff
+                              (qcappedRunGrounded(q, r, g, n) or n = NAT_ZERO)
+                            [by rewrite prev-of-succ-n-is-n clause-at-the-successor]
+                          @the-inductive-hypothesis-here |
+                            n != NAT_ZERO -> qcappedRunGrounded(q, r, g, n)
+                            [using specialize inductive-hypothesis(q, r, g)]
+                          @conclusion-grounded-at-succ-n |
+                            qcappedRunGrounded(q, r, g, peano.succ(n))
+                            [using tautology clause-with-the-predecessor-collapsed
+                              the-inductive-hypothesis-here]
+                        }
+                      @conclusion-nonzero-gives-grounded |
+                        peano.succ(n) != NAT_ZERO -> qcappedRunGrounded(q, r, g, peano.succ(n))
+                        [by discharge given-succ-n-nonzero]
+                    }
+                  @discharge-g |
+                    forall g: Nat; peano.succ(n) != NAT_ZERO -> qcappedRunGrounded(q, r, g, peano.succ(n))
+                    [by generalize generalize-g]
+                }
+              @discharge-r |
+                forall r: QPoly; forall g: Nat; peano.succ(n) != NAT_ZERO -> qcappedRunGrounded(q, r, g, peano.succ(n))
+                [by generalize generalize-r]
+            }
+          @conclusion-grounded-for-every-argument |
+            forall q, r: QPoly; forall g: Nat; peano.succ(n) != NAT_ZERO -> qcappedRunGrounded(q, r, g, peano.succ(n))
+            [by generalize generalize-q]
+        }
+      @conclusion-the-step-at-n |
+        (forall q2, r2: QPoly; forall g2: Nat; n != NAT_ZERO -> qcappedRunGrounded(q2, r2, g2, n))
+          -> (forall q, r: QPoly; forall g: Nat; peano.succ(n) != NAT_ZERO -> qcappedRunGrounded(q, r, g, peano.succ(n)))
+        [by discharge given-the-inductive-hypothesis]
+    }
+  @conclusion |
+    forall n: Nat;
+      (forall q2, r2: QPoly; forall g2: Nat; n != NAT_ZERO -> qcappedRunGrounded(q2, r2, g2, n))
+      -> (forall q, r: QPoly; forall g: Nat; peano.succ(n) != NAT_ZERO -> qcappedRunGrounded(q, r, g, peano.succ(n)))
+    [by generalize generalize-n]
+qed
+
+// THE OBLIGATION. Induction on `n`; the base is VACUOUS, its antecedent `NAT_ZERO != NAT_ZERO` being
+// false, and the step is the theorem above.
+theorem qcappedRunIsGrounded: forall q, r: QPoly; forall g, n: Nat;
+  n != NAT_ZERO -> qcappedRunGrounded(q, r, g, n)
+proof
+  @zero-is-itself |
+    NAT_ZERO = NAT_ZERO
+    [by reflexivity]
+  // `tautology` reads a `forall` as one opaque atom, so the binders are opened before the
+  // vacuous antecedent can be refuted inside them.
+  @base-case-proof |
+    fix q: QPoly {
+      @generalize-r-at-zero |
+        fix r: QPoly {
+          @generalize-g-at-zero |
+            fix g: Nat {
+              @conclusion-vacuously-grounded |
+                NAT_ZERO != NAT_ZERO -> qcappedRunGrounded(q, r, g, NAT_ZERO)
+                [using tautology zero-is-itself]
+            }
+          @discharge-g-at-zero |
+            forall g: Nat; NAT_ZERO != NAT_ZERO -> qcappedRunGrounded(q, r, g, NAT_ZERO)
+            [by generalize generalize-g-at-zero]
+        }
+      @discharge-r-at-zero |
+        forall r: QPoly; forall g: Nat; NAT_ZERO != NAT_ZERO -> qcappedRunGrounded(q, r, g, NAT_ZERO)
+        [by generalize generalize-r-at-zero]
+    }
+  @base-case |
+    forall q, r: QPoly; forall g: Nat; NAT_ZERO != NAT_ZERO -> qcappedRunGrounded(q, r, g, NAT_ZERO)
+    [by generalize base-case-proof]
+  @induction-step-for-all-n |
+    forall n: Nat;
+      (forall q2, r2: QPoly; forall g2: Nat; n != NAT_ZERO -> qcappedRunGrounded(q2, r2, g2, n))
+      -> (forall q, r: QPoly; forall g: Nat; peano.succ(n) != NAT_ZERO -> qcappedRunGrounded(q, r, g, peano.succ(n)))
+    [by cite qcappedRunReachesABaseFromAPredecessor]
+  @grounded-for-every-run-length |
+    forall n: Nat; forall q, r: QPoly; forall g: Nat; n != NAT_ZERO -> qcappedRunGrounded(q, r, g, n)
+    [using instantiation peano.induction((fun n: Nat => (forall q, r: QPoly; forall g: Nat; n != NAT_ZERO -> qcappedRunGrounded(q, r, g, n)))) base-case induction-step-for-all-n]
+  @generalize-q |
+    fix q: QPoly {
+      @generalize-r |
+        fix r: QPoly {
+          @generalize-g |
+            fix g: Nat {
+              @generalize-n |
+                fix n: Nat {
+                  @grounded-at-n |
+                    forall q4, r4: QPoly; forall g4: Nat; n != NAT_ZERO -> qcappedRunGrounded(q4, r4, g4, n)
+                    [using specialize grounded-for-every-run-length(n)]
+                  @conclusion-grounded-here |
+                    n != NAT_ZERO -> qcappedRunGrounded(q, r, g, n)
+                    [using specialize grounded-at-n(q, r, g)]
+                }
+              @discharge-n |
+                forall n: Nat; n != NAT_ZERO -> qcappedRunGrounded(q, r, g, n)
+                [by generalize generalize-n]
+            }
+          @discharge-g |
+            forall g, n: Nat; n != NAT_ZERO -> qcappedRunGrounded(q, r, g, n)
+            [by generalize generalize-g]
+        }
+      @discharge-r |
+        forall r: QPoly; forall g, n: Nat; n != NAT_ZERO -> qcappedRunGrounded(q, r, g, n)
+        [by generalize generalize-r]
+    }
+  @conclusion |
+    forall q, r: QPoly; forall g, n: Nat; n != NAT_ZERO -> qcappedRunGrounded(q, r, g, n)
+    [by generalize generalize-q]
 qed
 
 theorem qTripleTermMeaning:
