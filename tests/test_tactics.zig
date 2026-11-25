@@ -142,9 +142,9 @@ pub fn addTests(
 
     // a named theorem that RESOLVES and is TRUE but states something else settles nothing.
     // Both sides are shown, because the author never wrote the obligation.
-    ctx.fail(&.{ "check", "--library", "tests/cases/definition/library-consistency-mismatch" }, "error: 1 definition block(s) with an unsettled `consistency:` declaration:\n  - nrep  (tests/cases/definition/library-consistency-mismatch/wrong.b4m:17) — 'wrongStatement' does not state the obligation for clauses 0 and 1\n      it states:  ZERO = ZERO\n      wanted:     forall a: Nat; forall arg2: Nat; forall n: Nat; (arg2 = ZERO and arg2 = succ(n)) -> a = succ(nrep(a, n))\n");
+    ctx.fail(&.{ "check", "--library", "tests/cases/definition/library-consistency-mismatch" }, "error: 1 definition block(s) with an unsettled `consistency:` declaration:\n  - nrep  (tests/cases/definition/library-consistency-mismatch/wrong.b4m:22) — 'wrongStatement' does not state the obligation for clauses 0 and 1\n      it states:  ZERO = ZERO\n      wanted:     forall a: Nat; forall arg2: Nat; forall n: Nat; (arg2 = ZERO and arg2 = succ(n)) -> a = succ(a)\n");
 
-    ctx.fail(&.{ "check", "--library", "tests/cases/definition/library-consistency" }, "error: 1 definition block(s) with an unsettled `consistency:` declaration:\n  - f  (tests/cases/definition/library-consistency/bad.b4m:16) — 'noSuchTheorem' names no fact in this file (declared for clauses 0 and 1)\n");
+    ctx.fail(&.{ "check", "--library", "tests/cases/definition/library-consistency" }, "error: 1 definition block(s) with an unsettled `consistency:` declaration:\n  - f  (tests/cases/definition/library-consistency/bad.b4m:22) — 'noSuchTheorem' names no fact in this file (declared for clauses 0 and 1)\n");
 
     // -- `termination(<theory>):` on a RECURSIVE definition block ----------------------------
     //

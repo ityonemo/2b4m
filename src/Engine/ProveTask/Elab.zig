@@ -917,11 +917,43 @@ fn calleeSig(self: *Elab, callee: lexer.Token) ?InternPool.Key.Sig {
     return self.interner.keyOf(callable.sig).sig;
 }
 
-/// The result sort of `e` when it is a call to a declared func; null otherwise.
+/// The sort an expression's HEAD declares — a call's result sort, or a declared constant's
+/// own sort. Used by `inferBinderSort`'s equality rule: `x = succ(n)` pins `x` from `succ`'s
+/// result, and `x = ZERO` pins it from `ZERO`'s declaration.
+///
+/// The constant case was missing, and it is how a `when`-guarded definition block with a
+/// `consistency:` declaration failed to elaborate (PAINPOINTS 16h). The synthesized obligation
+/// for a guarded/pattern pair conditions a positional binder against the pattern —
+/// `arg2 = ZERO` — and with only the call case that binder had nothing to pin it, so the whole
+/// block was rejected with a `cannot infer the sort` naming the DEFINED SYMBOL (the positional
+/// binder borrows the symbol's token for its span, which is why the diagnostic pointed there
+/// rather than at `arg2`).
 fn callResultSort(self: *Elab, e: *const ast.Expr) ?SortId {
-    if (e.* != .call) return null;
-    const sig = self.calleeSig(e.call.callee) orelse return null;
-    return @enumFromInt(@intFromEnum(sig.result));
+    switch (e.*) {
+        .call => |c| {
+            const sig = self.calleeSig(c.callee) orelse return null;
+            return @enumFromInt(@intFromEnum(sig.result));
+        },
+        // a bare name: a declared CONSTANT carries its sort directly (`Key.Constant.sort`),
+        // which `calleeSig` cannot report since it only accepts `.func`/`.pred`. A clause
+        // variable resolves to nothing, so the rule simply does not fire for one.
+        .name => |n| {
+            const sym = self.resolveSymbolTok(n) orelse blk: {
+                const dotted = n.tag != .symbol and n.qualifier != InternPool.Index.none;
+                const target: Qualified = if (dotted)
+                    self.resolveQualified(n) catch return null
+                else
+                    .{ .ns = self.ns, .base = tokName(n) };
+                if (!dotted) if (self.schema_args) |sa| if (sa.get(target.base) != null) return null;
+                break :blk self.lookupIdent(target.ns, target.base) orelse return null;
+            };
+            return switch (self.interner.keyOf(sym)) {
+                .constant => |c| @enumFromInt(@intFromEnum(c.sort)),
+                else => null,
+            };
+        },
+        else => return null,
+    }
 }
 
 /// Build the guard proposition for a refinement qualifier at `arg`: an opaque predicate
