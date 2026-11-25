@@ -117,11 +117,15 @@ pub fn addTests(
     // primitive, and only the second is something a reader should weigh. Reported under the
     // SYMBOL and its clause — never the mangled publication name.
     ctx.ok(&.{ "check", "tests/cases/define/definition_blocks.b4m", "--axioms" },
-        \\OK: 18 declarations, 3 theorems proven
-        \\  — rests on 3 axiom(s):
-        \\      isZero (clause 0)  (tests/cases/define/definition_blocks.b4m:10)  — DEFINITION
-        \\      add (clause 0)  (tests/cases/define/definition_blocks.b4m:16)  — DEFINITION
-        \\      add (clause 1)  (tests/cases/define/definition_blocks.b4m:16)  — DEFINITION
+        \\OK: 28 declarations, 5 theorems proven
+        \\  — rests on 7 axiom(s):
+        \\      pOfS  (tests/cases/define/definition_blocks.b4m:13)
+        \\      sNotZero  (tests/cases/define/definition_blocks.b4m:14)
+        \\      tInduction  (tests/cases/define/definition_blocks.b4m:15)
+        \\      isZero (clause 0)  (tests/cases/define/definition_blocks.b4m:19)  — DEFINITION
+        \\      add (clause 0)  (tests/cases/define/definition_blocks.b4m:28)  — DEFINITION
+        \\      add (clause 1)  (tests/cases/define/definition_blocks.b4m:28)  — DEFINITION
+        \\      addGrounded (clause 0)  (tests/cases/define/definition_blocks.b4m:31)  — DEFINITION
         \\
     );
     ctx.okSilent(&.{ "check", "tests/cases/kernel/imp_chain.b4m" });

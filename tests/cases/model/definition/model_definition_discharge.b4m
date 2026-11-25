@@ -12,20 +12,36 @@ theory base <<< "model_definition_source.b4m"
 sort M
 const MZ: M
 oper msucc(a: M) => M
+oper mprev(n: M) => M requires n != MZ
+
+// M needs the source's structure too: the local definition DISCHARGES `nadd`'s clause set
+// arm for arm, so its arms must have the source's shape — including the `mprev` descent and
+// the guard. It also owes its own `termination:`, which is what these axioms pay for.
+axiom mprevOfSucc: forall n: M; mprev(msucc(n)) = n
+axiom msuccNotZero: forall n: M; msucc(n) != MZ
+axiom mInduction(prop(M)):
+  prop(MZ) -> (forall k: M; prop(k) -> prop(msucc(k))) -> forall n: M; prop(n)
 
 oper madd(a: M, b: M) => M:
   madd(MZ, b) = b;
-  madd(msucc(k), b) = msucc(madd(k, b)).
+  madd(a, b) = msucc(madd(mprev(a), b)) when a != MZ.
+  termination(peano): _, {maddIsGrounded, maddGrounded}
 
 model Mod {
   base.N: M
   base.NZ: MZ
   base.nsucc: msucc
+  base.nprev: mprev
   base.nadd: madd
   base.nadd <- madd
+  // `addSteps` now rests on these, so transferring it needs them discharged locally — the
+  // source's structural axioms become obligations the model must meet.
+  base.nprevOfSucc <- mprevOfSucc
+  base.nsuccNotZero <- msuccNotZero
 }
 
 // What this file proves (verified manifest):
+intheory maddIsGrounded
 intheory theZeroArmTransfers
 intheory theStepArmTransfers
 
@@ -43,4 +59,76 @@ proof
   @conclusion |
     forall b: M; forall k: M; madd(msucc(k), b) = msucc(madd(k, b))
     [using model(Mod) base.addSteps]
+qed
+
+// THE TERMINATION OBLIGATION for the local definition. The generated predicate mentions only
+// the CONTROLLING slot (`a`, which the arm's guard names); `b` rides.
+theorem maddIsGrounded: forall a: M; forall b: M; a != MZ -> maddGrounded(a)
+proof
+  @the-generated-clause |
+    forall a2: M; maddGrounded(a2) iff (maddGrounded(mprev(a2)) or mprev(a2) = MZ)
+    [by definition maddGrounded]
+  @prev-undoes-succ |
+    forall n: M; mprev(msucc(n)) = n
+    [by cite mprevOfSucc]
+  @a-successor-is-never-zero |
+    forall n: M; msucc(n) != MZ
+    [by cite msuccNotZero]
+  @zero-is-zero |
+    MZ = MZ
+    [by reflexivity]
+  @base-case |
+    MZ != MZ -> maddGrounded(MZ)
+    [using tautology zero-is-zero]
+  @induction-step |
+    fix k: M {
+      @given-inductive-hypothesis |
+        assume k != MZ -> maddGrounded(k) {
+          @inductive-hypothesis |
+            k != MZ -> maddGrounded(k)
+            [by hypothesis given-inductive-hypothesis]
+          @succ-k-is-nonzero |
+            msucc(k) != MZ
+            [using specialize a-successor-is-never-zero(k)]
+          @clause-at-succ-k |
+            maddGrounded(msucc(k)) iff (maddGrounded(mprev(msucc(k))) or mprev(msucc(k)) = MZ)
+            [using specialize the-generated-clause(msucc(k))]
+          @prev-of-succ-k |
+            mprev(msucc(k)) = k
+            [using specialize prev-undoes-succ(k)]
+          @clause-with-prev-collapsed |
+            maddGrounded(msucc(k)) iff (maddGrounded(k) or k = MZ)
+            [by rewrite prev-of-succ-k clause-at-succ-k]
+          @grounded-at-succ-k |
+            maddGrounded(msucc(k))
+            [using tautology clause-with-prev-collapsed inductive-hypothesis]
+          @conclusion-step-at-succ-k |
+            msucc(k) != MZ -> maddGrounded(msucc(k))
+            [using tautology grounded-at-succ-k]
+        }
+      @conclusion-hypothesis-gives-successor |
+        (k != MZ -> maddGrounded(k)) -> (msucc(k) != MZ -> maddGrounded(msucc(k)))
+        [by discharge given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: M; (k != MZ -> maddGrounded(k)) -> (msucc(k) != MZ -> maddGrounded(msucc(k)))
+    [by generalize induction-step]
+  @grounded-above-zero |
+    forall n: M; n != MZ -> maddGrounded(n)
+    [using instantiation mInduction((fun n: M => (n != MZ -> maddGrounded(n)))) base-case induction-step-for-all-k]
+  @generalize-a |
+    fix a: M {
+      @generalize-b |
+        fix b: M {
+          @conclusion-grounded-at-a |
+            a != MZ -> maddGrounded(a)
+            [using specialize grounded-above-zero(a)]
+        }
+      @discharge-b |
+        forall b: M; a != MZ -> maddGrounded(a)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a: M; forall b: M; a != MZ -> maddGrounded(a)
+    [by generalize generalize-a]
 qed

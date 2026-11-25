@@ -13,12 +13,16 @@ theory base <<< "model_definition_source.b4m"
 sort M
 const MZ: M
 oper msucc(a: M) => M
+// The source's `nadd` descends by `nprev`, so the model must interpret it: a transferred
+// proof may only mention symbols the model maps. The guard travels with it.
+oper mprev(n: M) => M requires n != MZ
 oper madd(a: M, b: M) => M
 
 model Mod {
   base.N: M
   base.NZ: MZ
   base.nsucc: msucc
+  base.nprev: mprev
   base.nadd: madd
 }
 
@@ -33,10 +37,13 @@ proof
     [using model(Mod) definition(0) base.nadd]
 qed
 
-theorem theStepClauseTransfers: forall b: M; forall k: M;
-  madd(msucc(k), b) = msucc(madd(k, b))
+// The step clause transfers AS WRITTEN — guard and `mprev` descent included. That is the
+// point of citing a clause through a model rather than restating it: the target gets the
+// source's own equation under interpretation, not a convenient paraphrase of it.
+theorem theStepClauseTransfers: forall a: M; forall b: M;
+  a != MZ -> madd(a, b) = msucc(madd(mprev(a), b))
 proof
   @conclusion |
-    forall b: M; forall k: M; madd(msucc(k), b) = msucc(madd(k, b))
+    forall a: M; forall b: M; a != MZ -> madd(a, b) = msucc(madd(mprev(a), b))
     [using model(Mod) definition(1) base.nadd]
 qed

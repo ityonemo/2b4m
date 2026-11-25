@@ -4,18 +4,31 @@
 sort T
 const Z: T
 oper s(n: T) => T
+oper p(n: T) => T requires n != Z
 pred big(n: T)
+
+// T must be INDUCTIVELY GENERATED for `add`'s recursion to terminate: on a bare abstract
+// sort nothing forbids an element whose `p` chain never reaches `Z`, so the termination
+// obligation would be correctly unprovable. These give T exactly that structure, no more.
+axiom pOfS: forall n: T; p(s(n)) = n
+axiom sNotZero: forall n: T; s(n) != Z
+axiom tInduction(prop(T)):
+  prop(Z) -> (forall k: T; prop(k) -> prop(s(k))) -> forall n: T; prop(n)
 
 // PREDICATE: one clause, the connective written out, cited BARE.
 pred isZero(n: T):
   isZero(n) iff n = Z.
 
 // FUNCTION: several clauses, each its own axiom, cited by ZERO-INDEXED arm. A clause
-// quantifies the params it MENTIONS (no vacuous `forall a` on the base clause) plus its own
-// free names (`k`), whose sort is inferred from use (`s(k)` makes k a T).
+// quantifies the params it MENTIONS (no vacuous `forall a` on the base clause).
+//
+// The recursive arm descends by `p` on the RIGHT, with its own guard, because a recursive
+// block's left side may hold only parameters and closed terms — the termination check reads
+// the descent off the right. `addSteps` below recovers the `s`-pattern statement from it.
 oper add(a: T, b: T) => T:
   add(Z, b) = b;
-  add(s(k), b) = s(add(k, b)).
+  add(a, b) = s(add(p(a), b)) when a != Z.
+  termination(peano): _, {addIsGrounded, addGrounded}
 
 // GUARDED clauses (Erlang-style `when`), every condition stated in full — axioms have no
 // precedence, so nothing is inherited from clause order.
@@ -26,6 +39,8 @@ oper pick(n: T) => T:
 // What this file proves (verified manifest):
 intheory zeroIsZero
 intheory addingZeroToZero
+intheory addSteps
+intheory addIsGrounded
 intheory addingZeroToOne
 
 theorem zeroIsZero: isZero(Z)
@@ -54,12 +69,126 @@ proof
     [by apply_at(Z) base-clause]
 qed
 
+// The `s`-pattern step, DERIVED from the `p`-descent clause: restating it at a successor
+// lets `pOfS` collapse the `p`. Its STATEMENT is what a reader expects of the step arm, so
+// the fixture still documents that shape even though the clause is written the other way.
+theorem addSteps: forall b: T; forall k: T; add(s(k), b) = s(add(k, b))
+proof
+  @the-step-clause |
+    forall a: T; forall b: T; a != Z -> add(a, b) = s(add(p(a), b))
+    [by definition(1) add]
+  @p-undoes-s |
+    forall n: T; p(s(n)) = n
+    [by cite pOfS]
+  @a-successor-is-never-zero |
+    forall n: T; s(n) != Z
+    [by cite sNotZero]
+  @generalize-b |
+    fix b: T {
+      @generalize-k |
+        fix k: T {
+          @succ-k-is-nonzero |
+            s(k) != Z
+            [using specialize a-successor-is-never-zero(k)]
+          @clause-at-succ-k |
+            add(s(k), b) = s(add(p(s(k)), b))
+            [using specialize the-step-clause(s(k), b) succ-k-is-nonzero]
+          @p-of-succ-k |
+            p(s(k)) = k
+            [using specialize p-undoes-s(k)]
+          @conclusion-step-at-k |
+            add(s(k), b) = s(add(k, b))
+            [by rewrite p-of-succ-k clause-at-succ-k]
+        }
+      @discharge-k |
+        forall k: T; add(s(k), b) = s(add(k, b))
+        [by generalize generalize-k]
+    }
+  @conclusion |
+    forall b: T; forall k: T; add(s(k), b) = s(add(k, b))
+    [by generalize generalize-b]
+qed
+
 theorem addingZeroToOne: add(s(Z), Z) = s(add(Z, Z))
 proof
   @step-clause |
     forall b: T; forall k: T; add(s(k), b) = s(add(k, b))
-    [by definition(1) add]
+    [by cite addSteps]
   @conclusion |
     add(s(Z), Z) = s(add(Z, Z))
     [by apply_at(Z, Z) step-clause]
+qed
+
+// THE TERMINATION OBLIGATION. `tInduction` is what makes it provable — on a bare abstract
+// sort the recursion need not terminate, so the schema is the assumption the definition
+// rests on, stated rather than smuggled. The generated predicate mentions only the
+// CONTROLLING slot (`a`, which the arm's guard names); `b` rides.
+theorem addIsGrounded: forall a: T; forall b: T; a != Z -> addGrounded(a)
+proof
+  @the-generated-clause |
+    forall a2: T; addGrounded(a2) iff (addGrounded(p(a2)) or p(a2) = Z)
+    [by definition addGrounded]
+  @p-undoes-s |
+    forall n: T; p(s(n)) = n
+    [by cite pOfS]
+  @a-successor-is-never-zero |
+    forall n: T; s(n) != Z
+    [by cite sNotZero]
+  @zero-is-zero |
+    Z = Z
+    [by reflexivity]
+  @base-case |
+    Z != Z -> addGrounded(Z)
+    [using tautology zero-is-zero]
+  @induction-step |
+    fix k: T {
+      @given-inductive-hypothesis |
+        assume k != Z -> addGrounded(k) {
+          @inductive-hypothesis |
+            k != Z -> addGrounded(k)
+            [by hypothesis given-inductive-hypothesis]
+          @succ-k-is-nonzero |
+            s(k) != Z
+            [using specialize a-successor-is-never-zero(k)]
+          @clause-at-succ-k |
+            addGrounded(s(k)) iff (addGrounded(p(s(k))) or p(s(k)) = Z)
+            [using specialize the-generated-clause(s(k))]
+          @p-of-succ-k |
+            p(s(k)) = k
+            [using specialize p-undoes-s(k)]
+          @clause-with-p-collapsed |
+            addGrounded(s(k)) iff (addGrounded(k) or k = Z)
+            [by rewrite p-of-succ-k clause-at-succ-k]
+          @grounded-at-succ-k |
+            addGrounded(s(k))
+            [using tautology clause-with-p-collapsed inductive-hypothesis]
+          @conclusion-step-at-succ-k |
+            s(k) != Z -> addGrounded(s(k))
+            [using tautology grounded-at-succ-k]
+        }
+      @conclusion-hypothesis-gives-successor |
+        (k != Z -> addGrounded(k)) -> (s(k) != Z -> addGrounded(s(k)))
+        [by discharge given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: T; (k != Z -> addGrounded(k)) -> (s(k) != Z -> addGrounded(s(k)))
+    [by generalize induction-step]
+  @grounded-above-zero |
+    forall n: T; n != Z -> addGrounded(n)
+    [using instantiation tInduction((fun n: T => (n != Z -> addGrounded(n)))) base-case induction-step-for-all-k]
+  @generalize-a |
+    fix a: T {
+      @generalize-b |
+        fix b: T {
+          @conclusion-grounded-at-a |
+            a != Z -> addGrounded(a)
+            [using specialize grounded-above-zero(a)]
+        }
+      @discharge-b |
+        forall b: T; a != Z -> addGrounded(a)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a: T; forall b: T; a != Z -> addGrounded(a)
+    [by generalize generalize-a]
 qed

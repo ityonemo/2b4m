@@ -4,12 +4,24 @@
 sort N
 const NZ: N
 oper nsucc(a: N) => N
+oper nprev(n: N) => N requires n != NZ
+
+// N must be INDUCTIVELY GENERATED for `nadd`'s recursion to terminate. On a bare abstract
+// sort it is not: nothing forbids an element whose `nprev` chain never reaches `NZ`, so the
+// termination obligation is correctly unprovable there. These two give N exactly the Peano
+// structure the obligation needs, and no more.
+axiom nprevOfSucc: forall n: N; nprev(nsucc(n)) = n
+axiom nsuccNotZero: forall n: N; nsucc(n) != NZ
+axiom nInduction(prop(N)):
+  prop(NZ) -> (forall k: N; prop(k) -> prop(nsucc(k))) -> forall n: N; prop(n)
 
 oper nadd(a: N, b: N) => N:
   nadd(NZ, b) = b;
-  nadd(nsucc(k), b) = nsucc(nadd(k, b)).
+  nadd(a, b) = nsucc(nadd(nprev(a), b)) when a != NZ.
+  termination(peano): _, {naddIsGrounded, naddGrounded}
 
 // What this file proves (verified manifest):
+intheory naddIsGrounded
 intheory addAtZero
 intheory addSteps
 
@@ -22,9 +34,123 @@ proof
     [by definition(0) nadd]
 qed
 
+// The step arm, DERIVED rather than transcribed: the definition descends by `nprev`, so
+// this restates it at a successor, where `nprevOfSucc` collapses the `nprev`. The STATEMENT
+// is unchanged, which is what keeps the model mappings below working — they pair clause
+// COUNTS, and both forms have two arms.
 theorem addSteps: forall b: N; forall k: N; nadd(nsucc(k), b) = nsucc(nadd(k, b))
 proof
+  @the-step-clause |
+    forall a: N; forall b: N; a != NZ -> nadd(a, b) = nsucc(nadd(nprev(a), b))
+    [by definition(1) nadd]
+  @prev-undoes-succ |
+    forall n: N; nprev(nsucc(n)) = n
+    [by cite nprevOfSucc]
+  @a-successor-is-never-zero |
+    forall n: N; nsucc(n) != NZ
+    [by cite nsuccNotZero]
+  @generalize-b |
+    fix b: N {
+      @generalize-k |
+        fix k: N {
+          @succ-k-is-nonzero |
+            nsucc(k) != NZ
+            [using specialize a-successor-is-never-zero(k)]
+          @clause-at-succ-k |
+            nadd(nsucc(k), b) = nsucc(nadd(nprev(nsucc(k)), b))
+            [using specialize the-step-clause(nsucc(k), b) succ-k-is-nonzero]
+          @prev-of-succ-k |
+            nprev(nsucc(k)) = k
+            [using specialize prev-undoes-succ(k)]
+          @conclusion-step-at-k |
+            nadd(nsucc(k), b) = nsucc(nadd(k, b))
+            [by rewrite prev-of-succ-k clause-at-succ-k]
+        }
+      @discharge-k |
+        forall k: N; nadd(nsucc(k), b) = nsucc(nadd(k, b))
+        [by generalize generalize-k]
+    }
   @conclusion |
     forall b: N; forall k: N; nadd(nsucc(k), b) = nsucc(nadd(k, b))
-    [by definition(1) nadd]
+    [by generalize generalize-b]
+qed
+
+// THE TERMINATION OBLIGATION. `nInduction` is what makes it provable: on a bare abstract
+// sort nothing forbids an element whose `nprev` chain never reaches `NZ`, so this is
+// exactly the assumption the recursion needs, stated rather than smuggled.
+//
+// The generated predicate mentions only the CONTROLLING slot (`a`, the one the arm's guard
+// names); `b` rides and termination does not depend on it.
+theorem naddIsGrounded: forall a: N; forall b: N; a != NZ -> naddGrounded(a)
+proof
+  @the-generated-clause |
+    forall a2: N; naddGrounded(a2) iff (naddGrounded(nprev(a2)) or nprev(a2) = NZ)
+    [by definition naddGrounded]
+  @prev-undoes-succ |
+    forall n: N; nprev(nsucc(n)) = n
+    [by cite nprevOfSucc]
+  @a-successor-is-never-zero |
+    forall n: N; nsucc(n) != NZ
+    [by cite nsuccNotZero]
+  // base: at NZ the antecedent is false, so the implication holds vacuously.
+  @zero-is-zero |
+    NZ = NZ
+    [by reflexivity]
+  @base-case |
+    NZ != NZ -> naddGrounded(NZ)
+    [using tautology zero-is-zero]
+  // step: at nsucc(k) the chain reaches k, which either IS the base or is covered by the IH.
+  @induction-step |
+    fix k: N {
+      @given-inductive-hypothesis |
+        assume k != NZ -> naddGrounded(k) {
+          @inductive-hypothesis |
+            k != NZ -> naddGrounded(k)
+            [by hypothesis given-inductive-hypothesis]
+          @succ-k-is-nonzero |
+            nsucc(k) != NZ
+            [using specialize a-successor-is-never-zero(k)]
+          @clause-at-succ-k |
+            naddGrounded(nsucc(k)) iff (naddGrounded(nprev(nsucc(k))) or nprev(nsucc(k)) = NZ)
+            [using specialize the-generated-clause(nsucc(k))]
+          @prev-of-succ-k |
+            nprev(nsucc(k)) = k
+            [using specialize prev-undoes-succ(k)]
+          @clause-with-prev-collapsed |
+            naddGrounded(nsucc(k)) iff (naddGrounded(k) or k = NZ)
+            [by rewrite prev-of-succ-k clause-at-succ-k]
+          @grounded-at-succ-k |
+            naddGrounded(nsucc(k))
+            [using tautology clause-with-prev-collapsed inductive-hypothesis]
+          @conclusion-step-at-succ-k |
+            nsucc(k) != NZ -> naddGrounded(nsucc(k))
+            [using tautology grounded-at-succ-k]
+        }
+      @conclusion-hypothesis-gives-successor |
+        (k != NZ -> naddGrounded(k)) -> (nsucc(k) != NZ -> naddGrounded(nsucc(k)))
+        [by discharge given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: N; (k != NZ -> naddGrounded(k)) -> (nsucc(k) != NZ -> naddGrounded(nsucc(k)))
+    [by generalize induction-step]
+  @grounded-above-zero |
+    forall n: N; n != NZ -> naddGrounded(n)
+    [using instantiation nInduction((fun n: N => (n != NZ -> naddGrounded(n)))) base-case induction-step-for-all-k]
+  // `b` rides: the conclusion does not mention it, so the binder is vacuous and
+  // generalizing over it adds nothing but the quantifier the obligation asks for.
+  @generalize-a |
+    fix a: N {
+      @generalize-b |
+        fix b: N {
+          @conclusion-grounded-at-a |
+            a != NZ -> naddGrounded(a)
+            [using specialize grounded-above-zero(a)]
+        }
+      @discharge-b |
+        forall b: N; a != NZ -> naddGrounded(a)
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a: N; forall b: N; a != NZ -> naddGrounded(a)
+    [by generalize generalize-a]
 qed

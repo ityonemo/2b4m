@@ -28,15 +28,29 @@ oper compose(f: Fn, g: Fn) => Fn
 sort Nat
 const ZERO: Nat
 oper succ(n: Nat) => Nat
+oper prev(n: Nat) => Nat requires n != ZERO
 
+// `Nat` must be INDUCTIVELY GENERATED for `cycle`'s recursion to terminate: on a bare sort
+// nothing forbids an element whose `prev` chain never reaches `ZERO`. These give it exactly
+// that structure, which is what the `termination:` obligation below rests on.
+axiom prevOfSucc: forall n: Nat; prev(succ(n)) = n
+axiom succNotZero: forall n: Nat; succ(n) != ZERO
+axiom natInduction(prop(Nat)):
+  prop(ZERO) -> (forall k: Nat; prop(k) -> prop(succ(k))) -> forall n: Nat; prop(n)
+
+// The recursive arm descends by `prev` on the RIGHT with its own guard — a recursive block's
+// left side may hold only parameters and closed terms. `cycleStep` below recovers the
+// `succ`-pattern statement, which is what point 3 above is about.
 oper cycle(s: Element, k: Nat) => Fn:
   cycle(s, ZERO) = identityFn;
-  cycle(s, succ(k)) = compose(identityFn, cycle(s, k)).
+  cycle(s, k) = compose(identityFn, cycle(s, prev(k))) when k != ZERO.
+  termination(peano): _, {cycleIsGrounded, cycleGrounded}
 
 // What this file proves (verified manifest):
 intheory leftIsInUnion
 intheory cycleAtZero
 intheory cycleStep
+intheory cycleIsGrounded
 
 // 1. x : Element, quantified after the params it rides with.
 theorem leftIsInUnion: forall a, b: Set; forall x: Element; member(x, a) -> member(x, union(a, b))
@@ -87,10 +101,114 @@ proof
     [by definition(0) cycle]
 qed
 
-// 3. s : Element and k : Nat, each its own.
+// 3. s : Element and k : Nat, each its own. DERIVED from the `prev`-descent clause by
+// restating it at a successor, where `prevOfSucc` collapses the `prev` — the STATEMENT still
+// shows the two binders carrying their own sorts, which is what this case is about.
 theorem cycleStep: forall s: Element; forall k: Nat; cycle(s, succ(k)) = compose(identityFn, cycle(s, k))
 proof
+  @the-step-clause |
+    forall s: Element; forall k: Nat; k != ZERO -> cycle(s, k) = compose(identityFn, cycle(s, prev(k)))
+    [by definition(1) cycle]
+  @prev-undoes-succ |
+    forall n: Nat; prev(succ(n)) = n
+    [by cite prevOfSucc]
+  @a-successor-is-never-zero |
+    forall n: Nat; succ(n) != ZERO
+    [by cite succNotZero]
+  @generalize-s |
+    fix s: Element {
+      @generalize-k |
+        fix k: Nat {
+          @succ-k-is-nonzero |
+            succ(k) != ZERO
+            [using specialize a-successor-is-never-zero(k)]
+          @clause-at-succ-k |
+            cycle(s, succ(k)) = compose(identityFn, cycle(s, prev(succ(k))))
+            [using specialize the-step-clause(s, succ(k)) succ-k-is-nonzero]
+          @prev-of-succ-k |
+            prev(succ(k)) = k
+            [using specialize prev-undoes-succ(k)]
+          @conclusion-step-at-k |
+            cycle(s, succ(k)) = compose(identityFn, cycle(s, k))
+            [by rewrite prev-of-succ-k clause-at-succ-k]
+        }
+      @discharge-k |
+        forall k: Nat; cycle(s, succ(k)) = compose(identityFn, cycle(s, k))
+        [by generalize generalize-k]
+    }
   @conclusion |
     forall s: Element; forall k: Nat; cycle(s, succ(k)) = compose(identityFn, cycle(s, k))
-    [by definition(1) cycle]
+    [by generalize generalize-s]
+qed
+
+// THE TERMINATION OBLIGATION. The generated predicate mentions only the CONTROLLING slot
+// (`k`, which the arm's guard names); `s` rides, and termination does not depend on it.
+theorem cycleIsGrounded: forall s: Element; forall k: Nat; k != ZERO -> cycleGrounded(k)
+proof
+  @the-generated-clause |
+    forall k2: Nat; cycleGrounded(k2) iff (cycleGrounded(prev(k2)) or prev(k2) = ZERO)
+    [by definition cycleGrounded]
+  @prev-undoes-succ |
+    forall n: Nat; prev(succ(n)) = n
+    [by cite prevOfSucc]
+  @a-successor-is-never-zero |
+    forall n: Nat; succ(n) != ZERO
+    [by cite succNotZero]
+  @zero-is-zero |
+    ZERO = ZERO
+    [by reflexivity]
+  @base-case |
+    ZERO != ZERO -> cycleGrounded(ZERO)
+    [using tautology zero-is-zero]
+  @induction-step |
+    fix k: Nat {
+      @given-inductive-hypothesis |
+        assume k != ZERO -> cycleGrounded(k) {
+          @inductive-hypothesis |
+            k != ZERO -> cycleGrounded(k)
+            [by hypothesis given-inductive-hypothesis]
+          @succ-k-is-nonzero |
+            succ(k) != ZERO
+            [using specialize a-successor-is-never-zero(k)]
+          @clause-at-succ-k |
+            cycleGrounded(succ(k)) iff (cycleGrounded(prev(succ(k))) or prev(succ(k)) = ZERO)
+            [using specialize the-generated-clause(succ(k))]
+          @prev-of-succ-k |
+            prev(succ(k)) = k
+            [using specialize prev-undoes-succ(k)]
+          @clause-with-prev-collapsed |
+            cycleGrounded(succ(k)) iff (cycleGrounded(k) or k = ZERO)
+            [by rewrite prev-of-succ-k clause-at-succ-k]
+          @grounded-at-succ-k |
+            cycleGrounded(succ(k))
+            [using tautology clause-with-prev-collapsed inductive-hypothesis]
+          @conclusion-step-at-succ-k |
+            succ(k) != ZERO -> cycleGrounded(succ(k))
+            [using tautology grounded-at-succ-k]
+        }
+      @conclusion-hypothesis-gives-successor |
+        (k != ZERO -> cycleGrounded(k)) -> (succ(k) != ZERO -> cycleGrounded(succ(k)))
+        [by discharge given-inductive-hypothesis]
+    }
+  @induction-step-for-all-k |
+    forall k: Nat; (k != ZERO -> cycleGrounded(k)) -> (succ(k) != ZERO -> cycleGrounded(succ(k)))
+    [by generalize induction-step]
+  @grounded-above-zero |
+    forall n: Nat; n != ZERO -> cycleGrounded(n)
+    [using instantiation natInduction((fun n: Nat => (n != ZERO -> cycleGrounded(n)))) base-case induction-step-for-all-k]
+  @generalize-s |
+    fix s: Element {
+      @generalize-k |
+        fix k: Nat {
+          @conclusion-grounded-at-k |
+            k != ZERO -> cycleGrounded(k)
+            [using specialize grounded-above-zero(k)]
+        }
+      @discharge-k |
+        forall k: Nat; k != ZERO -> cycleGrounded(k)
+        [by generalize generalize-k]
+    }
+  @conclusion |
+    forall s: Element; forall k: Nat; k != ZERO -> cycleGrounded(k)
+    [by generalize generalize-s]
 qed

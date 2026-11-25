@@ -3146,6 +3146,7 @@ test "a definition block synthesizes one consistency obligation per clause pair"
         \\  f(a, Z) = a;
         \\  f(a, s(n)) = s(f(a, n)).
         \\  consistency: _
+        \\  termination(peano): _, {fIsGrounded, fGrounded}
     ;
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
@@ -3211,6 +3212,7 @@ test "collectRecursiveCalls finds every self-call on the RHS, in order" {
         \\oper sub(a: Nat, b: Nat) => Nat
         \\oper fib(n: Nat) => Nat:
         \\  fib(n) = add(fib(sub(n, ONE)), fib(sub(n, succ(ONE)))).
+        \\  termination(peano): {fibIsGrounded, fibGrounded}
     ;
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
@@ -3230,9 +3232,13 @@ test "collectRecursiveCalls finds every self-call on the RHS, in order" {
             },
             .alias => {},
         },
-        // the clause is staged as an axiom; its formula is what we walk
+        // the clause is staged as an axiom; its formula is what we walk. Take the FIRST one:
+        // a `termination:` declaration also stages the generated predicate's own clause, so
+        // keeping the last would walk `fibGrounded`'s body instead of `fib`'s.
         .axiom => |a| switch (a) {
-            .local => |l| clause = l.formula,
+            .local => |l| if (clause == null) {
+                clause = l.formula;
+            },
             else => {},
         },
         else => {},
