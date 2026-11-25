@@ -115,9 +115,17 @@ axiom cIsZeroOfMeaning: forall a: Complex; forall p: CPoly;
 // every symbol a transferred proof names, so ℂ[x] declares them too. None involves a
 // subtraction: each decrementing index is a `succ` pattern, and the index arithmetic the
 // triple sums need is NAMED (`cmonus`, `ctheCofactorIndex`).
+// The recursion descends by `prev` on the FIRST index rather than matching `succ` on the
+// left, which the l-value rule requires of a recursive definition — every l-value argument
+// must be a parameter or a closed term, so the descent has to be readable on the RIGHT.
+// `peano.prev` is guarded (`requires n != ZERO`) and the arm's own `j != NAT_ZERO` discharges it.
+//
+// Mirror of `cconvolution`: there the second index descends and the first ascends, here the
+// first descends and the second ascends. Termination asks only about the DESCENDING index.
 oper ctailConvolution(p: CPoly, q: CPoly, j: Nat, m: Nat) => Complex:
   ctailConvolution(p, q, NAT_ZERO, m) = complex.mul(ccoeff(p, NAT_ZERO), ccoeff(q, m));
-  ctailConvolution(p, q, peano.succ(j), m) = complex.add(complex.mul(ccoeff(p, peano.succ(j)), ccoeff(q, m)), ctailConvolution(p, q, j, peano.succ(m))).
+  ctailConvolution(p, q, j, m) = complex.add(complex.mul(ccoeff(p, j), ccoeff(q, m)), ctailConvolution(p, q, peano.prev(j), peano.succ(m))) when j != NAT_ZERO.
+  termination(peano): _, {cTailConvolutionIsGrounded, ctailConvolutionGrounded}
 
 oper csegmentOf(p: CPoly, q: CPoly, j: Nat, c: Nat, n: Nat) => Complex:
   csegmentOf(p, q, j, c, NAT_ZERO) = complex.mul(ccoeff(p, j), ccoeff(q, c));
@@ -193,6 +201,8 @@ intheory cEvalZero
 intheory cEvalSucc
 intheory cTailConvolutionZero
 intheory cTailConvolutionSucc
+intheory cTailConvolutionReachesZeroFromAPredecessor
+intheory cTailConvolutionIsGrounded
 intheory cSegmentZero
 intheory cSegmentSucc
 intheory cRsegmentZero
@@ -819,18 +829,81 @@ proof
     [by definition(0) ctailConvolution]
 qed
 
+// The `succ` step, now DERIVED rather than transcribed: the definition descends by `prev`
+// (the l-value rule keeps patterns off the left), so this restates it at a successor, where
+// `prevOfSucc` collapses the `prev`. The STATEMENT is unchanged, which is what confines the
+// migration — every call site cites this theorem, not the clause, so the clause's `j != NAT_ZERO`
+// guard never reaches them.
 theorem cTailConvolutionSucc:
   forall p, q: CPoly; forall j, m: Nat;
   ctailConvolution(p, q, peano.succ(j), m) =
   complex.add(complex.mul(ccoeff(p, peano.succ(j)), ccoeff(q, m)),
   ctailConvolution(p, q, j, peano.succ(m)))
 proof
+  @the-recursive-clause |
+    forall p2: CPoly; forall q2: CPoly; forall j2: Nat; forall m2: Nat;
+      j2 != NAT_ZERO ->
+      ctailConvolution(p2, q2, j2, m2) =
+      complex.add(complex.mul(ccoeff(p2, j2), ccoeff(q2, m2)), ctailConvolution(p2, q2, peano.prev(j2), peano.succ(m2)))
+    [by definition(1) ctailConvolution]
+  @prev-undoes-succ |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-p |
+    fix p: CPoly {
+      @generalize-q |
+        fix q: CPoly {
+          @generalize-j |
+            fix j: Nat {
+              @generalize-m |
+                fix m: Nat {
+                  @succ-j-is-nonzero |
+                    peano.succ(j) != NAT_ZERO
+                    [using specialize a-successor-is-never-zero(j)]
+                  @clause-at-the-successor |
+                    ctailConvolution(p, q, peano.succ(j), m) =
+                      complex.add(complex.mul(ccoeff(p, peano.succ(j)), ccoeff(q, m)),
+                      ctailConvolution(p, q, peano.prev(peano.succ(j)), peano.succ(m)))
+                    [using specialize the-recursive-clause(p, q, peano.succ(j), m) succ-j-is-nonzero]
+                  @prev-of-succ-j |
+                    peano.prev(peano.succ(j)) = j
+                    [using specialize prev-undoes-succ(j)]
+                  @conclusion-step-at-j |
+                    ctailConvolution(p, q, peano.succ(j), m) =
+                      complex.add(complex.mul(ccoeff(p, peano.succ(j)), ccoeff(q, m)),
+                      ctailConvolution(p, q, j, peano.succ(m)))
+                    [by rewrite prev-of-succ-j clause-at-the-successor]
+                }
+              @discharge-m |
+                forall m: Nat;
+                  ctailConvolution(p, q, peano.succ(j), m) =
+                  complex.add(complex.mul(ccoeff(p, peano.succ(j)), ccoeff(q, m)),
+                  ctailConvolution(p, q, j, peano.succ(m)))
+                [by generalize generalize-m]
+            }
+          @discharge-j |
+            forall j, m: Nat;
+              ctailConvolution(p, q, peano.succ(j), m) =
+              complex.add(complex.mul(ccoeff(p, peano.succ(j)), ccoeff(q, m)),
+              ctailConvolution(p, q, j, peano.succ(m)))
+            [by generalize generalize-j]
+        }
+      @discharge-q |
+        forall q: CPoly; forall j, m: Nat;
+          ctailConvolution(p, q, peano.succ(j), m) =
+          complex.add(complex.mul(ccoeff(p, peano.succ(j)), ccoeff(q, m)),
+          ctailConvolution(p, q, j, peano.succ(m)))
+        [by generalize generalize-q]
+    }
   @conclusion |
     forall p, q: CPoly; forall j, m: Nat;
       ctailConvolution(p, q, peano.succ(j), m) =
       complex.add(complex.mul(ccoeff(p, peano.succ(j)), ccoeff(q, m)),
       ctailConvolution(p, q, j, peano.succ(m)))
-    [by definition(1) ctailConvolution]
+    [by generalize generalize-p]
 qed
 
 theorem cSegmentZero:
@@ -1421,5 +1494,190 @@ proof
   @conclusion |
     forall p: CPoly; forall q: CPoly; forall j: Nat; forall m: Nat;
       m != NAT_ZERO -> cconvolutionGrounded(p, q, j, m)
+    [by generalize generalize-p]
+qed
+
+// -- ctailConvolution's TERMINATION obligation ---------------------------------------------
+//
+// The generated predicate transcribes the recursive arm's one call site, with the NAT_ZERO arm's
+// pattern as its base alternative:
+//
+//   ctailConvolutionGrounded(p, q, j, m) iff
+//     (ctailConvolutionGrounded(p, q, peano.prev(j), peano.succ(m)) or peano.prev(j) = NAT_ZERO)
+//
+// The `peano.prev(j) = NAT_ZERO` disjunct is the base — the NAT_ZERO arm is the only terminating one, and it
+// narrows the THIRD slot — and it is what lets the recursion bottom out.
+//
+// Note what the ASCENDING `m` costs: nothing, exactly as `convolution`'s ascending `j` cost
+// nothing. It rides along in both the predicate and the obligation, because termination asks
+// only whether the DESCENT reaches a base.
+
+// Strategy: the inductive step on the descending index. At `peano.succ(k)` the generated clause's
+// `prev` collapses to `k`, leaving either `k = NAT_ZERO` (the base disjunct fires) or the
+// inductive hypothesis at `k`. `tautology` picks whichever holds. The ascending `m` is
+// specialized at `peano.succ(m)`, which is where the hypothesis has to be read.
+theorem cTailConvolutionReachesZeroFromAPredecessor: forall k: Nat;
+  (forall p2: CPoly; forall q2: CPoly; forall m2: Nat;
+  k != NAT_ZERO -> ctailConvolutionGrounded(p2, q2, k, m2))
+  -> (forall p: CPoly; forall q: CPoly; forall m: Nat;
+  peano.succ(k) != NAT_ZERO -> ctailConvolutionGrounded(p, q, peano.succ(k), m))
+proof
+  @the-generated-clause |
+    forall p3: CPoly; forall q3: CPoly; forall j3: Nat; forall m3: Nat;
+      ctailConvolutionGrounded(p3, q3, j3, m3) iff
+      (ctailConvolutionGrounded(p3, q3, peano.prev(j3), peano.succ(m3)) or peano.prev(j3) = NAT_ZERO)
+    [by definition ctailConvolutionGrounded]
+  @prev-undoes-succ |
+    forall n: Nat; peano.prev(peano.succ(n)) = n
+    [using import(peano) prevOfSucc]
+  @a-successor-is-never-zero |
+    forall a: Nat; peano.succ(a) != NAT_ZERO
+    [using import(peano) succNotZero]
+  @generalize-k |
+    fix k: Nat {
+      @given-the-inductive-hypothesis |
+        assume forall p2: CPoly; forall q2: CPoly; forall m2: Nat;
+          k != NAT_ZERO -> ctailConvolutionGrounded(p2, q2, k, m2) {
+          @inductive-hypothesis |
+            forall p2: CPoly; forall q2: CPoly; forall m2: Nat;
+              k != NAT_ZERO -> ctailConvolutionGrounded(p2, q2, k, m2)
+            [by hypothesis given-the-inductive-hypothesis]
+          // `prev` is guarded, so BOTH of these precede every term writing `peano.prev(peano.succ(k))`:
+          // the guard fact first, then the collapse.
+          @succ-k-is-nonzero |
+            peano.succ(k) != NAT_ZERO
+            [using specialize a-successor-is-never-zero(k)]
+          @prev-of-succ-k-is-k |
+            peano.prev(peano.succ(k)) = k
+            [using specialize prev-undoes-succ(k)]
+          @generalize-p |
+            fix p: CPoly {
+              @generalize-q |
+                fix q: CPoly {
+                  @generalize-m |
+                    fix m: Nat {
+                      @clause-at-succ-k |
+                        ctailConvolutionGrounded(p, q, peano.succ(k), m) iff
+                          (ctailConvolutionGrounded(p, q, peano.prev(peano.succ(k)), peano.succ(m))
+                          or peano.prev(peano.succ(k)) = NAT_ZERO)
+                        [using specialize the-generated-clause(p, q, peano.succ(k), m)]
+                      @clause-with-the-predecessor-collapsed |
+                        ctailConvolutionGrounded(p, q, peano.succ(k), m) iff
+                          (ctailConvolutionGrounded(p, q, k, peano.succ(m)) or k = NAT_ZERO)
+                        [by rewrite prev-of-succ-k-is-k clause-at-succ-k]
+                      @the-inductive-hypothesis-at-the-raised-index |
+                        k != NAT_ZERO -> ctailConvolutionGrounded(p, q, k, peano.succ(m))
+                        [using specialize inductive-hypothesis(p, q, peano.succ(m))]
+                      @grounded-at-succ-k |
+                        ctailConvolutionGrounded(p, q, peano.succ(k), m)
+                        [using tautology clause-with-the-predecessor-collapsed
+                          the-inductive-hypothesis-at-the-raised-index]
+                      @conclusion-nonzero-implies-grounded |
+                        peano.succ(k) != NAT_ZERO -> ctailConvolutionGrounded(p, q, peano.succ(k), m)
+                        [using tautology grounded-at-succ-k]
+                    }
+                  @discharge-m |
+                    forall m: Nat;
+                      peano.succ(k) != NAT_ZERO -> ctailConvolutionGrounded(p, q, peano.succ(k), m)
+                    [by generalize generalize-m]
+                }
+              @discharge-q |
+                forall q: CPoly; forall m: Nat;
+                  peano.succ(k) != NAT_ZERO -> ctailConvolutionGrounded(p, q, peano.succ(k), m)
+                [by generalize generalize-q]
+            }
+          @conclusion-for-all-polynomials |
+            forall p: CPoly; forall q: CPoly; forall m: Nat;
+              peano.succ(k) != NAT_ZERO -> ctailConvolutionGrounded(p, q, peano.succ(k), m)
+            [by generalize generalize-p]
+        }
+      @the-hypothesis-implies-the-step |
+        (forall p2: CPoly; forall q2: CPoly; forall m2: Nat;
+          k != NAT_ZERO -> ctailConvolutionGrounded(p2, q2, k, m2))
+          -> (forall p: CPoly; forall q: CPoly; forall m: Nat;
+          peano.succ(k) != NAT_ZERO -> ctailConvolutionGrounded(p, q, peano.succ(k), m))
+        [by discharge given-the-inductive-hypothesis]
+    }
+  @conclusion |
+    forall k: Nat;
+      (forall p2: CPoly; forall q2: CPoly; forall m2: Nat;
+      k != NAT_ZERO -> ctailConvolutionGrounded(p2, q2, k, m2))
+      -> (forall p: CPoly; forall q: CPoly; forall m: Nat;
+      peano.succ(k) != NAT_ZERO -> ctailConvolutionGrounded(p, q, peano.succ(k), m))
+    [by generalize generalize-k]
+qed
+
+// Strategy: `peano.induction` on the descending index. The base is VACUOUS — at j = NAT_ZERO the
+// antecedent demands `NAT_ZERO != NAT_ZERO` — so all the content is in the step above.
+theorem cTailConvolutionIsGrounded: forall p: CPoly; forall q: CPoly; forall j: Nat; forall m: Nat;
+  j != NAT_ZERO -> ctailConvolutionGrounded(p, q, j, m)
+proof
+  @zero-is-itself |
+    NAT_ZERO = NAT_ZERO
+    [by reflexivity]
+  // `tautology` reads a `forall` as one opaque atom, so the binders are opened before the
+  // vacuous antecedent can be refuted inside them.
+  @base-case-proof |
+    fix p: CPoly {
+      @generalize-q-at-zero |
+        fix q: CPoly {
+          @generalize-m-at-zero |
+            fix m: Nat {
+              @conclusion-vacuously-grounded-at-zero |
+                NAT_ZERO != NAT_ZERO -> ctailConvolutionGrounded(p, q, NAT_ZERO, m)
+                [using tautology zero-is-itself]
+            }
+          @discharge-m-at-zero |
+            forall m: Nat; NAT_ZERO != NAT_ZERO -> ctailConvolutionGrounded(p, q, NAT_ZERO, m)
+            [by generalize generalize-m-at-zero]
+        }
+      @discharge-q-at-zero |
+        forall q: CPoly; forall m: Nat;
+          NAT_ZERO != NAT_ZERO -> ctailConvolutionGrounded(p, q, NAT_ZERO, m)
+        [by generalize generalize-q-at-zero]
+    }
+  @base-case |
+    forall p: CPoly; forall q: CPoly; forall m: Nat;
+      NAT_ZERO != NAT_ZERO -> ctailConvolutionGrounded(p, q, NAT_ZERO, m)
+    [by generalize base-case-proof]
+  @induction-step-for-all-k |
+    forall k: Nat;
+      (forall p2: CPoly; forall q2: CPoly; forall m2: Nat;
+      k != NAT_ZERO -> ctailConvolutionGrounded(p2, q2, k, m2))
+      -> (forall p: CPoly; forall q: CPoly; forall m: Nat;
+      peano.succ(k) != NAT_ZERO -> ctailConvolutionGrounded(p, q, peano.succ(k), m))
+    [by cite cTailConvolutionReachesZeroFromAPredecessor]
+  @grounded-for-every-descending-index |
+    forall j: Nat; forall p: CPoly; forall q: CPoly; forall m: Nat;
+      j != NAT_ZERO -> ctailConvolutionGrounded(p, q, j, m)
+    [using instantiation peano.induction((fun j: Nat => (forall p: CPoly; forall q: CPoly; forall m: Nat; j != NAT_ZERO -> ctailConvolutionGrounded(p, q, j, m)))) base-case induction-step-for-all-k]
+  @generalize-p |
+    fix p: CPoly {
+      @generalize-q |
+        fix q: CPoly {
+          @generalize-j |
+            fix j: Nat {
+              @generalize-m |
+                fix m: Nat {
+                  @grounded-at-these-indices |
+                    j != NAT_ZERO -> ctailConvolutionGrounded(p, q, j, m)
+                    [using specialize grounded-for-every-descending-index(j, p, q, m)]
+                }
+              @discharge-m |
+                forall m: Nat; j != NAT_ZERO -> ctailConvolutionGrounded(p, q, j, m)
+                [by generalize generalize-m]
+            }
+          @discharge-j |
+            forall j: Nat; forall m: Nat; j != NAT_ZERO -> ctailConvolutionGrounded(p, q, j, m)
+            [by generalize generalize-j]
+        }
+      @discharge-q |
+        forall q: CPoly; forall j: Nat; forall m: Nat;
+          j != NAT_ZERO -> ctailConvolutionGrounded(p, q, j, m)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p: CPoly; forall q: CPoly; forall j: Nat; forall m: Nat;
+      j != NAT_ZERO -> ctailConvolutionGrounded(p, q, j, m)
     [by generalize generalize-p]
 qed
