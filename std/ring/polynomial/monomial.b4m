@@ -30,6 +30,7 @@ oper negR = ring_poly.negR
 const oneR = ring_poly.oneR
 fact mulOneLeftR = ring_poly.mulOneLeftR
 fact mulNegLeftR = ring_poly.mulNegLeftR
+fact mulZeroRightR = ring_poly.mulZeroRightR
 fact negPolyCoeff = ring_poly.negPolyCoeff
 oper convolution = ring_poly.convolution
 fact convolutionZero = ring_poly.convolutionZero
@@ -79,6 +80,7 @@ intheory theSkipStep
 intheory aMonomialShiftsEveryCoefficient
 intheory aConstantScalesEveryCoefficient
 intheory negationIsTheMinusOneScaling
+intheory aConstantMonomialProductAgreesCoefficientwise
 intheory monomialCoeffAtItsIndex
 intheory monomialCoeffElsewhere
 
@@ -1174,4 +1176,112 @@ proof
     forall p: Poly;
       ring_poly.negP(p) = ring_poly.mulP(monomial(negR(oneR), ZERO), p)
     [by generalize generalize-p]
+qed
+
+// -- A PRODUCT OF CONSTANT MONOMIALS -------------------------------------------------------
+// `monomial(c, 0) · monomial(d, 0)` and `monomial(c·d, 0)` agree at every index: at ZERO both
+// read `c·d`, and above it both vanish. Generic over R — the scaling law above does the work
+// and the two monomial coefficient clauses settle each case. Moved down from ℚ[x].
+theorem aConstantMonomialProductAgreesCoefficientwise: forall c, d: R; forall i: Nat;
+  coeff(ring_poly.mulP(monomial(c, ZERO), monomial(d, ZERO)), i) =
+  coeff(monomial(mulR(c, d), ZERO), i)
+proof
+  @scaling-is-coefficientwise |
+    forall g2: Poly; forall c2: R; forall i2: Nat;
+      coeff(ring_poly.mulP(monomial(c2, ZERO), g2), i2) = mulR(c2, coeff(g2, i2))
+    [by cite aConstantScalesEveryCoefficient]
+  @at-its-own-index |
+    forall a2: R; forall k2: Nat; coeff(monomial(a2, k2), k2) = a2
+    [by cite monomialCoeffAtItsIndex]
+  @elsewhere |
+    forall a2: R; forall k2, i2: Nat;
+      (not (i2 = k2)) -> coeff(monomial(a2, k2), i2) = zeroR
+    [by cite monomialCoeffElsewhere]
+  @generalize-c |
+    fix c: R {
+      @generalize-d |
+        fix d: R {
+          @generalize-i |
+            fix i: Nat {
+              @the-left-scaling |
+                coeff(ring_poly.mulP(monomial(c, ZERO), monomial(d, ZERO)), i) =
+                  mulR(c, coeff(monomial(d, ZERO), i))
+                [using specialize scaling-is-coefficientwise(monomial(d, ZERO), c, i)]
+              @the-index-is-zero-or-not |
+                i = ZERO or (not (i = ZERO))
+                [using tautology]
+              @when-the-index-is-zero |
+                  assume i = ZERO {
+                    @index-is-zero |
+                      i = ZERO
+                      [by hypothesis when-the-index-is-zero]
+                    // at ZERO both sides read `c·d`
+                    @d-at-zero |
+                      coeff(monomial(d, ZERO), ZERO) = d
+                      [using specialize at-its-own-index(d, ZERO)]
+                    @product-at-zero |
+                      coeff(monomial(mulR(c, d), ZERO), ZERO) = mulR(c, d)
+                      [using specialize at-its-own-index(mulR(c, d), ZERO)]
+                    @the-left-at-zero |
+                      coeff(ring_poly.mulP(monomial(c, ZERO), monomial(d, ZERO)), ZERO) =
+                        mulR(c, coeff(monomial(d, ZERO), ZERO))
+                      [using specialize scaling-is-coefficientwise(monomial(d, ZERO), c, ZERO)]
+                    @the-left-is-the-product |
+                      coeff(ring_poly.mulP(monomial(c, ZERO), monomial(d, ZERO)), ZERO) =
+                        mulR(c, d)
+                      [by rewrite d-at-zero the-left-at-zero]
+                    @conclusion-agree-at-zero |
+                      coeff(ring_poly.mulP(monomial(c, ZERO), monomial(d, ZERO)), i) =
+                        coeff(monomial(mulR(c, d), ZERO), i)
+                      [using simplify index-is-zero the-left-is-the-product product-at-zero]
+                  }
+              @when-the-index-is-nonzero |
+                  assume not (i = ZERO) {
+                    @index-is-nonzero |
+                      not (i = ZERO)
+                      [by hypothesis when-the-index-is-nonzero]
+                    // above ZERO both sides vanish
+                    @d-vanishes |
+                      coeff(monomial(d, ZERO), i) = zeroR
+                      [using specialize elsewhere(d, ZERO, i) index-is-nonzero]
+                    @product-vanishes |
+                      coeff(monomial(mulR(c, d), ZERO), i) = zeroR
+                      [using specialize elsewhere(mulR(c, d), ZERO, i) index-is-nonzero]
+                    @the-left-scales-zero |
+                      coeff(ring_poly.mulP(monomial(c, ZERO), monomial(d, ZERO)), i) =
+                        mulR(c, zeroR)
+                      [by rewrite d-vanishes the-left-scaling]
+                    @scaling-zero-is-zero |
+                      mulR(c, zeroR) = zeroR
+                      [using specialize mulZeroRightR(c)]
+                    @the-left-vanishes |
+                      coeff(ring_poly.mulP(monomial(c, ZERO), monomial(d, ZERO)), i) = zeroR
+                      [by rewrite scaling-zero-is-zero the-left-scales-zero]
+                    @conclusion-agree-above-zero |
+                      coeff(ring_poly.mulP(monomial(c, ZERO), monomial(d, ZERO)), i) =
+                        coeff(monomial(mulR(c, d), ZERO), i)
+                      [using simplify the-left-vanishes product-vanishes]
+                  }
+              @conclusion-agree-at-i |
+                coeff(ring_poly.mulP(monomial(c, ZERO), monomial(d, ZERO)), i) =
+                  coeff(monomial(mulR(c, d), ZERO), i)
+                [by common_conclusion the-index-is-zero-or-not when-the-index-is-zero when-the-index-is-nonzero]
+            }
+          @discharge-i |
+            forall i: Nat;
+              coeff(ring_poly.mulP(monomial(c, ZERO), monomial(d, ZERO)), i) =
+              coeff(monomial(mulR(c, d), ZERO), i)
+            [by generalize generalize-i]
+        }
+      @discharge-d |
+        forall d: R; forall i: Nat;
+          coeff(ring_poly.mulP(monomial(c, ZERO), monomial(d, ZERO)), i) =
+          coeff(monomial(mulR(c, d), ZERO), i)
+        [by generalize generalize-d]
+    }
+  @conclusion |
+    forall c, d: R; forall i: Nat;
+      coeff(ring_poly.mulP(monomial(c, ZERO), monomial(d, ZERO)), i) =
+      coeff(monomial(mulR(c, d), ZERO), i)
+    [by generalize generalize-c]
 qed

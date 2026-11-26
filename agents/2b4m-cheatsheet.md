@@ -120,27 +120,36 @@ found, so no interval exists in which a bogus axiom sits there looking settled.
 If the symbol is being DEFINED rather than constrained, prefer a definition block: it owes
 real obligations (above), and `--axioms` then reports a definition rather than an assumption.
 
-### A CITED hole ships; a bare one does not
+### `hole` vs `hole … cites` — decided by WHICH TASK you are doing
 
-`hole X cites "<locator>": <statement>` passes strict `check` — disclosed rather than silent,
-so `--axioms` lists it and a reader sees what the tree rests on. A BARE `hole` fails strict and
-is allowed only under `--draft`. So the choice is three-way, not two:
+`hole X cites "<locator>": <statement>` passes strict `check`: disclosed rather than silent, so
+`--axioms` lists it. A BARE `hole` fails strict (`--draft` allows it) and is ALWAYS a pin for
+later — something you have taken on and owe.
 
-| form | strict check | means |
+So the choice is three-way, and which to reach for depends on the job:
+
+| form | strict | means |
 |---|---|---|
 | `theorem` | passes | proved |
-| `hole X cites "…"` | **passes** | assumed on the named authority, disclosed |
-| `hole X` | fails | ours to prove; a worklist entry |
+| `hole X cites "…"` | passes | assumed on a named authority |
+| `hole X` | fails | yours to prove — a worklist entry |
 
-Tier the locator so the report is readable. The convention the corpus uses:
+- **A LOGICAL CHECK** ("do these steps compose?") grants the author's own claims with `cites`.
+  They are premises of the question, not things you set out to prove; a bare hole would assert
+  a debt you deliberately did not take on.
+- **A FULL FORMALIZATION** ("is this true from foundations?") makes an author's assertion a
+  BARE hole — it is exactly what you owe. `cites` narrows to genuine literature.
 
-- `standard:` — classical, with a textbook source
-- `assertion:` — the source asserts it without proving it
-- `gap:` — absent from the source entirely
-- `refuted:` — false, with the counterexample checked
+The same statement therefore gets opposite treatment in the two tasks, and a
+`cites "assertion: …"` becomes a bare hole the moment the task shifts from checking to
+formalizing.
 
-**A cited hole is still an assumption.** `cites` records WHERE it came from, never that it is
-true, and a bogus locator checks green forever — see the four disguises below.
+Tier the locator so the report reads — the convention the corpus uses: `standard:` (classical,
+textbook source), `assertion:` (the author asserts without proving), `gap:` (absent from the
+source), `refuted:` (false, counterexample checked).
+
+**`cites` records WHERE a claim came from, never that it is true.** A bogus locator checks
+green forever — see the four disguises below.
 
 ### Closing a hole means PROVING it
 

@@ -773,6 +773,25 @@ Practical notes, from proving Judson's parity lemma this way (2026-09-29):
   `file:line` and the theorems resting on it, which makes an exact regression golden while
   the work is in progress.
 
+**`cites` OR BARE — the choice names which task you are doing.** `hole X cites "<locator>":
+<statement>` passes strict `check`; a bare `hole` does not. That is not a convenience
+difference, it is a statement about who owes the proof:
+
+- A **LOGICAL CHECK** asks "do these steps compose?" — so the author's own claims are
+  PREMISES of the question, granted with `cites`. A bare hole there would assert a debt you
+  deliberately chose not to take on, and the check would never go green.
+- A **FULL FORMALIZATION** asks "is this true from foundations?" — so an author's assertion is
+  exactly what you owe, and it is a BARE hole. `cites` narrows to genuine literature.
+
+The same statement therefore gets opposite treatment in the two tasks, and a
+`cites "assertion: …"` properly becomes a bare hole when the task shifts from checking to
+formalizing. A bare `hole` is ALWAYS a pin for later.
+
+Tier the locator so `--axioms` reads as an accounting: `standard:` (classical, with a textbook
+source), `assertion:` (the source asserts without proving), `gap:` (absent from the source
+entirely), `refuted:` (false, counterexample checked). `cites` records WHERE a claim came
+from, never that it is true.
+
 **When NOT to bother.** If the statement is already given — a textbook's own lemma, a
 signature the source dictates — build it bottom-up; its shape is not in question and the
 hole machinery only adds the costs above.
