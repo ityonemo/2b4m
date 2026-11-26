@@ -52,9 +52,16 @@ pub const Result = struct {
 /// does not need the file to PARSE, but it does need the braces to BALANCE, since
 /// indentation is a function of nesting depth.
 pub fn check(arena: Allocator, source: []const u8) Allocator.Error!Result {
+    // Canonicalize the definition sections FIRST, on the TEXT, so everything downstream still
+    // sees tokens in source order. Permuting the token slice instead does not work: `render`
+    // computes `source[prev_end..tok.start]` to count blank lines between tokens, so a
+    // reordered slice walks those offsets backwards and panics (`start index 160 is larger
+    // than end index 119`). Source order is an invariant of the renderer, not an accident.
+    const canonical = try canonicalizeSections(arena, source);
+
     // tokenize fully (with comments) for one-token lookahead
     var toks: std.ArrayList(Token) = .empty;
-    var lex: lexer.Lexer = .init(source);
+    var lex: lexer.Lexer = .init(canonical);
     lex.keep_comments = true;
     while (true) {
         const t = lex.next();
@@ -62,11 +69,11 @@ pub fn check(arena: Allocator, source: []const u8) Allocator.Error!Result {
         if (t.tag == .eof) break;
     }
 
-    if (try braceImbalance(arena, source, toks.items)) |d|
-        return .{ .text = source, .diagnostic = d };
+    if (try braceImbalance(arena, canonical, toks.items)) |d|
+        return .{ .text = canonical, .diagnostic = d };
 
     var out: std.Io.Writer.Allocating = .init(arena);
-    render(&out.writer, source, toks.items) catch return error.OutOfMemory;
+    render(&out.writer, canonical, toks.items) catch return error.OutOfMemory;
     return .{ .text = try out.toOwnedSlice(), .diagnostic = null };
 }
 
@@ -118,6 +125,117 @@ fn diagnose(arena: Allocator, source: []const u8, at: u32, comptime what: []cons
 /// not balance. Prefer `check`, which reports WHY.
 pub fn format(arena: Allocator, source: []const u8) Allocator.Error![]const u8 {
     return (try check(arena, source)).text;
+}
+
+/// The canonical order of a definition block's well-formedness sections, and the only place it
+/// is defined. The PARSER accepts them in any order — they are independent obligations, so the
+/// grammar imposes no sequence — and `fmt` settles on one so diffs stay stable and a reader
+/// meets them in the same sequence every time.
+///
+/// Ordered weakest first: what the arms say about each other (`consistency:`), then about the
+/// domain (`totality:`), then about the recursion (`termination:`), then what the implicit case
+/// owes. `existence:` precedes `uniqueness:` because a value must exist before uniqueness means
+/// anything.
+const section_order = [_][]const u8{ "consistency", "totality", "termination", "existence", "uniqueness" };
+
+/// Reorder each definition block's sections into `section_order`, on the TEXT.
+///
+/// LINE-BASED and deliberately conservative. A section is a line whose first word is a section
+/// keyword; it owns that line plus any continuation lines (more-indented, or not starting with a
+/// section keyword) up to the next section or the next unindented line. Runs are permuted whole,
+/// so comments and continuations travel with the section they belong to.
+///
+/// Anything unexpected leaves the file untouched: a formatter that garbles an edge case is worse
+/// than one that declines. In particular a run containing a line this cannot classify is skipped
+/// entirely rather than partially reordered.
+fn canonicalizeSections(arena: Allocator, source: []const u8) Allocator.Error![]const u8 {
+    // first word of a line, ignoring leading space
+    const firstWord = struct {
+        fn f(line: []const u8) []const u8 {
+            var a: usize = 0;
+            while (a < line.len and (line[a] == ' ' or line[a] == '\t')) a += 1;
+            var b = a;
+            while (b < line.len and (std.ascii.isAlphanumeric(line[b]) or line[b] == '_')) b += 1;
+            return line[a..b];
+        }
+    }.f;
+    const rankOf = struct {
+        fn f(w: []const u8) ?usize {
+            for (section_order, 0..) |s, i| if (std.mem.eql(u8, w, s)) return i;
+            return null;
+        }
+    }.f;
+
+    // split into lines, keeping their extents
+    var lines: std.ArrayList([]const u8) = .empty;
+    var it = std.mem.splitScalar(u8, source, '\n');
+    while (it.next()) |l| try lines.append(arena, l);
+
+    // does any run need reordering?
+    var needs = false;
+    {
+        var last: ?usize = null;
+        for (lines.items) |l| {
+            const w = firstWord(l);
+            if (rankOf(w)) |r| {
+                if (last) |prev| if (r < prev) {
+                    needs = true;
+                    break;
+                };
+                last = r;
+            } else if (w.len != 0 and l.len != 0 and l[0] != ' ' and l[0] != '\t') {
+                last = null; // an unindented non-section line ends the run
+            }
+        }
+    }
+    if (!needs) return source;
+
+    var out: std.ArrayList([]const u8) = .empty;
+    var i: usize = 0;
+    while (i < lines.items.len) {
+        const w = firstWord(lines.items[i]);
+        if (rankOf(w) == null) {
+            try out.append(arena, lines.items[i]);
+            i += 1;
+            continue;
+        }
+        // collect the run: each section plus its continuation lines
+        const Chunk = struct { rank: usize, lines: []const []const u8 };
+        var chunks: std.ArrayList(Chunk) = .empty;
+        while (i < lines.items.len) {
+            const rank = rankOf(firstWord(lines.items[i])) orelse break;
+            const from = i;
+            i += 1;
+            while (i < lines.items.len) {
+                const l = lines.items[i];
+                if (l.len == 0) break; // a blank line ends the section
+                if (rankOf(firstWord(l)) != null) break;
+                if (l[0] != ' ' and l[0] != '\t') break; // unindented: a new declaration
+                i += 1;
+            }
+            try chunks.append(arena, .{ .rank = rank, .lines = lines.items[from..i] });
+        }
+        // stable insertion sort by rank. The decrement is INSIDE the body: a
+        // `: (b -= 1)` continue-expression still runs when `b` hits 0 and underflows `usize`.
+        const items = chunks.items;
+        for (1..items.len) |a| {
+            var b = a;
+            while (b > 0 and items[b - 1].rank > items[b].rank) {
+                const tmp = items[b - 1];
+                items[b - 1] = items[b];
+                items[b] = tmp;
+                b -= 1;
+            }
+        }
+        for (items) |c| try out.appendSlice(arena, c.lines);
+    }
+
+    var buf: std.ArrayList(u8) = .empty;
+    for (out.items, 0..) |l, n| {
+        if (n != 0) try buf.append(arena, '\n');
+        try buf.appendSlice(arena, l);
+    }
+    return buf.items;
 }
 
 /// Is `toks[i]` (an `.l_brace`) a `termination:` ENTRY PAIR — `{theorem, predicate}` — rather
@@ -735,6 +853,51 @@ test "a BLOCK brace still breaks — the pair exception is narrow" {
         \\    p() -> p()
         \\    [by discharge outer]
         \\qed
+        \\
+    );
+}
+
+test "fmt canonicalizes the definition sections, and leaves a canonical block alone" {
+    // The PARSER accepts any order (they are independent obligations); `fmt` settles on one so
+    // diffs stay stable. Written reversed here, emitted canonical.
+    try expectFmt(
+        \\sort N
+        \\const Z: N
+        \\oper s(a: N) => N
+        \\oper g(a: N, n: N) => N:
+        \\  g(a, n) = a when n = Z;
+        \\  g(a, n) = s(a) when n != Z.
+        \\  termination(peano): _, _
+        \\  consistency: _
+        \\
+    ,
+        \\sort N
+        \\const Z: N
+        \\oper s(a: N) => N
+        \\oper g(a: N, n: N) => N:
+        \\  g(a, n) = a when n = Z;
+        \\  g(a, n) = s(a) when n != Z.
+        \\  consistency: _
+        \\  termination(peano): _, _
+        \\
+    );
+
+    // ALREADY CANONICAL: byte-identical out. The whole `std` corpus is in this state, so the
+    // pass must be a no-op there — it returns the source slice untouched when nothing is out of
+    // order, rather than rebuilding it.
+    try expectFmt(
+        \\oper g(a: N, n: N) => N:
+        \\  g(a, n) = a when n = Z;
+        \\  g(a, n) = s(a) when n != Z.
+        \\  consistency: _
+        \\  totality(peano): gCovers
+        \\
+    ,
+        \\oper g(a: N, n: N) => N:
+        \\  g(a, n) = a when n = Z;
+        \\  g(a, n) = s(a) when n != Z.
+        \\  consistency: _
+        \\  totality(peano): gCovers
         \\
     );
 }

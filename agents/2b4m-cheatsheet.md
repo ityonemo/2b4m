@@ -360,8 +360,8 @@ oper add(a: Nat, b: Nat) => Nat:
 | `termination(<theory>):` | any clause recurses | does the recursion REACH A BASE? |
 | `existence:` + `uniqueness:` | the clause is IMPLICIT (left side not headed by the symbol) | does the value EXIST, uniquely? |
 
-Any order — they are independent obligations and the parser imposes no sequence. The table's
-order reads well as a convention.
+Any order — they are independent obligations and the parser imposes no sequence. `2b4m fmt`
+reorders them into the table's order.
 
 - **The checker SYNTHESIZES each obligation's statement** — never write it. A named theorem
   stating something else fails with both sides printed; read `wanted:` to learn the shape.
