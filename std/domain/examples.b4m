@@ -1,0 +1,37 @@
+// Worked example for `std/domain.b4m`'s nondegeneracy axiom.
+//
+// Why this file exists: `oneNotZero` is what stops the ZERO RING from counting as an integral
+// domain. The zero ring satisfies `noZeroDivisors` vacuously — there is nothing but zero, so
+// `a·b = 0` always holds with `a = 0` — and it satisfies every ring axiom, so the
+// zero-divisor condition alone does not exclude it. Every concrete domain discharges
+// `oneNotZero` when modeling the theory, so nothing inside std/ rests on it, and an axiom no
+// derivation touches could have its sides swapped unnoticed.
+theory domain <<< "std/domain.b4m"
+
+sort Domain = domain.Domain
+const ZERO = domain.ZERO
+const ONE = domain.ONE
+oper mul = domain.mul
+
+fact oneNotZero = domain.oneNotZero
+fact aProductOfNonzerosIsNonzero = domain.aProductOfNonzerosIsNonzero
+
+// What this file proves (verified manifest):
+intheory oneTimesOneIsNonzero
+
+// Because 1 ≠ 0, the zero-divisor condition applies AT one: 1·1 is nonzero. In the zero ring
+// the hypothesis fails, which is exactly what the axiom rules out — and it is the smallest
+// statement that needs BOTH axioms, so a direction error in either would show up here.
+theorem oneTimesOneIsNonzero: not (mul(ONE, ONE) = ZERO)
+proof
+  @one-is-not-zero |
+    ONE != ZERO
+    [by cite oneNotZero]
+  @nonzeros-multiply-nonzero |
+    forall a, b: Domain;
+      (not (a = ZERO)) -> (not (b = ZERO)) -> (not (mul(a, b) = ZERO))
+    [by cite aProductOfNonzerosIsNonzero]
+  @conclusion |
+    not (mul(ONE, ONE) = ZERO)
+    [using specialize nonzeros-multiply-nonzero(ONE, ONE) one-is-not-zero one-is-not-zero]
+qed

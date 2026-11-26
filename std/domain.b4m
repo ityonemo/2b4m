@@ -1,0 +1,310 @@
+// std/domain.b4m — the theory of an INTEGRAL DOMAIN: a commutative ring with unit and no
+// zero divisors. It sits strictly between std/ring.b4m (which has `mulZeroLeft`/`Right` but
+// no cancellation) and std/field.b4m (which adds inverses).
+//
+// The ring structure `(Domain, add, mul, ZERO, ONE, neg)` IS a commutative ring, so this
+// theory MODELS std/ring.b4m and the ring corpus transfers in.
+//
+// WHY THE LAYER EXISTS. `noZeroDivisors` is an AXIOM here and a THEOREM in std/field.b4m,
+// where inverses prove it. That is the whole difference, and it is enough: every degree fact
+// about D[x] that F[x] proved through `fieldInverse` actually needs only the zero-divisor
+// condition, and the inverse was simply the shortest route available. Stating the condition
+// directly is what lets ℤ[x] and ℤ_n[x] (n prime) have those facts too — neither has
+// inverses, so neither could reach them through the field layer.
+//
+// `oneNotZero` is part of the definition: the zero ring satisfies `noZeroDivisors` vacuously
+// but is not a domain, and the degree arguments need a nontrivial coefficient ring.
+
+theory ring <<< "std/ring.b4m"
+
+sort Domain
+const ZERO: Domain
+const ONE: Domain
+oper add(a: Domain, b: Domain) => Domain
+oper mul(a: Domain, b: Domain) => Domain
+oper neg(a: Domain) => Domain
+
+// `nonzero` mirrors std/field.b4m's: a definition block rather than an axiom, so the ring
+// layer's own copy can be bound to it through the model below (`ring.nonzero <- nonzero`)
+// and there is one notion rather than a fresh assumption per layer.
+pred nonzero(a: Domain):
+  nonzero(a) iff (not (a = ZERO)).
+
+// What this file proves (verified manifest):
+intheory nonzeroMeaning
+intheory mulOneRight
+intheory mulZeroRight
+intheory mulZeroLeft
+intheory addZeroRight
+intheory addNegRight
+intheory negationOfZeroIsZero
+intheory mulNegLeft
+intheory mulNegRight
+intheory aProductOfNonzerosIsNonzero
+intheory cancelMulLeft
+
+// -- ring axioms (discharge the ring model below) ---------------------------
+// Left-axiomatic, as in ring.b4m: only LEFT identity/inverse are primitive.
+axiom addIsAssociative: forall a, b, c: Domain; add(add(a, b), c) = add(a, add(b, c))
+axiom addZeroLeft: forall a: Domain; add(ZERO, a) = a
+axiom addNegLeft: forall a: Domain; add(neg(a), a) = ZERO
+axiom addIsCommutative: forall a, b: Domain; add(a, b) = add(b, a)
+axiom mulIsAssociative: forall a, b, c: Domain; mul(mul(a, b), c) = mul(a, mul(b, c))
+axiom mulAddDistribLeft: forall a, b, c: Domain; mul(a, add(b, c)) = add(mul(a, b), mul(a, c))
+axiom mulAddDistribRight: forall a, b, c: Domain; mul(add(a, b), c) = add(mul(a, c), mul(b, c))
+
+// -- the commutative-unital-domain axioms -----------------------------------
+axiom mulIsCommutative: forall a, b: Domain; mul(a, b) = mul(b, a)
+axiom mulOneLeft: forall a: Domain; mul(ONE, a) = a
+
+// THE DEFINING PROPERTY. A field proves this from `fieldInverse`; a domain assumes it.
+axiom noZeroDivisors: forall a, b: Domain; mul(a, b) = ZERO -> (a = ZERO or b = ZERO)
+
+// Nontriviality: the zero ring satisfies `noZeroDivisors` vacuously and is not a domain.
+axiom oneNotZero: ONE != ZERO
+
+// -- the ring model ---------------------------------------------------------
+// The whole ring corpus transfers in: mulZero*, mulNeg*, negMulNeg, additiveInverseUnique,
+// the additive-group facts, and so on.
+model RingIsDomain {
+  ring.Ring: Domain
+  ring.ZERO: ZERO
+  ring.ONE: ONE
+  ring.add: add
+  ring.mul: mul
+  ring.neg: neg
+  ring.addIsAssociative <- addIsAssociative
+  ring.addZeroLeft <- addZeroLeft
+  ring.addNegLeft <- addNegLeft
+  ring.addIsCommutative <- addIsCommutative
+  ring.mulIsAssociative <- mulIsAssociative
+  ring.mulAddDistribLeft <- mulAddDistribLeft
+  ring.mulAddDistribRight <- mulAddDistribRight
+  ring.nonzero: nonzero
+  ring.nonzero <- nonzero
+}
+
+// -- the characterizing `iff`, as a citable fact ----------------------------
+
+theorem nonzeroMeaning: forall a: Domain; nonzero(a) iff (not (a = ZERO))
+proof
+  @conclusion |
+    forall a: Domain; nonzero(a) iff (not (a = ZERO))
+    [by definition nonzero]
+qed
+
+// -- unit and zero laws (transferred or derived) -----------------------------
+
+// a·1 = a. Commute, then the left unit.
+theorem mulOneRight: forall a: Domain; mul(a, ONE) = a
+proof
+  @generalize-a |
+    fix a: Domain {
+      @commute |
+        mul(a, ONE) = mul(ONE, a)
+        [using specialize mulIsCommutative(a, ONE)]
+      @left-unit |
+        mul(ONE, a) = a
+        [using specialize mulOneLeft(a)]
+      @conclusion-at-a |
+        mul(a, ONE) = a
+        [using chain commute left-unit]
+    }
+  @conclusion |
+    forall a: Domain; mul(a, ONE) = a
+    [by generalize generalize-a]
+qed
+
+theorem mulZeroLeft: forall a: Domain; mul(ZERO, a) = ZERO
+proof
+  @conclusion |
+    forall a: Domain; mul(ZERO, a) = ZERO
+    [using model(RingIsDomain) ring.mulZeroLeft]
+qed
+
+theorem mulZeroRight: forall a: Domain; mul(a, ZERO) = ZERO
+proof
+  @conclusion |
+    forall a: Domain; mul(a, ZERO) = ZERO
+    [using model(RingIsDomain) ring.mulZeroRight]
+qed
+
+theorem addZeroRight: forall a: Domain; add(a, ZERO) = a
+proof
+  @conclusion |
+    forall a: Domain; add(a, ZERO) = a
+    [using model(RingIsDomain) ring.addZeroRight]
+qed
+
+theorem addNegRight: forall a: Domain; add(a, neg(a)) = ZERO
+proof
+  @conclusion |
+    forall a: Domain; add(a, neg(a)) = ZERO
+    [using model(RingIsDomain) ring.addNegRight]
+qed
+
+theorem negationOfZeroIsZero: neg(ZERO) = ZERO
+proof
+  @conclusion |
+    neg(ZERO) = ZERO
+    [using model(RingIsDomain) ring.negationOfZeroIsZero]
+qed
+
+theorem mulNegLeft: forall a, b: Domain; mul(neg(a), b) = neg(mul(a, b))
+proof
+  @conclusion |
+    forall a, b: Domain; mul(neg(a), b) = neg(mul(a, b))
+    [using model(RingIsDomain) ring.mulNegLeft]
+qed
+
+theorem mulNegRight: forall a, b: Domain; mul(a, neg(b)) = neg(mul(a, b))
+proof
+  @conclusion |
+    forall a, b: Domain; mul(a, neg(b)) = neg(mul(a, b))
+    [using model(RingIsDomain) ring.mulNegRight]
+qed
+
+// -- what the zero-divisor condition buys ------------------------------------
+
+// The contrapositive of `noZeroDivisors`, which is the form the polynomial degree arguments
+// actually use: a product of nonzeros is nonzero.
+theorem aProductOfNonzerosIsNonzero: forall a, b: Domain;
+  (not (a = ZERO)) -> (not (b = ZERO)) -> (not (mul(a, b) = ZERO))
+proof
+  @no-zero-divisors |
+    forall a, b: Domain; mul(a, b) = ZERO -> (a = ZERO or b = ZERO)
+    [by cite noZeroDivisors]
+  @generalize-a |
+    fix a: Domain {
+      @generalize-b |
+        fix b: Domain {
+          @split-at-a-b |
+            mul(a, b) = ZERO -> (a = ZERO or b = ZERO)
+            [using specialize no-zero-divisors(a, b)]
+          @conclusion-nonzeros-multiply-nonzero |
+            (not (a = ZERO)) -> (not (b = ZERO)) -> (not (mul(a, b) = ZERO))
+            [using tautology split-at-a-b]
+        }
+      @discharge-b |
+        forall b: Domain; (not (a = ZERO)) -> (not (b = ZERO)) -> (not (mul(a, b) = ZERO))
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b: Domain;
+      (not (a = ZERO)) -> (not (b = ZERO)) -> (not (mul(a, b) = ZERO))
+    [by generalize generalize-a]
+qed
+
+// MULTIPLICATIVE CANCELLATION, which a ring does not have and a domain does. This is the
+// other half of what the layer is for: `ring.b4m` carries additive cancellation only.
+//
+// From `a·b = a·c` with `a` nonzero: `a·(b − c) = 0`, so `b − c = 0` by the zero-divisor
+// condition, so `b = c`.
+theorem cancelMulLeft: forall a, b, c: Domain;
+  (not (a = ZERO)) -> mul(a, b) = mul(a, c) -> b = c
+proof
+  @nonzeros-multiply-nonzero |
+    forall a2, b2: Domain;
+      (not (a2 = ZERO)) -> (not (b2 = ZERO)) -> (not (mul(a2, b2) = ZERO))
+    [by cite aProductOfNonzerosIsNonzero]
+  @generalize-a |
+    fix a: Domain {
+      @generalize-b |
+        fix b: Domain {
+          @generalize-c |
+            fix c: Domain {
+              @given-a-nonzero |
+                assume not (a = ZERO) {
+                  @given-products-agree |
+                    assume mul(a, b) = mul(a, c) {
+                      @products-agree |
+                        mul(a, b) = mul(a, c)
+                        [by hypothesis given-products-agree]
+                      @a-nonzero |
+                        not (a = ZERO)
+                        [by hypothesis given-a-nonzero]
+                      // a·b + neg(a·c) = 0, since the two sides are equal
+                      @distribute-over-the-difference |
+                        mul(a, add(b, neg(c))) = add(mul(a, b), mul(a, neg(c)))
+                        [using specialize mulAddDistribLeft(a, b, neg(c))]
+                      @the-right-factor-negates |
+                        mul(a, neg(c)) = neg(mul(a, c))
+                        [using specialize mulNegRight(a, c)]
+                      @rewrite-the-negated-product |
+                        mul(a, add(b, neg(c))) = add(mul(a, b), neg(mul(a, c)))
+                        [by rewrite the-right-factor-negates distribute-over-the-difference]
+                      @rewrite-the-equal-product |
+                        mul(a, add(b, neg(c))) = add(mul(a, c), neg(mul(a, c)))
+                        [by rewrite products-agree rewrite-the-negated-product]
+                      @the-difference-vanishes |
+                        add(mul(a, c), neg(mul(a, c))) = ZERO
+                        [using specialize addNegRight(mul(a, c))]
+                      @the-product-is-zero |
+                        mul(a, add(b, neg(c))) = ZERO
+                        [using chain rewrite-the-equal-product the-difference-vanishes]
+                      // so the difference is zero, since a is not
+                      @nonzeros-at-a-and-the-difference |
+                        (not (a = ZERO)) -> (not (add(b, neg(c)) = ZERO)) ->
+                          (not (mul(a, add(b, neg(c))) = ZERO))
+                        [using specialize nonzeros-multiply-nonzero(a, add(b, neg(c)))]
+                      @the-difference-is-zero |
+                        add(b, neg(c)) = ZERO
+                        [using tautology nonzeros-at-a-and-the-difference a-nonzero
+                          the-product-is-zero]
+                      // b = c follows: add c to both sides of b − c = 0
+                      @the-sum-is-itself |
+                        add(add(b, neg(c)), c) = add(add(b, neg(c)), c)
+                        [by reflexivity]
+                      @the-sum-with-c |
+                        add(add(b, neg(c)), c) = add(ZERO, c)
+                        [by rewrite the-difference-is-zero the-sum-is-itself]
+                      @reassociate |
+                        add(add(b, neg(c)), c) = add(b, add(neg(c), c))
+                        [using specialize addIsAssociative(b, neg(c), c)]
+                      @the-inner-pair-vanishes |
+                        add(neg(c), c) = ZERO
+                        [using specialize addNegLeft(c)]
+                      @b-plus-zero |
+                        add(add(b, neg(c)), c) = add(b, ZERO)
+                        [by rewrite the-inner-pair-vanishes reassociate]
+                      @b-unchanged |
+                        add(b, ZERO) = b
+                        [using specialize addZeroRight(b)]
+                      @the-left-side-is-b |
+                        add(add(b, neg(c)), c) = b
+                        [using chain b-plus-zero b-unchanged]
+                      @zero-plus-c |
+                        add(ZERO, c) = c
+                        [using specialize addZeroLeft(c)]
+                      @the-right-side-is-c |
+                        add(add(b, neg(c)), c) = c
+                        [using chain the-sum-with-c zero-plus-c]
+                      @c-equals-b |
+                        c = b
+                        [using chain the-right-side-is-c the-left-side-is-b]
+                      @conclusion-b-equals-c |
+                        b = c
+                        [by symmetry c-equals-b]
+                    }
+                  @products-agree-implies-equal |
+                    mul(a, b) = mul(a, c) -> b = c
+                    [by discharge given-products-agree]
+                }
+              @conclusion-cancel-at-a-b-c |
+                (not (a = ZERO)) -> mul(a, b) = mul(a, c) -> b = c
+                [by discharge given-a-nonzero]
+            }
+          @discharge-c |
+            forall c: Domain; (not (a = ZERO)) -> mul(a, b) = mul(a, c) -> b = c
+            [by generalize generalize-c]
+        }
+      @discharge-b |
+        forall b: Domain; forall c: Domain;
+          (not (a = ZERO)) -> mul(a, b) = mul(a, c) -> b = c
+        [by generalize generalize-b]
+    }
+  @conclusion |
+    forall a, b, c: Domain;
+      (not (a = ZERO)) -> mul(a, b) = mul(a, c) -> b = c
+    [by generalize generalize-a]
+qed
