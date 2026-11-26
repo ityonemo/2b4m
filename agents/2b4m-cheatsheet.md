@@ -28,7 +28,7 @@ Naming/label conventions are a SEPARATE doc — see `agents/style-guide.md`.
 |---|---|
 | `check <one std file>` | well under a second |
 | `check aata/<one file>` | ~5 s |
-| `check std --library` | ~6 s for 126 files |
+| `check std --library` | ~6 s for 151 files |
 
 **If a check takes MINUTES, suspect a Debug binary before you believe the corpus is slow.**
 Debug is ~35x slower; `2b4m --help` prints which build you have, and plain `zig build` gives
@@ -301,7 +301,11 @@ qed
 - **Mixed boolean operators need explicit parens.** Same-op chains are fine (`a or b or c`, `a -> b -> c`); DIFFERENT ops must be parenthesized: `a and b or c` is a parse error → `(a and b) or c`. This includes `not` as an operand (`(not p) and q`, `a -> (not b)`) and `iff` (`(a and b) iff c`, `a -> (P iff Q)` — an iff under `->` needs parens).
 - `=` / `!=` are term comparisons, NOT boolean ops — never need parens against a connective (`x = y and p` parses as `(x = y) and p`).
 - Quantifier binders end with `;`: `forall a, b: Nat; …`, `exists w: Nat; …`.
-- No infix minus, ever — write `sub(a, b)`.
+- No infix minus, ever — write `sub(a, b)`. On ℕ `sub` is GUARDED
+  (`requires less_or_equal(b, a)`), so each use owes that from a proved step in scope; for
+  stepping back by one prefer `prev(n)` (`requires n != ZERO`), whose disequation guard is
+  usually already in hand. `monus` (truncated subtraction, floors at zero) is the total option
+  where the index genuinely runs past.
 
 ## iff (surface sugar)
 
@@ -340,36 +344,65 @@ citation; `[by cite I.thm]` is the same effect but a plain re-checked obligation
   `unproved obligation` error. Detail: `### WHAT A TACTIC IS GIVEN vs WHAT IT FINDS` in GUIDE.md.
 - Discipline: in `std/*.b4m` use accelerants freely (shortest kernel-checked proof). In `aata/*.md` do NOT accelerate a step Judson spells out — transcribe it; accelerants only for algebra the book elides. (See `.claude/rules/aata-guide.md`.)
 
-## DEFINITION BLOCKS — a declaration may carry its defining clauses
+## DEFINITION BLOCKS — a declaration carries its clauses AND owes obligations
 
-A `pred`/`oper` declaration followed by `:` takes the clauses that characterize
-it, `;`-separated. Each clause is written EXACTLY as the axiom it becomes.
+A `pred`/`oper` declaration followed by `:` takes the clauses that characterize it,
+`;`-separated, then the WELL-FORMEDNESS SECTIONS after the clause list's `.`.
 
 ```2b4m
 pred isZero(n: Nat):
-  isZero(n) iff n = ZERO          // a predicate: one clause, writes its connective
+  isZero(n) iff n = ZERO          // one clause, no pairs, owes nothing
 
 oper add(a: Nat, b: Nat) => Nat:
-  add(ZERO, b) = b;               // a function: one clause per case
+  add(ZERO, b) = b;
   add(succ(k), b) = succ(add(k, b))
-
-oper gcd(a: Nat, b: Nat) => Nat:  // guards when the heads don't distinguish
-  gcd(a, b) = a                  when b = ZERO;
-  gcd(a, b) = gcd(b, mod(a, b))  when b != ZERO
+  consistency(peano): _           // ZERO/succ never overlap; the tactic discharges it
 ```
 
-- **Every clause states its own condition IN FULL.** Clauses are not ordered and
-  there is no first-match-wins: each is a standalone axiom, and axioms have no
-  precedence. Overlapping clauses that disagree are inconsistent, unchecked.
+**IT IS NOT SUGAR.** A definition block owes up to four obligations that a bare declaration
+plus a hand-written axiom does not. That is the point: the form you choose carries semantic
+weight, and a reader learns from it that the checker vouched for the clauses.
+
+| section | when owed | asks |
+|---|---|---|
+| `consistency:` | 2+ clauses | do the arms AGREE where they overlap? |
+| `totality(<theory>):` | 2+ explicit arms, conditions not propositionally exhaustive | do the arms COVER the domain? |
+| `termination(<theory>):` | any clause recurses | does the recursion REACH A BASE? |
+| `existence:` + `uniqueness:` | the clause is IMPLICIT (left side not headed by the symbol) | does the value EXIST, uniquely? |
+
+**Written in that order** — the parser reads them sequentially, so `termination:` before
+`totality:` is a parse error. (An accident of the parse loops, not a design choice; slated to
+become order-insensitive.)
+
+- `consistency:` takes one entry per unordered clause PAIR, canonical order `(0,1)`, `(0,2)`,
+  … `_` discharges with `definition_consistency`, a name points at your theorem.
+- `termination:` takes one entry per CLAUSE: `_` for a terminating arm,
+  `{theorem, predicate}` for a recursive one. The predicate is GENERATED (a transcription of
+  that arm's call sites) and citable with `by definition`.
+- `totality:` is USUALLY AUTODETECTED — complementary conditions (`n = ZERO` / `n != ZERO`), a
+  pred split (`p(x)` / `not p(x)`), or a three-way partition need no declaration, and
+  declaring one anyway is rejected as unowed.
+- **The checker SYNTHESIZES every obligation's statement** — you never write it. A named
+  theorem that states something else fails with both sides printed.
+
+**A RECURSIVE block has two extra rules**: every arm must be EXPLICIT, and every l-value
+argument must be a bare parameter or a closed term — `f(succ(n))` destructures and hides the
+descent on the left, so write `f(n) = … f(prev(n)) … when n != ZERO` instead. Its clauses may
+also not rename the declared parameters.
+
+- **Every clause states its own condition IN FULL.** Clauses are unordered; there is no
+  first-match-wins. Each is a standalone axiom, and axioms have no precedence.
 - **Cite with `by definition`** — `[by definition isZero]` for a predicate,
   `[by definition(0) add]` for a function clause (ZERO-indexed).
-- **It is SUGAR.** `pred p(x: T)` + a separately-named `axiom` means the same
-  thing; only the axiom's name differs (and so `by cite thatName` cites it).
-- **NOT `define`.** A `define` is a macro — substituted before anything looks at
-  it, invisible to the kernel, so it cannot be cited, model-mapped, or named
-  where a symbol is required. A definition block declares a REAL symbol.
-- `--axioms` marks a clause `— DEFINITION` rather than listing it beside genuine
-  assumptions; `--library` still fails on an unused one, naming it a definition.
+- **NOT `define`.** A `define` is a macro — substituted before anything looks at it, invisible
+  to the kernel, so it cannot be cited, model-mapped, or named where a symbol is required.
+- `--axioms` marks a clause `— DEFINITION` rather than listing it beside genuine assumptions;
+  `--library` still fails on an unused one, naming it a definition.
+
+**What this does NOT buy you**: an `oper` block satisfying all four cannot be unsound, but
+`pred q(n): q(n) iff (not q(n)).` is accepted and proves `q(c) and not q(c)` — negative
+self-reference is orthogonal to all four. Full rationale in
+`design/definition-wellformedness.md`.
 
 ## Declaration keywords — one-liners; detail at `### KEYWORD: <name>` in GUIDE.md
 

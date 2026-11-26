@@ -26,6 +26,11 @@ fact zeroPolyCoeff = ring_poly.zeroPolyCoeff
 fact polyExtensionality = ring_poly.polyExtensionality
 oper addR = ring_poly.addR
 oper mulR = ring_poly.mulR
+oper negR = ring_poly.negR
+const oneR = ring_poly.oneR
+fact mulOneLeftR = ring_poly.mulOneLeftR
+fact mulNegLeftR = ring_poly.mulNegLeftR
+fact negPolyCoeff = ring_poly.negPolyCoeff
 oper convolution = ring_poly.convolution
 fact convolutionZero = ring_poly.convolutionZero
 fact convolutionSucc = ring_poly.convolutionSucc
@@ -72,6 +77,8 @@ intheory aMonomialRunSkipsToItsIndex
 intheory theSkipBase
 intheory theSkipStep
 intheory aMonomialShiftsEveryCoefficient
+intheory aConstantScalesEveryCoefficient
+intheory negationIsTheMinusOneScaling
 intheory monomialCoeffAtItsIndex
 intheory monomialCoeffElsewhere
 
@@ -1052,4 +1059,119 @@ proof
     forall a: R; forall k, i: Nat;
       (not (i = k)) -> coeff(monomial(a, k), i) = zeroR
     [by definition(1) monomial]
+qed
+
+// -- SCALING BY A CONSTANT -----------------------------------------------------------------
+// The degree-zero case of the shift: multiplying by `monomial(c, 0)` scales every coefficient
+// by `c`, the index unchanged. Generic over R — `aMonomialShiftsEveryCoefficient` above does
+// the work and `peano.addZeroLeft` collapses the index. Moved down from ℚ[x], which restated
+// it locally.
+theorem aConstantScalesEveryCoefficient: forall g: Poly; forall c: R; forall i: Nat;
+  coeff(ring_poly.mulP(monomial(c, ZERO), g), i) = mulR(c, coeff(g, i))
+proof
+  @the-shift |
+    forall g2: Poly; forall c2: R; forall k2, t2: Nat;
+      coeff(ring_poly.mulP(monomial(c2, k2), g2), peano.add(k2, t2)) =
+      mulR(c2, coeff(g2, t2))
+    [by cite aMonomialShiftsEveryCoefficient]
+  @generalize-g |
+    fix g: Poly {
+      @generalize-c |
+        fix c: R {
+          @generalize-i |
+            fix i: Nat {
+              @the-monomial-shifts |
+                coeff(ring_poly.mulP(monomial(c, ZERO), g), peano.add(ZERO, i)) =
+                  mulR(c, coeff(g, i))
+                [using specialize the-shift(g, c, ZERO, i)]
+              @the-index-collapses |
+                peano.add(ZERO, i) = i
+                [using specialize peano.addZeroLeft(i)]
+              @conclusion-scaled |
+                coeff(ring_poly.mulP(monomial(c, ZERO), g), i) = mulR(c, coeff(g, i))
+                [by rewrite the-index-collapses the-monomial-shifts]
+            }
+          @discharge-i |
+            forall i: Nat;
+              coeff(ring_poly.mulP(monomial(c, ZERO), g), i) = mulR(c, coeff(g, i))
+            [by generalize generalize-i]
+        }
+      @discharge-c |
+        forall c: R; forall i: Nat;
+          coeff(ring_poly.mulP(monomial(c, ZERO), g), i) = mulR(c, coeff(g, i))
+        [by generalize generalize-c]
+    }
+  @conclusion |
+    forall g: Poly; forall c: R; forall i: Nat;
+      coeff(ring_poly.mulP(monomial(c, ZERO), g), i) = mulR(c, coeff(g, i))
+    [by generalize generalize-g]
+qed
+
+// -- NEGATION IS THE MINUS-ONE SCALING -----------------------------------------------------
+// `negP(p) = monomial(-1, 0) · p`. Judson's monic step rewrites a negation as a scaling so the
+// leading coefficient can be read off the scaling law.
+//
+// Generic over R, but NOT by the route ℚ[x] took: ℚ[x] closed the arithmetic step
+// `(-1)·x = -x` with `[using polynomial(rational)]`, and `polynomial` is a SCALAR-layer
+// tactic — there is no `polynomial(ring)` over an abstract R. Here it is two explicit steps
+// instead, `ring.mulNegLeft` then `ring_poly.mulOneLeftR`, which is the honest cost of being
+// generic.
+theorem negationIsTheMinusOneScaling: forall p: Poly;
+  ring_poly.negP(p) = ring_poly.mulP(monomial(negR(oneR), ZERO), p)
+proof
+  @scaling-is-coefficientwise |
+    forall g2: Poly; forall c2: R; forall i2: Nat;
+      coeff(ring_poly.mulP(monomial(c2, ZERO), g2), i2) = mulR(c2, coeff(g2, i2))
+    [by cite aConstantScalesEveryCoefficient]
+  @negation-is-coefficientwise |
+    forall p2: Poly; forall i2: Nat;
+      coeff(ring_poly.negP(p2), i2) = negR(coeff(p2, i2))
+    [by cite negPolyCoeff]
+  @extensionality |
+    forall p2, q2: Poly;
+      (forall i2: Nat; coeff(p2, i2) = coeff(q2, i2)) -> p2 = q2
+    [by cite polyExtensionality]
+  @generalize-p |
+    fix p: Poly {
+      @each-index |
+        fix i: Nat {
+          @the-negations-coefficient |
+            coeff(ring_poly.negP(p), i) = negR(coeff(p, i))
+            [using specialize negation-is-coefficientwise(p, i)]
+          @the-scalings-coefficient |
+            coeff(ring_poly.mulP(monomial(negR(oneR), ZERO), p), i) =
+              mulR(negR(oneR), coeff(p, i))
+            [using specialize scaling-is-coefficientwise(p, negR(oneR), i)]
+          // `(-1)·x = -(1·x) = -x`, the two steps `polynomial(rational)` did at once.
+          @minus-one-pulls-out |
+            mulR(negR(oneR), coeff(p, i)) = negR(mulR(oneR, coeff(p, i)))
+            [using specialize mulNegLeftR(oneR, coeff(p, i))]
+          @one-is-the-identity |
+            mulR(oneR, coeff(p, i)) = coeff(p, i)
+            [using specialize mulOneLeftR(coeff(p, i))]
+          @minus-one-times-is-the-negation |
+            mulR(negR(oneR), coeff(p, i)) = negR(coeff(p, i))
+            [by rewrite one-is-the-identity minus-one-pulls-out]
+          @the-scaling-is-the-negation |
+            coeff(ring_poly.mulP(monomial(negR(oneR), ZERO), p), i) =
+              negR(coeff(p, i))
+            [by rewrite minus-one-times-is-the-negation the-scalings-coefficient]
+          @conclusion-the-coefficients-agree |
+            coeff(ring_poly.negP(p), i) =
+              coeff(ring_poly.mulP(monomial(negR(oneR), ZERO), p), i)
+            [using simplify the-negations-coefficient the-scaling-is-the-negation]
+        }
+      @the-coefficients-agree-everywhere |
+        forall i: Nat;
+          coeff(ring_poly.negP(p), i) =
+          coeff(ring_poly.mulP(monomial(negR(oneR), ZERO), p), i)
+        [by generalize each-index]
+      @conclusion-the-polynomials-agree |
+        ring_poly.negP(p) = ring_poly.mulP(monomial(negR(oneR), ZERO), p)
+        [using specialize extensionality(ring_poly.negP(p), ring_poly.mulP(monomial(negR(oneR), ZERO), p)) the-coefficients-agree-everywhere]
+    }
+  @conclusion |
+    forall p: Poly;
+      ring_poly.negP(p) = ring_poly.mulP(monomial(negR(oneR), ZERO), p)
+    [by generalize generalize-p]
 qed

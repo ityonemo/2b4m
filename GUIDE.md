@@ -483,6 +483,139 @@ The word proves nothing itself, which is why it cannot be unsound: it emits an
 `instantiation` and the kernel checks the fit. Conditions that CAN both hold do not
 match the schema's shape, so such a goal is rejected rather than discharged.
 
+### THE FOUR WELL-FORMEDNESS OBLIGATIONS
+
+A definition block claims to pin its symbol down. Four obligations check that it does, each
+guarding a different way the claim can fail. Each is DECLARED after the clause list's `.`, and
+each names a theorem you prove (or `_` where a tactic discharges it).
+
+| obligation | asks | without it |
+|---|---|---|
+| `consistency:` | do the arms AGREE where they overlap? | the block can prove `ZERO = ONE` |
+| `existence:` / `uniqueness:` | does the characterized value EXIST, uniquely? | the symbol may denote nothing, or a set |
+| `termination:` | does the recursion REACH A BASE? | `g(n) = s(g(n))` asserts a value equal to its own successor |
+| `totality:` | do the arms COVER the domain? | the symbol is UNDETERMINED somewhere |
+
+`consistency:` is above. The other three follow. **The checker SYNTHESIZES the statement each
+obligation needs** — you never write it — so when a named theorem states something else, the
+error prints both what it states and what was wanted.
+
+#### `existence:` / `uniqueness:` — for an IMPLICIT definition
+
+A clause is EXPLICIT when its left side is headed by the symbol (`recip(a) = …`): the symbol
+rewrites away and is eliminable. A clause is IMPLICIT when it characterizes the value instead:
+
+```2b4m
+oper recip(a: Field) => Field requires nonzero(a):
+  mul(a, recip(a)) = ONE.
+  existence: everyNonzeroHasAnInverse,
+  uniqueness: inversesAreUnique
+```
+
+`mul(a, recip(a)) = ONE` says what `recip(a)` must satisfy without saying what it IS. That
+only defines something if such a value exists and is unique — otherwise the clause is an
+assumption wearing a definition's clothes. Both are REQUIRED on an implicit block, and both
+are stated about the PROPERTY rather than about the defined symbol; stated about the symbol
+they would be circular.
+
+Only `oper` can be implicitly defined. A `pred` gets both for free: it is total, and any
+condition on it determines it pointwise.
+
+#### `termination(<theory>):` — for a RECURSIVE definition
+
+```2b4m
+oper fib(n: Nat) => Nat:
+  fib(ZERO) = ZERO;
+  fib(ONE) = ONE;
+  fib(n) = add(fib(prev(n)), fib(prev(prev(n)))) when less_than(ONE, n).
+  totality(peano): fibCovers
+  termination(peano): _, _, {fibIsGrounded, fibGrounded}
+```
+
+(Three arms, so it owes `totality:` as well — `n = ZERO` / `n = ONE` / `ONE < n` is not
+propositionally exhaustive. **The sections are ORDER-SENSITIVE**: `consistency:` then
+`totality:` then `termination:` then `existence:`/`uniqueness:`, which is the order the
+parser reads them in.)
+
+One entry per clause, in order: `_` for a terminating arm, `{theorem, predicate}` for a
+recursive one. The pair names the theorem you prove and the predicate the checker GENERATES —
+a transcription of that arm's call sites, one conjunct per call, each a disjunction of the call
+grounded with its argument hitting a terminating arm's pattern. It is a DEFINITION, so it is
+eliminable and citable with `by definition`, never an axiom.
+
+The obligation is the recursive arm's own guard:
+
+```
+forall n: Nat; less_than(ONE, n) -> fibGrounded(n)
+```
+
+**It names no ordering and no induction principle** — how to prove it is yours to choose
+(`peano.induction` for a one-step descent, strong induction for one reaching further back).
+That is deliberate: some legitimate recursions INCREASE (a ladder operator maps level `n` to
+`n+1`), so termination cannot be "something decreases".
+
+Two rules a recursive block must follow, both enforced:
+
+- **Every arm must be EXPLICIT.** An implicit clause makes the symbol non-eliminable, so no
+  arm's recursion can be grounded and there are no call sites to transcribe.
+- **Every l-value argument is a bare parameter or a term with no free variables.** `succ(n)`
+  destructures and puts the descent on the LEFT, where the checker cannot read it; write the
+  descent on the right (`prev(n)`) instead. `ZERO` and `succ(ZERO)` are fine, being closed.
+  Relatedly, a recursive block's clauses may not RENAME the declared parameters — the checker
+  reads base patterns by slot, and a rename makes the generated predicate's base branch
+  reflexive, which would let the obligation be discharged vacuously.
+
+`prev` is the natural descent: `oper prev(n: Nat) => Nat requires n != ZERO` in `std/peano.b4m`.
+Its guard is a disequation the arm's own condition supplies, where `sub(n, ONE)` would owe the
+order fact `less_or_equal(ONE, n)` and need a bridging lemma.
+
+#### `totality(<theory>):` — do the arms cover?
+
+```2b4m
+oper theCofactorIndex(i: Nat, j: Nat, k: Nat) => Nat:
+  theCofactorIndex(i, j, ZERO) = monus(i, j);
+  theCofactorIndex(i, j, succ(k)) = monus(monus(i, j), succ(k)).
+  totality(peano): theCofactorIndexCovers
+```
+
+`consistency:` and `totality:` are duals: one guards against arms CONTRADICTING, the other
+against arms NOT REACHING. A block can satisfy the first and fail the second — arms that never
+overlap make every consistency pair vacuous while some input matches no arm at all.
+
+The obligation is the arms' conditions DISJOINED, over the parameters. A pattern contributes an
+existential, because a pattern binds its own variables:
+
+```
+forall i, j, k: Nat; k = ZERO or (exists k_at3: Nat; k = succ(k_at3))
+```
+
+**It is usually AUTODETECTED and you declare nothing.** When the arms' conditions are
+propositionally exhaustive the block covers by construction, and the checker says so — a
+`totality:` declaration there is rejected as an obligation you do not owe. Three such shapes:
+
+- two-way complementarity — `n = ZERO` and `n != ZERO`
+- a PREDICATE split — `p(x)` and `not p(x)`
+- `swap`'s three-way — `x = u`, `x = v`, `x != u and x != v`
+
+Autodetection is deliberately SYNTACTIC: it refuses `n = ZERO` beside `less_than(ONE, n)`,
+which leaves a real gap at `ONE`. Deciding that pair needs arithmetic, and a detector that
+reasons could be wrong — so a refusal means you name a theorem, which is where a reader should
+look.
+
+A `ZERO`/`succ(k)` split is total on ℕ but NOT propositionally (the two conditions are
+unrelated atoms), so it owes the declaration above, discharged by `peano.zeroOrSucc`.
+
+#### What the obligations do NOT cover
+
+An `oper` block that satisfies all four cannot be unsound: its clause is an EQUATION, with no
+propositional structure to negate. A `pred` block is different —
+`pred q(n): q(n) iff (not q(n)).` is accepted and proves `q(c) and not q(c)`. That is NEGATIVE
+SELF-REFERENCE, orthogonal to all four, and a live hazard for hand-written predicates.
+
+And a bare `oper` plus a separately-named axiom owes NOTHING — you are asserting on your own
+authority, which is the `axiom`-vs-`hole` discipline rather than a well-formedness question.
+`design/definition-wellformedness.md` records the rationale behind all four.
+
 **Citing a clause** uses `by definition`, with the clause number for a function
 (zero-indexed; a predicate has one clause and cites bare):
 
