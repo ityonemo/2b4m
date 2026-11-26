@@ -242,6 +242,10 @@ pub const ProjectResult = struct {
     /// `consistency_gaps` is — an unused definition demands nothing in plain `check`.
     /// Empty unless asked.
     termination_gaps: []const TerminationGap,
+    /// `--library`: definition blocks whose `totality:` theorem does not exist or does not
+    /// state the synthesized coverage obligation. Checked here for the same reason the other
+    /// two are — an unused definition demands nothing in plain `check`. Empty unless asked.
+    totality_gaps: []const TerminationGap,
     /// the axioms the checked theorem(s) transitively rest on — only computed when the caller
     /// asked (`--axioms`); empty otherwise. A HOLE reached by the proof appears here with
     /// `is_hole` set: it is an axiom to the kernel, and the report says so explicitly.
@@ -511,6 +515,7 @@ fn summarize(arena: std.mem.Allocator, loaded: LoadedProject, roots: []const Con
         .unused_axioms = if (library) try collectUnusedAxioms(arena, ctx) else &.{},
         .consistency_gaps = if (library) try collectConsistencyGaps(arena, ctx) else &.{},
         .termination_gaps = if (library) try collectTerminationGaps(arena, ctx) else &.{},
+        .totality_gaps = if (library) try collectTotalityGaps(arena, ctx) else &.{},
     };
 }
 
@@ -712,6 +717,61 @@ fn collectConsistencyGaps(arena: std.mem.Allocator, ctx: *Context) ![]const Proj
                     .wanted = cmp.?.wanted,
                 });
             }
+        }
+    }
+    return out.items;
+}
+
+/// `--library`: a definition block's `totality:` theorem must exist and must state the
+/// synthesized coverage obligation — the arms' conditions disjoined.
+///
+/// Only reached by a block the parser already decided owes one: its arms do not cover
+/// propositionally, so autodetection declined and a named theorem is required. Reuses
+/// `TerminationGap`'s shape, the fields meaning the same things.
+fn collectTotalityGaps(arena: std.mem.Allocator, ctx: *Context) ![]const ProjectResult.TerminationGap {
+    var out: std.ArrayList(ProjectResult.TerminationGap) = .empty;
+    for (ctx.root_files.items) |rf| {
+        const root_idx = @intFromEnum(rf);
+        const f = ctx.files.get(root_idx);
+        const rns = try ctx.interner.namespace(.universe, try ctx.fileIndex(f.path));
+        for (ctx.parsed.get(root_idx).decls) |decl| {
+            const info: struct { name: lexer.Token, tot: ?ast.Totality } = switch (decl) {
+                .func => |fu| switch (fu) {
+                    .local => |l| .{ .name = l.name, .tot = l.totality },
+                    .alias => continue,
+                },
+                .pred => |pr| switch (pr) {
+                    .local => |l| .{ .name = l.name, .tot = l.totality },
+                    .alias => continue,
+                },
+                else => continue,
+            };
+            const tot = info.tot orelse continue;
+            const line = std.zig.findLineColumn(f.source, tot.theorem.start).line + 1;
+            const state = ctx.facts.lookup(ctx.io, .{ .namespace = rns, .name = tot.theorem.name });
+            if (state != null and state.? == .in_flight) continue; // mid-proof: not this check's business
+            if (state == null and ctx.declOf(rf, tot.theorem.name) == null) {
+                try out.append(arena, .{
+                    .symbol = ctx.interner.stringBytes(info.name.name),
+                    .path = f.path,
+                    .line = line,
+                    .theorem = ctx.interner.stringBytes(tot.theorem.name),
+                    .arm = 0,
+                });
+                continue;
+            }
+            const want = tot.obligation orelse continue;
+            const cmp = try statementMatches(arena, ctx, rf, rns, tot.theorem.name, want);
+            if (cmp == null) continue; // matched, or not comparable (diagnosed elsewhere)
+            try out.append(arena, .{
+                .symbol = ctx.interner.stringBytes(info.name.name),
+                .path = f.path,
+                .line = line,
+                .theorem = ctx.interner.stringBytes(tot.theorem.name),
+                .arm = 0,
+                .stated = cmp.?.stated,
+                .wanted = cmp.?.wanted,
+            });
         }
     }
     return out.items;

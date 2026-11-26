@@ -191,12 +191,21 @@ pub const Func = union(enum) {
         /// A RECURSIVE definition block's `termination(<theory>):` list, else null. See
         /// `Termination`.
         termination: ?Termination = null,
+        /// A definition block's `totality(<theory>):` declaration, else null — absent both when
+        /// the arms cover propositionally (nothing owed) and on a single-arm block. See
+        /// `Totality`.
+        totality: ?Totality = null,
     },
     alias: Alias,
 };
 
 pub const Pred = union(enum) {
-    local: struct { name: Token, params: []const Binder, consistency: ?Consistency = null },
+    local: struct {
+        name: Token,
+        params: []const Binder,
+        consistency: ?Consistency = null,
+        totality: ?Totality = null,
+    },
     alias: Alias,
 };
 
@@ -243,6 +252,27 @@ pub const Termination = struct {
         /// the predicate the checker generates (`fibGrounded` for `fib`)
         predicate: Token,
     };
+};
+
+/// A definition block's COVERAGE declaration: `totality(<theory>): <theorem>`.
+///
+/// `consistency:` asks whether the arms AGREE where they overlap; this asks whether they COVER
+/// the domain. A block can satisfy the first and fail the second — its arms never overlapping,
+/// so every consistency pair is vacuous, while some input matches no arm at all and the symbol
+/// is left UNDETERMINED there. That is what a definition exists to rule out and an axiom exists
+/// to disclose.
+///
+/// Only present when the arms do NOT cover propositionally. Where they do — two-way
+/// complementarity, a predicate split, `swap`'s three-way — the block owes nothing and this
+/// stays null. See `Parser.conditionsCoverPropositionally`.
+pub const Totality = struct {
+    /// the theory supplying the sort's coverage machinery; null when not written
+    theory: ?Token = null,
+    /// the theorem the author proves
+    theorem: Token,
+    /// the SYNTHESIZED statement it must match: the arms' conditions disjoined. Generated from
+    /// the clauses so the author never writes it.
+    obligation: ?*const Expr = null,
 };
 
 pub const Determinacy = struct {

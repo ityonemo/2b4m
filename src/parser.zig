@@ -1110,6 +1110,96 @@ pub const Parser = struct {
         }
     }
 
+    /// One arm's condition for the COVERAGE question, stated at the DECLARATION'S PARAMETERS —
+    /// null when the arm is unconditional (it applies everywhere, so the block trivially
+    /// covers).
+    ///
+    /// Differs from `conditionOf`, which serves `consistency:` and introduces fresh positional
+    /// binders (`arg1`, `arg2`) because a pair's obligation relates two arms that may name their
+    /// variables differently. Coverage is one statement over the parameters, so a pattern arm's
+    /// condition is written against the parameter directly: `f(a, ZERO)` gives `n = ZERO` for
+    /// the declaration `f(a, n)`, not `arg2 = ZERO`.
+    fn coverageConditionOf(self: *Parser, name: Token, params: []const ast.Binder, c: Clause) ParseError!?*const ast.Expr {
+        if (c.guard orelse antecedentOf(c.body)) |g| return g;
+        const app = findApplication(c.body, name) orelse return null;
+        var cond: ?*const ast.Expr = null;
+        for (app.args, 0..) |arg, pos| {
+            if (pos >= params.len) break;
+            if (arg.* == .name and arg.name.name == params[pos].name.name) continue; // bare param narrows nothing
+            const slot = try self.arena.create(ast.Expr);
+            slot.* = .{ .name = params[pos].name };
+            // A PATTERN BINDS ITS OWN VARIABLES, distinct from the parameters even when
+            // spelled the same: `f(i, j, succ(k))` against the declaration `f(i, j, k)` means
+            // "k is a successor of SOMETHING", not the false `k = succ(k)`. So the condition is
+            // EXISTENTIAL over the pattern's free names.
+            //
+            // Getting this wrong produces an obligation that is not merely hard but FALSE,
+            // which is the same shape of defect as the binder-rename hazard: a synthesized
+            // statement that typechecks while asserting something nobody meant.
+            // A PATTERN BINDS ITS OWN VARIABLES, distinct from the parameters even when spelled
+            // identically: `f(i, j, succ(k))` against the declaration `f(i, j, k)` means "k is a
+            // successor of SOMETHING", so the condition is `exists k'; k = succ(k')` — never the
+            // false `k = succ(k)`. Getting this wrong yields an obligation that is not merely
+            // hard but FALSE, the same shape of defect as the binder-rename hazard: a
+            // synthesized statement that typechecks while asserting what nobody meant.
+            //
+            // The pattern's binders are RENAMED before the equation is built, so the parameter
+            // reference on the left keeps its own name — renaming afterwards rewrites both sides
+            // alike. The suffix is the slot index, so the spelling is a function of the
+            // declaration and stable across runs. It must differ from the parameter's: the
+            // obligation already quantifies `forall k`, and `exists k` inside it is rejected by
+            // the no-shadowing rule.
+            var pattern_vars: std.ArrayList(ast.Binder) = .empty;
+            try self.collectClauseVars(arg, &pattern_vars);
+            var pattern = arg;
+            var fresh_binders: std.ArrayList(ast.Binder) = .empty;
+            for (pattern_vars.items) |pv| {
+                var fresh = pv;
+                if (self.interner) |ip| {
+                    const spelled = std.fmt.allocPrint(self.arena, "{s}_at{d}", .{ ip.stringBytes(pv.name.name), pos + 1 }) catch return error.OutOfMemory;
+                    fresh.name.name = ip.internString(spelled) catch return error.OutOfMemory;
+                    pattern = try self.renameFreeName(pattern, pv.name.name, fresh.name);
+                }
+                try fresh_binders.append(self.arena, fresh);
+            }
+            var eq = try self.binary(.equal, name, slot, pattern);
+            var fb = fresh_binders.items.len;
+            while (fb > 0) {
+                fb -= 1;
+                const one = try self.arena.alloc(ast.Binder, 1);
+                one[0] = fresh_binders.items[fb];
+                const node = try self.arena.create(ast.Expr);
+                node.* = .{ .quant = .{ .q = .exists, .tok = name, .binders = one, .body = eq } };
+                eq = node;
+            }
+            cond = if (cond) |have| try self.binary(.and_op, name, have, eq) else eq;
+        }
+        return cond;
+    }
+
+    /// The coverage obligation: the arms' conditions DISJOINED, quantified over the
+    /// declaration's parameters.
+    ///
+    ///     forall n: Nat; n = ZERO or less_than(ONE, n)
+    ///
+    /// Deterministic from source text, like every other synthesized obligation — the author
+    /// never writes it, so `--library` reports both sides when a named theorem states something
+    /// else.
+    fn coverageObligation(self: *Parser, name: Token, params: []const ast.Binder, conds: []const *const ast.Expr) ParseError!*const ast.Expr {
+        var body = conds[0];
+        for (conds[1..]) |c| body = try self.binary(.or_op, name, body, c);
+        var i = params.len;
+        while (i > 0) {
+            i -= 1;
+            const one = try self.arena.alloc(ast.Binder, 1);
+            one[0] = params[i];
+            const node = try self.arena.create(ast.Expr);
+            node.* = .{ .quant = .{ .q = .forall, .tok = name, .binders = one, .body = body } };
+            body = node;
+        }
+        return body;
+    }
+
     /// A fresh binder for argument slot `pos`, named `argN` — a function of the DECLARATION
     /// alone, so it is stable under any clause's choice of variable names.
     fn positionalBinder(self: *Parser, name: Token, pos: usize) ParseError!ast.Binder {
@@ -1209,6 +1299,7 @@ pub const Parser = struct {
         consistency: ?ast.Consistency = null,
         determinacy: ?ast.Determinacy = null,
         termination: ?ast.Termination = null,
+        totality: ?ast.Totality = null,
     };
 
     pub const Clause = struct {
@@ -1450,7 +1541,7 @@ pub const Parser = struct {
                 }
                 // `func f(a: T) => U:` opens a DEFINITION BLOCK (see parseDefinitionClauses).
                 const fwf: Wellformedness = if (self.tok.tag == .colon) try self.parseDefinitionClauses(name, params) else .{};
-                return .{ .func = .{ .local = .{ .name = name, .params = params, .result = result, .requires = requires, .consistency = fwf.consistency, .determinacy = fwf.determinacy, .termination = fwf.termination } } };
+                return .{ .func = .{ .local = .{ .name = name, .params = params, .result = result, .requires = requires, .consistency = fwf.consistency, .determinacy = fwf.determinacy, .termination = fwf.termination, .totality = fwf.totality } } };
             },
             .keyword_pred => {
                 _ = self.advance();
@@ -1795,6 +1886,22 @@ pub const Parser = struct {
             found = .{ .arms = arms, .entries = list, .obligations = obligations };
         }
 
+        // `totality(<theory>): <theorem>` — ONE entry, because coverage is a single statement
+        // about the whole block rather than something per arm or per pair.
+        var tot_theory: ?Token = null;
+        var tot_theorem: ?Token = null;
+        while (self.tok.tag == .identifier and std.mem.eql(u8, self.text(self.tok), "totality")) {
+            if (tot_theorem != null) return self.fail("a definition block declares `totality:` at most once", .{});
+            _ = self.advance();
+            if (self.tok.tag == .l_paren) {
+                _ = self.advance();
+                tot_theory = try self.expect(.identifier);
+                _ = try self.expect(.r_paren);
+            }
+            _ = try self.expect(.colon);
+            tot_theorem = try self.expect(.identifier);
+        }
+
         // `termination(<theory>): _, _, {thm, pred}` — positional over the ARMS. A `_` marks a
         // terminating arm (no recursive call); a `{thm, pred}` pair marks a recursive one and
         // names the theorem the author proves plus the predicate the checker generates.
@@ -2010,6 +2117,48 @@ pub const Parser = struct {
             };
         }
 
+        // THE COVERAGE DEMAND. A multi-arm EXPLICIT block must either cover propositionally or
+        // name a theorem. Implicit blocks are exempt: they characterize a value by a property
+        // rather than by cases, so there are no arms to cover with — their obligations are
+        // `existence:`/`uniqueness:`.
+        var totality: ?ast.Totality = null;
+        if (arms > 1 and clauses[0].explicit) {
+            var conds: std.ArrayList(*const ast.Expr) = .empty;
+            var all_conditioned = true;
+            for (clauses) |c| {
+                const cond = try self.coverageConditionOf(name, params, c);
+                if (cond) |x| try conds.append(self.arena, x) else {
+                    // an UNCONDITIONAL arm applies everywhere, so the block trivially covers.
+                    all_conditioned = false;
+                    break;
+                }
+            }
+            if (all_conditioned and !conditionsCoverPropositionally(self.arena, conds.items)) {
+                // STAGED OFF, like `consistency:` and `termination:` before it: 5 `std` blocks
+                // (the `theCofactorIndex` family) and ~9 fixtures are `ZERO`/`succ(k)` splits,
+                // total on ℕ by `peano.zeroOrSucc` but NOT propositionally, so each owes a real
+                // proof. Flipping this on is replacing `orelse null` with the `self.fail` below,
+                // after that migration.
+                //
+                // Everything else is live and gates new violations for free: a declaration that
+                // IS written is parsed, its obligation synthesized, and `--library` checks the
+                // named theorem states it; a declaration on a block that already covers is
+                // rejected as unowed.
+                const thm = tot_theorem orelse null;
+                if (false) _ = tot_theorem orelse return self.fail("definition '{s}' has {d} arms whose conditions do not provably cover its domain, so it may leave the symbol UNDETERMINED somewhere — declare `totality(<theory>): <theorem>` naming the proof that they do cover, or widen an arm's condition", .{ self.text(name), arms });
+                if (thm) |named| totality = .{
+                    .theory = tot_theory,
+                    .theorem = named,
+                    .obligation = try self.coverageObligation(name, params, conds.items),
+                };
+            } else if (tot_theorem) |thm| {
+                _ = thm;
+                return self.fail("definition '{s}' already covers its domain by propositional logic (its arms' conditions are exhaustive), so `totality:` declares an obligation it does not owe", .{self.text(name)});
+            }
+        } else if (tot_theorem != null) {
+            return self.fail("definition '{s}' does not need `totality:` — coverage is a statement about MULTIPLE explicit arms, and this block has {d} arm(s)", .{ self.text(name), arms });
+        }
+
         const determ: ?ast.Determinacy = if (ex_tok != null and un_tok != null)
             .{ .existence = ex_tok.?, .uniqueness = un_tok.? }
         else
@@ -2022,7 +2171,7 @@ pub const Parser = struct {
             }
         else
             null;
-        return .{ .consistency = found, .determinacy = determ, .termination = term };
+        return .{ .consistency = found, .determinacy = determ, .termination = term, .totality = totality };
     }
 
     /// Wrap one clause in `forall` over the declaration's params plus any extra free

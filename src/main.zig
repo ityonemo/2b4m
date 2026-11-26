@@ -731,6 +731,24 @@ pub fn main(init: std.process.Init) !u8 {
         try err.flush();
         return 1;
     }
+    // `--library`: a definition block's `totality:` theorem must state the coverage obligation.
+    // Only blocks whose arms do NOT cover propositionally reach here — autodetection handles
+    // the rest, which is 56 of the corpus's 62 applicable blocks.
+    if (result.totality_gaps.len > 0) {
+        var ebuf: [4096]u8 = undefined;
+        var efw: Io.File.Writer = .init(.stderr(), io, &ebuf);
+        const err = &efw.interface;
+        try err.print("error: {d} definition block(s) with an unsettled `totality:` declaration:\n", .{result.totality_gaps.len});
+        for (result.totality_gaps) |g| {
+            if (g.stated) |st| {
+                try err.print("  - {s}  ({s}:{d}) — '{s}' does not state the coverage obligation\n      it states:  {s}\n      wanted:     {s}\n", .{ g.symbol, g.path, g.line, g.theorem, st, g.wanted.? });
+            } else {
+                try err.print("  - {s}  ({s}:{d}) — '{s}' names no fact in this file\n", .{ g.symbol, g.path, g.line, g.theorem });
+            }
+        }
+        try err.flush();
+        return 1;
+    }
     // `--library`: a library must not ship assumptions nothing rests on. Every root-file
     // axiom no root theorem's proof reaches is an error (each named at its declaration).
     if (result.unused_axioms.len > 0) {
