@@ -39,10 +39,13 @@ oper coeff = ring_poly.coeff
 oper convolution = ring_poly.convolution
 pred less_than = peano.less_than
 pred degreeAtMost = ring_poly.degreeAtMost
+// the characterizing `iff`, needed by `theDegreeSumBoundsTheProduct` below
+fact degreeAtMostMeaning = ring_poly.degreeAtMostMeaning
 
 // What this file proves (verified manifest):
 intheory theProductsLeadingCoefficient
 intheory theProductVanishesAboveTheDegreeSum
+intheory theDegreeSumBoundsTheProduct
 intheory aBoundedPolynomialDiesAbove
 intheory theProductsAboveTheBoundVanish
 intheory everyTermAboveTheDegreeSumVanishes
@@ -697,3 +700,99 @@ proof
     forall m, e: Nat; less_than(m, succ(add(m, e)))
     [by generalize generalize-m]
 qed
+
+// deg(pq) <= deg(p) + deg(q): the product is bounded by the sum of the bounds. The
+// companion to `theProductVanishesAboveTheDegreeSum` above, restated as a degree bound
+// rather than a coefficient fact — which is the form the degree-additivity argument uses.
+//
+// Generic: it cites only `degreeAtMostMeaning` and its own sibling, no coefficient-ring
+// property beyond the ring axioms. It was proved only at `std/field/polynomial.b4m`, which
+// is the layering drift POLYNOMIAL-GENERICIZATION.md is about.
+theorem theDegreeSumBoundsTheProduct: forall p, q: Poly; forall m, n: Nat;
+  degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+  degreeAtMost(mulP(p, q), peano.add(m, n))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @generalize-m |
+            fix m: Nat {
+              @generalize-n |
+                fix n: Nat {
+                  @given-p-bounded |
+                    assume degreeAtMost(p, m) {
+                      @p-bounded |
+                        degreeAtMost(p, m)
+                        [by hypothesis given-p-bounded]
+                      @given-q-bounded |
+                        assume degreeAtMost(q, n) {
+                          @q-bounded |
+                            degreeAtMost(q, n)
+                            [by hypothesis given-q-bounded]
+                          @generalize-i |
+                            fix i: Nat {
+                              @given-i-is-high |
+                                assume less_than(peano.add(m, n), i) {
+                                  @i-is-high |
+                                    less_than(peano.add(m, n), i)
+                                    [by hypothesis given-i-is-high]
+                                  @conclusion-the-coefficient-vanishes |
+                                    coeff(mulP(p, q), i) = zeroR
+                                    [using specialize theProductVanishesAboveTheDegreeSum(p, q, m, n, i) p-bounded q-bounded i-is-high]
+                                }
+                              @conclusion-high-implies-vanishing |
+                                less_than(peano.add(m, n), i) ->
+                                  coeff(mulP(p, q), i) = zeroR
+                                [by discharge given-i-is-high]
+                            }
+                          @everything-above-vanishes |
+                            forall i: Nat;
+                              less_than(peano.add(m, n), i) ->
+                              coeff(mulP(p, q), i) = zeroR
+                            [by generalize generalize-i]
+                          @the-bound-unfolds |
+                            degreeAtMost(mulP(p, q), peano.add(m, n)) iff
+                              (forall i: Nat;
+                              less_than(peano.add(m, n), i) ->
+                              coeff(mulP(p, q), i) = zeroR)
+                            [using specialize degreeAtMostMeaning(mulP(p, q), peano.add(m, n))]
+                          @conclusion-the-product-is-bounded |
+                            degreeAtMost(mulP(p, q), peano.add(m, n))
+                            [using tautology the-bound-unfolds everything-above-vanishes]
+                        }
+                      @q-bounded-implies |
+                        degreeAtMost(q, n) ->
+                          degreeAtMost(mulP(p, q), peano.add(m, n))
+                        [by discharge given-q-bounded]
+                    }
+                  @p-bounded-implies |
+                    degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+                      degreeAtMost(mulP(p, q), peano.add(m, n))
+                    [by discharge given-p-bounded]
+                }
+              @discharge-n |
+                forall n9: Nat;
+                  degreeAtMost(p, m) -> degreeAtMost(q, n9) ->
+                  degreeAtMost(mulP(p, q), peano.add(m, n9))
+                [by generalize generalize-n]
+            }
+          @discharge-m |
+            forall m9, n9: Nat;
+              degreeAtMost(p, m9) -> degreeAtMost(q, n9) ->
+              degreeAtMost(mulP(p, q), peano.add(m9, n9))
+            [by generalize generalize-m]
+        }
+      @discharge-q |
+        forall q9: Poly; forall m9, n9: Nat;
+          degreeAtMost(p, m9) -> degreeAtMost(q9, n9) ->
+          degreeAtMost(mulP(p, q9), peano.add(m9, n9))
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; forall m, n: Nat;
+      degreeAtMost(p, m) -> degreeAtMost(q, n) ->
+      degreeAtMost(mulP(p, q), peano.add(m, n))
+    [by generalize generalize-p]
+qed
+

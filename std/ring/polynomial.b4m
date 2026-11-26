@@ -297,6 +297,7 @@ intheory addPolyCoeff
 intheory negPolyCoeff
 intheory theNegationsCoefficientFlipsR
 intheory bothNegationsCancelInAProduct
+intheory aNonvanishingCoefficientMakesItNonzero
 intheory aNonzeroPolynomialHasANonzeroNegation
 intheory theNegationIsBoundedWhereverTheOriginalIs
 intheory negationPreservesTheDegree
@@ -12504,5 +12505,61 @@ proof
   @conclusion |
     forall p: Poly;
       (not (p = ZEROP)) -> degree(negP(p)) = degree(p)
+    [by generalize generalize-p]
+qed
+
+// A polynomial with any nonvanishing coefficient is not the zero polynomial — the
+// contrapositive of `zeroPolyCoeff`, and the form every degree argument uses to discharge a
+// `p != ZEROP` hypothesis from a coefficient fact.
+//
+// Pure coefficient reasoning: it needs `zeroPolyCoeff` and nothing else, so it belongs at
+// this layer. It was proved only at `std/field/polynomial.b4m` despite citing no field
+// property, which is the layering drift POLYNOMIAL-GENERICIZATION.md is about.
+theorem aNonvanishingCoefficientMakesItNonzero: forall p: Poly; forall i: Nat;
+  (not (coeff(p, i) = zeroR)) -> (not (p = ZEROP))
+proof
+  @generalize-p |
+    fix p: Poly {
+      @generalize-i |
+        fix i: Nat {
+          @given-the-coefficient-survives |
+            assume not (coeff(p, i) = zeroR) {
+              @the-coefficient-survives |
+                not (coeff(p, i) = zeroR)
+                [by hypothesis given-the-coefficient-survives]
+              @given-p-is-zero |
+                assume p = ZEROP {
+                  @p-is-zero |
+                    p = ZEROP
+                    [by hypothesis given-p-is-zero]
+                  @the-zero-coefficient |
+                    coeff(ZEROP, i) = zeroR
+                    [using specialize zeroPolyCoeff(i)]
+                  @the-coefficient-vanishes |
+                    coeff(p, i) = zeroR
+                    [by rewrite p-is-zero the-zero-coefficient]
+                  @conclusion-absurd |
+                    not (p = ZEROP)
+                    [by ex_falso the-coefficient-vanishes the-coefficient-survives]
+                }
+              @zero-is-absurd |
+                (p = ZEROP) -> (not (p = ZEROP))
+                [by discharge given-p-is-zero]
+              @conclusion-p-is-nonzero |
+                not (p = ZEROP)
+                [using tautology zero-is-absurd]
+            }
+          @survives-implies-nonzero |
+            (not (coeff(p, i) = zeroR)) -> (not (p = ZEROP))
+            [by discharge given-the-coefficient-survives]
+        }
+      @discharge-i |
+        forall i9: Nat;
+          (not (coeff(p, i9) = zeroR)) -> (not (p = ZEROP))
+        [by generalize generalize-i]
+    }
+  @conclusion |
+    forall p: Poly; forall i: Nat;
+      (not (coeff(p, i) = zeroR)) -> (not (p = ZEROP))
     [by generalize generalize-p]
 qed

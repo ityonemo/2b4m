@@ -6593,53 +6593,16 @@ proof
 qed
 
 // A polynomial with a nonvanishing coefficient is not the zero polynomial.
+// Transferred from `std/ring/polynomial.b4m`: pure coefficient reasoning, citing no field
+// property, so the ring layer owns it. Statement unchanged, so every consumer here is
+// untouched.
 theorem aNonvanishingCoefficientMakesItNonzero: forall p: Poly; forall i: Nat;
   (not (coeff(p, i) = zeroF)) -> (not (p = ZEROP))
 proof
-  @generalize-p |
-    fix p: Poly {
-      @generalize-i |
-        fix i: Nat {
-          @given-the-coefficient-survives |
-            assume not (coeff(p, i) = zeroF) {
-              @the-coefficient-survives |
-                not (coeff(p, i) = zeroF)
-                [by hypothesis given-the-coefficient-survives]
-              @given-p-is-zero |
-                assume p = ZEROP {
-                  @p-is-zero |
-                    p = ZEROP
-                    [by hypothesis given-p-is-zero]
-                  @the-zero-coefficient |
-                    coeff(ZEROP, i) = zeroF
-                    [using specialize zeroPolyCoeff(i)]
-                  @the-coefficient-vanishes |
-                    coeff(p, i) = zeroF
-                    [by rewrite p-is-zero the-zero-coefficient]
-                  @conclusion-absurd |
-                    not (p = ZEROP)
-                    [by ex_falso the-coefficient-vanishes the-coefficient-survives]
-                }
-              @zero-is-absurd |
-                (p = ZEROP) -> (not (p = ZEROP))
-                [by discharge given-p-is-zero]
-              @conclusion-p-is-nonzero |
-                not (p = ZEROP)
-                [using tautology zero-is-absurd]
-            }
-          @survives-implies-nonzero |
-            (not (coeff(p, i) = zeroF)) -> (not (p = ZEROP))
-            [by discharge given-the-coefficient-survives]
-        }
-      @discharge-i |
-        forall i9: Nat;
-          (not (coeff(p, i9) = zeroF)) -> (not (p = ZEROP))
-        [by generalize generalize-i]
-    }
   @conclusion |
     forall p: Poly; forall i: Nat;
       (not (coeff(p, i) = zeroF)) -> (not (p = ZEROP))
-    [by generalize generalize-p]
+    [using model(FieldPolyModelsRingPoly) ring_poly.aNonvanishingCoefficientMakesItNonzero]
 qed
 
 // A PRODUCT OF NONZEROS IS NONZERO: its coefficient at the degree sum is the product of two
@@ -6803,92 +6766,17 @@ qed
 
 // The degree sum bounds the product: above it every coefficient is a convolution that
 // vanishes term by term.
+// Transferred from `std/ring/polynomial/leading.b4m`, where it sits beside its sibling
+// `theProductVanishesAboveTheDegreeSum`. Generic: the bound needs no field property.
 theorem theDegreeSumBoundsTheProduct: forall p, q: Poly; forall m, n: Nat;
   degreeAtMost(p, m) -> degreeAtMost(q, n) ->
   degreeAtMost(mulP(p, q), peano.add(m, n))
 proof
-  @generalize-p |
-    fix p: Poly {
-      @generalize-q |
-        fix q: Poly {
-          @generalize-m |
-            fix m: Nat {
-              @generalize-n |
-                fix n: Nat {
-                  @given-p-bounded |
-                    assume degreeAtMost(p, m) {
-                      @p-bounded |
-                        degreeAtMost(p, m)
-                        [by hypothesis given-p-bounded]
-                      @given-q-bounded |
-                        assume degreeAtMost(q, n) {
-                          @q-bounded |
-                            degreeAtMost(q, n)
-                            [by hypothesis given-q-bounded]
-                          @generalize-i |
-                            fix i: Nat {
-                              @given-i-is-high |
-                                assume less_than(peano.add(m, n), i) {
-                                  @i-is-high |
-                                    less_than(peano.add(m, n), i)
-                                    [by hypothesis given-i-is-high]
-                                  @conclusion-the-coefficient-vanishes |
-                                    coeff(mulP(p, q), i) = zeroF
-                                    [using specialize theProductVanishesAboveTheDegreeSum(p, q, m, n, i) p-bounded q-bounded i-is-high]
-                                }
-                              @conclusion-high-implies-vanishing |
-                                less_than(peano.add(m, n), i) ->
-                                  coeff(mulP(p, q), i) = zeroF
-                                [by discharge given-i-is-high]
-                            }
-                          @everything-above-vanishes |
-                            forall i: Nat;
-                              less_than(peano.add(m, n), i) ->
-                              coeff(mulP(p, q), i) = zeroF
-                            [by generalize generalize-i]
-                          @the-bound-unfolds |
-                            degreeAtMost(mulP(p, q), peano.add(m, n)) iff
-                              (forall i: Nat;
-                              less_than(peano.add(m, n), i) ->
-                              coeff(mulP(p, q), i) = zeroF)
-                            [using specialize degreeAtMostMeaning(mulP(p, q), peano.add(m, n))]
-                          @conclusion-the-product-is-bounded |
-                            degreeAtMost(mulP(p, q), peano.add(m, n))
-                            [using tautology the-bound-unfolds everything-above-vanishes]
-                        }
-                      @q-bounded-implies |
-                        degreeAtMost(q, n) ->
-                          degreeAtMost(mulP(p, q), peano.add(m, n))
-                        [by discharge given-q-bounded]
-                    }
-                  @p-bounded-implies |
-                    degreeAtMost(p, m) -> degreeAtMost(q, n) ->
-                      degreeAtMost(mulP(p, q), peano.add(m, n))
-                    [by discharge given-p-bounded]
-                }
-              @discharge-n |
-                forall n9: Nat;
-                  degreeAtMost(p, m) -> degreeAtMost(q, n9) ->
-                  degreeAtMost(mulP(p, q), peano.add(m, n9))
-                [by generalize generalize-n]
-            }
-          @discharge-m |
-            forall m9, n9: Nat;
-              degreeAtMost(p, m9) -> degreeAtMost(q, n9) ->
-              degreeAtMost(mulP(p, q), peano.add(m9, n9))
-            [by generalize generalize-m]
-        }
-      @discharge-q |
-        forall q9: Poly; forall m9, n9: Nat;
-          degreeAtMost(p, m9) -> degreeAtMost(q9, n9) ->
-          degreeAtMost(mulP(p, q9), peano.add(m9, n9))
-        [by generalize generalize-q]
-    }
   @conclusion |
     forall p, q: Poly; forall m, n: Nat;
       degreeAtMost(p, m) -> degreeAtMost(q, n) ->
       degreeAtMost(mulP(p, q), peano.add(m, n))
-    [by generalize generalize-p]
+    [using model(FieldPolyModelsRingPoly) ring_leading.theDegreeSumBoundsTheProduct]
 qed
 
 // -- NEGATION ALGEBRA, TRANSFERRED FROM R[x] -------------------------------------------------
