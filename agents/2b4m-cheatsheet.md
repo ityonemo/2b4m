@@ -99,54 +99,73 @@ axiom declared there that no theorem there rests on — which is why `std/` carr
 than leaving a caller to be the first to exercise one. If you add an axiom to
 `std/`, add the example that uses it.
 
-## THE AXIOMATIZATION RULE — write `hole` FIRST, always
+## THE AXIOMATIZATION RULE — write `hole` FIRST
 
-**`axiom` is reserved for a result you can point to in the literature.** Everything else —
-the source's own mathematics, your modelling decisions, your reconstructions of an argument,
-anything you believe but cannot cite — is a `hole`.
+Three legitimate uses of `axiom`, and nothing else:
 
-**The habit that matters: a new declaration you cannot cite goes in as `hole` from the
-start.** Not `axiom`-then-audit. The audit pass is where rationalization happens, and it is
-reliably too weak to catch your own reasoning: a plausible name plus a confident comment
-survives self-review almost every time. `hole` inverts the default — strict `check` refuses
-the tree until the thing is proved or you find the actual citation, and there is no interval
-in which a bogus axiom sits there looking settled.
+1. **A theory's PRIMITIVES.** `peano.add`'s two axioms ARE its theory — nothing defines `add`
+   in terms of something prior. Same for a ring's `mul`, a group's `op`. These cite nothing
+   and need not.
+2. **A result you can point to in the literature**, with the source named.
+3. **A schema** (an axiom family, parameterized, by construction unprovable).
 
-Measured failure rate on exactly this (the openai-wiles formalization, 2026-10-09): applying
-the test *after* writing axioms caught 4 of 29 as violations; the round that CLOSED those
-holes introduced 5 new violations, 3 of them written during the round whose stated purpose
-was applying the test. Self-audit does not converge. Writing `hole` first does.
+Everything else — a source's own mathematics, your modelling decisions, your reconstruction of
+an argument, anything you believe but cannot cite — is a `hole`.
+
+**Write it as `hole` from the start, not `axiom`-then-audit.** Self-audit does not converge: a
+plausible name plus a confident comment survives self-review almost every time. `hole` inverts
+the default — strict `check` refuses the tree until the thing is proved or the citation is
+found, so no interval exists in which a bogus axiom sits there looking settled.
+
+If the symbol is being DEFINED rather than constrained, prefer a definition block: it owes
+real obligations (above), and `--axioms` then reports a definition rather than an assumption.
+
+### A CITED hole ships; a bare one does not
+
+`hole X cites "<locator>": <statement>` passes strict `check` — disclosed rather than silent,
+so `--axioms` lists it and a reader sees what the tree rests on. A BARE `hole` fails strict and
+is allowed only under `--draft`. So the choice is three-way, not two:
+
+| form | strict check | means |
+|---|---|---|
+| `theorem` | passes | proved |
+| `hole X cites "…"` | **passes** | assumed on the named authority, disclosed |
+| `hole X` | fails | ours to prove; a worklist entry |
+
+Tier the locator so the report is readable. The convention the corpus uses:
+
+- `standard:` — classical, with a textbook source
+- `assertion:` — the source asserts it without proving it
+- `gap:` — absent from the source entirely
+- `refuted:` — false, with the counterexample checked
+
+**A cited hole is still an assumption.** `cites` records WHERE it came from, never that it is
+true, and a bogus locator checks green forever — see the four disguises below.
 
 ### Closing a hole means PROVING it
 
-Closing is **never** relabelling. These are all the same prohibited move:
+Never relabelling. All prohibited:
 
-- `hole X` → `axiom X` (the bare version)
-- `hole X` → `axiom X2` where `X2` is `X` renamed, or `X` with a premise bolted on
-- `hole X` → `theorem X` proved from `axiom Y` where `Y` is `X`'s content under a new name
+- `hole X` → `axiom X`
+- `hole X` → `axiom X2`, i.e. `X` renamed or with a premise bolted on
+- `hole X` → `theorem X` proved from `axiom Y` where `Y` is `X`'s content renamed
 
 A hole is closed when it is a `theorem` whose leaves are all genuine citations. Expect the
-axiom count to **rise** when you do this honestly — one large assumption becomes several
-small cited ones. A count that stays flat while holes vanish is the signature of relabelling.
+axiom count to **rise** — one large assumption becomes several small cited ones. A flat count
+while holes vanish is the signature of relabelling.
 
 ### The four ways a bogus axiom disguises itself
 
-All four were committed in one session, with confident comments on each:
-
-1. **The swallow.** An axiom whose statement produces the goal's whole existential, named as
-   if it were a lemma (`aCycleClassDecomposesIntoIntegralSubvarieties`). Test: does its
-   conclusion look like what you set out to prove?
+1. **The swallow.** Its statement produces the goal's whole existential, named like a lemma.
+   Test: does its conclusion look like what you set out to prove?
 2. **The invented hypothesis.** A guard attributed to the source that the source does not
-   state — found by reading a lemma's STATEMENT and never its PROOF, where the real
-   conditions live. Cost here: a confident, published, wrong diagnosis.
-3. **The textbook-sounding assumption about your own symbols.** "A group is cancellative",
-   "projections are linear" — true of groups and projections, but the symbol in your file is
-   an opaque `oper` with no theory attached, so nothing makes it true. Test: is the structure
-   the claim relies on actually declared?
-4. **The restated argument.** You formalize a *determination* argument as a *vanishing*
-   argument, or assert a ground equation where the source gives a per-index identity. It
-   type-checks, it is not the source's reasoning. Test: can you map each axiom to a specific
-   sentence, with its quantifiers intact?
+   state — from reading a lemma's STATEMENT and never its PROOF, where the real conditions are.
+3. **The textbook-sounding assumption about your own symbols.** "A group is cancellative" is
+   true of groups, but your symbol is an opaque `oper` with no theory attached, so nothing
+   makes it true. Test: is the structure the claim relies on actually declared?
+4. **The restated argument.** A *determination* argument formalized as a *vanishing* one, or a
+   ground equation where the source gives a per-index identity. Type-checks; not the source's
+   reasoning. Test: can you map each axiom to a specific sentence, quantifiers intact?
 
 ### Verification hygiene
 

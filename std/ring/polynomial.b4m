@@ -294,6 +294,7 @@ intheory polyMulIsAssociative
 intheory addPolyCoeff
 intheory negPolyCoeff
 intheory theNegationsCoefficientFlipsR
+intheory bothNegationsCancelInAProduct
 intheory convolutionZero
 intheory convolutionSucc
 intheory convolutionReachesZeroFromAPredecessor
@@ -12232,5 +12233,51 @@ proof
   @conclusion |
     forall p: Poly; forall i: Nat;
       coeff(p, i) = negR(oneR) -> coeff(negP(p), i) = oneR
+    [by generalize generalize-p]
+qed
+
+// -- BOTH NEGATIONS CANCEL IN A PRODUCT ----------------------------------------------------
+// Judson's `p(x) = (-α₁(x))(-β₁(x))`: pull the left negation out, pull the right one out, and
+// the two cancel by the involution. Generic over R, and short because both pull-out
+// directions and the involution are already here — ℚ[x] restated it in 79 lines, having only
+// the left pull-out locally and reaching the right one by commuting.
+theorem bothNegationsCancelInAProduct: forall p, q: Poly;
+  mulP(negP(p), negP(q)) = mulP(p, q)
+proof
+  @pull-the-left-out |
+    forall p2, q2: Poly; mulP(negP(p2), q2) = negP(mulP(p2, q2))
+    [by cite negationPullsOutOfTheProduct]
+  @pull-the-right-out |
+    forall p2, q2: Poly; mulP(p2, negP(q2)) = negP(mulP(p2, q2))
+    [by cite negationPullsOutOfTheProductOnTheRight]
+  @the-involution |
+    forall p2: Poly; negP(negP(p2)) = p2
+    [by cite negationIsAnInvolution]
+  @generalize-p |
+    fix p: Poly {
+      @generalize-q |
+        fix q: Poly {
+          @the-left-comes-out |
+            mulP(negP(p), negP(q)) = negP(mulP(p, negP(q)))
+            [using specialize pull-the-left-out(p, negP(q))]
+          @the-right-comes-out |
+            mulP(p, negP(q)) = negP(mulP(p, q))
+            [using specialize pull-the-right-out(p, q)]
+          @both-are-outside |
+            mulP(negP(p), negP(q)) = negP(negP(mulP(p, q)))
+            [by rewrite the-right-comes-out the-left-comes-out]
+          @the-double-negation-cancels |
+            negP(negP(mulP(p, q))) = mulP(p, q)
+            [using specialize the-involution(mulP(p, q))]
+          @conclusion-the-negations-cancel |
+            mulP(negP(p), negP(q)) = mulP(p, q)
+            [by rewrite the-double-negation-cancels both-are-outside]
+        }
+      @discharge-q |
+        forall q: Poly; mulP(negP(p), negP(q)) = mulP(p, q)
+        [by generalize generalize-q]
+    }
+  @conclusion |
+    forall p, q: Poly; mulP(negP(p), negP(q)) = mulP(p, q)
     [by generalize generalize-p]
 qed
