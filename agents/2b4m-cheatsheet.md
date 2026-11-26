@@ -7,57 +7,23 @@ paths:
 
 # 2b4m cheat-sheet (dense)
 
-The load-bearing mechanics + gotchas for writing `.b4m` proofs, in one page.
-`GUIDE.md` is the comprehensive reference; this is the lookup you keep in head.
-For depth on one thing, extract its GUIDE section (leaf sections are bounded by
-the next heading of any level):
+Load-bearing mechanics and gotchas for writing `.b4m` proofs. `GUIDE.md` is the full
+reference; extract one leaf section with
+`awk '/^#+ /{p=0} /^### TACTIC: tautology$/{p=1} p' GUIDE.md`. Naming and label conventions
+are in `agents/style-guide.md`.
 
-```
-awk '/^#+ /{p=0} /^### RULE: common_conclusion$/{p=1} p' GUIDE.md      # a proof rule
-awk '/^#+ /{p=0} /^### TACTIC: tautology$/{p=1} p' GUIDE.md  # an accelerant
-awk '/^#+ /{p=0} /^### KEYWORD: sort$/{p=1} p' GUIDE.md      # a declaration keyword
-```
+## Checking workflow
 
-Naming/label conventions are a SEPARATE doc — see `agents/style-guide.md`.
-
-## Checking workflow (ITERATE FAST, CONFIRM STRICT)
-
-**FIRST: know what a check should COST.** On a release build, with a warm cache:
-
-| command | expect |
-|---|---|
-| `check <one std file>` | well under a second |
-| `check aata/<one file>` | ~5 s |
-| `check std --library` | ~6 s for 151 files |
-
-**If a check takes MINUTES, suspect a Debug binary before you believe the corpus is slow.**
-Debug is ~35x slower; `2b4m --help` prints which build you have, and plain `zig build` gives
-you ReleaseFast. This is not hypothetical — a whole session was once restructured around
-"the gates are slow" (moving them to background tasks, adding a commit hook to batch them)
-when the real cause was a Debug binary, and every premise of that restructuring was wrong.
-
-**SECOND: check the file you changed, not the corpus.** This is about LOAD, not latency: a
-full-corpus sweep re-verifies 126 unchanged files, which on a laptop is heat and battery
-spent for no information, however fast it is. The per-file check is the working loop. The
-whole-directory sweep belongs at the commit, which is what the pre-commit hook is for — and
-the hook filters by path so an unrelated commit does not pay for it either.
-
-
-While writing/fixing a proof, run **`2b4m check --fast <file>`** every iteration —
-it trusts accelerated verdicts and skips kernel-certificate generation, so it's
-much faster feedback for the write-check-fix loop. It gives you the same
-pass/fail signal for your proof structure.
-
-While iterating on ONE proof in a long file, add its name — **`2b4m check --fast <file>
-<theorem>`** proves only that theorem and what it cites, so you are not waiting on the
-file's other proofs (a wrong name, an axiom, or a schema is diagnosed).
-
-Then, ONCE, before you declare the file done (and before it hits a gate), run
-plain **`2b4m check <file>`** over the WHOLE file (strict — full kernel verification).
-**`2b4m check <dir>`** checks every `.b4m` and `.md` under a directory in one pass
-(a fact two files cite is proved once) and prints one aggregate line. This is the real
-guarantee. A file is not "done" until plain `2b4m check` is green with NO
-`NOT FULLY VERIFIED` banner.
+- **Iterate** with `2b4m check --fast <file> [theorem]` — trusts accelerated verdicts, skips
+  certificate generation. Naming a theorem proves only it and what it cites.
+- **Finalize** with plain `2b4m check <file>`, which is the real guarantee. Not done until it
+  is green with no `NOT FULLY VERIFIED` banner.
+- `2b4m check <dir>` sweeps every `.b4m` and `.md` under it in one pass, proving a shared fact
+  once. Check the file you changed; the directory sweep belongs at the commit (the pre-commit
+  hook does it, filtered by path).
+- **Expected cost, release build, warm cache**: one std file well under a second, one `aata`
+  file ~5 s, `check std --library` ~6 s for 151 files. A check taking MINUTES means a Debug
+  binary (~35x slower) — `2b4m --help` prints the build, plain `zig build` gives ReleaseFast.
 
 ### `--fast` IS A STRUCTURAL CHECK UP TO A TRUST BOUNDARY — that is the whole of what it promises
 
@@ -344,65 +310,55 @@ citation; `[by cite I.thm]` is the same effect but a plain re-checked obligation
   `unproved obligation` error. Detail: `### WHAT A TACTIC IS GIVEN vs WHAT IT FINDS` in GUIDE.md.
 - Discipline: in `std/*.b4m` use accelerants freely (shortest kernel-checked proof). In `aata/*.md` do NOT accelerate a step Judson spells out — transcribe it; accelerants only for algebra the book elides. (See `.claude/rules/aata-guide.md`.)
 
-## DEFINITION BLOCKS — a declaration carries its clauses AND owes obligations
+## DEFINITION BLOCKS — clauses plus well-formedness sections
 
-A `pred`/`oper` declaration followed by `:` takes the clauses that characterize it,
-`;`-separated, then the WELL-FORMEDNESS SECTIONS after the clause list's `.`.
+A `pred`/`oper` declaration followed by `:` takes its clauses, `;`-separated, then the
+well-formedness sections after the clause list's `.`.
 
 ```2b4m
 pred isZero(n: Nat):
-  isZero(n) iff n = ZERO          // one clause, no pairs, owes nothing
+  isZero(n) iff n = ZERO          // one clause, owes nothing
 
 oper add(a: Nat, b: Nat) => Nat:
   add(ZERO, b) = b;
   add(succ(k), b) = succ(add(k, b))
-  consistency(peano): _           // ZERO/succ never overlap; the tactic discharges it
+  consistency(peano): _
 ```
 
-**IT IS NOT SUGAR.** A definition block owes up to four obligations that a bare declaration
-plus a hand-written axiom does not. That is the point: the form you choose carries semantic
-weight, and a reader learns from it that the checker vouched for the clauses.
-
-| section | when owed | asks |
+| section | owed when | asks |
 |---|---|---|
 | `consistency:` | 2+ clauses | do the arms AGREE where they overlap? |
-| `totality(<theory>):` | 2+ explicit arms, conditions not propositionally exhaustive | do the arms COVER the domain? |
+| `totality(<theory>):` | 2+ explicit arms whose conditions are not propositionally exhaustive | do the arms COVER the domain? |
 | `termination(<theory>):` | any clause recurses | does the recursion REACH A BASE? |
 | `existence:` + `uniqueness:` | the clause is IMPLICIT (left side not headed by the symbol) | does the value EXIST, uniquely? |
 
-**Written in that order** — the parser reads them sequentially, so `termination:` before
-`totality:` is a parse error. (An accident of the parse loops, not a design choice; slated to
-become order-insensitive.)
+Write them in that order — the parser reads them sequentially. (To become order-insensitive,
+with `fmt` canonicalizing; not built.)
 
-- `consistency:` takes one entry per unordered clause PAIR, canonical order `(0,1)`, `(0,2)`,
-  … `_` discharges with `definition_consistency`, a name points at your theorem.
-- `termination:` takes one entry per CLAUSE: `_` for a terminating arm,
-  `{theorem, predicate}` for a recursive one. The predicate is GENERATED (a transcription of
-  that arm's call sites) and citable with `by definition`.
-- `totality:` is USUALLY AUTODETECTED — complementary conditions (`n = ZERO` / `n != ZERO`), a
-  pred split (`p(x)` / `not p(x)`), or a three-way partition need no declaration, and
-  declaring one anyway is rejected as unowed.
-- **The checker SYNTHESIZES every obligation's statement** — you never write it. A named
-  theorem that states something else fails with both sides printed.
+- **The checker SYNTHESIZES each obligation's statement** — never write it. A named theorem
+  stating something else fails with both sides printed; read `wanted:` to learn the shape.
+- `consistency:` — one entry per unordered clause PAIR, order `(0,1)`, `(0,2)`, … `(1,2)`.
+  `_` discharges with `definition_consistency`; a name points at your theorem.
+- `termination:` — one entry per CLAUSE: `_` for a terminating arm, `{theorem, predicate}`
+  for a recursive one. The predicate is GENERATED and citable with `by definition`. The
+  obligation is the arm's own guard; it names no induction principle, so the proof is yours.
+- `totality:` — usually AUTODETECTED (complementary conditions, a `p(x)`/`not p(x)` split, or
+  a three-way partition owe nothing, and declaring one is rejected as unowed). A `ZERO`/`succ(k)`
+  split is NOT propositionally exhaustive and owes one, via `peano.zeroOrSucc`.
 
-**A RECURSIVE block has two extra rules**: every arm must be EXPLICIT, and every l-value
-argument must be a bare parameter or a closed term — `f(succ(n))` destructures and hides the
-descent on the left, so write `f(n) = … f(prev(n)) … when n != ZERO` instead. Its clauses may
-also not rename the declared parameters.
+**A recursive block** additionally needs every arm EXPLICIT, every l-value argument a bare
+parameter or a closed term (`f(succ(n))` hides the descent on the left — write
+`f(n) = … f(prev(n)) … when n != ZERO`), and no clause renaming a declared parameter.
 
-- **Every clause states its own condition IN FULL.** Clauses are unordered; there is no
-  first-match-wins. Each is a standalone axiom, and axioms have no precedence.
-- **Cite with `by definition`** — `[by definition isZero]` for a predicate,
-  `[by definition(0) add]` for a function clause (ZERO-indexed).
-- **NOT `define`.** A `define` is a macro — substituted before anything looks at it, invisible
-  to the kernel, so it cannot be cited, model-mapped, or named where a symbol is required.
-- `--axioms` marks a clause `— DEFINITION` rather than listing it beside genuine assumptions;
-  `--library` still fails on an unused one, naming it a definition.
-
-**What this does NOT buy you**: an `oper` block satisfying all four cannot be unsound, but
-`pred q(n): q(n) iff (not q(n)).` is accepted and proves `q(c) and not q(c)` — negative
-self-reference is orthogonal to all four. Full rationale in
-`design/definition-wellformedness.md`.
+- **Every clause states its own condition IN FULL** — clauses are unordered, no
+  first-match-wins, and axioms have no precedence.
+- **Cite with `by definition`** — `[by definition isZero]` for a pred, `[by definition(0) add]`
+  for a function clause (ZERO-indexed).
+- **NOT `define`**, which is a macro: invisible to the kernel, so uncitable, un-model-mappable,
+  and unusable where a symbol is required.
+- `--axioms` marks a clause `— DEFINITION`; `--library` still fails on an unused one.
+- An `oper` block meeting all four cannot be unsound. A `pred` can:
+  `pred q(n): q(n) iff (not q(n)).` proves `q(c) and not q(c)`.
 
 ## Declaration keywords — one-liners; detail at `### KEYWORD: <name>` in GUIDE.md
 

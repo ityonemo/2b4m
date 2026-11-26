@@ -52,6 +52,8 @@ intheory negationOfASum
 intheory addLeftSwapLocal
 intheory aSumCancelsItsRightSummand
 intheory negationIsAnInvolution
+intheory negationOfZeroIsZero
+intheory aNonzeroHasANonzeroNegation
 intheory addCancelRight
 
 // -- right identity / inverse (derived from the left laws + commutativity) ---
@@ -499,4 +501,68 @@ proof
   @conclusion |
     forall a, b, c: Ring; add(a, c) = add(b, c) -> a = b
     [by generalize generalize-a]
+qed
+
+// -- ZERO IS ITS OWN NEGATION --------------------------------------------------------------
+// `neg(ZERO) = ZERO`, by the uniqueness of additive inverses: `add(ZERO, ZERO) = ZERO` says
+// ZERO is an inverse of ZERO, and an inverse is unique. A gap in this layer until now —
+// needed by anything reasoning about a nonzero negation, which ℚ had locally and R did not.
+theorem negationOfZeroIsZero: neg(ZERO) = ZERO
+proof
+  @zero-plus-zero |
+    add(ZERO, ZERO) = ZERO
+    [using specialize addZeroLeft(ZERO)]
+  @an-inverse-is-unique |
+    forall x, y: Ring; add(x, y) = ZERO -> y = neg(x)
+    [by cite additiveInverseUnique]
+  @zero-is-an-inverse-of-zero |
+    ZERO = neg(ZERO)
+    [using specialize an-inverse-is-unique(ZERO, ZERO) zero-plus-zero]
+  @conclusion |
+    neg(ZERO) = ZERO
+    [by symmetry zero-is-an-inverse-of-zero]
+qed
+
+// A nonzero element has a nonzero negation: `neg(x) = ZERO` would give
+// `x = neg(neg(x)) = neg(ZERO) = ZERO`.
+theorem aNonzeroHasANonzeroNegation: forall x: Ring;
+  (not (x = ZERO)) -> (not (neg(x) = ZERO))
+proof
+  @generalize-x |
+    fix x: Ring {
+      @given-x-nonzero |
+        assume not (x = ZERO) {
+          @x-nonzero |
+            not (x = ZERO)
+            [by hypothesis given-x-nonzero]
+          @given-the-negation-is-zero |
+            assume neg(x) = ZERO {
+              @the-negation-is-zero |
+                neg(x) = ZERO
+                [by hypothesis given-the-negation-is-zero]
+              @double-negation |
+                neg(neg(x)) = x
+                [using specialize negationIsAnInvolution(x)]
+              @neg-of-zero |
+                neg(ZERO) = ZERO
+                [by cite negationOfZeroIsZero]
+              @x-is-neg-zero |
+                neg(ZERO) = x
+                [by rewrite the-negation-is-zero double-negation]
+              @x-is-zero |
+                x = ZERO
+                [by rewrite x-is-neg-zero neg-of-zero]
+            }
+          @conclusion-the-negation-is-nonzero |
+            not (neg(x) = ZERO)
+            [by contradiction given-the-negation-is-zero x-is-zero x-nonzero]
+        }
+      @nonzero-implies |
+        (not (x = ZERO)) -> (not (neg(x) = ZERO))
+        [by discharge given-x-nonzero]
+    }
+  @conclusion |
+    forall x: Ring;
+      (not (x = ZERO)) -> (not (neg(x) = ZERO))
+    [by generalize generalize-x]
 qed
