@@ -17,6 +17,7 @@
 // remains WRITABLE in a statement. Retracted when `recip` was guarded (`84c05e7`).
 
 theory ring <<< "std/ring.b4m"
+theory domain <<< "std/domain.b4m"
 
 sort Field
 const ZERO: Field
@@ -57,6 +58,7 @@ intheory negMulNeg
 intheory negAdd
 intheory recipMulLeft
 intheory noZeroDivisors
+intheory cancelMulLeft
 
 // -- ring axioms (discharge the ring model below) ---------------------------
 // Left-axiomatic, as in ring.b4m: only LEFT identity/inverse are primitive.
@@ -473,3 +475,47 @@ sort OrderedField = ordered.OrderedField
 pred orderedLessThan = ordered.less_than
 fact orderedNoZeroDivisors = ordered.noZeroDivisors
 fact orderedZeroLessThanOne = ordered.zeroLessThanOne
+
+// -- a field IS an integral domain ------------------------------------------
+//
+// `std/domain.b4m` assumes `noZeroDivisors`; here it is a THEOREM, proved from `fieldInverse`
+// above. So the discharge runs the other way from the usual direction — the field does not
+// weaken to reach the domain, it proves the domain's defining axiom — and in return the
+// domain corpus (multiplicative cancellation, chiefly) transfers in.
+//
+// This is what makes the layer pay for itself at the field level too: `cancelMulLeft` is a
+// domain fact, not a field one, and before the layer existed a field had to reach it through
+// reciprocals.
+model DomainIsField {
+  domain.Domain: Field
+  domain.ZERO: ZERO
+  domain.ONE: ONE
+  domain.add: add
+  domain.mul: mul
+  domain.neg: neg
+  domain.addIsAssociative <- addIsAssociative
+  domain.addZeroLeft <- addZeroLeft
+  domain.addNegLeft <- addNegLeft
+  domain.addIsCommutative <- addIsCommutative
+  domain.mulIsAssociative <- mulIsAssociative
+  domain.mulAddDistribLeft <- mulAddDistribLeft
+  domain.mulAddDistribRight <- mulAddDistribRight
+  domain.mulIsCommutative <- mulIsCommutative
+  domain.mulOneLeft <- mulOneLeft
+  domain.noZeroDivisors <- noZeroDivisors
+  domain.oneNotZero <- oneNotZero
+  domain.nonzero: nonzero
+  domain.nonzero <- nonzero
+}
+
+// MULTIPLICATIVE CANCELLATION, transferred from the domain layer rather than re-proved
+// through reciprocals. A model transfer puts no bare name in scope (see the shim idiom in
+// `agents/2b4m-cheatsheet.md`), so this one-line theorem is what callers cite.
+theorem cancelMulLeft: forall a, b, c: Field;
+  (not (a = ZERO)) -> mul(a, b) = mul(a, c) -> b = c
+proof
+  @conclusion |
+    forall a, b, c: Field;
+      (not (a = ZERO)) -> mul(a, b) = mul(a, c) -> b = c
+    [using model(DomainIsField) domain.cancelMulLeft]
+qed
