@@ -599,6 +599,14 @@ Easy to misread as "broken here", because the goal plainly IS a ring identity. *
 worth planning around:** a new polynomial layer must state its own
 distributivity/identity/negation lemmas, since no tactic will supply them.
 
+**AND IT BITES WHEN MOVING A PROOF DOWN A LAYER, measured 2026-11-25.** Porting
+`theNegationIsTheMinusOneScaling` from ℚ[x] to the ring layer: ℚ[x] closed `(-1)·x = -x` with
+one `[using polynomial(rational)]` step, and there is no `polynomial(ring)` over an abstract
+`R`, so the generic proof spends two explicit steps instead (`ring.mulNegLeft`, then
+`mulOneLeftR`). Small in this instance — but it means a genericization estimate cannot assume
+a tactic step ports as a tactic step. Budget explicit algebra for every scalar-tactic step in
+the proof being moved.
+
 ## 23. Smaller language facts, each of which cost a round
 
 - **A step cannot carry its own `proof … qed`.** An inner universal needing its own induction
