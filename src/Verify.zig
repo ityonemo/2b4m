@@ -111,6 +111,20 @@ draft: bool = false,
 /// its source's facts, so "which one did this step actually get?" is not answerable from the
 /// source text. Written to stderr as the run proceeds; never affects the verdict.
 trace_facts: bool = false,
+/// `query instance <file> <hash>`: the hash to DECODE, as the author pasted it — a bare
+/// `2e5cfa07d7a3de11` or the full `induction{2e5cfa07d7a3de11}` spelling. Null = not querying.
+///
+/// A schema instance is NAMED by hashing its arguments (`Schema.instanceHash`), so a log line
+/// identifies an instance only in the sense that two identical instantiations collide. The
+/// preimage — `(schema_name, params, args)` — lives on the IN-FLIGHT task and nothing maps
+/// `name -> payload`, so after a run the association is gone (SCHEMA-HASH-DECODE-PLAN.md).
+///
+/// Rather than re-derive it (enumerate candidate instantiations, recompute the hash for each,
+/// and hope to reproduce six per-accelerant recipes plus the model-transfer parameter
+/// extension), this re-runs the check and MATCHES ON THE NAME the engine itself minted. The
+/// hash is then never recomputed, which is why none of the plan's four hazards apply: the
+/// engine already did the hashing, correctly, by construction.
+decode_instance: ?[]const u8 = null,
 /// `--chaos[=SEED]`: shuffle the engine's scheduling order under a fixed seed, so a run
 /// explores a DIFFERENT task interleaving while staying single-threaded and reproducible.
 ///

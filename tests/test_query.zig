@@ -129,6 +129,48 @@ pub fn addTests(
         r.expectExitCode(0);
     }
 
+    // `query instance <file> <hash>` — decode a `Schema{hash}` back into the instantiation it
+    // names. ONE schema instantiated at TWO arguments gets two distinct hashes; each must
+    // recover the argument actually written. That is the whole claim of the subcommand, and it
+    // is the test SCHEMA-HASH-DECODE-PLAN.md asks for.
+    //
+    // The fixture's hashes are STABLE across runs (verified): a declared schema's hash covers
+    // only its arguments, where an accelerant-minted name also covers the prover's hygienic
+    // fvars and so varies with worker interleaving on a multi-theorem run.
+    ctx.ok(&.{ "query", "instance", "tests/cases/schema/query_instance_twice.b4m", "7e823c3f835aa0a3" },
+        \\atBoth{7e823c3f835aa0a3}
+        \\  schema: atBoth
+        \\  in:     ns#46
+        \\  t := A
+        \\
+    );
+    ctx.ok(&.{ "query", "instance", "tests/cases/schema/query_instance_twice.b4m", "8740d0f6455bceca" },
+        \\atBoth{8740d0f6455bceca}
+        \\  schema: atBoth
+        \\  in:     ns#46
+        \\  t := B
+        \\
+    );
+
+    // The FULL `Schema{hash}` spelling, as a trace line prints it, resolves identically — a
+    // reader pastes what they have rather than editing the braces off.
+    ctx.ok(&.{ "query", "instance", "tests/cases/schema/query_instance_twice.b4m", "atBoth{7e823c3f835aa0a3}" },
+        \\atBoth{7e823c3f835aa0a3}
+        \\  schema: atBoth
+        \\  in:     ns#46
+        \\  t := A
+        \\
+    );
+
+    // A hash from a DIFFERENT argument set does not resolve, and says so rather than guessing.
+    // Honest degradation is the point: "no match" is itself information (a stale hash, or an
+    // instance this run never demanded).
+    {
+        const r = ctx.run(&.{ "query", "instance", "tests/cases/schema/query_instance_twice.b4m", "deadbeefdeadbeef" });
+        r.expectStdErrMatch("no instantiation in this run hashes to 'deadbeefdeadbeef'");
+        r.expectExitCode(1);
+    }
+
     // `debug taint <file>`: a proof with no accelerated tactic reports that
     // every step is kernel-checked.
     ctx.ok(&.{ "debug", "taint", "tests/cases/cli/outline.b4m" }, "no accelerated tactics — every step is kernel-checked\n");

@@ -202,6 +202,11 @@ axiom_origin: std.AutoHashMapUnmanaged(InternPool.Index, HoleDecl) = .empty,
 /// interleaves tasks, so writing each line to stderr when it is produced shreds them into each
 /// other. The driver prints this once the run is quiescent.
 fact_trace: std.ArrayList([]const u8) = .empty,
+/// `query instance` matches, ACCUMULATED like `fact_trace` and for the same reason: the engine
+/// interleaves tasks, so a match is found at an unpredictable moment and the driver reports it
+/// once the run is quiescent. Usually one entry; more than one means a hash was asked about
+/// that several instances share, which is itself worth seeing.
+decoded_instances: std.ArrayList([]const u8) = .empty,
 /// MODEL-DISCHARGED facts: every LOCAL fact a `model` names as the thing that discharges a
 /// source obligation (`src <- local`, a `@`-projection, or a guard witness on a `:` map).
 /// Such a fact is USED — by the model machinery rather than by a proof's citation closure, so
@@ -668,6 +673,21 @@ pub fn traceLine(self: *Context, line: []const u8) void {
     self.side_lock.lock();
     defer self.side_lock.unlock();
     self.fact_trace.append(self.arena, line) catch {};
+}
+
+/// Record a `query instance` match. Same lock as `traceLine` and for the same reason — this is
+/// a side table written by a task mid-run (`[[side-table-lock-discipline]]`).
+///
+/// DEDUPED BY TEXT, because a ProveTask is RE-ENTERED: it suspends on a dependency and resumes,
+/// running `run` again each time, so one instance reported itself three times on the first
+/// working version. Deduping on the rendered text is right rather than counting entries — two
+/// genuinely distinct instances sharing a queried hash (the collision case, worth seeing)
+/// render differently, while one instance re-entered renders identically.
+pub fn noteDecodedInstance(self: *Context, text: []const u8) void {
+    self.side_lock.lock();
+    defer self.side_lock.unlock();
+    for (self.decoded_instances.items) |have| if (std.mem.eql(u8, have, text)) return;
+    self.decoded_instances.append(self.arena, text) catch {};
 }
 
 /// The file table as a flat slice, for the diagnostic renderer (which indexes it by the

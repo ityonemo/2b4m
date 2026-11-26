@@ -160,34 +160,101 @@ pub fn new(arena: std.mem.Allocator, payload: ProveTask) std.mem.Allocator.Error
 fn traceInstance(self: *Context, inst: Instance) void {
     var scratch: term.Pool = .init(self.arena, self.gpa);
     for (inst.params, inst.args) |pname, arg| {
-        const rendered = switch (arg) {
-            .value => |v| blk: {
-                const id = scratch.copyIn(self.interner, v.off) catch break :blk null;
-                break :blk print.render(self.arena, &scratch, self.interner, id) catch null;
-            },
-            .lambda => |l| blk: {
-                const id = scratch.copyIn(self.interner, l.off) catch break :blk null;
-                const body = print.render(self.arena, &scratch, self.interner, id) catch break :blk null;
-                var buf: std.ArrayList(u8) = .empty;
-                buf.appendSlice(self.arena, "fun ") catch break :blk null;
-                for (l.params, 0..) |lp, i| {
-                    if (i != 0) buf.appendSlice(self.arena, ", ") catch break :blk null;
-                    // TRIM AT `#`, as `print.displayName` does: the prover disambiguates
-                    // same-named eigenvariables of sibling `fix` blocks by appending `#<n>`,
-                    // and `#` cannot occur in a userland identifier, so trimming recovers what
-                    // the author wrote. Without this the trace leaks `k#45` for a plain `k`.
-                    const raw = self.interner.stringBytes(lp);
-                    const shown = if (std.mem.indexOfScalar(u8, raw, '#')) |at| raw[0..at] else raw;
-                    buf.appendSlice(self.arena, shown) catch break :blk null;
-                }
-                buf.appendSlice(self.arena, " => ") catch break :blk null;
-                buf.appendSlice(self.arena, body) catch break :blk null;
-                break :blk buf.items;
-            },
-        } orelse continue;
+        const rendered = renderArg(self, &scratch, arg) orelse continue;
         const line = std.fmt.allocPrint(self.arena, "          {s} := {s}\n", .{ self.interner.stringBytes(pname), rendered }) catch continue;
         self.traceLine(line);
     }
+}
+
+/// One schema argument as display text, or null if it cannot be rendered.
+///
+/// The args are DURABLE (`TermOff` into the InternPool) while the renderer wants a `TermId` in
+/// a live pool, so each is copied into `scratch` first. A lambda prints its parameter list,
+/// since that is what distinguishes `induction(fun k => P(k))` from `induction(fun k => Q(k))`
+/// — the whole point of expanding a hash.
+fn renderArg(self: *Context, scratch: *term.Pool, arg: DurableArg) ?[]const u8 {
+    return switch (arg) {
+        .value => |v| blk: {
+            const id = scratch.copyIn(self.interner, v.off) catch break :blk null;
+            break :blk print.render(self.arena, scratch, self.interner, id) catch null;
+        },
+        .lambda => |l| blk: {
+            const id = scratch.copyIn(self.interner, l.off) catch break :blk null;
+            const body = print.render(self.arena, scratch, self.interner, id) catch break :blk null;
+            var buf: std.ArrayList(u8) = .empty;
+            buf.appendSlice(self.arena, "fun ") catch break :blk null;
+            for (l.params, 0..) |lp, i| {
+                if (i != 0) buf.appendSlice(self.arena, ", ") catch break :blk null;
+                // TRIM AT `#`, as `print.displayName` does: the prover disambiguates
+                // same-named eigenvariables of sibling `fix` blocks by appending `#<n>`,
+                // and `#` cannot occur in a userland identifier, so trimming recovers what
+                // the author wrote. Without this the trace leaks `k#45` for a plain `k`.
+                const raw = self.interner.stringBytes(lp);
+                const shown = if (std.mem.indexOfScalar(u8, raw, '#')) |at| raw[0..at] else raw;
+                buf.appendSlice(self.arena, shown) catch break :blk null;
+            }
+            buf.appendSlice(self.arena, " => ") catch break :blk null;
+            buf.appendSlice(self.arena, body) catch break :blk null;
+            break :blk buf.items;
+        },
+    };
+}
+
+/// `query instance`: if THIS task is the instance whose hash was asked about, record the
+/// decoded preimage. Called from the same site `--trace-facts` expands at, because that is
+/// where the payload is still in hand.
+///
+/// MATCHES ON THE NAME, never on a recomputed hash. `task.name` is already
+/// `<schema>{<hash>}` — the engine minted it from `Schema.instanceHash` — so comparing against
+/// the queried hash is exact, and the six per-accelerant hash recipes, the model-transfer
+/// parameter extension and the reserved-slot rule are all somebody else's problem by then.
+///
+/// The author may paste either spelling, so a bare hash matches the `{…}` suffix and a full
+/// `induction{…}` matches the whole name.
+fn decodeInstance(self: *Context, task: *const ProveTask, inst: Instance, ns: InternPool.Index) void {
+    const wanted = self.verify.decode_instance orelse return;
+    const name = self.interner.stringBytes(task.name);
+    const matches = std.mem.eql(u8, name, wanted) or blk: {
+        // bare-hash form: the name's LAST `{…}` group equals what was asked. The last, because
+        // an accelerant's synthetic schema is itself named `specialize{A}`, so its instance is
+        // `specialize{A}{B}` and only the outer `{B}` is the instance hash.
+        if (!std.mem.endsWith(u8, name, "}")) break :blk false;
+        const open = std.mem.lastIndexOfScalar(u8, name[0 .. name.len - 1], '{') orelse break :blk false;
+        break :blk std.mem.eql(u8, name[open + 1 .. name.len - 1], wanted);
+    };
+    if (!matches) return;
+
+    var buf: std.ArrayList(u8) = .empty;
+    const add = struct {
+        fn f(a: std.mem.Allocator, b: *std.ArrayList(u8), comptime fmt: []const u8, args: anytype) void {
+            const s = std.fmt.allocPrint(a, fmt, args) catch return;
+            b.appendSlice(a, s) catch {};
+        }
+    }.f;
+
+    add(self.arena, &buf, "{s}\n", .{name});
+    add(self.arena, &buf, "  schema: {s}\n", .{self.interner.stringBytes(inst.schema_name)});
+    if (task.model != .universe) {
+        add(self.arena, &buf, "  model:  model#{d}\n", .{@intFromEnum(task.model)});
+    }
+    add(self.arena, &buf, "  in:     ns#{d}\n", .{@intFromEnum(ns)});
+
+    var scratch: term.Pool = .init(self.arena, self.gpa);
+    for (inst.params, inst.args) |pname, arg| {
+        const rendered = renderArg(self, &scratch, arg) orelse continue;
+        add(self.arena, &buf, "  {s} := {s}\n", .{ self.interner.stringBytes(pname), rendered });
+    }
+    // A MODEL TRANSFER keeps source-space twins of the args, and the hash is over `args` — so
+    // reporting only one side would mislead about what the instance actually is. Shown only
+    // when they differ, which outside a transfer they do not (same slice).
+    if (inst.args_source.ptr != inst.args.ptr) {
+        add(self.arena, &buf, "  (source-space arguments, before the model mapping)\n", .{});
+        for (inst.params, inst.args_source) |pname, arg| {
+            const rendered = renderArg(self, &scratch, arg) orelse continue;
+            add(self.arena, &buf, "  {s} := {s}\n", .{ self.interner.stringBytes(pname), rendered });
+        }
+    }
+    self.noteDecodedInstance(buf.items);
 }
 
 fn runErased(self: *Context, payload: *anyopaque, h: *Engine.Handle) std.mem.Allocator.Error!void {
@@ -214,6 +281,11 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
         // candidate enumeration and knowledge of which accelerant minted the name. Printing it
         // at the moment it is minted removes most of the need for that.
         if (task.instance) |inst| traceInstance(self, inst);
+    }
+    // `query instance` is independent of tracing: it wants ONE instance's preimage, not the
+    // whole run's narration, so it must not require `--trace-facts` to be on.
+    if (self.verify.decode_instance != null) {
+        if (task.instance) |inst| decodeInstance(self, task, inst, ns);
     }
     switch (try self.facts.claimOrLookup(self.io, key, h.self_index)) {
         .proven => return,

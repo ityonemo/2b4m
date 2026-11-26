@@ -29,7 +29,8 @@ pub fn addTests(
             "       2b4m query theorem <file.b4m> <theorem> [--sig]\n" ++
             "       2b4m query whereis <file.b4m> <identifier>\n" ++
             "       2b4m query search <file.b4m|dir> <query>\n" ++
-            "       2b4m query uses <file.b4m> [theorem]\n",
+            "       2b4m query uses <file.b4m> [theorem]\n" ++
+            "       2b4m query instance <file.b4m> <hash> [theorem]\n",
     );
     no_args.expectExitCode(1);
     test_step.dependOn(&no_args.step);

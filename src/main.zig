@@ -182,7 +182,8 @@ const query_usage =
     "       2b4m query theorem <file.b4m> <theorem> [--sig]\n" ++
     "       2b4m query whereis <file.b4m> <identifier>\n" ++
     "       2b4m query search <file.b4m|dir> <query>\n" ++
-    "       2b4m query uses <file.b4m> [theorem]\n";
+    "       2b4m query uses <file.b4m> [theorem]\n" ++
+    "       2b4m query instance <file.b4m> <hash> [theorem]\n";
 
 /// Print a query op's result (stdout when ok, stderr otherwise) and map to an
 /// exit code.
@@ -285,6 +286,15 @@ fn queryCommand(arena: std.mem.Allocator, std_root: []const u8, rest: []const [:
             else => return fail("error: cannot open '{s}': {t}\n", .{ path, e }),
         };
         const result = try b4m.query.uses.uses(arena, path, source, thm);
+        return emitQuery(result.text, result.ok);
+    }
+    if (rest.len >= 1 and std.mem.eql(u8, rest[0], "instance")) {
+        // `query instance <file> <hash>` — decode a `Schema{<hash>}` into the instantiation it
+        // names. Unlike its siblings this RUNS THE PROVER, because a hash exists only as a
+        // product of elaboration; the file is read by the loader rather than here.
+        if (rest.len < 3 or rest.len > 4) return fail(query_usage, .{});
+        const thm: ?[]const u8 = if (rest.len == 4) rest[3] else null;
+        const result = try b4m.query.instance.instance(io, arena, rest[1], rest[2], thm, null, readRaw, std_root);
         return emitQuery(result.text, result.ok);
     }
     if (rest.len >= 1 and std.mem.eql(u8, rest[0], "search")) {
@@ -427,6 +437,7 @@ pub fn main(init: std.process.Init) !u8 {
             \\       2b4m query whereis <file.b4m> <identifier>
             \\       2b4m query search <file.b4m|dir> <query>
             \\       2b4m query uses <file.b4m> [theorem]
+            \\       2b4m query instance <file.b4m> <hash> [theorem]
             \\
             \\check proves every theorem of the file; with a theorem name it proves
             \\only that one (and what it cites) — the rest of the file is not run.
@@ -530,7 +541,7 @@ pub fn main(init: std.process.Init) !u8 {
         return debugCommand(arena, std_root, args[2..]);
     }
     const usage = "usage: 2b4m check [--fast | --fast-only W… | --fast-except W…] [--draft] [--axioms] [--library] [--trace-facts] [--chaos[=SEED]] [-j<n>] [--io-threads=<n>] [--sync-io] [--io-delay=<us>] <file.b4m | dir> [theorem]\n       2b4m fmt [--check] <file.b4m|.md>\n       2b4m lint <file.b4m|.md>\n" ++
-        "       2b4m index <file.b4m>\n       2b4m debug accelerant <file> <line | theorem step-label> [--model <Name>]…\n       2b4m debug taint <file> [theorem]\n       2b4m debug model <file> [Name]\n       2b4m query outline <file.b4m> [theorem]\n       2b4m query claims <file.b4m> [theorem]\n       2b4m query theorem <file.b4m> <theorem> [--sig]\n       2b4m query whereis <file.b4m> <identifier>\n       2b4m query search <file.b4m|dir> <query>\n       2b4m query uses <file.b4m> [theorem]\n";
+        "       2b4m index <file.b4m>\n       2b4m debug accelerant <file> <line | theorem step-label> [--model <Name>]…\n       2b4m debug taint <file> [theorem]\n       2b4m debug model <file> [Name]\n       2b4m query outline <file.b4m> [theorem]\n       2b4m query claims <file.b4m> [theorem]\n       2b4m query theorem <file.b4m> <theorem> [--sig]\n       2b4m query whereis <file.b4m> <identifier>\n       2b4m query search <file.b4m|dir> <query>\n       2b4m query uses <file.b4m> [theorem]\n       2b4m query instance <file.b4m> <hash> [theorem]\n";
     if (args.len < 3 or !std.mem.eql(u8, args[1], "check")) {
         return fail(usage, .{});
     }

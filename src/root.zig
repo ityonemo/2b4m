@@ -228,6 +228,10 @@ pub const ProjectResult = struct {
     /// asked. Accumulated during the run (the engine interleaves tasks, so writing as we go
     /// would shred the lines into each other) and printed by the driver at the end.
     fact_trace: []const []const u8,
+    /// `query instance <hash>`: the decoded preimage of every instance whose name carries that
+    /// hash — schema, model, and each parameter bound to its argument. Empty unless asked, and
+    /// empty-when-asked is itself the answer ("no instantiation in this run hashes to that").
+    decoded_instances: []const []const u8,
     /// `--library`: the root files' axioms NO root theorem rests on — a library must not ship
     /// assumptions nothing uses. Empty unless asked. Same shape as `axioms` (never a hole).
     unused_axioms: []const Axiom,
@@ -512,6 +516,7 @@ fn summarize(arena: std.mem.Allocator, loaded: LoadedProject, roots: []const Con
         .axioms = if (want_axioms) try collectAxioms(arena, ctx, theorem) else &.{},
         .files_checked = roots.len,
         .fact_trace = ctx.fact_trace.items,
+        .decoded_instances = ctx.decoded_instances.items,
         .unused_axioms = if (library) try collectUnusedAxioms(arena, ctx) else &.{},
         .consistency_gaps = if (library) try collectConsistencyGaps(arena, ctx) else &.{},
         .termination_gaps = if (library) try collectTerminationGaps(arena, ctx) else &.{},
@@ -1127,6 +1132,7 @@ test {
     std.testing.refAllDecls(query.whereis);
     std.testing.refAllDecls(query.search);
     std.testing.refAllDecls(query.uses);
+    std.testing.refAllDecls(query.instance);
     std.testing.refAllDecls(debug.taint);
     std.testing.refAllDecls(debug.accelerant);
     std.testing.refAllDecls(debug.model);
