@@ -10,8 +10,17 @@ theorems now live at the ring layer and transfer back in one line each; ℚ[x] s
 `rational.mul` looks ℚ-specific; if its proof only ever cites ring axioms, it is generic.
 `check --axioms <file> <theorem>` answers it in one command, and the naming never reveals it.
 
-**Its limit, measured:** `--axioms` sees what a proof cites, not how much unported scaffolding
-sits beneath. `negationPreservesTheDegree` read as generic and was — but porting it meant
+**TWO LIMITS, both measured, both having cost a round.**
+
+**It cannot tell a TRANSFER from a local proof.** A model transfer still rests on the target's
+axioms, so `--axioms` on an already-transferred theorem reports the target's own construction
+axioms — `theIntegerProductsLeadingCoefficient` listed ℤ's `addSuccLeft`/`intCases`/
+`nonnegInduction`, which read exactly like a local induction over ℤ and are in fact the
+transferred proof's transitive closure. Three of four "duplications" surveyed this way were
+already one-line transfers. **The direct check is `grep "using model"` inside the proof body**;
+run it before claiming duplication.
+
+**And it sees what a proof cites, not how much unported scaffolding sits beneath.** `negationPreservesTheDegree` read as generic and was — but porting it meant
 first porting a 75-line helper. Survey the dependency chain, not just the axiom list.
 
 **And a survey goes stale from your own work.** An agent surveying six dependencies up front
