@@ -132,7 +132,7 @@ pub fn addTests(
     // `query instance <file> <hash>` — decode a `Schema{hash}` back into the instantiation it
     // names. ONE schema instantiated at TWO arguments gets two distinct hashes; each must
     // recover the argument actually written. That is the whole claim of the subcommand, and it
-    // is the test SCHEMA-HASH-DECODE-PLAN.md asks for.
+    // is the test PAINPOINTS 33c asks for.
     //
     // The fixture's hashes are STABLE across runs (verified): a declared schema's hash covers
     // only its arguments, where an accelerant-minted name also covers the prover's hygienic

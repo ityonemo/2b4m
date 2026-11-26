@@ -837,6 +837,39 @@ written, invisible until something blocks. Five such gaps surfaced in one refact
 was never re-exported into `ring/polynomial.b4m`; `leading.b4m` aliased `degreeAtMost` but not
 `degreeAtMostMeaning`).
 
+## 33c. A `Schema{hash}` is decoded by RE-RUNNING, not by recomputing the hash
+
+`2b4m query instance <file> <hash> [theorem]` decodes a schema-instance hash from a log, and
+`--trace-facts` expands the preimage inline beneath the hash in the run that minted it. Built
+2026-11-25; the plan that designed them is retired.
+
+**The design lesson.** The plan proposed enumerating candidate instantiations and RECOMPUTING
+each hash to find a match. The implementation instead re-runs the check and matches the name the
+ENGINE minted — because recomputing means reproducing every `termHash` recipe plus
+`freeFvarParams`' parameter extension, `hashEntity`'s reserved-slot rule, and the
+`args`/`args_source` asymmetry, each a way to compute a different number and report "no match"
+on a hash that does decode. Matching the engine's own output makes the hashing correct by
+construction, and all four of those hazards stay the engine's business. Cost is one check per
+query: 0.94s on the 10,115-line `std/field/polynomial.b4m`.
+
+**ACCELERANT HASHES ARE NOT REPRODUCIBLE ACROSS RUNS.** The plan asserted reproducibility as the
+precondition for decoding at all, and that holds for DECLARED schemas (`instanceHash` hashes
+name bytes and `loc`, not allocation-ordered `Index`es). It does NOT hold for accelerant-minted
+ones: their inner `termHash` hashes ordinary fvars by NAME (`Schema.zig:126`), and those carry
+the prover's `#<n>` disambiguation suffix whose numbering follows the demand schedule — three
+runs, three hashes. Stable under `-j1 --sync-io`. So a hash quoted from a parallel run may be
+undecodable in principle, not merely unmatched.
+
+**Two shape facts.** An accelerant instance is named `specialize{A}{B}` — TWO brace groups,
+because the synthetic schema is itself `specialize{A}` and `instanceHash` wraps that; the LAST
+group is the instance hash. And which instances exist depends on what the run demanded, so a
+hash from `check <file> <thm>` need not appear in a whole-file check — hence the optional
+theorem argument, which the no-match message points at.
+
+**One hash can decode to SEVERAL instances** — a universe one and a model-transferred one, the
+latter printing its source-space arguments too. Reporting one side would mislead, which is what
+the plan warned about and is now visible rather than theoretical.
+
 ## 34. Measurement hygiene
 
 - **A counting measurement must EXCLUDE what you are about to delete.**

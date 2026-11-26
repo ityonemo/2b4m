@@ -276,7 +276,7 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
         // `(schema_name, params, args)` reified durably at the naming site, so each parameter
         // can be shown bound to the argument it was instantiated at.
         //
-        // This is the cheap half of decoding `Schema{hash}` (SCHEMA-HASH-DECODE-PLAN.md): the
+        // This is the cheap half of decoding `Schema{hash}` (PAINPOINTS 33c): the
         // expensive half is re-deriving a preimage from a hash AFTER the run, which needs a
         // candidate enumeration and knowledge of which accelerant minted the name. Printing it
         // at the moment it is minted removes most of the need for that.

@@ -13,7 +13,7 @@
 //!
 //! THE APPROACH: RE-RUN AND MATCH ON THE NAME, never on a recomputed hash.
 //!
-//! The plan this implements (SCHEMA-HASH-DECODE-PLAN.md) proposed re-derivation: enumerate
+//! A retired plan proposed re-derivation instead (see PAINPOINTS 33c): enumerate
 //! candidate instantiations, recompute `instanceHash` for each, report the matches. That is
 //! the right instinct — store nothing, no side table to keep in sync — but recomputing the
 //! hash means reproducing, exactly:

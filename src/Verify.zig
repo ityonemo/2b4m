@@ -117,7 +117,7 @@ trace_facts: bool = false,
 /// A schema instance is NAMED by hashing its arguments (`Schema.instanceHash`), so a log line
 /// identifies an instance only in the sense that two identical instantiations collide. The
 /// preimage — `(schema_name, params, args)` — lives on the IN-FLIGHT task and nothing maps
-/// `name -> payload`, so after a run the association is gone (SCHEMA-HASH-DECODE-PLAN.md).
+/// `name -> payload`, so after a run the association is gone (PAINPOINTS 33c).
 ///
 /// Rather than re-derive it (enumerate candidate instantiations, recompute the hash for each,
 /// and hope to reproduce six per-accelerant recipes plus the model-transfer parameter
