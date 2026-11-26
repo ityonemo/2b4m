@@ -150,6 +150,7 @@ oper rmonus(i: Nat, j: Nat) => Nat:
 oper rtheCofactorIndex(i: Nat, j: Nat, k: Nat) => Nat:
   rtheCofactorIndex(i, j, NAT_ZERO) = rmonus(i, j);
   rtheCofactorIndex(i, j, peano.succ(k)) = rmonus(rmonus(i, j), peano.succ(k)).
+  totality(peano): rtheCofactorIndexCovers
 
 // The recursion descends by `peano.prev` rather than matching `peano.succ` on the left, which the
 // l-value rule requires of a recursive definition — the descent must be readable on the RIGHT.
@@ -222,6 +223,7 @@ axiom rOnePolyCoeffHigher: forall i: Nat;
   rcoeff(RONEP, peano.succ(i)) = ZERO
 
 // What this file proves (verified manifest):
+intheory rtheCofactorIndexCovers
 intheory rOneIsTheUnitMonomial
 intheory rMulIsCommutative
 intheory rMulIsAssociative
@@ -3779,4 +3781,37 @@ proof
   @conclusion |
     forall p, q, r: RPoly; forall i, m, n: Nat; m != NAT_ZERO -> rtripleRowsGrounded(m)
     [by generalize generalize-p]
+qed
+
+// The arms split on `k` being NAT_ZERO or a successor, which is exactly `peano.zeroOrSucc`. The
+// riding binders `i`/`j` are quantified because the obligation covers the whole parameter list,
+// but neither appears in the condition: only the last slot is narrowed.
+theorem rtheCofactorIndexCovers: forall i: Nat; forall j: Nat; forall k: Nat;
+  k = NAT_ZERO or (exists k_at3: Nat; k = peano.succ(k_at3))
+proof
+  @every-nat-is-zero-or-a-successor |
+    forall n: Nat; n = NAT_ZERO or (exists m: Nat; n = peano.succ(m))
+    [using import(peano) zeroOrSucc]
+  @generalize-i |
+    fix i: Nat {
+      @generalize-j |
+        fix j: Nat {
+          @generalize-k |
+            fix k: Nat {
+              @conclusion-covered-at-k |
+                k = NAT_ZERO or (exists k_at3: Nat; k = peano.succ(k_at3))
+                [using specialize every-nat-is-zero-or-a-successor(k)]
+            }
+          @discharge-k |
+            forall k: Nat; k = NAT_ZERO or (exists k_at3: Nat; k = peano.succ(k_at3))
+            [by generalize generalize-k]
+        }
+      @discharge-j |
+        forall j: Nat; forall k: Nat; k = NAT_ZERO or (exists k_at3: Nat; k = peano.succ(k_at3))
+        [by generalize generalize-j]
+    }
+  @conclusion |
+    forall i: Nat; forall j: Nat; forall k: Nat;
+      k = NAT_ZERO or (exists k_at3: Nat; k = peano.succ(k_at3))
+    [by generalize generalize-i]
 qed

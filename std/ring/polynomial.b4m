@@ -266,6 +266,7 @@ intheory theTriangleRowsStep
 intheory aRowIsTheScaledRun
 intheory theRowRunBase
 intheory theRowRunStep
+intheory theCofactorIndexCovers
 intheory theCofactorIsTheGapsGap
 intheory aCommonAmountCancels
 intheory theCancelBase
@@ -5837,6 +5838,7 @@ oper monus(i: Nat, j: Nat) => Nat:
 oper theCofactorIndex(i: Nat, j: Nat, k: Nat) => Nat:
   theCofactorIndex(i, j, ZERO) = monus(i, j);
   theCofactorIndex(i, j, succ(k)) = monus(monus(i, j), succ(k)).
+  totality(peano): theCofactorIndexCovers
 
 // term(j,k) at output index i = p_j q_k r_{(i-j)-k}.
 oper tripleTerm(p: Poly, q: Poly, r: Poly, i: Nat, j: Nat, k: Nat) => R:
@@ -12148,4 +12150,37 @@ proof
   @conclusion |
     forall p, q, r: Poly; forall i, m, n: Nat; m != ZERO -> tripleRowsGrounded(m)
     [by generalize generalize-p]
+qed
+
+// The arms split on `k` being ZERO or a successor, which is exactly `peano.zeroOrSucc`. The
+// riding binders `i`/`j` are quantified because the obligation covers the whole parameter list,
+// but neither appears in the condition: only the last slot is narrowed.
+theorem theCofactorIndexCovers: forall i: Nat; forall j: Nat; forall k: Nat;
+  k = ZERO or (exists k_at3: Nat; k = succ(k_at3))
+proof
+  @every-nat-is-zero-or-a-successor |
+    forall n: Nat; n = ZERO or (exists m: Nat; n = succ(m))
+    [using import(peano) zeroOrSucc]
+  @generalize-i |
+    fix i: Nat {
+      @generalize-j |
+        fix j: Nat {
+          @generalize-k |
+            fix k: Nat {
+              @conclusion-covered-at-k |
+                k = ZERO or (exists k_at3: Nat; k = succ(k_at3))
+                [using specialize every-nat-is-zero-or-a-successor(k)]
+            }
+          @discharge-k |
+            forall k: Nat; k = ZERO or (exists k_at3: Nat; k = succ(k_at3))
+            [by generalize generalize-k]
+        }
+      @discharge-j |
+        forall j: Nat; forall k: Nat; k = ZERO or (exists k_at3: Nat; k = succ(k_at3))
+        [by generalize generalize-j]
+    }
+  @conclusion |
+    forall i: Nat; forall j: Nat; forall k: Nat;
+      k = ZERO or (exists k_at3: Nat; k = succ(k_at3))
+    [by generalize generalize-i]
 qed

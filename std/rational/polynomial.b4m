@@ -139,6 +139,7 @@ axiom integerCoefficientsMeaning: forall p: QPoly; forall n: Nat;
   (forall i: Nat; peano.less_than(i, n) -> isInteger(qcoeff(p, i)))
 
 // What this file proves (verified manifest):
+intheory qtheCofactorIndexCovers
 intheory theZeroPolynomialHasIntegerCoefficients
 intheory qSubPolyCoeff
 intheory everyCoefficientIsARatioOfIntegers
@@ -2697,6 +2698,7 @@ oper qmonus(i: Nat, j: Nat) => Nat:
 oper qtheCofactorIndex(i: Nat, j: Nat, k: Nat) => Nat:
   qtheCofactorIndex(i, j, NAT_ZERO) = qmonus(i, j);
   qtheCofactorIndex(i, j, peano.succ(k)) = qmonus(qmonus(i, j), peano.succ(k)).
+  totality(peano): qtheCofactorIndexCovers
 
 // The recursion descends by `peano.prev` rather than matching `peano.succ` on the left, which the
 // l-value rule requires of a recursive definition — the descent must be readable on the RIGHT.
@@ -6580,4 +6582,37 @@ proof
   @conclusion |
     forall p, q, r: QPoly; forall i, m, n: Nat; m != NAT_ZERO -> qtripleRowsGrounded(m)
     [by generalize generalize-p]
+qed
+
+// The arms split on `k` being NAT_ZERO or a successor, which is exactly `peano.zeroOrSucc`. The
+// riding binders `i`/`j` are quantified because the obligation covers the whole parameter list,
+// but neither appears in the condition: only the last slot is narrowed.
+theorem qtheCofactorIndexCovers: forall i: Nat; forall j: Nat; forall k: Nat;
+  k = NAT_ZERO or (exists k_at3: Nat; k = peano.succ(k_at3))
+proof
+  @every-nat-is-zero-or-a-successor |
+    forall n: Nat; n = NAT_ZERO or (exists m: Nat; n = peano.succ(m))
+    [using import(peano) zeroOrSucc]
+  @generalize-i |
+    fix i: Nat {
+      @generalize-j |
+        fix j: Nat {
+          @generalize-k |
+            fix k: Nat {
+              @conclusion-covered-at-k |
+                k = NAT_ZERO or (exists k_at3: Nat; k = peano.succ(k_at3))
+                [using specialize every-nat-is-zero-or-a-successor(k)]
+            }
+          @discharge-k |
+            forall k: Nat; k = NAT_ZERO or (exists k_at3: Nat; k = peano.succ(k_at3))
+            [by generalize generalize-k]
+        }
+      @discharge-j |
+        forall j: Nat; forall k: Nat; k = NAT_ZERO or (exists k_at3: Nat; k = peano.succ(k_at3))
+        [by generalize generalize-j]
+    }
+  @conclusion |
+    forall i: Nat; forall j: Nat; forall k: Nat;
+      k = NAT_ZERO or (exists k_at3: Nat; k = peano.succ(k_at3))
+    [by generalize generalize-i]
 qed
