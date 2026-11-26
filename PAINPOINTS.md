@@ -599,6 +599,17 @@ Easy to misread as "broken here", because the goal plainly IS a ring identity. *
 worth planning around:** a new polynomial layer must state its own
 distributivity/identity/negation lemmas, since no tactic will supply them.
 
+**IDEA, PARKED (user, 2026-11-25): let `polynomial` synthesize OVER A MODEL.** Better than the
+operation-name mapping this entry's neighbours have floated, because a `model` already carries
+the DISCHARGE that its mapping is sound — `polynomial(model(M))` would read the ring structure
+through M's own `:` map, so a misbound operator is a model error caught where models are
+checked, not a tactic that silently normalizes nonsense. The name-mapping alternative has
+nothing behind it but the certificate.
+
+Not scoped. The open questions are whether the tactic's canonical expansion can run in the
+source theory and transfer, or must run in the target; and how it interacts with the `--fast`
+trust boundary, where `model` already drops the per-axiom obligation-coverage check.
+
 **AND IT BITES WHEN MOVING A PROOF DOWN A LAYER, measured 2026-11-25.** Porting
 `theNegationIsTheMinusOneScaling` from ℚ[x] to the ring layer: ℚ[x] closed `(-1)·x = -x` with
 one `[using polynomial(rational)]` step, and there is no `polynomial(ring)` over an abstract
