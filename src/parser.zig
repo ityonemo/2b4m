@@ -1957,7 +1957,7 @@ pub const Parser = struct {
         // otherwise — an author who reorders the clauses would leave the recursive arm
         // unchecked and the obligation stated about a terminating one.
         var term_obligations: std.ArrayList(?*const ast.Expr) = .empty;
-        if (saw_termination) {
+        if (saw_termination and self.interner != null) {
             for (term_entries.items, clauses, 0..) |entry, c, i| {
                 const rhs = clauseRhs(c.body);
                 var calls: std.ArrayList(ast.Expr.Call) = .empty;
@@ -2002,6 +2002,19 @@ pub const Parser = struct {
         // the property pins it DOWN. Both must be discharged, or the block is an assumption
         // wearing a definition's clothes — PAINPOINTS 16f derives `ZERO = ONE` from one that
         // was not.
+        // WITHOUT AN INTERNER none of the checks below can run: name identity is what they are
+        // made of, and `fmt`/`lint`/`query` parse with `.init` rather than `.initInterning`, so
+        // every `StrId` is `.none` and every name compares EQUAL to every other. That made
+        // `collectRecursiveCalls` read every call as a self-call, so `query uses` reported valid
+        // declarations as malformed recursions while `check` on the same file was green.
+        //
+        // Skipping is right rather than a workaround: these are the CHECKER's soundness
+        // obligations, and a formatter or a usage query has no business enforcing them. `check`
+        // always interns.
+        if (self.interner == null) {
+            return .{ .consistency = found, .determinacy = null, .termination = null, .totality = null };
+        }
+
         if (is_implicit) {
             if (ex_tok == null or un_tok == null) {
                 return self.fail("definition '{s}' is IMPLICIT (its clause characterizes '{s}' rather than rewriting it) and must declare both `existence:` and `uniqueness:` after the clause list's `.`", .{ self.text(name), self.text(name) });

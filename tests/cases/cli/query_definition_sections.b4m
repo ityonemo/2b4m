@@ -1,0 +1,31 @@
+// REGRESSION: `query uses` on a file with definition-block WELL-FORMEDNESS SECTIONS.
+//
+// `fmt`/`lint`/`query` parse with `Parser.init` rather than `.initInterning`, so every `StrId`
+// is `.none` and every name compares EQUAL to every other. The section checks are built on name
+// identity -- `collectRecursiveCalls` asks whether a call's callee IS the symbol being defined --
+// so without an interner it read EVERY call as a self-call. `query uses` then reported valid
+// declarations as malformed recursions ("entry 1 is `_`, but clause 0 RECURSES") on files that
+// `check` passed cleanly.
+//
+// The fix skips the checks when there is no interner: they are the CHECKER's soundness
+// obligations, and a formatter or a usage query has no business enforcing them.
+//
+// `g` below is deliberately NOT recursive -- its step arm returns `s(a)`, not a self-call -- so
+// any report of recursion here is the bug returning.
+sort N
+const Z: N
+oper s(a: N) => N
+
+// Conditions are COMPLEMENTARY, so `totality:` autodetects and is not owed.
+oper g(a: N, n: N) => N:
+  g(a, n) = a when n = Z;
+  g(a, n) = s(a) when n != Z.
+  consistency: _
+
+intheory gAtZero
+theorem gAtZero: forall a: N; forall n: N; n = Z -> g(a, n) = a
+proof
+  @conclusion |
+    forall a: N; forall n: N; n = Z -> g(a, n) = a
+    [by definition(0) g]
+qed

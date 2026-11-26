@@ -107,6 +107,18 @@ pub fn addTests(
         \\
     );
 
+    // REGRESSION: `query uses` on a file carrying definition-block well-formedness sections.
+    // `query` parses without an interner, so every `StrId` is `.none` and every name compares
+    // EQUAL — which made the section checks (built on name identity) read every call as a
+    // self-call and report valid declarations as malformed recursions. `g` here is NOT
+    // recursive, so any recursion complaint is the bug returning.
+    ctx.ok(&.{ "query", "uses", "tests/cases/cli/query_definition_sections.b4m" },
+        \\theorem gAtZero
+        \\  rules: definition
+        \\  cites: 0 g
+        \\
+    );
+
     // `debug taint <file>`: a proof with no accelerated tactic reports that
     // every step is kernel-checked.
     ctx.ok(&.{ "debug", "taint", "tests/cases/cli/outline.b4m" }, "no accelerated tactics — every step is kernel-checked\n");
