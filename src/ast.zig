@@ -186,7 +186,7 @@ pub const Func = union(enum) {
         /// An IMPLICIT definition block's `existence:` / `uniqueness:` pair, else null. Only
         /// `oper` can be implicitly defined: a `pred` gets both obligations for free, since it
         /// is total (existence) and determined pointwise by any condition on it (uniqueness).
-        /// See `Determinacy` and IMPLICIT-DEFINITION-PLAN.md.
+        /// See `Determinacy` and design/definition-wellformedness.md.
         determinacy: ?Determinacy = null,
         /// A RECURSIVE definition block's `termination(<theory>):` list, else null. See
         /// `Termination`.
@@ -234,7 +234,7 @@ pub const Pred = union(enum) {
 /// marks a recursive arm and carries two names: the theorem the author proves, and the
 /// predicate the checker generates from the arm's call sites.
 ///
-/// See DEFINITION-SOUNDNESS-PLAN.md's WELL-FOUNDEDNESS section — notably that the obligation
+/// See design/definition-wellformedness.md's WELL-FOUNDEDNESS section — notably that the obligation
 /// names no ordering and no induction principle, so how to prove it is the author's choice.
 pub const Termination = struct {
     /// the theory supplying the sort's machinery; `.none` name when not written
@@ -280,7 +280,7 @@ pub const Determinacy = struct {
     uniqueness: Token,
 
     /// The obligation each named theorem must state, synthesized from the clauses so the
-    /// author never writes it. See IMPLICIT-DEFINITION-PLAN.md for the shapes.
+    /// author never writes it. See design/definition-wellformedness.md for the shapes.
     existence_obligation: ?*const Expr = null,
     uniqueness_obligation: ?*const Expr = null,
 };

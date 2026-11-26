@@ -676,7 +676,7 @@ pub const Parser = struct {
     /// Stage the GENERATED predicate a recursive definition's termination obligation is stated
     /// over: `<f>Grounded`, a pure TRANSCRIPTION of the recursive arm's call sites.
     ///
-    /// The rule (DEFINITION-SOUNDNESS-PLAN.md): in the recursive arm, replace every `f(t…)`
+    /// The rule (design/definition-wellformedness.md): in the recursive arm, replace every `f(t…)`
     /// with `<f>Grounded(t…)` and DROP the surrounding non-recursive structure — `fib(k) =
     /// add(fib(sub(k,ONE)), fib(sub(k,TWO)))` transcribes to `fibGrounded(k) iff
     /// fibGrounded(sub(k,ONE)) and fibGrounded(sub(k,TWO))`. The arm's own arithmetic
@@ -1782,7 +1782,7 @@ pub const Parser = struct {
     /// An optional Erlang-style `when <guard>` makes the clause conditional: the emitted
     /// formula becomes `guard -> clause`. Guards do NOT establish precedence — every clause
     /// states its own condition in full, because axioms have no order (see
-    /// DEFINITION-KEYWORD-PLAN).
+    /// design/definition-wellformedness.md).
     fn parseDefinitionClauses(self: *Parser, name: Token, params: []const ast.Binder) ParseError!Wellformedness {
         _ = try self.expect(.colon);
         // Each clause is kept (not just staged) so the PAIRS can be synthesized below: a
@@ -1828,7 +1828,7 @@ pub const Parser = struct {
     /// `(0,2)`, … `(1,2)`, … A NAME points that pair at a theorem the author wrote; `_` says
     /// discharge it with `definition_consistency`. Every position is written out even when
     /// automatic, so a reader sees how many pairs exist and a miscount is an error rather than
-    /// a silent default. See DEFINITION-SOUNDNESS-PLAN.md.
+    /// a silent default. See design/definition-wellformedness.md.
     ///
     /// `consistency` is a plain identifier, not a keyword: nothing in the corpus uses the name,
     /// and a block attribute does not need to be reserved vocabulary.
@@ -2095,7 +2095,7 @@ pub const Parser = struct {
             //   parameters as `j = j`. TRUE, so the disjunct fires unconditionally, the
             //   predicate holds everywhere, and `[by reflexivity]` plus `tautology` discharges
             //   the obligation with NO INDUCTION AT ALL. That is exactly the vacuous route
-            //   DEFINITION-SOUNDNESS-PLAN.md's soundness argument had searched for and not
+            //   design/definition-wellformedness.md's soundness argument had searched for and not
             //   found.
             //
             // DETECTED VIA THE RECURSIVE ARM, which is the one clause whose argument names are

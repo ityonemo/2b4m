@@ -146,7 +146,7 @@ pub fn produce(site: *Site, w: *const Walk, e: *Elab, goal: TermId, c: ast.Step.
 ///
 /// peeled into its parts. Everything is read off the TERM, so a goal the author wrote in a
 /// different but equivalent shape is rejected rather than guessed at — the statement must
-/// match what the checker synthesizes (see DEFINITION-SOUNDNESS-PLAN.md).
+/// match what the checker synthesizes (see design/definition-wellformedness.md).
 fn peel(site: *Site, goal: TermId, c: ast.Step.Claim) Error!Peeled {
     var outer: std.ArrayList(term.Node.Fvar) = .empty;
     var cur = goal;

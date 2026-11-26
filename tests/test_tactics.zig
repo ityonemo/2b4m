@@ -99,7 +99,7 @@ pub fn addTests(
     // the shared definition-consistency schema (std/peano.b4m) discharges a REAL corpus
     // obligation: cpower splits on ZERO/succ, so its arms owe "where both conditions hold,
     // the results agree", and one `instantiation` of `zeroSuccSplitIsVacuous` closes it.
-    // Gates the reuse design in DEFINITION-SOUNDNESS-PLAN.md — notably that `prop` takes
+    // Gates the reuse design in design/definition-wellformedness.md — notably that `prop` takes
     // BOTH variables, since every recursive step arm mentions the predecessor.
     ctx.okSilent(&.{ "check", "tests/cases/definition/consistency_schema.b4m" });
 
