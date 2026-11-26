@@ -292,6 +292,7 @@ intheory theProductCoefficientsAgree
 intheory polyMulIsAssociative
 intheory addPolyCoeff
 intheory negPolyCoeff
+intheory theNegationsCoefficientFlipsR
 intheory convolutionZero
 intheory convolutionSucc
 intheory convolutionReachesZeroFromAPredecessor
@@ -12183,4 +12184,52 @@ proof
     forall i: Nat; forall j: Nat; forall k: Nat;
       k = ZERO or (exists k_at3: Nat; k = succ(k_at3))
     [by generalize generalize-i]
+qed
+
+// -- THE NEGATION'S COEFFICIENT AT MINUS ONE ----------------------------------------------
+// At any index where a polynomial's coefficient is -1, the negation's is 1. Generic over R:
+// the proof is coefficientwise (`negPolyCoeff`) and closes on `negationIsAnInvolution`,
+// neither of which needs more than a ring. Moved down from ℚ[x], which hand-proved it.
+theorem theNegationsCoefficientFlipsR: forall p: Poly; forall i: Nat;
+  coeff(p, i) = negR(oneR) ->
+  coeff(negP(p), i) = oneR
+proof
+  @negation-is-coefficientwise |
+    forall p2: Poly; forall i2: Nat; coeff(negP(p2), i2) = negR(coeff(p2, i2))
+    [by cite negPolyCoeff]
+  @generalize-p |
+    fix p: Poly {
+      @generalize-i |
+        fix i: Nat {
+          @given-the-coefficient-is-minus-one |
+            assume coeff(p, i) = negR(oneR) {
+              @the-coefficient-is-minus-one |
+                coeff(p, i) = negR(oneR)
+                [by hypothesis given-the-coefficient-is-minus-one]
+              @the-negated-coefficient |
+                coeff(negP(p), i) = negR(coeff(p, i))
+                [using specialize negation-is-coefficientwise(p, i)]
+              @the-negated-coefficient-at-minus-one |
+                coeff(negP(p), i) = negR(negR(oneR))
+                [by rewrite the-coefficient-is-minus-one the-negated-coefficient]
+              @double-negation |
+                negR(negR(oneR)) = oneR
+                [using specialize ring.negationIsAnInvolution(oneR)]
+              @conclusion-the-coefficient-is-one |
+                coeff(negP(p), i) = oneR
+                [by rewrite double-negation the-negated-coefficient-at-minus-one]
+            }
+          @minus-one-implies-one |
+            coeff(p, i) = negR(oneR) -> coeff(negP(p), i) = oneR
+            [by discharge given-the-coefficient-is-minus-one]
+        }
+      @discharge-i |
+        forall i9: Nat;
+          coeff(p, i9) = negR(oneR) -> coeff(negP(p), i9) = oneR
+        [by generalize generalize-i]
+    }
+  @conclusion |
+    forall p: Poly; forall i: Nat;
+      coeff(p, i) = negR(oneR) -> coeff(negP(p), i) = oneR
+    [by generalize generalize-p]
 qed
