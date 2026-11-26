@@ -218,6 +218,134 @@ fn mentionsName(e: *const ast.Expr, nm: InternPool.StrId) bool {
     };
 }
 
+/// Is the DISJUNCTION of all arm conditions a propositional tautology — i.e. do the arms
+/// provably cover the domain, by propositional logic alone?
+///
+/// This is the autodetection route for `totality:`. Decided by truth-table over the distinct
+/// ATOMS of the conditions, treating every non-propositional subformula as opaque — the same
+/// reading `tautology` uses. So it recognizes, with no theorem required:
+///
+///   - two-way complementarity: `n = ZERO` against `n != ZERO`     (56 of 62 `std` blocks)
+///   - a PREDICATE split:       `p(x)` against `not p(x)`
+///   - `swap`'s three-way:      `x = u`, `x = v`, `x != u and x != v`
+///
+/// and refuses `n = ZERO` against `less_than(ONE, n)`, which leaves a real gap at `ONE`. That
+/// refusal is the point: an author must then name a theorem, which is exactly where to look.
+/// `monus`'s missing floor clause hid here for sessions — its arms never overlapped, so
+/// `consistency:` was satisfied while `i < j` matched neither arm.
+///
+/// SYNTACTIC AND CONSERVATIVE. Atoms are compared as written (`exprsEqual`), never reasoned
+/// about: a detector that decides `n = ZERO or ONE < n` by arithmetic is a prover, and a prover
+/// here can be wrong. An equation and its negation are linked by construction (the atom is the
+/// same, the polarity differs); nothing else is.
+fn conditionsCoverPropositionally(arena: std.mem.Allocator, conds: []const *const ast.Expr) bool {
+    if (conds.len == 0) return false;
+    var atoms: std.ArrayList(*const ast.Expr) = .empty;
+    for (conds) |c| collectAtoms(arena, c, &atoms) catch return false;
+    if (atoms.items.len == 0 or atoms.items.len > 16) return false; // same cap `tautology` uses
+    // every assignment must satisfy at least one condition
+    const n = atoms.items.len;
+    var assign: u32 = 0;
+    const limit = @as(u32, 1) << @intCast(n);
+    while (assign < limit) : (assign += 1) {
+        var any = false;
+        for (conds) |c| if (evalUnder(c, atoms.items, assign)) {
+            any = true;
+            break;
+        };
+        if (!any) return false; // a gap: this assignment satisfies no arm
+    }
+    return true;
+}
+
+/// Every maximal non-propositional subformula of `e`, deduplicated.
+///
+/// A DISEQUATION IS THE NEGATION OF ITS EQUATION, not a separate atom — `n != ZERO` registers
+/// the atom `n = ZERO` and is read with inverted polarity. Without that, `n = ZERO` and
+/// `n != ZERO` would be independent atoms, the truth table would admit "both false", and the
+/// commonest covering shape in the corpus would go undetected.
+fn collectAtoms(arena: std.mem.Allocator, e: *const ast.Expr, out: *std.ArrayList(*const ast.Expr)) std.mem.Allocator.Error!void {
+    switch (e.*) {
+        .not => |n| return collectAtoms(arena, n.operand, out),
+        .binary => |b| switch (b.op) {
+            .and_op, .or_op, .implies, .iff => {
+                try collectAtoms(arena, b.lhs, out);
+                try collectAtoms(arena, b.rhs, out);
+                return;
+            },
+            // `x != t` contributes the atom `x = t`; polarity is `evalUnder`'s business.
+            .not_equal => {
+                const positive = try arena.create(ast.Expr);
+                positive.* = .{ .binary = .{ .op = .equal, .tok = b.tok, .lhs = b.lhs, .rhs = b.rhs } };
+                for (out.items) |have| if (exprsEqual(have, positive)) return;
+                try out.append(arena, positive);
+                return;
+            },
+            else => {},
+        },
+        else => {},
+    }
+    for (out.items) |have| if (exprsEqual(have, e)) return;
+    try out.append(arena, e);
+}
+
+/// Truth of `e` under the bit-assignment `assign` over `atoms`.
+fn evalUnder(e: *const ast.Expr, atoms: []const *const ast.Expr, assign: u32) bool {
+    switch (e.*) {
+        .not => |n| return !evalUnder(n.operand, atoms, assign),
+        .binary => |b| switch (b.op) {
+            // the mirror of `collectAtoms`: look up `x = t` and invert.
+            .not_equal => {
+                for (atoms, 0..) |a, i| {
+                    if (a.* != .binary or a.binary.op != .equal) continue;
+                    if (!exprsEqual(a.binary.lhs, b.lhs) or !exprsEqual(a.binary.rhs, b.rhs)) continue;
+                    return (assign >> @intCast(i)) & 1 == 0;
+                }
+                return false;
+            },
+            .and_op => return evalUnder(b.lhs, atoms, assign) and evalUnder(b.rhs, atoms, assign),
+            .or_op => return evalUnder(b.lhs, atoms, assign) or evalUnder(b.rhs, atoms, assign),
+            .implies => return !evalUnder(b.lhs, atoms, assign) or evalUnder(b.rhs, atoms, assign),
+            .iff => return evalUnder(b.lhs, atoms, assign) == evalUnder(b.rhs, atoms, assign),
+            else => {},
+        },
+        else => {},
+    }
+    for (atoms, 0..) |a, i| if (exprsEqual(a, e)) return (assign >> @intCast(i)) & 1 == 1;
+    return false;
+}
+
+/// Structural equality of two clause expressions, by the names the parser can see. The
+/// question a complementarity test asks is "the same term as written", not "provably equal",
+/// so syntactic comparison is the right instrument and keeps the check deterministic from
+/// source text.
+fn exprsEqual(a: *const ast.Expr, b: *const ast.Expr) bool {
+    return switch (a.*) {
+        .name => |x| switch (b.*) {
+            .name => |y| x.name == y.name and x.qualifier == y.qualifier,
+            else => false,
+        },
+        .call => |x| switch (b.*) {
+            .call => |y| {
+                if (x.callee.name != y.callee.name) return false;
+                if (x.args.len != y.args.len) return false;
+                for (x.args, y.args) |xa, ya| if (!exprsEqual(xa, ya)) return false;
+                return true;
+            },
+            else => false,
+        },
+        .binary => |x| switch (b.*) {
+            .binary => |y| x.op == y.op and exprsEqual(x.lhs, y.lhs) and exprsEqual(x.rhs, y.rhs),
+            else => false,
+        },
+        .not => |x| switch (b.*) {
+            .not => |y| exprsEqual(x.operand, y.operand),
+            else => false,
+        },
+        else => false,
+    };
+}
+
 /// Does this arm's argument NARROW its slot? A pattern narrows — whether it is an application
 /// (`succ(ZERO)`) or a bare CONSTANT (`ZERO`). A bare VARIABLE does not: that slot is
 /// unconstrained, so there is nothing to negate.
@@ -2670,6 +2798,64 @@ test "precedence: same-operator chains parse; -> right-assoc; cmp is not a bool 
     try expectExprDump("(a and b) or c", "(or_op (and_op a b) c)");
     try expectExprDump("(not a) and b", "(and_op (not a) b)");
     try expectExprDump("a -> (b and c)", "(implies a (and_op b c))");
+}
+
+test "conditionsCoverPropositionally recognizes the covering shapes, and only those" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    // Parse a file's definition-block guards by hand would be circular; build the conditions
+    // directly as the parser does, over tokens whose `name` StrIds stand for `n`/`ZERO`/`p`.
+    const n_tok: Token = .{ .tag = .identifier, .start = 0, .end = 1, .name = @enumFromInt(1), .qualifier = .none };
+    const z_tok: Token = .{ .tag = .identifier, .start = 0, .end = 1, .name = @enumFromInt(2), .qualifier = .none };
+    const one_tok: Token = .{ .tag = .identifier, .start = 0, .end = 1, .name = @enumFromInt(3), .qualifier = .none };
+    const lt_tok: Token = .{ .tag = .identifier, .start = 0, .end = 1, .name = @enumFromInt(4), .qualifier = .none };
+
+    const n = try arena.create(ast.Expr);
+    n.* = .{ .name = n_tok };
+    const z = try arena.create(ast.Expr);
+    z.* = .{ .name = z_tok };
+    const one = try arena.create(ast.Expr);
+    one.* = .{ .name = one_tok };
+
+    const n_eq_z = try arena.create(ast.Expr);
+    n_eq_z.* = .{ .binary = .{ .op = .equal, .tok = n_tok, .lhs = n, .rhs = z } };
+    const n_ne_z = try arena.create(ast.Expr);
+    n_ne_z.* = .{ .binary = .{ .op = .not_equal, .tok = n_tok, .lhs = n, .rhs = z } };
+
+    // 1. two-way complementarity — the dominant corpus shape
+    try testing.expect(conditionsCoverPropositionally(arena, &.{ n_eq_z, n_ne_z }));
+
+    // 2. a PREDICATE split: p(n) against not p(n)
+    const p_args = try arena.alloc(*const ast.Expr, 1);
+    p_args[0] = n;
+    const p_of_n = try arena.create(ast.Expr);
+    p_of_n.* = .{ .call = .{ .callee = lt_tok, .args = p_args } };
+    const not_p = try arena.create(ast.Expr);
+    not_p.* = .{ .not = .{ .tok = n_tok, .operand = p_of_n } };
+    try testing.expect(conditionsCoverPropositionally(arena, &.{ p_of_n, not_p }));
+
+    // 3. `swap`'s THREE-WAY split: x = A, x = B, (x != A and x != B)
+    const n_eq_one = try arena.create(ast.Expr);
+    n_eq_one.* = .{ .binary = .{ .op = .equal, .tok = n_tok, .lhs = n, .rhs = one } };
+    const n_ne_one = try arena.create(ast.Expr);
+    n_ne_one.* = .{ .binary = .{ .op = .not_equal, .tok = n_tok, .lhs = n, .rhs = one } };
+    const neither = try arena.create(ast.Expr);
+    neither.* = .{ .binary = .{ .op = .and_op, .tok = n_tok, .lhs = n_ne_z, .rhs = n_ne_one } };
+    try testing.expect(conditionsCoverPropositionally(arena, &.{ n_eq_z, n_eq_one, neither }));
+
+    // 4. THE GAP IT MUST REFUSE: `n = ZERO` beside `less_than(ONE, n)` says nothing at ONE.
+    // Deciding that pair needs arithmetic, and a detector that reasons can be wrong.
+    const lt_args = try arena.alloc(*const ast.Expr, 2);
+    lt_args[0] = one;
+    lt_args[1] = n;
+    const one_lt_n = try arena.create(ast.Expr);
+    one_lt_n.* = .{ .call = .{ .callee = lt_tok, .args = lt_args } };
+    try testing.expect(!conditionsCoverPropositionally(arena, &.{ n_eq_z, one_lt_n }));
+
+    // and a single unconditional arm covers nothing on its own evidence
+    try testing.expect(!conditionsCoverPropositionally(arena, &.{n_eq_z}));
 }
 
 test "mixed boolean operators require explicit parentheses" {
