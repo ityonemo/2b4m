@@ -38,36 +38,51 @@ a misbound operator becomes a model error rather than a silently wrong normaliza
 
 ## Remaining recommendations
 
-1. **Introduce `std/domain.b4m` + `std/domain/polynomial.b4m`** (neither exists). An
-   integral-domain layer between `ring` (has `mulZeroLeft`/`Right`, no cancellation) and
-   `field` (adds inverses) would carry degree additivity, cancellation, and the
-   scaling-reflects-a-degree-bound family. ℤ[x] and ℤ_n[x] for prime n get them free.
+1. **`std/domain.b4m` EXISTS (2026-11-25); `std/domain/polynomial.b4m` does not.** The scalar
+   layer landed: commutative ring + `noZeroDivisors` (an AXIOM here, a THEOREM in `field.b4m`)
+   + `oneNotZero` (needed, since the zero ring satisfies `noZeroDivisors` vacuously), modelling
+   `ring.b4m` so the ring corpus transfers in. Carries `aProductOfNonzerosIsNonzero` and
+   `cancelMulLeft`, the multiplicative cancellation a ring lacks. A FIELD now models it
+   (`DomainIsField`, `field.b4m:489`), discharging the domain's axiom with the field's own
+   theorem — so the layer pays off above a field too, not only below.
 
-   **THEN CLOSE IT OUT (user, 2026-11-25): wire ℤ[x] and ℤ_n[x] to the new layer** rather
-   than leaving the refactor half-applied. Scoped ahead:
+   **THE ARCHITECTURAL FINDING, measured: the degree facts never needed inverses.** All three
+   F[x] targets rest on `fieldInverse`, but tracing where it ENTERS shows a single step:
 
-   - Both already declare a ring model (`IntegerPolynomials` at `std/integer/polynomial.b4m:107`,
-     `ModNPolynomials` at `std/integer/mod-n-polynomial.b4m:95`), so each needs the domain
-     model added beside it, not invented.
-   - **ℤ_p is READY**: `std/integer/mod-n-domain.b4m:64` already proves
-     `is_prime(N) -> mul(x, y) = ZERO -> (x = ZERO or y = ZERO)` — it exists for Gauss's Lemma
-     (AATA §17.3), which needed exactly "ℤ_p[x] is an integral domain". That discharges the
-     domain axiom directly.
-   - **ℤ is NOT ready**: it has no zero-divisor fact anywhere (`grep` finds none in
-     `std/integer*.b4m`). Proving `mul(a, b) = ZERO -> (a = ZERO or b = ZERO)` over ℤ is a
-     prerequisite, reachable from the sign trichotomy at `std/integer/order.b4m:1141`.
+   ```
+   aNonzeroMultipleHasAtLeastTheDegree (96 ln)
+     -> degreeOfAProduct (83 ln)                      degree additivity
+          -> aProductOfNonzerosIsNonzero (68 ln)
+               -> field.noZeroDivisors                <-- the ONLY field use
+          -> theProductsLeadingCoefficient            already generic, at ring layer
+          -> theProductVanishesAboveTheDegreeSum      already generic, at ring layer
+          -> theDegreeSumBoundsTheProduct             generic; now ported
+   ```
 
-   **The real cost, which is why this ranks last.** Several F[x] theorems *state* domain facts
-   (`aNonzeroMultipleHasAtLeastTheDegree`, `aSmallDegreeMultipleIsTheZeroMultiple`,
-   `anEqualDegreeCofactorIsConstant`) while `--axioms` shows the first resting on
-   **`fieldInverse`**, not `noZeroDivisors` — inverses were available and were the shortest
-   route. Moving it down is a **re-proof from the weaker axiom**, not a relocation. Degree
-   additivity is where the content is.
+   The source itself comments that step *"a field has no zero divisors"*. So the re-proof is
+   confined to one lemma, not spread through the chain.
+
+   **WHAT REMAINS is a ~700-line project, not a port.** 2b4m has no sort subsumption, so D[x]
+   must be a third independent polynomial sort mirroring F[x]'s ~250-line primitive block (11
+   axioms, `coeff`/`ZEROP`/`degree`/`degreeAtMost`, `convolution`, `mulP`/`addP`/`negP`), plus
+   `DomainPolyModelsRingPoly` and `FieldPolyModelsDomainPoly` models, then
+   `aProductOfNonzerosIsNonzero` and `degreeOfAProduct` re-proved, then the three targets
+   (`anEqualDegreeCofactorIsConstant` is in `std/field/monic.b4m:338`, not `polynomial.b4m`).
+   About 150 lines of new mathematics and 550 of structural mirroring.
+
+   **THEN CLOSE IT OUT (user, 2026-11-25): wire ℤ[x] and ℤ_n[x].** Both already declare a ring
+   model (`IntegerPolynomials` at `std/integer/polynomial.b4m:107`, `ModNPolynomials` at
+   `std/integer/mod-n-polynomial.b4m:95`), so each needs the domain model beside it.
+   **ℤ_p is READY**: `std/integer/mod-n-domain.b4m:64` already proves
+   `is_prime(N) -> mul(x, y) = ZERO -> (x = ZERO or y = ZERO)`, built for Gauss's Lemma (AATA
+   §17.3), which needed exactly "ℤ_p[x] is an integral domain". **ℤ is NOT**: no zero-divisor
+   fact exists in `std/integer*`, so proving it is a prerequisite, reachable from the sign
+   trichotomy at `std/integer/order.b4m:1141`.
 
 2. **Decide the `polynomial`-tactic question deliberately.** Either accept that polynomial
    identities are hand-written and say so in `GUIDE.md` (where it still is not), or cost the
    model-synthesis idea against the `--fast` boundary, where `model` already drops the
-   per-axiom obligation-coverage check.
+   per-axiom obligation-coverage check. PAINPOINTS 22 carries the idea.
 
 ## The process rule worth keeping regardless
 
