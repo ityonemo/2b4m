@@ -1149,8 +1149,22 @@ pub const Parser = struct {
             // declaration and stable across runs. It must differ from the parameter's: the
             // obligation already quantifies `forall k`, and `exists k` inside it is rejected by
             // the no-shadowing rule.
+            // A BARE NAME argument binds nothing: it is a CONSTANT the arm matches against
+            // (`f(zed)`, `f(ZERO)`), so the condition is the plain equation `n = zed` with no
+            // existential. Only names nested INSIDE an application are the pattern's own
+            // binders — `succ(k)` binds `k`.
+            //
+            // This distinction cannot be made by spelling. `aata` declares
+            // `const intZero = integer.ZERO`, a legal lower-case constant, and the style guide
+            // prescribes lower-case for `pi`/`e`/`i`; `collectClauseVars` reads the lower-case
+            // convention and so calls `intZero` a variable. Quantifying it produced
+            // `exists intZero_at1; n = intZero_at1` — true but vacuous, which both broke
+            // complementarity with the `n != intZero` guard (so the block wrongly appeared to
+            // owe an obligation) and failed to elaborate. Reading the ARGUMENT'S SHAPE instead
+            // of its name sidesteps the ambiguity entirely: the same ambiguity is what blocks
+            // the l-value rule and what produced PAINPOINTS 16h.
             var pattern_vars: std.ArrayList(ast.Binder) = .empty;
-            try self.collectClauseVars(arg, &pattern_vars);
+            if (arg.* != .name) try self.collectClauseVars(arg, &pattern_vars);
             var pattern = arg;
             var fresh_binders: std.ArrayList(ast.Binder) = .empty;
             for (pattern_vars.items) |pv| {
