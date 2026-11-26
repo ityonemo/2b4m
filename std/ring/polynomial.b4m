@@ -49,6 +49,7 @@ fact addZeroRightR = ring.addZeroRight
 fact addNegLeftR = ring.addNegLeft
 fact addNegRightR = ring.addNegRight
 fact mulNegLeftR = ring.mulNegLeft
+fact aNonzeroHasANonzeroNegationR = ring.aNonzeroHasANonzeroNegation
 fact mulIsAssociativeR = ring.mulIsAssociative
 fact mulAddDistribLeftR = ring.mulAddDistribLeft
 fact mulAddDistribRightR = ring.mulAddDistribRight
@@ -295,6 +296,7 @@ intheory addPolyCoeff
 intheory negPolyCoeff
 intheory theNegationsCoefficientFlipsR
 intheory bothNegationsCancelInAProduct
+intheory aNonzeroPolynomialHasANonzeroNegation
 intheory convolutionZero
 intheory convolutionSucc
 intheory convolutionReachesZeroFromAPredecessor
@@ -12279,5 +12281,70 @@ proof
     }
   @conclusion |
     forall p, q: Poly; mulP(negP(p), negP(q)) = mulP(p, q)
+    [by generalize generalize-p]
+qed
+
+// -- A NONZERO POLYNOMIAL HAS A NONZERO NEGATION -------------------------------------------
+// `negP(p)` cannot be the zero polynomial when `p` is not: its coefficient at `degree(p)` is
+// the negation of a nonzero scalar, which `ring.aNonzeroHasANonzeroNegation` says is nonzero.
+// Generic over R, and shorter than ℚ[x]'s version because that scalar fact now lives at the
+// ring layer rather than being re-derived inline from double negation.
+theorem aNonzeroPolynomialHasANonzeroNegation: forall p: Poly;
+  (not (p = ZEROP)) -> (not (negP(p) = ZEROP))
+proof
+  @the-degree-is-a-leading-index |
+    forall p2: Poly; (not (p2 = ZEROP)) -> (not (coeff(p2, degree(p2)) = zeroR))
+    [by cite degreeIsALeadingIndex]
+  @negation-is-coefficientwise |
+    forall p2: Poly; forall i2: Nat; coeff(negP(p2), i2) = negR(coeff(p2, i2))
+    [by cite negPolyCoeff]
+  @the-zero-polynomial-vanishes |
+    forall i2: Nat; coeff(ZEROP, i2) = zeroR
+    [by cite zeroPolyCoeff]
+  @a-nonzero-scalar-has-a-nonzero-negation |
+    forall x2: R; (not (x2 = zeroR)) -> (not (negR(x2) = zeroR))
+    [by cite aNonzeroHasANonzeroNegationR]
+  @generalize-p |
+    fix p: Poly {
+      @given-p-nonzero |
+        assume not (p = ZEROP) {
+          @p-nonzero |
+            not (p = ZEROP)
+            [by hypothesis given-p-nonzero]
+          @the-leading-coefficient-survives |
+            not (coeff(p, degree(p)) = zeroR)
+            [using specialize the-degree-is-a-leading-index(p) p-nonzero]
+          @its-negation-survives |
+            not (negR(coeff(p, degree(p))) = zeroR)
+            [using specialize a-nonzero-scalar-has-a-nonzero-negation(coeff(p, degree(p))) the-leading-coefficient-survives]
+          @the-negated-coefficient |
+            coeff(negP(p), degree(p)) = negR(coeff(p, degree(p)))
+            [using specialize negation-is-coefficientwise(p, degree(p))]
+          @the-negations-coefficient-survives |
+            not (coeff(negP(p), degree(p)) = zeroR)
+            [by rewrite the-negated-coefficient its-negation-survives]
+          @given-the-negation-is-zero |
+            assume negP(p) = ZEROP {
+              @the-negation-is-zero |
+                negP(p) = ZEROP
+                [by hypothesis given-the-negation-is-zero]
+              @the-zero-coefficient |
+                coeff(ZEROP, degree(p)) = zeroR
+                [using specialize the-zero-polynomial-vanishes(degree(p))]
+              @the-negations-coefficient-is-zeros |
+                coeff(negP(p), degree(p)) = zeroR
+                [by rewrite the-negation-is-zero the-zero-coefficient]
+            }
+          @conclusion-the-negation-is-nonzero |
+            not (negP(p) = ZEROP)
+            [by contradiction given-the-negation-is-zero the-negations-coefficient-is-zeros the-negations-coefficient-survives]
+        }
+      @nonzero-implies-negation-nonzero |
+        (not (p = ZEROP)) -> (not (negP(p) = ZEROP))
+        [by discharge given-p-nonzero]
+    }
+  @conclusion |
+    forall p: Poly;
+      (not (p = ZEROP)) -> (not (negP(p) = ZEROP))
     [by generalize generalize-p]
 qed

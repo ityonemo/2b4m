@@ -538,7 +538,7 @@ pub fn addTests(
     // whose proof cites an UNDISCHARGED axiom fails by statement mismatch (the citation
     // stays in source space while the goal is in target space). The four fixtures differ
     // only in what the model maps:
-    ctx.fail(&.{ "check", "tests/cases/model/discharge/omits_axiom_bad.b4m" }, "std/ring.b4m:80:44: error: this step cites a fact the model does not discharge: it arrives over 'Ring', the model's SOURCE sort, while the proof is in 'T'. Add that fact's `<-` obligation to the model block — a transferred theorem may only cite source axioms the model discharges.\n");
+    ctx.fail(&.{ "check", "tests/cases/model/discharge/omits_axiom_bad.b4m" }, "std/ring.b4m:82:44: error: this step cites a fact the model does not discharge: it arrives over 'Ring', the model's SOURCE sort, while the proof is in 'T'. Add that fact's `<-` obligation to the model block — a transferred theorem may only cite source axioms the model discharges.\n");
     ctx.okSilent(&.{ "check", "tests/cases/model/discharge/omits_axiom_ok.b4m" });
     // …and a model is a FULL OVERLAY, not a filter scoped to its source theory: citing a
     // theorem from a theory the model does not touch is sound (identity on it), and citing
