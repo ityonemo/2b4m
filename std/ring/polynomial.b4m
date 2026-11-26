@@ -50,6 +50,7 @@ fact addNegLeftR = ring.addNegLeft
 fact addNegRightR = ring.addNegRight
 fact mulNegLeftR = ring.mulNegLeft
 fact aNonzeroHasANonzeroNegationR = ring.aNonzeroHasANonzeroNegation
+fact negationOfZeroIsZeroR = ring.negationOfZeroIsZero
 fact mulIsAssociativeR = ring.mulIsAssociative
 fact mulAddDistribLeftR = ring.mulAddDistribLeft
 fact mulAddDistribRightR = ring.mulAddDistribRight
@@ -297,6 +298,8 @@ intheory negPolyCoeff
 intheory theNegationsCoefficientFlipsR
 intheory bothNegationsCancelInAProduct
 intheory aNonzeroPolynomialHasANonzeroNegation
+intheory theNegationIsBoundedWhereverTheOriginalIs
+intheory negationPreservesTheDegree
 intheory convolutionZero
 intheory convolutionSucc
 intheory convolutionReachesZeroFromAPredecessor
@@ -12346,5 +12349,160 @@ proof
   @conclusion |
     forall p: Poly;
       (not (p = ZEROP)) -> (not (negP(p) = ZEROP))
+    [by generalize generalize-p]
+qed
+
+// -- NEGATION PRESERVES A DEGREE BOUND -----------------------------------------------------
+// If every coefficient of `p` above `n` vanishes, so does every coefficient of `negP(p)`:
+// negation is coefficientwise, and `negR(zeroR) = zeroR`. Generic over R — the ℚ[x] version
+// differed only in spelling.
+theorem theNegationIsBoundedWhereverTheOriginalIs: forall p: Poly; forall n: Nat;
+  degreeAtMost(p, n) -> degreeAtMost(negP(p), n)
+proof
+  @the-bounds-meaning |
+    forall p2: Poly; forall n2: Nat;
+      degreeAtMost(p2, n2) iff (forall i2: Nat; less_than(n2, i2) -> coeff(p2, i2) = zeroR)
+    [by cite degreeAtMostMeaning]
+  @negation-is-coefficientwise |
+    forall p2: Poly; forall i2: Nat; coeff(negP(p2), i2) = negR(coeff(p2, i2))
+    [by cite negPolyCoeff]
+  @the-negation-of-zero-is-zero |
+    negR(zeroR) = zeroR
+    [by cite negationOfZeroIsZeroR]
+  @generalize-p |
+    fix p: Poly {
+      @generalize-n |
+        fix n: Nat {
+          @given-the-bound |
+            assume degreeAtMost(p, n) {
+              @the-bound |
+                degreeAtMost(p, n)
+                [by hypothesis given-the-bound]
+              @the-bound-at-p-n |
+                degreeAtMost(p, n) iff (forall i2: Nat; less_than(n, i2) -> coeff(p, i2) = zeroR)
+                [using specialize the-bounds-meaning(p, n)]
+              @the-original-vanishes-above |
+                forall i2: Nat; less_than(n, i2) -> coeff(p, i2) = zeroR
+                [using tautology the-bound-at-p-n the-bound]
+              @the-negation-vanishes-above |
+                fix i: Nat {
+                  @given-i-above |
+                    assume less_than(n, i) {
+                      @i-above |
+                        less_than(n, i)
+                        [by hypothesis given-i-above]
+                      @the-original-at-i |
+                        coeff(p, i) = zeroR
+                        [using specialize the-original-vanishes-above(i) i-above]
+                      @the-negated-coefficient |
+                        coeff(negP(p), i) = negR(coeff(p, i))
+                        [using specialize negation-is-coefficientwise(p, i)]
+                      @the-negated-coefficient-at-zero |
+                        coeff(negP(p), i) = negR(zeroR)
+                        [by rewrite the-original-at-i the-negated-coefficient]
+                      @conclusion-the-negation-at-i |
+                        coeff(negP(p), i) = zeroR
+                        [by rewrite the-negation-of-zero-is-zero the-negated-coefficient-at-zero]
+                    }
+                  @above-implies-vanishes |
+                    less_than(n, i) -> coeff(negP(p), i) = zeroR
+                    [by discharge given-i-above]
+                }
+              @all-above-vanish |
+                forall i: Nat; less_than(n, i) -> coeff(negP(p), i) = zeroR
+                [by generalize the-negation-vanishes-above]
+              @the-negations-bound-meaning |
+                degreeAtMost(negP(p), n) iff
+                  (forall i2: Nat; less_than(n, i2) -> coeff(negP(p), i2) = zeroR)
+                [using specialize the-bounds-meaning(negP(p), n)]
+              @conclusion-the-negation-is-bounded |
+                degreeAtMost(negP(p), n)
+                [using tautology the-negations-bound-meaning all-above-vanish]
+            }
+          @bound-implies-bound |
+            degreeAtMost(p, n) -> degreeAtMost(negP(p), n)
+            [by discharge given-the-bound]
+        }
+      @discharge-n |
+        forall n: Nat; degreeAtMost(p, n) -> degreeAtMost(negP(p), n)
+        [by generalize generalize-n]
+    }
+  @conclusion |
+    forall p: Poly; forall n: Nat;
+      degreeAtMost(p, n) -> degreeAtMost(negP(p), n)
+    [by generalize generalize-p]
+qed
+
+// -- NEGATION PRESERVES THE DEGREE ---------------------------------------------------------
+// The negation is nonzero, its coefficient at `degree(p)` is the flip of a nonzero scalar and
+// so nonzero, and it is bounded there — `degreeIsUnique` then pins the two degrees equal.
+theorem negationPreservesTheDegree: forall p: Poly;
+  (not (p = ZEROP)) -> degree(negP(p)) = degree(p)
+proof
+  @the-negation-is-nonzero-when-p-is |
+    forall p2: Poly; (not (p2 = ZEROP)) -> (not (negP(p2) = ZEROP))
+    [by cite aNonzeroPolynomialHasANonzeroNegation]
+  @the-degree-is-a-leading-index |
+    forall p2: Poly; (not (p2 = ZEROP)) -> (not (coeff(p2, degree(p2)) = zeroR))
+    [by cite degreeIsALeadingIndex]
+  @negation-is-coefficientwise |
+    forall p2: Poly; forall i2: Nat; coeff(negP(p2), i2) = negR(coeff(p2, i2))
+    [by cite negPolyCoeff]
+  @a-nonzero-scalar-has-a-nonzero-negation |
+    forall x2: R; (not (x2 = zeroR)) -> (not (negR(x2) = zeroR))
+    [by cite aNonzeroHasANonzeroNegationR]
+  @the-degree-bounds-the-coefficients |
+    forall p2: Poly; (not (p2 = ZEROP)) -> degreeAtMost(p2, degree(p2))
+    [by cite degreeBoundsTheCoefficients]
+  @negation-preserves-a-bound |
+    forall p2: Poly; forall n2: Nat; degreeAtMost(p2, n2) -> degreeAtMost(negP(p2), n2)
+    [by cite theNegationIsBoundedWhereverTheOriginalIs]
+  @degree-is-unique |
+    forall p2: Poly; forall n2: Nat;
+      (not (p2 = ZEROP)) -> (not (coeff(p2, n2) = zeroR)) -> degreeAtMost(p2, n2) ->
+      n2 = degree(p2)
+    [by cite degreeIsUnique]
+  @generalize-p |
+    fix p: Poly {
+      @given-p-nonzero |
+        assume not (p = ZEROP) {
+          @p-nonzero |
+            not (p = ZEROP)
+            [by hypothesis given-p-nonzero]
+          @the-negation-is-nonzero |
+            not (negP(p) = ZEROP)
+            [using specialize the-negation-is-nonzero-when-p-is(p) p-nonzero]
+          @the-leading-coefficient-survives |
+            not (coeff(p, degree(p)) = zeroR)
+            [using specialize the-degree-is-a-leading-index(p) p-nonzero]
+          @its-negation-survives |
+            not (negR(coeff(p, degree(p))) = zeroR)
+            [using specialize a-nonzero-scalar-has-a-nonzero-negation(coeff(p, degree(p))) the-leading-coefficient-survives]
+          @the-negated-coefficient |
+            coeff(negP(p), degree(p)) = negR(coeff(p, degree(p)))
+            [using specialize negation-is-coefficientwise(p, degree(p))]
+          @the-negations-coefficient-survives |
+            not (coeff(negP(p), degree(p)) = zeroR)
+            [by rewrite the-negated-coefficient its-negation-survives]
+          @the-original-is-bounded |
+            degreeAtMost(p, degree(p))
+            [using specialize the-degree-bounds-the-coefficients(p) p-nonzero]
+          @the-negation-is-bounded |
+            degreeAtMost(negP(p), degree(p))
+            [using specialize negation-preserves-a-bound(p, degree(p)) the-original-is-bounded]
+          @the-degrees-agree-flipped |
+            degree(p) = degree(negP(p))
+            [using specialize degree-is-unique(negP(p), degree(p)) the-negation-is-nonzero the-negations-coefficient-survives the-negation-is-bounded]
+          @conclusion-the-degrees-agree |
+            degree(negP(p)) = degree(p)
+            [by symmetry the-degrees-agree-flipped]
+        }
+      @nonzero-implies-the-degrees-agree |
+        (not (p = ZEROP)) -> degree(negP(p)) = degree(p)
+        [by discharge given-p-nonzero]
+    }
+  @conclusion |
+    forall p: Poly;
+      (not (p = ZEROP)) -> degree(negP(p)) = degree(p)
     [by generalize generalize-p]
 qed

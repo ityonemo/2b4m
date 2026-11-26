@@ -849,77 +849,10 @@ qed
 theorem theNegationIsBoundedWhereverTheOriginalIs: forall p: QPoly; forall n: peano.Nat;
   qdegreeAtMost(p, n) -> qdegreeAtMost(qnegP(p), n)
 proof
-  @generalize-p |
-    fix p: QPoly {
-      @generalize-n |
-        fix n: peano.Nat {
-          @given-the-bound |
-            assume qdegreeAtMost(p, n) {
-              @the-bound |
-                qdegreeAtMost(p, n)
-                [by hypothesis given-the-bound]
-              @the-bounds-meaning |
-                qdegreeAtMost(p, n) iff
-                  (forall i: peano.Nat;
-                  peano.less_than(n, i) -> qcoeff(p, i) = ZERO)
-                [using specialize qDegreeAtMostMeaning(p, n)]
-              @the-original-vanishes-above |
-                forall i: peano.Nat;
-                  peano.less_than(n, i) -> qcoeff(p, i) = ZERO
-                [using tautology the-bounds-meaning the-bound]
-              @the-negation-vanishes-above |
-                fix i: peano.Nat {
-                  @given-i-above |
-                    assume peano.less_than(n, i) {
-                      @i-above |
-                        peano.less_than(n, i)
-                        [by hypothesis given-i-above]
-                      @the-original-at-i |
-                        qcoeff(p, i) = ZERO
-                        [using specialize the-original-vanishes-above(i) i-above]
-                      @the-negated-coefficient |
-                        qcoeff(qnegP(p), i) = rational.neg(qcoeff(p, i))
-                        [using specialize qNegPolyCoeff(p, i)]
-                      @the-negated-coefficient-at-zero |
-                        qcoeff(qnegP(p), i) = rational.neg(ZERO)
-                        [by rewrite the-original-at-i the-negated-coefficient]
-                      @neg-of-zero |
-                        rational.neg(ZERO) = ZERO
-                        [by cite rational.negZero]
-                      @conclusion-the-negation-at-i |
-                        qcoeff(qnegP(p), i) = ZERO
-                        [by rewrite neg-of-zero the-negated-coefficient-at-zero]
-                    }
-                  @above-implies-vanishes |
-                    peano.less_than(n, i) -> qcoeff(qnegP(p), i) = ZERO
-                    [by discharge given-i-above]
-                }
-              @all-above-vanish |
-                forall i: peano.Nat;
-                  peano.less_than(n, i) -> qcoeff(qnegP(p), i) = ZERO
-                [by generalize the-negation-vanishes-above]
-              @the-negations-bound-meaning |
-                qdegreeAtMost(qnegP(p), n) iff
-                  (forall i: peano.Nat;
-                  peano.less_than(n, i) -> qcoeff(qnegP(p), i) = ZERO)
-                [using specialize qDegreeAtMostMeaning(qnegP(p), n)]
-              @conclusion-the-negation-is-bounded |
-                qdegreeAtMost(qnegP(p), n)
-                [using tautology the-negations-bound-meaning all-above-vanish]
-            }
-          @bound-implies-bound |
-            qdegreeAtMost(p, n) -> qdegreeAtMost(qnegP(p), n)
-            [by discharge given-the-bound]
-        }
-      @discharge-n |
-        forall n9: peano.Nat;
-          qdegreeAtMost(p, n9) -> qdegreeAtMost(qnegP(p), n9)
-        [by generalize generalize-n]
-    }
   @conclusion |
     forall p: QPoly; forall n: peano.Nat;
       qdegreeAtMost(p, n) -> qdegreeAtMost(qnegP(p), n)
-    [by generalize generalize-p]
+    [using model(RationalPolynomialsOverARing) ring_poly.theNegationIsBoundedWhereverTheOriginalIs]
 qed
 
 // Negation preserves the degree. The negation is nonzero, its coefficient at the original's
@@ -928,56 +861,10 @@ qed
 theorem negationPreservesTheDegree: forall p: QPoly;
   (not (p = QZEROP)) -> qdegree(qnegP(p)) = qdegree(p)
 proof
-  @generalize-p |
-    fix p: QPoly {
-      @given-p-nonzero |
-        assume not (p = QZEROP) {
-          @p-nonzero |
-            not (p = QZEROP)
-            [by hypothesis given-p-nonzero]
-          @the-negation-is-nonzero |
-            not (qnegP(p) = QZEROP)
-            [using specialize theNegationOfANonzeroPolynomialIsNonzero(p) p-nonzero]
-          // the negation's coefficient at p's degree is nonzero
-          @the-leading-coefficient-survives |
-            not (qcoeff(p, qdegree(p)) = ZERO)
-            [using specialize qDegreeIsALeadingIndex(p) p-nonzero]
-          @the-negated-coefficient |
-            qcoeff(qnegP(p), qdegree(p)) = rational.neg(qcoeff(p, qdegree(p)))
-            [using specialize qNegPolyCoeff(p, qdegree(p))]
-          @the-negated-leading-coefficient-survives |
-            not (rational.neg(qcoeff(p, qdegree(p))) = ZERO)
-            [using specialize aNonzeroHasNonzeroNegation(qcoeff(p, qdegree(p))) the-leading-coefficient-survives]
-          @the-negations-coefficient-survives |
-            not (qcoeff(qnegP(p), qdegree(p)) = ZERO)
-            [by rewrite the-negated-coefficient the-negated-leading-coefficient-survives]
-          // and it is bounded there: p's bound carries over coefficientwise
-          @the-original-is-bounded |
-            qdegreeAtMost(p, qdegree(p))
-            [using specialize qDegreeBoundsTheCoefficients(p) p-nonzero]
-          @the-negation-is-bounded |
-            qdegreeAtMost(qnegP(p), qdegree(p))
-            [using specialize theNegationIsBoundedWhereverTheOriginalIs(p, qdegree(p)) the-original-is-bounded]
-          @degree-is-unique |
-            forall q: QPoly; forall n: peano.Nat;
-              (not (q = QZEROP)) -> (not (qcoeff(q, n) = ZERO)) ->
-              qdegreeAtMost(q, n) -> n = qdegree(q)
-            [using model(RationalPolynomials) fieldpoly.degreeIsUnique]
-          @the-degrees-agree-flipped |
-            qdegree(p) = qdegree(qnegP(p))
-            [using specialize degree-is-unique(qnegP(p), qdegree(p)) the-negation-is-nonzero the-negations-coefficient-survives the-negation-is-bounded]
-          @conclusion-the-degrees-agree |
-            qdegree(qnegP(p)) = qdegree(p)
-            [by symmetry the-degrees-agree-flipped]
-        }
-      @nonzero-implies-the-degrees-agree |
-        (not (p = QZEROP)) -> qdegree(qnegP(p)) = qdegree(p)
-        [by discharge given-p-nonzero]
-    }
   @conclusion |
     forall p: QPoly;
       (not (p = QZEROP)) -> qdegree(qnegP(p)) = qdegree(p)
-    [by generalize generalize-p]
+    [using model(RationalPolynomialsOverARing) ring_poly.negationPreservesTheDegree]
 qed
 
 // -- JUDSON'S MONIC NORMALIZATION ---------------------------------------------------------
