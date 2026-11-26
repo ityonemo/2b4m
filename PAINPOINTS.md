@@ -66,7 +66,7 @@ sort `Q`" and have the sort and its axioms come into being.
 Same shape, same cause: **`Seq` is re-postulated per carrier** (33 files declare a Seq-like
 sort or an `at`), and **`disequalityIsSymmetric` exists in four files**, once per sort, with
 no home. Measurement in `drafts/algebra-layering/README.md` (54 axioms below the abstract
-layer) and `POLYNOMIAL-GENERICIZATION.md`.
+layer) and entry 33b.
 
 **What would have saved the time on the ℚ[x] instance:** a `--library` check that a declared
 `oper` with no axiom mentioning it is flagged. `qmulP` was mapped but LAWLESS, and nothing
@@ -800,6 +800,42 @@ inconsistent.**
 `twoGcdsDivideEachOther` already supplied it. The discipline that makes this legitimate: the
 aata rule allows a divergent proof structure, noted in a `>` aside. The divergence gets
 WRITTEN DOWN with its reason, not silently substituted.
+
+## 33b. `--axioms` has TWO BLIND SPOTS when judging where a theorem belongs
+
+`check --axioms <file> <theorem>` is the right tool for "is this proof generic?" — what a proof
+CITES settles it, where the statement's vocabulary does not. A statement over `qcoeff` and
+`rational.mul` looks ℚ-specific and may rest on nothing but ring axioms. That much works.
+
+**But it cannot tell a MODEL TRANSFER from a local proof.** A transfer still rests on the
+target's axioms, so an already-transferred theorem reports the target's own CONSTRUCTION
+axioms. `theIntegerProductsLeadingCoefficient` listed ℤ's `addSuccLeft`, `addPrevLeft`,
+`intCases`, `nonnegInduction` — which reads exactly like an induction over ℤ's constructors and
+is in fact the transferred proof's transitive closure. Three of four "duplications" surveyed
+this way were already one-line transfers. **The direct check is `grep "using model"` inside the
+proof body**, and it takes one command.
+
+**And it cannot see UNPORTED SCAFFOLDING beneath a proof.** `negationPreservesTheDegree` read as
+generic and was — but porting it meant first porting a 75-line helper the axiom list never
+mentioned. Survey the dependency chain, not just the axiom list.
+
+**Two further survey hazards, both measured:**
+
+- **A survey goes stale from your OWN work.** An agent surveying six dependencies ported one
+  mid-run, then reported its original count and wrongly concluded a three-deep chain blocked it,
+  when five of six were by then in place. Re-check immediately before acting.
+- **And from an unchecked candidate file.** Another missed that two generic lemmas already lived
+  in `std/ring/polynomial/leading.b4m`, because its grep covered `polynomial.b4m` and
+  `monomial.b4m` only. Grep the whole layer, not the file you expect.
+
+**The process rule this all serves:** before inducting over a polynomial recursion, check
+whether the fact belongs one layer down — one `--axioms` call plus a grep of the layer below.
+And **when adding a directional lemma, add both directions**: a layer gets built to satisfy one
+consumer, that consumer's proofs happen to be left-handed, and the right forms are never
+written, invisible until something blocks. Five such gaps surfaced in one refactor
+(`std/ring.b4m` had no `neg(ZERO) = ZERO`, hence no nonzero-negation fact; `negationOfZeroIsZero`
+was never re-exported into `ring/polynomial.b4m`; `leading.b4m` aliased `degreeAtMost` but not
+`degreeAtMostMeaning`).
 
 ## 34. Measurement hygiene
 
