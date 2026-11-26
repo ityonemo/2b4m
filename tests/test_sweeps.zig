@@ -102,13 +102,16 @@ pub fn addTests(
     // below must agree with itself. (`holes_many.b4m` is too small to vary — 99 citations at
     // every seed — which is exactly why the sweep above never caught this.)
     //
-    // The fixture is a real witness because its count DOES move with the seed —
-    // 2530/2418/2654/2374 at seeds 1/7/42/99 — so pinning one seed asserts replay rather
-    // than merely asserting a constant. A regression that reintroduces async reads or extra
+    // The fixture is a real witness because its count DOES move with the seed, so pinning one
+    // seed asserts REPLAY rather than merely asserting a constant. (The absolute number also
+    // moves when trace output gains lines — `--trace-facts` now expands a schema instance's
+    // arguments under its hash — so a mismatch here means either a replay regression or a
+    // deliberate trace change. Check which by running the same seed three times: stable means
+    // replay is fine and the golden needs updating.) A regression that reintroduces async reads or extra
     // workers under chaos makes this flaky, which is the intended signal.
     for (0..3) |_| {
         const r = ctx.run(&.{ "check", "--chaos=7", "--trace-facts", "tests/cases/cli/chaos_replay.b4m", "--axioms" });
-        r.expectStdErrMatch("--- fact resolution trace (2418 citations) ---");
+        r.expectStdErrMatch("--- fact resolution trace (2497 citations) ---");
         r.expectExitCode(0);
     }
     ctx.okSilent(&.{ "fmt", "--check", "tests/cases/namespaces/holes_many.b4m" });

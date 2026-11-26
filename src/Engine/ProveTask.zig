@@ -34,6 +34,7 @@ const IdentKV = @import("../IdentKV.zig");
 const FetchTask = @import("FetchTask.zig");
 const StrId = InternPool.StrId;
 const term = @import("../term.zig");
+const print = @import("../print.zig");
 const Engine = @import("../Engine.zig");
 const Context = @import("../Context.zig");
 const FactKV = @import("../FactKV.zig");
@@ -147,6 +148,48 @@ pub fn new(arena: std.mem.Allocator, payload: ProveTask) std.mem.Allocator.Error
     return .{ .payload = p, .run = &runErased };
 }
 
+/// One `  <param> := <argument>` line per schema parameter, for `--trace-facts`.
+///
+/// The args are DURABLE (`TermOff` into the InternPool) while the renderer wants a `TermId` in
+/// a live pool, so each is copied into a scratch pool first. A lambda argument prints its
+/// parameter list, since that is what distinguishes `induction(fun k => P(k))` from
+/// `induction(fun k => Q(k))` — the whole point of expanding the hash.
+///
+/// Best-effort: a line that cannot be rendered is skipped rather than failing the run. This is
+/// a diagnostic, and a trace that drops a row is better than a check that dies.
+fn traceInstance(self: *Context, inst: Instance) void {
+    var scratch: term.Pool = .init(self.arena, self.gpa);
+    for (inst.params, inst.args) |pname, arg| {
+        const rendered = switch (arg) {
+            .value => |v| blk: {
+                const id = scratch.copyIn(self.interner, v.off) catch break :blk null;
+                break :blk print.render(self.arena, &scratch, self.interner, id) catch null;
+            },
+            .lambda => |l| blk: {
+                const id = scratch.copyIn(self.interner, l.off) catch break :blk null;
+                const body = print.render(self.arena, &scratch, self.interner, id) catch break :blk null;
+                var buf: std.ArrayList(u8) = .empty;
+                buf.appendSlice(self.arena, "fun ") catch break :blk null;
+                for (l.params, 0..) |lp, i| {
+                    if (i != 0) buf.appendSlice(self.arena, ", ") catch break :blk null;
+                    // TRIM AT `#`, as `print.displayName` does: the prover disambiguates
+                    // same-named eigenvariables of sibling `fix` blocks by appending `#<n>`,
+                    // and `#` cannot occur in a userland identifier, so trimming recovers what
+                    // the author wrote. Without this the trace leaks `k#45` for a plain `k`.
+                    const raw = self.interner.stringBytes(lp);
+                    const shown = if (std.mem.indexOfScalar(u8, raw, '#')) |at| raw[0..at] else raw;
+                    buf.appendSlice(self.arena, shown) catch break :blk null;
+                }
+                buf.appendSlice(self.arena, " => ") catch break :blk null;
+                buf.appendSlice(self.arena, body) catch break :blk null;
+                break :blk buf.items;
+            },
+        } orelse continue;
+        const line = std.fmt.allocPrint(self.arena, "          {s} := {s}\n", .{ self.interner.stringBytes(pname), rendered }) catch continue;
+        self.traceLine(line);
+    }
+}
+
 fn runErased(self: *Context, payload: *anyopaque, h: *Engine.Handle) std.mem.Allocator.Error!void {
     const task: *ProveTask = @ptrCast(@alignCast(payload));
     return run(self, task, h);
@@ -160,6 +203,17 @@ pub fn run(self: *Context, task: *ProveTask, h: *Engine.Handle) std.mem.Allocato
     if (self.verify.trace_facts) {
         const line = std.fmt.allocPrint(self.arena, "[prove] task#{d} = {s} in ns#{d} (model#{d})\n", .{ @intFromEnum(h.self_index), self.interner.stringBytes(task.name), @intFromEnum(ns), @intFromEnum(task.model) }) catch "";
         self.traceLine(line);
+        // A SCHEMA INSTANCE's name is a HASH of its arguments, so the line above says only
+        // *which* instance in the sense that two identical instantiations collide. Expand the
+        // preimage right here, where it is still in hand: `task.instance` carries
+        // `(schema_name, params, args)` reified durably at the naming site, so each parameter
+        // can be shown bound to the argument it was instantiated at.
+        //
+        // This is the cheap half of decoding `Schema{hash}` (SCHEMA-HASH-DECODE-PLAN.md): the
+        // expensive half is re-deriving a preimage from a hash AFTER the run, which needs a
+        // candidate enumeration and knowledge of which accelerant minted the name. Printing it
+        // at the moment it is minted removes most of the need for that.
+        if (task.instance) |inst| traceInstance(self, inst);
     }
     switch (try self.facts.claimOrLookup(self.io, key, h.self_index)) {
         .proven => return,

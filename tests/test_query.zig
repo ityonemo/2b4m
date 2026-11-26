@@ -119,6 +119,16 @@ pub fn addTests(
         \\
     );
 
+    // `--trace-facts` EXPANDS a schema instance's arguments beneath its hash. The name is a
+    // hash of the arguments, so without this a reader can tell two instantiations apart but
+    // cannot tell what either one IS. The preimage is in hand at the naming site, so it is
+    // printed there — the cheap half of decoding `Schema{hash}`.
+    {
+        const r = ctx.run(&.{ "check", "--trace-facts", "std/peano.b4m", "addZeroRight" });
+        r.expectStdErrMatch("prop := fun k => add(k, ZERO) = k");
+        r.expectExitCode(0);
+    }
+
     // `debug taint <file>`: a proof with no accelerated tactic reports that
     // every step is kernel-checked.
     ctx.ok(&.{ "debug", "taint", "tests/cases/cli/outline.b4m" }, "no accelerated tactics — every step is kernel-checked\n");
