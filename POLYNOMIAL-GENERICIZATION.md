@@ -94,12 +94,13 @@ divisors"*). Everything around it is already generic and already at the ring lay
 not yet exist in `std/integer*` and would be the prerequisite, reachable from the sign
 trichotomy at `std/integer/order.b4m:1141`.
 
-## Still open
+## PUNTED: the `polynomial`-tactic question (user, 2026-11-25)
 
-**Decide the `polynomial`-tactic question deliberately.** Either accept that polynomial
-identities are hand-written and say so in `GUIDE.md` (where it still is not), or cost the
-model-synthesis idea against the `--fast` boundary, where `model` already drops the per-axiom
-obligation-coverage check. PAINPOINTS 22 carries the idea.
+Not pursued. The scalar-layer limitation stands as-is: `polynomial` binds `add`/`mul`/`ZERO`/
+`succ` by well-known name, so there is no `polynomial(ring)` over an abstract carrier and a
+polynomial-ring identity is hand-written. PAINPOINTS 22 carries the limitation and the parked
+model-synthesis idea; `GUIDE.md` is deliberately left without it rather than documenting a
+constraint nobody is about to change.
 
 ## The process rule worth keeping regardless
 
