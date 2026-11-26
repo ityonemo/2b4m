@@ -1,7 +1,10 @@
 # Polynomial genericization — what to move down, and the constraint on doing it
 
-**Re-probed 2026-11-17.** The analysis holds; three figures were stale and are corrected
-below. Recommendation 2 has LANDED; the rest are open.
+**Re-probed 2026-11-25.** The analysis holds. Recommendation 2 has LANDED; the rest are open.
+Verified this round: `std/domain.b4m` and `std/domain/polynomial.b4m` still absent, and all 8
+of ℚ[x]'s generic theorems are still in `std/rational/polynomial.b4m`. One figure corrected —
+`using polynomial(` is now **176** sites, not 164; the substantive claim (not one is over
+polynomial operations) is unchanged.
 
 Each polynomial carrier re-declares the same primitives — `coeff`, `ZEROP`, `addP`, `negP`,
 `mulP`, a `convolution` with its two recursion clauses, `degreeAtMost`, extensionality.
@@ -43,7 +46,7 @@ Genuinely carrier-specific, and staying put: `everyCoefficientIsARatioOfIntegers
 
 Know this before planning any polynomial work. `polynomial` binds `add`/`mul`/`ZERO`/`succ`
 by **well-known name**, so over a carrier whose operations are `addP`/`mulP` it reports
-`the goal has no add/mul structure`. All 164 `using polynomial(...)` sites in the corpus
+`the goal has no add/mul structure`. All 176 `using polynomial(...)` sites in the corpus
 pass `field` or `rational` — the **coefficient** ring — and not one is over polynomial
 operations.
 

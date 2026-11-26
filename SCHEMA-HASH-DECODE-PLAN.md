@@ -1,12 +1,16 @@
 # Decoding `Schema{<hash>}` back into meaningful information
 
-**Status: DESIGNED, not built** (`2b4m query` has no `instance` subcommand). A slow linear
-search is acceptable — the error path does not need to be fast.
+**Status: DESIGNED, not built** (`2b4m query` has no `instance` subcommand — re-verified
+2026-11-25). A slow linear search is acceptable — the error path does not need to be fast.
+
+**References refreshed 2026-11-25.** The accelerant rebuild moved every hashing site out of
+`Prove.zig`; the analysis below held, the line numbers did not.
 
 ## What a reader sees today
 
 A schema instance is named by hashing its arguments
-(`Schema.instanceHash`, `Prove.zig` ~2409), so `--trace-facts` prints
+(`Schema.instanceHash`, `src/Engine/ProveTask/Schema.zig:51`, called from
+`Prove.zig:1824` and `:2329`), so `--trace-facts` prints
 
 ```
 [prove] task#11 = aSchema{635ffcad5c91c77c} in ns#68 (model#0)
@@ -20,8 +24,9 @@ The hash is **reproducible** — it hashes `(name bytes, loc)`, not allocation-o
 
 ## The preimage is retained, just not addressable from the name
 
-`ProveTask.instance` carries `(schema_name, params, args)` — the exact preimage, reified
-durably right after the naming site (`Prove.zig` ~2431). The gap is that it lives on the
+`ProveTask.Instance` (`src/Engine/ProveTask.zig:91`) carries
+`(schema_name, params, args, args_source)` — the exact preimage, reified durably right after
+each naming site (`Prove.zig:1855` and `:2358`). The gap is that it lives on the
 **in-flight task** and nothing maps `inst_name -> that payload`. After the run the
 association is gone, though the args themselves are still durable in the pool.
 
@@ -58,13 +63,18 @@ model transfer, where `args_source` differs from `args`.)*
 - **Model transfers.** The payload keeps BOTH `args` and `args_source`; the hash is over
   `args`. A decoder reporting only one would mislead on a transferred instance.
 - **`freeFvarParams`.** Under a model, `pnames` is EXTENDED beyond the schema's declared
-  params (`Prove.zig` ~2397) by the args' free variables of refined image sort. Any
+  params (`Prove.zig:1812`) by the args' free variables of refined image sort. Any
   re-derivation must reproduce that extension or it hashes the wrong parameter list.
-- **Reserved slots.** `hashEntity` (`Schema.zig:91`) treats non-named Items (`Index.none`,
+- **Reserved slots.** `hashEntity` (`src/Engine/ProveTask/Schema.zig:91`) treats non-named Items (`Index.none`,
   `SortId.prop`) as fixed values rather than resolving a name. Mirror that; do not assume
   every entity has a name.
-- **`termHash` has the same shape** and names synthetic accelerant schemas, so whatever
-  decodes one should decode the other. It is called at THREE sites (`Prove.zig` ~3484,
-  ~3925, ~4650), and the first mixes in an arg count and a head-local flavour on top of the
-  term hash — reproduce that or it will not match. (The flavour is load-bearing: omitting it
-  caused a keep-first collision, see `[[schema-instance-crosstalk]]`.)
+- **`termHash` has the same shape** (`Schema.zig:168`) and names synthetic accelerant schemas,
+  so whatever decodes one should decode the other. It is called from **SIX accelerants**, not
+  from the engine — `Tautology.zig:168`, `Chain.zig:253`, `Arithmetic.zig:582`,
+  `Specialize.zig:245`, `Extensionality.zig:153` and `common.zig:802`. `Specialize` is the one
+  that mixes in an arg count and a head-local flavour on top of the term hash — reproduce that
+  or it will not match. (The flavour is load-bearing: omitting it caused a keep-first
+  collision, see `[[schema-instance-crosstalk]]`.)
+
+  That the sites are per-accelerant rather than central is itself a decode constraint: a
+  re-deriver must know which accelerant minted a name to know which hash recipe to replay.
