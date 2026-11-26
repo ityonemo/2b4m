@@ -1849,7 +1849,24 @@ pub const Parser = struct {
             return self.fail("definition '{s}' mixes explicit and implicit clauses ({d} of {d} are implicit) — an explicit clause rewrites its symbol, an implicit one characterizes it, and a block must be one or the other", .{ self.text(name), implicit_arms, arms });
         }
         const is_implicit = implicit_arms != 0;
-        while (self.tok.tag == .identifier and std.mem.eql(u8, self.text(self.tok), "consistency")) {
+
+        // THE WELL-FORMEDNESS SECTIONS, in ANY ORDER. One dispatch loop rather than four
+        // sequential `while`s: those only matched at their own position, so `termination:`
+        // written before `totality:` was a parse error with a diagnostic that named the wrong
+        // thing ("expected a declaration, got 'totality'"). Nothing about the sections is
+        // ordered — each is an independent obligation — so the grammar should not impose one.
+        //
+        // Each arm parses ONLY. Everything that validates or synthesizes runs after the loop,
+        // because a check may need a section the loop has not reached yet (`totality:` is owed
+        // or unowed depending on the arms, and `termination:` entries are matched against them).
+        var tot_theory: ?Token = null;
+        var tot_theorem: ?Token = null;
+        var term_theory: ?Token = null;
+        var term_entries: std.ArrayList(?ast.Termination.Pair) = .empty;
+        var saw_termination = false;
+        while (self.tok.tag == .identifier) {
+            const section = self.text(self.tok);
+            if (std.mem.eql(u8, section, "consistency")) {
             _ = self.advance();
             // `consistency(<theory>):` — the theory whose VACUITY SCHEMA a `_` entry's staged
             // proof cites. Optional, because a file owning its own constructors needs none.
@@ -1898,13 +1915,9 @@ pub const Parser = struct {
                 try self.stageConsistencyTheorem(name, obligations[p], p, arms, selector orelse constructorTheory(clauses, name));
             }
             found = .{ .arms = arms, .entries = list, .obligations = obligations };
-        }
-
-        // `totality(<theory>): <theorem>` — ONE entry, because coverage is a single statement
-        // about the whole block rather than something per arm or per pair.
-        var tot_theory: ?Token = null;
-        var tot_theorem: ?Token = null;
-        while (self.tok.tag == .identifier and std.mem.eql(u8, self.text(self.tok), "totality")) {
+            } else if (std.mem.eql(u8, section, "totality")) {
+            // ONE entry, because coverage is a single statement about the whole block rather
+            // than something per arm or per pair.
             if (tot_theorem != null) return self.fail("a definition block declares `totality:` at most once", .{});
             _ = self.advance();
             if (self.tok.tag == .l_paren) {
@@ -1914,15 +1927,10 @@ pub const Parser = struct {
             }
             _ = try self.expect(.colon);
             tot_theorem = try self.expect(.identifier);
-        }
-
-        // `termination(<theory>): _, _, {thm, pred}` — positional over the ARMS. A `_` marks a
-        // terminating arm (no recursive call); a `{thm, pred}` pair marks a recursive one and
-        // names the theorem the author proves plus the predicate the checker generates.
-        var term_theory: ?Token = null;
-        var term_entries: std.ArrayList(?ast.Termination.Pair) = .empty;
-        var saw_termination = false;
-        while (self.tok.tag == .identifier and std.mem.eql(u8, self.text(self.tok), "termination")) {
+            } else if (std.mem.eql(u8, section, "termination")) {
+            // positional over the ARMS: `_` marks a terminating arm, a `{thm, pred}` pair marks
+            // a recursive one and names the theorem the author proves plus the predicate the
+            // checker generates.
             if (saw_termination) return self.fail("a definition block declares `termination:` at most once", .{});
             saw_termination = true;
             _ = self.advance();
@@ -1950,6 +1958,23 @@ pub const Parser = struct {
             if (term_entries.items.len != arms) {
                 return self.fail("`termination:` needs one entry per clause — {d} clause(s), got {d}", .{ arms, term_entries.items.len });
             }
+            } else if (std.mem.eql(u8, section, "existence") or std.mem.eql(u8, section, "uniqueness")) {
+                // The IMPLICIT case's pair. Both required, in either order, each once.
+                const is_ex = std.mem.eql(u8, section, "existence");
+                _ = self.advance();
+                _ = try self.expect(.colon);
+                const thm = try self.expect(.identifier);
+                if (is_ex) {
+                    if (ex_tok != null) return self.fail("a definition block declares `existence:` at most once", .{});
+                    ex_tok = thm;
+                } else {
+                    if (un_tok != null) return self.fail("a definition block declares `uniqueness:` at most once", .{});
+                    un_tok = thm;
+                }
+                if (self.tok.tag == .comma) _ = self.advance();
+            } else {
+                break; // not a section keyword: the block's declarations are done
+            }
         }
 
         // Each entry must MATCH its arm: `_` only where the arm does not recurse, a
@@ -1976,25 +2001,6 @@ pub const Parser = struct {
                 try self.stageGroundedPredicate(name, params, clauses, i, pair.predicate);
                 try term_obligations.append(self.arena, try self.terminationObligation(name, params, clauses, i, pair.predicate));
             }
-        }
-
-        // The IMPLICIT case's pair. Both names are required, in either order, each once.
-        while (self.tok.tag == .identifier) {
-            const word = self.text(self.tok);
-            const is_ex = std.mem.eql(u8, word, "existence");
-            const is_un = std.mem.eql(u8, word, "uniqueness");
-            if (!is_ex and !is_un) break;
-            _ = self.advance();
-            _ = try self.expect(.colon);
-            const thm = try self.expect(.identifier);
-            if (is_ex) {
-                if (ex_tok != null) return self.fail("a definition block declares `existence:` at most once", .{});
-                ex_tok = thm;
-            } else {
-                if (un_tok != null) return self.fail("a definition block declares `uniqueness:` at most once", .{});
-                un_tok = thm;
-            }
-            if (self.tok.tag == .comma) _ = self.advance();
         }
 
         // An IMPLICIT block characterizes its symbol by a property it satisfies rather than

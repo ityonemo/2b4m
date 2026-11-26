@@ -171,6 +171,11 @@ pub fn addTests(
     // are a base pattern beside its exact negation, so only genuine gaps reach the author.
     ctx.fail(&.{ "check", "tests/cases/definition/totality-gap.b4m" }, "tests/cases/definition/totality-gap.b4m:27:1: error: definition 'f' has 2 arms whose conditions do not provably cover its domain, so it may leave the symbol UNDETERMINED somewhere — declare `totality(<theory>): <theorem>` naming the proof that they do cover, or widen an arm's condition\n");
 
+    // The well-formedness sections parse in ANY ORDER. They were four sequential `while`
+    // loops, so each matched only at its own position and `termination:` before `totality:`
+    // was a parse error naming the wrong thing. This fixture writes them reversed.
+    ctx.okSilent(&.{ "check", "--draft", "tests/cases/definition/section-order.b4m" });
+
     // A SOUNDNESS GATE: a recursive block whose clauses RENAME the declared parameters makes
     // the generated predicate's base branch reflexive (`j = j`), which fires unconditionally
     // and lets the termination obligation be discharged with no induction at all — verified

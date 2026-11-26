@@ -533,9 +533,9 @@ oper fib(n: Nat) => Nat:
 ```
 
 (Three arms, so it owes `totality:` as well — `n = ZERO` / `n = ONE` / `ONE < n` is not
-propositionally exhaustive. **The sections are ORDER-SENSITIVE**: `consistency:` then
-`totality:` then `termination:` then `existence:`/`uniqueness:`, which is the order the
-parser reads them in.)
+propositionally exhaustive. **The sections parse in ANY ORDER** — they are independent
+obligations, so the grammar imposes no sequence. `consistency:`, `totality:`, `termination:`,
+`existence:`/`uniqueness:` reads well as a convention, but nothing enforces it.)
 
 One entry per clause, in order: `_` for a terminating arm, `{theorem, predicate}` for a
 recursive one. The pair names the theorem you prove and the predicate the checker GENERATES —

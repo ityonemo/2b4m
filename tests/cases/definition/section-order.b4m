@@ -1,0 +1,38 @@
+// THE WELL-FORMEDNESS SECTIONS PARSE IN ANY ORDER.
+//
+// They used to be four sequential `while` loops, so each only matched at its own position and
+// `termination:` written before `totality:` failed with a diagnostic naming the wrong thing
+// ("expected a declaration, got 'totality'"). Nothing about the sections is ordered -- each is
+// an independent obligation -- so the grammar should not impose one.
+//
+// This fixture writes them in the REVERSE of the old required order. Each arm now parses only;
+// everything that validates or synthesizes runs after the dispatch loop, because a check may
+// need a section the loop has not reached yet.
+theory peano <<< "std/peano.b4m"
+theory order <<< "std/peano/order.b4m"
+sort Nat = peano.Nat
+const ZERO = peano.ZERO
+const ONE = peano.ONE
+oper add = peano.add
+oper prev = peano.prev
+pred less_than = order.less_than
+
+hole fibCovers cites "fixture: coverage is not the subject here":
+  forall n: Nat; n = ZERO or n = ONE or less_than(ONE, n)
+hole fibGrounds cites "fixture: termination is not the subject here":
+  forall n: Nat; less_than(ONE, n) -> fibGrounded(n)
+
+oper fib(n: Nat) => Nat:
+  fib(ZERO) = ZERO;
+  fib(ONE) = ONE;
+  fib(n) = add(fib(prev(n)), fib(prev(prev(n)))) when less_than(ONE, n).
+  termination(peano): _, _, {fibGrounds, fibGrounded}
+  totality(peano): fibCovers
+
+intheory fibAtZero
+theorem fibAtZero: fib(ZERO) = ZERO
+proof
+  @conclusion |
+    fib(ZERO) = ZERO
+    [by definition(0) fib]
+qed
