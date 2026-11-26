@@ -142,9 +142,9 @@ pub fn addTests(
 
     // a named theorem that RESOLVES and is TRUE but states something else settles nothing.
     // Both sides are shown, because the author never wrote the obligation.
-    ctx.fail(&.{ "check", "--library", "tests/cases/definition/library-consistency-mismatch" }, "error: 1 definition block(s) with an unsettled `consistency:` declaration:\n  - nrep  (tests/cases/definition/library-consistency-mismatch/wrong.b4m:22) — 'wrongStatement' does not state the obligation for clauses 0 and 1\n      it states:  ZERO = ZERO\n      wanted:     forall a: Nat; forall arg2: Nat; forall n: Nat; (arg2 = ZERO and arg2 = succ(n)) -> a = succ(a)\n");
+    ctx.fail(&.{ "check", "--library", "tests/cases/definition/library-consistency-mismatch" }, "error: 1 definition block(s) with an unsettled `consistency:` declaration:\n  - nrep  (tests/cases/definition/library-consistency-mismatch/wrong.b4m:23) — 'wrongStatement' does not state the obligation for clauses 0 and 1\n      it states:  ZERO = ZERO\n      wanted:     forall a: Nat; forall arg2: Nat; forall n: Nat; (arg2 = ZERO and arg2 = succ(n)) -> a = succ(a)\n");
 
-    ctx.fail(&.{ "check", "--library", "tests/cases/definition/library-consistency" }, "error: 1 definition block(s) with an unsettled `consistency:` declaration:\n  - f  (tests/cases/definition/library-consistency/bad.b4m:22) — 'noSuchTheorem' names no fact in this file (declared for clauses 0 and 1)\n");
+    ctx.fail(&.{ "check", "--library", "tests/cases/definition/library-consistency" }, "error: 1 definition block(s) with an unsettled `consistency:` declaration:\n  - f  (tests/cases/definition/library-consistency/bad.b4m:28) — 'noSuchTheorem' names no fact in this file (declared for clauses 0 and 1)\n");
 
     // -- `termination(<theory>):` on a RECURSIVE definition block ----------------------------
     //
@@ -187,7 +187,7 @@ pub fn addTests(
     // `--library`: the named theorem must STATE the obligation. A theorem that resolves and
     // is true but says something else settles nothing — and both sides are shown, since the
     // author never wrote the obligation.
-    ctx.fail(&.{ "check", "--library", "tests/cases/definition/library-termination-mismatch" }, "error: 1 recursive definition block(s) with an unsettled `termination:` declaration:\n  - g  (tests/cases/definition/library-termination-mismatch/wrong.b4m:13) — 'gTerminates' does not state the termination obligation for clause 1\n      it states:  forall a: N; unrelated(a)\n      wanted:     forall n: N; n != Z -> gGrounded(n)\n");
+    ctx.fail(&.{ "check", "--library", "tests/cases/definition/library-termination-mismatch" }, "error: 1 recursive definition block(s) with an unsettled `termination:` declaration:\n  - g  (tests/cases/definition/library-termination-mismatch/wrong.b4m:18) — 'gTerminates' does not state the termination obligation for clause 1\n      it states:  forall a: N; unrelated(a)\n      wanted:     forall n: N; n != Z -> gGrounded(n)\n");
 
     ctx.fail(&.{ "check", "tests/cases/definition/consistency_arity_bad.b4m" }, "tests/cases/definition/consistency_arity_bad.b4m:9:12: error: definition_consistency expects either a constructor split (`forall …; (k = <base> and k = <step>(n)) -> …`) or conditions containing a proposition and its negation; this goal is neither\n");
 

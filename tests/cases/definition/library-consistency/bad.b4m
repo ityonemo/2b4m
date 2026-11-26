@@ -10,6 +10,12 @@ sort N
 const Z: N
 oper s(a: N) => N
 
+// COVERAGE on an abstract sort. `N` has `Z`/`s` declared and nothing saying it is inductively
+// generated, so the arms' `Z` / `s(n)` split is not PROVABLE here — the same thing the
+// termination work found. Stated as an axiom, which is the honest form: it is the assumption a
+// two-arm split over this sort always rested on.
+axiom nIsZeroOrSucc: forall n: N; n = Z or (exists m: N; n = s(m))
+
 // NOT RECURSIVE: the step arm returns `s(Z)` rather than recursing. What this fixture tests
 // is that a `consistency:` declaration naming a theorem which DOES NOT EXIST is rejected
 // under `--library`, and that needs only a multi-clause block with a declaration — the
@@ -20,3 +26,12 @@ oper f(n: N) => N:
   f(Z) = Z;
   f(s(n)) = s(Z).
   consistency: noSuchTheorem
+  totality(peano): fCovers
+
+intheory fCovers
+theorem fCovers: forall n: N; n = Z or (exists n_at1: N; n = s(n_at1))
+proof
+  @conclusion |
+    forall n: N; n = Z or (exists n_at1: N; n = s(n_at1))
+    [by cite nIsZeroOrSucc]
+qed

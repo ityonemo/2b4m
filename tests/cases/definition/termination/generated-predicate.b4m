@@ -29,6 +29,7 @@ oper fib(n: Nat) => Nat:
   fib(ZERO) = ZERO;
   fib(ONE) = ONE;
   fib(n) = add(fib(sub(n, ONE)), fib(sub(n, TWO))) when less_than(ONE, n).
+  totality(peano): fibCovers
   termination(peano): _, _, {
   fibIsGroundedAboveOne, fibGrounded
   }
@@ -41,6 +42,7 @@ hole fibIsGroundedAboveOne
 
 // The generated predicate, confirmed verbatim: two conjuncts (two call sites), each carrying
 // both terminating arms' patterns as base alternatives.
+intheory fibCovers
 intheory theGeneratedPredicateTranscribesBothCallSites
 theorem theGeneratedPredicateTranscribesBothCallSites: forall n: Nat;
   fibGrounded(n) iff
@@ -53,4 +55,56 @@ proof
       ((fibGrounded(sub(n, ONE)) or sub(n, ONE) = ZERO or sub(n, ONE) = ONE)
       and (fibGrounded(sub(n, TWO)) or sub(n, TWO) = ZERO or sub(n, TWO) = ONE))
     [by definition fibGrounded]
+qed
+
+// COVERAGE. The three arms condition on `n = ZERO`, `n = ONE` and `less_than(ONE, n)`, which
+// exhaust ℕ — but NOT propositionally: the three are unrelated atoms, so autodetection
+// correctly declines and this must be proved. `trichotomy` at (ONE, n) supplies the split, and
+// `belowOneMeansZero` turns its `n < ONE` arm into `n = ZERO`.
+//
+// Contrast the `cappedRun`-shaped blocks, where a base pattern sits beside its exact negation
+// and coverage IS propositional — 56 of the corpus's blocks are that shape and owe nothing.
+theorem fibCovers: forall n: Nat; n = ZERO or n = ONE or less_than(ONE, n)
+proof
+  @one-compares-with-every-nat |
+    forall a: Nat; forall b: Nat; less_than(a, b) or a = b or less_than(b, a)
+    [using import(order) trichotomy]
+  @below-one-is-zero |
+    forall i: Nat; less_than(i, peano.succ(ZERO)) -> i = ZERO
+    [using import(order) belowOneMeansZero]
+  @one-is-the-successor-of-zero |
+    ONE = peano.succ(ZERO)
+    [using import(peano) oneIsSuccZero]
+  @generalize-n |
+    fix n: Nat {
+      @one-against-n |
+        less_than(ONE, n) or ONE = n or less_than(n, ONE)
+        [using specialize one-compares-with-every-nat(ONE, n)]
+      @below-one-at-n |
+        less_than(n, peano.succ(ZERO)) -> n = ZERO
+        [using specialize below-one-is-zero(n)]
+      @below-one-written-with-one |
+        less_than(n, ONE) -> n = ZERO
+        [by rewrite one-is-the-successor-of-zero below-one-at-n]
+      // `tautology` reads `ONE = n` and `n = ONE` as UNRELATED atoms, so the orientation
+      // trichotomy hands back must be flipped before it can close the disjunction.
+      @given-one-equals-n |
+        assume ONE = n {
+          @one-equals-n |
+            ONE = n
+            [by hypothesis given-one-equals-n]
+          @conclusion-n-equals-one |
+            n = ONE
+            [by symmetry one-equals-n]
+        }
+      @one-equals-n-gives-n-equals-one |
+        ONE = n -> n = ONE
+        [by discharge given-one-equals-n]
+      @conclusion-covered-at-n |
+        n = ZERO or n = ONE or less_than(ONE, n)
+        [using tautology one-against-n below-one-written-with-one one-equals-n-gives-n-equals-one]
+    }
+  @conclusion |
+    forall n: Nat; n = ZERO or n = ONE or less_than(ONE, n)
+    [by generalize generalize-n]
 qed

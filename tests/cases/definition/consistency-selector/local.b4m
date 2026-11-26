@@ -5,9 +5,13 @@ sort N
 const Z: N
 oper s(a: N) => N
 axiom sNotZero: forall n: N; not (s(n) = Z)
+// COVERAGE on an abstract sort: nothing says `N` is inductively generated, so the `Z` / `s(n)`
+// split is not PROVABLE here. Stated as an axiom, the honest form.
+axiom nIsZeroOrSucc: forall n: N; n = Z or (exists m: N; n = s(m))
 axiom zeroSuccSplitIsVacuous(prop(N, N)):
   forall k, n: N; (k = Z and k = s(n)) -> prop(k, n)
 
+intheory fCovers
 intheory fBase
 
 // NOT RECURSIVE: the step arm returns `s(a)` rather than recursing. What this fixture tests
@@ -19,10 +23,24 @@ oper f(a: N, n: N) => N:
   f(a, Z) = a;
   f(a, s(n)) = s(a).
   consistency: _
+  totality(peano): fCovers
 
 theorem fBase: forall a: N; f(a, Z) = a
 proof
   @conclusion |
     forall a: N; f(a, Z) = a
     [by definition(0) f]
+qed
+
+theorem fCovers: forall a: N; forall n: N; n = Z or (exists n_at2: N; n = s(n_at2))
+proof
+  @generalize-a |
+    fix a: N {
+      @conclusion-covered-for-this-a |
+        forall n: N; n = Z or (exists n_at2: N; n = s(n_at2))
+        [by cite nIsZeroOrSucc]
+    }
+  @conclusion |
+    forall a: N; forall n: N; n = Z or (exists n_at2: N; n = s(n_at2))
+    [by generalize generalize-a]
 qed
