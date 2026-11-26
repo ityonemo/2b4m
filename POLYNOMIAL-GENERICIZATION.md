@@ -36,10 +36,17 @@ not per proof. (PAINPOINTS 22 carries this, with the parked idea of letting `pol
 synthesize over a MODEL — which would read ring structure through the model's own `:` map, so
 a misbound operator becomes a model error rather than a silently wrong normalization.)
 
-## RULING: the polynomial layering STOPS at ring (user, 2026-11-25)
+## RULING: ring and field are the polynomial layers; nothing between (user, 2026-11-25)
 
-`std/domain.b4m` landed and stays. **`std/domain/polynomial.b4m` will NOT be built**, and the
-three F[x] degree theorems stay where they are.
+**`ring/polynomial.b4m` and `field/polynomial.b4m` are general enough to root work in freely** —
+ring is the weakest useful structure so its corpus transfers everywhere, and field is where the
+concrete carriers live (ℚ[x], ℝ[x], ℂ[x]). `std/domain.b4m` landed and stays.
+**`std/domain/polynomial.b4m` will NOT be built**, and the three F[x] degree theorems stay where
+they are.
+
+The cost of a polynomial layer is flat (see the measurement below), so the question is how many
+consumers amortize it: ring and field have many, domain has two (ℤ and ℤ_p), and
+UFD/PID/euclidean would have fewer still.
 
 **Why, and it is an argument about the whole hierarchy rather than about D[x].** The algebraic
 chain does not stop at domains — `ring ⊃ domain ⊃ UFD ⊃ PID ⊃ euclidean domain ⊃ field` — and
