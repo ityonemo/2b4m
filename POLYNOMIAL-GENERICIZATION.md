@@ -43,6 +43,20 @@ a misbound operator becomes a model error rather than a silently wrong normaliza
    `field` (adds inverses) would carry degree additivity, cancellation, and the
    scaling-reflects-a-degree-bound family. ℤ[x] and ℤ_n[x] for prime n get them free.
 
+   **THEN CLOSE IT OUT (user, 2026-11-25): wire ℤ[x] and ℤ_n[x] to the new layer** rather
+   than leaving the refactor half-applied. Scoped ahead:
+
+   - Both already declare a ring model (`IntegerPolynomials` at `std/integer/polynomial.b4m:107`,
+     `ModNPolynomials` at `std/integer/mod-n-polynomial.b4m:95`), so each needs the domain
+     model added beside it, not invented.
+   - **ℤ_p is READY**: `std/integer/mod-n-domain.b4m:64` already proves
+     `is_prime(N) -> mul(x, y) = ZERO -> (x = ZERO or y = ZERO)` — it exists for Gauss's Lemma
+     (AATA §17.3), which needed exactly "ℤ_p[x] is an integral domain". That discharges the
+     domain axiom directly.
+   - **ℤ is NOT ready**: it has no zero-divisor fact anywhere (`grep` finds none in
+     `std/integer*.b4m`). Proving `mul(a, b) = ZERO -> (a = ZERO or b = ZERO)` over ℤ is a
+     prerequisite, reachable from the sign trichotomy at `std/integer/order.b4m:1141`.
+
    **The real cost, which is why this ranks last.** Several F[x] theorems *state* domain facts
    (`aNonzeroMultipleHasAtLeastTheDegree`, `aSmallDegreeMultipleIsTheZeroMultiple`,
    `anEqualDegreeCofactorIsConstant`) while `--axioms` shows the first resting on
