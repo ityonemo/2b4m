@@ -2148,21 +2148,20 @@ pub const Parser = struct {
                 }
             }
             if (all_conditioned and !conditionsCoverPropositionally(self.arena, conds.items)) {
-                // STAGED OFF, like `consistency:` and `termination:` before it: 5 `std` blocks
-                // (the `theCofactorIndex` family) and ~9 fixtures are `ZERO`/`succ(k)` splits,
-                // total on ℕ by `peano.zeroOrSucc` but NOT propositionally, so each owes a real
-                // proof. Flipping this on is replacing `orelse null` with the `self.fail` below,
-                // after that migration.
+                // REQUIRED. A block whose arms do not provably cover its domain must name the
+                // proof that they do — otherwise it may leave the symbol UNDETERMINED
+                // somewhere, which is what a definition exists to rule out and an axiom exists
+                // to disclose. `monus`'s missing floor clause hid exactly there: its two arms
+                // never overlapped, so every `consistency:` pair was vacuous while `i < j`
+                // matched neither — undetermined precisely where the flooring was the point.
                 //
-                // Everything else is live and gates new violations for free: a declaration that
-                // IS written is parsed, its obligation synthesized, and `--library` checks the
-                // named theorem states it; a declaration on a block that already covers is
-                // rejected as unowed.
-                const thm = tot_theorem orelse null;
-                if (false) _ = tot_theorem orelse return self.fail("definition '{s}' has {d} arms whose conditions do not provably cover its domain, so it may leave the symbol UNDETERMINED somewhere — declare `totality(<theory>): <theorem>` naming the proof that they do cover, or widen an arm's condition", .{ self.text(name), arms });
-                if (thm) |named| totality = .{
+                // Only blocks autodetection DECLINES reach here; 56 of the corpus's 62
+                // applicable blocks are a base pattern beside its exact negation and owe
+                // nothing.
+                const thm = tot_theorem orelse return self.fail("definition '{s}' has {d} arms whose conditions do not provably cover its domain, so it may leave the symbol UNDETERMINED somewhere — declare `totality(<theory>): <theorem>` naming the proof that they do cover, or widen an arm's condition", .{ self.text(name), arms });
+                totality = .{
                     .theory = tot_theory,
-                    .theorem = named,
+                    .theorem = thm,
                     .obligation = try self.coverageObligation(name, params, conds.items),
                 };
             } else if (tot_theorem) |thm| {
@@ -3495,6 +3494,7 @@ test "a definition block synthesizes one consistency obligation per clause pair"
         \\  f(a, Z) = a;
         \\  f(a, s(n)) = s(f(a, n)).
         \\  consistency: _
+        \\  totality(peano): fCovers
         \\  termination(peano): _, {fIsGrounded, fGrounded}
     ;
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);

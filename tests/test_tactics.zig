@@ -163,6 +163,14 @@ pub fn addTests(
     // `convolution(p, q, j, succ(m))`), so the two flips go together after that migration.
     ctx.okSilent(&.{ "check", "--draft", "tests/cases/definition/termination/generated-predicate.b4m" });
 
+    // THE FOURTH OBLIGATION: a multi-arm block whose conditions leave a GAP must name the proof
+    // that they cover. Here `n = ZERO` beside `less_than(ONE, n)` says nothing about `n = ONE`,
+    // so `f(ONE)` is undetermined — and `consistency:` cannot see it, the two conditions being
+    // disjoint and every pair therefore vacuous. `monus`'s missing floor clause was exactly
+    // this shape and hid for sessions. Autodetection handles the 56 of 62 corpus blocks that
+    // are a base pattern beside its exact negation, so only genuine gaps reach the author.
+    ctx.fail(&.{ "check", "tests/cases/definition/totality-gap.b4m" }, "tests/cases/definition/totality-gap.b4m:27:1: error: definition 'f' has 2 arms whose conditions do not provably cover its domain, so it may leave the symbol UNDETERMINED somewhere — declare `totality(<theory>): <theorem>` naming the proof that they do cover, or widen an arm's condition\n");
+
     // A SOUNDNESS GATE: a recursive block whose clauses RENAME the declared parameters makes
     // the generated predicate's base branch reflexive (`j = j`), which fires unconditionally
     // and lets the termination obligation be discharged with no induction at all — verified
